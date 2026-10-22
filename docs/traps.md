@@ -102,13 +102,29 @@ once, as `starter/baseline.py` does, and cache arrays under `data/cache/`.
 benchmark matches, defaults to `only_alive=True` and silently drops every dead-ball frame. That leaves no `D` to
 learn or score. Pass `only_alive=False`.
 
-In the same loader (kloppy 3.18.0):
-- `ball_owning_team` is home when `BallPossession` is 1 and away otherwise, so a frame without a possession value
-  becomes away;
-- frames without a ball entry are skipped.
+Measured on the seven DFL matches on 2026-10-22 (kloppy 3.18.0; `python pipeline/benchmark/selftest.py --dfl`):
+- **The default drops the dead ball.** On J03WMX, `only_alive=True, limit=5000` returned 5,000 frames over N 10,000 to
+  15,823: none is dead in our parse, no alive row in that range is missing, and the 824 dead rows are the ones it
+  dropped. Dead frames are 40.7% to 51.7% of the ball frames of a match (J03WQQ the least, J03WN1 the most), so the
+  default deletes about half of every match.
+- **`limit` is per object and counts what the loader keeps.** With `only_alive=False` it stops after the first 5,000
+  frames of the first half (N 10,000 to 14,999, period 1 only). With the default it counts alive frames, so the same
+  limit reaches further.
+- **With `only_alive=False` it agrees with our parser** on those 5,000 frames: ball x, y and z, alive or dead, the
+  team in possession and three players, with 0 disagreements. Our frame numbers and its `frame_id` are the same N.
+- **The other two behaviours never fire on these files.** The loader reads `BallPossession` as home when it is 1 and
+  away otherwise, so a frame with no possession value would come out as away, and it skips a frame with no ball
+  entry. In all seven matches every ball frame has a `BallPossession` of 1 or 2 and a `BallStatus`, and no frame
+  number in a half is without a ball frame (0 in each count). Our own parser (`pipeline/benchmark/dfl.py`) counts the
+  first two and refuses any other code, so a file that changes this stops the parse.
 
-Check how often each happens, index frames by `frame_id` rather than by position, and read `BallPossession` == 2 for
-away yourself if the default is wrong. Found by reading the loader's source, not yet by running it.
+Its own download does not work: kloppy 3.18's DFL loader fetches from `springernature.figshare.com`, which sits behind a
+bot challenge, so `load_open_tracking_data` cannot get the files. P01 downloads them with
+`pipeline/benchmark/sources.py` and parses them with `pipeline/benchmark/dfl.py`. kloppy still reads local files
+(`kloppy.sportec.load_tracking(meta_data=..., raw_data=...)`), which is how the cross-check runs.
+
+If you do use kloppy on these files, index frames by `frame_id` rather than by position, and read `BallPossession`
+yourself for the away team.
 
 ## Reproducibility and environment
 

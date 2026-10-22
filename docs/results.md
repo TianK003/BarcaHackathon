@@ -118,6 +118,44 @@ over the first 60 s.
   missing entry.
 - A frame-exact decode of the tactical video seeks back to a keyframe, at most 49 frames earlier ([T23](traps.md)).
 
+### A05 — The DFL parser against kloppy and by frame number (2026-10-22)
+
+Public data only (the DFL/IDSSE matches of P01). Command: `python pipeline/benchmark/selftest.py --dfl`, checks
+`test_dfl_parser_agrees_with_kloppy`, `test_dfl_second_half_spot_check` and `test_dfl_t30_facts`; the first parse of a
+match takes 44 to 64 s. The timeline is `pipeline/benchmark/dfl.py`'s: the first half, 25 separator rows, then the
+second half (J03WMX: 145,992 rows, the second half starts at row 70,733).
+
+- **kloppy, J03WMX, `only_alive=False, limit=5000`** (N 10,000 to 14,999, the first half only; 4,176 alive, 1,359
+  with the home team in possession): ball x, y and z (5,000 each), alive or dead (5,000), team in possession (5,000),
+  the team of the 22 players in its first frame, presence of 3 players (15,000), their x and y (30,000 values) and the
+  number of players per frame (5,000). Positions agree to 1e-6 m. **0 disagreements** in every count.
+- **kloppy's default, `only_alive=True`, same limit:** 5,000 frames over N 10,000 to 15,823 (5,824 rows). None is dead
+  in our parse, no alive row of ours in that range is left out, and the 824 dead rows are the ones it drops.
+- **By frame number:** a separate lxml pass, keyed by N, read 200 ball frames from each half (second half drawn with
+  `default_rng(0)`, first with `default_rng(1)`) and compared N, X, Y, Z, S, BallStatus and BallPossession with the
+  timeline's row: N - 10000 in the first half, n1 + 25 + (N - 100000) in the second. **0 disagreements.**
+- **Fields that are missing:** none of X, Y, S, Z, BallPossession or BallStatus is missing on any ball or player frame
+  of J03WMX, and no row lacks a ball frame; the same holds for all seven matches (below).
+
+Ball frames, by match, from the same parse (`rows w/o ball`, `no possession` and `no status` are 0 everywhere, and the
+parser refuses a possession that is not 1 or 2, so a clean parse is a 0 for that too):
+
+| match | ball frames | dead | dead share |
+|---|---|---|---|
+| J03WMX | 145,967 | 60,598 | 41.5% |
+| J03WN1 | 141,561 | 73,184 | 51.7% |
+| J03WOH | 137,214 | 65,269 | 47.6% |
+| J03WOY | 142,536 | 66,250 | 46.5% |
+| J03WPY | 146,211 | 64,751 | 44.3% |
+| J03WQQ | 142,345 | 57,993 | 40.7% |
+| J03WR9 | 146,810 | 61,494 | 41.9% |
+
+**So:**
+- Our timeline and kloppy read the same ball, alive flag, possession and players, and the halves are laid out where
+  the file says. Home and away agree between kloppy's reading of `Role` and ours.
+- Dead ball is 41% to 52% of every benchmark match. kloppy's default drops all of it ([T30](traps.md)), which would
+  leave the benchmark with no `D`. Its fallbacks for a missing possession or ball entry never apply to these files.
+
 ## Experiments
 
 Copy this template for each run, and add a scoreboard row for anything worth comparing.
