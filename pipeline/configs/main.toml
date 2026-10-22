@@ -1,0 +1,31 @@
+# The team's current pipeline -- the config that produces the file we would submit today.
+#
+#   python pipeline/run.py pipeline/configs/main.toml            # -> evaluation/results/main.csv
+#
+# To try something, copy this file to pipeline/configs/<your_experiment>.toml (the file name becomes the output's
+# name), change it, run it, and log the run in docs/results.md. When an experiment wins on validation, its changes
+# come back here.
+#
+# Today this is the organisers' baseline_smooth50 in substance -- nearest player plus a +/-2 s majority vote -- only
+# decoded per half and with X outside the graded frames. Its dead-ball class is "the tracking lost the ball", which
+# is wrong on 66% of dead-ball frames (docs/traps.md T12). P04-P06 replace each part.
+
+description = "Nearest player + 50-frame majority vote, per half. The baseline in substance until P04-P06 land."
+seed = 0
+scope = "halves"
+
+# Each [[evidence]] entry is one source: kind is its key in pipeline/evidence/__init__.py REGISTRY. Optional:
+# name = "..." (default: kind; must be unique) and weight = 1.0 (how much the decoder trusts it). Every other key is
+# passed to the source as a keyword argument.
+[[evidence]]
+kind = "nearest_player"
+
+# Exactly one decoder (pipeline/decode/). Every key but kind is a keyword argument.
+[decoder]
+kind = "majority_vote"
+half_width = 50          # frames each side: +/-2 s at 25 fps
+fallback = "D"           # where no source had an opinion anywhere in the window
+
+# Zero or more refiners (pipeline/refine/), applied in order after the decoder:
+# [[refine]]
+# kind = "..."

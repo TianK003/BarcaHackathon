@@ -1,0 +1,15 @@
+# Exact versions that regenerate our submission byte for byte -- Python 3.11.9 (docs/traps.md T20).
+#
+#   py -3.11 -m venv .venv                                  # macOS/Linux: python3.11 -m venv .venv
+#   .venv/Scripts/python -m pip install -r requirements-pipeline.txt
+#   .venv/Scripts/python pipeline/run.py pipeline/configs/main.toml
+#
+# Only what pipeline/ imports, plus what pandas itself requires, so it installs the same on Windows, macOS and
+# Linux. (A full `pip freeze` of the team venv would carry Windows-only packages such as pywinpty from the notebook
+# stack.) The notebooks and kloppy stay in requirements-starter.txt. When the pipeline starts importing a new
+# package, pin it here in the same commit.
+numpy==2.4.6
+pandas==3.0.6
+python-dateutil==2.9.0.post0
+six==1.17.0
+tzdata==2026.5; sys_platform == "win32"

@@ -1,0 +1,22 @@
+# The organisers' baseline_smooth50, rebuilt through the pipeline. A regression check, not a candidate.
+#
+#   python pipeline/run.py pipeline/configs/smooth50_repro.toml
+#
+# must write a file byte-identical to evaluation/results/baseline_smooth50.csv (as committed, with LF endings), and
+# `python pipeline/selftest.py --data` checks that for all four baselines. If it ever stops being identical,
+# something upstream of the decoder moved: the ATD parse, the alignment, the team of a slot, or the writer.
+
+description = "baseline_smooth50 rebuilt: nearest player, +/-50-frame majority vote over the whole file."
+seed = 0
+
+# The baseline smooths straight through halftime and over ungraded frames. Reproducing it means doing the same, so
+# this is the one config allowed scope = "file" -- every real config uses "halves" (docs/traps.md T11).
+scope = "file"
+
+[[evidence]]
+kind = "nearest_player"
+
+[decoder]
+kind = "majority_vote"
+half_width = 50
+fallback = "D"
