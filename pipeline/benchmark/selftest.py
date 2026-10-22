@@ -1,8 +1,8 @@
-"""Self-checks for the P01 benchmark: the DFL registry, download and match information now; the rest later.
+"""Self-checks for the P01 benchmark: the DFL registry, download, match information and positions now; the rest later.
 
     python pipeline/benchmark/selftest.py           # synthetic checks only -- seconds, no data needed
     python pipeline/benchmark/selftest.py --dfl     # + the 21 downloaded DFL files: size and md5 (reads 2.6 GB),
-                                                    #   and the 7 match information files parsed
+                                                    #   the 7 match information files parsed, and one positions file
     python pipeline/benchmark/selftest.py --data    # + checks that read the real match's data (aggregates only)
 
 The runner is pipeline/selftest.py's: every function named test_* is a check, it prints PASS or FAIL for each, and
@@ -20,6 +20,7 @@ import argparse
 import contextlib
 import hashlib
 import io
+import json
 import os
 import re
 import sys
@@ -27,6 +28,8 @@ import tempfile
 import time
 import urllib.error
 from xml.sax.saxutils import quoteattr
+
+import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
@@ -59,6 +62,56 @@ SYNTHETIC_GUEST = ("DFL-CLU-SYNAWY", "Synthetic Away FC",
                    (("DFL-OBJ-SYNA02", 23, None, None, "B. Short"),  # only a short name: that is used
                     ("DFL-OBJ-SYNA03", 9, "Zoë Maria", "Müller", "Z. Müller"),  # non-ASCII, several given names
                     ("DFL-OBJ-SYNA01", 1, "Ann", "Goalie", "A. Goalie")))
+# Positions of the synthetic match. The first half is N 10000-10009 and the second N 100000-100007, so the timeline
+# has 10 + 25 + 8 = 43 rows and the second half starts on row 35. A coordinate is given as (jx, jy), a place on a grid
+# with 8 intervals across and down the 104.5 x 67.5 m pitch: its normalised value is exactly jx / 8 and jy / 8 (x runs
+# with X, y against Y), so a check can compare with == and no rounding hides an off-by-one or a missing flip. A None
+# leaves that attribute out of the file. The tuples are in file order.
+PERSON_A, PERSON_B, PERSON_C = "DFL-OBJ-SYNH01", "DFL-OBJ-SYNH02", "DFL-OBJ-SYNA01"
+PERSON_REFEREE, PERSON_UNLISTED, PERSON_BALL = "DFL-OBJ-SYNR01", "DFL-OBJ-SYNZ01", "DFL-OBJ-SYNBAL"
+SYNTHETIC_TIME = "2024-02-28T08:15:28.955+00:00"  # every frame says the same: the parser must not read T
+# {(PersonId, GameSection): ((N, jx, jy, S in km/h as text), ...)}, in the order the file lists the FrameSets.
+SYNTHETIC_PLAYER_FRAMES = {
+    # A plays both halves, and her second half comes first in the file. Her first half has a frame before the half
+    # (N 9999) and one after it (N 10010, which also lacks S): both are dropped, and neither may land on row -1 or on
+    # a separator row.
+    (PERSON_A, "secondHalf"): ((100000, 1, 1, "3.6"), (100001, 2, 3, "4.5"), (100002, 3, 5, None),
+                               (100003, 4, 7, "6.3"), (100004, 5, 8, "7.2"), (100005, 6, 6, "8.1"),
+                               (100006, 7, 4, "9.0"), (100007, 8, 2, "9.9")),
+    (PERSON_A, "firstHalf"): ((9999, 0, 0, "1.0"),
+                              (10000, 0, 2, "10.8"), (10001, 1, 3, "11.7"), (10002, 2, 2, "12.6"),
+                              (10003, 3, 1, "13.5"), (10004, 4, 0, "14.4"), (10005, 5, 6, "15.3"),
+                              (10006, None, 7, "16.2"), (10007, 7, 8, "17.1"), (10008, 8, 5, "18.0"),
+                              (10009, 8, 1, "18.9"), (10010, 3, 3, None)),
+    # B plays the first half only; his frames N 10004 and N 10003 are written in that order.
+    (PERSON_B, "firstHalf"): ((10000, 8, 6, "5.4"), (10001, 7, 5, "6.3"), (10002, 6, 4, "7.2"),
+                              (10004, 5, None, "9.0"), (10003, 5, 3, "8.1"), (10005, 4, 2, "9.9"),
+                              (10006, 3, 1, "10.8"), (10007, 2, 0, None), (10008, 1, 7, "12.6"),
+                              (10009, 0, 8, "13.5")),
+    # C, of the away team, comes on at N 100003 (row 38).
+    (PERSON_C, "secondHalf"): ((100003, 4, 4, "21.6"), (100004, 5, 5, "22.5"), (100005, None, 6, "23.4"),
+                               (100006, 7, 7, "24.3"), (100007, 8, 8, "25.2")),
+}
+# {GameSection: ((N, jx, jy, Z in metres, S, BallPossession, BallStatus), ...)}; the text is what the file says.
+# N 100004 has no ball frame, N 10007 is a dead ball that was last the away team's, N 100007 one that was the home
+# team's, and each code is missing on a frame of its own.
+SYNTHETIC_BALL_FRAMES = {
+    "firstHalf": ((10000, 4, 4, "0.00", "7.2", "1", "1"), (10001, 5, 4, "0.25", "8.1", "1", "1"),
+                  (10002, 6, 3, "0.50", "9.0", "1", "1"), (10003, 6, 2, "0.75", None, "1", "1"),
+                  (10004, 5, 1, "1.00", "10.8", "1", "1"), (10005, 4, 1, "1.25", "11.7", "2", "1"),
+                  (10006, 3, 2, "1.50", "12.6", "2", "1"), (10007, 3, 3, "1.75", "13.5", "2", "0"),
+                  (10008, 2, 4, None, "14.4", "2", "1"), (10009, 2, 5, "2.25", "15.3", "2", None)),
+    "secondHalf": ((100000, 1, 5, "0.00", "5.4", "2", "1"), (100001, 1, 6, None, "6.3", "2", "1"),
+                   (100002, 2, 7, "0.50", "7.2", "2", "1"), (100003, 3, 7, "0.75", "8.1", "1", "1"),
+                   (100005, 5, 6, "1.25", "9.9", "1", None), (100006, 6, 5, "1.50", "10.8", None, "1"),
+                   (100007, 7, 4, "1.75", "11.7", "1", "0")),
+}
+# What parse_positions must report on the synthetic match: 17 ball frames, 33 stored player frames (A 10 + 8, B 10,
+# C 5) and 2 dropped; X is missing on 2 stored frames, Y on 1, S on 3 (the dropped frame's missing S is not counted).
+SYNTHETIC_REPORT = {
+    "ball_frames": 17, "rows_without_ball": 1, "player_frames": 33, "player_frames_outside_halves": 2,
+    "skipped_framesets": {"DFL-CLU-SYNAWY": 1, "referee": 1},
+    "missing": {"X": 2, "Y": 1, "S": 3, "Z": 2, "BallPossession": 1, "BallStatus": 2}}
 
 
 # -- helpers ----------------------------------------------------------------------------------------------------------
@@ -429,14 +482,75 @@ def synthetic_team(role, team_id, name, squad):
         "PlayerShirtMainColor": "#F4F5F0", "LineUp": "4-2-3-1"}), players, role[0].upper() + "00")
 
 
+def grid_x(j):
+    """X in metres, as text, that normalises to exactly j / 8 on the synthetic 104.5 m pitch (None stays None)."""
+    return None if j is None else repr((j - 4) * 13.0625)
+
+
+def grid_y(j):
+    """Y in metres, as text, that normalises to exactly j / 8 on the synthetic 67.5 m pitch: Y runs against y."""
+    return None if j is None else repr(33.75 - 8.4375 * j)
+
+
+def synthetic_frameset(section, team_id, person_id, frames, match_id):
+    """One <FrameSet> as DFL writes it, one <Frame> per line; `frames` are the rendered <Frame> lines."""
+    return "<FrameSet {}>\n{}\n</FrameSet>".format(xml_attributes({
+        "GameSection": section, "MatchId": "DFL-MAT-" + match_id, "TeamId": team_id, "PersonId": person_id}),
+        "\n".join(frames))
+
+
+def player_frame(n, jx, jy, speed):
+    return "<Frame {} />".format(xml_attributes({
+        "N": n, "T": SYNTHETIC_TIME, "X": grid_x(jx), "Y": grid_y(jy), "D": "0.00", "S": speed, "A": "0.00",
+        "M": "1"}))
+
+
+def ball_frame(n, jx, jy, z, speed, possession, status):
+    return "<Frame {} />".format(xml_attributes({
+        "N": n, "T": SYNTHETIC_TIME, "X": grid_x(jx), "Y": grid_y(jy), "Z": z, "D": "0.00", "S": speed, "A": "0.00",
+        "M": "1", "BallPossession": possession, "BallStatus": status}))
+
+
+def synthetic_positions_text(match_id):
+    """The positions file of the synthetic match, with the layout that the parser must not depend on.
+
+    The referee and a player who is not in the squad list come first (the real file starts with the referees), then
+    the players, one of them with his second half before his first, one with two frames out of order, and the ball
+    last, as in the real file. Every FrameSet carries the match id, as the real ones do.
+    """
+    home, guest = SYNTHETIC_HOME[0], SYNTHETIC_GUEST[0]
+    club_of = {PERSON_A: home, PERSON_B: home, PERSON_C: guest}
+    sets = [
+        synthetic_frameset("firstHalf", "referee", PERSON_REFEREE,
+                           [player_frame(10000 + k, 4, 4, "2.0") for k in range(3)], match_id),
+        synthetic_frameset("firstHalf", guest, PERSON_UNLISTED,
+                           [player_frame(10000 + k, 1, 1, "2.0") for k in range(3)], match_id)]
+    sets += [synthetic_frameset(section, club_of[person], person, [player_frame(*frame) for frame in frames], match_id)
+             for (person, section), frames in SYNTHETIC_PLAYER_FRAMES.items()]
+    sets += [synthetic_frameset(section, "BALL", PERSON_BALL, [ball_frame(*frame) for frame in frames], match_id)
+             for section, frames in SYNTHETIC_BALL_FRAMES.items()]
+    return """<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<PutDataRequest RequestId="00000000-0000-4000-8000-000000000001" MessageTime="{time}" TransmissionComplete="true" \
+TransmissionSuspended="false">
+<Positions EventTime="{time}">
+<MetaData MatchId="DFL-MAT-{match_id}" Type="pitch-size">
+<PitchSize X="104.50" Y="67.50" />
+</MetaData>
+{sets}
+</Positions>
+</PutDataRequest>
+""".format(time=SYNTHETIC_TIME, match_id=match_id, sets="\n".join(sets))
+
+
 def write_synthetic_dfl(folder, match_id="SYN001"):
     """Write a small DFL match in the real file format into `folder`; return {kind: path}, kinds as in sources.FILES.
 
-    Only the match information file so far; the positions parser's task adds the positions file here. The element
-    and attribute names are the real ones (copied from J03WMX's file), the values are made up and chosen so that
-    every parser rule shows: the guest team is listed first, so Role decides and not the order; each squad is out of
+    The match information and the positions (not the events, which no parser reads yet). The element and attribute
+    names are the real ones (copied from J03WMX's files), the values are made up and chosen so that every parser rule
+    shows. Information: the guest team is listed first, so Role decides and not the order; each squad is out of
     PersonId order; names exercise the fallbacks and non-ASCII text; a trainer and a referee carry PersonIds that
-    are not players; the pitch is not the usual 105 x 68; the two half durations differ.
+    are not players; the pitch is not the usual 105 x 68; the two half durations differ. Positions: see
+    synthetic_positions_text and the SYNTHETIC_* tables.
     """
     home_id, home_name, home_squad = SYNTHETIC_HOME
     guest_id, guest_name, guest_squad = SYNTHETIC_GUEST
@@ -466,7 +580,9 @@ def write_synthetic_dfl(folder, match_id="SYN001"):
         guest=synthetic_team("guest", guest_id, guest_name, guest_squad),
         home=synthetic_team("home", home_id, home_name, home_squad))
     name = "DFL_02_01_matchinformation_DFL-COM-SYNTH_DFL-MAT-{}.xml".format(match_id)
-    return {"information": write_text(folder, name, text)}
+    positions = "DFL_04_03_positions_raw_observed_DFL-COM-SYNTH_DFL-MAT-{}.xml".format(match_id)
+    return {"information": write_text(folder, name, text),
+            "positions": write_text(folder, positions, synthetic_positions_text(match_id))}
 
 
 # -- the match information parser -------------------------------------------------------------------------------------
@@ -591,6 +707,303 @@ def test_match_information_names_a_missing_file():
                      "pipeline/benchmark/sources.py")
 
 
+# -- the positions parser ---------------------------------------------------------------------------------------------
+
+MATCH_ARRAYS = ("frame_number", "players_xy", "players_speed", "player_team", "ball_xy", "ball_z", "ball_speed",
+                "ball_status", "ball_possession")
+
+
+def positions_of(folder, damage=None):
+    """(info, path) of a fresh synthetic match in `folder`; `damage`, if given, rewrites the positions file first."""
+    from pipeline.benchmark import dfl
+    paths = write_synthetic_dfl(folder)
+    info = dfl.parse_match_information(paths["information"])
+    return info, (paths["positions"] if damage is None else damaged(paths["positions"], damage))
+
+
+def leaves(value):
+    """Every number at the bottom of nested dicts."""
+    return [leaf for item in value.values() for leaf in leaves(item)] if isinstance(value, dict) else [value]
+
+
+def synthetic_row(n):
+    """The timeline row of frame number N in the synthetic match, or None outside both halves."""
+    if 10000 <= n <= 10009:
+        return n - 10000
+    if 100000 <= n <= 100007:
+        return 35 + n - 100000  # 10 rows, 25 of separator, then the second half
+    return None
+
+
+def frameset_block(text, section, person):
+    """The text of the one <FrameSet> of this person and half."""
+    pattern = r'<FrameSet GameSection="{}" [^>]*PersonId="{}">.*?</FrameSet>'.format(section, person)
+    found = re.findall(pattern, text, flags=re.DOTALL)
+    assert len(found) == 1, "{} FrameSets for {} in {}".format(len(found), person, section)
+    return found[0]
+
+
+def edit_frameset(section, person, change):
+    """A damage for `damaged`: the FrameSet of this person and half becomes change(its text)."""
+    def damage(text):
+        block = frameset_block(text, section, person)
+        return text.replace(block, change(block))
+    return damage
+
+
+def edit_frame(n, change):
+    """A change for edit_frameset: the line of the frame with this N becomes change(line)."""
+    def edit(block):
+        lines = block.split("\n")
+        hits = [i for i, line in enumerate(lines) if '<Frame N="{}" '.format(n) in line]
+        assert len(hits) == 1, "{} frames with N={}".format(len(hits), n)
+        lines[hits[0]] = change(lines[hits[0]])
+        return "\n".join(lines)
+    return edit
+
+
+def edit_ball_frame(n, old, new):
+    """A damage: in the ball's frame N, the text `old` becomes `new`."""
+    return edit_frameset("firstHalf" if n < 100000 else "secondHalf", PERSON_BALL,
+                         edit_frame(n, lambda line: line.replace(old, new)))
+
+
+def both(first, second):
+    """A damage that applies two damages, one after the other."""
+    return lambda text: second(first(text))
+
+
+def expect_positions_errors(cases, error=ValueError):
+    """Each case (label, damage, fragments): parse the synthetic match damaged that way; it must raise `error`."""
+    from pipeline.benchmark import dfl
+    for label, damage, fragments in cases:
+        with tempfile.TemporaryDirectory() as folder:
+            info, path = positions_of(folder, damage)
+            try:
+                expect_error(error, lambda: dfl.parse_positions(path, info), os.path.basename(path), *fragments)
+            except AssertionError as problem:
+                raise AssertionError("{}: {}".format(label, problem)) from problem
+
+
+def test_positions_synthetic_exact():
+    from pipeline.benchmark import dfl
+    with tempfile.TemporaryDirectory() as folder:
+        info, path = positions_of(folder)
+        match = dfl.parse_positions(path, info)
+    assert dfl.GAP_ROWS == 25 and dfl.SECTIONS == {"firstHalf": 1, "secondHalf": 2}, (dfl.GAP_ROWS, dfl.SECTIONS)
+    assert (match.match_id, match.pitch, match.fps) == ("SYN001", (104.5, 67.5), 25), match
+    assert (match.n_frames, match.n_players) == (43, 6), (match.n_frames, match.n_players)
+    assert match.graded == ((1, 0, 10), (2, 35, 43)), match.graded
+    assert match.kickoffs == {1: 0, 2: 35}, match.kickoffs
+    assert all(type(value) is int for block in match.graded for value in block), match.graded
+    assert match.frame_number[10] == -1 and match.frame_number[35] == 100000, match.frame_number[[10, 35]]
+    assert match.ball_status[39] == -1, "N 100004 has no ball frame: its codes are -1"
+    assert list(match.player_team) == [0, 0, 0, 1, 1, 1], "home first, then away, as the squads list them"
+    assert [player.person_id for player in info.players][::3] == [PERSON_A, PERSON_C], info.players
+
+    shapes = {"frame_number": ((43,), np.int64), "players_xy": ((43, 6, 2), np.float64),
+              "players_speed": ((43, 6), np.float64), "player_team": ((6,), np.int8), "ball_xy": ((43, 2), np.float64),
+              "ball_z": ((43,), np.float64), "ball_speed": ((43,), np.float64), "ball_status": ((43,), np.int8),
+              "ball_possession": ((43,), np.int8)}
+    assert sorted(shapes) == sorted(MATCH_ARRAYS)
+    for name, (shape, dtype) in shapes.items():
+        array = getattr(match, name)
+        assert (array.shape, array.dtype) == (shape, np.dtype(dtype)), (name, array.shape, array.dtype)
+        assert not array.flags.writeable, "{} must be read-only: a cached match returns it that way".format(name)
+
+    # The rows of C: NaN before he comes on at N 100003 (rows 35-37), then set.
+    columns = {PERSON_A: 0, PERSON_B: 1, PERSON_C: 3}
+    assert np.isnan(match.players_xy[35:38, 3]).all() and np.isnan(match.players_speed[35:38, 3]).all()
+    assert tuple(match.players_xy[38, 3]) == (0.5, 0.5), match.players_xy[38, 3]
+    assert not np.isnan(match.players_speed[38, 3])
+    # Normalised exactly, and y flipped: A's frame N 10002 is X = -26.125, Y = 16.875 and gives (0.25, 0.25); her
+    # frame N 10009 is X = 52.25, Y = 25.3125 and gives (1.0, 0.125), where an unflipped y would be 0.875.
+    assert (grid_x(2), grid_y(2)) == ("-26.125", "16.875"), (grid_x(2), grid_y(2))
+    assert tuple(match.players_xy[2, 0]) == (0.25, 0.25) and tuple(match.players_xy[9, 0]) == (1.0, 0.125), \
+        (match.players_xy[2, 0], match.players_xy[9, 0])
+    # Speed is S / 3.6 (km/h to m/s), NaN where S is missing; the same for the ball.
+    assert match.ball_speed[0] == 7.2 / 3.6 and np.isnan(match.ball_speed[3]), match.ball_speed[:4]
+    assert match.players_speed[0, 0] == 10.8 / 3.6 and np.isnan(match.players_speed[7, 1]), match.players_speed[:8, :2]
+    assert match.ball_z[4] == 1.0 and np.isnan(match.ball_z[8]), "Z is metres as written, NaN where missing"
+    assert (match.ball_status[7], match.ball_possession[7]) == (0, 1), "a dead frame, last the away team's"
+    assert (match.ball_status[42], match.ball_possession[42]) == (0, 0), "a dead frame, last the home team's"
+    assert (match.ball_status[9], match.ball_possession[9]) == (-1, 1), "a missing code is -1, the other stays"
+    assert (match.ball_status[41], match.ball_possession[41]) == (1, -1), (match.ball_status[41],
+                                                                        match.ball_possession[41])
+
+    # Everything, built independently from the tables that wrote the file.
+    want_xy, want_speed = np.full((43, 6, 2), np.nan), np.full((43, 6), np.nan)
+    for (person, _), frames in SYNTHETIC_PLAYER_FRAMES.items():
+        for n, jx, jy, speed in frames:
+            row = synthetic_row(n)
+            if row is None:
+                continue  # before or after its half: dropped
+            want_xy[row, columns[person]] = (np.nan if jx is None else jx / 8, np.nan if jy is None else jy / 8)
+            want_speed[row, columns[person]] = np.nan if speed is None else float(speed) / 3.6
+    want_ball_xy, want_ball_z, want_ball_speed = np.full((43, 2), np.nan), np.full(43, np.nan), np.full(43, np.nan)
+    want_possession, want_status = np.full(43, -1, np.int8), np.full(43, -1, np.int8)
+    for frames in SYNTHETIC_BALL_FRAMES.values():
+        for n, jx, jy, z, speed, possession, status in frames:
+            row = synthetic_row(n)
+            want_ball_xy[row] = (jx / 8, jy / 8)
+            want_ball_z[row] = np.nan if z is None else float(z)
+            want_ball_speed[row] = np.nan if speed is None else float(speed) / 3.6
+            want_possession[row] = -1 if possession is None else {"1": 0, "2": 1}[possession]
+            want_status[row] = -1 if status is None else int(status)
+    want_frames = np.concatenate([np.arange(10000, 10010), np.full(25, -1), np.arange(100000, 100008)])
+    for name, want in (("frame_number", want_frames), ("players_xy", want_xy), ("players_speed", want_speed),
+                       ("ball_xy", want_ball_xy), ("ball_z", want_ball_z), ("ball_speed", want_ball_speed),
+                       ("ball_status", want_status), ("ball_possession", want_possession)):
+        try:
+            np.testing.assert_array_equal(getattr(match, name), want)
+        except AssertionError as error:
+            raise AssertionError("{} differs from the tables that wrote the file: {}".format(name, error)) from error
+
+    assert match.report == SYNTHETIC_REPORT, match.report
+    assert json.loads(json.dumps(match.report, sort_keys=True)) == match.report, "the report must be JSON-ready"
+    assert all(type(leaf) is int for leaf in leaves(match.report)), "counts must be Python ints, not numpy's"
+    try:
+        match.fps = 30
+    except AttributeError:
+        pass
+    else:
+        raise AssertionError("DflMatch must be frozen")
+    assert dfl.DflMatch.__eq__ is object.__eq__, "eq=False: a field-wise == over arrays is meaningless"
+
+
+def test_positions_ignore_the_order_of_the_file():
+    """The ball first and the FrameSets reversed: the same match, because rows come from N and never from position."""
+    from pipeline.benchmark import dfl
+
+    def reversed_framesets(text):
+        blocks = re.findall(r"<FrameSet .*?</FrameSet>", text, flags=re.DOTALL)
+        assert len(blocks) == 8 and "\n".join(blocks) in text, len(blocks)
+        return text.replace("\n".join(blocks), "\n".join(reversed(blocks)))
+
+    with tempfile.TemporaryDirectory() as folder:
+        info, path = positions_of(folder)
+        as_written = dfl.parse_positions(path, info)
+        reordered = dfl.parse_positions(damaged(path, reversed_framesets), info)
+    for name in MATCH_ARRAYS:
+        np.testing.assert_array_equal(getattr(reordered, name), getattr(as_written, name), err_msg=name)
+    assert reordered.report == as_written.report and reordered.graded == as_written.graded
+    assert reordered != as_written, "two parses are two objects"
+
+
+def test_positions_rejects_unknown_section():
+    # The section is checked on every FrameSet, those the parser skips (the referee) included.
+    cases = [(label, edit_frameset("firstHalf", person, lambda block: block.replace(
+        'GameSection="firstHalf"', 'GameSection="firstHalfExtra"')), ["firstHalfExtra", "GameSection", "secondHalf"])
+        for label, person in (("a referee's FrameSet", PERSON_REFEREE), ("a player's", PERSON_B),
+                              ("the ball's", PERSON_BALL))]
+    expect_positions_errors(cases)
+
+
+def test_positions_rejects_bad_label():
+    expect_positions_errors([
+        ("BallStatus 3", edit_ball_frame(10002, 'BallStatus="1"', 'BallStatus="3"'),
+         ["1 ball frame(s)", "N=10002", "firstHalf", "BallStatus='3'", "BallStatus that is not 0 or 1"]),
+        ("BallPossession 0", edit_ball_frame(10001, 'BallPossession="1"', 'BallPossession="0"'),
+         ["N=10001", "BallPossession='0'"]),
+        ("a possession that is no integer", edit_ball_frame(10001, 'BallPossession="1"', 'BallPossession="1.5"'),
+         ["BallPossession='1.5'"]),
+        ("a possession that is text", edit_ball_frame(100001, 'BallPossession="2"', 'BallPossession="home"'),
+         ["N=100001", "secondHalf", "BallPossession='home'"]),
+        ("an empty status", edit_ball_frame(10003, 'BallStatus="1"', 'BallStatus=""'), ["N=10003", "BallStatus=''"]),
+        ("two bad frames, in two halves", both(edit_ball_frame(100007, 'BallStatus="0"', 'BallStatus="2"'),
+                                               edit_ball_frame(10004, 'BallPossession="1"', 'BallPossession="9"')),
+         ["2 ball frame(s)", "N=10004", "firstHalf", "BallPossession='9'"])])
+
+
+def test_positions_rejects_team_mismatch():
+    def team(section, person, club, other):
+        return edit_frameset(section, person, lambda block: block.replace(
+            'TeamId="{}"'.format(club), 'TeamId="{}"'.format(other)))
+
+    expect_positions_errors([
+        ("a home player under the away club", team("secondHalf", PERSON_A, "DFL-CLU-SYNHOM", "DFL-CLU-SYNAWY"),
+         [PERSON_A, "home", "DFL-CLU-SYNHOM", 'TeamId="DFL-CLU-SYNAWY"', "swap home and away"]),
+        ("an away player under the home club", team("secondHalf", PERSON_C, "DFL-CLU-SYNAWY", "DFL-CLU-SYNHOM"),
+         [PERSON_C, "away", "DFL-CLU-SYNAWY", 'TeamId="DFL-CLU-SYNHOM"']),
+        ("a player under a club that is neither", team("firstHalf", PERSON_B, "DFL-CLU-SYNHOM", "DFL-CLU-NOBODY"),
+         [PERSON_B, "DFL-CLU-SYNHOM", 'TeamId="DFL-CLU-NOBODY"'])])
+
+
+def test_positions_rejects_other_match():
+    other = "DFL-MAT-OTHER9"
+    fragments = [other, "DFL-MAT-SYN001", "different matches"]
+    expect_positions_errors([
+        ("every FrameSet", lambda text: text.replace('MatchId="DFL-MAT-SYN001"', 'MatchId="{}"'.format(other)),
+         fragments),
+        ("one skipped FrameSet", edit_frameset("firstHalf", PERSON_REFEREE, lambda block: block.replace(
+            'MatchId="DFL-MAT-SYN001"', 'MatchId="{}"'.format(other))), fragments)])
+
+
+def test_positions_rejects_duplicates():
+    expect_positions_errors([
+        ("a person's FrameSet twice", edit_frameset("firstHalf", PERSON_B, lambda block: block + "\n" + block),
+         [PERSON_B, 'GameSection="firstHalf"', "appears twice"]),
+        ("a frame number twice in a FrameSet", edit_frameset("firstHalf", PERSON_B, edit_frame(
+            10003, lambda line: line.replace('N="10003"', 'N="10002"'))),
+         [PERSON_B, 'GameSection="firstHalf"', "N=10002", "twice"]),
+        ("a frame number twice in the ball's", edit_ball_frame(100003, 'N="100003"', 'N="100002"'),
+         ['TeamId="BALL"', "N=100002", "twice"]),
+        ("a second ball FrameSet", edit_frameset("firstHalf", PERSON_BALL, lambda block: block + "\n" + block),
+         ["second ball FrameSet", "firstHalf", 'TeamId="BALL"'])])
+
+
+def test_positions_rejects_a_match_without_a_ball_in_each_half():
+    def without_frames(block):
+        return "\n".join(line for line in block.split("\n") if not line.startswith("<Frame "))
+
+    expect_positions_errors([
+        ("no ball in the second half", edit_frameset("secondHalf", PERSON_BALL, lambda block: ""),
+         ["no ball FrameSet", "secondHalf", 'TeamId="BALL"', "--verify"]),
+        ("no ball in the first half", edit_frameset("firstHalf", PERSON_BALL, lambda block: ""),
+         ["no ball FrameSet", "firstHalf"]),
+        ("a ball FrameSet without frames", edit_frameset("secondHalf", PERSON_BALL, without_frames),
+         ["ball FrameSet", "secondHalf", "no frames"]),
+        ("a file without any FrameSet", lambda text: "<PutDataRequest><Positions /></PutDataRequest>",
+         ["no ball FrameSet", "firstHalf", "positions file"])])
+
+
+def test_positions_rejects_damaged_files():
+    def frame(person, section, n, old, new):
+        return edit_frameset(section, person, edit_frame(n, lambda line: line.replace(old, new)))
+
+    def attribute_removed(person, section, name, value):
+        return edit_frameset(section, person, lambda block: block.replace(' {}="{}"'.format(name, value), "", 1))
+
+    expect_positions_errors([
+        ("a file cut short", lambda text: text[:len(text) // 2], ["well-formed", "--verify"]),
+        ("a frame without N", frame(PERSON_A, "secondHalf", 100001, ' N="100001"', ""),
+         [PERSON_A, "secondHalf", "no N attribute", "--verify"]),
+        ("an N that is no number", frame(PERSON_A, "secondHalf", 100001, 'N="100001"', 'N="ten"'),
+         [PERSON_A, "N='ten'", "whole number"]),
+        ("an X that is no number", frame(PERSON_A, "secondHalf", 100000, 'X="{}"'.format(grid_x(1)), 'X="abc"'),
+         [PERSON_A, "X='abc'", "finite number"]),
+        ("an infinite Y", frame(PERSON_B, "firstHalf", 10000, 'Y="{}"'.format(grid_y(6)), 'Y="inf"'),
+         [PERSON_B, "Y='inf'", "finite number"]),
+        ("an S that is no number", frame(PERSON_C, "secondHalf", 100003, 'S="21.6"', 'S="fast"'),
+         [PERSON_C, "S='fast'"]),
+        ("a Z that is no number", edit_ball_frame(10001, 'Z="0.25"', 'Z="high"'), ['TeamId="BALL"', "Z='high'"]),
+        ("a FrameSet without PersonId", attribute_removed(PERSON_B, "firstHalf", "PersonId", PERSON_B),
+         ["no PersonId attribute", "--verify"]),
+        ("a FrameSet without TeamId", attribute_removed(PERSON_B, "firstHalf", "TeamId", "DFL-CLU-SYNHOM"),
+         ["no TeamId attribute", PERSON_B]),
+        ("a FrameSet without GameSection", attribute_removed(PERSON_B, "firstHalf", "GameSection", "firstHalf"),
+         ["no GameSection attribute", PERSON_B])])
+
+
+def test_positions_names_a_missing_file():
+    from pipeline.benchmark import dfl
+    with tempfile.TemporaryDirectory() as folder:
+        info, path = positions_of(folder)
+        os.remove(path)
+        expect_error(FileNotFoundError, lambda: dfl.parse_positions(path, info), os.path.basename(path),
+                     "pipeline/benchmark/sources.py")
+
+
 # -- the downloaded DFL files (--dfl) ---------------------------------------------------------------------------------
 
 def test_dfl_files_verified():
@@ -625,13 +1038,75 @@ def test_dfl_match_information_all():
             "{} + {}".format(*counts), "{:,.0f} / {:,.0f}".format(*(info.total_time_raw[half] for half in (1, 2)))))
 
 
+def test_dfl_positions_one_match():
+    """J03WMX's positions parse into a timeline that agrees with the information file and with itself (418 MB)."""
+    from pipeline.benchmark import dfl, sources
+    match_id = "J03WMX"
+    info = dfl.parse_match_information(sources.local_path(match_id, "information"))
+    started = time.perf_counter()
+    match = dfl.parse_positions(sources.local_path(match_id, "positions"), info)
+    seconds = time.perf_counter() - started
+    report = match.report
+    print("      parsed in {:.1f} s: {:,} rows x {} players, {:,} ball frames, {:,} player frames "
+          "({} dropped outside the halves)".format(seconds, match.n_frames, match.n_players, report["ball_frames"],
+                                                    report["player_frames"], report["player_frames_outside_halves"]))
+    print("      skipped FrameSets {}; missing attributes {}".format(report["skipped_framesets"], report["missing"]))
+    assert set(report["skipped_framesets"]) == {"referee"}, \
+        "{}: FrameSets of {} were skipped; a player who is not in the match information would be missing".format(
+            match_id, sorted(set(report["skipped_framesets"]) - {"referee"}))
+
+    expected = sources.EXPECTED_BALL_FRAMES[match_id]
+    assert report["ball_frames"] == expected, (report["ball_frames"], expected)
+    (_, start1, stop1), (_, start2, stop2) = match.graded
+    starts = (match.frame_number[start1], match.frame_number[start2])
+    assert starts == (10000, 100000), "the halves start at N {} and {}, not 10000 and 100000".format(*starts)
+    assert (start1, stop1 + dfl.GAP_ROWS, stop2) == (0, start2, match.n_frames), (match.graded, match.n_frames)
+    print("      rows without a ball frame: {}".format(report["rows_without_ball"]))
+    assert report["rows_without_ball"] == 0, report["rows_without_ball"]
+
+    in_play = match.frame_number >= 0
+    present = ~np.isnan(match.players_xy[:, :, 0])
+    per_team = [present[:, match.player_team == team].sum(axis=1) for team in (0, 1)]
+    over = float(((per_team[0] > 11) | (per_team[1] > 11))[in_play].mean())
+    print("      rows with more than 11 players of a team: {:.5f} (home max {}, away max {})".format(
+        over, per_team[0].max(), per_team[1].max()))
+    assert over < 0.001, over
+
+    length, width = match.pitch
+    x_metres = (match.players_xy[:, :, 0][present] - 0.5) * length
+    inside = float((np.abs(x_metres) <= length / 2 + 5).mean())
+    print("      player frames no more than 5 m beyond a goal line: {:.5f}".format(inside))
+    assert inside >= 0.999, inside
+
+    # S is in km/h: against the distance a player really covers between frames, S / 3.6 is the same speed.
+    metres = match.players_xy * np.array([length, width])
+    step = np.hypot(*np.moveaxis(np.diff(metres, axis=0), -1, 0)) * match.fps  # frame r - 1 to r, in m/s
+    stated = match.players_speed[1:]
+    fast = np.isfinite(step) & np.isfinite(stated) & (step > 2.0)
+    ratio = float(np.median(stated[fast] / step[fast]))
+    print("      median (S / 3.6) / finite-difference speed, {:,} frames above 2 m/s: {:.3f}".format(
+        int(fast.sum()), ratio))
+    assert 0.9 <= ratio <= 1.1, ratio
+
+    # TotalTime* is in milliseconds or in seconds: whichever reading makes the rows add up is the one that is right.
+    def agrees(divisor):
+        return all(abs((stop - start) / match.fps - info.total_time_raw[half] / divisor)
+                   <= 0.02 * info.total_time_raw[half] / divisor for half, start, stop in match.graded)
+
+    matched = [name for name, divisor in (("seconds", 1.0), ("ms/1000", 1000.0)) if agrees(divisor)]
+    print("      rows / 25 per half: {}; TotalTime read as {}".format(
+        " and ".join("{:,.1f} s".format((stop - start) / match.fps) for _, start, stop in match.graded),
+        " and ".join(matched) or "neither"))
+    assert matched, "rows / 25 is within 2% of TotalTime{First,Second}Half neither as seconds nor as ms / 1000"
+
+
 # -- runner -----------------------------------------------------------------------------------------------------------
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--dfl", action="store_true",
-                        help="also check the downloaded DFL files: size and md5 of all 21 (reads 2.6 GB), and parse "
-                             "the 7 match information files")
+                        help="also check the downloaded DFL files: size and md5 of all 21 (reads 2.6 GB), parse the 7 "
+                             "match information files and one positions file")
     parser.add_argument("--data", action="store_true", help="also run the checks that read the real match's data")
     args = parser.parse_args(argv)
 
