@@ -79,6 +79,11 @@ def test_a_check_module_that_is_not_listed_is_refused():
         assert len(found) == 2 and "alpha.py" in found[0] and "pipeline.benchmark.alpha" in found[1], found
         stranger = problems("pkg.checks.alpha", "pkg.other.beta", "pkg.checks.beta")
         assert len(stranger) == 1 and "pkg.other.beta" in stranger[0], stranger
+        # An entry with no file of the same name in checks/ has nothing to "list instead": it says so.
+        orphan = problems("pkg.checks.alpha", "pkg.checks.beta", "pkg.other.gamma", "pkg.checks.delta")
+        assert len(orphan) == 2 and "pkg.other.gamma" in orphan[0] and "no gamma.py" in orphan[0] \
+            and "instead" not in orphan[0], orphan
+        assert "pkg.checks.delta" in orphan[1] and "no delta.py" in orphan[1], orphan
 
     real_modules = checks.MODULES
     checks.MODULES = real_modules[:-1]

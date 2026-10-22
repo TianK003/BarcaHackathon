@@ -1021,10 +1021,9 @@ def test_dfl_cache_equals_fresh_parse():
     Every other --dfl check reads the match through the cache, so this is the one that runs the parser itself on real
     data: if the parser changed and a stale cache were still being read, it would be seen here. (The cache key holds
     the hash of the parser that is running, which should make that impossible; this is the measurement that says it
-    is.) The cache is
-    built first if it is not there, so that the match compared is one read back from disk; the fresh parse (about a
-    minute) is dropped as soon as the two have been compared, so two matches, about 300 MB, are held only while they
-    are.
+    is.) The cache is built first if it is not there, so that the match compared is one read back from disk; the
+    fresh parse (about a minute) is dropped as soon as the two have been compared, so two matches, about 300 MB, are
+    held only while they are.
     """
     from pipeline.benchmark import dfl, sources
     match_id = "J03WMX"

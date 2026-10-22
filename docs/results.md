@@ -170,10 +170,15 @@ compares J03WMX from the cache with a fresh parse (0 differences in all nine arr
 
 | | no cache (built) | cache (reused) |
 |---|---|---|
-| One match | 41.7 to 49.1 s | 0.7 to 1.9 s |
-| All seven | 325.8 s | 5.5 to 6.7 s |
-| Whole `--dfl` run, 59 checks | 532 s | 221 s |
-| `test_dfl_t30_facts` | 297.8 s before the cache (one parse per match) | 4.7 s |
+| One match, first measurement | 41.7 to 49.1 s | 0.7 to 1.9 s |
+| One match, after the parser's hash changed | 21.6 to 29.4 s | 1.4 to 1.8 s |
+| All seven, first measurement | 325.8 s | 5.5 to 6.7 s |
+| All seven, after the hash changed | 174.4 s | 10.7 s |
+| Whole `--dfl` run, 59 checks (first measurement) | 532 s | 221 s |
+| `test_dfl_t30_facts` (first measurement) | 297.8 s before the cache (one parse per match) | 4.7 s |
+
+The two measurements are the same code on a differently loaded machine, so the times depend on the machine's load:
+quote the ranges, never one figure.
 
 - A reused match is read in under 2 s, almost all of it the sha256 of the two source files (the positions file is up
   to 420 MB), which is what keeps a cache from being read after its sources change. The caches take 129 to 141 MB per

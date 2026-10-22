@@ -63,9 +63,17 @@ def module_list_problems(path=None, modules=None, package=None):
     problems = ["{} has {}.py, which MODULES does not list, so its checks would never run; add it to MODULES in "
                 "{}__init__.py".format(folder, name, folder)
                 for name in present if name != "common" and package + "." + name not in listed]
-    problems += ["MODULES lists {}, which is not a module of {}; list the module of the same name in {} "
-                 "instead".format(name, package, folder)
-                 for name in listed if name.rsplit(".", 1)[0] != package or name.rsplit(".", 1)[-1] not in present]
+    for name in listed:
+        parent, _, short = name.rpartition(".")
+        if parent != package:
+            # Listed from another package (the production module of the same name, say): the checks' own is the one.
+            problems.append("MODULES lists {}, which is not a module of {}; list the module of the same name in {} "
+                            "instead".format(name, package, folder) if short in present else
+                            "MODULES lists {}, which is not a module of {}, and {} has no {}.py to list in its "
+                            "place; remove it from MODULES, or write the module".format(name, package, folder, short))
+        elif short not in present:
+            problems.append("MODULES lists {}, but {} has no {}.py; remove it from MODULES, or write the module"
+                            .format(name, folder, short))
     return problems
 
 
