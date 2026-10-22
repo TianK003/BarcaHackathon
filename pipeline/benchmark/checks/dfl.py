@@ -9,7 +9,7 @@ may be printed freely.
 import contextlib
 import dataclasses
 import hashlib
-import importlib
+import importlib.util
 import json
 import math
 import os
@@ -599,7 +599,8 @@ def test_match_cache_built_then_reused():
                                        "positions": describe_source(paths["positions"])}
         assert manifest["parsed_with"] == {"numpy": np.__version__, "lxml": etree.__version__}
         with open(dfl.__file__, "rb") as handle:  # the parser is this very file, read here by a pass of its own
-            assert manifest["parser_sha256"] == hashlib.sha256(handle.read()).hexdigest(), manifest["parser_sha256"]
+            parser = hashlib.sha256(handle.read().replace(b"\r\n", b"\n")).hexdigest()
+        assert manifest["parser_sha256"] == parser, manifest["parser_sha256"]
         assert "cache" not in manifest["report"], "how a match was reached must not be stored with it"
         assert manifest_bytes.endswith(b"}\n") and b"\r" not in manifest_bytes, "LF line endings, one final newline"
         stamp = os.stat(manifest_path).st_mtime_ns
@@ -677,9 +678,55 @@ def test_match_cache_rebuilt_when_the_parser_changes():
 
 
 def test_the_parser_hash_is_the_hash_of_dfl_py():
+    """The hash is that of dfl.py's text with its line endings made LF (see the next check for why)."""
     from pipeline.benchmark import dfl
     with open(dfl.__file__, "rb") as handle:
-        assert dfl._parser_sha256() == hashlib.sha256(handle.read()).hexdigest()
+        assert dfl._parser_sha256() == hashlib.sha256(handle.read().replace(b"\r\n", b"\n")).hexdigest()
+
+
+def parser_copy(folder, name, ending, extra=""):
+    """dfl.py's text plus `extra`, written to folder/name.py with this line ending and imported as module `name`."""
+    from pipeline.benchmark import dfl
+    with open(dfl.__file__, encoding="utf-8", newline="") as handle:
+        text = handle.read().replace("\r\n", "\n") + extra
+    path = os.path.join(folder, name + ".py")
+    with open(path, "w", encoding="utf-8", newline="") as handle:
+        handle.write(text.replace("\n", ending))
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module  # a dataclass looks its module up here
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_parser_hash_does_not_depend_on_line_endings():
+    """dfl.py checked out with CRLF (git's core.autocrlf on Windows) is the same parser: it must not rebuild a cache.
+
+    The same text as an LF file, as a CRLF file, and with one comment line added (a real edit), each imported as a
+    module of its own, so that each hashes the file it was loaded from.
+    """
+    from pipeline.benchmark import dfl
+    names = ("dfl_copy_lf", "dfl_copy_crlf", "dfl_copy_edited")
+    try:
+        with tempfile.TemporaryDirectory() as folder, tempfile.TemporaryDirectory() as root:
+            lf = parser_copy(folder, names[0], "\n")
+            crlf = parser_copy(folder, names[1], "\r\n")
+            edited = parser_copy(folder, names[2], "\n", extra="# an edit\n")
+            with open(crlf.__file__, "rb") as handle:
+                raw = handle.read()
+            assert raw.count(b"\r\n") > 100 and raw.count(b"\n") == raw.count(b"\r\n"), "the copy is not all CRLF"
+            assert lf._parser_sha256() == crlf._parser_sha256() == dfl._parser_sha256(), "line endings changed the hash"
+            assert edited._parser_sha256() != lf._parser_sha256(), "an edit did not change the hash"
+
+            # What it is for: the cache one checkout built is fresh for the other, and not for the edited parser.
+            paths, _ = cache_setup(root)
+            args = ("SYN001",)
+            options = dict(data_dir=root, paths=paths)
+            statuses = [module.load_match(*args, **options).report["cache"] for module in (lf, crlf, lf, edited)]
+            assert statuses == ["built", "reused", "reused", "built"], statuses
+    finally:
+        for name in names:
+            sys.modules.pop(name, None)
 
 
 def test_importing_the_parser_does_not_load_pandas():
