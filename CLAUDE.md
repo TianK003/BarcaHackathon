@@ -36,13 +36,34 @@ Floor to beat: `baseline_smooth50`, full-match **spellF1 0.2433**.
 - **Don't modify `evaluation/`.** It is the official scorer; local edits only make our numbers drift from the
   official ones. Where the docs and `possession_metrics.py` disagree, the code is right.
 
+## Team docs (`docs/`)
+
+Read them before starting work and update them when you finish. They are public and Claude reads them, so they hold
+aggregates only, never raw data rows.
+
+- `docs/proposals.md` — prioritised ideas `P01…` with effort, impact, owner and status, plus a suggested plan to the
+  deadline. Update the status when you start or finish one.
+- `docs/results.md` — every experiment (`R…`) and analysis (`A…`): commit, command, public-window and validation
+  scores, verdict. Log failures too, and every upload in its submission log. A01–A03 hold measurements that should
+  shape any design.
+- `docs/traps.md` — pitfalls `T01…`. Add one whenever something costs real time.
+- `docs/technical_document.md` — the draft of deliverable 3. Update it when a pipeline decision lands.
+
 ## Commands
 
-No test suite, linter or CI. The checks are the validator, the scorer, and the alignment self-checks in the loaders.
+No CI or linter. The checks are `pipeline/selftest.py`, the validator, the scorer, and the alignment self-checks in
+the loaders.
 
 ```bash
-pip install -r requirements.txt            # numpy + pandas: all the scorer and baseline need
-pip install -r requirements-starter.txt    # + kloppy==3.18.0, matplotlib, notebook
+py -3.11 -m venv .venv                                            # macOS/Linux: python3.11 -m venv .venv
+.venv/Scripts/python -m pip install -r requirements-starter.txt   # numpy, pandas + kloppy==3.18.0, matplotlib, notebook
+.venv/Scripts/python -m pip install -r requirements-pipeline.txt  # exact pins of what pipeline/ imports
+
+python pipeline/run.py pipeline/configs/main.toml       # data/ -> evaluation/results/main.csv, validated + manifest
+python pipeline/run.py CONFIG --score [GT]              # + scores vs public GT (or a labels CSV), per-source agreement
+python pipeline/run.py CONFIG --out ../team_name.csv    # CSVs only to evaluation/results/, data/, or outside the repo
+python pipeline/selftest.py                             # contract + equivalence checks on synthetic data (seconds)
+python pipeline/selftest.py --data                      # + the 4 committed baselines rebuilt byte for byte
 
 python evaluation/validate_submission.py path/to.csv            # official scorer's checks; run on the exact upload
 python evaluation/run_evaluation.py                             # score every *.csv in evaluation/results/ vs public GT
@@ -62,13 +83,18 @@ The scorer writes `evaluation/scoreboard.csv` and `evaluation/reports/<name>.jso
 (gitignored) and exits 1 if any submission was skipped as invalid. `--gt` takes `public` (default), `private`
 (organisers only) or a CSV path.
 
-Python 3.8+; scorer output is identical across versions (it also reproduces the README board on 3.12 / numpy 2.5 /
-pandas 3.0). Use 3.9+ for the notebooks on Windows — Jupyter on 3.8 hits a `pywinpty` build failure.
+Run everything with the venv's interpreter — `.venv/Scripts/python` on Windows, `.venv/bin/python` on macOS/Linux —
+because activation doesn't persist between tool calls. The team standard is Python 3.11.9 (numpy 2.4.6, pandas 3.0.6,
+kloppy 3.18.0); `requirements-pipeline.txt` pins what the pipeline imports, and the pipeline needs ≥ 3.11
+(`tomllib`). The scorer itself gives identical output on 3.8+, but different library versions can change our own
+output (`docs/traps.md` T20–T21).
 
 ## Architecture
 
-There is no package: scripts put the repo root (and `evaluation/`) on `sys.path` and import `games` /
-`possession_metrics` as top-level modules, so each runs by path from any working directory.
+Apart from `pipeline/`, there is no package: scripts put the repo root (and `evaluation/`) on `sys.path` and import
+`games` / `possession_metrics` as top-level modules, so each runs by path from any working directory. `pipeline/`
+keeps that convention: its scripts swap their own folder on `sys.path` for the repo root, and importing it adds
+`evaluation/`.
 
 - **`games.py`** (stdlib only) — single source of truth for match constants (199,319 frames, 25 fps, pitch
   105.3 × 68.0 m, half boundaries) and every data path. `asset_paths(source="tactical"|"broadcast")` builds file
@@ -80,6 +106,14 @@ There is no package: scripts put the repo root (and `evaluation/`) on `sys.path`
 - **`starter/`** — loaders, `baseline.py` (nearest tracked player to the ball, then a centred majority vote; numpy
   only, streams the raw ATD rather than loading it through kloppy) and three guided notebooks
   (`03_first_submission.ipynb` is the end-to-end walk-through).
+- **`pipeline/`** — our submission pipeline; `pipeline/README.md` is the overview (mermaid diagram, contracts,
+  configs). Five stages, one folder each with its own README: `inputs` (alignment; the ATD parsed once into
+  `data/cache/atd_tactical/`) → `evidence` (per-frame `alive`/`home` probabilities, NaN = no opinion) → `decode` (one
+  block per graded half) → `refine` → `output` (LF CSV, official validation, manifest in `data/runs/`). Components
+  are plain functions in each stage's `REGISTRY`, chosen by TOML configs in `pipeline/configs/` and checked against
+  their signatures before any data loads. `configs/smooth50_repro.toml` must rebuild `baseline_smooth50.csv` byte for
+  byte — run `selftest.py --data` after any change upstream of the decoder. Contracts live in
+  `pipeline/contracts.py`; change them only with the team.
 
 ### Frame alignment — an off-by-one shifts every transition
 
@@ -115,7 +149,10 @@ frames are all `D`. The public GT labels only 11,185–18,684 (5 minutes, 17 pos
 
 ### Data facts that bite
 
-- The ball is missing (`NaN`) on 41% of graded frames, disproportionately at contested moments.
+- The ball is missing (`NaN`) on 41% of graded frames, in long gaps: median 10.7 s, and gaps under 2 s hold only
+  0.1% of missing frames. Coverage worsens through each half, so the public window is the best-covered block of the
+  match. With the ball visible, the nearest player's team is still wrong 22% of the time, and the ball is visible on
+  66% of dead-ball frames (measured: `docs/results.md` A01–A03).
 - ATD carries no identities: 46 tactical track slots ("Track 1…46", `ShirtNumber` = slot index) for 22 players;
   slots appear, vanish, swap and occasionally duplicate. A slot's team comes from the metadata XML, whose first
   `<Team>` is home/Barcelona (`baseline.team_of_each_track`).
@@ -149,9 +186,10 @@ none of this; it reads only CSVs.
 One Google Form (URL emailed to registrants, Google account needed); one response per team, editable, the last one
 before the deadline counts.
 
-1. **`<team_name>.csv`** — validate the exact file being uploaded.
+1. **`<team_name>.csv`** — validate the exact file being uploaded, and log it in the submission log in
+   `docs/results.md`.
 2. **Public repo URL** — source, pinned dependencies, install/run instructions, and the command that regenerates the
    CSV. The `requirements*.txt` here are mostly unpinned; pin ours.
 3. **`<team_name>.pdf` or `.md` technical doc**, a few pages: approach and why; assets used and dropped; handling of
    missing/noisy tracking; possession rules implemented (loose balls, challenges, restarts); limitations;
-   reproduction. `*.pdf` is gitignored.
+   reproduction. Draft it in `docs/technical_document.md`. `*.pdf` is gitignored.
