@@ -1,7 +1,8 @@
-"""Self-checks for the P01 benchmark: the DFL registry and download now; parser, truth, scoring, degradation later.
+"""Self-checks for the P01 benchmark: the DFL registry, download and match information now; the rest later.
 
     python pipeline/benchmark/selftest.py           # synthetic checks only -- seconds, no data needed
-    python pipeline/benchmark/selftest.py --dfl     # + the 21 downloaded DFL files: size and md5 (reads 2.6 GB)
+    python pipeline/benchmark/selftest.py --dfl     # + the 21 downloaded DFL files: size and md5 (reads 2.6 GB),
+                                                    #   and the 7 match information files parsed
     python pipeline/benchmark/selftest.py --data    # + checks that read the real match's data (aggregates only)
 
 The runner is pipeline/selftest.py's: every function named test_* is a check, it prints PASS or FAIL for each, and
@@ -11,7 +12,8 @@ shares and scores, never a row, a coordinate or a label sequence (CLAUDE.md, har
 (CC BY 4.0), so their aggregates may be printed freely.
 
 The download checks run the real streaming, hashing and rename code against a fake opener that serves small bodies
-from memory, so no network is touched and nothing outside a temporary folder is written.
+from memory, so no network is touched and nothing outside a temporary folder is written. The parser checks read a
+synthetic match written by write_synthetic_dfl in the real file format, so they need no download either.
 """
 
 import argparse
@@ -19,10 +21,12 @@ import contextlib
 import hashlib
 import io
 import os
+import re
 import sys
 import tempfile
 import time
 import urllib.error
+from xml.sax.saxutils import quoteattr
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
@@ -31,11 +35,29 @@ if __name__ == "__main__":
     # that `import pipeline` resolves from any working directory (as in pipeline/selftest.py).
     sys.path[0] = ROOT
 
-from pipeline.selftest import expect_error, quiet  # noqa: E402  (importing it also puts evaluation/ on sys.path)
+# Importing it also puts evaluation/ on sys.path.
+from pipeline.selftest import expect_error, quiet, write_text  # noqa: E402
 
 # Params
 # 2.56 MB: three 1 MiB reads, the last one short, so the streaming loop really loops.
 GOOD_BODY = bytes(range(256)) * 10_000
+# The home and guest team of each DFL match, spelled as General@HomeTeamName and General@GuestTeamName spell them in
+# the files (the parser reads the names from the <Team> elements chosen by Role, so the two are independent).
+DFL_TEAMS = {"J03WMX": ("1. FC Köln", "FC Bayern München"), "J03WN1": ("VfL Bochum 1848", "Bayer 04 Leverkusen"),
+             "J03WOH": ("Fortuna Düsseldorf", "SSV Jahn Regensburg"),
+             "J03WOY": ("Fortuna Düsseldorf", "F.C. Hansa Rostock"),
+             "J03WPY": ("Fortuna Düsseldorf", "1. FC Nürnberg"), "J03WQQ": ("Fortuna Düsseldorf", "FC St. Pauli"),
+             "J03WR9": ("Fortuna Düsseldorf", "1. FC Kaiserslautern")}
+# Squads of the synthetic match: (PersonId, ShirtNumber, FirstName, LastName, Shortname), None leaves the attribute
+# out. Each is listed in the file in an order that is not PersonId order, so a parser that keeps file order fails.
+SYNTHETIC_HOME = ("DFL-CLU-SYNHOM", "Synthetic Home FC",
+                  (("DFL-OBJ-SYNH03", 4, "Hal", "Third", "H. Third"),
+                   ("DFL-OBJ-SYNH01", 1, "Hanna", "Keeper", "H. Keeper"),
+                   ("DFL-OBJ-SYNH02", 10, None, None, None)))  # no name at all: the PersonId stands in
+SYNTHETIC_GUEST = ("DFL-CLU-SYNAWY", "Synthetic Away FC",
+                   (("DFL-OBJ-SYNA02", 23, None, None, "B. Short"),  # only a short name: that is used
+                    ("DFL-OBJ-SYNA03", 9, "Zoë Maria", "Müller", "Z. Müller"),  # non-ASCII, several given names
+                    ("DFL-OBJ-SYNA01", 1, "Ann", "Goalie", "A. Goalie")))
 
 
 # -- helpers ----------------------------------------------------------------------------------------------------------
@@ -378,6 +400,186 @@ def test_cli_rejects_an_unknown_match():
     assert "J03WXX" in shown.getvalue()
 
 
+# -- the synthetic DFL match ------------------------------------------------------------------------------------------
+
+def xml_attributes(values):
+    """name="value" for every pair whose value is not None, escaped, in the order given."""
+    return " ".join("{}={}".format(name, quoteattr(str(value))) for name, value in values.items() if value is not None)
+
+
+def synthetic_team(role, team_id, name, squad):
+    """One <Team> as DFL writes it: the real attributes and children, with a trainer who is not a player."""
+    players = "\n".join(
+        "          <Player {} />".format(xml_attributes({
+            "PersonId": person_id, "ShirtNumber": shirt, "FirstName": first, "LastName": last, "Shortname": short,
+            "Starting": "true", "TeamLeader": "false"}))
+        for person_id, shirt, first, last, short in squad)
+    return """      <Team {}>
+        <Players>
+{}
+        </Players>
+        <TrainerStaff>
+          <Trainer PersonId="DFL-OBJ-SYNT{}" Role="headcoach" FirstName="Tia" LastName="Coach" Shortname="T. Coach" />
+        </TrainerStaff>
+        <OfficialStaff>
+        </OfficialStaff>
+      </Team>""".format(xml_attributes({
+        "TeamId": team_id, "TeamName": name, "Role": role, "PlayerShirtType": "Heimtrikot",
+        "PlayerShirtMainColor": "#F4F5F0", "LineUp": "4-2-3-1"}), players, role[0].upper() + "00")
+
+
+def write_synthetic_dfl(folder, match_id="SYN001"):
+    """Write a small DFL match in the real file format into `folder`; return {kind: path}, kinds as in sources.FILES.
+
+    Only the match information file so far; the positions parser's task adds the positions file here. The element
+    and attribute names are the real ones (copied from J03WMX's file), the values are made up and chosen so that
+    every parser rule shows: the guest team is listed first, so Role decides and not the order; each squad is out of
+    PersonId order; names exercise the fallbacks and non-ASCII text; a trainer and a referee carry PersonIds that
+    are not players; the pitch is not the usual 105 x 68; the two half durations differ.
+    """
+    home_id, home_name, home_squad = SYNTHETIC_HOME
+    guest_id, guest_name, guest_squad = SYNTHETIC_GUEST
+    text = """<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<PutDataRequest RequestId="00000000-0000-4000-8000-000000000000" MessageTime="2024-02-28T08:15:28.955+00:00"
+    TransmissionComplete="true" TransmissionSuspended="false">
+  <MatchInformation>
+    <General {general} />
+    <Environment Country="Deutschland" StadiumName="Synthetic Arena" NeutralVenue="false" Roof="open"
+        PitchX="104.50" PitchY="67.50" />
+    <Teams>
+{guest}
+{home}
+    </Teams>
+    <Referees>
+      <Referee PersonId="DFL-OBJ-SYNR01" Role="referee" FirstName="Rob" LastName="Whistle" Shortname="R. Whistle" />
+    </Referees>
+    <OtherGameInformation TotalTimeFirstHalf="2700040" TotalTimeSecondHalf="2820120"
+        PlayingTimeFirstHalf="1888960" PlayingTimeSecondHalf="1525720" />
+  </MatchInformation>
+</PutDataRequest>
+""".format(
+        general=xml_attributes({
+            "TypeOfSport": "Fußball", "CompetitionName": "Synthetic League", "CompetitionId": "DFL-COM-SYNTH",
+            "MatchId": "DFL-MAT-" + match_id, "MatchTitle": "{}:{}".format(home_name, guest_name),
+            "HomeTeamName": home_name, "HomeTeamId": home_id, "GuestTeamName": guest_name, "GuestTeamId": guest_id}),
+        guest=synthetic_team("guest", guest_id, guest_name, guest_squad),
+        home=synthetic_team("home", home_id, home_name, home_squad))
+    name = "DFL_02_01_matchinformation_DFL-COM-SYNTH_DFL-MAT-{}.xml".format(match_id)
+    return {"information": write_text(folder, name, text)}
+
+
+# -- the match information parser -------------------------------------------------------------------------------------
+
+def test_match_information_synthetic():
+    from pipeline.benchmark import dfl
+    with tempfile.TemporaryDirectory() as folder:
+        info = dfl.parse_match_information(write_synthetic_dfl(folder)["information"])
+    assert info.match_id == "SYN001", "the short id, without the DFL-MAT- prefix: " + info.match_id
+    assert (info.home_id, info.home_name) == ("DFL-CLU-SYNHOM", "Synthetic Home FC"), info
+    # The guest team is listed first in the file, and is the away team: Role decides, not the order.
+    assert (info.away_id, info.away_name) == ("DFL-CLU-SYNAWY", "Synthetic Away FC"), info
+    assert info.pitch == (104.5, 67.5) and all(type(side) is float for side in info.pitch), info.pitch
+    assert info.total_time_raw == {1: 2700040.0, 2: 2820120.0}, info.total_time_raw
+    assert all(type(key) is int and type(value) is float for key, value in info.total_time_raw.items())
+    # Home first, each team in PersonId order; the trainer and the referee are not players; a name is FirstName and
+    # LastName, else Shortname, else the PersonId.
+    assert info.players == (
+        dfl.Player("DFL-OBJ-SYNH01", 0, 1, "Hanna Keeper"),
+        dfl.Player("DFL-OBJ-SYNH02", 0, 10, "DFL-OBJ-SYNH02"),
+        dfl.Player("DFL-OBJ-SYNH03", 0, 4, "Hal Third"),
+        dfl.Player("DFL-OBJ-SYNA01", 1, 1, "Ann Goalie"),
+        dfl.Player("DFL-OBJ-SYNA02", 1, 23, "B. Short"),
+        dfl.Player("DFL-OBJ-SYNA03", 1, 9, "Zoë Maria Müller"),
+    ), info.players
+    assert type(info.players) is tuple, type(info.players)
+    assert all(type(player.team) is int and type(player.shirt) is int for player in info.players), info.players
+    assert info == dfl.MatchInfo(
+        match_id="SYN001", home_id="DFL-CLU-SYNHOM", away_id="DFL-CLU-SYNAWY", home_name="Synthetic Home FC",
+        away_name="Synthetic Away FC", pitch=(104.5, 67.5), players=info.players,
+        total_time_raw={1: 2700040.0, 2: 2820120.0}), "MatchInfo must compare by value"
+    try:
+        info.pitch = (1.0, 1.0)
+    except AttributeError:
+        pass
+    else:
+        raise AssertionError("MatchInfo must be frozen")
+
+
+def test_match_information_follows_the_match_id():
+    from pipeline.benchmark import dfl
+    with tempfile.TemporaryDirectory() as folder:
+        path = write_synthetic_dfl(folder, match_id="SYN002")["information"]
+        assert path.endswith("_DFL-MAT-SYN002.xml"), path
+        assert dfl.parse_match_information(path).match_id == "SYN002"
+
+
+def damaged(path, damage):
+    """Rewrite the file at `path` as damage(its text), which must change it; return the path."""
+    with open(path, encoding="utf-8", newline="") as handle:
+        intact = handle.read()
+    text = damage(intact)
+    assert text != intact, "the damage left the synthetic file as it was"
+    return write_text(os.path.dirname(path), os.path.basename(path), text)
+
+
+def test_match_information_rejects_bad_role():
+    from pipeline.benchmark import dfl
+    with tempfile.TemporaryDirectory() as folder:
+        path = damaged(write_synthetic_dfl(folder)["information"],
+                       lambda text: text.replace('Role="guest"', 'Role="visitor"'))
+        expect_error(ValueError, lambda: dfl.parse_match_information(path), os.path.basename(path), "Role", "visitor",
+                     '"home"', '"guest"')
+
+
+def test_match_information_rejects_damaged_files():
+    from pipeline.benchmark import dfl
+
+    def without_teams(text):
+        return re.sub(r"<Teams>.*</Teams>", "<Teams></Teams>", text, flags=re.DOTALL)
+
+    cases = [  # label, how to damage the file, what the message must name besides the file
+        ("two home teams", lambda text: text.replace('Role="guest"', 'Role="home"'), ['Role="home"', "two <Team>"]),
+        ("no teams", without_teams, ['Role="home"', 'Role="guest"']),
+        ("no pitch width", lambda text: text.replace(' PitchX="104.50"', ""), ["PitchX", "Environment"]),
+        ("pitch that is no number", lambda text: text.replace('PitchY="67.50"', 'PitchY="wide"'), ["PitchY", "wide"]),
+        ("negative pitch", lambda text: text.replace('PitchX="104.50"', 'PitchX="-105"'), ["PitchX", "-105"]),
+        ("shirt that is no number", lambda text: text.replace('ShirtNumber="9"', 'ShirtNumber="nine"'),
+         ["ShirtNumber", "nine", "DFL-OBJ-SYNA03"]),
+        ("a player in both teams", lambda text: text.replace("DFL-OBJ-SYNH01", "DFL-OBJ-SYNA01"),
+         ["DFL-OBJ-SYNA01", "twice"]),
+        ("no second half duration", lambda text: text.replace(' TotalTimeSecondHalf="2820120"', ""),
+         ["TotalTimeSecondHalf"]),
+        ("match id without its prefix", lambda text: text.replace("DFL-MAT-SYN001", "SYN001"),
+         ["MatchId", "DFL-MAT-"]),
+        ("General naming the other home team",
+         lambda text: text.replace('HomeTeamId="DFL-CLU-SYNHOM"', 'HomeTeamId="DFL-CLU-SYNAWY"'),
+         ["HomeTeamId", "Role"]),
+        ("a positions file instead", lambda text: "<PutDataRequest><Positions /></PutDataRequest>",
+         ["MatchInformation", "Positions", "match information file"]),
+        ("a file cut short", lambda text: text[:len(text) // 2], ["well-formed", "--verify"]),
+    ]
+    with tempfile.TemporaryDirectory() as folder:
+        written = write_synthetic_dfl(folder)["information"]
+        with open(written, encoding="utf-8", newline="") as handle:
+            intact = handle.read()
+        for label, damage, fragments in cases:
+            write_text(folder, os.path.basename(written), intact)
+            path = damaged(written, damage)
+            try:
+                expect_error(ValueError, lambda: dfl.parse_match_information(path), os.path.basename(path),
+                             *fragments)
+            except AssertionError as error:
+                raise AssertionError("{}: {}".format(label, error)) from error
+
+
+def test_match_information_names_a_missing_file():
+    from pipeline.benchmark import dfl
+    with tempfile.TemporaryDirectory() as folder:
+        path = os.path.join(folder, "DFL_02_01_matchinformation_DFL-COM-SYNTH_DFL-MAT-SYN001.xml")
+        expect_error(FileNotFoundError, lambda: dfl.parse_match_information(path), os.path.basename(path),
+                     "pipeline/benchmark/sources.py")
+
+
 # -- the downloaded DFL files (--dfl) ---------------------------------------------------------------------------------
 
 def test_dfl_files_verified():
@@ -392,12 +594,34 @@ def test_dfl_files_verified():
         len(statuses), sum(remote.size for remote in sources.select()), sources.external_dir()))
 
 
+
+def test_dfl_match_information_all():
+    """All 7 match information files parse, and say what the paper says: teams, a real pitch, full squads."""
+    from pipeline.benchmark import dfl, sources
+    print("      {:<7} {:<20} {:<22} {:>11} {:>9} {:>14}".format(
+        "match", "home", "guest", "pitch (m)", "players", "total (raw)"))
+    for match_id in sources.MATCH_IDS:
+        info = dfl.parse_match_information(sources.local_path(match_id, "information"))
+        assert info.match_id == match_id, (info.match_id, match_id)
+        assert (info.home_name, info.away_name) == DFL_TEAMS[match_id], (match_id, info.home_name, info.away_name)
+        assert 100 <= info.pitch[0] <= 110 and 64 <= info.pitch[1] <= 75, (match_id, info.pitch)
+        counts = [sum(player.team == team for player in info.players) for team in (0, 1)]
+        assert min(counts) >= 14, "{}: players per team {}; a squad has at least 14".format(match_id, counts)
+        assert [player.team for player in info.players] == sorted(player.team for player in info.players), \
+            "{}: players must list home first".format(match_id)
+        assert sorted(info.total_time_raw) == [1, 2] and min(info.total_time_raw.values()) > 0, info.total_time_raw
+        print("      {:<7} {:<20} {:<22} {:>11} {:>9} {:>14}".format(
+            match_id, info.home_name, info.away_name, "{:g} x {:g}".format(*info.pitch),
+            "{} + {}".format(*counts), "{:,.0f} / {:,.0f}".format(*(info.total_time_raw[half] for half in (1, 2)))))
+
+
 # -- runner -----------------------------------------------------------------------------------------------------------
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--dfl", action="store_true",
-                        help="also check the downloaded DFL files: size and md5 of all 21 (reads 2.6 GB)")
+                        help="also check the downloaded DFL files: size and md5 of all 21 (reads 2.6 GB), and parse "
+                             "the 7 match information files")
     parser.add_argument("--data", action="store_true", help="also run the checks that read the real match's data")
     args = parser.parse_args(argv)
 
