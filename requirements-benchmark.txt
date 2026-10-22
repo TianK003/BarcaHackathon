@@ -1,0 +1,9 @@
+# What pipeline/benchmark/ imports on top of the pipeline's own pins (docs/proposals.md, P01).
+#
+#   .venv/Scripts/python -m pip install -r requirements-benchmark.txt     # macOS/Linux: .venv/bin/python
+#   .venv/Scripts/python pipeline/benchmark/sources.py                    # download and verify the DFL files
+#
+# lxml reads the DFL XML files (the positions files are 350-420 MB each). Pin new imports here in the same commit that
+# adds them, as in requirements-pipeline.txt.
+-r requirements-pipeline.txt
+lxml==6.1.3
