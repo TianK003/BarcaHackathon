@@ -116,6 +116,13 @@ SYNTHETIC_REPORT = {
 
 # -- helpers ----------------------------------------------------------------------------------------------------------
 
+def utf8_stdout():
+    """Make stdout write UTF-8, whatever the console or the pipe thinks its code page is (team names have umlauts)."""
+    reconfigure = getattr(sys.stdout, "reconfigure", None)  # a replaced stdout may not have it
+    if reconfigure is not None:
+        reconfigure(encoding="utf-8")
+
+
 class RecordingBody(io.BytesIO):
     """A response body that notes, at every read, how much was asked for and what the disk looked like."""
 
@@ -663,7 +670,7 @@ def test_match_information_rejects_damaged_files():
          ["Synthetic Away FC", 'Role="guest"', "lists no <Player>", "--verify"]),
         ("two <Environment> elements", lambda text: re.sub(r"<Environment[^>]*/>", lambda match: match.group(0) * 2,
                                                            text),
-         ["<Environment>", "2 <Environment> elements"]),
+         ["<Environment>", "2 <Environment> elements", "--verify"]),
         ("no pitch length", lambda text: text.replace(' PitchX="104.50"', ""), ["PitchX", "Environment", "--verify"]),
         ("pitch that is no number", lambda text: text.replace('PitchY="67.50"', 'PitchY="wide"'),
          ["PitchY", "wide", "--verify"]),
@@ -697,6 +704,13 @@ def test_match_information_rejects_damaged_files():
                              *fragments)
             except AssertionError as error:
                 raise AssertionError("{}: {}".format(label, error)) from error
+
+    # A duplicated element in an otherwise valid file is a damaged download, not another kind of file.
+    with tempfile.TemporaryDirectory() as folder:
+        path = damaged(write_synthetic_dfl(folder)["information"],
+                       lambda text: re.sub(r"<Environment[^>]*/>", lambda match: match.group(0) * 2, text))
+        message = expect_error(ValueError, lambda: dfl.parse_match_information(path), "--verify")
+        assert "not a DFL match information file" not in message, message
 
 
 def test_match_information_names_a_missing_file():
@@ -771,6 +785,22 @@ def edit_ball_frame(n, old, new):
 def both(first, second):
     """A damage that applies two damages, one after the other."""
     return lambda text: second(first(text))
+
+
+def insert_after(marker, addition):
+    """A damage: `addition` goes right after the first `marker`."""
+    return lambda text: text.replace(marker, marker + addition, 1)
+
+
+def open_the_first_frameset(text):
+    """A damage: the first FrameSet (the referee's) is never closed, so each one after it starts inside it.
+
+    The closing tag that is missing is put back at the end, which keeps the file well-formed, so that the error is the
+    parser's own and not the XML parser's.
+    """
+    opened = text.replace("</FrameSet>\n<FrameSet", "\n<FrameSet", 1)
+    assert opened != text, "the synthetic file has no two FrameSets in a row"
+    return opened.replace("</Positions>", "</FrameSet>\n</Positions>")
 
 
 def expect_positions_errors(cases, error=ValueError):
@@ -926,7 +956,13 @@ def test_positions_rejects_team_mismatch():
         ("an away player under the home club", team("secondHalf", PERSON_C, "DFL-CLU-SYNAWY", "DFL-CLU-SYNHOM"),
          [PERSON_C, "away", "DFL-CLU-SYNAWY", 'TeamId="DFL-CLU-SYNHOM"']),
         ("a player under a club that is neither", team("firstHalf", PERSON_B, "DFL-CLU-SYNHOM", "DFL-CLU-NOBODY"),
-         [PERSON_B, "DFL-CLU-SYNHOM", 'TeamId="DFL-CLU-NOBODY"'])])
+         [PERSON_B, "DFL-CLU-SYNHOM", 'TeamId="DFL-CLU-NOBODY"']),
+        # The club is checked before the skip and the ball rules, so neither a referee's TeamId nor the ball's lets a
+        # rostered player through (as a referee he would be skipped silently, as the ball he would be read as it).
+        ("a home player under the referees' TeamId", team("firstHalf", PERSON_B, "DFL-CLU-SYNHOM", "referee"),
+         [PERSON_B, "home", "DFL-CLU-SYNHOM", 'TeamId="referee"', "swap home and away"]),
+        ("an away player under the ball's TeamId", team("secondHalf", PERSON_C, "DFL-CLU-SYNAWY", "BALL"),
+         [PERSON_C, "away", "DFL-CLU-SYNAWY", 'TeamId="BALL"', "swap home and away"])])
 
 
 def test_positions_rejects_other_match():
@@ -992,7 +1028,13 @@ def test_positions_rejects_damaged_files():
         ("a FrameSet without TeamId", attribute_removed(PERSON_B, "firstHalf", "TeamId", "DFL-CLU-SYNHOM"),
          ["no TeamId attribute", PERSON_B]),
         ("a FrameSet without GameSection", attribute_removed(PERSON_B, "firstHalf", "GameSection", "firstHalf"),
-         ["no GameSection attribute", PERSON_B])])
+         ["no GameSection attribute", PERSON_B]),
+        ("a <Frame> before any FrameSet", insert_after("</MetaData>\n", '<Frame N="1" />\n'),
+         ["<Frame> outside any <FrameSet>", "positions file"]),
+        ("a <Frame> between two FrameSets", insert_after("</FrameSet>\n", '<Frame N="1" />\n'),
+         ["<Frame> outside any <FrameSet>", "positions file"]),
+        ("a FrameSet inside another", open_the_first_frameset,
+         ["starts inside", PERSON_REFEREE, PERSON_UNLISTED, "positions file"])])
 
 
 def test_positions_names_a_missing_file():
@@ -1002,6 +1044,22 @@ def test_positions_names_a_missing_file():
         os.remove(path)
         expect_error(FileNotFoundError, lambda: dfl.parse_positions(path, info), os.path.basename(path),
                      "pipeline/benchmark/sources.py")
+
+
+def test_stdout_is_utf8():
+    """A team name such as "1. FC Köln" must reach a pipe in a legacy code page as UTF-8, not as "K?ln"."""
+    saved = sys.stdout
+    try:
+        raw = io.BytesIO()
+        sys.stdout = io.TextIOWrapper(raw, encoding="ascii", errors="replace", newline="\n")
+        utf8_stdout()
+        print("1. FC Köln")
+        sys.stdout.flush()
+        assert raw.getvalue() == "1. FC Köln\n".encode("utf-8"), raw.getvalue()
+        sys.stdout = io.StringIO()  # no reconfigure(): the call must leave it alone
+        utf8_stdout()
+    finally:
+        sys.stdout = saved
 
 
 # -- the downloaded DFL files (--dfl) ---------------------------------------------------------------------------------
@@ -1103,6 +1161,7 @@ def test_dfl_positions_one_match():
 # -- runner -----------------------------------------------------------------------------------------------------------
 
 def main(argv=None):
+    utf8_stdout()
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--dfl", action="store_true",
                         help="also check the downloaded DFL files: size and md5 of all 21 (reads 2.6 GB), parse the 7 "

@@ -63,8 +63,8 @@ VERIFY_ADVICE = "the download is probably damaged, so {} --verify to check it".f
 GAP_ROWS = 25                            # separator rows between the halves of a timeline (one second at 25 Hz)
 SECTIONS = {"firstHalf": 1, "secondHalf": 2}  # FrameSet@GameSection -> half, in time order
 FPS = 25                                 # the positions are sampled at 25 Hz (consecutive T differ by 40 ms)
+LABEL_ATTRIBUTES = ("TeamId", "PersonId", "GameSection")  # what names a FrameSet in a message
 BALL_TEAM_ID = "BALL"                    # FrameSet@TeamId of the ball's FrameSet
-REFEREE_TEAM_ID = "referee"              # ... of the referees', which are not read
 KMH_PER_MS = 3.6                         # Frame@S is in km/h; speeds are kept in m/s
 POSSESSION_TEAM = {"1": 0, "2": 1}       # Frame@BallPossession -> team: 1 is the home team (0), 2 the guest (1)
 BALL_STATUS = {"0": 0, "1": 1}           # Frame@BallStatus: 0 the ball is dead, 1 alive; kept as it is
@@ -222,10 +222,11 @@ def parse_positions(path, info):
     row = start of the half + (N - first N of the half).
 
     FrameSets. Each has TeamId, PersonId and GameSection, a GameSection that is in SECTIONS (checked on every FrameSet,
-    those that are skipped too) and, if it has one, the MatchId of `info`. TeamId "BALL" is the ball: exactly one per
-    half, in both halves. TeamId "referee", and a PersonId that is not in info.players, are skipped and counted by
-    TeamId. A rostered player's TeamId must be the club that `info` gives his team (a mismatch could turn home into
-    away). A second FrameSet for one (PersonId, GameSection), and a repeated N inside a FrameSet, are errors: which to
+    those that are skipped too) and, if it has one, the MatchId of `info`, and none starts inside another. A rostered
+    player's TeamId must be the club that `info` gives his team, whatever else it says (a mismatch could turn home into
+    away, and "referee" or "BALL" would hide him). Then TeamId "BALL" is the ball: exactly one per half, in both
+    halves. A PersonId that is not in info.players (the referees', in the real files) is skipped and counted by
+    TeamId. A second FrameSet for one (PersonId, GameSection), and a repeated N inside a FrameSet, are errors: which to
     keep is not for us to guess.
 
     Values. X, Y, S and Z that are absent, or read nan, are NaN, and a BallPossession or BallStatus that is absent is
@@ -278,9 +279,8 @@ def _child(parent, path, name):
         raise ValueError("{}: <{}> has no <{}> element (it has {}); this is not a DFL match information file "
                          "(DFL_02_01_matchinformation_*.xml)".format(path, parent.tag, name, found))
     if len(children) > 1:
-        raise ValueError("{}: <{}> has {} <{}> elements and exactly one is expected; this is not a DFL match "
-                         "information file (DFL_02_01_matchinformation_*.xml)".format(
-                             path, parent.tag, len(children), name))
+        raise ValueError("{}: <{}> has {} <{}> elements and exactly one is expected; {}".format(
+            path, parent.tag, len(children), name, VERIFY_ADVICE))
     return children[0]
 
 
@@ -366,7 +366,7 @@ class _Series:
 
 
 def _label(team_id, person_id, section):
-    """How a FrameSet is named in a message; an attribute it lacks reads ?."""
+    """How a FrameSet is named in a message; an attribute it lacks reads ?. The arguments follow LABEL_ATTRIBUTES."""
     return '<FrameSet TeamId="{}" PersonId="{}" GameSection="{}">'.format(
         *("?" if value is None else value for value in (team_id, person_id, section)))
 
@@ -404,6 +404,11 @@ def _scan(path, info):
                             append(get(name))
                         _forget(element)
                 elif event == "start":
+                    if current is not None:
+                        raise ValueError("{}: {} starts inside {}, which has not ended; this is not a DFL positions "
+                                         "file (DFL_04_03_positions_raw_observed_*.xml)".format(
+                                             path, _label(*(element.get(name) for name in LABEL_ATTRIBUTES)),
+                                             current.label))
                     current = _open(element.attrib, path, info, roster, club_of, balls, players, skipped)
                 else:
                     if current.kind == "ball":
@@ -420,9 +425,9 @@ def _scan(path, info):
 
 def _open(attributes, path, info, roster, club_of, balls, players, skipped):
     """The _Reading for a FrameSet that starts: what it is, and whether the file may have it."""
-    team_id, person_id, section = (attributes.get(name) for name in ("TeamId", "PersonId", "GameSection"))
+    team_id, person_id, section = (attributes.get(name) for name in LABEL_ATTRIBUTES)
     label = _label(team_id, person_id, section)
-    for name, value in (("TeamId", team_id), ("PersonId", person_id), ("GameSection", section)):
+    for name, value in zip(LABEL_ATTRIBUTES, (team_id, person_id, section)):
         if not value:
             raise ValueError("{}: {} has no {} attribute; {}".format(path, label, name, VERIFY_ADVICE))
     if section not in SECTIONS:
@@ -435,20 +440,22 @@ def _open(attributes, path, info, roster, club_of, balls, players, skipped):
                          "(sources.local_path)".format(path, label, stated, MATCH_ID_PREFIX + info.match_id))
 
     half = SECTIONS[section]
+    player = roster.get(person_id)
+    # A rostered person's club is checked before anything else, so that TeamId="referee" cannot make him a skipped
+    # FrameSet and TeamId="BALL" cannot make him the ball.
+    if player is not None and team_id != club_of[player.team]:
+        raise ValueError("{}: {} is a player of the {} team ({}) in the match information, but its TeamId is not that "
+                         "club; a mismatch could swap home and away, so the file is refused; {}".format(
+                             path, label, "home" if player.team == 0 else "away", club_of[player.team],
+                             VERIFY_ADVICE))
     if team_id == BALL_TEAM_ID:
         if half in balls:
             raise ValueError("{}: a second ball FrameSet for {} ({}); a positions file has exactly one per half, and "
                              "which to keep is not for us to guess; {}".format(path, section, label, VERIFY_ADVICE))
         return _Reading("ball", team_id, person_id, section, BALL_ATTRIBUTES)
-    player = roster.get(person_id)
-    if team_id == REFEREE_TEAM_ID or player is None:
+    if player is None:
         skipped[team_id] = skipped.get(team_id, 0) + 1
         return _Reading("skipped", team_id, person_id, section, ())
-    if team_id != club_of[player.team]:
-        raise ValueError("{}: {} is a player of the {} team ({}) in the match information, but its TeamId is not that "
-                         "club; a mismatch could swap home and away, so the file is refused; {}".format(
-                             path, label, "home" if player.team == 0 else "away", club_of[player.team],
-                             VERIFY_ADVICE))
     if (person_id, half) in players:
         raise ValueError("{}: {} appears twice; each person has one FrameSet per half, and which of the two to keep "
                          "is not for us to guess; {}".format(path, label, VERIFY_ADVICE))
