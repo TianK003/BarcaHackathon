@@ -10,7 +10,8 @@ only — never raw data rows ([CLAUDE.md](../CLAUDE.md)).
 ## Scoreboard
 
 Our runs, best first. *Public* means the 5-minute public GT (17 possessions, mean 14.2 s); *val* means the P01
-hand-labelled windows.
+benchmark: other matches (DFL open data), degraded to look like ours. Hand labels on this match are not allowed
+([T27](traps.md)).
 
 | ID | date | what | public macroF1 | public spellF1 | poss / dur | val spellF1 | verdict |
 |---|---|---|---|---|---|---|---|
@@ -77,7 +78,8 @@ Share of frames with no ball, per 5-minute block of graded play, counted from ea
 | 2nd | 12% | 33% | 26% | 55% | 26% | 39% | 80% | 51% | 52% | 40% | 28% |
 
 **So:** the public window is the best-covered block of the match, and ball-based methods will look better on it
-than they really are ([T01](traps.md)). When building P01, label poorly covered blocks too.
+than they really are ([T01](traps.md)). When building P01, degrade the benchmark to the late blocks' coverage
+too, not only to the match average.
 
 ### A03 — Does the tactical camera follow the ball? (2026-10-21)
 
@@ -124,7 +126,7 @@ Copy this template for each run, and add a scoreboard row for anything worth com
 ### R0xx — <short name> (YYYY-MM-DD, <who>)
 Proposal: P0x · Commit: `abc1234` · Command: `…`
 Public: macroF1 … · spellF1 … (bootstrap … – …) · poss … · dur … · lat_f …
-Validation (P01): spellF1 … (bootstrap … – …)
+Validation (P01 benchmark): spellF1 … (… matches, degradation seed …; bootstrap … – …)
 Changed vs the previous best: …
 Verdict: keep / drop / inconclusive — because …
 ```

@@ -122,9 +122,10 @@ def summarise(codes, graded, fps):
 def score(codes, gt="public"):
     """(scores, gt_codes): the official metrics of codes against a ground truth.
 
-    gt is resolved by the scorer's own rules: "public" for the 5 minutes in this repository, or a path -- which is
-    how P01's hand-labelled windows plug in. Scores here are for checking; the public window ranks the baselines the
-    wrong way round (docs/traps.md T01).
+    gt is resolved by the scorer's own rules: "public" for the 5 minutes in this repository, or a path to any
+    frame,label CSV of this match, such as another run's output. There are no hand labels of this match to plug in
+    (docs/traps.md T27); P01's benchmark is other matches. Scores here are for checking; the public window ranks the
+    baselines the wrong way round (docs/traps.md T01).
     """
     import run_evaluation  # the official resolver for "public" / a path; imported late, only when scoring
     gt_path = run_evaluation.find_gt(gt)

@@ -32,8 +32,11 @@ runs through the same pipeline and is rebuilt byte for byte as a regression chec
 | Tactical video (frames, audio) | | |
 | Broadcast video, ATD, homography | | |
 | Public 5-minute ground truth | | |
-| Hand-labelled validation windows | | |
-| External datasets or pretrained models | | |
+| Labelled tracking of other matches (DFL/IDSSE open data; P01, P13) | | |
+| Other external datasets or pretrained models | | |
+
+No frame of this match was hand-labelled, for training, validation or the submission (RULES.md, as clarified on
+22 Oct 2026).
 
 ## 3. Missing and noisy tracking
 
@@ -51,8 +54,10 @@ duplicates. What we did about each. -->
 
 ## 5. Validation
 
-<!-- How we chose between versions: the public window for correctness only, hand-labelled windows (how many, how they
-were labelled, how they were kept out of the submission), bootstrap intervals. -->
+<!-- How we chose between versions: the public window for correctness only; the P01 benchmark of other matches
+(which matches, how they were degraded, how well the degraded copy reproduces our data's statistics, and whether it
+ranks the four baselines in their published order); bootstrap intervals. What the benchmark could not measure (Smart
+Tagging, camera, audio) and how we checked those instead. -->
 
 ## 6. Limitations
 

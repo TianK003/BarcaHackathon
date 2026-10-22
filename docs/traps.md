@@ -98,6 +98,18 @@ pipeline's `atd.players_present` and `atd.ball_present` do exactly that.
 **T19 — kloppy is slow on the full ATD.** Loading all 199,319 frames takes minutes and gigabytes. Stream the raw file
 once, as `starter/baseline.py` does, and cache arrays under `data/cache/`.
 
+**T30 — kloppy's DFL loader hides the dead ball.** `kloppy.sportec.load_open_tracking_data`, which loads P01's
+benchmark matches, defaults to `only_alive=True` and silently drops every dead-ball frame. That leaves no `D` to
+learn or score. Pass `only_alive=False`.
+
+In the same loader (kloppy 3.18.0):
+- `ball_owning_team` is home when `BallPossession` is 1 and away otherwise, so a frame without a possession value
+  becomes away;
+- frames without a ball entry are skipped.
+
+Check how often each happens, index frames by `frame_id` rather than by position, and read `BallPossession` == 2 for
+away yourself if the default is wrong. Found by reading the loader's source, not yet by running it.
+
 ## Reproducibility and environment
 
 **T20 — Use the team venv.** It runs Python 3.11.9 in `.venv`, with numpy 2.4.6, pandas 3.0.6 and kloppy 3.18.0.
@@ -133,5 +145,20 @@ or run final inference on CPU. Sort directory listings.
 times all count as "any other source of corrected possession data for this fixture", or close enough. Inferring the
 private GT's statistics from the published baseline scores is off-limits in spirit too: tune on our own validation.
 
-**T27 — Hand labels validate; they never submit.** Hand-labelled frames must not reach the submitted file, and a model
-trained on them must predict those frames out of fold. Disclose them in the technical document.
+**T27 — No hand labels on this match, not even to validate.** The organisers changed the rule on 22 Oct 2026
+(upstream `c073f29`, RULES.md). Hand-labelled data from other matches is fine for training or validation, in any
+amount. Hand labels on BAR-ATH are not, whatever they are for.
+
+Not allowed on this match:
+- labelling possession or stoppages from its video, including "blind" calibration on the public window;
+- drawing ball boxes on its frames to fine-tune a detector (P14);
+- hand-correcting any output.
+
+Still fine:
+- the published public GT;
+- watching the video and measuring around its published transitions (P02);
+- pseudo-labels our own code produces (P07);
+- labelled data of other matches (P01, P13).
+
+A model trained on the public GT must predict the public window out of fold, so that no ground-truth label is copied
+into the file. Disclose every labelled dataset in the technical document.

@@ -2,7 +2,7 @@
 
     python pipeline/run.py pipeline/configs/main.toml                  # -> evaluation/results/main.csv
     python pipeline/run.py pipeline/configs/main.toml --score          # + public-window scores, per-source agreement
-    python pipeline/run.py CONFIG --score data/labels/val_gt.csv        # ... against our own labels (P01)
+    python pipeline/run.py CONFIG --score evaluation/results/other.csv  # ... against another run, to compare two
     python pipeline/run.py CONFIG --out ../team_name.csv                # the deliverable, outside the repository
 
 What happens, in order -- each stage is a folder of pipeline/ with a README.md that explains it:
@@ -196,7 +196,8 @@ def main(argv=None):
     parser.add_argument("--rebuild-cache", action="store_true", help="re-parse the ATD even if its cache is fresh")
     parser.add_argument("--score", nargs="?", const="public", metavar="GT",
                         help="score the result: 'public' (the default when the flag is given) for the 5 minutes "
-                             "in this repository, or a path to a frame,label CSV such as our own validation labels")
+                             "in this repository, or a path to a frame,label CSV of this match such as another "
+                             "run's output")
     args = parser.parse_args(argv)
 
     try:

@@ -28,7 +28,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 
 | ID | proposal | attacks | effort | impact | status |
 |---|---|---|---|---|---|
-| [P01](#p01--a-validation-set-we-can-trust) | Validation set we can trust | deciding anything at all | M | enabling | idea |
+| [P01](#p01--a-validation-set-we-can-trust) | Validation set we can trust: other matches, degraded to look like ours | deciding anything at all | M | enabling | idea |
 | [P02](#p02--learn-the-ground-truths-conventions-from-the-public-window) | Learn the GT's conventions from the public window | boundary timing | S | high | idea |
 | [P03](#p03--one-command-deterministic-cached) | One-command, deterministic, cached pipeline | reproducibility | S–M | enabling | done → R001 |
 | [P04](#p04--sticky-ownership-from-controlled-touches) | Sticky ownership from controlled touches | facts 3, 5 | S | high | idea |
@@ -40,7 +40,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P10](#p10--referee-whistle-from-the-audio-track) | Referee whistle from the audio track | fact 4 | S–M | medium (audio confirmed, A04) | idea |
 | [P11](#p11--touch-and-pass-events-to-place-boundaries) | Touch and pass events to place boundaries | fact 5 | M–L | medium–high | idea |
 | [P12](#p12--metric-aware-post-processing) | Metric-aware post-processing | fact 5 | S | medium | idea |
-| [P13](#p13--learn-from-external-labelled-tracking-data) | External labelled tracking data and a big benchmark | facts 1, 2 | L | medium–high | idea |
+| [P13](#p13--learn-from-external-labelled-tracking-data) | Pre-train on external labelled tracking data | facts 1, 2 | L (M on top of P01) | medium–high | idea |
 | [P14](#p14--recover-the-ball-from-the-video) | Recover the ball from the video | facts 1, 2 | L | medium–high, uncertain | idea |
 | [P15](#p15--broadcast-tracking-as-a-second-opinion) | Broadcast tracking as a second opinion | facts 1, 4 | L | medium | idea |
 
@@ -50,7 +50,7 @@ One track per person; swap freely.
 
 | track | week 1 (→ Oct 27) | week 2 (→ Nov 3) | week 3 (→ Nov 10) |
 |---|---|---|---|
-| Validation | P01 tool and labels, P02 | P12 | re-validate every candidate |
+| Validation | P01 adapter and degraded benchmark, P02 | P12 | re-validate every candidate |
 | Pipeline and decoder | P03 | P06 | tune P06 on P01 |
 | Ball visible | P04 | P11 | P11 |
 | Dead ball | P05 rules | P05 classifier, P08 | P10 |
@@ -65,25 +65,58 @@ Week 4: feature freeze **Fri 13 Nov**; regenerate the file from a clean clone on
 
 ### P01 — A validation set we can trust
 
+**Rules changed on 22 Oct 2026.** The organisers' clarification (upstream `c073f29`, RULES.md and OVERVIEW.md) allows
+hand-labelled data from **other matches**, in any amount, and forbids hand labels on the competition match itself —
+for validation and calibration too ([T27](traps.md)). The first plan for P01 (label about 15 minutes of BAR-ATH from
+the video, after labelling the public window blind to calibrate) is therefore out. The goal is unchanged; the labels
+now come from other matches.
+
 **Why.** The public window holds 17 possessions — each worth about 0.06 spellF1 — and it is the easiest 5 minutes of
 the match (fact 2). It already picked the wrong baseline. Until we have a better yardstick, every other proposal is
 a coin flip.
 
-**What.**
-1. Build a small labelling tool: step through the tactical video with the ATD projected onto it
-   (`starter/load_homography.project`), mark possession changes and stoppages, and write `frame,label` with `X`
-   outside the labelled windows.
-2. Calibrate first. Each of us labels the public window blind, then compares with the official GT. That measures how
-   our eye differs from the corrected-tracking convention (P02) before it contaminates anything.
-3. Label about 3 minutes each — roughly 15 minutes and 50 possessions — spread over both halves and over well- and
-   badly-covered blocks (A02).
-4. Score with the official scorer: `python evaluation/run_evaluation.py --gt data/labels/val_gt.csv --bootstrap 1000`.
-   Each labelled window is its own run, so possessions are never stitched across windows.
+**What.** A benchmark of other matches whose tracking carries labels of the same kind as our ground truth, degraded
+to look like our ATD and run through our own pipeline.
+1. **Source: the DFL/IDSSE open data** (Bassek et al., *Sci Data* 12, 195, 2025; CC BY 4.0): seven full Bundesliga
+   matches at 25 Hz. Each frame carries `BallStatus` (alive/dead) and `BallPossession` (which team): the same two
+   things our GT encodes. Their truth is therefore `D` where `BallStatus` is dead and otherwise the team
+   `BallPossession` names, exactly how our GT is built. The loader is `kloppy.sportec.load_open_tracking_data(match_id=...)`
+   in our pinned kloppy 3.18.0; it downloads the files, and they go under `data/external/` (gitignored).
+   Two traps sit in the loader ([T30](traps.md)):
+   - it drops every dead-ball frame unless you pass `only_alive=False`;
+   - it reads `BallPossession` as "1 is home, anything else is away", so a frame with no possession value comes out
+     as away.
+2. **An adapter** turns each match into an `Inputs`-compatible object, plus a `frame,label` truth for it. The object
+   carries the same arrays as `atd_cache.Atd` (players, the team of each slot, ball, speeds), its own `graded`
+   blocks per half, pitch size and fps. Every evidence source, decoder and refiner then runs on it unchanged.
+   A benchmark runner runs one config over every match and reports scores per match and pooled.
+3. **Degrade it to look like our ATD**, with the degradation seeded ([T22](traps.md)):
+   - Drop the ball in gaps drawn from A01's distribution (median 10.7 s; 75% of the missing frames in gaps of 15 s
+     or more), at a rate that climbs through each half as in A02. Our gaps are not random: they cluster in crowded
+     and aerial play. Random gaps would flatter ball-free methods (P07), so where the data allows, also build a
+     variant that places gaps in crowded play, and report both.
+   - Break identities into anonymous, team-labelled tracklets that appear, vanish and swap ([T15](traps.md)).
+   - Add positional noise.
+   - Before trusting the copy, check that it matches our data on A01's numbers: ball-missing share, gap lengths,
+     the nearest player agreeing with the truth on about 78% of in-play ball-visible frames, and the ball visible on
+     about 66% of dead-ball frames.
+4. **Score with the official metric** (`possession_metrics.evaluate`), per match and half, never stitched across
+   halves, with bootstrap intervals. Seven full matches replace 17 possessions.
+5. **Check the yardstick.** The benchmark should rank the four baselines in their published full-match order
+   (`smooth50` > `smooth125` > `smooth25` > `raw`, EVALUATION.md), the order the public window gets wrong. That is a
+   check, not a target. Never tune the degradation towards the published numbers ([T26](traps.md)).
 
-**Rules.** Hand-labelled data used to *validate or train* is explicitly allowed (RULES.md). The labels must never reach
-the submitted file, and a model trained on them must predict those windows out of fold ([T27](traps.md)). Keep them
-in `data/labels/` (gitignored), share them outside git, and disclose them in the technical document. If you're unsure
-whether 15 minutes counts as a "small amount", ask the organisers before building on it.
+**What it cannot settle.**
+- **Conventions.** The DFL flags may flip at different moments from Metrica's corrected tracking. Use the benchmark
+  to rank methods and to fit what transfers (switch penalties, duration priors, model weights). Fit timing (P04's
+  back-dating, P05's `D` onset, P12's shift) on the public window through P02.
+- **Our other assets.** DFL comes without video, audio, homography or Smart Tagging, so P08, P09, P10, P14 and P15
+  cannot be benchmarked directly. Either simulate them from the benchmark's truth with the noise measured on our match
+  (A03 for P09), or check them on the public window only.
+
+If a convention cannot be read from the DFL flags, hand-labelling other matches is allowed, in any amount. Never
+label BAR-ATH. The DFL data is public and outside the competition bundle, so its own licence governs it, not the
+bundle's rules. Cite it in the technical document.
 
 ### P02 — Learn the ground truth's conventions from the public window
 
@@ -100,6 +133,10 @@ possession change at the first touch, or once control is established? With 0.3�
 
 Watch each transition on video. Write the conventions into [traps.md](traps.md) and the technical document, using
 aggregates and frame numbers only.
+
+With no hand labels allowed on this match, this is the only place we can learn *this* GT's timing: P01's benchmark
+follows the DFL's conventions, not Metrica's. Watching the video and measuring around the published transitions is
+fine. Writing labels for frames of this match is not ([T27](traps.md)).
 
 ### P03 — One command, deterministic, cached
 
@@ -138,7 +175,8 @@ every duel.
 
 **Why.** Fact 4. Every stoppage we miss merges two possessions, and every spurious one splits a possession.
 
-**What.** Rules first, then a classifier on the same features:
+**What.** Rules first, then a classifier on the same features. Train it on P01's matches (their `BallStatus`), never
+on labels of this match ([T27](traps.md)). The features:
 - the ball beyond the touch or goal line, or vanishing right at it;
 - the ball still at a restart spot — corner arc, six-yard box, touchline, centre spot;
 - a collective slowdown — median player speed from the ATD speed channel;
@@ -181,10 +219,11 @@ This is the backbone that everything else plugs into.
   defensive-line heights, mean velocity toward the opponent's goal, players per third, and pressure near the ball
   zone. Add how each of these changes over ±1–2 s.
 - Derive each team's attacking direction per half from the data.
-- Train H-vs-A on ball-visible frames where P04 is confident (pseudo-labels, tens of thousands of frames) plus the
-  public GT.
-- Measure on the **ball-missing** frames of the P01 windows only. They are harder: crowded, aerial, and late in
-  halves.
+- Train H-vs-A on ball-visible frames where P04 is confident (pseudo-labels, tens of thousands of frames), on P01's
+  matches with the ball masked (P13), and on the public GT, predicted out of fold ([T27](traps.md)).
+- Measure on P01's **simulated ball gaps**, where the truth is known, and check against the public window's
+  ball-missing frames (few: 6.5% of its in-play frames). Real gaps are harder than simulated ones: crowded, aerial,
+  and late in halves.
 - Feed the probabilities into P06.
 
 ### P08 — Smart Tagging as soft evidence
@@ -200,7 +239,8 @@ This is the backbone that everything else plugs into.
 | `SET PIECES` | a stoppage ending in a restart by the tagged team |
 | `GOALS` | a stoppage until the kick-off |
 
-Measure each code's agreement with the public GT (and P01) first, then feed the votes to P06 as features. Never copy
+Measure each code's agreement with the public GT first, then feed the votes to P06 as features. P01's matches have no
+Smart Tagging, so the public window is the only place to measure this source. Never copy
 intervals across as labels. Map `Barcelona` → H, `Atletic Club` → A and `N/A` → no vote. Tag windows are seconds wide,
 and phases are not possessions ([T17](traps.md)).
 
@@ -263,29 +303,32 @@ The broadcast audio has whistles too, but it is not aligned (P15).
 
 ### P13 — Learn from external labelled tracking data
 
-**Why.** 7,500 labelled frames can train almost nothing and rank nothing, but public datasets carry our kind of
-labels.
+**Why.** The 7,500 publicly labelled frames of this match can train almost nothing, and since 22 Oct we may not add
+hand labels of our own on it ([T27](traps.md)). Public datasets of other matches carry our kind of labels, in any
+amount. The benchmark half of this idea moved to [P01](#p01--a-validation-set-we-can-trust); what stays here is
+training on them.
 
 **What.** Three sources, all with kloppy loaders in our pinned 3.18.0:
 - **DFL/IDSSE open data** (Bassek et al., *Sci Data* 12, 195, 2025): 7 Bundesliga matches. Their 25 Hz positional
   data carries per-frame `BallStatus` (alive/dead) and `BallPossession` — the same two things our GT encodes. Loader:
-  `kloppy.sportec.load_open_tracking_data(match_id=...)`.
+  `kloppy.sportec.load_open_tracking_data(match_id=..., only_alive=False)` ([T30](traps.md)). P01 builds the
+  adapter and the degradation for it.
 - **Metrica sample games 1–3** (`kloppy.metrica.load_open_data`; game 3 is in our FIFA/EPTS format), with event data
   to derive possession from.
 - **SkillCorner open data** (`kloppy.skillcorner.load_open_data`): 10 fps broadcast tracking. kloppy derives its
   alive/dead flag from the possession field, so it is weaker.
 
-Degrade the datasets to look like our ATD: drop the ball in long gaps that match our gap distribution (A01), break
-players into anonymous team-labelled tracklets, and add noise. Then use them two ways:
-- as a big benchmark, scored with `possession_metrics.evaluate`, to rank methods with far less noise than 17
-  possessions;
-- to pre-train P07 or a sequence model (a per-frame set encoder over the players plus the ball with a missing mask →
-  TCN/BiGRU → per-frame logits → P06), calibrated afterwards on our own labels.
+Degrade them the way P01 does, then pre-train P07 or a sequence model on them: a per-frame set encoder over the
+players plus the ball with a missing mask → TCN/BiGRU → per-frame logits → P06. Calibrate it afterwards on the public
+window, predicted out of fold. That is the only labelled data of this match we have.
+
+Hold out P01's benchmark matches from training, or train and score across folds of matches, so that the benchmark
+still measures something.
 
 **Rules.** Conventions differ between providers, so use external data to rank methods and pre-train, then calibrate
-on ours. Check every licence, keep the sources public (the organisers must be able to access them), and explain them
-in the technical document. **Never use anything about this fixture**: no event feeds, stats or match reports
-([T26](traps.md)).
+on the public window. Check every licence, keep the sources public (the organisers must be able to access them), and
+explain them in the technical document. **Never use anything about this fixture**: no event feeds, stats or match
+reports ([T26](traps.md)).
 
 ### P14 — Recover the ball from the video
 
@@ -298,6 +341,8 @@ tracker lost.
 - Project the detections to the pitch with the homography (`load_homography.unproject`, valid on 100% of tactical
   frames), and clean them with a kinematic filter.
 - An airborne ball projects to the wrong ground point, so give it low confidence.
+- Fine-tune only on frames of other matches. Drawing ball boxes on this match's frames is hand-labelling it
+  ([T27](traps.md)).
 - Decode frame-exactly ([T23](traps.md)), budget the GPU time, and keep the video on our own machines unless the T&C
   clearly allow otherwise.
 

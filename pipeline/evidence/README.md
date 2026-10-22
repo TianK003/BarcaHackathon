@@ -84,8 +84,8 @@ and its hard 0/1 claims a certainty it does not have. P04 is its replacement.
 - **Randomness from the seed:** `np.random.default_rng([run.seed, 1234])`, with a constant of your own, so adding a
   source never shifts another's random stream ([T22](../../docs/traps.md)).
 - **No ground truth as input**, and nothing about this fixture from outside the bundle
-  ([T26](../../docs/traps.md)). A model trained on our hand labels must predict those windows out of fold
-  ([T27](../../docs/traps.md)).
+  ([T26](../../docs/traps.md)). No hand labels on this match; train on other matches (P01, P13), and a model
+  trained on the public GT must predict the public window out of fold ([T27](../../docs/traps.md)).
 - **Never print rows.** Aggregates only, in logs, notebooks committed to git, and docs.
 
 ## Planned extensions (build them when the first source needs them)

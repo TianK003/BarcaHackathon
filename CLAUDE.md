@@ -24,12 +24,17 @@ Floor to beat: `baseline_smooth50`, full-match **spellF1 0.2433**.
   them available to a third-party/cloud LLM. Do not Read, `cat`, `head` or `grep` files under `data/`; do not print
   raw tracking/tagging/homography rows (`df.head()`, record dumps); do not view video frames or executed notebook
   outputs that may contain them. Write code that runs locally and inspect only aggregates — scores, counts, shapes,
-  pass/fail. `evaluation/gt/` and `evaluation/results/baseline_*.csv` are public (MIT) and fine to read.
+  pass/fail. `evaluation/gt/` and `evaluation/results/baseline_*.csv` are public (MIT) and fine to read. So are the
+  public datasets of *other* matches under `data/external/` (the DFL/IDSSE open data, CC BY 4.0; P01, P13). They are
+  not competition data, and their own licences govern them. Keep everything else in `data/` closed.
 - **Never commit match data** or derived data that could reconstruct it (frame-level tracking exports, clipped
   video); the submission repo must be public. `.gitignore` covers `data/*`, `*.mp4` and `evaluation/results/*.csv`
   (except `baseline_*.csv`) — keep it that way.
-- **Submitted labels must come from an algorithm.** Hand-labelling or hand-correcting the output disqualifies;
-  hand-labelled data used only to train or validate a model is fine.
+- **Submitted labels must come from an algorithm.** Hand-labelling or hand-correcting the output disqualifies.
+- **No hand labels on this match at all**, not even to train, validate or calibrate. This comes from the organisers'
+  clarification of 22 Oct 2026 (upstream `c073f29`, RULES.md). Hand-labelled data from *other* matches is fine, in
+  any amount, so validation comes from other matches (`docs/proposals.md` P01). The published public GT may be used;
+  a model trained on it must predict the public window out of fold (`docs/traps.md` T27).
 - **No private ground truth**, or anything derived from it, beyond the public 5 minutes.
 - **The repo must regenerate the submitted CSV exactly** — the same file, not approximately. Seed all randomness,
   pin dependencies, keep one command that goes from `data/` to the CSV.
@@ -145,7 +150,9 @@ frames are all `D`. The public GT labels only 11,185–18,684 (5 minutes, 17 pos
   metric; abstaining across a hand-over drags the old label over it — at transitions, guess.
 - Noise: full-match `spellF1` gaps below ~0.04 (`macroF1`: ~0.01) are not real. On the public window one missed
   possession moves `spellF1` ~0.06, and it ranks `smooth125` above `smooth50` — the reverse of the full match. Use it
-  to check correctness, never to pick hyperparameters.
+  to check correctness, never to pick hyperparameters; pick those on P01's benchmark of other matches. The public
+  window stays the only place to learn this GT's *timing* conventions (P02), because other providers flip their
+  flags at different moments.
 
 ### Data facts that bite
 

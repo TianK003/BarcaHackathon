@@ -153,8 +153,9 @@ Each stage's README has a template, its rules and the traps that apply. After an
 | the scores | `python pipeline/run.py <config> --score` | public-window scores plus each source's agreement with the GT. Today `nearest_player` agrees on 77.8% of 5,640 frames, exactly [A01](../docs/results.md) |
 
 The public window is for correctness only. It holds 17 possessions and ranks the baselines the wrong way round
-([T01](../docs/traps.md)). Choose between versions on our validation windows (P01) with `--score <labels.csv>` and
-the scorer's `--bootstrap 1000`.
+([T01](../docs/traps.md)). Choose between versions on P01's benchmark of other matches (DFL open data, degraded to
+look like ours), with bootstrap intervals. Hand labels on this match are not allowed, not even for validation
+([T27](../docs/traps.md)).
 
 ## Rules that the code enforces, and ones it can't
 

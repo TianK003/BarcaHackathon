@@ -57,7 +57,8 @@ Possessions are counted the way the scorer counts them: inside the graded halves
 before it ([T06](../../docs/traps.md)). `validate_submission.py` counts differently (over the whole file, `X` as a gap),
 so compare like with like.
 
-With `--score` (the public window by default, or `--score path/to/labels.csv` for our validation windows from P01):
+With `--score` (the public window by default, or `--score path/to/labels.csv` for any other `frame,label` file of
+this match, such as another run's output; there are no hand labels of this match, [T27](../../docs/traps.md)):
 
 ```
 score     evaluation/gt/BAR-ATH_possession_gt_public.csv: macroF1 0.6207  spellF1 0.3256  ...  possessions 26 (truth 17)

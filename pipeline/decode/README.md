@@ -70,7 +70,7 @@ A hidden (semi-)Markov model over `H`, `A`, `D`, decoded with Viterbi per block.
   every frame where only `home` is known.) Multiply each source's terms by its `weight`.
 - **Clip probabilities to [ε, 1 − ε] first.** `nearest_player` reports hard 0s and 1s, whose logs are −∞.
 - **A switch penalty and duration priors** decide how much evidence a change has to beat. Tune them on P01's
-  validation windows, never on the public window ([T01](../../docs/traps.md)).
+  benchmark of other matches, never on the public window ([T01](../../docs/traps.md)).
 - **Return the posterior.** It is what tells a refiner where an `X` is free (inside a possession) and where it is
   expensive (at a hand-over) — [EVALUATION.md](../../EVALUATION.md), P12.
 
