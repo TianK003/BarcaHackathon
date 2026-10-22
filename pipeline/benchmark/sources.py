@@ -143,6 +143,7 @@ def local_path(match_id, kind, data_dir=None):
 def select(match_ids=None):
     """The RemoteFiles of the given matches, in registry order, KINDS order within a match. None means all 21."""
     if match_ids is not None:
+        match_ids = tuple(match_ids)  # read once: a generator would be empty after the validation below
         unknown = [match_id for match_id in match_ids if match_id not in FILES]
         if unknown:
             raise ValueError("unknown DFL match id {}; the registry has {}".format(unknown[0], ", ".join(MATCH_IDS)))
@@ -162,21 +163,23 @@ def verify(files=None, data_dir=None):
 def download(files=None, data_dir=None, opener=None, log=print):
     """Make every file ok on disk and return their paths, in order; DownloadError at the first one that cannot be.
 
-    A file that already passes its size and md5 is left alone and costs no request. Anything else is downloaded
-    (and, if a damaged file was there, replaced). `opener(request, timeout=...)` is urllib.request.urlopen by
-    default; it is a parameter so that the checks can serve bodies from memory through this same code.
+    A file that already passes its size and md5 is left alone and costs no request. Anything else is downloaded;
+    a damaged file is removed first, so a download that fails leaves nothing at the final path. `log` gets one line
+    per file, and one more when figshare fails and the mirror is tried. `opener(request, timeout=...)` is
+    urllib.request.urlopen by default; it is a parameter so that the checks can serve bodies from memory through
+    this same code.
     """
     opener = opener or urllib.request.urlopen
     paths = []
     for remote in (select() if files is None else files):
         path = remote.path(data_dir)
         status = _status(path, remote)
-        label = "{}/{}".format(remote.match_id, remote.kind)
+        label = _label(remote)
         if status == "ok":
             log("ok          {:<22} {:>12,} bytes".format(label, remote.size))
         else:
             log("downloading {:<22} {:>12,} bytes ({})".format(label, remote.size, status))
-            _fetch(remote, path, opener)
+            _fetch(remote, path, opener, log)
             log("downloaded  {}".format(label))
         paths.append(path)
     return paths
@@ -194,17 +197,36 @@ def _status(path, remote):
     return "ok" if digest.hexdigest() == remote.md5 else "md5"
 
 
-def _fetch(remote, path, opener):
-    """Stream the file to <path>.part from figshare, or failing that from the mirror, then rename it into place."""
+def _label(remote):
+    return "{}/{}".format(remote.match_id, remote.kind)
+
+
+def _fetch(remote, path, opener, log):
+    """Stream the file to <path>.part from figshare, or failing that from the mirror, then rename it into place.
+
+    Whatever stood at the final path is removed first (download() calls this only for a missing or damaged file), so
+    that a download which fails leaves the file absent, never damaged: the promise of the module docstring.
+    """
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    if os.path.exists(path):
+        try:
+            os.remove(path)
+        except OSError as error:
+            raise DownloadError(
+                "{}: the damaged file {} cannot be removed ({}); another process may be using it. Close it, or "
+                "delete the file by hand, then re-run.".format(remote.name, path, error)) from error
     part = path + ".part"
+    sources = (("figshare", remote.url), ("mirror", remote.mirror_url))
     failures = []
-    for source, url in (("figshare", remote.url), ("mirror", remote.mirror_url)):
+    for position, (source, url) in enumerate(sources):
         try:
             _stream(remote, url, part, opener)
             break
         except DownloadError as error:
             failures.append("  {} ({}): {}".format(source, url, error))
+            if position + 1 < len(sources):
+                log("retrying    {:<22} {} failed ({}); trying the {}".format(
+                    _label(remote), source, error, sources[position + 1][0]))
     else:
         raise DownloadError(
             "{}: neither source gave a file with the pinned size and md5, and nothing was kept. Re-run to try "
@@ -212,11 +234,13 @@ def _fetch(remote, path, opener):
             "sources.py.\n{}".format(remote.name, "\n".join(failures)))
     try:
         os.replace(part, path)
-    except PermissionError as error:
+    except OSError as error:  # a PermissionError is the usual one on Windows; a full or read-only disk is another
         _discard(part)
-        raise DownloadError(
-            "{}: the verified download could not be moved to {} ({}); another download may still be writing "
-            "the file. Wait for it to finish, then re-run.".format(remote.name, path, error)) from error
+        advice = ("another download may still be writing the file. Wait for it to finish, then re-run."
+                  if isinstance(error, PermissionError) else
+                  "check the free disk space and the permissions of that folder, then re-run.")
+        raise DownloadError("{}: the verified download could not be moved to {} ({}); {}".format(
+            remote.name, path, error, advice)) from error
 
 
 def _stream(remote, url, part, opener):

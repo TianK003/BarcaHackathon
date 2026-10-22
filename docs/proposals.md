@@ -28,7 +28,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 
 | ID | proposal | attacks | effort | impact | status |
 |---|---|---|---|---|---|
-| [P01](#p01--a-validation-set-we-can-trust) | Validation set we can trust: other matches, degraded to look like ours | deciding anything at all | M | enabling | idea |
+| [P01](#p01--a-validation-set-we-can-trust) | Validation set we can trust: other matches, degraded to look like ours | deciding anything at all | M | enabling | doing (Tian) |
 | [P02](#p02--learn-the-ground-truths-conventions-from-the-public-window) | Learn the GT's conventions from the public window | boundary timing | S | high | idea |
 | [P03](#p03--one-command-deterministic-cached) | One-command, deterministic, cached pipeline | reproducibility | S–M | enabling | done → R001 |
 | [P04](#p04--sticky-ownership-from-controlled-touches) | Sticky ownership from controlled touches | facts 3, 5 | S | high | idea |

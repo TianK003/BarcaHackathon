@@ -40,22 +40,44 @@ GOOD_BODY = bytes(range(256)) * 10_000
 
 # -- helpers ----------------------------------------------------------------------------------------------------------
 
+class RecordingBody(io.BytesIO):
+    """A response body that notes, at every read, how much was asked for and what the disk looked like."""
+
+    def __init__(self, body, final_path):
+        super().__init__(body)
+        self.final_path = final_path
+        self.read_sizes = []
+        self.final_existed = []
+        self.part_existed = []
+
+    def read(self, size=-1):
+        self.read_sizes.append(size)
+        self.final_existed.append(os.path.exists(self.final_path))
+        self.part_existed.append(os.path.exists(self.final_path + ".part"))
+        return super().read(size)
+
+
 class FakeOpener:
     """Stands in for urllib.request.urlopen: serves a body per URL and remembers every request it got.
 
-    A value in `bodies` that is an exception is raised instead of served, which is how a dead server looks.
+    A value in `bodies` that is an exception is raised instead of served, which is how a dead server looks. Given
+    `final_path`, each served body (kept in `responses`) records what the disk looked like while it was read.
     """
 
-    def __init__(self, bodies):
+    def __init__(self, bodies, final_path=None):
         self.bodies = bodies
+        self.final_path = final_path
         self.requests = []
+        self.responses = []
 
     def __call__(self, request, timeout=None):
         self.requests.append((request.full_url, request.get_header("User-agent"), timeout))
         body = self.bodies[request.full_url]
         if isinstance(body, Exception):
             raise body
-        return io.BytesIO(body)
+        response = io.BytesIO(body) if self.final_path is None else RecordingBody(body, self.final_path)
+        self.responses.append(response)
+        return response
 
     @property
     def urls(self):
@@ -80,6 +102,27 @@ def present(remote, root, body):
     with open(path, "wb") as handle:
         handle.write(body)
     return path
+
+
+@contextlib.contextmanager
+def replace_raises(error):
+    """os.replace fails with `error` inside the block, as it does when another process holds the target."""
+    real_replace = os.replace
+
+    def failing(source, destination):
+        raise error
+
+    os.replace = failing
+    try:
+        yield
+    finally:
+        os.replace = real_replace
+
+
+def collecting_log():
+    """(log, lines): a log function that keeps what it was given."""
+    lines = []
+    return lines.append, lines
 
 
 def leftovers(root):
@@ -147,6 +190,9 @@ def test_select_keeps_registry_order_and_names_unknown_ids():
     chosen = sources.select(["J03WQQ", "J03WMX"])
     assert [remote.match_id for remote in chosen] == ["J03WMX"] * 3 + ["J03WQQ"] * 3, "registry order, 3 kinds each"
     assert len(sources.select()) == 21
+    from_generator = sources.select(match_id for match_id in ("J03WQQ", "J03WMX"))
+    assert from_generator == chosen, "a generator of ids must select the same files as a list ({} files)".format(
+        len(from_generator))
     expect_error(ValueError, lambda: sources.select(["J03WXX"]), "J03WXX", "J03WMX")
 
 
@@ -213,53 +259,97 @@ def test_download_skips_valid_file():
 def test_download_replaces_a_damaged_file():
     from pipeline.benchmark import sources
     remote = probe_file()
-    opener = FakeOpener({remote.url: GOOD_BODY})
     with tempfile.TemporaryDirectory() as root:
+        opener = FakeOpener({remote.url: GOOD_BODY}, final_path=remote.path(root))
         present(remote, root, GOOD_BODY[::-1])  # right size, wrong content: a previous run that was cut short
         paths = sources.download([remote], root, opener=opener, log=quiet)
         assert sources.verify([remote], root) == {paths[0]: "ok"}
+        assert not any(opener.responses[0].final_existed), "the damaged file must be gone before the new bytes flow"
     assert opener.urls == [remote.url]
+
+
+def test_download_leaves_no_damaged_file_behind():
+    from pipeline.benchmark import sources
+    remote = probe_file()
+    down = urllib.error.URLError("connection refused")
+    opener = FakeOpener({remote.url: down, remote.mirror_url: down})
+    for damage in (GOOD_BODY[:-1], GOOD_BODY[::-1]):  # wrong size, then wrong content
+        with tempfile.TemporaryDirectory() as root:
+            present(remote, root, damage)
+            expect_error(sources.DownloadError, lambda: sources.download([remote], root, opener=opener, log=quiet),
+                         remote.name, "nothing was kept")
+            assert leftovers(root) == [], "a final file is complete and right or absent: {}".format(leftovers(root))
+            assert sources.verify([remote], root) == {remote.path(root): "missing"}
+
+
+def test_download_streams_in_mebibyte_chunks_into_a_part_file():
+    from pipeline.benchmark import sources
+    remote = probe_file()
+    with tempfile.TemporaryDirectory() as root:
+        opener = FakeOpener({remote.url: GOOD_BODY}, final_path=remote.path(root))
+        sources.download([remote], root, opener=opener, log=quiet)
+    body = opener.responses[0]
+    assert set(body.read_sizes) == {1 << 20}, "every read must ask for 1 MiB: {}".format(body.read_sizes)
+    assert len(body.read_sizes) == 4, "3 chunks of data and the empty read that ends the body: {}".format(
+        body.read_sizes)
+    assert not any(body.final_existed), "the final file must not exist while the bytes are still arriving"
+    assert all(body.part_existed), "the bytes must flow into <name>.part"
 
 
 def test_download_falls_back_to_mirror():
     from pipeline.benchmark import sources
     remote = probe_file()
     opener = FakeOpener({remote.url: GOOD_BODY[::-1], remote.mirror_url: GOOD_BODY})
+    log, lines = collecting_log()
     with tempfile.TemporaryDirectory() as root:
-        paths = sources.download([remote], root, opener=opener, log=quiet)
+        paths = sources.download([remote], root, opener=opener, log=log)
         assert sources.verify([remote], root) == {paths[0]: "ok"}
         assert leftovers(root) == [os.path.relpath(paths[0], root)], leftovers(root)
     assert opener.urls == [remote.url, remote.mirror_url], opener.urls
+    # One line to say the download started, one for the fallback with its reason, one to say it finished: no
+    # progress lines per chunk.
+    assert [line.split()[0] for line in lines] == ["downloading", "retrying", "downloaded"], lines
+    assert "J03WMX/information" in lines[1] and "figshare failed" in lines[1] and "md5" in lines[1], lines[1]
 
 
 def test_download_falls_back_when_the_server_is_down():
     from pipeline.benchmark import sources
     remote = probe_file()
     opener = FakeOpener({remote.url: urllib.error.URLError("connection refused"), remote.mirror_url: GOOD_BODY})
+    log, lines = collecting_log()
     with tempfile.TemporaryDirectory() as root:
-        paths = sources.download([remote], root, opener=opener, log=quiet)
+        paths = sources.download([remote], root, opener=opener, log=log)
         assert sources.verify([remote], root) == {paths[0]: "ok"}
     assert opener.urls == [remote.url, remote.mirror_url], opener.urls
+    assert "connection refused" in lines[1], "the log must give the reason figshare failed: {}".format(lines)
 
 
 def test_download_reports_a_file_that_is_being_written():
     from pipeline.benchmark import sources
     remote = probe_file()
     opener = FakeOpener({remote.url: GOOD_BODY})
-    real_replace = os.replace
-
-    def locked(source, destination):
-        raise PermissionError(13, "The process cannot access the file because it is being used by another process")
-
+    locked = PermissionError(13, "The process cannot access the file because it is being used by another process")
     with tempfile.TemporaryDirectory() as root:
-        os.replace = locked
-        try:
+        with replace_raises(locked):
             expect_error(sources.DownloadError, lambda: sources.download([remote], root, opener=opener, log=quiet),
                          remote.name, "another download")
-        finally:
-            os.replace = real_replace
         assert leftovers(root) == [], leftovers(root)
     assert opener.urls == [remote.url], "a local problem must not be retried from the mirror: {}".format(opener.urls)
+
+
+def test_download_reports_any_failure_to_move_the_file_into_place():
+    from pipeline.benchmark import sources
+    remote = probe_file()
+    opener = FakeOpener({remote.url: GOOD_BODY})
+    full = OSError(28, "No space left on device")
+    with tempfile.TemporaryDirectory() as root:
+        with replace_raises(full):
+            message = expect_error(sources.DownloadError,
+                                   lambda: sources.download([remote], root, opener=opener, log=quiet),
+                                   remote.name, "No space left", "disk space")
+        assert "another download" not in message, "only a PermissionError points at another download: " + message
+        assert leftovers(root) == [], leftovers(root)
+    assert opener.urls == [remote.url], opener.urls
 
 
 # -- command line -----------------------------------------------------------------------------------------------------
