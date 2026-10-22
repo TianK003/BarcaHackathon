@@ -5,6 +5,7 @@ module of its topic:
 
     sources.py   the DFL registry and the download
     dfl.py       the DFL parsers and the cache of parsed matches (synthetic, and the downloaded ones with --dfl)
+    hazard.py    the gap-onset hazard: features, logistic fit, AUC and the mask sampler (synthetic arrays only)
     harness.py   the harness itself: what it collects, how it reports NOT RUN, the console set-up
     common.py    what several modules share: the synthetic DFL match, real_match, damaged, NotRun (no checks of its own)
 
@@ -22,6 +23,6 @@ Import with absolute imports (from pipeline.benchmark import dfl): a check modul
 cannot then shadow it.
 """
 
-from pipeline.benchmark.checks import dfl, harness, sources
+from pipeline.benchmark.checks import dfl, harness, hazard, sources
 
-MODULES = (sources, dfl, harness)
+MODULES = (sources, dfl, hazard, harness)
