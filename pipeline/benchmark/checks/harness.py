@@ -59,22 +59,39 @@ def test_collect_takes_the_checks_a_module_defines_and_sorts_them_by_name():
 
 
 def test_a_check_module_that_is_not_listed_is_refused():
-    """A module in checks/ that checks.MODULES does not list would run nothing, silently: the harness refuses that."""
+    """A check module that checks.MODULES does not list would run nothing, silently; one that is not a check module
+    (a production module of the same name, say) would hide that. The harness refuses both."""
+    import importlib
     from pipeline.benchmark import checks, selftest
-    assert selftest.unlisted_modules() == [], "every module of pipeline/benchmark/checks/ must be in MODULES"
+    assert selftest.module_list_problems() == [], "every module of pipeline/benchmark/checks/ must be in MODULES"
 
     with tempfile.TemporaryDirectory() as folder:
         for name in ("__init__", "common", "alpha", "beta"):  # common holds no checks and is the one exception
             write_text(folder, name + ".py", "")
-        listed = [fake_module("pkg.checks.alpha")]
-        assert selftest.unlisted_modules([folder], listed) == ["beta"]
-        assert selftest.unlisted_modules([folder], listed + [fake_module("pkg.checks.beta")]) == []
+
+        def problems(*names):
+            return selftest.module_list_problems([folder], [fake_module(name) for name in names], "pkg.checks")
+
+        assert len(problems("pkg.checks.alpha")) == 1 and "beta.py" in problems("pkg.checks.alpha")[0]
+        assert problems("pkg.checks.alpha", "pkg.checks.beta") == []
+        # Names are compared whole: a production module called alpha does not stand in for the checks' alpha.
+        found = problems("pipeline.benchmark.alpha", "pkg.checks.beta")
+        assert len(found) == 2 and "alpha.py" in found[0] and "pipeline.benchmark.alpha" in found[1], found
+        stranger = problems("pkg.checks.alpha", "pkg.other.beta", "pkg.checks.beta")
+        assert len(stranger) == 1 and "pkg.other.beta" in stranger[0], stranger
 
     real_modules = checks.MODULES
     checks.MODULES = real_modules[:-1]
     try:
         expect_error(ValueError, selftest.collect, real_modules[-1].__name__.rsplit(".", 1)[-1], "MODULES",
                      "checks/__init__.py")
+    finally:
+        checks.MODULES = real_modules
+    # The mistake that was made: the production dfl.py listed in place of checks/dfl.py. 40 checks went quiet.
+    production = importlib.import_module("pipeline.benchmark.dfl")
+    checks.MODULES = tuple(production if module.__name__.endswith(".dfl") else module for module in real_modules)
+    try:
+        expect_error(ValueError, selftest.collect, "dfl.py", "pipeline.benchmark.dfl", "MODULES")
     finally:
         checks.MODULES = real_modules
 

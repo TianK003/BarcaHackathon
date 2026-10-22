@@ -54,11 +54,19 @@ later call reads them back in a second or two. It follows pipeline/inputs/atd_ca
 
 The manifest records the size and sha256 of both source files, the numpy and lxml versions that parsed them, the
 sha256 of this very file (the parser) and CACHE_VERSION; a cache is reused only if all of them still match, so a
-re-downloaded file, a new library or an edit to the parser never reads through a stale cache. The price is that any
-edit to this file, a docstring included, rebuilds the seven caches (about 6 minutes). The file is hashed with its line
-endings made LF, so that git checking it out with CRLF (core.autocrlf on Windows) is not mistaken for an edit.
-CACHE_VERSION is for what the hash cannot see: bump it when the layout on disk changes, that is when ARRAY_DTYPES or
-the manifest's fields do.
+re-downloaded file, a new library or another version of the parser does not read a cache that a different one built.
+
+The parser's hash is taken once, when this module is imported (PARSER_SHA256), and not when load_match is called, so
+that the key describes the code that is running. A process that imported the parser before the file changed (a
+notebook left open across a git pull, a long run, a lane merged meanwhile) goes on running the old code, and keeps
+using the cache that fits it; a process that starts later runs the new file and rebuilds. What is left is an edit made
+while the module is being imported, or one that Python's own bytecode cache fails to notice (it compares the source's
+modification time and size). Any edit to this file, a docstring included, changes the hash and so rebuilds the seven
+caches (about 6 minutes). The file is hashed with its line endings made LF, so that git checking it out with CRLF
+(core.autocrlf on Windows) is not mistaken for an edit. The layout of the arrays and of the manifest is in this file
+too, so changing it changes the hash; CACHE_VERSION is only a manual switch for the day every cache has to go at once
+for a reason the key cannot see (say a numpy fix that kept its version number).
+
 The arrays are written first and the manifest last, with the old manifest removed up front, so a run killed half-way
 leaves no manifest and the next call rebuilds. A cache that cannot be read (an array missing, cut short or of the wrong
 shape, a manifest that is not JSON or lacks a field) is treated as absent and rebuilt, never as an error: everything in
@@ -69,6 +77,7 @@ import hashlib
 import json
 import math
 import os
+import zipfile
 from dataclasses import dataclass, field, replace
 
 import numpy as np
@@ -95,7 +104,7 @@ ABSENT = -1                              # no code, no ball frame, and the separ
 PLAYER_ATTRIBUTES = ("N", "X", "Y", "S")  # what is read from a player's <Frame>
 BALL_ATTRIBUTES = ("N", "X", "Y", "Z", "S", "BallPossession", "BallStatus")  # ... and from the ball's
 MISSING_ATTRIBUTES = ("X", "Y", "S", "Z", "BallPossession", "BallStatus")    # the report counts these when absent
-CACHE_VERSION = 1                        # bump when the cache's layout changes; the parser's own hash covers the rest
+CACHE_VERSION = 1                        # a manual switch: bump it to invalidate every cache (any edit here does too)
 CACHE_FOLDER = ("cache", "dfl")          # <data dir>/cache/dfl/<match id>/
 MANIFEST = "manifest.json"
 SOURCE_KINDS = ("information", "positions")  # the files a match is parsed from, named as sources.FILES names them
@@ -318,7 +327,7 @@ def load_match(match_id, data_dir=None, rebuild=False, paths=None):
     key = {"cache_version": CACHE_VERSION,
            "sources": {kind: describe_source(paths[kind]) for kind in SOURCE_KINDS},
            "parsed_with": {"numpy": np.__version__, "lxml": etree.__version__},
-           "parser_sha256": _parser_sha256()}
+           "parser_sha256": PARSER_SHA256}
     manifest = None if rebuild else _read_manifest(folder)
     if manifest is not None and all(manifest.get(name) == value for name, value in key.items()):
         match = _load(folder, manifest, match_id)
@@ -721,19 +730,24 @@ def _timeline(info, balls, players, skipped):
 
 # -- the cache --------------------------------------------------------------------------------------------------------
 
-def _parser_sha256():
-    """The sha256 of this file, which is the parser, with CRLF read as LF: part of the cache key, so no edit slips by.
-
-    A checkout that changes only the line endings (git does, on Windows, when core.autocrlf is on and the file is
-    rewritten) leaves the hash as it was, because it is the same parser and its cache is still fresh.
-    """
-    with open(__file__, "rb") as handle:
+def _text_sha256(path):
+    """The sha256 of a text file's bytes with CRLF read as LF: a checkout that changes only the line endings (git does,
+    on Windows, when core.autocrlf is on and it rewrites the file) is not a change of the file."""
+    with open(path, "rb") as handle:
         return hashlib.sha256(handle.read().replace(b"\r\n", b"\n")).hexdigest()
+
+
+# The hash of this file, which is the parser, taken now, as the module is imported: the part of the cache key that says
+# which code made a cache. It is not read again when a match is loaded; see the module docstring for why.
+PARSER_SHA256 = _text_sha256(__file__)
 
 
 def _read_array(path):
     """One cached array; ValueError if the file is not a plain numpy array (an .npz or a pickle under an .npy name)."""
-    array = np.load(path, allow_pickle=False)
+    try:
+        array = np.load(path, allow_pickle=False)
+    except zipfile.BadZipFile as error:  # a zip cut short under an .npy name: not a ValueError, but as unreadable
+        raise ValueError("{}: not a readable numpy file ({})".format(path, error)) from error
     if not isinstance(array, np.ndarray):
         close = getattr(array, "close", None)
         if close is not None:

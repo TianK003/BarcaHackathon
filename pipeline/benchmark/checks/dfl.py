@@ -10,6 +10,7 @@ import contextlib
 import dataclasses
 import hashlib
 import importlib.util
+import io
 import json
 import math
 import os
@@ -546,17 +547,19 @@ def assert_same_match(first, second):
 
     The report is compared without its "cache" entry, which says how the match was reached and so differs by design.
     """
-    for name in MATCH_ARRAYS:
-        one, other = getattr(first, name), getattr(second, name)
-        assert (one.dtype, one.shape) == (other.dtype, other.shape), (name, one.dtype, other.dtype, one.shape,
-                                                                       other.shape)
-        np.testing.assert_array_equal(one, other, err_msg=name)
-    for name in ("match_id", "pitch", "fps", "graded", "kickoffs"):
-        one, other = getattr(first, name), getattr(second, name)
-        assert one == other and type_tree(one) == type_tree(other), (name, one, other, type_tree(one),
-                                                                     type_tree(other))
-    reports = [{key: value for key, value in match.report.items() if key != "cache"} for match in (first, second)]
-    assert reports[0] == reports[1] and type_tree(reports[0]) == type_tree(reports[1]), reports
+    from pipeline.benchmark import dfl
+    for field in dataclasses.fields(dfl.DflMatch):  # every field of the class, so that a new one is never skipped
+        one, other = getattr(first, field.name), getattr(second, field.name)
+        if field.name == "report":
+            one, other = [{key: value for key, value in report.items() if key != "cache"} for report in (one, other)]
+        if isinstance(one, np.ndarray):
+            assert isinstance(other, np.ndarray), (field.name, type(other))
+            assert (one.dtype, one.shape) == (other.dtype, other.shape), (field.name, one.dtype, other.dtype, one.shape,
+                                                                           other.shape)
+            np.testing.assert_array_equal(one, other, err_msg=field.name)
+        else:
+            assert one == other and type_tree(one) == type_tree(other), (field.name, one, other, type_tree(one),
+                                                                         type_tree(other))
 
 
 def edit_manifest(folder, change):
@@ -574,6 +577,13 @@ def manifest_of(folder):
     """The cache's manifest.json, parsed."""
     with open(os.path.join(folder, "manifest.json"), encoding="utf-8") as handle:
         return json.load(handle)
+
+
+def test_the_cache_stores_every_array_field():
+    """The arrays the cache writes are exactly the array fields of DflMatch: a new field cannot be left out of it."""
+    from pipeline.benchmark import dfl
+    array_fields = {field.name for field in dataclasses.fields(dfl.DflMatch) if field.type is np.ndarray}
+    assert array_fields == set(dfl.ARRAY_DTYPES) == set(MATCH_ARRAYS), (sorted(array_fields), sorted(dfl.ARRAY_DTYPES))
 
 
 def test_match_cache_built_then_reused():
@@ -600,7 +610,7 @@ def test_match_cache_built_then_reused():
         assert manifest["parsed_with"] == {"numpy": np.__version__, "lxml": etree.__version__}
         with open(dfl.__file__, "rb") as handle:  # the parser is this very file, read here by a pass of its own
             parser = hashlib.sha256(handle.read().replace(b"\r\n", b"\n")).hexdigest()
-        assert manifest["parser_sha256"] == parser, manifest["parser_sha256"]
+        assert manifest["parser_sha256"] == parser == dfl.PARSER_SHA256, manifest["parser_sha256"]
         assert "cache" not in manifest["report"], "how a match was reached must not be stored with it"
         assert manifest_bytes.endswith(b"}\n") and b"\r" not in manifest_bytes, "LF line endings, one final newline"
         stamp = os.stat(manifest_path).st_mtime_ns
@@ -655,22 +665,22 @@ def test_match_cache_rebuilt_when_source_changes():
 
 
 def test_match_cache_rebuilt_when_the_parser_changes():
-    """The parser is part of the key: an edit to dfl.py can never be read through a cache that an older one built."""
+    """The parser is part of the key: a parser that is not the one that built a cache does not read it."""
     from pipeline.benchmark import dfl
     with tempfile.TemporaryDirectory() as root:
         paths, folder = cache_setup(root)
         first = load_synthetic(root, paths)
         assert first.report["cache"] == "built"
-        real_hash = dfl._parser_sha256
-        assert real_hash() == manifest_of(folder)["parser_sha256"], "the manifest must hold the parser's own hash"
-        dfl._parser_sha256 = lambda: "0" * 64  # the parser was edited: its bytes hash to something else
+        real_hash = dfl.PARSER_SHA256
+        assert real_hash == manifest_of(folder)["parser_sha256"], "the manifest must hold the parser's own hash"
+        dfl.PARSER_SHA256 = "0" * 64  # as if this were another version of the parser
         try:
             second = load_synthetic(root, paths)
             assert second.report["cache"] == "built", "a parser that changed was read through the old cache"
             assert manifest_of(folder)["parser_sha256"] == "0" * 64
             assert load_synthetic(root, paths).report["cache"] == "reused", "and the new cache is fresh for it"
         finally:
-            dfl._parser_sha256 = real_hash
+            dfl.PARSER_SHA256 = real_hash
         third = load_synthetic(root, paths)
         assert third.report["cache"] == "built", "the parser changed back, which is another change: rebuild"
         assert load_synthetic(root, paths).report["cache"] == "reused"
@@ -678,10 +688,19 @@ def test_match_cache_rebuilt_when_the_parser_changes():
 
 
 def test_the_parser_hash_is_the_hash_of_dfl_py():
-    """The hash is that of dfl.py's text with its line endings made LF (see the next check for why)."""
+    """The constant is the hash of dfl.py's text with its line endings made LF (see the check below for why)."""
     from pipeline.benchmark import dfl
     with open(dfl.__file__, "rb") as handle:
-        assert dfl._parser_sha256() == hashlib.sha256(handle.read().replace(b"\r\n", b"\n")).hexdigest()
+        assert dfl.PARSER_SHA256 == hashlib.sha256(handle.read().replace(b"\r\n", b"\n")).hexdigest()
+
+
+def import_parser(path, name):
+    """The file at `path` imported as a module called `name`, which runs its code and takes its hash right now."""
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module  # a dataclass looks its module up here
+    spec.loader.exec_module(module)
+    return module
 
 
 def parser_copy(folder, name, ending, extra=""):
@@ -692,11 +711,7 @@ def parser_copy(folder, name, ending, extra=""):
     path = os.path.join(folder, name + ".py")
     with open(path, "w", encoding="utf-8", newline="") as handle:
         handle.write(text.replace("\n", ending))
-    spec = importlib.util.spec_from_file_location(name, path)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module  # a dataclass looks its module up here
-    spec.loader.exec_module(module)
-    return module
+    return import_parser(path, name)
 
 
 def test_the_parser_hash_does_not_depend_on_line_endings():
@@ -715,8 +730,8 @@ def test_the_parser_hash_does_not_depend_on_line_endings():
             with open(crlf.__file__, "rb") as handle:
                 raw = handle.read()
             assert raw.count(b"\r\n") > 100 and raw.count(b"\n") == raw.count(b"\r\n"), "the copy is not all CRLF"
-            assert lf._parser_sha256() == crlf._parser_sha256() == dfl._parser_sha256(), "line endings changed the hash"
-            assert edited._parser_sha256() != lf._parser_sha256(), "an edit did not change the hash"
+            assert lf.PARSER_SHA256 == crlf.PARSER_SHA256 == dfl.PARSER_SHA256, "line endings changed the hash"
+            assert edited.PARSER_SHA256 != lf.PARSER_SHA256, "an edit did not change the hash"
 
             # What it is for: the cache one checkout built is fresh for the other, and not for the edited parser.
             paths, _ = cache_setup(root)
@@ -724,6 +739,47 @@ def test_the_parser_hash_does_not_depend_on_line_endings():
             options = dict(data_dir=root, paths=paths)
             statuses = [module.load_match(*args, **options).report["cache"] for module in (lf, crlf, lf, edited)]
             assert statuses == ["built", "reused", "reused", "built"], statuses
+    finally:
+        for name in names:
+            sys.modules.pop(name, None)
+
+
+def test_the_cache_is_keyed_on_the_parser_that_is_running():
+    """The key is the parser's hash from when it was imported, not what dfl.py holds when load_match is called.
+
+    A process that imported the parser before dfl.py changed (a notebook left open across a git pull, a long --dfl run,
+    a lane merged meanwhile) keeps running the old code, so its cache must describe that code: it neither rebuilds
+    because the file moved on, nor stamps the new file's hash on arrays that its old parser made.
+    """
+    names = ("dfl_copy_old", "dfl_copy_new")
+    try:
+        with tempfile.TemporaryDirectory() as folder, tempfile.TemporaryDirectory() as root:
+            paths, cache_folder = cache_setup(root)
+            options = dict(data_dir=root, paths=paths)
+            old = parser_copy(folder, names[0], "\n")
+            assert old.load_match("SYN001", **options).report["cache"] == "built"
+
+            with open(old.__file__, "a", encoding="utf-8", newline="") as handle:  # edited under the running process
+                handle.write("FPS = 26\n")  # a change of behaviour: the edited parser reads 26 frames a second
+            reused = old.load_match("SYN001", **options)
+            assert (reused.report["cache"], reused.fps) == ("reused", 25), \
+                "the running parser did not recognise the cache it built: it keyed on the file as it is now"
+
+            new = import_parser(old.__file__, names[1])  # a process that starts now runs the edited file
+            assert new.PARSER_SHA256 != old.PARSER_SHA256
+            rebuilt = new.load_match("SYN001", **options)
+            assert (rebuilt.report["cache"], rebuilt.fps) == ("built", 26), \
+                "the edited parser read a cache that the old parser built"
+            assert manifest_of(cache_folder)["parser_sha256"] == new.PARSER_SHA256
+
+            # The old process meets the new parser's cache. It rebuilds with the code it is running and says so in the
+            # manifest, with its own hash and not that of the file on disk: no later process is led to trust old arrays.
+            assert old.load_match("SYN001", **options).report["cache"] == "built"
+            assert manifest_of(cache_folder)["parser_sha256"] == old.PARSER_SHA256 != new.PARSER_SHA256
+
+            # And it does not read the file again: with dfl.py gone from disk a session still works.
+            os.remove(old.__file__)
+            assert old.load_match("SYN001", **options).report["cache"] == "reused"
     finally:
         for name in names:
             sys.modules.pop(name, None)
@@ -780,6 +836,11 @@ def test_match_cache_rebuilt_when_an_array_is_damaged():
             with open(target, "wb") as handle:  # a zip archive of arrays, which np.load opens as an NpzFile
                 np.savez(handle, ball_status=np.zeros(original.n_frames, dtype=np.int8))
 
+        def npz_cut_short():
+            buffer = io.BytesIO()
+            np.savez(buffer, ball_status=np.zeros(original.n_frames, dtype=np.int8))
+            write_bytes(buffer.getvalue()[:len(buffer.getvalue()) // 2])  # still starts with the zip signature
+
         # A version 1.0 .npy file: magic, version, a 2-byte header length, the header, then one byte per frame (int8).
         assert intact[:8] == b"\x93NUMPY\x01\x00", intact[:8]
         header_end = 10 + int.from_bytes(intact[8:10], "little")
@@ -788,7 +849,7 @@ def test_match_cache_rebuilt_when_an_array_is_damaged():
                  ("half the data missing", lambda: write_bytes(intact[:header_end + original.n_frames // 2])),
                  ("only the header", lambda: write_bytes(intact[:header_end])),
                  ("cut inside the header", lambda: write_bytes(intact[:20])),
-                 ("an .npz saved under the .npy name", save_as_npz),
+                 ("an .npz saved under the .npy name", save_as_npz), ("an .npz cut short", npz_cut_short),
                  ("not an array", lambda: write_bytes(b"this is not a numpy file")),
                  ("empty", lambda: write_bytes(b"")),
                  ("too few rows", lambda: save(np.zeros(original.n_frames - 1, dtype=np.int8))),
@@ -959,7 +1020,8 @@ def test_dfl_cache_equals_fresh_parse():
 
     Every other --dfl check reads the match through the cache, so this is the one that runs the parser itself on real
     data: if the parser changed and a stale cache were still being read, it would be seen here. (The cache key holds
-    the parser's own hash, which should make that impossible; this is the measurement that says it is.) The cache is
+    the hash of the parser that is running, which should make that impossible; this is the measurement that says it
+    is.) The cache is
     built first if it is not there, so that the match compared is one read back from disk; the fresh parse (about a
     minute) is dropped as soon as the two have been compared, so two matches, about 300 MB, are held only while they
     are.

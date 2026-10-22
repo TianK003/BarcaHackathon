@@ -123,8 +123,8 @@ over the first 60 s.
 Public data only (the DFL/IDSSE matches of P01). Command: `python pipeline/benchmark/selftest.py --dfl`, checks
 `test_dfl_parser_agrees_with_kloppy`, `test_dfl_second_half_spot_check`, `test_dfl_t30_facts`,
 `test_dfl_cache_equals_fresh_parse` and `test_dfl_all_matches_load`; the first parse of a match takes 42 to 64 s. The
-timeline is `pipeline/benchmark/dfl.py`'s: the first half, 25 separator rows, then the
-second half (J03WMX: 145,992 rows, the second half starts at row 70,733).
+timeline is `pipeline/benchmark/dfl.py`'s: the first half, 25 separator rows, then the second half (J03WMX: 145,992
+rows, the second half starts at row 70,733).
 
 - **kloppy, J03WMX, `only_alive=False, limit=5000`** (N 10,000 to 14,999, the first half only; 4,176 alive, 1,359
   with the home team in possession): the pitch length and width (2), ball x, y and z (5,000 each), alive or dead
@@ -164,9 +164,9 @@ parser refuses a possession that is not 1 or 2, so a clean parse is a 0 for that
 
 **Cost** (2026-10-23; Windows 11, local disk, Python 3.11.9). Every later stage reads a match through
 `dfl.load_match`, which keeps it as nine `.npy` files and a `manifest.json` in `data/cache/dfl/<match id>/`, keyed on
-the sha256 of both source files, the numpy and lxml versions, `CACHE_VERSION` and the sha256 of `dfl.py` itself.
-`test_dfl_all_matches_load` loads all seven twice, and `test_dfl_cache_equals_fresh_parse` compares J03WMX from the
-cache with a fresh parse (0 differences in all nine arrays, the scalars and the report):
+the sha256 of both source files, the numpy and lxml versions, `CACHE_VERSION` and the sha256 of `dfl.py` itself, taken
+when the module is imported. `test_dfl_all_matches_load` loads all seven twice, and `test_dfl_cache_equals_fresh_parse`
+compares J03WMX from the cache with a fresh parse (0 differences in all nine arrays, the scalars and the report):
 
 | | no cache (built) | cache (reused) |
 |---|---|---|
@@ -176,8 +176,8 @@ cache with a fresh parse (0 differences in all nine arrays, the scalars and the 
 | `test_dfl_t30_facts` | 297.8 s before the cache (one parse per match) | 4.7 s |
 
 - A reused match is read in under 2 s, almost all of it the sha256 of the two source files (the positions file is up
-  to 420 MB), which is what makes a stale cache impossible. The caches take 129 to 141 MB per match, 956 MB for the
-  seven.
+  to 420 MB), which is what keeps a cache from being read after its sources change. The caches take 129 to 141 MB per
+  match, 956 MB for the seven.
 - What the reused `--dfl` run still spends: kloppy's own loads (about 100 s), the fresh parse of the cache check (about
   50 s), the spot check's own pass over the file (about 34 s) and the 2.6 GB md5 check (about 10 s).
 

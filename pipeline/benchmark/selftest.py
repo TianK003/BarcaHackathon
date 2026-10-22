@@ -2,10 +2,11 @@
 
     python pipeline/benchmark/selftest.py           # synthetic checks only -- seconds, no data needed
     python pipeline/benchmark/selftest.py --dfl     # + the 21 downloaded DFL files: size and md5 (reads 2.6 GB),
-                                                    #   the 7 matches loaded through the cache, J03WMX cross-checked
-                                                    #   against kloppy and by frame number, and the T30 counts on all
-                                                    #   7 matches (about 8 minutes while the 7 caches are built under
-                                                    #   data/cache/dfl/, about 3 after that)
+                                                    #   the 7 matches loaded through the cache, J03WMX's cache
+                                                    #   compared with a fresh parse, J03WMX cross-checked against
+                                                    #   kloppy and by frame number, and the T30 counts on all 7
+                                                    #   matches (measured: 532 s while the 7 caches are built under
+                                                    #   data/cache/dfl/, 221 s after that)
     python pipeline/benchmark/selftest.py --data    # + checks that read the real match's data (aggregates only)
 
 This file is the harness and the one command: it collects the checks, filters them by flag, runs them and reports.
@@ -46,16 +47,26 @@ from pipeline.benchmark import checks  # noqa: E402
 from pipeline.benchmark.checks.common import NotRun, utf8_stdout  # noqa: E402
 
 
-def unlisted_modules(path=None, modules=None):
-    """The modules in the checks package that `modules` (default checks.MODULES) does not list, sorted by name.
+def module_list_problems(path=None, modules=None, package=None):
+    """What is wrong with the list of check modules, as sentences; an empty list if nothing is.
 
-    `path` is the folders to look in (default: the package's own). Every module there holds checks, and a module that
-    MODULES does not list would silently run none of them, so the harness refuses that. common.py is the exception: it
-    holds what the others share, and no check.
+    `modules` (default checks.MODULES) must be exactly the modules of `package` (default the checks package) that
+    are in the folders `path` (default the package's own), compared by their whole names. A module that is not listed
+    would silently run none of its checks, and a listed one that is not a module of the package (the production
+    module of the same name, say) would hide that. common.py is the exception: it holds what the others share, and no
+    check, so it may be left out.
     """
-    listed = {module.__name__.rsplit(".", 1)[-1] for module in (checks.MODULES if modules is None else modules)}
-    return sorted(info.name for info in pkgutil.iter_modules(checks.__path__ if path is None else path)
-                  if info.name != "common" and info.name not in listed)
+    package = checks.__name__ if package is None else package
+    listed = [module.__name__ for module in (checks.MODULES if modules is None else modules)]
+    present = sorted(info.name for info in pkgutil.iter_modules(checks.__path__ if path is None else path))
+    folder = package.replace(".", "/") + "/"
+    problems = ["{} has {}.py, which MODULES does not list, so its checks would never run; add it to MODULES in "
+                "{}__init__.py".format(folder, name, folder)
+                for name in present if name != "common" and package + "." + name not in listed]
+    problems += ["MODULES lists {}, which is not a module of {}; list the module of the same name in {} "
+                 "instead".format(name, package, folder)
+                 for name in listed if name.rsplit(".", 1)[0] != package or name.rsplit(".", 1)[-1] not in present]
+    return problems
 
 
 def collect(modules=None):
@@ -63,13 +74,12 @@ def collect(modules=None):
 
     A check is a function named test_* that the module defines itself: one it merely imports does not count. The
     names are unique across the modules, because the harness filters and orders by name alone. With the default
-    modules, a module of the package that MODULES does not list is a ValueError that names it.
+    modules, a list that is not exactly the modules of the checks package is a ValueError that says what is wrong
+    (module_list_problems).
     """
-    if modules is None and unlisted_modules():
-        raise ValueError("pipeline/benchmark/checks/ has {} that checks.MODULES does not list, so its checks would "
-                         "never run; add {} to MODULES in pipeline/benchmark/checks/__init__.py".format(
-                             ", ".join("{}.py".format(name) for name in unlisted_modules()),
-                             "it" if len(unlisted_modules()) == 1 else "them"))
+    problems = module_list_problems() if modules is None else []
+    if problems:
+        raise ValueError("; ".join(problems))
     found = {}
     for module in checks.MODULES if modules is None else modules:
         for name, value in vars(module).items():
@@ -119,9 +129,9 @@ def main(argv=None, modules=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--dfl", action="store_true",
                         help="also check the downloaded DFL files: size and md5 of all 21 (reads 2.6 GB), parse the 7 "
-                             "match information files, load the 7 matches through the cache, cross-check J03WMX "
-                             "against kloppy and by frame number, and count T30's facts on all 7 (about 8 minutes "
-                             "while the caches are built, about 3 after that)")
+                             "match information files, load the 7 matches through the cache, compare J03WMX's "
+                             "cache with a fresh parse, cross-check J03WMX against kloppy and by frame number, and "
+                             "count T30's facts on all 7 (measured: 532 s while the caches are built, 221 s after)")
     parser.add_argument("--data", action="store_true", help="also run the checks that read the real match's data")
     args = parser.parse_args(argv)
 
