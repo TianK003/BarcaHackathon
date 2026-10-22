@@ -11,23 +11,27 @@ P01 degrades the DFL matches until their tracking looks like ours (docs/proposal
 matters most: ours is missing on 40.7% of graded frames, in long gaps. Those gaps do not start at random. They cluster
 at the lines and on slow balls (A01; the calibration measures them as A07). So the benchmark places its ball gaps where
 our tracker loses the ball: a hazard fitted on our own match (A08) is carried to the benchmark matches, where it
-gives each frame a probability that a gap starts there, and sample_mask draws the gaps from it. This module is the
-maths of that and nothing else -- it reads no data and knows no match; the calibration fits it and the degrader uses it.
+gives each frame the probability that the next frame starts a gap, and sample_mask draws the gaps from it. This module
+is the maths of that and nothing else -- it reads no data and knows no match; the calibration fits it and the degrader
+uses it.
 
 A model small enough for 147 onsets: about six features and a logistic link, the standard discrete-time event-history
 model. numpy and nothing else (no scikit-learn, no scipy), so the pins stay as they are.
 
 Conventions
 -----------
-* One block is one graded half. Row i of every array is frame block_start + i; positions are in metres, NaN where the
-  tracker has nothing. Nothing here looks across the halftime break.
-* prob[s] is the probability that a gap starts AT frame s, i.e. that the ball is missing at s given it was visible
-  before. A hazard fitted on "the next frame starts a gap" (features at the last visible frame t, outcome at t + 1)
-  must be shifted one frame before it goes to sample_mask.
+* One block is one graded half. Row i of every array is frame block_start + i; positions are in metres with the origin
+  at a pitch corner (normalised coordinates times the pitch), NaN where the tracker has nothing. Nothing here looks
+  across the halftime break.
+* The event is "the next frame starts a gap", and everything is indexed by the at-risk frame r, the last visible frame:
+  the features of frame r, the fitted probability prob[r] = predict(model, features)[r], and sample_mask's prob,
+  onset_class and third at r. A gap that is placed after r occupies frames r + 1 ...; nobody shifts anything.
 * Gap lengths are frame counts (ints), never seconds: the caller converts.
 * Fits are deterministic and their stored floats rounded to 1e-9, because BLAS summation order differs between
   machines (CLAUDE.md, determinism). predict adds its terms column by column rather than with a matrix product, so
   the probabilities do not depend on the BLAS either.
+* A fit that has not converged is an error, never a model: a half-fitted hazard would flow unnoticed into the
+  calibration's go/no-go AUCs and into where the benchmark's gaps fall, just as a NaN AUC would flow into a comparison.
 """
 
 import math
@@ -45,7 +49,9 @@ NEAR_PLAYER_M = 3.0      # players_within_3m counts the players at most this far
 THIRD_EDGES = (15, 30)   # minutes of the half where the second and the last third of a duration table begin
 DECIMALS = 9             # a fitted model keeps this many decimals
 NEWTON_TOLERANCE = 1e-10  # Newton stops once no parameter moves by more than this
-MAX_CONDITION = 1e12      # a Hessian worse conditioned than this has no one solution (l2 = 0 and a repeated column)
+MAX_HALVINGS = 30         # a Newton step is halved at most this often (to 2^-30) to lower the penalised objective
+OBJECTIVE_SLACK = 1e-12   # relative: a step may raise the objective by this much, the noise of summing 90,000 terms
+MAX_CONDITION = 1.0 / np.finfo(np.float64).eps   # beyond this a Hessian is singular to working precision
 
 
 # -- features ---------------------------------------------------------------------------------------------------------
@@ -53,9 +59,13 @@ MAX_CONDITION = 1e12      # a Hessian worse conditioned than this has no one sol
 def features(ball_xy_m, players_xy_m, pitch, fps, block_start, kickoff):
     """(n, 6) table of FEATURES for one block; a row where the ball is missing is NaN in every column.
 
-    `ball_xy_m` (n, 2) and `players_xy_m` (n, P, 2) are in metres, NaN where missing (a position with one coordinate
-    NaN counts as missing). `pitch` is (length, width) in metres, `fps` the frame rate, `block_start` the video frame
-    of row 0 and `kickoff` the video frame of the half's kick-off.
+    `ball_xy_m` (n, 2) and `players_xy_m` (n, P, 2) are in metres with the ORIGIN AT A PITCH CORNER: x runs 0 to the
+    length, y 0 to the width, i.e. the normalised 0-1 coordinates of games.py and the DFL parser times the pitch.
+    DFL's native metres, measured from the centre of the pitch, would give wrong line distances without any error, so
+    convert first. NaN where missing (a position with one coordinate NaN counts as missing). `pitch` is (length,
+    width) in metres, `fps` the frame rate, `block_start` the video frame of row 0 and `kickoff` the video frame of
+    the half's kick-off. Row i is the at-risk frame r = i: the features of a frame say how likely the next frame is to
+    start a gap.
 
     line_distance_m   min(x, L - x, y, W - y): the distance to the nearest line, negative beyond it.
     beyond_line       1.0 where line_distance_m < 0 (strictly: a ball on a line is still in play), else 0.0.
@@ -137,7 +147,8 @@ def features(ball_xy_m, players_xy_m, pitch, fps, block_start, kickoff):
 
 def third_of_minute(minute):
     """0 for minute < 15, 1 for minute < 30, 2 otherwise (an int array): the third of the half that sample_mask's
-    duration table is indexed by. A minute before the kick-off is in the first third; NaN is refused."""
+    duration table is indexed by. Take it at the at-risk frame, like every per-frame argument of sample_mask. A minute
+    before the kick-off is in the first third; NaN is refused."""
     minute = np.asarray(minute, dtype=np.float64)
     if np.isnan(minute).any():
         raise ValueError("hazard.third_of_minute: minute has {} NaN; compute it from the frame numbers, which always "
@@ -162,15 +173,24 @@ class LogisticModel:
 
 
 def fit_logistic(X, y, l2=1.0, iterations=50):
-    """LogisticModel fitted to the (n, k) features X and the 0/1 outcomes y by Newton/IRLS.
+    """LogisticModel fitted to the (n, k) features X and the 0/1 outcomes y by damped Newton/IRLS.
 
     It minimises  -log-likelihood + l2 / 2 * |coef|^2  on features standardised by their mean and population SD
-    (ddof 0; a constant column keeps its value as its mean and gets a scale of 1, and so a coefficient of 0). The
-    intercept is not penalised. Newton runs from the base-rate intercept and zero coefficients for at most
-    `iterations` steps, and stops early once no parameter moves by more than 1e-10. The result is rounded to 1e-9.
+    (ddof 0). The mean and scale are rounded to 1e-9 first and the fit is made on the rounded ones, so that predict
+    reproduces exactly what was fitted. A constant column keeps its value as its mean and gets a scale of 1 and a
+    coefficient of 0. The intercept is not penalised. Newton runs from the base-rate intercept and zero coefficients
+    for at most `iterations` steps and stops once no parameter would move by more than 1e-10. Each step is halved, up to
+    30 times, until it does not raise the penalised objective: a plain Newton step overshoots, cycles or blows up on a
+    rare 0/1 column with a strong effect (a few onsets in a flagged sliver of the rows; coefficients of -88,000 were
+    seen on synthetic data of that shape). The result is rounded to 1e-9. The iteration count and the output are
+    deterministic.
 
     X must have no NaN: the caller chooses the at-risk rows. ValueError, naming what to change, for a bad shape, a NaN
-    or an outcome that is not 0 or 1, a single class, an l2 below 0, and (with l2 = 0) a Hessian that has no inverse.
+    or an outcome that is not 0 or 1, a single class, an l2 below 0, a column whose standard deviation rounds to 0, a
+    Hessian that is singular to working precision, and above all for a fit that has NOT converged in `iterations`
+    steps: a model that stopped half-way is never returned, because it would flow silently into the AUCs of the
+    calibration's go/no-go and into where the benchmark's gaps fall. The message gives the last step and suggests a
+    larger l2, which is what holds such a feature in check.
     """
     X = np.asarray(X, dtype=np.float64)
     y = np.asarray(y, dtype=np.float64)
@@ -197,39 +217,86 @@ def fit_logistic(X, y, l2=1.0, iterations=50):
         raise ValueError("hazard.fit_logistic: iterations must be an integer of at least 1, got {!r}"
                          .format(iterations))
 
+    # What is stored is what is fitted: round first, standardise by the rounded numbers.
     constant = X.max(axis=0) == X.min(axis=0)
-    mean = np.where(constant, X[0], X.mean(axis=0))
-    scale = np.where(constant, 1.0, X.std(axis=0))
-    design = np.column_stack([np.ones(n), (X - mean) / scale])
+    mean = _stored(np.where(constant, X[0], X.mean(axis=0)))
+    spread = X.std(axis=0)
+    scale = _stored(np.where(constant, 1.0, spread))
+    if (scale == 0.0).any():
+        column = int(np.flatnonzero(scale == 0.0)[0])
+        raise ValueError("hazard.fit_logistic: column {} of X has a standard deviation of {:.3g}, which rounds to 0 at "
+                         "1e-9 and cannot be stored as a scale (predict would divide by zero); drop the column, or "
+                         "express it in a unit in which it varies".format(column, spread[column]))
+    design = np.column_stack([np.ones(n), np.where(constant, 0.0, (X - mean) / scale)])
     penalty = np.full(k + 1, float(l2))
     penalty[0] = 0.0
 
     base_rate = y.mean()
     beta = np.zeros(k + 1)
     beta[0] = math.log(base_rate / (1.0 - base_rate))
-    for _ in range(int(iterations)):
+    current = _objective(design, y, penalty, beta)
+    last_step = math.inf
+    converged = False
+    for count in range(int(iterations)):
         p = _sigmoid(design @ beta)
         score = design.T @ (p - y) + penalty * beta
         curvature = (design.T * (p * (1.0 - p))) @ design + np.diag(penalty)
-        if not np.linalg.cond(curvature) < MAX_CONDITION:
-            raise ValueError("hazard.fit_logistic: the features are collinear (a column repeats another, or is a "
-                             "combination of the others), so the fit has no one answer; use l2 > 0 or drop the column")
+        try:
+            singular = not np.linalg.cond(curvature) < MAX_CONDITION
+        except np.linalg.LinAlgError:
+            singular = True
+        if singular:
+            raise ValueError("hazard.fit_logistic: the penalised Hessian is singular to working precision after {} "
+                             "steps. {}".format(count, "With l2 = 0 that means a column repeats another or is a "
+                                                "combination of the others: use l2 > 0 or drop it." if l2 == 0 else
+                                                "With l2 > 0 it means the probabilities saturated at 0 or 1: check "
+                                                "for a feature that separates the outcomes, or use a larger l2."))
         step = np.linalg.solve(curvature, score)
-        beta = beta - step
-        if np.abs(step).max() < NEWTON_TOLERANCE:
+        last_step = float(np.abs(step).max())
+        if last_step < NEWTON_TOLERANCE:
+            beta = beta - step
+            converged = True
             break
+        damping = 1.0
+        for _ in range(MAX_HALVINGS + 1):
+            candidate = beta - damping * step
+            value = _objective(design, y, penalty, candidate)
+            if value <= current + OBJECTIVE_SLACK * (1.0 + abs(current)):
+                break
+            damping /= 2.0
+        else:
+            raise ValueError("hazard.fit_logistic: after {} steps no step down to 2^-{} of a Newton step lowers the "
+                             "penalised objective (the last full step was {:.3g}); the fit is numerically flat or "
+                             "the features are extreme: use a larger l2".format(count, MAX_HALVINGS, last_step))
+        beta, current = candidate, value
+    if not converged:
+        raise ValueError("hazard.fit_logistic: no convergence in {} Newton steps (the last step still moved a "
+                         "parameter by {:.3g}, against a tolerance of {:g}); use a larger l2, which is what holds a "
+                         "rare or strongly predictive feature in check, or allow more iterations"
+                         .format(iterations, last_step, NEWTON_TOLERANCE))
 
-    def stored(values):
-        values = np.round(values, DECIMALS) + 0.0   # + 0.0 turns a negative zero into 0.0
-        values.setflags(write=False)
-        return values
+    return LogisticModel(coef=_stored(beta[1:]), intercept=float(_stored(beta[:1])[0]), mean=mean, scale=scale)
 
-    return LogisticModel(coef=stored(beta[1:]), intercept=float(np.round(beta[0], DECIMALS) + 0.0), mean=stored(mean),
-                         scale=stored(scale))
+
+def _stored(values):
+    """`values` rounded to DECIMALS places, read-only, with no negative zero (+ 0.0 turns -0.0 into 0.0)."""
+    values = np.round(values, DECIMALS) + 0.0
+    values.setflags(write=False)
+    return values
+
+
+def _objective(design, y, penalty, beta):
+    """The penalised negative log-likelihood, sum(log(1 + e^z) - y z) + sum(penalty * beta^2) / 2, z = design @ beta."""
+    z = design @ beta
+    return float(np.sum(np.logaddexp(0.0, z) - y * z) + 0.5 * np.dot(penalty * beta, beta))
 
 
 def predict(model, X):
-    """The model's probability for each row of the (n, k) features X; a row with a NaN gives NaN."""
+    """The model's probability for each row of the (n, k) features X; a row with a NaN gives NaN.
+
+    For the features of frame r (features(...)[r]) it is the probability that frame r + 1 starts a gap, which is what
+    sample_mask's `prob[r]` wants: pass it on as it is.
+    """
     X = np.asarray(X, dtype=np.float64)
     coef = np.asarray(model.coef, dtype=np.float64)
     if X.ndim != 2:
@@ -290,18 +357,28 @@ def auc(scores, labels):
 def sample_mask(prob, onset_class, third, durations, rng):
     """Bool mask of one block (True = ball missing) with gaps drawn from the per-frame onset probability `prob`.
 
-    prob         (n,) in [0, 1): the probability that a gap starts at each frame (see the module docstring).
-    onset_class  (n,) ints: 1 where an onset would be near a line, 0 otherwise.
-    third        (n,) ints: 0, 1 or 2 for the first, second and last third of the half (third_of_minute).
+    All three per-frame arguments are indexed by the at-risk frame r: the last visible frame, where the ball is seen
+    and a gap may start on the NEXT frame. That is how the hazard is fitted (features at r, outcome "frame r + 1 starts
+    a gap"), so predict's output goes in as it is and nothing is shifted.
+
+    prob         (n,) in [0, 1): the probability that frame r + 1 starts a gap, given the ball is visible at r.
+    onset_class  (n,) ints, read at r: 1 where an onset would be near a line, 0 otherwise.
+    third        (n,) ints, read at r: 0, 1 or 2 for the first, second and last third of the half (third_of_minute).
     durations    durations[onset_class][third]: a non-empty 1-D int array of gap lengths in frames, each at least 1.
     rng          a numpy Generator.
 
-    From t = 0: draw E ~ Exponential(1); the onset is the first frame s >= t where L(s) - L(t - 1) >= E, with L the
-    running sum of -log(1 - prob) (the exact inverse transform for a discrete-time hazard, by np.searchsorted); draw
-    the length d of the gap from durations[onset_class[s]][third[s]]; mark frames s ... s + d - 1, cut at the end of
-    the block; continue from t = s + d, so that no onset falls inside a gap. It stops once no onset falls in the block.
-    The draws are exactly one rng.exponential(1.0) then one rng.choice(options) per gap, plus a last exponential that
-    overshoots the block, so a seeded Generator gives the same gaps on every machine.
+    From t = 0 (frame 0 is visible by construction): draw E ~ Exponential(1); the event is the first frame r >= t where
+    L(r) - L(t - 1) >= E, with L the running sum of -log(1 - prob) (the exact inverse transform for a discrete-time
+    hazard, by np.searchsorted); draw the length d of the gap from durations[onset_class[r]][third[r]]; mark frames
+    r + 1 ... r + d, cut at the end of the block; continue from t = r + 1 + d, the first visible frame after the gap,
+    which is at risk again. So no event falls inside a gap and two gaps never fuse: at least one visible frame (t
+    itself) separates them. An event on the last frame leaves nothing to mark. It stops once no event falls in the
+    block.
+
+    The draws are exactly one rng.exponential(1.0) then one rng.choice(options) per event, in that order, plus one
+    more exponential that overshoots the block when the last gap ended inside it (or when there was no gap at all).
+    When the last gap runs off the end of the block, or the event is on the last frame, no further draw is made. A
+    seeded Generator therefore gives the same gaps on every machine.
     """
     prob = np.asarray(prob, dtype=np.float64)
     if prob.ndim != 1:
@@ -310,7 +387,7 @@ def sample_mask(prob, onset_class, third, durations, rng):
     n = prob.size
     if np.isnan(prob).any():
         raise ValueError("hazard.sample_mask: prob has {} NaN; give 0 where no gap can start, for instance where the "
-                         "features are undefined".format(int(np.isnan(prob).sum())))
+                         "ball is missing already or the features are undefined".format(int(np.isnan(prob).sum())))
     if prob.min(initial=0.0) < 0.0 or prob.max(initial=0.0) >= 1.0:
         raise ValueError("hazard.sample_mask: prob must lie in [0, 1); a probability of 1 has an infinite hazard "
                          "(cap it, e.g. at 1 - 1e-9)")
@@ -323,12 +400,12 @@ def sample_mask(prob, onset_class, third, durations, rng):
     t = 0
     while t < n:
         base = cumulative[t - 1] if t else 0.0
-        start = t + int(np.searchsorted(cumulative[t:], base + rng.exponential(1.0), side="left"))
-        if start >= n:
+        at_risk = t + int(np.searchsorted(cumulative[t:], base + rng.exponential(1.0), side="left"))
+        if at_risk >= n:
             break
-        length = int(rng.choice(table[onset_class[start]][third[start]]))
-        mask[start:start + length] = True
-        t = start + length
+        length = int(rng.choice(table[onset_class[at_risk]][third[at_risk]]))
+        mask[at_risk + 1:at_risk + 1 + length] = True
+        t = at_risk + 1 + length
     return mask
 
 

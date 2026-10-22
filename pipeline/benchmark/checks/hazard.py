@@ -58,6 +58,36 @@ def synthetic_rows(seed, n, coef, intercept, means, spreads):
     return X, y
 
 
+def rare_flag_rows(seed, n, prevalence, odds_ratio, events=147):
+    """Two continuous features and one rare 0/1 flag with the given odds ratio, in n rows with about `events` onsets.
+
+    The shape of our own data: 147 onsets in the ball-visible frames of one match, a few of them in a flagged sliver
+    of the rows. The intercept is found by bisection so that the expected number of onsets is `events`. Returns the
+    features (flag last), the outcomes, and the true probabilities, whose information gives the sampling error.
+    """
+    rng = np.random.default_rng(seed)
+    flag = (rng.uniform(size=n) < prevalence).astype(float)
+    continuous = rng.normal(size=(n, 2))
+    linear = 0.5 * continuous[:, 0] - 0.3 * continuous[:, 1] + math.log(odds_ratio) * flag
+    low, high = -20.0, 5.0
+    for _ in range(80):   # the expected count rises with the intercept
+        middle = (low + high) / 2.0
+        low, high = (low, middle) if sigmoid(middle + linear).sum() > events else (middle, high)
+    p = sigmoid(middle + linear)
+    return np.column_stack([continuous, flag]), (rng.uniform(size=n) < p).astype(float), p
+
+
+def sampling_errors(X, p):
+    """Standard errors of the three raw coefficients at the TRUE probabilities p, from the information X'WX.
+
+    Taken at the truth and not at the estimate on purpose: at a wild estimate (a coefficient of -88,000) the curvature
+    vanishes and the errors explode, which would let exactly the failure this is meant to catch pass.
+    """
+    design = np.column_stack([np.ones(len(X)), X])
+    information = (design.T * (p * (1.0 - p))) @ design
+    return np.sqrt(np.diag(np.linalg.inv(information)))[1:]
+
+
 class ScriptedRng:
     """Stands in for a Generator: exponential() returns the scripted draws (then 1e9, which ends any block), choice()
     takes the first option; every call is logged, so a check can see the order in which the sampler draws."""
@@ -247,6 +277,12 @@ def test_hazard_fit_logistic_reaches_the_penalised_optimum():
     for l2 in (0.0, 1.0, 5.0, 40.0):
         model = hazard.fit_logistic(X, y, l2=l2)
         assert np.abs(gradient(model, X, y, l2)).max() < 1e-5, (l2, gradient(model, X, y, l2))
+    # A feature in tiny units (SD 4e-7): its scale is stored rounded to 1e-9, a 0.1% change of the number, so a fit
+    # made with the unrounded SD but stored with the rounded one has a gradient of about 5e-4 in the stored space.
+    X, y = synthetic_rows([15, 13], 300, [1.5e6, -0.6], 0.2, [0.0, 1.0], [4e-7, 1.0])
+    for l2 in (1.0, 40.0):
+        model = hazard.fit_logistic(X, y, l2=l2)
+        assert np.abs(gradient(model, X, y, l2)).max() < 1e-5, (l2, gradient(model, X, y, l2))
     # The rare-event case the hazard is really fitted on: about 0.4% of rows are onsets.
     X, y = synthetic_rows([15, 3], 20_000, [0.8, -0.6, 0.3], -5.5, [0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
     assert 0.001 < y.mean() < 0.02, y.mean()
@@ -257,6 +293,28 @@ def test_hazard_fit_logistic_reaches_the_penalised_optimum():
     flat = hazard.fit_logistic(X, y, l2=1e9)
     assert np.abs(flat.coef).max() < 1e-4, flat.coef
     assert abs(flat.intercept - math.log(y.mean() / (1 - y.mean()))) < 1e-3, flat.intercept
+
+
+def test_hazard_fit_logistic_converges_on_a_rare_strong_flag():
+    # The case plain Newton cannot do: about 147 onsets in 90,000 rows and a 0/1 flag on 0.3% to 4% of the rows whose
+    # odds ratio is 12 to 64 (the features of every other check are continuous). The first Newton step overshoots, and
+    # the next ones cycle (the flag's coefficient went 3.7, -4,388, 549, ...) or saturate the probabilities: the first
+    # version of this fit returned a coefficient of -88,000 on some of these and refused the rest as "collinear".
+    # Halving each step until the penalised objective does not rise converges in at most 8 steps on all of them, so
+    # 15 are allowed here, and a fit that has not converged would raise.
+    for index, (prevalence, odds_ratio) in enumerate(((0.003, 20), (0.01, 12), (0.01, 64), (0.04, 20))):
+        X, y, p = rare_flag_rows([15, 12, index], 90_000, prevalence, odds_ratio)
+        model = hazard.fit_logistic(X, y, iterations=15)
+        # It is the optimum: the penalised gradient vanishes (measured at most 2.3e-6 on these four; the 1e-9 rounding
+        # of the stored parameters meets a curvature of up to about 1e4).
+        assert np.abs(gradient(model, X, y, 1.0)).max() < 1e-5, (prevalence, odds_ratio, gradient(model, X, y, 1.0))
+        # And it is the right optimum: each coefficient, per unit of its feature, is within 3 sampling standard errors
+        # of the truth (the flag's is 0.2 to 0.4 here, i.e. a tolerance of 0.5 to 1.1 on the log odds ratio; the
+        # measured errors are at most 1.9 standard errors).
+        found = model.coef / model.scale
+        truth = np.array([0.5, -0.3, math.log(odds_ratio)])
+        errors = sampling_errors(X, p)
+        assert np.all(np.abs(found - truth) <= 3 * errors), (prevalence, odds_ratio, found, truth, errors)
 
 
 def test_hazard_fit_logistic_standardises_and_rounds():
@@ -281,10 +339,18 @@ def test_hazard_fit_logistic_standardises_and_rounds():
     moved = hazard.fit_logistic(X * [3.0, 0.01, 1.0] + [7.0, -2.0, 0.0], y)
     assert np.allclose(hazard.predict(model, X), hazard.predict(moved, X * [3.0, 0.01, 1.0] + [7.0, -2.0, 0.0]),
                        rtol=0, atol=1e-6)
-    # `iterations` caps the Newton steps: one step is not the optimum, and by 50 it has stopped moving.
-    assert not np.allclose(hazard.fit_logistic(X, y, iterations=1).coef, model.coef, rtol=0, atol=1e-4)
+    # `iterations` caps the Newton steps, and a fit that is not done by then is refused, never returned: one step is not
+    # the optimum. The error gives the size of the last step and suggests a larger l2. By 50 steps this fit has
+    # stopped moving, so more steps change nothing.
+    expect_error(ValueError, lambda: hazard.fit_logistic(X, y, iterations=1), "hazard.fit_logistic", "no convergence",
+                 "1 Newton steps", "moved a parameter by", "larger l2")
     long = hazard.fit_logistic(X, y, iterations=200)
     assert np.array_equal(long.coef, model.coef) and long.intercept == model.intercept
+    # The mean and the scale that are stored are the ones the fit used (the optimum check above has a column in tiny
+    # units for that), so a column whose SD rounds to 0 at 1e-9 is refused: predict would divide by zero.
+    tiny = X.copy()
+    tiny[:, 1] = 1.0 + 1e-12 * rng.normal(size=40)
+    expect_error(ValueError, lambda: hazard.fit_logistic(tiny, y), "hazard.fit_logistic", "column 1", "rounds to 0")
 
 
 def test_hazard_fit_logistic_refuses_what_it_cannot_fit():
@@ -298,9 +364,12 @@ def test_hazard_fit_logistic_refuses_what_it_cannot_fit():
     expect_error(ValueError, lambda: hazard.fit_logistic(X, np.zeros(60)), "hazard.fit_logistic", "both")
     expect_error(ValueError, lambda: hazard.fit_logistic(X, y, l2=-1.0), "hazard.fit_logistic", "l2")
     expect_error(ValueError, lambda: hazard.fit_logistic(X, y, iterations=0), "hazard.fit_logistic", "iterations")
-    # Two identical columns and no penalty: there is no one answer, and the error says what to change.
-    expect_error(ValueError, lambda: hazard.fit_logistic(np.column_stack([X[:, 0], X[:, 0]]), y, l2=0.0),
-                 "hazard.fit_logistic", "l2")
+    # Two identical columns and no penalty: the Hessian is singular, there is no one answer, and the error says so and
+    # what to change. With a penalty the same columns are fine: it splits the weight between them.
+    twin = np.column_stack([X[:, 0], X[:, 0]])
+    expect_error(ValueError, lambda: hazard.fit_logistic(twin, y, l2=0.0), "hazard.fit_logistic", "singular",
+                 "repeats another", "l2 > 0")
+    assert np.allclose(hazard.fit_logistic(twin, y).coef[0], hazard.fit_logistic(twin, y).coef[1], atol=1e-6)
 
 
 def test_hazard_predict_applies_the_stored_standardisation():
@@ -367,48 +436,67 @@ def test_hazard_third_of_minute_cuts_at_15_and_30():
 
 
 def test_hazard_sample_mask_follows_the_cumulative_hazard():
-    # prob = UNIT_HAZARD makes the cumulative hazard L(s) = s + 1, so an onset draw E lands on the first frame s with
-    # L(s) - L(t - 1) >= E, t being where the last gap ended (0 at the start). Every number below is worked out by hand.
+    # prob = UNIT_HAZARD makes the cumulative hazard L(r) = r + 1. The event is the first at-risk frame r >= t with
+    # L(r) - L(t - 1) >= E, t being the first visible frame after the last gap (0 at the start); the gap then occupies
+    # r + 1 ... r + d, and its length is looked up at r. Every number below is worked out by hand.
     durations = [[np.array([3]), np.array([4]), np.array([5])],     # onset_class 0, the three thirds
                  [np.array([6]), np.array([7]), np.array([8])]]     # onset_class 1
     n = 30
     prob = np.full(n, UNIT_HAZARD)
-    # Distinct classes and thirds on the neighbours of each onset, so that a lookup one frame off picks another length.
+    # Class and third differ on both neighbours of each event frame (2, 7 and 27), so a lookup made one frame early or
+    # late (at the first missing frame, say) picks another length: the lengths at 1, 2, 3 are 8, 3, 7; at 6, 7, 8
+    # 5, 7, 3; at 26, 27, 28 6, 5, 7.
     onset_class = np.zeros(n, dtype=np.int64)
-    onset_class[[1, 3, 6, 26, 28]] = 1
+    onset_class[[1, 3, 7, 26, 28]] = 1
     third = np.zeros(n, dtype=np.int64)
-    third[6] = third[28] = 1
-    third[[7, 27]] = 2
-    rng = ScriptedRng([2.5, 1.2, 14.5])
+    third[[1, 6, 27]] = 2
+    third[[3, 7, 28]] = 1
+    rng = ScriptedRng([2.5, 1.2, 12.5])
     mask = hazard.sample_mask(prob, onset_class, third, durations, rng)
-    # E = 2.5: L(2) = 3 >= 2.5 > L(1) = 2, so the onset is frame 2 (class 0, first third: 3 frames) -> missing 2..4.
-    # E = 1.2 from t = 5: L(s) - L(4) = s - 4 >= 1.2 -> frame 6 (class 1, second third: 7 frames) -> missing 6..12.
-    # E = 14.5 from t = 13: L(s) - L(12) = s - 12 >= 14.5 -> frame 27 (class 0, last third: 5 frames), cut at 30.
+    # E = 2.5 from t = 0: L(2) = 3 >= 2.5 > L(1) = 2, so r = 2 (class 0, first third: 3 frames) -> missing 3, 4, 5.
+    # E = 1.2 from t = 6: L(r) - L(5) = r - 5 >= 1.2 -> r = 7 (class 1, second third: 7 frames) -> missing 8 ... 14.
+    # E = 12.5 from t = 15: L(r) - L(14) = r - 14 >= 12.5 -> r = 27 (class 0, last third: 5 frames) -> 28 ... 32, cut
+    # at 30, so 28 and 29.
     expected = np.zeros(n, dtype=bool)
-    expected[2:5] = expected[6:13] = expected[27:] = True
+    expected[3:6] = expected[8:15] = expected[28:] = True
     assert mask.dtype == bool and mask.shape == (n,), (mask.dtype, mask.shape)
-    assert np.array_equal(mask, expected), np.flatnonzero(mask)
+    assert np.array_equal(mask, expected), runs_of_true(mask)
     # The order of the draws is part of the contract (a stream seeded the same way must give the same gaps): an
-    # exponential, then a length, per onset, and nothing more once the last gap runs off the end of the block.
+    # exponential, then a length, per event, and nothing more once the last gap runs off the end of the block.
     assert rng.log == [("exponential", 1.0), ("choice", [3]), ("exponential", 1.0), ("choice", [7]),
                        ("exponential", 1.0), ("choice", [5])], rng.log
 
-    # A draw that overshoots the block ends the sampling: one onset, then one exponential that finds no frame.
+    # Gaps never fuse: an event on the very first frame after a gap leaves that frame visible. E = 2.5 gives r = 2 and
+    # the gap 3, 4, 5; then E = 0.5 from t = 6: L(6) - L(5) = 1 >= 0.5, so r = 6 (class 0, last third: 5 frames) and
+    # the gap 7 ... 11. Frame 6 stays visible between them.
+    mask = hazard.sample_mask(prob[:20], onset_class[:20], third[:20], durations, ScriptedRng([2.5, 0.5]))
+    assert runs_of_true(mask) == [(3, 6), (7, 12)], runs_of_true(mask)
+
+    # A gap cannot start on frame 0, which is visible by construction: the earliest event is r = 0, the gap frame 1.
+    mask = hazard.sample_mask(prob[:12], onset_class[:12], third[:12], durations, ScriptedRng([0.5]))
+    assert runs_of_true(mask) == [(1, 4)], runs_of_true(mask)   # r = 0: class 0, first third -> 3 frames
+
+    # An event on the last frame has nothing to mark, but still draws its length, and then nothing more is drawn.
+    rng = ScriptedRng([11.5])   # L(11) = 12 >= 11.5 > L(10) = 11
+    mask = hazard.sample_mask(prob[:12], onset_class[:12], third[:12], durations, rng)
+    assert not mask.any() and rng.log == [("exponential", 1.0), ("choice", [3])], rng.log
+
+    # A draw that overshoots the block ends the sampling: one event, then one exponential that finds no frame.
     rng = ScriptedRng([2.5])
     mask = hazard.sample_mask(prob[:12], onset_class[:12], third[:12], durations, rng)
-    assert np.flatnonzero(mask).tolist() == [2, 3, 4], np.flatnonzero(mask)
+    assert runs_of_true(mask) == [(3, 6)], runs_of_true(mask)
     assert [call for call, _ in rng.log] == ["exponential", "choice", "exponential"], rng.log
 
-    # The condition is "L(s) - L(t - 1) >= E": a draw that lands exactly on a cumulative value picks that frame, not the
+    # The condition is "L(r) - L(t - 1) >= E": a draw that lands exactly on a cumulative value picks that frame, not the
     # next. (A continuous draw never does; the scripted one is the cumulative sum itself, at frame 4.)
     exact = float(np.cumsum(-np.log1p(-prob))[4])
     mask = hazard.sample_mask(prob[:12], onset_class[:12], third[:12], durations, ScriptedRng([exact]))
-    assert runs_of_true(mask) == [(4, 7)], runs_of_true(mask)   # frame 4: class 0, first third -> 3 frames
+    assert runs_of_true(mask) == [(5, 8)], runs_of_true(mask)   # r = 4: class 0, first third -> 3 frames
 
     # Frames with no hazard are skipped: the first frame whose cumulative hazard reaches E is 10 (L = 1 there).
     quiet_start = np.concatenate([np.zeros(10), np.full(10, UNIT_HAZARD)])
     mask = hazard.sample_mask(quiet_start, onset_class[:20], third[:20], durations, ScriptedRng([0.5]))
-    assert runs_of_true(mask) == [(10, 13)], runs_of_true(mask)   # frame 10, class 0, first third -> 3 frames
+    assert runs_of_true(mask) == [(11, 14)], runs_of_true(mask)   # r = 10: class 0, first third -> 3 frames
     # No hazard anywhere: no gap, and the one draw made finds nothing.
     rng = ScriptedRng([0.5])
     assert not hazard.sample_mask(np.zeros(20), onset_class[:20], third[:20], durations, rng).any()
@@ -417,13 +505,14 @@ def test_hazard_sample_mask_follows_the_cumulative_hazard():
 
 
 def test_sample_mask_deterministic_and_rate():
-    # With a constant hazard p and one gap length d, an onset waits Geometric(p) frames (mean 1 / p; the onset may be
-    # the very frame the last gap ended on, so the wait counted before it is 1 / p - 1) and the gap then takes d. These
-    # cycles renew, so over T frames the expected number of onsets is T / mu with
-    #     mu = 1 / p - 1 + d,    and its variance is T * sigma^2 / mu^3  with  sigma^2 = Var(wait) = (1 - p) / p^2.
-    # (The standard renewal-count asymptotics; edge effects are a count or two, far below the 3 sigma allowed.)
+    # With a constant hazard p and one gap length d, an event waits G ~ Geometric(p) at-risk frames (the first frame
+    # counts, so E[G] = 1 / p and Var[G] = (1 - p) / p^2), and then the gap takes d frames, after which the next
+    # at-risk frame comes at once. So the cycles are G + d, they renew, and over T frames the expected number of
+    # events is T / mu, with variance T * sigma^2 / mu^3 (the standard renewal-count asymptotics), where
+    #     mu = 1 / p + d,    sigma^2 = (1 - p) / p^2.
+    # Edge effects are a count or two, far below the 3 sigma allowed.
     p, d, blocks, frames = RATE_P, RATE_D, RATE_BLOCKS, RATE_FRAMES
-    mu = 1.0 / p - 1.0 + d
+    mu = 1.0 / p + d
     total = blocks * frames
     expected = total / mu
     sigma = math.sqrt(total * ((1.0 - p) / p ** 2) / mu ** 3)
@@ -438,9 +527,11 @@ def test_sample_mask_deterministic_and_rate():
     masks, onsets = zip(*(draw(block) for block in range(blocks)))
     count = sum(onsets)
     assert abs(count - expected) <= 3 * sigma, (count, expected, sigma)
-    # Gaps never overlap, and only the last one in a block can be cut by the block's end.
+    # Gaps never overlap, and only the last one in a block can be cut by the block's end (by up to d frames: an event
+    # on the very last frame has all of its gap beyond the block).
     masked = sum(int(mask.sum()) for mask in masks)
-    assert d * count - (d - 1) * blocks <= masked <= d * count, (masked, count)
+    assert d * count - d * blocks <= masked <= d * count, (masked, count)
+    assert not any(mask[0] for mask in masks)   # the first frame is visible by construction
     # The same seed gives the same mask, byte for byte; another seed gives another.
     again, _ = draw(0)
     assert again.tobytes() == masks[0].tobytes() and again.dtype == bool
@@ -455,14 +546,18 @@ def test_hazard_sample_mask_starts_only_where_the_hazard_is_positive():
     for seed in range(5):
         mask = hazard.sample_mask(prob, zeros, zeros, constant_durations(d), np.random.default_rng([15, 9, seed]))
         runs = runs_of_true(mask)
-        assert runs and runs[0][0] >= 2000 and runs[-1][1] <= 3000 + d, runs   # about 50 onsets expected in there
-    # No onset falls inside a gap: with a hazard high enough to chain gaps, every run is a whole number of them.
+        # About 50 events fall in the window; each is an at-risk frame r in 2000 ... 2999 and its gap starts at r + 1.
+        assert runs and runs[0][0] >= 2001 and runs[-1][1] <= 3000 + d, runs
+        assert all(stop - start == d for start, stop in runs), runs
+    # No event falls inside a gap and no two gaps fuse: with a hazard high enough to chain gaps, every run is exactly
+    # one gap long (the last one may be cut by the end of the block). A multiple of d would mean fused gaps.
     n = 5000
     dense = np.full(n, 0.3)
     mask = hazard.sample_mask(dense, np.zeros(n, dtype=np.int64), np.zeros(n, dtype=np.int64), constant_durations(5),
                               np.random.default_rng([15, 9, 99]))
     runs = runs_of_true(mask)
-    assert len(runs) > 100 and all((stop - start) % 5 == 0 for start, stop in runs[:-1]), runs[:5]
+    assert len(runs) > 100 and not mask[0], len(runs)
+    assert all(stop - start == 5 for start, stop in runs[:-1]) and runs[-1][1] - runs[-1][0] <= 5, runs[:5]
 
 
 def test_hazard_sample_mask_refuses_bad_input():
