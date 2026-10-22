@@ -1,17 +1,20 @@
-"""Checks of the DFL parsers (pipeline/benchmark/dfl.py): the synthetic match, then the downloaded ones with --dfl.
+"""Checks of the DFL parsers and of the cache of parsed matches (pipeline/benchmark/dfl.py), synthetic and --dfl.
 
-The synthetic checks read a match written by write_synthetic_dfl in the real file format, so they need no download.
-The test_dfl_* checks need the 21 downloaded files and run only with --dfl. Nothing here prints a row of the real
-match's data: the DFL files are public (CC BY 4.0), so their aggregates may be printed freely.
+The synthetic checks (the two parsers, and load_match with its cache) read a match written by write_synthetic_dfl in
+the real file format, so they need no download. The test_dfl_* checks need the 21 downloaded files and run only with
+--dfl. Nothing here prints a row of the real match's data: the DFL files are public (CC BY 4.0), so their aggregates
+may be printed freely.
 """
 
 import contextlib
 import dataclasses
+import hashlib
 import importlib
 import json
 import math
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import time
@@ -33,11 +36,13 @@ HALF_START_N = {1: 10000, 2: 100000}  # J03WMX's first frame number in each half
 GAP_ROWS = 25                         # separator rows between the halves, as the plan fixes it (not read from dfl)
 SPOT_FRAMES = 200                     # frame numbers drawn from each half for the spot check
 # What docs/traps.md T30 and results.md A05 quote of kloppy's first KLOPPY_LIMIT frames of J03WMX (measured 2026-10-22):
-# of the 5,000 frames with only_alive=False, how many are alive and how many have the home team in possession; and
-# with the default only_alive=True, the frames it returned, the range of N they cover, the rows in that range and the
-# dead rows it dropped from it (5,000 + 824 = 5,824 = 15,823 - 10,000 + 1).
-KLOPPY_FACTS = {"alive": 4176, "home": 1359, "default_frames": 5000, "default_first": 10000, "default_last": 15823,
-                "default_rows": 5824, "default_dropped": 824}
+# of the 5,000 frames with only_alive=False, how many are alive and how many have the home team in possession, how
+# many players kloppy's first frame has (each one's team is compared) and how many x and y values of the 3 players
+# that are followed (2 x 3 x 5,000) were compared; and with the default only_alive=True, the frames it returned, the
+# range of N they cover, the rows in that range and the dead rows it dropped from it (5,000 + 824 = 5,824 =
+# 15,823 - 10,000 + 1).
+KLOPPY_FACTS = {"alive": 4176, "home": 1359, "players": 22, "player_xy_values": 30000, "default_frames": 5000,
+                "default_first": 10000, "default_last": 15823, "default_rows": 5824, "default_dropped": 824}
 # What docs/traps.md T30 and results.md A05 quote, measured through our parser on each match (2026-10-22): the ball
 # frames, the rows with no ball frame (kloppy skips them), the ball frames with no BallPossession (it turns them into
 # the away team), the ball frames with no BallStatus, the X, Y, S and Z that are missing on any frame, and the dead
@@ -488,6 +493,16 @@ def test_positions_rejects_damaged_files():
          ["starts inside", PERSON_REFEREE, PERSON_UNLISTED, "positions file", "--verify"])])
 
 
+def test_the_structural_refusals_give_the_advice_once():
+    """A FrameSet in a FrameSet and a <Frame> outside any: what is wrong, then the one piece of advice, not two."""
+    from pipeline.benchmark import dfl
+    for damage in (insert_after("</MetaData>\n", '<Frame N="1" />\n'), open_the_first_frameset):
+        with tempfile.TemporaryDirectory() as folder:
+            info, path = positions_of(folder, damage)
+            message = expect_error(ValueError, lambda: dfl.parse_positions(path, info), dfl.VERIFY_ADVICE)
+            assert message.count("download is") == 1 and message.count("--verify") == 1, message
+
+
 def test_positions_names_a_missing_file():
     from pipeline.benchmark import dfl
     with tempfile.TemporaryDirectory() as folder:
@@ -499,7 +514,8 @@ def test_positions_names_a_missing_file():
 
 # -- the cache: dfl.load_match ----------------------------------------------------------------------------------------
 
-MANIFEST_KEYS = ["cache_version", "fps", "graded", "kickoffs", "match_id", "parsed_with", "pitch", "report", "sources"]
+MANIFEST_KEYS = ["cache_version", "fps", "graded", "kickoffs", "match_id", "parsed_with", "parser_sha256", "pitch",
+                 "report", "sources"]
 CACHE_FILES = sorted(["{}.npy".format(name) for name in MATCH_ARRAYS] + ["manifest.json"])
 
 
@@ -554,6 +570,12 @@ def edit_manifest(folder, change):
         handle.write("\n")
 
 
+def manifest_of(folder):
+    """The cache's manifest.json, parsed."""
+    with open(os.path.join(folder, "manifest.json"), encoding="utf-8") as handle:
+        return json.load(handle)
+
+
 def test_match_cache_built_then_reused():
     from lxml import etree
     from pipeline.benchmark import dfl
@@ -576,6 +598,8 @@ def test_match_cache_built_then_reused():
         assert manifest["sources"] == {"information": describe_source(paths["information"]),
                                        "positions": describe_source(paths["positions"])}
         assert manifest["parsed_with"] == {"numpy": np.__version__, "lxml": etree.__version__}
+        with open(dfl.__file__, "rb") as handle:  # the parser is this very file, read here by a pass of its own
+            assert manifest["parser_sha256"] == hashlib.sha256(handle.read()).hexdigest(), manifest["parser_sha256"]
         assert "cache" not in manifest["report"], "how a match was reached must not be stored with it"
         assert manifest_bytes.endswith(b"}\n") and b"\r" not in manifest_bytes, "LF line endings, one final newline"
         stamp = os.stat(manifest_path).st_mtime_ns
@@ -629,6 +653,44 @@ def test_match_cache_rebuilt_when_source_changes():
             assert load_synthetic(root, paths).report["cache"] == "reused", "{}: the new manifest".format(label)
 
 
+def test_match_cache_rebuilt_when_the_parser_changes():
+    """The parser is part of the key: an edit to dfl.py can never be read through a cache that an older one built."""
+    from pipeline.benchmark import dfl
+    with tempfile.TemporaryDirectory() as root:
+        paths, folder = cache_setup(root)
+        first = load_synthetic(root, paths)
+        assert first.report["cache"] == "built"
+        real_hash = dfl._parser_sha256
+        assert real_hash() == manifest_of(folder)["parser_sha256"], "the manifest must hold the parser's own hash"
+        dfl._parser_sha256 = lambda: "0" * 64  # the parser was edited: its bytes hash to something else
+        try:
+            second = load_synthetic(root, paths)
+            assert second.report["cache"] == "built", "a parser that changed was read through the old cache"
+            assert manifest_of(folder)["parser_sha256"] == "0" * 64
+            assert load_synthetic(root, paths).report["cache"] == "reused", "and the new cache is fresh for it"
+        finally:
+            dfl._parser_sha256 = real_hash
+        third = load_synthetic(root, paths)
+        assert third.report["cache"] == "built", "the parser changed back, which is another change: rebuild"
+        assert load_synthetic(root, paths).report["cache"] == "reused"
+        assert_same_match(first, third)
+
+
+def test_the_parser_hash_is_the_hash_of_dfl_py():
+    from pipeline.benchmark import dfl
+    with open(dfl.__file__, "rb") as handle:
+        assert dfl._parser_sha256() == hashlib.sha256(handle.read()).hexdigest()
+
+
+def test_importing_the_parser_does_not_load_pandas():
+    """dfl.load_match needs the ATD cache's hashing, but only when it is called: parsing alone must stay light."""
+    from pipeline.benchmark import sources
+    code = "import sys; sys.path.insert(0, {!r}); import pipeline.benchmark.dfl; print('pandas' in sys.modules)".format(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(sources.__file__)))))
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
+    assert result.stdout.strip() == "False", "importing dfl pulled in pandas: {!r}".format(result.stdout)
+
+
 def test_match_cache_arrays_read_only():
     with tempfile.TemporaryDirectory() as root:
         paths, _ = cache_setup(root)
@@ -667,8 +729,19 @@ def test_match_cache_rebuilt_when_an_array_is_damaged():
         def save(array, **options):
             np.save(target, array, **options)
 
-        cases = [("cut short", lambda: write_bytes(intact[:len(intact) // 2])),
-                 ("only a header", lambda: write_bytes(intact[:20])),
+        def save_as_npz():
+            with open(target, "wb") as handle:  # a zip archive of arrays, which np.load opens as an NpzFile
+                np.savez(handle, ball_status=np.zeros(original.n_frames, dtype=np.int8))
+
+        # A version 1.0 .npy file: magic, version, a 2-byte header length, the header, then one byte per frame (int8).
+        assert intact[:8] == b"\x93NUMPY\x01\x00", intact[:8]
+        header_end = 10 + int.from_bytes(intact[8:10], "little")
+        assert len(intact) - header_end == original.n_frames, (len(intact), header_end, original.n_frames)
+        cases = [("the last byte missing", lambda: write_bytes(intact[:-1])),
+                 ("half the data missing", lambda: write_bytes(intact[:header_end + original.n_frames // 2])),
+                 ("only the header", lambda: write_bytes(intact[:header_end])),
+                 ("cut inside the header", lambda: write_bytes(intact[:20])),
+                 ("an .npz saved under the .npy name", save_as_npz),
                  ("not an array", lambda: write_bytes(b"this is not a numpy file")),
                  ("empty", lambda: write_bytes(b"")),
                  ("too few rows", lambda: save(np.zeros(original.n_frames - 1, dtype=np.int8))),
@@ -832,6 +905,33 @@ def test_dfl_all_matches_load():
             assert load_pass == "first" or status == "reused", \
                 "{}: loaded a second time and it was {}, not reused".format(match_id, status)
             del match
+
+
+def test_dfl_cache_equals_fresh_parse():
+    """J03WMX read back from the cache is, field for field, what parse_positions gives on the file right now.
+
+    Every other --dfl check reads the match through the cache, so this is the one that runs the parser itself on real
+    data: if the parser changed and a stale cache were still being read, it would be seen here. (The cache key holds
+    the parser's own hash, which should make that impossible; this is the measurement that says it is.) The cache is
+    built first if it is not there, so that the match compared is one read back from disk; the fresh parse (about a
+    minute) is dropped as soon as the two have been compared, so two matches, about 300 MB, are held only while they
+    are.
+    """
+    from pipeline.benchmark import dfl, sources
+    match_id = "J03WMX"
+    cached = dfl.load_match(match_id)
+    if cached.report["cache"] != "reused":
+        del cached
+        cached = dfl.load_match(match_id)
+    assert cached.report["cache"] == "reused", cached.report["cache"]
+    started = time.perf_counter()
+    fresh = dfl.parse_positions(sources.local_path(match_id, "positions"),
+                                dfl.parse_match_information(sources.local_path(match_id, "information")))
+    seconds = time.perf_counter() - started
+    assert_same_match(fresh, cached)
+    print("      {:,} rows x {} players, {} arrays and the report equal, fresh parse {:.1f} s".format(
+        fresh.n_frames, fresh.n_players, len(MATCH_ARRAYS), seconds))
+    del fresh, cached
 
 
 def test_dfl_match_information_all():
@@ -1169,7 +1269,8 @@ def test_dfl_parser_agrees_with_kloppy():
         print("        {:<18} {:>9,} compared, {} disagreements".format(what, compared[what], differences[what]))
     assert not any(differences.values()), "kloppy and the parser disagree: {}".format(
         {what: count for what, count in differences.items() if count})
-    window = {"alive": compared["alive frames"], "home": compared["home frames"]}
+    window = {"alive": compared["alive frames"], "home": compared["home frames"], "players": compared["player team"],
+              "player_xy_values": compared["player x/y"]}
     quoted = {name: KLOPPY_FACTS[name] for name in window}
     assert window == quoted, "kloppy's first {} frames hold {} but docs/traps.md T30 and docs/results.md A05 quote " \
                              "{}".format(KLOPPY_LIMIT, window, quoted)

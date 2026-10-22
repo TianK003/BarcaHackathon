@@ -13,13 +13,13 @@ The checks themselves live in pipeline/benchmark/checks/, one module per topic (
 checks.MODULES; to add one, write a function named test_* in the module of its topic, or start a new module there and
 list it. See pipeline/benchmark/checks/__init__.py.
 
-The runner is pipeline/selftest.py's: every function named test_* is a check, it prints PASS or FAIL for each, and
-the exit code is 1 if anything failed. A check that could not run here (an optional dependency such as kloppy is not
-installed) raises NotRun and is printed as NOT RUN with its reason: it is counted apart from the passes and does not
-fail the run, but it is never reported as a pass. Checks named test_dfl_* need the downloaded DFL files and run only
-with --dfl; test_data_* need the real match and run only with --data. Nothing from the real match is ever printed --
-counts, shares and scores, never a row, a coordinate or a label sequence (CLAUDE.md, hard rules). The DFL files are
-public (CC BY 4.0), so their aggregates may be printed freely.
+The run loop is its own but in the style of pipeline/selftest.py's: every function named test_* is a check, it prints
+PASS or FAIL for each, and the exit code is 1 if anything failed. A check that could not run here (an optional
+dependency such as kloppy is not installed) raises NotRun and is printed as NOT RUN with its reason: it is counted
+apart from the passes and does not fail the run, but it is never reported as a pass. Checks named test_dfl_* need the
+downloaded DFL files and run only with --dfl; test_data_* need the real match and run only with --data. Nothing from
+the real match is ever printed -- counts, shares and scores, never a row, a coordinate or a label sequence (CLAUDE.md,
+hard rules). The DFL files are public (CC BY 4.0), so their aggregates may be printed freely.
 
 The download checks run the real streaming, hashing and rename code against a fake opener that serves small bodies
 from memory, so no network is touched and nothing outside a temporary folder is written. The parser checks read a
@@ -30,6 +30,7 @@ either.
 import argparse
 import inspect
 import os
+import pkgutil
 import sys
 import time
 
@@ -45,12 +46,30 @@ from pipeline.benchmark import checks  # noqa: E402
 from pipeline.benchmark.checks.common import NotRun, utf8_stdout  # noqa: E402
 
 
+def unlisted_modules(path=None, modules=None):
+    """The modules in the checks package that `modules` (default checks.MODULES) does not list, sorted by name.
+
+    `path` is the folders to look in (default: the package's own). Every module there holds checks, and a module that
+    MODULES does not list would silently run none of them, so the harness refuses that. common.py is the exception: it
+    holds what the others share, and no check.
+    """
+    listed = {module.__name__.rsplit(".", 1)[-1] for module in (checks.MODULES if modules is None else modules)}
+    return sorted(info.name for info in pkgutil.iter_modules(checks.__path__ if path is None else path)
+                  if info.name != "common" and info.name not in listed)
+
+
 def collect(modules=None):
     """[(name, function)] of every check in `modules` (default checks.MODULES), sorted by name.
 
     A check is a function named test_* that the module defines itself: one it merely imports does not count. The
-    names are unique across the modules, because the harness filters and orders by name alone.
+    names are unique across the modules, because the harness filters and orders by name alone. With the default
+    modules, a module of the package that MODULES does not list is a ValueError that names it.
     """
+    if modules is None and unlisted_modules():
+        raise ValueError("pipeline/benchmark/checks/ has {} that checks.MODULES does not list, so its checks would "
+                         "never run; add {} to MODULES in pipeline/benchmark/checks/__init__.py".format(
+                             ", ".join("{}.py".format(name) for name in unlisted_modules()),
+                             "it" if len(unlisted_modules()) == 1 else "them"))
     found = {}
     for module in checks.MODULES if modules is None else modules:
         for name, value in vars(module).items():
@@ -106,7 +125,11 @@ def main(argv=None, modules=None):
     parser.add_argument("--data", action="store_true", help="also run the checks that read the real match's data")
     args = parser.parse_args(argv)
 
-    selected = collect(modules)
+    try:
+        selected = collect(modules)
+    except ValueError as error:
+        print("FAIL  collecting the checks: {}".format(error))
+        return 1
     if not args.dfl:
         selected = [(name, check) for name, check in selected if not name.startswith("test_dfl_")]
     if not args.data:

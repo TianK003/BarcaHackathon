@@ -52,15 +52,18 @@ load_match(match_id) is therefore the one door to a match: the first call parses
 and the rest as manifest.json under <data dir>/cache/dfl/<match_id>/ (git ignores everything under data/), and every
 later call reads them back in a second or two. It follows pipeline/inputs/atd_cache.py, which does the same for the ATD.
 
-The manifest records the size and sha256 of both source files, CACHE_VERSION and the numpy and lxml versions that
-parsed them; a cache is reused only if all three still match, so a re-downloaded file or a new library never reads
-through a stale cache. Bump CACHE_VERSION when parse_positions or the arrays change in a way the sources cannot show.
+The manifest records the size and sha256 of both source files, the numpy and lxml versions that parsed them, the
+sha256 of this very file (the parser) and CACHE_VERSION; a cache is reused only if all of them still match, so a
+re-downloaded file, a new library or an edit to the parser never reads through a stale cache. The price is that any
+edit to this file, a docstring included, rebuilds the seven caches (about 6 minutes). CACHE_VERSION is for what the
+hash cannot see: bump it when the layout on disk changes, that is when ARRAY_DTYPES or the manifest's fields do.
 The arrays are written first and the manifest last, with the old manifest removed up front, so a run killed half-way
 leaves no manifest and the next call rebuilds. A cache that cannot be read (an array missing, cut short or of the wrong
 shape, a manifest that is not JSON or lacks a field) is treated as absent and rebuilt, never as an error: everything in
 it can be had again from the sources.
 """
 
+import hashlib
 import json
 import math
 import os
@@ -71,7 +74,6 @@ from lxml import etree
 
 import games
 from pipeline.benchmark import sources
-from pipeline.inputs.atd_cache import describe_source
 
 # Params
 MATCH_ID_PREFIX = "DFL-MAT-"             # General@MatchId reads "DFL-MAT-J03WMX"; we say "J03WMX" everywhere else
@@ -91,7 +93,7 @@ ABSENT = -1                              # no code, no ball frame, and the separ
 PLAYER_ATTRIBUTES = ("N", "X", "Y", "S")  # what is read from a player's <Frame>
 BALL_ATTRIBUTES = ("N", "X", "Y", "Z", "S", "BallPossession", "BallStatus")  # ... and from the ball's
 MISSING_ATTRIBUTES = ("X", "Y", "S", "Z", "BallPossession", "BallStatus")    # the report counts these when absent
-CACHE_VERSION = 1                        # bump when the arrays or their meaning change; every cache then rebuilds
+CACHE_VERSION = 1                        # bump when the cache's layout changes; the parser's own hash covers the rest
 CACHE_FOLDER = ("cache", "dfl")          # <data dir>/cache/dfl/<match id>/
 MANIFEST = "manifest.json"
 SOURCE_KINDS = ("information", "positions")  # the files a match is parsed from, named as sources.FILES names them
@@ -309,10 +311,12 @@ def load_match(match_id, data_dir=None, rebuild=False, paths=None):
     for kind in SOURCE_KINDS:
         _require_file(paths[kind])
 
+    from pipeline.inputs.atd_cache import describe_source  # here, not above: it pulls in pandas and the starter loaders
     folder = os.path.join(data_dir or games.DATA_DIR, *CACHE_FOLDER, match_id)
     key = {"cache_version": CACHE_VERSION,
            "sources": {kind: describe_source(paths[kind]) for kind in SOURCE_KINDS},
-           "parsed_with": {"numpy": np.__version__, "lxml": etree.__version__}}
+           "parsed_with": {"numpy": np.__version__, "lxml": etree.__version__},
+           "parser_sha256": _parser_sha256()}
     manifest = None if rebuild else _read_manifest(folder)
     if manifest is not None and all(manifest.get(name) == value for name, value in key.items()):
         match = _load(folder, manifest, match_id)
@@ -478,8 +482,8 @@ def _scan(path, info):
                     if event == "end":
                         if current is None:
                             raise ValueError("{}: a <Frame> outside any <FrameSet>; this is not a DFL positions file "
-                                             "(DFL_04_03_positions_raw_observed_*.xml), or the download is damaged; "
-                                             "{}".format(path, VERIFY_ADVICE))
+                                             "(DFL_04_03_positions_raw_observed_*.xml); {}".format(
+                                                 path, VERIFY_ADVICE))
                         get = element.get
                         for name, append in current.appenders:
                             append(get(name))
@@ -487,8 +491,7 @@ def _scan(path, info):
                 elif event == "start":
                     if current is not None:
                         raise ValueError("{}: {} starts inside {}, which has not ended; this is not a DFL positions "
-                                         "file (DFL_04_03_positions_raw_observed_*.xml), or the download is "
-                                         "damaged; {}".format(
+                                         "file (DFL_04_03_positions_raw_observed_*.xml); {}".format(
                                              path, _label(*(element.get(name) for name in LABEL_ATTRIBUTES)),
                                              current.label, VERIFY_ADVICE))
                     current = _open(element.attrib, path, info, roster, club_of, balls, players, skipped)
@@ -716,6 +719,23 @@ def _timeline(info, balls, players, skipped):
 
 # -- the cache --------------------------------------------------------------------------------------------------------
 
+def _parser_sha256():
+    """The sha256 of the bytes of this file, which is the parser: part of the cache key, so no edit goes unnoticed."""
+    with open(__file__, "rb") as handle:
+        return hashlib.sha256(handle.read()).hexdigest()
+
+
+def _read_array(path):
+    """One cached array; ValueError if the file is not a plain numpy array (an .npz or a pickle under an .npy name)."""
+    array = np.load(path, allow_pickle=False)
+    if not isinstance(array, np.ndarray):
+        close = getattr(array, "close", None)
+        if close is not None:
+            close()  # an NpzFile keeps its file open, and Windows then refuses to rewrite it
+        raise ValueError("{}: not a plain numpy array".format(path))
+    return array
+
+
 def _read_manifest(folder):
     """The manifest as a dict, or None if there is none or it cannot be read as one: an unreadable cache is absent."""
     try:
@@ -754,7 +774,7 @@ def _load(folder, manifest, match_id):
     try:
         if manifest["match_id"] != match_id:
             return None
-        arrays = {name: np.load(os.path.join(folder, name + ".npy"), allow_pickle=False) for name in ARRAY_DTYPES}
+        arrays = {name: _read_array(os.path.join(folder, name + ".npy")) for name in ARRAY_DTYPES}
         pitch = tuple(float(side) for side in manifest["pitch"])
         graded = tuple((int(half), int(start), int(stop)) for half, start, stop in manifest["graded"])
         kickoffs = {int(half): int(row) for half, row in manifest["kickoffs"].items()}

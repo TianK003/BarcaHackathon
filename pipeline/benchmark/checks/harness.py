@@ -4,10 +4,11 @@ import contextlib
 import io
 import re
 import sys
+import tempfile
 import types
 
 from pipeline.benchmark.checks.common import utf8_stdout
-from pipeline.selftest import expect_error
+from pipeline.selftest import expect_error, write_text
 
 
 def fake_module(name, **functions):
@@ -55,6 +56,42 @@ def test_collect_takes_the_checks_a_module_defines_and_sorts_them_by_name():
 
     twin = fake_module("fake_three", test_a=test_dup)
     expect_error(ValueError, lambda: selftest.collect([first, twin]), "test_a", "fake_one", "fake_three", "unique")
+
+
+def test_a_check_module_that_is_not_listed_is_refused():
+    """A module in checks/ that checks.MODULES does not list would run nothing, silently: the harness refuses that."""
+    from pipeline.benchmark import checks, selftest
+    assert selftest.unlisted_modules() == [], "every module of pipeline/benchmark/checks/ must be in MODULES"
+
+    with tempfile.TemporaryDirectory() as folder:
+        for name in ("__init__", "common", "alpha", "beta"):  # common holds no checks and is the one exception
+            write_text(folder, name + ".py", "")
+        listed = [fake_module("pkg.checks.alpha")]
+        assert selftest.unlisted_modules([folder], listed) == ["beta"]
+        assert selftest.unlisted_modules([folder], listed + [fake_module("pkg.checks.beta")]) == []
+
+    real_modules = checks.MODULES
+    checks.MODULES = real_modules[:-1]
+    try:
+        expect_error(ValueError, selftest.collect, real_modules[-1].__name__.rsplit(".", 1)[-1], "MODULES",
+                     "checks/__init__.py")
+    finally:
+        checks.MODULES = real_modules
+
+    # main() says so and fails, instead of a traceback or a quiet run of fewer checks.
+    real_collect = selftest.collect
+
+    def refusing(modules=None):
+        raise ValueError("checks/beta.py is not in MODULES")
+
+    selftest.collect = refusing
+    try:
+        shown = io.StringIO()
+        with contextlib.redirect_stdout(shown):
+            code = selftest.main([])
+    finally:
+        selftest.collect = real_collect
+    assert code == 1 and "checks/beta.py is not in MODULES" in shown.getvalue(), (code, shown.getvalue())
 
 
 def test_a_check_that_could_not_run_is_not_a_pass():

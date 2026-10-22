@@ -121,15 +121,17 @@ over the first 60 s.
 ### A05 — The DFL parser against kloppy and by frame number (2026-10-22)
 
 Public data only (the DFL/IDSSE matches of P01). Command: `python pipeline/benchmark/selftest.py --dfl`, checks
-`test_dfl_parser_agrees_with_kloppy`, `test_dfl_second_half_spot_check` and `test_dfl_t30_facts`; the first parse of a
-match takes 44 to 64 s. The timeline is `pipeline/benchmark/dfl.py`'s: the first half, 25 separator rows, then the
+`test_dfl_parser_agrees_with_kloppy`, `test_dfl_second_half_spot_check`, `test_dfl_t30_facts`,
+`test_dfl_cache_equals_fresh_parse` and `test_dfl_all_matches_load`; the first parse of a match takes 42 to 64 s. The
+timeline is `pipeline/benchmark/dfl.py`'s: the first half, 25 separator rows, then the
 second half (J03WMX: 145,992 rows, the second half starts at row 70,733).
 
 - **kloppy, J03WMX, `only_alive=False, limit=5000`** (N 10,000 to 14,999, the first half only; 4,176 alive, 1,359
   with the home team in possession): the pitch length and width (2), ball x, y and z (5,000 each), alive or dead
   (5,000), team in possession (5,000), the team of the 22 players in its first frame, presence of 3 players (15,000),
   their x and y (30,000 values) and the number of players per frame (5,000). Positions agree to 1e-6 m. **0
-  disagreements** in every count. The window counts quoted here (4,176; 1,359; and the default's 15,823, 5,824 and 824) are asserted by the check.
+  disagreements** in every count. The counts quoted here (4,176 alive; 1,359 home; 22 players; 30,000 values; and the
+  default's 15,823, 5,824 and 824) are asserted by the check.
 - **kloppy's default, `only_alive=True`, same limit:** 5,000 frames over N 10,000 to 15,823 (5,824 rows). None is dead
   in our parse, no alive row of ours in that range is left out, and the 824 dead rows are the ones it drops.
 - **By frame number:** a separate lxml pass, keyed by N, read 200 ball frames from each half (second half drawn with
@@ -160,23 +162,24 @@ parser refuses a possession that is not 1 or 2, so a clean parse is a 0 for that
 - Dead ball is 41% to 52% of every benchmark match. kloppy's default drops all of it ([T30](traps.md)), which would
   leave the benchmark with no `D`. Its fallbacks for a missing possession or ball entry never apply to these files.
 
-### A06 — The cost of a DFL match, parsed and from the cache (2026-10-23)
-
-Public data only. Command: `python pipeline/benchmark/selftest.py --dfl`, check `test_dfl_all_matches_load`, which
-loads all seven matches through `dfl.load_match` twice (Windows 11, local disk, Python 3.11.9). The cache is
-`data/cache/dfl/<match id>/`: nine `.npy` files and a `manifest.json`.
+**Cost** (2026-10-23; Windows 11, local disk, Python 3.11.9). Every later stage reads a match through
+`dfl.load_match`, which keeps it as nine `.npy` files and a `manifest.json` in `data/cache/dfl/<match id>/`, keyed on
+the sha256 of both source files, the numpy and lxml versions, `CACHE_VERSION` and the sha256 of `dfl.py` itself.
+`test_dfl_all_matches_load` loads all seven twice, and `test_dfl_cache_equals_fresh_parse` compares J03WMX from the
+cache with a fresh parse (0 differences in all nine arrays, the scalars and the report):
 
 | | no cache (built) | cache (reused) |
 |---|---|---|
-| One match | 43.9 to 48.5 s | 0.7 to 1.3 s |
-| All seven | 326.8 s | 5.5 to 6.9 s |
-| Whole `--dfl` run, 53 checks | 487 s | 162 s |
-| `test_dfl_t30_facts` | 297.8 s (one parse per match, before the cache) | 4.5 s |
+| One match | 41.7 to 49.1 s | 0.7 to 1.9 s |
+| All seven | 325.8 s | 5.5 to 6.7 s |
+| Whole `--dfl` run, 59 checks | 532 s | 221 s |
+| `test_dfl_t30_facts` | 297.8 s before the cache (one parse per match) | 4.7 s |
 
-- A reused match is read in 0.7 to 1.3 s, most of it the sha256 of the two source files (the positions file is up to
-  420 MB), which is what makes a stale cache impossible.
-- The caches take 129 to 141 MB per match, 956 MB for the seven.
-- What remains of the `--dfl` run is kloppy's own loads (about 100 s) and the 2.6 GB md5 check (9 s).
+- A reused match is read in under 2 s, almost all of it the sha256 of the two source files (the positions file is up
+  to 420 MB), which is what makes a stale cache impossible. The caches take 129 to 141 MB per match, 956 MB for the
+  seven.
+- What the reused `--dfl` run still spends: kloppy's own loads (about 100 s), the fresh parse of the cache check (about
+  50 s), the spot check's own pass over the file (about 34 s) and the 2.6 GB md5 check (about 10 s).
 
 ## Experiments
 

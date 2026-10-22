@@ -2,8 +2,9 @@
 
 The synthetic match (write_synthetic_dfl and the squads, tables and helpers it is written from) is one fixture for
 every check that needs a DFL file: the parser checks read it, and so will the cache's and every later stage's. It lives
-here, in the real file format with made-up values, so that no check needs a download. real_match is the one door
-through which the --dfl checks reach a downloaded match. Import from here with absolute imports
+here, in the real file format with made-up values, so that no check needs a download. real_match is how the --dfl
+checks that share a downloaded match get it (dfl.load_match behind a one-match memo); a check that wants the cache's
+own answer, built or reused, calls dfl.load_match itself. Import from here with absolute imports
 (from pipeline.benchmark.checks.common import ...): a module of this package named like a production module would
 otherwise shadow it.
 """
