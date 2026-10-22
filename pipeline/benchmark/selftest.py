@@ -1,10 +1,11 @@
-"""Self-checks for the P01 benchmark: the DFL registry, download, match information and positions now; the rest later.
+"""Self-checks for the P01 benchmark: the DFL registry, download, parsers and cache now; the rest later.
 
     python pipeline/benchmark/selftest.py           # synthetic checks only -- seconds, no data needed
     python pipeline/benchmark/selftest.py --dfl     # + the 21 downloaded DFL files: size and md5 (reads 2.6 GB),
-                                                    #   the 7 match information files parsed, J03WMX's positions parsed
-                                                    #   and cross-checked against kloppy and by frame number, and the
-                                                    #   T30 counts on all 7 positions files (about 12 minutes)
+                                                    #   the 7 matches loaded through the cache, J03WMX cross-checked
+                                                    #   against kloppy and by frame number, and the T30 counts on all
+                                                    #   7 matches (about 8 minutes while the 7 caches are built under
+                                                    #   data/cache/dfl/, about 3 after that)
     python pipeline/benchmark/selftest.py --data    # + checks that read the real match's data (aggregates only)
 
 This file is the harness and the one command: it collects the checks, filters them by flag, runs them and reports.
@@ -99,8 +100,9 @@ def main(argv=None, modules=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--dfl", action="store_true",
                         help="also check the downloaded DFL files: size and md5 of all 21 (reads 2.6 GB), parse the 7 "
-                             "match information files, cross-check J03WMX's positions against kloppy and by frame "
-                             "number, and count T30's facts on all 7 positions files (about 12 minutes)")
+                             "match information files, load the 7 matches through the cache, cross-check J03WMX "
+                             "against kloppy and by frame number, and count T30's facts on all 7 (about 8 minutes "
+                             "while the caches are built, about 3 after that)")
     parser.add_argument("--data", action="store_true", help="also run the checks that read the real match's data")
     args = parser.parse_args(argv)
 

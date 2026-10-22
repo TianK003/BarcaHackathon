@@ -255,20 +255,20 @@ def damaged(path, damage):
 
 # -- the downloaded DFL files (--dfl) ---------------------------------------------------------------------------------
 
-PARSE_SECONDS = {}  # match id -> how long its positions took to parse (real_match), for the check that prints it
+LOAD_SECONDS = {}  # match id -> how long dfl.load_match took for it (real_match), for the check that prints it
 
 
 @functools.lru_cache(maxsize=1)
 def real_match(match_id):
-    """The DflMatch of a downloaded match, parsed once per run for the checks that follow each other.
+    """The DflMatch of a downloaded match, through dfl.load_match and so through data/cache/dfl/.
 
-    One match is about 150 MB of arrays and a parse takes about a minute, so only the last match is kept. The checks
-    on J03WMX run back to back (their names sort that way) and share one parse. Task 5's disk cache
-    (dfl.load_match) will replace this.
+    The first run parses the match (about a minute) and stores it; every later run, here and in any other script,
+    reads it back in a second or two. One match is about 150 MB of arrays, so only the last match is kept in memory:
+    the checks on J03WMX run back to back (their names sort that way) and share one load. Its report says whether
+    that load was "built" or "reused".
     """
-    from pipeline.benchmark import dfl, sources
-    info = dfl.parse_match_information(sources.local_path(match_id, "information"))
+    from pipeline.benchmark import dfl
     started = time.perf_counter()
-    match = dfl.parse_positions(sources.local_path(match_id, "positions"), info)
-    PARSE_SECONDS[match_id] = time.perf_counter() - started
+    match = dfl.load_match(match_id)
+    LOAD_SECONDS[match_id] = time.perf_counter() - started
     return match

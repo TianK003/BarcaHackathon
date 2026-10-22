@@ -14,12 +14,13 @@ import os
 import re
 import sys
 import tempfile
+import time
 import types
 
 import numpy as np
 
 from pipeline.benchmark.checks.common import (
-    DFL_TEAMS, PARSE_SECONDS, NotRun, PERSON_A, PERSON_B, PERSON_BALL, PERSON_C, PERSON_REFEREE, PERSON_UNLISTED,
+    DFL_TEAMS, LOAD_SECONDS, NotRun, PERSON_A, PERSON_B, PERSON_BALL, PERSON_C, PERSON_REFEREE, PERSON_UNLISTED,
     SYNTHETIC_BALL_FRAMES, SYNTHETIC_PLAYER_FRAMES, SYNTHETIC_REPORT, damaged, grid_x, grid_y, real_match,
     write_synthetic_dfl)
 from pipeline.selftest import expect_error, write_text
@@ -496,6 +497,303 @@ def test_positions_names_a_missing_file():
                      "pipeline/benchmark/sources.py")
 
 
+# -- the cache: dfl.load_match ----------------------------------------------------------------------------------------
+
+MANIFEST_KEYS = ["cache_version", "fps", "graded", "kickoffs", "match_id", "parsed_with", "pitch", "report", "sources"]
+CACHE_FILES = sorted(["{}.npy".format(name) for name in MATCH_ARRAYS] + ["manifest.json"])
+
+
+def cache_setup(root):
+    """(paths of a synthetic match written under root/source, the folder its cache must be in)."""
+    source = os.path.join(root, "source")
+    os.makedirs(source)
+    return write_synthetic_dfl(source), os.path.join(root, "cache", "dfl", "SYN001")
+
+
+def load_synthetic(root, paths, **options):
+    from pipeline.benchmark import dfl
+    return dfl.load_match("SYN001", data_dir=root, paths=paths, **options)
+
+
+def type_tree(value):
+    """The types inside a nested value, as text, so that 1, 1.0 and "1" differ, and so do a tuple and a list."""
+    if isinstance(value, (tuple, list)):
+        return "{}[{}]".format(type(value).__name__, ", ".join(type_tree(item) for item in value))
+    if isinstance(value, dict):
+        return "dict[{}]".format(", ".join("{}: {}".format(type_tree(key), type_tree(item))
+                                           for key, item in sorted(value.items(), key=repr)))
+    return type(value).__name__
+
+
+def assert_same_match(first, second):
+    """Both DflMatch hold the same: arrays equal (NaN equal to NaN) with one dtype, scalars equal with one type.
+
+    The report is compared without its "cache" entry, which says how the match was reached and so differs by design.
+    """
+    for name in MATCH_ARRAYS:
+        one, other = getattr(first, name), getattr(second, name)
+        assert (one.dtype, one.shape) == (other.dtype, other.shape), (name, one.dtype, other.dtype, one.shape,
+                                                                       other.shape)
+        np.testing.assert_array_equal(one, other, err_msg=name)
+    for name in ("match_id", "pitch", "fps", "graded", "kickoffs"):
+        one, other = getattr(first, name), getattr(second, name)
+        assert one == other and type_tree(one) == type_tree(other), (name, one, other, type_tree(one),
+                                                                     type_tree(other))
+    reports = [{key: value for key, value in match.report.items() if key != "cache"} for match in (first, second)]
+    assert reports[0] == reports[1] and type_tree(reports[0]) == type_tree(reports[1]), reports
+
+
+def edit_manifest(folder, change):
+    """Rewrite the cache's manifest.json as change(its parsed content) (which edits it in place)."""
+    path = os.path.join(folder, "manifest.json")
+    with open(path, encoding="utf-8") as handle:
+        manifest = json.load(handle)
+    change(manifest)
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
+        json.dump(manifest, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+
+
+def test_match_cache_built_then_reused():
+    from lxml import etree
+    from pipeline.benchmark import dfl
+    from pipeline.inputs.atd_cache import describe_source
+    with tempfile.TemporaryDirectory() as root:
+        paths, folder = cache_setup(root)
+        built = load_synthetic(root, paths)
+        assert built.report["cache"] == "built", built.report
+        assert sorted(os.listdir(root)) == ["cache", "source"], "nothing may be written outside <data dir>/cache"
+        assert [os.listdir(os.path.join(root, "cache")), os.listdir(os.path.join(root, "cache", "dfl"))] == [
+            ["dfl"], ["SYN001"]], "the cache is <data dir>/cache/dfl/<match id>/"
+        assert sorted(os.listdir(folder)) == CACHE_FILES, sorted(os.listdir(folder))
+
+        manifest_path = os.path.join(folder, "manifest.json")
+        with open(manifest_path, "rb") as handle:
+            manifest_bytes = handle.read()
+        manifest = json.loads(manifest_bytes)
+        assert sorted(manifest) == MANIFEST_KEYS, sorted(manifest)
+        assert dfl.CACHE_VERSION == 1 == manifest["cache_version"]
+        assert manifest["sources"] == {"information": describe_source(paths["information"]),
+                                       "positions": describe_source(paths["positions"])}
+        assert manifest["parsed_with"] == {"numpy": np.__version__, "lxml": etree.__version__}
+        assert "cache" not in manifest["report"], "how a match was reached must not be stored with it"
+        assert manifest_bytes.endswith(b"}\n") and b"\r" not in manifest_bytes, "LF line endings, one final newline"
+        stamp = os.stat(manifest_path).st_mtime_ns
+
+        reused = load_synthetic(root, paths)
+        assert reused.report["cache"] == "reused", reused.report
+        assert os.stat(manifest_path).st_mtime_ns == stamp, "a cache that was fresh was rewritten"
+        assert_same_match(built, reused)
+        direct = dfl.parse_positions(paths["positions"], dfl.parse_match_information(paths["information"]))
+        assert_same_match(direct, reused)  # what the cache gives is what a parse gives, field for field
+        assert "cache" not in direct.report, "parse_positions itself knows nothing of the cache"
+
+        forced = load_synthetic(root, paths, rebuild=True)
+        assert forced.report["cache"] == "built", forced.report
+        with open(manifest_path, "rb") as handle:
+            assert handle.read() == manifest_bytes, "the same inputs must give the same manifest, byte for byte"
+        assert_same_match(built, forced)
+
+
+def test_match_cache_rebuilt_when_source_changes():
+    with tempfile.TemporaryDirectory() as root:
+        paths, folder = cache_setup(root)
+        first = load_synthetic(root, paths)
+        assert (first.report["cache"], first.ball_status[2]) == ("built", 1)
+
+        # The key is the bytes, not the file's date: the same text written again is still the same cache.
+        with open(paths["positions"], encoding="utf-8", newline="") as handle:
+            text = handle.read()
+        write_text(os.path.dirname(paths["positions"]), os.path.basename(paths["positions"]), text)
+        os.utime(paths["positions"], (4_000_000_000, 4_000_000_000))
+        assert load_synthetic(root, paths).report["cache"] == "reused"
+
+        damaged(paths["positions"], edit_ball_frame(10002, 'BallStatus="1"', 'BallStatus="0"'))
+        second = load_synthetic(root, paths)
+        assert (second.report["cache"], second.ball_status[2]) == ("built", 0), "the positions changed: rebuild"
+        third = load_synthetic(root, paths)
+        assert third.report["cache"] == "reused" and third.ball_status[2] == 0, "and the new cache is the one reused"
+        assert_same_match(second, third)
+
+        damaged(paths["information"], lambda text: text.replace('TotalTimeFirstHalf="2700040"',
+                                                                 'TotalTimeFirstHalf="2700041"'))
+        assert load_synthetic(root, paths).report["cache"] == "built", "the match information changed: rebuild"
+        assert load_synthetic(root, paths).report["cache"] == "reused"
+
+        # The rest of the key: the format version and the library versions that did the parsing.
+        for label, change in (("cache_version", lambda manifest: manifest.update(cache_version=0)),
+                              ("numpy", lambda manifest: manifest["parsed_with"].update(numpy="0.0.1")),
+                              ("lxml", lambda manifest: manifest["parsed_with"].update(lxml="0.0.1"))):
+            edit_manifest(folder, change)
+            assert load_synthetic(root, paths).report["cache"] == "built", "{} changed: rebuild".format(label)
+            assert load_synthetic(root, paths).report["cache"] == "reused", "{}: the new manifest".format(label)
+
+
+def test_match_cache_arrays_read_only():
+    with tempfile.TemporaryDirectory() as root:
+        paths, _ = cache_setup(root)
+        for expected in ("built", "reused"):
+            match = load_synthetic(root, paths)
+            assert match.report["cache"] == expected, match.report
+            for name in MATCH_ARRAYS:
+                assert not getattr(match, name).flags.writeable, "{} is writable ({})".format(name, expected)
+
+
+def test_match_cache_rebuilt_when_array_missing():
+    with tempfile.TemporaryDirectory() as root:
+        paths, folder = cache_setup(root)
+        original = load_synthetic(root, paths)
+        for name in MATCH_ARRAYS:
+            os.remove(os.path.join(folder, name + ".npy"))  # the manifest is left in place
+            rebuilt = load_synthetic(root, paths)
+            assert rebuilt.report["cache"] == "built", "{}.npy was gone but the cache was reused".format(name)
+            assert sorted(os.listdir(folder)) == CACHE_FILES, sorted(os.listdir(folder))
+            assert_same_match(original, rebuilt)
+
+
+def test_match_cache_rebuilt_when_an_array_is_damaged():
+    """A file that is cut short, is not an array, or is an array of another shape or type is as good as missing."""
+    with tempfile.TemporaryDirectory() as root:
+        paths, folder = cache_setup(root)
+        original = load_synthetic(root, paths)
+        target = os.path.join(folder, "ball_status.npy")
+        with open(target, "rb") as handle:
+            intact = handle.read()
+
+        def write_bytes(body):
+            with open(target, "wb") as handle:
+                handle.write(body)
+
+        def save(array, **options):
+            np.save(target, array, **options)
+
+        cases = [("cut short", lambda: write_bytes(intact[:len(intact) // 2])),
+                 ("only a header", lambda: write_bytes(intact[:20])),
+                 ("not an array", lambda: write_bytes(b"this is not a numpy file")),
+                 ("empty", lambda: write_bytes(b"")),
+                 ("too few rows", lambda: save(np.zeros(original.n_frames - 1, dtype=np.int8))),
+                 ("too many dimensions", lambda: save(np.zeros((original.n_frames, 1), dtype=np.int8))),
+                 ("floats", lambda: save(np.zeros(original.n_frames, dtype=np.float64))),
+                 ("objects", lambda: save(np.array([None] * original.n_frames, dtype=object), allow_pickle=True))]
+        for label, damage in cases:
+            damage()
+            rebuilt = load_synthetic(root, paths)
+            assert rebuilt.report["cache"] == "built", "{}: a damaged array was loaded".format(label)
+            assert_same_match(original, rebuilt)
+            assert load_synthetic(root, paths).report["cache"] == "reused", label
+
+
+def test_match_cache_rebuilt_when_manifest_damaged():
+    """A manifest that is not JSON, not an object, or lacks or garbles a field is no manifest: rebuild, never raise."""
+    with tempfile.TemporaryDirectory() as root:
+        paths, folder = cache_setup(root)
+        original = load_synthetic(root, paths)
+        target = os.path.join(folder, "manifest.json")
+
+        def write_bytes(body):
+            def damage():
+                with open(target, "wb") as handle:
+                    handle.write(body)
+            return damage
+
+        def without(key):
+            return lambda: edit_manifest(folder, lambda manifest: manifest.pop(key))
+
+        def garbled(key, value):
+            return lambda: edit_manifest(folder, lambda manifest: manifest.update({key: value}))
+
+        cases = [("cut short", write_bytes(b'{"cache_version": 1, "fps": 25, "gra')), ("empty", write_bytes(b"")),
+                 ("not UTF-8", write_bytes(b"\xff\xfe\x00 not text")), ("a list", write_bytes(b"[1, 2, 3]")),
+                 ("null", write_bytes(b"null")), ("a number", write_bytes(b"7"))]
+        cases += [("no {}".format(key), without(key)) for key in MANIFEST_KEYS]
+        cases += [("pitch a number", garbled("pitch", 105)), ("pitch of text", garbled("pitch", ["a", "b"])),
+                  ("pitch of one value", garbled("pitch", [105.0])),
+                  ("match_id of another match", garbled("match_id", "SYN999")),
+                  ("match_id a number", garbled("match_id", 7)),
+                  ("graded blocks too short", garbled("graded", [[1, 2], [2, 3]])),
+                  ("graded a number", garbled("graded", 4)), ("graded of text", garbled("graded", [["a", 1, 2]])),
+                  ("kickoffs a list", garbled("kickoffs", [0, 35])),
+                  ("kickoffs of text", garbled("kickoffs", {"x": 1})),
+                  ("fps text", garbled("fps", "fast")), ("report a list", garbled("report", [1]))]
+        for label, damage in cases:
+            damage()
+            rebuilt = load_synthetic(root, paths)
+            assert rebuilt.report["cache"] == "built", "{}: a damaged manifest was trusted".format(label)
+            assert_same_match(original, rebuilt)
+            assert load_synthetic(root, paths).report["cache"] == "reused", "{}: the rebuilt manifest".format(label)
+
+
+def test_match_cache_leaves_no_manifest_when_a_save_is_interrupted():
+    """The manifest is what marks a cache as complete: out first, written last, so a killed run leaves none."""
+    class Interrupted(Exception):
+        pass
+
+    def failing_after(allowed):
+        calls = []
+        real_save = np.save
+
+        def save(*arguments, **options):
+            if len(calls) == allowed:
+                raise Interrupted("the disk is gone")
+            calls.append(arguments[0])
+            return real_save(*arguments, **options)
+        return save, real_save
+
+    for allowed in (0, 3, len(MATCH_ARRAYS) - 1):  # before the first array, in the middle, before the last
+        with tempfile.TemporaryDirectory() as root:
+            paths, folder = cache_setup(root)
+            save, real_save = failing_after(allowed)
+            np.save = save
+            try:
+                expect_error(Interrupted, lambda: load_synthetic(root, paths), "the disk is gone")
+            finally:
+                np.save = real_save
+            assert not os.path.exists(os.path.join(folder, "manifest.json")), "a half-written cache has a manifest"
+            assert load_synthetic(root, paths).report["cache"] == "built"
+            assert load_synthetic(root, paths).report["cache"] == "reused"
+
+            # The same with a complete cache that is being rebuilt: its old manifest must go before any array does.
+            edit_manifest(folder, lambda manifest: manifest.update(cache_version=0))
+            save, real_save = failing_after(allowed)
+            np.save = save
+            try:
+                expect_error(Interrupted, lambda: load_synthetic(root, paths), "the disk is gone")
+            finally:
+                np.save = real_save
+            assert not os.path.exists(os.path.join(folder, "manifest.json")), \
+                "an interrupted rebuild left the old manifest in front of a mixture of old and new arrays"
+            assert load_synthetic(root, paths).report["cache"] == "built"
+
+
+def test_match_cache_names_what_is_wrong():
+    from pipeline.benchmark import dfl, sources
+    with tempfile.TemporaryDirectory() as root:
+        paths, _ = cache_setup(root)
+        # An id that is not one of the seven, and no paths: say which ids there are.
+        expect_error(ValueError, lambda: dfl.load_match("J03WXX", data_dir=root), "J03WXX", *sources.MATCH_IDS)
+        # A real id whose files are not under this data dir: the file, and how to fetch it.
+        wanted = sources.local_path("J03WMX", "information", root)
+        assert wanted.startswith(root), wanted
+        expect_error(FileNotFoundError, lambda: dfl.load_match("J03WMX", data_dir=root), wanted,
+                     "pipeline/benchmark/sources.py")
+        os.remove(paths["positions"])
+        expect_error(FileNotFoundError, lambda: load_synthetic(root, paths), os.path.basename(paths["positions"]),
+                     "pipeline/benchmark/sources.py")
+        # Paths that are not the two kinds of file.
+        expect_error(ValueError, lambda: load_synthetic(root, {"information": paths["information"]}), "information",
+                     "positions")
+        expect_error(ValueError, lambda: load_synthetic(root, dict(paths, events="x.xml")), "information", "positions",
+                     "events")
+        assert not os.path.exists(os.path.join(root, "cache")), "a failed load must not leave a cache folder behind"
+
+    # A match id that is not the match the files are of: the cache would be filed under the wrong name.
+    with tempfile.TemporaryDirectory() as root:
+        paths, _ = cache_setup(root)
+        expect_error(ValueError, lambda: dfl.load_match("SYN002", data_dir=root, paths=paths), "SYN002", "SYN001",
+                     os.path.basename(paths["information"]))
+        assert not os.path.exists(os.path.join(root, "cache")), "a refused match must not be cached"
+
+
 # -- the downloaded DFL files (--dfl) ---------------------------------------------------------------------------------
 
 def test_dfl_files_verified():
@@ -508,6 +806,32 @@ def test_dfl_files_verified():
         len(bad), sorted(bad.items())[0])
     print("      {} files ok, {:,} bytes under {}".format(
         len(statuses), sum(remote.size for remote in sources.select()), sources.external_dir()))
+
+
+def test_dfl_all_matches_load():
+    """All 7 matches load through the cache, and a second pass finds every cache fresh.
+
+    The first pass builds the cache of a match that has none (about a minute each) and reads the others; it prints
+    the seconds and "built" or "reused". The second pass must say "reused" for all seven. One match is held at a
+    time (about 150 MB of arrays), and each is checked against the ball frame count that sources.py pins.
+    """
+    from pipeline.benchmark import dfl, sources
+    print("      {:<7} {:>6} {:<7} {:>8} {:>11} {:>9}".format("match", "pass", "cache", "seconds", "rows", "players"))
+    for load_pass in ("first", "second"):
+        for match_id in sources.MATCH_IDS:
+            started = time.perf_counter()
+            match = dfl.load_match(match_id)
+            seconds = time.perf_counter() - started
+            status = match.report["cache"]
+            print("      {:<7} {:>6} {:<7} {:>8.1f} {:>11,} {:>9}".format(
+                match_id, load_pass, status, seconds, match.n_frames, match.n_players))
+            expected = sources.EXPECTED_BALL_FRAMES[match_id]
+            assert (match.match_id, match.report["ball_frames"]) == (match_id, expected), \
+                (match_id, match.match_id, match.report["ball_frames"], expected)
+            assert status in ("built", "reused"), status
+            assert load_pass == "first" or status == "reused", \
+                "{}: loaded a second time and it was {}, not reused".format(match_id, status)
+            del match
 
 
 def test_dfl_match_information_all():
@@ -537,9 +861,9 @@ def test_dfl_positions_one_match():
     info = dfl.parse_match_information(sources.local_path(match_id, "information"))
     match = real_match(match_id)
     report = match.report
-    print("      parsed in {:.1f} s: {:,} rows x {} players, {:,} ball frames, {:,} player frames "
-          "({} dropped outside the halves)".format(PARSE_SECONDS[match_id], match.n_frames, match.n_players,
-                                                    report["ball_frames"], report["player_frames"],
+    print("      {} in {:.1f} s: {:,} rows x {} players, {:,} ball frames, {:,} player frames "
+          "({} dropped outside the halves)".format(report["cache"], LOAD_SECONDS[match_id], match.n_frames,
+                                                    match.n_players, report["ball_frames"], report["player_frames"],
                                                     report["player_frames_outside_halves"]))
     print("      skipped FrameSets {}; missing attributes {}".format(report["skipped_framesets"], report["missing"]))
     assert set(report["skipped_framesets"]) == {"referee"}, \
@@ -1019,7 +1343,7 @@ def test_dfl_t30_facts():
     drops every dead-ball frame. The table counts each through our parser, which refuses a BallPossession that is not
     1 or 2 (so every match in it has 0 of those, the "other" column), and the counts are asserted exactly, as the docs
     quote them, with the player frames that lie outside both halves, which the parser drops (the "players out"
-    column: the docs say that none does). About 6 minutes without the cache: one parse per match.
+    column: the docs say that none does). Seconds with the cache, about 5 minutes for the one run that builds it.
     """
     from pipeline.benchmark import sources
     print("      {:<7} {:>11} {:>13} {:>13} {:>5} {:>9} {:>11} {:>16} {:>13}".format(

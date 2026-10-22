@@ -1,5 +1,4 @@
-"""The DFL/IDSSE open data, read by our own parsers: the match information and the positions now; truth and the cache
-later.
+"""The DFL/IDSSE open data, read by our own parsers and kept parsed on disk (load_match); the truth comes later.
 
 What the data are
 -----------------
@@ -45,14 +44,34 @@ DFL gives X and Y in metres from the centre of the pitch, S in km/h and Z in met
 and y = (W/2 - Y) / W in 0-1 (L, W = MatchInfo.pitch). The y axis is flipped, as the plan fixes it; nothing in the
 benchmark depends on which way it points, only on every consumer reading this one. Speeds are in m/s (S / 3.6) and Z in
 metres. A missing X, Y, S or Z is NaN and a missing BallPossession or BallStatus is -1; both are counted in the report.
+
+The cache
+---------
+Parsing one positions file takes about a minute, and every later stage wants the same seven matches again and again.
+load_match(match_id) is therefore the one door to a match: the first call parses it and stores the arrays as .npy files
+and the rest as manifest.json under <data dir>/cache/dfl/<match_id>/ (git ignores everything under data/), and every
+later call reads them back in a second or two. It follows pipeline/inputs/atd_cache.py, which does the same for the ATD.
+
+The manifest records the size and sha256 of both source files, CACHE_VERSION and the numpy and lxml versions that
+parsed them; a cache is reused only if all three still match, so a re-downloaded file or a new library never reads
+through a stale cache. Bump CACHE_VERSION when parse_positions or the arrays change in a way the sources cannot show.
+The arrays are written first and the manifest last, with the old manifest removed up front, so a run killed half-way
+leaves no manifest and the next call rebuilds. A cache that cannot be read (an array missing, cut short or of the wrong
+shape, a manifest that is not JSON or lacks a field) is treated as absent and rebuilt, never as an error: everything in
+it can be had again from the sources.
 """
 
+import json
 import math
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 from lxml import etree
+
+import games
+from pipeline.benchmark import sources
+from pipeline.inputs.atd_cache import describe_source
 
 # Params
 MATCH_ID_PREFIX = "DFL-MAT-"             # General@MatchId reads "DFL-MAT-J03WMX"; we say "J03WMX" everywhere else
@@ -72,6 +91,14 @@ ABSENT = -1                              # no code, no ball frame, and the separ
 PLAYER_ATTRIBUTES = ("N", "X", "Y", "S")  # what is read from a player's <Frame>
 BALL_ATTRIBUTES = ("N", "X", "Y", "Z", "S", "BallPossession", "BallStatus")  # ... and from the ball's
 MISSING_ATTRIBUTES = ("X", "Y", "S", "Z", "BallPossession", "BallStatus")    # the report counts these when absent
+CACHE_VERSION = 1                        # bump when the arrays or their meaning change; every cache then rebuilds
+CACHE_FOLDER = ("cache", "dfl")          # <data dir>/cache/dfl/<match id>/
+MANIFEST = "manifest.json"
+SOURCE_KINDS = ("information", "positions")  # the files a match is parsed from, named as sources.FILES names them
+# The DflMatch fields that are arrays, one .npy each, with the dtype a cache must give back.
+ARRAY_DTYPES = {"frame_number": np.int64, "players_xy": np.float64, "players_speed": np.float64,
+                "player_team": np.int8, "ball_xy": np.float64, "ball_z": np.float64, "ball_speed": np.float64,
+                "ball_status": np.int8, "ball_possession": np.int8}
 
 
 @dataclass(frozen=True)
@@ -125,7 +152,7 @@ class DflMatch:
     half to its first row, which is what the plan treats as the kick-off (the first frame DFL gives for the half,
     not necessarily the whistle). x, y are normalised 0-1 (see the module docstring), speeds are m/s, ball_z is
     metres. ball_status is 1 alive, 0 dead, -1 unknown; ball_possession is 0 home, 1 away, -1 unknown. `report`
-    counts what the parse saw (parse_positions).
+    counts what the parse saw (parse_positions); a match from load_match has one more entry, "cache".
 
     The arrays are read-only, so that a match read from the cache and one just parsed behave the same. The class
     compares by identity (eq=False): a field-wise == over arrays would be a question with no useful answer.
@@ -250,6 +277,59 @@ def parse_positions(path, info):
     _require_ball_per_half(path, balls)
     _reject_bad_codes(path, bad_codes)
     return _timeline(info, balls, players, skipped)
+
+
+def load_match(match_id, data_dir=None, rebuild=False, paths=None):
+    """The DflMatch of one match: read back from its cache when that is fresh, otherwise parsed and stored.
+
+    A real match (one of sources.MATCH_IDS) is read from its downloaded files, which sources.local_path finds under
+    `data_dir` (default games.DATA_DIR). `paths` = {"information": ..., "positions": ...} names the two files instead,
+    for a match that is not one of them (the synthetic ones of the self-checks); the cache is then
+    <data dir>/cache/dfl/<match_id>/ all the same. rebuild=True parses even when the cache is fresh.
+
+    The report of the match returned has one more entry than parse_positions gives: "cache" is "built" if this call
+    parsed the files and "reused" if it read the cache. It is set on the returned match only and never stored, so
+    that the manifest does not depend on how a match was reached. The arrays are read-only either way, and a reused
+    match equals a built one in every field.
+
+    ValueError for an id outside sources.MATCH_IDS when there are no paths, for paths that are not exactly the two
+    kinds of file, and for files that are of another match than `match_id`; FileNotFoundError, naming the file and how
+    to fetch it, for a source file that is not there; whatever the parsers raise for a file that is damaged. A cache
+    that cannot be read is not an error: it is rebuilt.
+    """
+    if paths is None:
+        if match_id not in sources.MATCH_IDS:
+            raise ValueError("{!r} is not one of the DFL benchmark matches ({}); to load any other match, pass "
+                             "paths=a dict of the files of its two kinds, information and positions".format(
+                                 match_id, ", ".join(sources.MATCH_IDS)))
+        paths = {kind: sources.local_path(match_id, kind, data_dir) for kind in SOURCE_KINDS}
+    elif sorted(paths) != sorted(SOURCE_KINDS):
+        raise ValueError("paths must name exactly {} and it names {}".format(
+            " and ".join('"{}"'.format(kind) for kind in SOURCE_KINDS), sorted(paths)))
+    for kind in SOURCE_KINDS:
+        _require_file(paths[kind])
+
+    folder = os.path.join(data_dir or games.DATA_DIR, *CACHE_FOLDER, match_id)
+    key = {"cache_version": CACHE_VERSION,
+           "sources": {kind: describe_source(paths[kind]) for kind in SOURCE_KINDS},
+           "parsed_with": {"numpy": np.__version__, "lxml": etree.__version__}}
+    manifest = None if rebuild else _read_manifest(folder)
+    if manifest is not None and all(manifest.get(name) == value for name, value in key.items()):
+        match = _load(folder, manifest, match_id)
+        if match is not None:
+            return match
+
+    info = parse_match_information(paths["information"])
+    if info.match_id != match_id:
+        raise ValueError("{}: the match information is of match {} but {} was asked for; the cache of a match is "
+                         "filed under its id, so pass the files of that match".format(
+                             paths["information"], info.match_id, match_id))
+    match = parse_positions(paths["positions"], info)
+    _save(match, folder, dict(
+        key, match_id=match.match_id, pitch=list(match.pitch), fps=match.fps,
+        graded=[list(block) for block in match.graded],
+        kickoffs={str(half): row for half, row in match.kickoffs.items()}, report=match.report))
+    return replace(match, report=dict(match.report, cache="built"))
 
 
 def _require_file(path):
@@ -632,3 +712,73 @@ def _timeline(info, balls, players, skipped):
         ball_xy=ball_xy, ball_z=ball_z, ball_speed=ball_speed, ball_status=ball_status,
         ball_possession=ball_possession,
         report={**counts, "skipped_framesets": dict(sorted(skipped.items())), "missing": missing})
+
+
+# -- the cache --------------------------------------------------------------------------------------------------------
+
+def _read_manifest(folder):
+    """The manifest as a dict, or None if there is none or it cannot be read as one: an unreadable cache is absent."""
+    try:
+        with open(os.path.join(folder, MANIFEST), encoding="utf-8") as handle:
+            manifest = json.load(handle)
+    except (OSError, ValueError):  # no file, no access, not UTF-8, not JSON (JSONDecodeError is a ValueError)
+        return None
+    return manifest if isinstance(manifest, dict) else None
+
+
+def _save(match, folder, manifest):
+    """Arrays first, manifest last, with the old manifest removed up front (atd_cache._save does the same).
+
+    The manifest is what marks a cache as complete, so a run killed half-way through writing leaves none, and the next
+    call rebuilds instead of loading a mixture of old and new arrays.
+    """
+    os.makedirs(folder, exist_ok=True)
+    manifest_path = os.path.join(folder, MANIFEST)
+    if os.path.exists(manifest_path):
+        os.remove(manifest_path)
+    for name in ARRAY_DTYPES:
+        np.save(os.path.join(folder, name + ".npy"), getattr(match, name), allow_pickle=False)
+    with open(manifest_path, "w", encoding="utf-8", newline="\n") as handle:
+        json.dump(manifest, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+
+
+def _load(folder, manifest, match_id):
+    """The DflMatch the cache holds, or None if any part of it cannot be read as one.
+
+    JSON has no tuples, no integer keys and no distinction between 105 and 105.0 that the parser's own values have, so
+    each scalar is given back the exact type parse_positions returns: pitch a tuple of floats, graded a tuple of
+    (int, int, int), kickoffs {int: int}. The arrays are loaded into memory, not memory-mapped (Windows locks a mapped
+    file, which would break the next rebuild or a temporary folder's cleanup), and made read-only.
+    """
+    try:
+        if manifest["match_id"] != match_id:
+            return None
+        arrays = {name: np.load(os.path.join(folder, name + ".npy"), allow_pickle=False) for name in ARRAY_DTYPES}
+        pitch = tuple(float(side) for side in manifest["pitch"])
+        graded = tuple((int(half), int(start), int(stop)) for half, start, stop in manifest["graded"])
+        kickoffs = {int(half): int(row) for half, row in manifest["kickoffs"].items()}
+        fps = int(manifest["fps"])
+        report = manifest["report"]
+    except (OSError, ValueError, EOFError, KeyError, TypeError, AttributeError):
+        return None
+    if len(pitch) != 2 or not isinstance(report, dict) or not _fits(arrays):
+        return None
+    for array in arrays.values():
+        array.setflags(write=False)
+    return DflMatch(match_id=match_id, pitch=pitch, fps=fps, graded=graded, kickoffs=kickoffs,
+                    report=dict(report, cache="reused"), **arrays)
+
+
+def _fits(arrays):
+    """Whether the arrays have the dtypes of ARRAY_DTYPES and shapes that fit one timeline of n rows and P players."""
+    if any(arrays[name].dtype != dtype for name, dtype in ARRAY_DTYPES.items()):
+        return False
+    frame_number, player_team = arrays["frame_number"], arrays["player_team"]
+    if frame_number.ndim != 1 or player_team.ndim != 1:
+        return False
+    n, players = frame_number.shape[0], player_team.shape[0]
+    shapes = {"frame_number": (n,), "players_xy": (n, players, 2), "players_speed": (n, players),
+              "player_team": (players,), "ball_xy": (n, 2), "ball_z": (n,), "ball_speed": (n,), "ball_status": (n,),
+              "ball_possession": (n,)}
+    return all(arrays[name].shape == shape for name, shape in shapes.items())

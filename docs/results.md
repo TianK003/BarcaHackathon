@@ -160,6 +160,24 @@ parser refuses a possession that is not 1 or 2, so a clean parse is a 0 for that
 - Dead ball is 41% to 52% of every benchmark match. kloppy's default drops all of it ([T30](traps.md)), which would
   leave the benchmark with no `D`. Its fallbacks for a missing possession or ball entry never apply to these files.
 
+### A06 — The cost of a DFL match, parsed and from the cache (2026-10-23)
+
+Public data only. Command: `python pipeline/benchmark/selftest.py --dfl`, check `test_dfl_all_matches_load`, which
+loads all seven matches through `dfl.load_match` twice (Windows 11, local disk, Python 3.11.9). The cache is
+`data/cache/dfl/<match id>/`: nine `.npy` files and a `manifest.json`.
+
+| | no cache (built) | cache (reused) |
+|---|---|---|
+| One match | 43.9 to 48.5 s | 0.7 to 1.3 s |
+| All seven | 326.8 s | 5.5 to 6.9 s |
+| Whole `--dfl` run, 53 checks | 487 s | 162 s |
+| `test_dfl_t30_facts` | 297.8 s (one parse per match, before the cache) | 4.5 s |
+
+- A reused match is read in 0.7 to 1.3 s, most of it the sha256 of the two source files (the positions file is up to
+  420 MB), which is what makes a stale cache impossible.
+- The caches take 129 to 141 MB per match, 956 MB for the seven.
+- What remains of the `--dfl` run is kloppy's own loads (about 100 s) and the 2.6 GB md5 check (9 s).
+
 ## Experiments
 
 Copy this template for each run, and add a scoreboard row for anything worth comparing.
