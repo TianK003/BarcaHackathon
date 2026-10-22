@@ -12,4 +12,7 @@ real tracking with the ball's own alive/dead and possession flags, to be degrade
 
 This file grows with the benchmark: sources.py is the registry and the download; the parser, the truth, the scorer and
 the degrader land in their own modules next to it.
+
+The self-checks live in checks/, one module per topic, and selftest.py is the harness that collects and runs them (to
+add a check, see checks/__init__.py).
 """
