@@ -39,6 +39,7 @@ MATCH_ID_PREFIX = "DFL-MAT-"             # General@MatchId reads "DFL-MAT-J03WMX
 ROLE_TEAM = {"home": 0, "guest": 1}      # Team@Role -> Player.team; DFL's "guest" is our away
 TOTAL_TIME_ATTRIBUTE = {1: "TotalTimeFirstHalf", 2: "TotalTimeSecondHalf"}  # half -> OtherGameInformation attribute
 FETCH_ADVICE = "run python pipeline/benchmark/sources.py"
+VERIFY_ADVICE = "the download is probably damaged, so {} --verify to check it".format(FETCH_ADVICE)
 
 
 @dataclass(frozen=True)
@@ -113,6 +114,9 @@ def parse_match_information(path):
     role_of_person = {}
     for role, team in ROLE_TEAM.items():
         squad = [_player(element, path, team) for element in teams[role].findall("Players/Player")]
+        if not squad:
+            raise ValueError("{}: the <Team> with Role=\"{}\" ({}) lists no <Player> under <Players>; both "
+                             "squads are expected; {}".format(path, role, team_names[role], VERIFY_ADVICE))
         for player in squad:
             if player.person_id in role_of_person:
                 raise ValueError("{}: PersonId {} is listed twice (under Role=\"{}\", then under Role=\"{}\"); the "
@@ -134,25 +138,28 @@ def _read(path):
     try:
         return etree.parse(path, etree.XMLParser(resolve_entities=False, no_network=True)).getroot()
     except etree.XMLSyntaxError as error:
-        raise ValueError("{}: not well-formed XML ({}); the download is probably damaged, so {} --verify to "
-                         "check it".format(path, error, FETCH_ADVICE)) from error
+        raise ValueError("{}: not well-formed XML ({}); {}".format(path, error, VERIFY_ADVICE)) from error
 
 
 def _child(parent, path, name):
     """The one child element called `name`, or a ValueError that says what the file has instead."""
-    child = parent.find(name)
-    if child is None:
+    children = parent.findall(name)
+    if not children:
         found = ", ".join("<{}>".format(element.tag) for element in parent if isinstance(element.tag, str))
         found = found or "nothing"  # a comment's tag is a function, not a name: left out
         raise ValueError("{}: <{}> has no <{}> element (it has {}); this is not a DFL match information file "
                          "(DFL_02_01_matchinformation_*.xml)".format(path, parent.tag, name, found))
-    return child
+    if len(children) > 1:
+        raise ValueError("{}: <{}> has {} <{}> elements and exactly one is expected; this is not a DFL match "
+                         "information file (DFL_02_01_matchinformation_*.xml)".format(
+                             path, parent.tag, len(children), name))
+    return children[0]
 
 
 def _attribute(element, path, name):
     value = element.get(name)
     if not value:
-        raise ValueError("{}: <{}> has no {} attribute".format(path, element.tag, name))
+        raise ValueError("{}: <{}> has no {} attribute; {}".format(path, element.tag, name, VERIFY_ADVICE))
     return value
 
 
@@ -164,7 +171,8 @@ def _number(element, path, name):
     except ValueError:
         value = math.nan
     if not math.isfinite(value):
-        raise ValueError("{}: <{}> has {}={!r}, which is not a number".format(path, element.tag, name, text))
+        raise ValueError("{}: <{}> has {}={!r}, which is not a number; {}".format(
+            path, element.tag, name, text, VERIFY_ADVICE))
     return value
 
 
@@ -190,11 +198,13 @@ def _teams_by_role(teams_element, path):
 def _player(element, path, team):
     person_id = _attribute(element, path, "PersonId")
     shirt = element.get("ShirtNumber")
+    if shirt is None:
+        raise ValueError("{}: <Player> {} has no ShirtNumber attribute; {}".format(path, person_id, VERIFY_ADVICE))
     try:
         shirt = int(shirt)
-    except (TypeError, ValueError):
-        raise ValueError("{}: <Player> {} has ShirtNumber={!r}, which is not a whole number".format(
-            path, person_id, shirt)) from None
+    except ValueError:
+        raise ValueError("{}: <Player> {} has ShirtNumber={!r}, which is not a whole number; {}".format(
+            path, person_id, shirt, VERIFY_ADVICE)) from None
     full_name = " ".join(part for part in (element.get("FirstName", "").strip(), element.get("LastName", "").strip())
                          if part)
     return Player(person_id=person_id, team=team, shirt=shirt,

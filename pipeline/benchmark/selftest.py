@@ -41,8 +41,9 @@ from pipeline.selftest import expect_error, quiet, write_text  # noqa: E402
 # Params
 # 2.56 MB: three 1 MiB reads, the last one short, so the streaming loop really loops.
 GOOD_BODY = bytes(range(256)) * 10_000
-# The home and guest team of each DFL match, spelled as General@HomeTeamName and General@GuestTeamName spell them in
-# the files (the parser reads the names from the <Team> elements chosen by Role, so the two are independent).
+# The home and guest team of each DFL match, as Bassek, Rein, Weber & Memmert (2025), Sci Data 12:195, Table 1 lists
+# them. Typed from the paper and never taken from the files' General@HomeTeamName / GuestTeamName: the parser reads
+# the files, so a table "fixed" from them would make this check compare the files with themselves.
 DFL_TEAMS = {"J03WMX": ("1. FC Köln", "FC Bayern München"), "J03WN1": ("VfL Bochum 1848", "Bayer 04 Leverkusen"),
              "J03WOH": ("Fortuna Düsseldorf", "SSV Jahn Regensburg"),
              "J03WOY": ("Fortuna Düsseldorf", "F.C. Hansa Rostock"),
@@ -540,15 +541,25 @@ def test_match_information_rejects_damaged_files():
     cases = [  # label, how to damage the file, what the message must name besides the file
         ("two home teams", lambda text: text.replace('Role="guest"', 'Role="home"'), ['Role="home"', "two <Team>"]),
         ("no teams", without_teams, ['Role="home"', 'Role="guest"']),
-        ("no pitch width", lambda text: text.replace(' PitchX="104.50"', ""), ["PitchX", "Environment"]),
-        ("pitch that is no number", lambda text: text.replace('PitchY="67.50"', 'PitchY="wide"'), ["PitchY", "wide"]),
+        # The guest team is the first one in the file, so count=1 empties its squad.
+        ("a team with no players",
+         lambda text: re.sub(r"<Players>.*?</Players>", "<Players></Players>", text, count=1, flags=re.DOTALL),
+         ["Synthetic Away FC", 'Role="guest"', "lists no <Player>", "--verify"]),
+        ("two <Environment> elements", lambda text: re.sub(r"<Environment[^>]*/>", lambda match: match.group(0) * 2,
+                                                           text),
+         ["<Environment>", "2 <Environment> elements"]),
+        ("no pitch length", lambda text: text.replace(' PitchX="104.50"', ""), ["PitchX", "Environment", "--verify"]),
+        ("pitch that is no number", lambda text: text.replace('PitchY="67.50"', 'PitchY="wide"'),
+         ["PitchY", "wide", "--verify"]),
         ("negative pitch", lambda text: text.replace('PitchX="104.50"', 'PitchX="-105"'), ["PitchX", "-105"]),
         ("shirt that is no number", lambda text: text.replace('ShirtNumber="9"', 'ShirtNumber="nine"'),
-         ["ShirtNumber", "nine", "DFL-OBJ-SYNA03"]),
+         ["ShirtNumber", "nine", "DFL-OBJ-SYNA03", "--verify"]),
+        ("a shirt that is missing", lambda text: text.replace(' ShirtNumber="9"', ""),
+         ["no ShirtNumber attribute", "DFL-OBJ-SYNA03", "--verify"]),
         ("a player in both teams", lambda text: text.replace("DFL-OBJ-SYNH01", "DFL-OBJ-SYNA01"),
          ["DFL-OBJ-SYNA01", "twice"]),
         ("no second half duration", lambda text: text.replace(' TotalTimeSecondHalf="2820120"', ""),
-         ["TotalTimeSecondHalf"]),
+         ["TotalTimeSecondHalf", "--verify"]),
         ("match id without its prefix", lambda text: text.replace("DFL-MAT-SYN001", "SYN001"),
          ["MatchId", "DFL-MAT-"]),
         ("General naming the other home team",
@@ -594,11 +605,10 @@ def test_dfl_files_verified():
         len(statuses), sum(remote.size for remote in sources.select()), sources.external_dir()))
 
 
-
 def test_dfl_match_information_all():
     """All 7 match information files parse, and say what the paper says: teams, a real pitch, full squads."""
     from pipeline.benchmark import dfl, sources
-    print("      {:<7} {:<20} {:<22} {:>11} {:>9} {:>14}".format(
+    print("      {:<7} {:<20} {:<22} {:>11} {:>9} {:>21}".format(
         "match", "home", "guest", "pitch (m)", "players", "total (raw)"))
     for match_id in sources.MATCH_IDS:
         info = dfl.parse_match_information(sources.local_path(match_id, "information"))
@@ -610,7 +620,7 @@ def test_dfl_match_information_all():
         assert [player.team for player in info.players] == sorted(player.team for player in info.players), \
             "{}: players must list home first".format(match_id)
         assert sorted(info.total_time_raw) == [1, 2] and min(info.total_time_raw.values()) > 0, info.total_time_raw
-        print("      {:<7} {:<20} {:<22} {:>11} {:>9} {:>14}".format(
+        print("      {:<7} {:<20} {:<22} {:>11} {:>9} {:>21}".format(
             match_id, info.home_name, info.away_name, "{:g} x {:g}".format(*info.pitch),
             "{} + {}".format(*counts), "{:,.0f} / {:,.0f}".format(*(info.total_time_raw[half] for half in (1, 2)))))
 
