@@ -14,8 +14,8 @@ Why we parse them ourselves
 kloppy (3.18.0, pinned) has a loader for this data, and it is wrong for us in three ways that nothing would announce:
 it maps every BallPossession other than 1 to the away team, so a frame without a possession value turns into an
 away frame; it skips frames that have no ball entry; and by default it drops every dead-ball frame, which leaves no
-D to learn or to score (docs/traps.md T30, found by reading its source). Reading the XML ourselves lets each of
-those be a decision we make and test, with the counts printed, instead of a default we inherit.
+D to learn or to score (docs/traps.md T30, measured on all seven matches in docs/results.md A05). Reading the XML
+ourselves lets each of those be a decision we make and test, with the counts printed, instead of a default we inherit.
 
 Home and away
 -------------
@@ -398,7 +398,8 @@ def _scan(path, info):
                     if event == "end":
                         if current is None:
                             raise ValueError("{}: a <Frame> outside any <FrameSet>; this is not a DFL positions file "
-                                             "(DFL_04_03_positions_raw_observed_*.xml)".format(path))
+                                             "(DFL_04_03_positions_raw_observed_*.xml), or the download is damaged; "
+                                             "{}".format(path, VERIFY_ADVICE))
                         get = element.get
                         for name, append in current.appenders:
                             append(get(name))
@@ -406,9 +407,10 @@ def _scan(path, info):
                 elif event == "start":
                     if current is not None:
                         raise ValueError("{}: {} starts inside {}, which has not ended; this is not a DFL positions "
-                                         "file (DFL_04_03_positions_raw_observed_*.xml)".format(
+                                         "file (DFL_04_03_positions_raw_observed_*.xml), or the download is "
+                                         "damaged; {}".format(
                                              path, _label(*(element.get(name) for name in LABEL_ATTRIBUTES)),
-                                             current.label))
+                                             current.label, VERIFY_ADVICE))
                     current = _open(element.attrib, path, info, roster, club_of, balls, players, skipped)
                 else:
                     if current.kind == "ball":

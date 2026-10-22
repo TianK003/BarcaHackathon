@@ -87,6 +87,23 @@ SYNTHETIC_REPORT = {
     "missing": {"X": 2, "Y": 1, "S": 3, "Z": 2, "BallPossession": 1, "BallStatus": 2}}
 
 
+# -- the harness's contract with the checks ---------------------------------------------------------------------------
+
+class NotRun(Exception):
+    """Raised by a check that could not run on this machine, as opposed to one that ran and failed.
+
+    The harness prints "NOT RUN  <name>: <reason>", counts it apart from the passes and does not fail the run for it:
+    an optional comparison (kloppy) that is not installed has compared nothing, which a PASS would claim it had.
+    It is defined here, and not in selftest.py, because the checks raise it and the harness catches it: when the
+    harness runs by path as __main__, a check importing it from selftest.py would load that file a second time as a
+    different module, and the harness would catch a different class.
+    """
+
+    def __init__(self, reason):
+        super().__init__(reason)
+        self.reason = reason
+
+
 # -- console ----------------------------------------------------------------------------------------------------------
 
 def utf8_stdout():

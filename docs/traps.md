@@ -98,9 +98,9 @@ pipeline's `atd.players_present` and `atd.ball_present` do exactly that.
 **T19 — kloppy is slow on the full ATD.** Loading all 199,319 frames takes minutes and gigabytes. Stream the raw file
 once, as `starter/baseline.py` does, and cache arrays under `data/cache/`.
 
-**T30 — kloppy's DFL loader hides the dead ball.** `kloppy.sportec.load_open_tracking_data`, which loads P01's
-benchmark matches, defaults to `only_alive=True` and silently drops every dead-ball frame. That leaves no `D` to
-learn or score. Pass `only_alive=False`.
+**T30 — kloppy's DFL loader hides the dead ball.** Both of kloppy's DFL loaders,
+`kloppy.sportec.load_open_tracking_data` and `kloppy.sportec.load_tracking`, default to `only_alive=True` and silently
+drop every dead-ball frame. That leaves no `D` to learn or score. Pass `only_alive=False`.
 
 Measured on the seven DFL matches on 2026-10-22 (kloppy 3.18.0; `python pipeline/benchmark/selftest.py --dfl`):
 - **The default drops the dead ball.** On J03WMX, `only_alive=True, limit=5000` returned 5,000 frames over N 10,000 to

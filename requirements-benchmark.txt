@@ -5,5 +5,8 @@
 #
 # lxml reads the DFL XML files (the positions files are 350-420 MB each). Pin new imports here in the same commit that
 # adds them, as in requirements-pipeline.txt.
+#
+# The optional kloppy cross-check of selftest.py --dfl (test_dfl_parser_agrees_with_kloppy) uses the kloppy==3.18.0
+# that requirements-starter.txt pins; it is not repeated here, and without it the check reports NOT RUN.
 -r requirements-pipeline.txt
 lxml==6.1.3
