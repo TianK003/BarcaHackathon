@@ -157,12 +157,17 @@ players' jitter, the RMS of the second difference of a position (the statistic `
 ours), is 8.996 cm in the seven matches, pooled by sums of squares, against 3.280 mm in ours: 27 times. The rule, set
 before measuring, was to smooth every tracklet piece with a centred 5-frame moving average (the window shrinks at a
 piece's ends to the rows inside it, and nothing crosses a piece) if DFL's is more than twice ours, so the profile is
-smoothed (`degrade.SMOOTH_WINDOW`). It lowers the pooled jitter to 6.47 cm (fidelity report, three seeds), still 20
-times ours, and that is not the average's failure. Five of the seven matches (all the 2. Bundesliga ones) have 98% of
-the squares of their second differences in the largest 0.05% of triples: rare jumps (in J03WOY's first half, 61 steps of
-1,520,419 exceed 25 m/s) that an average spreads out and does not remove. And the bulk is a 1 cm grid: the median second
-difference of every match is 1.00 cm and its 99th percentile 2.83 cm, against 1.4 mm and 9.6 mm in ours, which a 5-frame
-average lowers by a factor of about 6 on white noise. Nothing was tuned to close that gap (R004).
+smoothed (`degrade.SMOOTH_WINDOW`). On the profile's own draws (version 2, seed 0, the seven matches pooled; the same
+pieces with and without the average, `test_data_tracking_constants_follow_from_the_measurements`) it lowers the jitter
+from 12.0 to 8.7 cm, and the fidelity report's three seeds say 8.5 cm: about 26 times ours, and that is not the
+average's failure. (The 12.0 is more than DFL's own 9.0, which the cuts can do: in five matches the RMS is 98% rare
+jumps, and the pieces and slots change which triples are counted. So the check compares the same draws with and without
+the average, and not the profile with the clean players. Version 1, R004, had 6.47 cm over three seeds.) Five of the
+seven matches (all the 2. Bundesliga ones) have 98% of the squares of their second differences in the largest 0.05% of
+triples: rare jumps (in J03WOY's first half, 61 steps of 1,520,419 exceed 25 m/s) that an average spreads out and does
+not remove. And the bulk is a 1 cm grid: the median second difference of every match is 1.00 cm and its 99th percentile
+2.83 cm, against 1.4 mm and 9.6 mm in ours, which a 5-frame average lowers by a factor of about 6 on white noise.
+Nothing was tuned to close that gap (R004).
 
 **The cap, the shortest piece and the scale of the tracked spans (version 2).** Our tracker has 18 or fewer slots
 present on 10.6% of its frames (5.2% have 14 or fewer): the camera is on a part of the pitch and the rest of the players
@@ -208,10 +213,16 @@ The checks that pin the parts: `test_cap_keeps_nearest`, `test_cap_inactive_abov
 `test_cap_limits_refuse_counts_that_are_not_the_masks_frames`,
 `test_transplant_counts_read_the_same_window_as_the_mask`, `test_min_piece_rule_drops_every_piece_shorter_than_it`,
 `test_min_piece_rule_runs_after_the_cap_and_before_the_slots`, `test_min_piece_rule_counts_the_episode_pieces`,
-`test_tracked_scale_multiplies_the_drawn_lengths_and_the_lost_share_stays_d` and
-`test_tracking_version_2_with_no_low_count_frame_is_version_1s_players` (with no frame at or below 18, and lambda 1 and
-no shortest-piece rule through the parameters, the players are version 1's byte for byte). The rest:
-`test_wrong_team_starts_at_close_pairs`, `test_wrong_team_moves_one_player_to_other_pool`,
+`test_tracked_scale_multiplies_the_drawn_lengths_and_the_lost_share_stays_d`,
+`test_tracked_scale_is_the_frozen_one_and_follows_from_the_recorded_measurements` (2.042 from 41.28 s and 20.22 s, in
+the default run), `test_calibrated_parameters_read_the_scale_and_the_shortest_piece_when_called` (the constants are read
+when the function is called) and `test_tracking_version_2_with_no_low_count_frame_is_version_1s_players` (with no frame
+at or below 18, and lambda 1 and no shortest-piece rule through the parameters, the players are version 1's byte for
+byte). The order of the parts is pinned by two scenes:
+`test_cap_is_applied_to_the_pieces_after_the_episodes_and_leaves_their_counts_alone` (an onset on a capped row is still
+counted, as the cap comes after the episodes) and `test_cap_cuts_the_smoothing_and_the_speeds_at_the_drops` (nothing is
+smoothed or differenced across a drop). The rest: `test_wrong_team_starts_at_close_pairs`,
+`test_wrong_team_moves_one_player_to_other_pool`,
 `test_wrong_team_draws_come_from_the_wrong_team_stream_in_a_fixed_order`, `test_speed_nan_share`,
 `test_speed_nan_runs_follow_the_documented_draws`, `test_smoothing_is_a_centred_moving_average_inside_each_piece`,
 `test_profiles_nest`, `test_tracking_without_the_new_parts_is_task_12s_players` (with the new parts off the players are

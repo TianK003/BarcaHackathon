@@ -1204,7 +1204,7 @@ corrected this entry; only the layout, the determinism, the leaks and the lost s
 more than 18 slots present on 89.4% of its frames), the mean tracked span 2,797 frames (111.9 s) and the mean lost span
 71.7 frames (2.87 s); 2.80% of the 3,211,274 on-pitch frames are lost, in 1,605 tracklets. **Slots used per team**
 (home / away; the first version of these figures came from a throwaway script, and the check has printed them itself
-since the commit after `811732d` that added the print, `slot_use`, the same function for both sides): of the pools of
+since `6144685`, which added the print, `slot_use`, the same function for both sides): of the pools of
 24 / 22 slots the degraded match has 13 / 13 ever present, 11 / 12 present on at least a tenth of the frames and 12 / 12
 on at least a hundredth, against ours 22 / 21, 21 / 20 and 22 / 21 (A09 had 11 + 11 on a tenth before the episodes, which
 take a slot in the other team's pool). The lost
@@ -1369,27 +1369,49 @@ by more than 0.4 points; what changed is the players, and the checks below say h
 Reports: `data/runs/benchmark/tracking/<stem>.json` and `<stem>.coarse.json` (R004's, version 1, were kept in
 `tracking_v1/` for the paired comparison below), and `data/runs/benchmark/fidelity_tracking.json` (not committed; each
 carries the Calibration's digest).
-Checks: `pipeline/benchmark/selftest.py --dfl --data` passes all 257 checks (237 synthetic, 20 with `--dfl` and
-`--data`; 238 and 218 in R004), `pipeline/selftest.py` 35 of 35 and its `--data` run 37 of 37 (the four baselines
-identical byte for byte). The checks of each part were written first and failed first (the cap's 12 for a missing
-`cap_pieces`, `cap_limits` and `transplant_counts` and a `choose_half` that took no limit; the 5 of the shortest piece,
-the scale and the draws' record for a missing `MIN_PIECE_FRAMES` and missing `min_piece` and `tracked_scale` parameters;
-the 4 of the fidelity gates, the report, the pending list and the runner for a gate still pending and a default still
-`gaps`). The code was run against 34 mutants (21 of the cap and what it touches, 13 of the shortest piece, lambda and
-their record), each caught by a check in the end: for the cap, `CAP` itself not capped, a tie to the higher column, the
-farthest kept, membership that is not sticky, the nearest dropped when there are too many, the farthest added when there
-are too few, a centre spot that is a corner, no last place for a missing ball, another Transplant, a window of counts
-that goes round the whole source and not its tail, a drop counted once per piece, a profile that does not cap, a float
-count accepted, pieces returned unsorted, counts and masks of different lengths, a ball lost on every third row, rows
-before the kick-off capped and a piece that is not there yet pre-marked as kept (it survived until a hand-built scene
-was added); for the shortest piece, the minimum itself dropped, one frame short kept, an episode piece not counted as
-one, the frames counted as one, a rule that does not run, a profile with no rule; for lambda, not applied, rounded down,
-zero accepted, a bool accepted, the record forgetting it, and the counts not pooled by the report; and the default
-profile, the pending list and a moved lambda. Three survived at first, none of them for the same reason: a window of
-counts that did not go round (a no-op, replaced by a sharper mutant that goes round the whole source), a piece that is
-not present kept (a hand-built scene with spare room was added) and the rule's counts not pooled by the report (the
-check now names the pooled counts explicitly). The moved lambda is caught only by `--data`: the check of the constants
-fails on it, but on the assertion of the smoothing (fragile: below) before it reaches the one on lambda.
+**Corrected after review** (review round 1 of Task 14, in `97b62b5` and `59bc7d6`; the degradation, the reports and
+every number of this entry are unchanged: `fidelity.py` on the corrected code prints the same figures to the last digit,
+and a run of the four yardsticks under both truths with `--no-write` prints the same tables and Kendall's tau, apart
+from the commit it names). Four things changed. (1) The assertion that smoothing lowers the jitter compared the degraded
+players, cut by the walk, the episodes, the cap and the rule, with DFL's clean ones, so which jumps survive the cuts
+decided its sign (T35); it ran before the assertion on lambda, and 2.042 was asserted nowhere else, so a moved lambda
+was reported as "smoothing lowers the jitter". It now compares the same draws with and without the average (smooth=0:
+0.1201 m to 0.0873 m, seed 0, the 7 matches), the assertion on lambda comes first and uses recorded constants only, and
+the default run pins it too (`test_tracked_scale_is_the_frozen_one_and_follows_from_the_recorded_measurements`: 41.28 /
+20.22 = 2.042; with lambda at 2.0 that check fails alone, and in the data check the first assertion does). (2) The order
+of the cap, the episodes and the smoothing was pinned by no check: a cap taken before the episodes, and a smoothing and
+speeds taken over the uncapped piece across the cuts, passed all 41 older synthetic checks of checks/tracking.py. Two
+scenes pin them, and each fails on its mutant and on no other check
+(`test_cap_is_applied_to_the_pieces_after_the_episodes_and_leaves_their_counts_alone`, where the half has 23 onsets and
+no episode when the cap comes first, every onset on a capped row finding no pair; and
+`test_cap_cuts_the_smoothing_and_the_speeds_at_the_drops`). (3) `leaks` and its helpers moved from checks/inputs.py to
+checks/common.py, so that checks/tracking.py and checks/degrade.py import no other check module. (4)
+`calibrated_parameters` read TRACKED_SCALE and MIN_PIECE_FRAMES as default arguments, bound when the module loaded; it
+now reads them when it is called, as WRONG_TEAM_SCALE and SMOOTH_WINDOW are
+(`test_calibrated_parameters_read_the_scale_and_the_shortest_piece_when_called`), and the docstrings and the README's
+jitter (it quoted version 1's 6.47 cm, 20 times ours, for the profile) were brought up to date.
+Checks: `pipeline/benchmark/selftest.py --dfl --data` passes all 261 checks (241 synthetic, 20 with `--dfl` and
+`--data`; 257 and 237 before the review, 238 and 218 in R004), `pipeline/selftest.py` 35 of 35 and its `--data` run 37
+of 37 (the four baselines identical byte for byte). The checks of each part were written first and failed first (the
+cap's 12 for a missing `cap_pieces`, `cap_limits` and `transplant_counts` and a `choose_half` that took no limit; the 5
+of the shortest piece, the scale and the draws' record for a missing `MIN_PIECE_FRAMES` and missing `min_piece` and
+`tracked_scale` parameters; the 4 of the fidelity gates, the report, the pending list and the runner for a gate still
+pending and a default still `gaps`). The code was run against 34 mutants (21 of the cap and what it touches, 13 of the
+shortest piece, lambda and their record), each caught by a check in the end: for the cap, `CAP` itself not capped, a tie
+to the higher column, the farthest kept, membership that is not sticky, the nearest dropped when there are too many, the
+farthest added when there are too few, a centre spot that is a corner, no last place for a missing ball, another
+Transplant, a window of counts that goes round the whole source and not its tail, a drop counted once per piece, a
+profile that does not cap, a float count accepted, pieces returned unsorted, counts and masks of different lengths, a
+ball lost on every third row, rows before the kick-off capped and a piece that is not there yet pre-marked as kept (it
+survived until a hand-built scene was added); for the shortest piece, the minimum itself dropped, one frame short kept,
+an episode piece not counted as one, the frames counted as one, a rule that does not run, a profile with no rule; for
+lambda, not applied, rounded down, zero accepted, a bool accepted, the record forgetting it, and the counts not pooled
+by the report; and the default profile, the pending list and a moved lambda. Three survived at first, none of them for
+the same reason: a window of counts that did not go round (a no-op, replaced by a sharper mutant that goes round the
+whole source), a piece that is not present kept (a hand-built scene with spare room was added) and the rule's counts not
+pooled by the report (the check now names the pooled counts explicitly). The moved lambda was at first caught only by
+`--data`, and there by the assertion of the smoothing (fragile) before it reached the one on lambda; review round 1
+fixed both (above).
 
 **What happened, in order** (the first two steps were stops: the notes say to stop and report when a gate misses).
 1. The cap alone (the first version of v2) passed the three count gates it was built for and failed one gate it was not
@@ -1593,11 +1615,12 @@ are the same, so the two are paired; `tracking` v2 minus v1, from the two sets o
   nearest player to the ball is always kept, so a decoder that reads only that is nearly blind to the cap, as expected.
 - The `tracking` v1 figures of this table are R004's reports (the Calibration digest `65b0c1915194…`, version 2, commit
   `39d86cf`); the v2 ones are at `95583d9`.
-- A fragile assertion, noted and not touched: `test_data_tracking_constants_follow_from_the_measurements` asserts that
-  smoothing lowers the pooled second-difference RMS (0.0873 m degraded against DFL's clean 0.0900 m, seed 0). The RMS is
-  98% rare jumps in the 2. Bundesliga matches (T35), so where a jump falls (in a dropped frame, at the edge of a piece)
-  moves it by a few percent: with lambda at 2.0 instead of 2.042 the margin was gone. It is a margin of 3% and not a
-  result.
+- The assertion that smoothing lowers the jitter was fragile and is corrected (review round 1, above):
+  `test_data_tracking_constants_follow_from_the_measurements` compared the degraded players, cut and smoothed (0.0873 m,
+  seed 0), with DFL's clean ones (0.0900 m), a margin of 3% that lambda had used up (with lambda at 2.0 it was gone); it
+  now compares the same draws with and without the average, 0.1201 m to 0.0873 m, a fall of 27%. The RMS without the
+  average is more than DFL's clean one, which the cuts can do: it is 98% rare jumps in the 2. Bundesliga matches (T35),
+  and the pieces and slots change which triples are counted.
 
 Runtime: 93 to 110 s for `fidelity.py` on all seven matches and three seeds (three runs; it was 109 s for v1), and the
 runner's own line for the yardstick says 5.4 to 6.0 s per config (the whole run was not timed), with the DFL caches and
