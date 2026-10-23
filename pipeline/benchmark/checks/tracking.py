@@ -33,12 +33,13 @@ from pipeline.selftest import expect_error
 # The record of what was drawn (info["players"]): the parameters and counts, per half and in all. No frame.
 HALF_KEYS = ("tracklets", "slots_used", "on_pitch_frames", "lost_frames", "onsets", "episodes", "skipped_far",
              "skipped_overlap", "episode_frames", "speed_nan_runs", "speed_nan_frames", "capped_frames",
-             "cap_slot_frames", "cap_pieces_cut")
+             "cap_slot_frames", "cap_pieces_cut", "short_pieces", "short_slot_frames", "short_episode_pieces")
 PLAYERS_KEYS = ("d", "mean_tracked_frames", "mean_lost_frames", "tracklets", "on_pitch_frames", "lost_frames",
                 "lost_share", "scale", "wrong_team_target", "mean_episode_frames", "onset_rate", "smooth_window",
                 "speed_nan_target", "onsets", "episodes", "skipped_far", "skipped_overlap", "episode_frames",
                 "speed_nan_runs", "speed_nan_frames", "speed_nan_share", "capped_frames", "cap_slot_frames",
-                "cap_pieces_cut", "halves")
+                "cap_pieces_cut", "short_pieces", "short_slot_frames", "short_episode_pieces", "tracked_scale",
+                "min_piece_frames", "halves")
 
 
 # -- helpers ----------------------------------------------------------------------------------------------------------
@@ -219,26 +220,27 @@ def test_tracking_parameters_are_worked_out_from_the_calibration():
     calibration = made_up_calibration()
     assert degrade.CAP == 18
     assert abs(degrade.lost_share(calibration.present_counts) - 3 / 55) < 1e-12
-    parameters = degrade.calibrated_parameters(calibration, 25)
+    parameters = degrade.calibrated_parameters(calibration, 25, tracked_scale=1.0)
     assert parameters.lengths.tolist() == [10, 25, 50, 80, 100] and parameters.lengths.dtype == np.int64
     assert parameters.mean_tracked == MADE_UP_MEAN and abs(parameters.d - MADE_UP_D) < 1e-12
     assert abs(parameters.mu - MADE_UP_MU) < 1e-12 and abs(MADE_UP_MU - 159 / 52) < 1e-12
     assert not parameters.lengths.flags.writeable
-    other_rate = degrade.calibrated_parameters(calibration, 50)
+    other_rate = degrade.calibrated_parameters(calibration, 50, tracked_scale=1.0)
     assert other_rate.lengths.tolist() == [20, 50, 100, 160, 200] and other_rate.mean_tracked == 106.0
     assert abs(other_rate.mu - 106 * (3 / 55) / (52 / 55)) < 1e-12
 
     # A tracked span is at least a frame, and the seconds are rounded as round() does (halves to even).
     seconds = (0.0, 0.01, 0.02, 0.07, 0.1, 0.14, 4.0, 40.0)   # x 25: 0, 0.25, 0.5, 1.75, 2.5, 3.5, 100, 1000 frames
     short = without_new_parts(calibration, tracklet_lengths_s=np.array(seconds))
-    assert degrade.calibrated_parameters(short, 25).lengths.tolist() == [max(1, round(s * 25)) for s in seconds] == [
-        1, 1, 1, 2, 2, 4, 100, 1000]
+    assert degrade.calibrated_parameters(short, 25, tracked_scale=1.0).lengths.tolist() == [
+        max(1, round(s * 25)) for s in seconds] == [1, 1, 1, 2, 2, 4, 100, 1000]
     # Only the frames above CAP: a 19 is in and an 18 is not, and the halves are pooled.
     counts = {1: np.array([18, 18, 19], dtype=np.int16), 2: np.array([22, 3], dtype=np.int16)}
     assert abs(degrade.lost_share(counts) - (1 - 20.5 / 22)) < 1e-12
     # Nobody lost: d = 0, no lost span (mu = 0).
     nobody = degrade.calibrated_parameters(without_new_parts(
-        calibration, present_counts={1: np.full(10, 22, dtype=np.int16)}, tracklet_lengths_s=np.array([1.0])), 25)
+        calibration, present_counts={1: np.full(10, 22, dtype=np.int16)}, tracklet_lengths_s=np.array([1.0])), 25,
+        tracked_scale=1.0)
     assert (nobody.d, nobody.mu, nobody.mean_tracked) == (0.0, 0.0, 25.0)
 
     expect_error(ValueError, lambda: degrade.lost_share({1: np.array([18, 4, 0], dtype=np.int16)}),
@@ -506,7 +508,7 @@ def test_tracking_draws_come_from_the_tracklets_stream_in_a_fixed_order():
     halves, seeds and components draw apart."""
     match = steady_match()
     view = degrade.tracking_view(match)
-    parameters = degrade.calibrated_parameters(made_up_calibration(), 25)
+    parameters = degrade.calibrated_parameters(made_up_calibration(), 25, min_piece=0)     # the walk's own spans
     lengths = parameters.lengths.tolist()
     assert degrade.COMPONENTS["tracklets"] == 1
     for seed in (0, 4):
@@ -605,15 +607,18 @@ def test_tracking_is_deterministic_and_independent_of_the_other_matches():
     assert sorted(info["players"]["halves"]) == [1, 2]
     assert all(sorted(record) == sorted(HALF_KEYS) for record in info["players"]["halves"].values())
     for name in ("onsets", "episodes", "skipped_far", "skipped_overlap", "episode_frames", "speed_nan_runs",
-                 "speed_nan_frames", "capped_frames", "cap_slot_frames", "cap_pieces_cut"):
+                 "speed_nan_frames", "capped_frames", "cap_slot_frames", "cap_pieces_cut", "short_pieces",
+                 "short_slot_frames", "short_episode_pieces"):
         assert info["players"][name] == sum(record[name] for record in info["players"]["halves"].values()), name
+    assert info["players"]["tracked_scale"] == degrade.TRACKED_SCALE and info["players"]["min_piece_frames"] == 8
     assert info["players"]["onsets"] == info["players"]["episodes"] + info["players"]["skipped_far"] + \
         info["players"]["skipped_overlap"]
     assert info["players"]["tracklets"] == sum(record["tracklets"] for record in info["players"]["halves"].values())
     assert info["players"]["lost_frames"] == info["players"]["on_pitch_frames"] - int(
         np.isfinite(first.players_xy[:, :, 0]).sum())
-    assert abs(info["players"]["mean_tracked_frames"] - MADE_UP_MEAN) < 1e-9
-    assert abs(info["players"]["mean_lost_frames"] - MADE_UP_MU) < 1e-9
+    scaled = np.maximum(1, np.rint(np.array([10, 25, 50, 80, 100]) * degrade.TRACKED_SCALE)).mean()
+    assert abs(info["players"]["mean_tracked_frames"] - scaled) < 1e-9, "the made-up lengths at the frozen scale"
+    assert abs(info["players"]["mean_lost_frames"] - scaled * 3 / 52) < 1e-9, "mu = mean * d / (1 - d), d = 3 / 55"
     assert all(isinstance(value, (int, float)) for value in info["players"].values() if not isinstance(value, dict))
     # Many seeds, many different spans: the draws are not stuck.
     drawn = {degrade.degrade(view, "tracking", calibration, seed)[0].players_xy.tobytes() for seed in range(12)}
@@ -999,24 +1004,26 @@ def test_cap_matches_the_documented_rule_on_random_pieces():
 def test_cap_leaves_min_of_the_count_and_the_tracked_players_on_every_row():
     """After the cap a row has as many players as the count allows and no more than were tracked: min(count, tracked).
 
-    Through the whole profile on a squad of 22 (the made-up Calibration, whose counts have 18, 10 and 7 in runs among
-    22, 20 and 19): the number of slots present on a row of the degraded match is the number tracked without the cap
-    (the same draws: the cap draws nothing) when the count is above CAP, and the smaller of the count and that number
-    when it is not; the record's drops are the sum of the difference, and the rows outside the graded blocks have
-    nobody."""
+    On a squad of 22 (the made-up Calibration, whose counts have 18, 10 and 7 in runs among 22, 20 and 19), with the
+    shortest-piece rule off so that the cap is alone: the number of slots present on a row is the number tracked without
+    the cap (the same draws: the cap draws nothing) when the count is above CAP, and the smaller of the count and that
+    number when it is not; the record's drops are the sum of the difference, and the rows outside the graded blocks have
+    nobody. The profile itself, with the rule on, is the same players as degraded_players with its parameters and
+    limits (what degrade passes), the cap's record is the same, and no row has more players than the cap leaves."""
     match = steady_match(rows=(240, 200), teams=FULL_SQUAD, substitutions=True)
     view = degrade.tracking_view(match)
     cal = made_up_calibration()
-    parameters = degrade.calibrated_parameters(cal, view.fps)
+    profile = degrade.calibrated_parameters(cal, view.fps)
+    parameters = dataclasses.replace(profile, min_piece=0)
     low = rows = 0
     outside = np.ones(match.n_frames, dtype=bool)
     for _, start, stop in view.graded:
         outside[start:stop] = False
     for seed in range(5):
-        atd, info = degrade.degrade(view, "tracking", cal, seed)
         limits = degrade.cap_limits(view, cal, seed)
         before = np.isfinite(degrade.degraded_players(view, parameters, seed)[0][:, :, 0]).sum(axis=1)
-        after = atd.players_present.sum(axis=1)
+        xy, _, _, counts = degrade.degraded_players(view, parameters, seed, limits)
+        after = np.isfinite(xy[:, :, 0]).sum(axis=1)
         dropped = 0
         for half, start, stop in view.graded:
             kickoff = view.kickoffs[half]
@@ -1025,13 +1032,17 @@ def test_cap_leaves_min_of_the_count_and_the_tracked_players_on_every_row():
             assert (after[start:kickoff] == before[start:kickoff]).all() and (after[kickoff:stop] == want).all(), (
                 seed, half)
             dropped += int((before[start:stop] - after[start:stop]).sum())
-            record = info["players"]["halves"][half]
-            assert record["capped_frames"] == int((count <= degrade.CAP).sum())
-            low, rows = low + record["capped_frames"], rows + stop - kickoff
-        assert info["players"]["cap_slot_frames"] == dropped > 0, (seed, dropped)
+            assert counts[half]["capped_frames"] == int((count <= degrade.CAP).sum())
+            low, rows = low + counts[half]["capped_frames"], rows + stop - kickoff
+        assert sum(record["cap_slot_frames"] for record in counts.values()) == dropped > 0, (seed, dropped)
+        assert (after[outside] == 0).all()
+        atd, info = degrade.degrade(view, "tracking", cal, seed)
+        same = degrade.degraded_players(view, profile, seed, limits)[0]
+        assert atd.players_xy.tobytes() == same.tobytes(), "the profile is these players, rule included"
+        assert info["players"]["cap_slot_frames"] == dropped, "the rule is after the cap: the record is the cap's"
         assert info["players"]["capped_frames"] == sum(
             record["capped_frames"] for record in info["players"]["halves"].values())
-        assert (after[outside] == 0).all()
+        assert (atd.players_present.sum(axis=1) <= after).all(), "the rule only takes players away"
     assert 0.03 < low / rows < 0.3, low / rows
 
 
@@ -1161,7 +1172,10 @@ def test_tracking_version_2_with_no_low_count_frame_is_version_1s_players():
     Counts all 22 (as long as the masks): the whole profile's players equal degraded_players without the cap, bytes of
     the positions and speeds, and so do its tracklets and the counts of the walk, the episodes and the NaN runs, on a
     full squad and on a steady match, under three seeds; and so do counts that are all just above CAP (19). The record
-    says that nothing was capped. The profile's version is 2 and the gaps and clean ones' are 1."""
+    says that nothing was capped. With the scale of the tracked spans at 1 and the shortest-piece rule off, set through
+    the parameters (what version 1 was), the same holds for the players that those parameters make: a cap that finds no
+    frame to act on is the walk, the episodes, the slots, the speeds and the smoothing of version 1, and nothing else.
+    The profile's version is 2 and the gaps and clean ones' are 1."""
     assert degrade.PROFILES == {"clean": 1, "gaps": 1, "tracking": 2}
     for match in (steady_match(rows=(240, 200), teams=FULL_SQUAD, substitutions=True), steady_match()):
         view = degrade.tracking_view(match)
@@ -1170,15 +1184,157 @@ def test_tracking_version_2_with_no_low_count_frame_is_version_1s_players():
             cal = types.SimpleNamespace(**{**vars(base), "present_counts": {
                 half: np.full(len(mask), level, dtype=np.int16) for half, mask in base.ball_masks.items()}})
             parameters = degrade.calibrated_parameters(cal, view.fps)
+            version_1 = degrade.calibrated_parameters(cal, view.fps, tracked_scale=1.0, min_piece=0)
+            assert (version_1.tracked_scale, version_1.min_piece) == (1.0, 0)
             for seed in range(3):
                 atd, info = degrade.degrade(view, "tracking", cal, seed)
                 xy, speed, records, counts = degrade.degraded_players(view, parameters, seed)
                 assert atd.players_xy.tobytes() == xy.tobytes() and atd.players_speed.tobytes() == speed.tobytes()
                 assert info["version"] == 2 and info["players"]["capped_frames"] == 0
                 assert info["players"]["cap_slot_frames"] == info["players"]["cap_pieces_cut"] == 0
-                again = degrade.degraded_players(view, parameters, seed, degrade.cap_limits(view, cal, seed))
-                assert again[0].tobytes() == xy.tobytes() and again[1].tobytes() == speed.tobytes()
-                assert again[2] == records and again[3] == counts
+                limits = degrade.cap_limits(view, cal, seed)
+                for own in (parameters, version_1):
+                    plain = degrade.degraded_players(view, own, seed)
+                    again = degrade.degraded_players(view, own, seed, limits)
+                    assert again[0].tobytes() == plain[0].tobytes() and again[1].tobytes() == plain[1].tobytes()
+                    assert again[2] == plain[2] and again[3] == plain[3]
+
+
+
+# -- the shortest piece, and the scale of the tracked spans ---------------------------------------------------------
+
+def test_min_piece_rule_drops_every_piece_shorter_than_it():
+    """A piece shorter than MIN_PIECE_FRAMES is dropped whatever made it, and counted; the others come back as they
+    were.
+
+    Hand-built pieces of a steady match with 6 players (home 0-2, away 3-5, so a piece in the pool of the other team is
+    an episode piece). Player 0: 7 frames (dropped), 8 (kept: exactly the shortest) and 25 (kept). Player 3 (away): a
+    one-frame piece (dropped). Player 1 (home) in the away pool, so an episode piece: 9 frames (kept) and 5 (dropped).
+    Player 4 (away): 8 (kept) and 2 (dropped). So 4 pieces are dropped, holding 7 + 1 + 5 + 2 = 15 slot-frames, one of
+    them an episode piece. A minimum of 0 is no rule: the pieces come back, with nothing counted. The rule is on the
+    pieces it is handed, in the order it is handed them."""
+    view = degrade.tracking_view(steady_match())
+    pieces = sorted([(0, 0, 7, 0), (7, 0, 15, 0), (15, 0, 40, 0), (3, 3, 4, 1), (10, 1, 19, 1), (20, 1, 25, 1),
+                     (30, 4, 38, 1), (38, 4, 40, 1)])
+    assert degrade.MIN_PIECE_FRAMES == 8
+    got, counts = degrade.drop_short_pieces(view, pieces, degrade.MIN_PIECE_FRAMES)
+    assert got == [piece for piece in pieces if piece[2] - piece[0] >= 8] and len(got) == 4
+    assert counts == {"short_pieces": 4, "short_slot_frames": 15, "short_episode_pieces": 1}, counts
+    assert pieces == sorted(pieces) and len(pieces) == 8, "the input is left as it was"
+    again, none = degrade.drop_short_pieces(view, pieces, 0)
+    assert again == pieces and none == {"short_pieces": 0, "short_slot_frames": 0, "short_episode_pieces": 0}
+    assert degrade.drop_short_pieces(view, pieces, 1)[0] == pieces, "a piece of one frame is not shorter than 1"
+    assert degrade.drop_short_pieces(view, pieces, 26)[1]["short_pieces"] == 8, "the longest piece is 25 frames"
+    expect_error(ValueError, lambda: degrade.drop_short_pieces(view, pieces, -1), "min_piece", "at least 0")
+    expect_error(ValueError, lambda: degrade.drop_short_pieces(view, pieces, 2.5), "min_piece")
+    expect_error(ValueError, lambda: degrade.tracking_parameters([30], 0.1, min_piece=-3), "min_piece")
+    assert degrade.tracking_parameters([30], 0.1).min_piece == 0, "none by default: version 1's"
+
+
+def test_min_piece_rule_runs_after_the_cap_and_before_the_slots():
+    """The pieces that the walk, an episode or the cap leave short are not tracklets: the player is absent there.
+
+    23 players (the 22 of cap_match and column 22, home, who comes on at row 35 of 40: a piece of 5 frames that the walk
+    makes), all tracked, the ball at x = 10/32, so the four farthest are columns 18 to 21, and the count 18 on rows
+    10-14 and 20-24 and above CAP between them: those four are dropped on rows 10-14, back on rows 15-19 (5 frames: a
+    piece the cap makes, the flicker of a count that is 18, 19, 18) and dropped again on rows 20-24. With the rule on,
+    in choose_half, columns 18 to 21 have the pieces before and after only (rows 0-9 and 25-39), column 22 has none, and
+    the record counts 5 pieces of 5 slot-frames each, none of them an episode piece; with the rule off, the middle
+    pieces and column 22's are tracklets. The rule is after the cap (it sees the cap's pieces: that is why the five are
+    counted) and before the slots (a piece it drops takes no slot: column 22's would have been slot 11)."""
+    squad = FULL_SQUAD + (0,)
+    match = cap_match(lambda half, row: (10 / 32, 0.5), teams=squad, off={22: 35})
+    view = degrade.tracking_view(match)
+    start, stop = match.graded[0][1:]
+    limit = limit_for(view, 1, [(10, 15, 18), (20, 25, 18)])
+    on = degrade.tracking_parameters([10 ** 9], 0.0, min_piece=8)
+    off = degrade.tracking_parameters([10 ** 9], 0.0)
+    kept = degrade.choose_half(view, 1, on, 0, limit)
+    plain = degrade.choose_half(view, 1, off, 0, limit)
+    spans = {}
+    for t in kept.tracklets:
+        spans.setdefault(t.player, []).append((t.start - start, t.stop - start))
+    for player in range(18, 22):
+        assert spans[player] == [(0, 10), (25, 40)], (player, spans[player])
+    assert 22 not in spans and all(spans[player] == [(0, 40)] for player in range(18))
+    assert {name: kept.counts[name] for name in ("short_pieces", "short_slot_frames", "short_episode_pieces")} == {
+        "short_pieces": 5, "short_slot_frames": 25, "short_episode_pieces": 0}, kept.counts
+    assert kept.counts["capped_frames"] == 10 and kept.counts["cap_slot_frames"] == 40
+    middle = {t.player: (t.start - start, t.stop - start, t.slot) for t in plain.tracklets if t.start - start == 15}
+    assert sorted(middle) == [18, 19, 20, 21] and all(stop_ == 20 for _, stop_, _ in middle.values())
+    assert {t.player: t.slot for t in plain.tracklets if t.start - start == 35} == {22: 11}, "slot 11 without the rule"
+    assert len(plain.tracklets) == len(kept.tracklets) + 5
+    assert plain.counts["short_pieces"] == 0 and not any(t.slot == 11 for t in kept.tracklets), "it took no slot"
+
+
+def test_min_piece_rule_counts_the_episode_pieces():
+    """An episode piece that is shorter than the minimum is dropped and counted as one, in the half's record.
+
+    Six players who stand far apart except through half 1, where a home and an away player are 1 m apart (pairs_match),
+    nobody lost, and wrong-team episodes of 3 frames only (the shortest that the rule can see): every episode is a piece
+    of at most 3 frames in the other pool, and so a short one. The pieces that are short without the rule (the episodes,
+    and now and then the piece that a second onset leaves before or after one) are worked out from the tracklets of the
+    same draws without the rule, one at a time: with the rule on, those are the pieces dropped, their frames are the
+    slot-frames counted, those of them in the other team's pool are the episode pieces, and every other piece is as it
+    was. Nothing else about the draws moves, so the episodes are the same."""
+    match = pairs_match([(1, 0, 1000, [(1, 4, 1 / 128)])])
+    view = degrade.tracking_view(match)
+    on = episode_parameters(share=0.06, episodes=(3,), min_piece=8)
+    off = episode_parameters(share=0.06, episodes=(3,))
+    dropped = episodes = 0
+    for seed in range(4):
+        _, _, records, counts = degrade.degraded_players(view, on, seed)
+        for half, start, stop in match.graded:
+            plain = degrade.choose_half(view, half, off, seed)
+            short = [t for t in plain.tracklets if t.stop - t.start < degrade.MIN_PIECE_FRAMES]
+            assert counts[half]["episodes"] == plain.counts["episodes"]
+            assert counts[half]["short_pieces"] == len(short)
+            assert counts[half]["short_slot_frames"] == sum(t.stop - t.start for t in short)
+            assert counts[half]["short_episode_pieces"] == sum(1 for t in short if is_carried(t, view))
+            assert {(t.player, t.start, t.stop) for t in records[half]} == {
+                (t.player, t.start, t.stop) for t in plain.tracklets if t.stop - t.start >= 8}
+            dropped, episodes = dropped + len(short), episodes + counts[half]["short_episode_pieces"]
+    assert dropped > 20 and episodes > 15, (dropped, episodes)
+
+
+def test_tracked_scale_multiplies_the_drawn_lengths_and_the_lost_share_stays_d():
+    """The walk's tracked lengths are multiplied by lambda (rounded, at least 1) and the lost spans follow, so d holds.
+
+    The made-up Calibration's tracked spans are 10, 25, 50, 80 and 100 frames at 25 Hz; at lambda 1.5 they are 15, 38
+    (37.5: half to even), 75, 120 and 150, at 2 they are 20, 50, 100, 160 and 200, and at 0.5 they are 5, 12 (12.5), 25,
+    40 and 50; a length is at least one frame (spans of 0.01 s and 0.5 s at lambda 0.04 are 1 frame each). d is the
+    Calibration's and does not move; the mean lost span is mu = mean tracked * d / (1 - d) of the scaled lengths.
+    Through the walk on a long steady match (with the shortest-piece rule off: it would drop the spans of 5 frames) the
+    share of the frames that are lost is d to within 0.01 for each lambda (the same tolerance as
+    test_lost_share_on_long_synthetic). The profile's own parameters carry the frozen constant, and a lambda that is not
+    a positive finite number is refused, naming it."""
+    cal = made_up_calibration()
+    one = degrade.calibrated_parameters(cal, 25, tracked_scale=1.0)
+    assert one.lengths.tolist() == [10, 25, 50, 80, 100] and one.tracked_scale == 1.0
+    match = steady_match(rows=(20000, 20000))
+    view = degrade.tracking_view(match)
+    on_pitch = int(np.isfinite(match.players_xy[:, :, 0]).sum())
+    for scale, expected in ((1.5, [15, 38, 75, 120, 150]), (2.0, [20, 50, 100, 160, 200]), (0.5, [5, 12, 25, 40, 50])):
+        parameters = degrade.calibrated_parameters(cal, 25, tracked_scale=scale)
+        assert parameters.lengths.tolist() == expected and parameters.lengths.dtype == np.int64, scale
+        assert parameters.tracked_scale == scale and parameters.d == one.d, "d does not move"
+        mean = sum(expected) / len(expected)
+        assert parameters.mean_tracked == mean and abs(parameters.mu - mean * one.d / (1 - one.d)) < 1e-9
+        assert abs(parameters.mu / one.mu - mean / one.mean_tracked) < 1e-9, "the lost spans follow the tracked ones"
+        bare = dataclasses.replace(parameters, scale=0.0, speed_nan_share=0.0, min_piece=0)     # d alone: no rule
+        xy, _, _, _ = degrade.degraded_players(view, bare, 0)
+        lost = 1 - int(np.isfinite(xy[:, :, 0]).sum()) / on_pitch
+        assert abs(lost - one.d) < 0.01, (scale, lost, one.d)
+    nobody = without_new_parts(cal, tracklet_lengths_s=np.array([0.01, 0.5, 40.0]), present_counts={
+        half: np.full(len(mask), 22, dtype=np.int16) for half, mask in cal.ball_masks.items()})
+    assert degrade.calibrated_parameters(nobody, 25, tracked_scale=0.04).lengths.tolist() == [1, 1, 40]
+    profile = degrade.calibrated_parameters(cal, 25)
+    assert profile.tracked_scale == degrade.TRACKED_SCALE and profile.min_piece == degrade.MIN_PIECE_FRAMES
+    expected = np.maximum(1, np.rint(np.array([10, 25, 50, 80, 100]) * degrade.TRACKED_SCALE)).astype(int)
+    assert profile.lengths.tolist() == expected.tolist()
+    for bad in (0, -1.0, float("nan"), float("inf"), True, "2"):
+        expect_error(ValueError, lambda: degrade.calibrated_parameters(cal, 25, tracked_scale=bad), "tracked_scale")
+    expect_error(ValueError, lambda: degrade.calibrated_parameters(cal, 25, min_piece=-1), "min_piece")
 
 
 # -- the wrong-team episodes, the NaN-speed runs and the smoothing -----------------------------------------------------
@@ -1460,7 +1616,8 @@ def test_tracking_without_the_new_parts_is_task_12s_players():
     on two steady matches and three seeds, under two sets of parameters. The new parts draw only from their own
     generators, so with them on the walk (the spans) is the same too, and so is the ball (test_profiles_nest)."""
     cases = ((steady_match(rows=(400, 300)), degrade.tracking_parameters([3, 5, 8, 20], 0.3)),
-             (steady_match(), degrade.calibrated_parameters(made_up_calibration(), 25)))
+             (steady_match(), degrade.calibrated_parameters(made_up_calibration(), 25, tracked_scale=1.0,
+                                                           min_piece=0)))
     for match, parameters in cases:
         view = degrade.tracking_view(match)
         plain = dataclasses.replace(parameters, scale=0.0, speed_nan_share=0.0, smooth=0)
@@ -1726,25 +1883,27 @@ def test_dfl_tracking_never_exhausts_a_pool_on_the_real_matches():
 def test_data_tracking_profile_on_a_real_match_with_our_real_calibration():
     """Our own Calibration on a downloaded DFL match: what the tracking profile makes, for information.
 
-    Needs both our match (the Calibration is measured from it, or read from its cache) and a downloaded DFL match, so
-    it runs with --data and says NOT RUN where the DFL files are not there. It prints d, the mean tracked span and the
-    mean lost span of ours, and the statistics that calibration.player_stats gives on the degraded match beside the
+    Needs both our match (the Calibration is measured from it, or read from its cache) and a downloaded DFL match, so it
+    runs with --data and says NOT RUN where the DFL files are not there. It prints d, the mean tracked span and the mean
+    lost span of ours, and the statistics that calibration.player_stats gives on the degraded match beside the
     Calibration's: the histogram of slots present, the tracklets' median, the wrong-team share and the NaN-speed share.
     Nothing of that table is asserted: the gates of the profile are fidelity.py's (R004b), and the table is there to say
     by how much one match and one seed are off. What is asserted is the layout, that the ball is gaps', that the draws
     are the same twice, that nothing of the truth is reachable and that no pool runs out; that the cap reads the very
     window of our counts that the ball's mask was read from (the Transplant that the profile records), and that on every
     row the slots present are min(count, tracked) where our count is at most CAP and the tracked ones otherwise (the
-    tracked ones being version 1's players, from the same draws without the cap); and that the lost share, pooled over
-    the 7 matches and 5 seeds, is d to within 0.003 (the observed 2.59%
-    is 0.09 points over d = 2.50%: a DFL half is 68,000 to 78,000 frames, where a cut at the end of a run is not
-    negligible). A mu without the (1 - d) would give about 2.53%, which no tolerance here can separate from 2.59%:
-    the synthetic test_lost_share_on_long_synthetic, whose d = 0.3 makes it 23.1% against 30%, is what catches that. It
-    also prints how many slots each team uses, in the degraded match and in ours (slot_use: the slots of the pool, those
-    ever present, and those present on at least a tenth and at least a hundredth of the frames: the figures that R004
-    and the README quote), the cap's share of the frames and drops, how many tracklets are shorter than 8 frames (ours
-    has none, A09) and the slot persistence of both: the idle gaps of a slot and the returns to the same slot, with the
-    cap and, for comparison, without it (version 1's). Aggregates only.
+    tracked ones being the players of the same draws without the cap, and with the shortest-piece rule off, which takes
+    more players away, and the profile's own players are these and no more); and that the lost share of the walk, the
+    episodes and the rule (no cap), pooled over the 7 matches and 5 seeds, is d to within 0.003 (2.71% against d = 2.50%
+    with the scale of the tracked spans and the rule, 2.59% before them: a DFL half is 68,000 to 78,000 frames, where a
+    cut at the end of a run is not negligible, and a longer span makes it weigh more). A mu without the (1 - d) would
+    give about 2.53%, which no tolerance here can separate from 2.59%: the synthetic test_lost_share_on_long_synthetic,
+    whose d = 0.3 makes it 23.1% against 30%, is what catches that. It also prints how many slots each team uses, in the
+    degraded match and in ours (slot_use: the slots of the pool, those ever present, and those present on at least a
+    tenth and at least a hundredth of the frames: the figures that R004 and the README quote), the cap's share of the
+    frames and drops, how many tracklets are shorter than 8 frames (ours has none, A09) and the slot persistence of
+    both: the idle gaps of a slot and the returns to the same slot, with the cap and, for comparison, without it.
+    Aggregates only.
     """
     from pipeline.benchmark import sources
     match_id = sources.MATCH_IDS[0]
@@ -1770,8 +1929,11 @@ def test_data_tracking_profile_on_a_real_match_with_our_real_calibration():
 
     # The cap: our counts are read from the very window that the ball's mask was, and every row has min(count, tracked).
     limits = degrade.cap_limits(view, cal, 0)
-    tracked = np.isfinite(degrade.degraded_players(view, parameters, 0)[0][:, :, 0]).sum(axis=1)
-    shown = atd.players_present.sum(axis=1)
+    alone = dataclasses.replace(parameters, min_piece=0)         # the cap by itself: the shortest-piece rule takes more
+    tracked = np.isfinite(degrade.degraded_players(view, alone, 0)[0][:, :, 0]).sum(axis=1)
+    shown = np.isfinite(degrade.degraded_players(view, alone, 0, limits)[0][:, :, 0]).sum(axis=1)
+    assert degrade.degraded_players(view, parameters, 0, limits)[0].tobytes() == atd.players_xy.tobytes()
+    assert (atd.players_present.sum(axis=1) <= shown).all(), "the shortest-piece rule only takes players away"
     low = frames = 0
     for half, _, stop in view.graded:
         record, kickoff = info["transplants"][half], view.kickoffs[half]
@@ -1843,8 +2005,8 @@ def test_data_tracking_profile_on_a_real_match_with_our_real_calibration():
                                   ("over 60 s", 3, "{:.1%}")):
         print("      {:<26} {:>10} {:>10}".format(name, template.format(gaps_degraded[index]),
                                                   template.format(gaps_ours[index])))
-    print("      returns after a lost span: {:,}, {:,} of them to the same slot ({:.1%}); without the cap (version "
-          "1) {:,}, {:,} of them ({:.1%}); ours has no identities".format(
+    print("      returns after a lost span: {:,}, {:,} of them to the same slot ({:.1%}); without the cap {:,}, {:,} "
+          "of them ({:.1%}); ours has no identities".format(
               returns, same, same / returns if returns else math.nan, plain_returns, plain_same,
               plain_same / plain_returns if plain_returns else math.nan))
     assert gaps_degraded[0] > 0 and gaps_ours[0] > 0 and returns > 0
@@ -1908,13 +2070,18 @@ def test_second_difference_shape_counts_what_it_says():
 # of the 7 DFL matches at s = 1.0, and the share in ours (Calibration.wrong_team_share).
 RECORDED_OBSERVED = (39756, 1002644)
 RECORDED_TARGET = 0.105391764
+# The one measurement that TRACKED_SCALE was worked out from (docs/results.md R004b, 2026-10-23): the pooled tracklet
+# median, in seconds, of tracking v2 at lambda = 1 with the shortest-piece rule in, seed 0, over the 7 DFL matches laid
+# end to end.
+RECORDED_MEDIAN_S = 20.22
 
 
 def test_data_tracking_constants_follow_from_the_measurements():
-    """The frozen scale and the smoothing window, re-derived from the 7 DFL matches and our Calibration (aggregates).
+    """The frozen constants (the scale of the episodes, the smoothing window and the scale of the tracked spans),
+    re-derived from the 7 DFL matches and our Calibration (aggregates).
 
     Needs our match (the Calibration) and the seven downloaded matches, so it runs with --data and says NOT RUN where
-    they are not there. Two rules were set before anything was measured, and this applies them to the code as it is:
+    they are not there. Three rules were set before anything was measured, and this applies them to the code as it is:
     (1) smoothing: the players' second-difference RMS of the 7 clean matches (calibration.player_stats' own statistic,
     from each kick-off to the end of the graded block, pooled by sums of squares) against
     Calibration.player_jitter_rms_m:
@@ -1926,7 +2093,14 @@ def test_data_tracking_constants_follow_from_the_measurements():
     the gate's own band, measured now. It prints both, per match and pooled, the degraded players' jitter after the
     smoothing beside DFL's and ours, what the jitter is made of (its median, 99th percentile and the share of its
     squares in rare jumps) and the wrong-team episodes that player_stats sees in the degraded matches beside ours
-    (information).
+    (information). (3) the scale of the tracked spans: the walk draws its spans from our final tracklets, which already
+    hold the cuts that the cap and the episodes add, so TRACKED_SCALE is lambda = ours' tracklet median (the
+    Calibration's) over the pooled median of this profile at lambda = 1 with the shortest-piece rule in (seed 0, the 7
+    matches laid end to end, as fidelity pools them), to 3 decimals, once: the constant is compared with the recorded
+    measurement (RECORDED_MEDIAN_S), the measurement is made again here and must reproduce it (the code is the code that
+    it was made with), and the median, the share of the frames lost and the pieces dropped at the frozen lambda are
+    printed (information). The first scale is measured on version 1's players (no cap, no rule, lambda 1) and the
+    frozen one, with the tracklet median, on the profile's.
     """
     from pipeline.benchmark import sources
     for match_id in sources.MATCH_IDS:
@@ -1938,6 +2112,8 @@ def test_data_tracking_constants_follow_from_the_measurements():
     target = cal.wrong_team_share
     jitter, seen_episodes = {"clean": [0.0, 0], "degraded": [0.0, 0]}, []
     wrong = {"first": [0, 0], "frozen": [0, 0]}
+    medians = {"one": [], "frozen": []}
+    spells = {"frozen": [0, 0, 0]}                      # frames on the pitch, frames lost, pieces dropped by the rule
     from pipeline.inputs import Inputs
     ours = Inputs()
     ours_spans = [(half, ours.kickoffs[half], stop) for half, _, stop in ours.graded]
@@ -1953,15 +2129,30 @@ def test_data_tracking_constants_follow_from_the_measurements():
                                                    clean.players_speed, spans, view.fps)}
         base = degrade.calibrated_parameters(cal, view.fps)
         assert base.scale == degrade.WRONG_TEAM_SCALE and base.smooth == degrade.SMOOTH_WINDOW
-        for name, parameters in (("first", dataclasses.replace(base, scale=1.0, smooth=0)), ("frozen", base)):
-            xy, speed, _, _ = degrade.degraded_players(view, parameters, 0)
+        assert base.tracked_scale == degrade.TRACKED_SCALE and base.min_piece == degrade.MIN_PIECE_FRAMES
+        version_1 = degrade.calibrated_parameters(cal, view.fps, tracked_scale=1.0, min_piece=0)
+        unit = degrade.calibrated_parameters(cal, view.fps, tracked_scale=1.0)
+        limits = degrade.cap_limits(view, cal, 0)
+        for name, parameters, caps in (("first", dataclasses.replace(version_1, scale=1.0, smooth=0), None),
+                                       ("one", unit, limits), ("frozen", base, limits)):
+            xy, speed, _, counts = degrade.degraded_players(view, parameters, 0, caps)
             stats[name] = calibration.player_stats(np.isfinite(xy[:, :, 0]), degrade.slot_team(), xy * pitch, speed,
                                                    spans, view.fps)
+            if name in medians:
+                medians[name].append(stats[name]["tracklet_lengths_s"])
+            if name == "one":
+                continue
             wrong[name][0] += stats[name]["wrong_team_frames"]
             wrong[name][1] += stats[name]["frames"]
             if name == "frozen":
                 jitter["degraded"][0] += stats[name]["jitter_rms_m"] ** 2 * stats[name]["jitter_triples"]
                 jitter["degraded"][1] += stats[name]["jitter_triples"]
+                clean_present = np.isfinite(np.asarray(view.players_xy)[:, :, 0])
+                for half, start, stop in view.graded:
+                    spells["frozen"][0] += int(clean_present[start:stop].sum())
+                    spells["frozen"][1] += int(clean_present[start:stop].sum()) - int(
+                        np.isfinite(xy[start:stop, :, 0]).sum())
+                    spells["frozen"][2] += counts[half]["short_pieces"]
         jitter["clean"][0] += stats["clean"]["jitter_rms_m"] ** 2 * stats["clean"]["jitter_triples"]
         jitter["clean"][1] += stats["clean"]["jitter_triples"]
         print("      {:<8} {:>14.4f} {:>16.4f} {:>16.4f}".format(
@@ -2001,3 +2192,18 @@ def test_data_tracking_constants_follow_from_the_measurements():
     assert degrade.WRONG_TEAM_SCALE == worked_out == 2.658, (degrade.WRONG_TEAM_SCALE, worked_out)
     assert abs(target - RECORDED_TARGET) < 1e-9, "the Calibration is the one the scale was worked out against"
     assert abs(frozen - target) <= 0.03, (frozen, target)
+
+    # The scale of the tracked spans (rule 3): the same one-shot, from the recorded median, and the measurement again.
+    ours_median = float(np.median(cal.tracklet_lengths_s))
+    unit_median = float(np.median(np.concatenate(medians["one"])))
+    frozen_median = float(np.median(np.concatenate(medians["frozen"])))
+    print("      tracklet median, seed 0, 7 matches end to end: {:.2f} s at lambda 1 (recorded {:.2f} s), {:.2f} s "
+          "at lambda {} (ours {:.2f} s); lost share {:.4f} with the cap, {:,} pieces dropped by the shortest-piece "
+          "rule".format(
+              unit_median, RECORDED_MEDIAN_S, frozen_median, degrade.TRACKED_SCALE, ours_median,
+              spells["frozen"][1] / spells["frozen"][0], spells["frozen"][2]))
+    assert abs(ours_median - 41.28) < 1e-9, "the Calibration is the one the scale was worked out against"
+    assert abs(unit_median - RECORDED_MEDIAN_S) < 1e-9, "the recorded measurement reproduces with this code"
+    assert degrade.TRACKED_SCALE == round(ours_median / RECORDED_MEDIAN_S, 3) == 2.042, degrade.TRACKED_SCALE
+    assert degrade.MIN_PIECE_FRAMES == int(round(float(cal.tracklet_lengths_s.min()) * ours.fps)) == 8, (
+        "the shortest tracklet of ours (A09)")

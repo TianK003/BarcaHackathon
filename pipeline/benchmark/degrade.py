@@ -185,6 +185,20 @@ COMPONENTS = {"transplant": 0, "tracklets": 1, "wrong_team": 2, "speed_nan": 3, 
 TAIL_FRAMES = 7500                  # a mask that runs out goes round the last 300 s of the source (25 Hz)
 INDEX_BYTES = 4                     # an id outside the registry has the first 4 bytes of its sha256 as match_index
 CAP = 18                            # d is taken over the frames with MORE than this many slots present (not the tail)
+# The shortest tracklet of ours is 8 frames (0.32 s; A09, Calibration.tracklet_lengths_s): a piece shorter than this,
+# whatever made it (the walk's run ends, an episode, the cap), is not a tracklet of ours, and the player is absent on
+# its frames.
+MIN_PIECE_FRAMES = 8
+# lambda, the factor on the walk's drawn tracked lengths (calibrated_parameters). The walk draws its tracked spans from
+# our FINAL tracklets, which already hold the cuts that the cap and the episodes add, so the profile counts our cuts
+# twice: the walk alone gives a pooled tracklet median of 40.88 s against ours 41.28 s, and each part that cuts takes it
+# further down (episodes 29.26 s, cap 24.44 s, both 19.68 s: R004b). It is rescaled ONCE, label-free, from one
+# measurement: the pooled tracklet median of this profile at lambda = 1 with the shortest-piece rule in, seed 0, over
+# the 7 DFL matches, laid end to end as fidelity.py pools it, was 20.22 s (13,192 tracklets), against ours 41.28 s
+# (Calibration), so lambda = 41.28 / 20.22 = 2.0415..., 2.042 to three decimals (2026-10-23, Task 14, R004b). It is
+# applied whether or not the tracklet-median gate would pass with it, and it is frozen: never touch it again because of
+# a gate, a WARN or a score.
+TRACKED_SCALE = 2.042
 CENTRE_SPOT = 0.5                   # the cap's ball until DFL's has been seen in a half: the middle, in x and in y
 FULL = calibration_module.FULL_COUNT    # 22: players on the pitch, so slots present on a frame where nobody is lost
 HOME_SLOTS, AWAY_SLOTS = 24, 22     # our tracker's slots (the ATD metadata): the home team's first, then the away's
@@ -397,6 +411,9 @@ class TrackingParameters:
     onset_rate = s * wrong_team_share / mean_episode per row (0 with no scale, no share or no episodes). `nan_runs` are
     our runs of NaN speeds in frames and `speed_nan_share` the share of the present slot-frames to reach. `smooth` is
     the window in frames of the moving average over each tracklet piece (0 is none; otherwise odd, at least 3).
+    `min_piece` is the shortest piece that is a tracklet, in frames (drop_short_pieces; 0 is no rule), and
+    `tracked_scale` the factor that the lengths were multiplied by (calibrated_parameters), kept for the record: the
+    lengths are already scaled.
     """
     lengths: np.ndarray = field(repr=False)
     d: float
@@ -409,6 +426,8 @@ class TrackingParameters:
     nan_runs: np.ndarray = field(default_factory=_none, repr=False)
     speed_nan_share: float = 0.0
     smooth: int = 0
+    min_piece: int = 0
+    tracked_scale: float = 1.0
 
     @property
     def onset_rate(self):
@@ -465,7 +484,7 @@ def _share(name, value, below, why):
 
 
 def tracking_parameters(lengths, d, episodes=None, wrong_team_share=0.0, scale=0.0, nan_runs=None,
-                        speed_nan_share=0.0, smooth=0):
+                        speed_nan_share=0.0, smooth=0, min_piece=0, tracked_scale=1.0):
     """TrackingParameters of tracked spans `lengths` (whole frames, each at least 1) and a lost share d (0 to below 1).
 
     mu = mean_tracked * d / (1 - d). A lost span is at least 1 frame, so a mean below 1 cannot be drawn: a d so small
@@ -476,7 +495,9 @@ def tracking_parameters(lengths, d, episodes=None, wrong_team_share=0.0, scale=0
     give the onsets' rate s * share / mean episode, which must be below 1; a share and a scale above 0 need episodes.
     `nan_runs` (whole frames, each at least 1) and `speed_nan_share` (0 to below MAX_SPEED_NAN_SHARE) are the NaN-speed
     runs and the share to reach, which needs runs. `smooth` is 0, or the odd window (at least 3) of the moving average.
-    ValueError, naming the argument, for anything else.
+    `min_piece` is 0 (no rule) or the shortest piece, in frames, that is a tracklet (drop_short_pieces), and
+    `tracked_scale` a positive finite number, the factor already applied to `lengths` (the record's). ValueError, naming
+    the argument, for anything else.
     """
     array = np.asarray(lengths)
     if array.ndim != 1 or array.size == 0 or array.dtype.kind not in "iu" or (array < 1).any():
@@ -519,19 +540,41 @@ def tracking_parameters(lengths, d, episodes=None, wrong_team_share=0.0, scale=0
                          "average; got {!r}".format(smooth))
     return TrackingParameters(lengths=array, d=float(d), mean_tracked=mean, mu=mu, episodes=shown,
                               mean_episode=mean_episode, wrong_team_share=share, scale=float(scale), nan_runs=runs,
-                              speed_nan_share=nan_share, smooth=int(smooth))
+                              speed_nan_share=nan_share, smooth=int(smooth), min_piece=_min_piece(min_piece),
+                              tracked_scale=_tracked_scale(tracked_scale))
 
 
-def calibrated_parameters(calibration, fps, profile=TRACKING):
+def _min_piece(value):
+    """`value` as a whole number of frames, at least 0; ValueError naming min_piece otherwise."""
+    if isinstance(value, bool) or not isinstance(value, (int, np.integer)) or value < 0:
+        raise ValueError("min_piece must be a whole number of frames, at least 0 (0 is no rule): the shortest piece "
+                         "that is a tracklet; got {!r}".format(value))
+    return int(value)
+
+
+def _tracked_scale(value):
+    """`value` as a float, positive and finite; ValueError naming tracked_scale otherwise."""
+    if isinstance(value, bool) or not isinstance(value, (int, float, np.integer, np.floating)) or not (
+            math.isfinite(value) and value > 0):
+        raise ValueError("tracked_scale must be a positive finite number, the factor on the walk's drawn tracked "
+                         "lengths; got {!r}".format(value))
+    return float(value)
+
+
+def calibrated_parameters(calibration, fps, profile=TRACKING, tracked_scale=TRACKED_SCALE, min_piece=MIN_PIECE_FRAMES):
     """TrackingParameters from the Calibration: its tracklet lengths and episodes at the match's rate, d from its slots.
 
-    A tracked span is max(1, round(seconds * fps)) frames, `fps` the match's own (DFL's 25); d is lost_share over
-    present_counts. A wrong-team episode is converted the same way (wrong_team_episodes_s, both directions together),
-    and the mean episode is the mean of those very lengths; the NaN-speed runs are already in frames
-    (speed_nan_runs). The targets are the Calibration's wrong_team_share and speed_nan_share, the scale is
-    WRONG_TEAM_SCALE and the smoothing window SMOOTH_WINDOW. ValueError, naming the profile, for a Calibration that
-    lacks any of TRACKING_FIELDS (the made-up ones of the checks, a Calibration of an older layout), for no tracklets,
-    for a share above 0 with no episodes or runs to draw, and for an fps that is not a whole number, at least 1.
+    A tracked span is max(1, round(seconds * fps)) frames, `fps` the match's own (DFL's 25), multiplied by
+    `tracked_scale` (lambda: the walk draws its spans from our final tracklets, which already hold the cuts that the cap
+    and the episodes add, so a rescale corrects it once, R004b) and rounded again, at least 1 frame; the mean lost span
+    follows through mu (the lost share stays d). `min_piece` is the shortest piece that is a tracklet
+    (MIN_PIECE_FRAMES). d is lost_share over present_counts. A wrong-team episode is converted the same way
+    (wrong_team_episodes_s, both directions together), and the mean episode is the mean of those very lengths; the
+    NaN-speed runs are already in frames (speed_nan_runs). The targets are the Calibration's wrong_team_share and
+    speed_nan_share, the scale is WRONG_TEAM_SCALE and the smoothing window SMOOTH_WINDOW. ValueError, naming the
+    profile, for a Calibration that lacks any of TRACKING_FIELDS (the made-up ones of the checks, a Calibration of an
+    older layout), for no tracklets, for a share above 0 with no episodes or runs to draw, and for an fps that is not a
+    whole number, at least 1.
     """
     absent = [name for name in TRACKING_FIELDS if not hasattr(calibration, name)]
     if absent:
@@ -544,6 +587,7 @@ def calibrated_parameters(calibration, fps, profile=TRACKING):
         raise ValueError("the Calibration's tracklet_lengths_s must be a non-empty list of finite lengths in seconds, "
                          "its tracked spans; it has shape {}".format(seconds.shape))
     lengths = np.maximum(1, np.rint(seconds * fps)).astype(np.int64)
+    lengths = np.maximum(1, np.rint(lengths * _tracked_scale(tracked_scale))).astype(np.int64)
     episodes_s = np.asarray(calibration.wrong_team_episodes_s, dtype=np.float64)
     if episodes_s.ndim != 1 or not np.isfinite(episodes_s).all():
         raise ValueError("the Calibration's wrong_team_episodes_s must be a list of finite lengths in seconds, its "
@@ -559,7 +603,7 @@ def calibrated_parameters(calibration, fps, profile=TRACKING):
     return tracking_parameters(lengths, lost_share(calibration.present_counts), episodes=episodes,
                                wrong_team_share=calibration.wrong_team_share, scale=WRONG_TEAM_SCALE,
                                nan_runs=runs if runs.size else None, speed_nan_share=calibration.speed_nan_share,
-                               smooth=SMOOTH_WINDOW)
+                               smooth=SMOOTH_WINDOW, min_piece=min_piece, tracked_scale=tracked_scale)
 
 
 def walk_run(rng, length, parameters):
@@ -794,6 +838,32 @@ def cap_pieces(view, half, pieces, limit):
     return sorted(out), counts
 
 
+def drop_short_pieces(view, pieces, minimum):
+    """([(first, player, last, pool)], counts): the pieces of at least `minimum` frames, and what was dropped.
+
+    Ours has no tracklet shorter than MIN_PIECE_FRAMES (A09), so a piece shorter than `minimum` is dropped whatever made
+    it (the walk's run ends, an episode, the cap): the player is absent on its frames, and it takes no slot. The rest
+    come back as they went in, in their order; 0 is no rule. The counts are {"short_pieces": pieces dropped,
+    "short_slot_frames": the frames they held, "short_episode_pieces": how many of them were in the other team's pool
+    (an episode)}. ValueError for a `minimum` that is not a whole number of at least 0.
+    """
+    minimum = _min_piece(minimum)
+    counts = {"short_pieces": 0, "short_slot_frames": 0, "short_episode_pieces": 0}
+    if minimum == 0:
+        return pieces, counts
+    team = np.asarray(view.player_team)
+    kept = []
+    for piece in pieces:
+        first, player, last, pool = piece
+        if last - first >= minimum:
+            kept.append(piece)
+            continue
+        counts["short_pieces"] += 1
+        counts["short_slot_frames"] += last - first
+        counts["short_episode_pieces"] += int(pool != int(team[player]))
+    return kept, counts
+
+
 def assign_slots(view, half, pieces):
     """[Tracklet] of the pieces (first, player, last, pool), in order of (start, player), each in the lowest free slot.
 
@@ -827,15 +897,18 @@ class HalfPlayers:
 
 def choose_half(view, half, parameters, seed, limit=None):
     """HalfPlayers of one half: the walk's spans (walk_spans), cut by the wrong-team episodes (episode_pieces), capped
-    by our counts (cap_pieces, with `limit`, the half's cap_limits: none is no cap), slotted.
+    by our counts (cap_pieces, with `limit`, the half's cap_limits: none is no cap), without the pieces shorter than
+    parameters.min_piece (drop_short_pieces), slotted.
 
     The order is the one the degradation documents: the per-player tracklets, the episodes that split them, the cap that
-    drops players, then the slot of every piece (assign_slots), so that a player who comes back after a drop takes the
-    lowest free slot. ValueError as walk_spans, cap_pieces and assign_slots.
+    drops players, the pieces that are too short to be tracklets, then the slot of every piece (assign_slots), so that a
+    player who comes back after a drop takes the lowest free slot. ValueError as walk_spans, cap_pieces and
+    assign_slots.
     """
     pieces, counts = episode_pieces(view, half, walk_spans(view, half, parameters, seed), parameters, seed)
     pieces, capped = cap_pieces(view, half, pieces, limit)
-    return HalfPlayers(tracklets=assign_slots(view, half, pieces), counts={**counts, **capped})
+    pieces, short = drop_short_pieces(view, pieces, parameters.min_piece)
+    return HalfPlayers(tracklets=assign_slots(view, half, pieces), counts={**counts, **capped, **short})
 
 
 def choose_tracklets(view, half, parameters, seed):
@@ -969,7 +1042,8 @@ def _players_record(view, parameters, records, counts):
     """The JSON-ready account of the players of every half: the parameters and, per half, counts. No frame in it."""
     halves, on_pitch, lost, count = {}, 0, 0, 0
     sums = dict.fromkeys(("onsets", "episodes", "skipped_far", "skipped_overlap", "episode_frames", "speed_nan_runs",
-                          "speed_nan_frames", "capped_frames", "cap_slot_frames", "cap_pieces_cut"), 0)
+                          "speed_nan_frames", "capped_frames", "cap_slot_frames", "cap_pieces_cut", "short_pieces",
+                          "short_slot_frames", "short_episode_pieces"), 0)
     for half, start, stop in view.graded:
         frames = int((~np.isnan(np.asarray(view.players_xy)[start:stop, :, 0])).sum())
         tracked = sum(t.stop - t.start for t in records[half])
@@ -985,6 +1059,7 @@ def _players_record(view, parameters, records, counts):
             "scale": parameters.scale, "wrong_team_target": round(parameters.wrong_team_share, DECIMALS),
             "mean_episode_frames": round(parameters.mean_episode, DECIMALS),
             "onset_rate": round(parameters.onset_rate, DECIMALS + 3), "smooth_window": parameters.smooth,
+            "tracked_scale": parameters.tracked_scale, "min_piece_frames": parameters.min_piece,
             "speed_nan_target": round(parameters.speed_nan_share, DECIMALS), **sums,
             "speed_nan_share": (round(sums["speed_nan_frames"] / (on_pitch - lost), DECIMALS)
                                 if on_pitch > lost else None),

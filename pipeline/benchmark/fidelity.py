@@ -142,7 +142,8 @@ D_SHARE_BAND = ("absolute", 0.05)
 FILE_FOLDER = run.REPORT_FOLDER                   # <data dir>/runs/benchmark/fidelity_<profile>[.m-<ids>][.s<n>].json
 # The counts of what the players' degradation drew that a report adds up over matches, seeds and halves.
 PLAYERS_DRAWS = ("tracklets", "onsets", "episodes", "skipped_far", "skipped_overlap", "episode_frames",
-                 "speed_nan_runs", "speed_nan_frames", "capped_frames", "cap_slot_frames", "cap_pieces_cut")
+                 "speed_nan_runs", "speed_nan_frames", "capped_frames", "cap_slot_frames", "cap_pieces_cut",
+                 "short_pieces", "short_slot_frames", "short_episode_pieces")
 NOTES = ("The yardsticks' outputs of ours (possessions per minute, D share) are over our graded halves, as the "
          "published baselines are, and not over the kick-off spans of the rest of the Calibration: an accepted offset "
          "of at most 1% of the frames.",

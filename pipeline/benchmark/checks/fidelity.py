@@ -38,6 +38,11 @@ IDS = ("J03WMX", "J03WN1")
 # median and NaN-speed share. They were measured on other spans than the kick-off ones, so a centre comes from the
 # Calibration.
 PLAN_FIGURES = {0.407, 0.4069, 10.7, 0.778, 0.66, 0.066, 0.108, 0.495, 20.5, 35.5, 0.0796, 0.080}
+# What the players' degradation draws that a report pools (written out here, not read from fidelity.PLAYERS_DRAWS, so that a
+# count the report forgets to pool is seen): the walk and the episodes, the NaN runs, the cap and the shortest-piece rule.
+DRAW_NAMES = ("tracklets", "onsets", "episodes", "skipped_far", "skipped_overlap", "episode_frames", "speed_nan_runs",
+              "speed_nan_frames", "capped_frames", "cap_slot_frames", "cap_pieces_cut", "short_pieces",
+              "short_slot_frames", "short_episode_pieces")
 TRACKING_GATES = ["missing_share", "median_gap_s", "present_share_22", "present_mean", "present_share_le14",
                   "wrong_team_share", "tracklet_median_s", "speed_nan_share"]
 
@@ -326,7 +331,7 @@ def worked_out_tracking(matches, cal, seeds=SEEDS):
             wrong, nan = wrong + stats["wrong_team_frames"], nan + stats["speed_nan_frames"]
             hist[:stats["present_hist"].size] += stats["present_hist"]
             tracklets.append(stats["tracklet_lengths_s"])
-            for name in fidelity.PLAYERS_DRAWS:
+            for name in DRAW_NAMES:
                 drawn[name] = drawn.get(name, 0) + info["players"][name]
             for _, start, stop in spans:
                 for row in range(start, stop):
@@ -396,9 +401,10 @@ def test_fidelity_tracking_report_synthetic():
         assert abs(by_name["median_gap_s"]["measured"] - gaps["median_gap_s"]) < 1e-9
         # What was drawn, pooled: the degrader's own counts, none of them zero here.
         assert result["players_draws"] == ours["players_draws"], (result["players_draws"], ours["players_draws"])
-        assert set(result["players_draws"]) == set(fidelity.PLAYERS_DRAWS)
+        assert set(result["players_draws"]) == set(DRAW_NAMES) == set(fidelity.PLAYERS_DRAWS)
         assert result["players_draws"]["speed_nan_runs"] > 0 and result["players_draws"]["tracklets"] > 0
-        assert all(result["players_draws"][name] > 0 for name in ("capped_frames", "cap_slot_frames", "cap_pieces_cut"))
+        assert all(result["players_draws"][name] > 0 for name in (
+            "capped_frames", "cap_slot_frames", "cap_pieces_cut", "short_pieces", "short_slot_frames"))
         stats = result["statistics"]
         for name in ("present_share_22", "present_mean", "present_share_le14", "wrong_team_share", "speed_nan_share"):
             assert abs(stats[name]["benchmark"] - by_name[name]["measured"]) < 1e-9, name
