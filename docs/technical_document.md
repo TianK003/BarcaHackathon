@@ -146,16 +146,18 @@ the one before, and its version goes into every report.
 | profile | the ball | the players | entry |
 |---|---|---|---|
 | `clean` v1 | DFL's, on every frame | DFL's, one slot per player | R002, the floor |
-| `gaps` v1 | missing where ours was: our own missing-ball masks, transplanted onto each half; its speed NaN (T31) | untouched | R003 |
+| `gaps` v1 | missing as ours was: our own missing-ball masks, transplanted onto each half (their pattern, not their clock); its speed NaN (T31) | untouched | R003 |
 | `tracking` v3, **the default as of R004c** | `gaps`' ball, byte for byte | our tracklet lengths in 46 slots, wrong-team slots (T32), NaN-speed runs, 5-frame smoothing, and our low-count frames (only the players nearest the ball) | R004 to R004c |
 | `context` v1, **sensitivity only** | the gaps placed where our tracker loses the ball: a hazard fitted on our match (A08) | `tracking`'s | R005: fails the near-line gate |
 
 Version 3 (R004c) changed one rule of version 2, so that a slot is taken by a new tracklet only from the row after its
-last one stopped, and rescaled the tracked spans once more (2.072). All eight gates pass, no check warns and the ranking
-does not move. What moved is the account of the jitter, 1.80 cm per slot after smoothing, where R004b's 8.5 cm was slot
-handovers (T35). `context` fails its near-line gate, 0.5586 of its gaps starting within 2 m of a line against our 0.2797
-(+-0.05), because DFL tracks the ball out of play (R005, section 6). It is a sensitivity check, the default stays
-`tracking`, and the four yardsticks keep their order on it.
+last one stopped, and derived the scale of the tracked spans again by the same one-shot rule, because the slot rule
+moved its measurement (2.042 to 2.072; T37). All eight gates pass, no check warns and the ranking does not move. What
+moved is the account of the jitter, 1.80 cm per slot after smoothing, where R004b's 8.5 cm was slot handovers (T35).
+`context` fails its near-line gate, 0.5586 of its gaps starting within 2 m of a line against our 0.2797 (+-0.05),
+because DFL tracks the ball out of play (R005, section 6). That gate binds only `context`: the default's transplanted
+gaps measure 36.0% on the same statistic (R003). `context` is a sensitivity check, the default stays `tracking`, and the
+four yardsticks keep their order on it.
 
 **Fidelity, as of R004c** (`tracking` v3: 7 matches x 3 seeds, `fidelity.py --profile tracking`, which exits 0). A gate
 is our own value, measured the same way on each half from its kick-off, plus or minus a tolerance fixed before anything
@@ -175,13 +177,16 @@ cannot show 22 slots (T36). All eight pass:
 
 Ten WARN checks are printed and never tuned towards, and none warns: the four yardsticks predict 18.7% to 24.3% fewer
 possessions a minute than on ours (band 25%), and the ball is visible on 0.5684 of the benchmark's dead frames against
-0.6637 (band 0.10).
+0.6637 in our public window (band 0.10; the ball is missing there on 12% of frames against 40.7% over the match, so
+ours over the whole match is unmeasured).
 
 **The rule on degradations.** A degradation is fitted only on label-free statistics of our tracking (A07, A08), with
-constants from rules written before any score was seen, rescaled at most once, frozen with their measurement in the
-code, and never tuned towards a published score, a yardstick or a WARN (T26, T37). When a gate missed (the first
-low-count cap, on the tracklet median) we stopped, said so and made two corrections, each forced by its measurement
-(R004b). The degrader never reads `ball_status` or `ball_possession`, and a change to a profile bumps its version.
+constants from rules written before any score was seen, rescaled once per version from one label-free measurement,
+frozen with their measurement in the code, and never tuned towards a published score, a yardstick or a WARN (T26, T37).
+When a gate missed (the first low-count cap, on the tracklet median) we stopped, said so and made two corrections, each
+forced by its measurement: no piece under 8 frames, and one rescale of the tracked spans, applied whether or not the
+gate would then pass (R004b, T37). The degrader never reads `ball_status` or `ball_possession`, and a change to a
+profile bumps its version.
 
 **Statistics on seven clusters.** The pooled spellF1 is the official scorer's number on all halves as one file. An
 interval is the 90% Student t interval of the seven matches' paired deltas against a reference config, beside the exact
@@ -191,7 +196,7 @@ about 0.015 (R003 to R004c), which the intervals do not show, so three seeds are
 
 **Does it rank the four baselines as the full match does?** We run the organisers' four baselines decoded per half
 (`nearest_w{0,25,50,125}`) as a check, not a target. Pooled spellF1 on the default profile (R004c; the other profiles'
-are in the scoreboard summary of `docs/results.md`):
+are in [the scoreboard summary of `docs/results.md`](results.md#the-four-yardsticks-on-every-profile-in-one-table)):
 
 | baseline | published, full match (R000) | benchmark, raw truth | benchmark, coarse truth |
 |---|---|---|---|
@@ -217,26 +222,31 @@ benchmark cannot show is in section 6.
   the public window is alive on 80.4% of its frames, more than 96% of DFL's 5-minute windows, so it cannot say how far
   ours differs from DFL's 437 possessions a match (A06, T33). The coarse truth stands in for the difference and does not
   correct it, and `D` timing against ours is unmeasured. The timing parameters come from the public window (P02).
-- **Seven matches, five of them Fortuna Düsseldorf's home games.** A small and not independent sample: the intervals
-  are wide for that reason, and the smallest sign-flip p is 0.0156. Two matches have a team down to 10 players, so
-  statistics on how many players are tracked are measured at full strength only (T36).
+- **Seven matches, five of them Fortuna Düsseldorf's home games.** The sample is small, so the intervals are wide, and
+  not independent, so even they may be too narrow; the smallest sign-flip p is 0.0156. Two matches have a team down to
+  10 players, so statistics on how many players are tracked are measured at full strength only (T36).
 - **No video, audio, homography or Smart Tagging.** Whatever uses them (P08, P09, P10, P14, P15) is checked on the
   public window only, or simulated from the benchmark's truth with noise measured on our match (A03).
-- **Aerial play.** The ATD has no ball height, so how many of our ball gaps and tracker errors come from airborne balls
-  cannot be measured on ours, and the profiles do not model it: our first plan said "crowded and aerial", and measured
-  it is "lines and slow balls" (A08).
-- **Position bias.** None is added, because none can be measured on ours (there is no reference to measure it against).
-  The jitter after smoothing is 1.80 cm per slot against our 3.3 mm, 5.5 times ours (T35, R004c), so a method that
-  reads distances is validated without whatever positional error ours carries.
-- **The default's ball gaps are transplanted and blind to the play.** They sit where our own masks were in time, not
-  where a tracker loses the ball (near the lines, on slow balls, with more players around, A08): 36.0% of them start
-  within 2 m of a line against 28.0% of ours, and the ball is visible on 0.5684 of the dead frames against 0.6637 in
-  the public window (R003). A method that depends on where the gaps fall is validated on gaps that ignore the play.
-- **`context` does not fix that, and why.** It places the gaps by the play and fails its near-line gate on every seed,
-  0.5586 against 0.2797 (+-0.05): DFL tracks the ball out of play, so 25.2% of its at-risk rows are within 2 m of a line
-  against 9.0% of ours, while the model's probability rises near a line by a similar factor on both (3.9 on DFL's rows,
-  2.9 on ours). No scale of the hazard moves it and no remedy was applied. It stays a sensitivity profile, and its
-  numbers are not set beside `tracking`'s without saying so (R005).
+- **Aerial projection.** A camera-based tracker projects an airborne ball onto the pitch plane, which displaces it.
+  DFL's positions carry no such error and the benchmark adds none, and ours has no ball height, so the error cannot be
+  measured on ours. Nor can we tell how many of our ball gaps come from airborne balls: our first plan said "crowded
+  and aerial", and measured it is "lines and slow balls" (A08).
+- **Position bias.** None is added, because none can be measured on ours (there is no reference to measure it against),
+  so a method that reads distances is validated without whatever positional error ours carries.
+- **Rougher positions.** The jitter after smoothing is 1.80 cm per slot against our 3.3 mm, 5.5 times ours in RMS (T35,
+  R004c), which matters to a method that reads positions, speeds or accelerations.
+- **The default's ball gaps are transplanted and blind to the play.** They keep the pattern of our masks, not their
+  clock (the offset is drawn uniformly, so the pattern lags by up to 7.6 minutes in a 68,000-frame half, `degrade.py`;
+  R003's draws reached 11,222 frames) and not where our tracker loses the ball (near the lines, on slow balls, with
+  more players around, A08). 36.0% of them start within 2 m of a line against 28.0% of ours, because DFL's ball is
+  tracked out of play and so spends more time near the lines (R003, R005), and the ball is visible on 0.5684 of the
+  dead frames against 0.6637 in the public window (R003). A method that depends on where the gaps fall is validated on
+  gaps that ignore the play.
+- **`context` does not fix that, and why.** It places the gaps by the play and fails its own near-line gate (the
+  default has none) on every seed, 0.5586 against 0.2797 (+-0.05): DFL tracks the ball out of play, so 25.2% of its
+  at-risk rows are within 2 m of a line against 9.0% of ours, while the model's probability rises near a line by a
+  similar factor on both (3.9 on DFL's rows, 2.9 on ours). No scale of the hazard moves it and no remedy was applied.
+  It stays a sensitivity profile, and its numbers are not set beside `tracking`'s without saying so (R005).
 - **Tracklets and slots are not ours.** The tracklet median is 26.52 s against our 41.28 s, 36% below and inside its
   +-50% band (R004c, T37). A player returns to his own slot 47.4% of the time (ours has no identities), and a slot
   idles a median of 4.3 s where ours idles 7.4 s (both on J03WMX, seed 0, R004c, A09). A method that follows a slot

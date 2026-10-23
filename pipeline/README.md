@@ -209,18 +209,22 @@ needs the video's homography or the Smart Tagging stops the run and names the as
   and discussed in `docs/results.md` and never tuned towards. Run it after any change to a profile. Degradations are
   fitted once on label-free statistics of our tracking, then frozen ([T37](../docs/traps.md)).
 
-**The default profile, as of R004c, is `tracking` version 3.** The ball is missing where ours was (our own masks,
-transplanted in time, so the gaps are not placed by the play). The players have our tracklets in 46 slots, wrong-team
-slots (10.5% of our frames from each kick-off, 10.8% of the graded ones, T32), NaN speeds in runs, smoothing, and our
-low-count frames (only the players nearest the ball tracked). A slot is freed for a new tracklet only from the row after
-its last one stopped, which leaves a jitter per slot of 1.80 cm against our 3.3 mm (T35). All eight gates pass and none
-of the ten checks warns ([R004c](../docs/results.md)).
+**The default profile, as of R004c, is `tracking` version 3.** The ball is missing as ours was (our own masks,
+transplanted with their pattern and not their clock, so the gaps are not placed by the play). The players have our
+tracklets in 46 slots, wrong-team slots (10.5% of our frames from each kick-off, 10.8% of the graded ones, T32), NaN
+speeds in runs, smoothing, and our low-count frames (only the players nearest the ball tracked). The 5-frame smoothing
+leaves a jitter per slot of 1.80 cm against our 3.3 mm. Since v3 a slot is freed for a new tracklet only from the row
+after its last one stopped, which removed the slot handovers that had inflated the jitter to 6.5 to 8.5 cm (T35). All
+eight gates pass and none of the ten checks warns ([R004c](../docs/results.md)).
 
 **`context` is a sensitivity check, not a default.** It places the ball's gaps where our tracker loses the ball
-([A08](../docs/results.md)) and fails its near-line gate, 0.5586 against our 0.2797 +-0.05, because DFL tracks the ball
-out of play ([R005](../docs/results.md)). So `run.DEFAULT_PROFILE` stays `tracking`. Run `context` to see whether a
-ranking depends on how the gaps are placed, and say so when you quote it or set its number beside another profile's.
-`run.py --profile clean|gaps|tracking|context` picks a profile, and every report names its profile and version.
+([A08](../docs/results.md)) and fails its own near-line gate, 0.5586 against our 0.2797 +-0.05, because DFL tracks the
+ball out of play ([R005](../docs/results.md)); the default's transplanted gaps measure 36.0% on the same statistic
+(R003), but only `context` has a gate on it. So `run.DEFAULT_PROFILE` stays `tracking`. Run `context` to see whether a
+ranking depends on how the gaps are placed, and say so when you quote it or set its number beside another profile's:
+`context` and `tracking` v3 order the four configs the same way under both truths (Kendall tau +1.000), and every config
+scores 0.3 to 2.2 points of spellF1 higher on `context` (R005). `run.py --profile clean|gaps|tracking|context` picks a
+profile, and every report names its profile and version.
 
 What it cannot test: whatever uses the homography, the Smart Tagging, the camera or the audio (DFL has no video), and
 the conventions of our ground truth beyond what the public window shows. Check those on the public window. The details

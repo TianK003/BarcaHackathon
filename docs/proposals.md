@@ -107,17 +107,21 @@ to look like our ATD and run through our own pipeline.
 3. **Degrade it to look like our ATD**, with the degradation seeded ([T22](traps.md)), in profiles that add one part
    of our tracking at a time (`degrade.py`: `clean`, `gaps` and `tracking`, the default, in its version 3 since R004c;
    `context`, with R005, is a sensitivity profile only):
-   - **Drop the ball where ours was** (`gaps`, R003): our own missing-ball masks are transplanted onto each half, which
-     keeps the gap lengths (A01: median 10.7 s; 75% of the missing frames in gaps of 15 s or more) and the climb
-     through each half (A02). Our gaps are not random, and the plan's "crowded and aerial" became **lines and slow
+   - **Drop the ball as ours was dropped** (`gaps`, R003): our own missing-ball masks are transplanted onto each half,
+     which keeps the gap lengths (A01: median 10.7 s; 75% of the missing frames in gaps of 15 s or more) and the pattern
+     of a stretch of our half, but not its clock. The offset is drawn uniformly, so the pattern lags by up to M - n
+     frames (M the length of our half, n the benchmark half's: up to 7.6 minutes for a 68,000-frame half), and most of
+     the climb through each half (A02) comes shifted. Our gaps are not random, and random ones would flatter ball-free
+     methods (P07), so the masks are transplanted and not drawn. The plan's "crowded and aerial" became **lines and slow
      balls** once measured: 28.6% of their onsets are within 2 m of a line against 8.5% of the visible frames, and the
      median ball speed at an onset is 2.2 m/s against 5.1 m/s (A07, A08). The ATD has no ball height, so aerial play
      cannot be measured on ours, and a crowd around the ball raises the hazard too, less than the lines and slow balls
-     do (A08). A transplanted mask is placed without looking at the play. The `context` profile (R005) places the gaps
-     with a hazard fitted on our own tracker (A08) and **fails its near-line gate**, 0.5586 against our 0.2797 +-0.05:
-     DFL tracks the ball out of play, so a quarter of its at-risk rows are near a line against 9% of ours. It stays a
+     do (A08). A transplanted mask is still placed without looking at the play: 36.0% of its gaps start within 2 m of a
+     line against our 28.0% (R003). The `context` profile (R005) places the gaps with a hazard fitted on our own tracker
+     (A08) and **fails its near-line gate**, a gate that binds only it: 0.5586 against our 0.2797 +-0.05, because DFL
+     tracks the ball out of play, so a quarter of its at-risk rows are near a line against 9% of ours. It stays a
      sensitivity check, the default stays `tracking`, and the four yardsticks keep their order on `context` under both
-     truths (R005). Random gaps would flatter ball-free methods (P07).
+     truths (R005).
    - **Break identities** into anonymous, team-labelled tracklets that appear, vanish and swap ([T15](traps.md); the
      `tracking` profile, R004 to R004c): our own tracklet lengths in 46 slots, wrong-team slots ([T32](traps.md)), NaN
      speeds in runs, and our low-count frames.
@@ -297,9 +301,10 @@ This is the backbone that everything else plugs into.
   matches with the ball masked (P13), and on the public GT, predicted out of fold ([T27](traps.md)).
 - Measure on P01's **simulated ball gaps**, where the truth is known, and check against the public window's
   ball-missing frames (few: 6.5% of its in-play frames). Real gaps are harder than the `gaps` profile's, which are
-  transplanted in time and not placed by the play: ours start near the lines and on slow balls, with more players
-  around the ball (A08). The `context` profile (R005) places them that way, fails its near-line gate and is a
-  sensitivity check only, so the benchmark's default still has gaps that are blind to the play.
+  transplanted with their pattern and not their clock, and not placed by the play: ours start near the lines and on
+  slow balls, with more players around the ball (A08). The `context` profile (R005) places them that way, fails its
+  own near-line gate and is a sensitivity check only, so the benchmark's default still has gaps that are blind to the
+  play.
 - Feed the probabilities into P06.
 
 ### P08 — Smart Tagging as soft evidence

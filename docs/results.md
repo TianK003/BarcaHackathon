@@ -31,8 +31,8 @@ The organisers' four baselines decoded per graded half (`nearest_w{0,25,50,125}`
 spellF1 on the seven DFL matches, per profile and under each truth ([the two
 truths](../pipeline/benchmark/README.md#the-two-truths)). Every number is copied from the entry in its first column,
 where the intervals, the paired deltas and the sign-flip tests are. The profiles differ in what they take from our
-tracking, so a row is read against the others only for its order, and absolute spellF1 on the benchmark is not our
-leaderboard's.
+tracking. Read each row for its order, and a difference between two rows as that profile's effect on the same four
+configs; absolute spellF1 on the benchmark is not our leaderboard's.
 
 | profile (entry) | raw: `w0` | `w25` | `w50` | `w125` | coarse: `w0` | `w25` | `w50` | `w125` |
 |---|---|---|---|---|---|---|---|---|
@@ -49,17 +49,19 @@ Bold is the first of the four. For comparison, the published full-match scores (
 - **`clean` (R002):** the benchmark's floor, with the ball on every frame, so `majority_vote` predicts `D` on 0.0% of
   the graded frames (alive/dead F1 0.7110 for all four, "always alive"); the truth reorders the yardsticks, and nothing
   here ranks a dead-ball detector.
-- **`gaps` (R003):** frozen at v1, the first benchmark that looks like our match (our own ball gaps); the yardstick
-  check holds in its robust part (`w0` last under both truths), the rest of the order follows the truth.
+- **`gaps` (R003):** frozen at v1, the first benchmark that looks like our match (our own ball gaps, with their pattern
+  and not their clock, so not placed by the play); the yardstick check holds in its robust part (`w0` last under both
+  truths), the rest of the order follows the truth.
 - **`tracking` v1 (R004):** superseded by R004b; the five counted gates passed and three count gates stayed pending
   until the low-count tail existed; no order changes from `gaps`.
 - **`tracking` v2 (R004b):** all eight gates pass and no WARN; no order moves from R004 (the four move by 0.4 points of
   spellF1 at most); superseded by R004c, which corrected its account of the jitter (T35).
 - **`tracking` v3 (R004c), the default:** all eight gates and all ten checks pass; no order moves from R004b (no config
   by more than 0.6 points); the jitter per slot is 1.80 cm and not R004b's 8.5 cm, which was slot handovers (T35).
-- **`context` v1 (R005):** fails the near-line gate (0.5586 against 0.2797 +-0.05) and the share missing pooled, so it
-  is a sensitivity check and not the default; it gives `tracking` v3's order under both truths (Kendall tau +1.000
-  between the two profiles' orders) with every config 0.3 to 2.2 points higher.
+- **`context` v1 (R005):** fails its own near-line gate (0.5586 against 0.2797 +-0.05; `tracking` v3's transplanted
+  gaps measure 36.0% on it, R003, but have no gate) and the share missing pooled, so it is a sensitivity check and not
+  the default; it gives `tracking` v3's order under both truths (Kendall tau +1.000 between the two profiles' orders)
+  with every config 0.3 to 2.2 points higher.
 
 What every row says: `w0` is last under both truths, and the rest of the order follows the truth. The raw truth puts
 `w50` first and the coarse one puts `w125` first, and neither gives the published order `w50 > w125 > w25 > w0` (R000).
