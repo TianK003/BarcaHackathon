@@ -11,7 +11,8 @@ module of its topic:
     inputs.py    a DFL match served to the pipeline as MatchInputs and clean_atd: contract, no truth (synthetic, and
                  a downloaded match with --dfl)
     score.py     HalfScore, pooled and per_match against the official pm.evaluate, predict against pipeline.run.run,
-                 and the yardstick configs (synthetic, and a downloaded match with --dfl)
+                 the yardstick configs, and the match-level statistics (t_interval, sign_flip_p, compare)
+                 (synthetic, and a downloaded match with --dfl)
     harness.py   the harness itself: what it collects, how it reports NOT RUN, the console set-up
     common.py    what several modules share: the synthetic DFL match, real_match, damaged, NotRun (no checks of its own)
 

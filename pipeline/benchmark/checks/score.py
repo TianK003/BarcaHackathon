@@ -11,10 +11,12 @@ for the organisers' baselines. The check that reads a downloaded match is test_d
 """
 
 import dataclasses
+import itertools
 import math
 import os
 import random
 import tempfile
+from fractions import Fraction
 
 import numpy as np
 
@@ -396,6 +398,279 @@ def test_yardstick_configs_load_and_pass_the_signature_checks():
         assert note == trailing_comment(texts[0], "half_width")[0] and column == fallback_column, (
             "{}: the # on the half_width line is in column {}, the one on the fallback line in {}".format(
                 width, column, fallback_column))
+
+
+# -- match-level statistics -------------------------------------------------------------------------------------------
+
+def student_quantile(df, probability=0.95):
+    """The probability-quantile of Student's t with df degrees of freedom, from its density, with nothing from the code.
+
+    CDF(x) = 1/2 + the integral of the density from 0 to x (Simpson's rule, 800 steps); the root is found by bisection.
+    """
+    def density(t):
+        return math.exp(math.lgamma((df + 1) / 2) - math.lgamma(df / 2) - 0.5 * math.log(df * math.pi)
+                        - (df + 1) / 2 * math.log1p(t * t / df))
+
+    def cdf(x, steps=800):
+        width = x / steps
+        total = density(0.0) + density(x) + sum((4 if step % 2 else 2) * density(step * width)
+                                                for step in range(1, steps))
+        return 0.5 + total * width / 3
+
+    low, high = 0.0, 20.0
+    for _ in range(40):
+        middle = (low + high) / 2
+        low, high = (middle, high) if cdf(middle) < probability else (low, middle)
+    return (low + high) / 2
+
+
+def brute_force_flip_p(deltas):
+    """The sign-flip p by itertools, in exact arithmetic: each delta is the decimal that it prints as, as a Fraction.
+
+    Every pattern of signs, and the share whose sum is at least as far from 0 as the data's: no tolerance, because
+    nothing is rounded (0.1 + 0.2 is 0.3 here, and 0.4 + 0.2 - 0.2 is 0.4).
+    """
+    exact = [Fraction(repr(float(delta))) for delta in deltas]
+    observed = abs(sum(exact))
+    count = sum(1 for signs in itertools.product((1, -1), repeat=len(exact))
+                if abs(sum(sign * delta for sign, delta in zip(signs, exact))) >= observed)
+    return count / 2 ** len(exact)
+
+
+def spell_half(match_id, n_gt, n_pred, tp, seed=0, half=1, confusion=ZERO_CONFUSION):
+    """A HalfScore with the same true positives at every IoU: its spellF1 is that of tp, n_pred and n_gt."""
+    return score.HalfScore(match_id, half, seed, n_gt, n_pred, (tp,) * 5, confusion)
+
+
+def spell_f1(tp, n_pred, n_gt):
+    """F1 from its definition: the harmonic mean of precision and recall, 0 where either is empty."""
+    precision, recall = tp / n_pred, tp / n_gt
+    return 2 * precision * recall / (precision + recall)
+
+
+def test_t_table_is_the_two_sided_90_percent_quantile():
+    """T_95 is the table of the brief, and each entry is the 95th percentile of t with that many degrees of freedom."""
+    assert score.T_95 == {1: 6.314, 2: 2.920, 3: 2.353, 4: 2.132, 5: 2.015, 6: 1.943, 7: 1.895, 8: 1.860, 9: 1.833,
+                          10: 1.812}
+    assert all(type(value) is float for value in score.T_95.values())
+    for df, value in score.T_95.items():
+        exact = student_quantile(df)
+        assert abs(value - exact) <= 5.1e-4, "df {}: the table says {}, the density gives {:.5f}".format(
+            df, value, exact)
+
+
+def test_t_interval_known():
+    """[1..7]: mean 4, sd sqrt(28 / 6) = 2.1602 (ddof 1), six degrees of freedom: 1.943 * 2.1602 / sqrt(7) each side."""
+    mean, low, high = score.t_interval([1, 2, 3, 4, 5, 6, 7])
+    half = 1.943 * math.sqrt(28 / 6) / math.sqrt(7)
+    assert abs(half - 1.5864) < 1e-4, half                              # worked by hand: 1.943 * 2.1602 / 2.6458
+    assert mean == 4.0 and math.isclose(low, 4 - half, rel_tol=1e-12) and math.isclose(high, 4 + half, rel_tol=1e-12)
+    assert all(type(value) is float for value in (mean, low, high))
+    # Two values: sd = sqrt(2), one degree of freedom (6.314): 2 +/- 6.314 * sqrt(2) / sqrt(2).
+    mean, low, high = score.t_interval((1, 3))
+    assert mean == 2.0 and math.isclose(low, 2 - 6.314) and math.isclose(high, 2 + 6.314)
+    # Equal values have no spread; an array is read like a list; the order does not matter.
+    assert score.t_interval(np.array([0.25, 0.25, 0.25])) == (0.25, 0.25, 0.25)
+    assert score.t_interval([7, 1, 4, 2, 6, 3, 5]) == score.t_interval([1, 2, 3, 4, 5, 6, 7])
+    # Eleven values is ten degrees of freedom, the last row of the table. 0..10 have sample variance 11 * 12 / 12 = 11,
+    # so the half-width is 1.812 * sqrt(11) / sqrt(11) = 1.812.
+    mean, low, high = score.t_interval(list(range(11)))
+    assert mean == 5.0 and math.isclose(high - mean, 1.812, rel_tol=1e-9)
+    assert math.isclose(mean - low, 1.812, rel_tol=1e-9)
+
+
+def test_t_interval_edge_cases():
+    """Fewer than two values have a mean and no interval; more than eleven are beyond the table, and say so."""
+    one = score.t_interval([0.4])
+    assert one[0] == 0.4 and math.isnan(one[1]) and math.isnan(one[2])
+    none = score.t_interval([])
+    assert all(math.isnan(value) for value in none) and all(type(value) is float for value in none)
+    assert all(type(value) is float for value in one)
+    message = expect_error(ValueError, lambda: score.t_interval(list(range(12))), "t_interval", "12",
+                           "10 degrees of freedom")
+    assert "T_95" in message, message
+    expect_error(ValueError, lambda: score.t_interval(np.zeros((3, 2))), "t_interval", "one-dimensional")
+    # NaN is carried, not hidden.
+    assert all(math.isnan(value) for value in score.t_interval([1.0, float("nan"), 3.0]))
+
+
+def test_sign_flip_all_positive():
+    """Seven deltas of one sign: only all-plus and all-minus are as far from 0 as the data, 2 of 128 patterns, 1/64."""
+    assert score.sign_flip_p([0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07]) == 1 / 64
+    assert score.sign_flip_p([-5, -1, -2, -9, -3, -4, -8]) == 1 / 64
+    assert type(score.sign_flip_p([1, 2, 3])) is float
+    # Sixteen is the largest case: 65,536 patterns, and 2 of them for deltas of one sign.
+    assert score.sign_flip_p(np.linspace(0.1, 1.6, 16)) == 2 / 65536
+
+
+def test_sign_flip_small_case():
+    """Three deltas, the 8 patterns counted by hand."""
+    # 2, 1, -1: the sums over +/-2 +/-1 +/-1 are 4, 2, 2, 0, 0, -2, -2, -4; observed 2 (a tie with three others), so the
+    # six with |sum| >= 2 count: 6 / 8.
+    assert score.sign_flip_p([2, 1, -1]) == 0.75
+    # 3, 1, 1: 5, 3, 3, 1, -1, -3, -3, -5 -- observed 5, only the two extremes: 2 / 8.
+    assert score.sign_flip_p([3, 1, 1]) == 0.25
+    # 3, -1, 1: observed sum 3, patterns with |sum| >= 3 are +-5 (two) and +-3 (four): 6 / 8.
+    assert score.sign_flip_p([3, -1, 1]) == 0.75
+    # Exact ties must not be split by rounding. -0.4, -0.2, 0.2: the sums over the 8 patterns are -0.4, -0.8, 0, -0.4,
+    # 0.4, 0, 0.8, 0.4, so the six with |sum| >= 0.4 count, 6 / 8, though as floats those sums of 0.4 are not all the
+    # same number (without FLIP_TOLERANCE the answer is 4 / 8). The same for -0.3, -0.1, 0.1: 6 / 8.
+    assert score.sign_flip_p([-0.4, -0.2, 0.2]) == 0.75
+    assert score.sign_flip_p([-0.3, -0.1, 0.1]) == 0.75
+    # -0.1, 0.2, 0.3: sums of +-0.6 (2), +-0.4 (2), +-0.2 (2) and 0 (2); the two of 0.4 and the two of 0.6 count: 4 / 8.
+    assert score.sign_flip_p([-0.1, 0.2, 0.3]) == 0.5
+    assert score.sign_flip_p([0.1, 0.2, -0.3]) == 1.0                   # observed mean 0 (to rounding): every pattern
+    assert score.sign_flip_p([0.3, 0.2, 0.1]) == 0.25                   # observed 0.6: the two extremes
+    # Nothing to tell apart: every pattern is as far from 0 as the data, which is at 0.
+    assert score.sign_flip_p([0.0, 0.0, 0.0, 0.0]) == 1.0
+    assert score.sign_flip_p([0.5]) == 1.0                              # one value: its flip is as far as it is
+    # Against an independent count in exact arithmetic, on random deltas with exact ties (multiples of 0.05, 0.1 or
+    # 0.01) and without.
+    rng = np.random.default_rng([8, 5])
+    for n in (2, 3, 5, 8, 10):
+        for deltas in (np.round(rng.normal(size=n), 2), rng.integers(-3, 4, size=n) * 0.05,
+                       rng.integers(-5, 6, size=n) / 10, rng.normal(size=n)):
+            assert score.sign_flip_p(deltas) == brute_force_flip_p(deltas.tolist()), (n, deltas)
+    # What it refuses: none, too many (17 would be 131,072 patterns), and values that are not numbers.
+    expect_error(ValueError, lambda: score.sign_flip_p([]), "sign_flip_p", "no deltas")
+    expect_error(ValueError, lambda: score.sign_flip_p(np.zeros(17)), "sign_flip_p", "17", "16")
+    expect_error(ValueError, lambda: score.sign_flip_p([1.0, float("nan")]), "sign_flip_p", "NaN")
+    expect_error(ValueError, lambda: score.sign_flip_p(np.zeros((2, 2))), "sign_flip_p", "one-dimensional")
+
+
+def hand_built_configs():
+    """Two configs on four matches, one half each, worked by hand: (scores_a, scores_b, the deltas b - a).
+
+    spellF1 of M1: 0.5 -> 0.75 (tp 2 -> 3 of 4 and 4), M2: 0.5 -> 0.5 (20 of 40 either way: the big match that does not
+    move), M3: 2/3 -> 0.5 (it predicted 4 possessions for 2 true ones and now predicts 2, matching 1), M4: 0.4 -> 0.6
+    (2 -> 3 of 5 and 5).
+    """
+    a = [spell_half("M1", 4, 4, 2), spell_half("M2", 40, 40, 20), spell_half("M3", 2, 4, 2), spell_half("M4", 5, 5, 2)]
+    b = [spell_half("M1", 4, 4, 3), spell_half("M2", 40, 40, 20), spell_half("M3", 2, 2, 1), spell_half("M4", 5, 5, 3)]
+    return a, b, {"M1": 0.25, "M2": 0.0, "M3": 0.5 - 2 / 3, "M4": 0.2}
+
+
+def test_compare_arithmetic_and_direction():
+    """Delta is b - a, from the pooled counts of each match; wins and losses count its sign; the rest follows."""
+    a, b, expected = hand_built_configs()
+    assert math.isclose(spell_f1(2, 4, 4), 0.5) and math.isclose(spell_f1(1, 2, 2), 0.5)
+    assert math.isclose(spell_f1(2, 4, 2), 2 / 3)
+    result = score.compare(a, b, {"M1": "C1", "M2": "C1", "M3": "C2"})
+    assert list(result) == ["pooled_delta", "match_deltas", "mean_delta", "low", "high", "p_sign_flip", "wins",
+                            "losses", "n", "by_competition"], list(result)
+    assert list(result["match_deltas"]) == ["M1", "M2", "M3", "M4"]
+    for match_id, delta in expected.items():
+        assert math.isclose(result["match_deltas"][match_id], delta, abs_tol=1e-12), (match_id, result["match_deltas"])
+    assert (result["wins"], result["losses"], result["n"]) == (2, 1, 4)        # M2 is a tie: neither
+    # The pooled delta is the delta of the two pooled scores, not the mean of the matches' deltas (0.0294 against
+    # 0.0708): a matched 26 of 53 predicted and 51 true possessions, b 27 of 51 and 51 (F1 = 2 tp / (predicted + true)).
+    assert math.isclose(result["pooled_delta"], spell_f1(27, 51, 51) - spell_f1(26, 53, 51), abs_tol=1e-12)
+    assert abs(result["pooled_delta"] - 0.0294) < 5e-5 and abs(result["mean_delta"] - 0.0708) < 5e-5
+    mean, low, high = score.t_interval(list(expected.values()))
+    assert math.isclose(result["mean_delta"], mean, abs_tol=1e-12)
+    assert math.isclose(result["mean_delta"], (0.25 + 0.0 - 1 / 6 + 0.2) / 4, abs_tol=1e-12)
+    assert math.isclose(result["low"], low, abs_tol=1e-12) and math.isclose(result["high"], high, abs_tol=1e-12)
+    half = 2.353 * np.std(list(expected.values()), ddof=1) / 2                 # three degrees of freedom, sqrt(4) = 2
+    assert math.isclose(result["high"] - result["mean_delta"], half, rel_tol=1e-9)
+    assert result["low"] < 0 < result["high"]
+    assert result["p_sign_flip"] == brute_force_flip_p(list(expected.values()))
+    # By competition: the mean delta of its matches, in the order of the names; a match the mapping lacks is "other".
+    assert list(result["by_competition"]) == ["C1", "C2", "other"], result["by_competition"]
+    assert math.isclose(result["by_competition"]["C1"], 0.125)
+    assert math.isclose(result["by_competition"]["C2"], 0.5 - 2 / 3)
+    assert math.isclose(result["by_competition"]["other"], 0.2)
+
+    # The other way round is the other sign, with the same evidence against 0.
+    reverse = score.compare(b, a, {"M1": "C1", "M2": "C1", "M3": "C2"})
+    assert (reverse["wins"], reverse["losses"]) == (1, 2)
+    assert reverse["match_deltas"] == {m: -d for m, d in result["match_deltas"].items()}
+    assert reverse["mean_delta"] == -result["mean_delta"] and reverse["p_sign_flip"] == result["p_sign_flip"]
+    assert math.isclose(reverse["low"], -result["high"]) and math.isclose(reverse["high"], -result["low"])
+    assert all(type(result[key]) is float for key in ("pooled_delta", "mean_delta", "low", "high", "p_sign_flip"))
+    assert all(type(value) is float for value in result["match_deltas"].values())
+    assert all(type(result[key]) is int for key in ("wins", "losses", "n"))
+
+
+def test_compare_identical():
+    """A config against itself: no difference anywhere, p of 1.0, and not one win or loss."""
+    a, _, _ = hand_built_configs()
+    result = score.compare(a, list(a))
+    assert result["pooled_delta"] == 0.0 and result["mean_delta"] == 0.0 and result["match_deltas"] == dict.fromkeys(
+        ("M1", "M2", "M3", "M4"), 0.0)
+    assert result["low"] == 0.0 and result["high"] == 0.0
+    assert result["p_sign_flip"] == 1.0 and (result["wins"], result["losses"], result["n"]) == (0, 0, 4)
+    assert result["by_competition"] == {"other": 0.0}, "synthetic matches are in no competition"
+
+
+def test_compare_groups_the_real_matches_by_competition():
+    """With no mapping given, the benchmark's own: two Bundesliga matches and five 2. Bundesliga, by their ids."""
+    from pipeline.benchmark import sources
+    assert list(sources.MATCH_IDS) == sorted(sources.MATCH_IDS)
+    a = [spell_half(match_id, 10, 10, 4) for match_id in sources.MATCH_IDS]
+    gains = dict(zip(sources.MATCH_IDS, (1, 2, 3, 4, 5, 6, 7)))
+    b = [spell_half(match_id, 10, 10, 4 + gains[match_id] % 3) for match_id in sources.MATCH_IDS]
+    result = score.compare(a, b)
+    assert result["n"] == 7 and list(result["by_competition"]) == ["DFL-COM-000001", "DFL-COM-000002"]
+    for competition in result["by_competition"]:
+        members = [m for m in sources.MATCH_IDS if sources.COMPETITION[m] == competition]
+        assert math.isclose(result["by_competition"][competition],
+                            sum(result["match_deltas"][m] for m in members) / len(members)), competition
+    assert len([m for m in sources.MATCH_IDS if sources.COMPETITION[m] == "DFL-COM-000002"]) == 5
+    # Seven matches is six degrees of freedom (T_95[6]): the interval and the p are those of the deltas, unweighted.
+    mean, low, high = score.t_interval(list(result["match_deltas"].values()))
+    assert (result["mean_delta"], result["low"], result["high"]) == (mean, low, high)
+    assert result["p_sign_flip"] == brute_force_flip_p(list(result["match_deltas"].values()))
+
+
+def test_compare_serves_macro_f1_through_the_metric_keyword():
+    """metric="macro_f1" is the same comparison of the frame metric, from the matches' summed confusions."""
+    # Truth rows H, A, D; columns H, A, D, X. M1 gets the home/away calls right in b and not in a, M2 is the other way,
+    # and M3 is better in b than in a.
+    good = ((8, 0, 0, 0), (0, 8, 0, 0), (0, 0, 4, 0))
+    poor = ((4, 4, 0, 0), (4, 4, 0, 0), (0, 0, 4, 0))
+    middling = ((6, 2, 0, 0), (2, 6, 0, 0), (0, 0, 4, 0))
+    a = [spell_half("M1", 3, 3, 1, confusion=poor), spell_half("M2", 3, 3, 1, confusion=good),
+         spell_half("M3", 3, 3, 1, confusion=middling)]
+    b = [spell_half("M1", 3, 3, 1, confusion=good), spell_half("M2", 3, 3, 1, confusion=poor),
+         spell_half("M3", 3, 3, 1, confusion=good)]
+    macro = {name: pm.macro_f1(np.array(matrix)) for name, matrix in (("good", good), ("poor", poor),
+                                                                      ("middling", middling))}
+    expected = {"M1": macro["good"] - macro["poor"], "M2": macro["poor"] - macro["good"],
+                "M3": macro["good"] - macro["middling"]}
+    result = score.compare(a, b, metric="macro_f1")
+    assert result["match_deltas"] == expected and expected["M1"] > 0.2 and expected["M3"] > 0.05
+    assert (result["wins"], result["losses"], result["n"]) == (2, 1, 3)
+    pooled_a = np.array(poor) + np.array(good) + np.array(middling)
+    pooled_b = np.array(good) + np.array(poor) + np.array(good)
+    assert result["pooled_delta"] == pm.macro_f1(pooled_b) - pm.macro_f1(pooled_a) > 0.01
+    # The spell counts are identical, so the default metric sees nothing, and a mistyped metric is an error.
+    assert score.compare(a, b)["match_deltas"] == dict.fromkeys(("M1", "M2", "M3"), 0.0)
+    assert score.compare(a, b)["pooled_delta"] == 0.0
+    assert score.compare(a, b, metric="spell_f1_mean") == score.compare(a, b)
+    expect_error(ValueError, lambda: score.compare(a, b, metric="f1"), "compare", "f1", "macro_f1", "spell_f1_mean")
+
+
+def test_compare_rejects_mismatched_matches():
+    """Two configs are compared match by match, so they must have been scored on the same matches, halves and seeds."""
+    a, b, _ = hand_built_configs()
+    expect_error(ValueError, lambda: score.compare(a[:3], b), "compare", "M4", "different matches")
+    expect_error(ValueError, lambda: score.compare(a, b[1:]), "compare", "M1", "different matches")
+    other = [spell_half("M9" if half.match_id == "M3" else half.match_id, half.n_gt, half.n_pred, half.tp[0])
+             for half in b]
+    message = expect_error(ValueError, lambda: score.compare(a, other), "compare", "M3", "M9")
+    assert "different matches" in message
+    # The same matches scored on other seeds (or with a half missing) are not a pairing either: the pooled counts would
+    # be of different things. Named by (match, half, seed).
+    reseeded = [spell_half(half.match_id, half.n_gt, half.n_pred, half.tp[0], seed=1) for half in b]
+    expect_error(ValueError, lambda: score.compare(a, reseeded), "compare", "M1", "half 1", "seed 0", "seed 1")
+    expect_error(ValueError, lambda: score.compare(a, b + [spell_half("M1", 4, 4, 3, half=2)]), "compare", "M1",
+                 "half 2")
+    expect_error(ValueError, lambda: score.compare([], []), "compare", "no HalfScore")
+    expect_error(ValueError, lambda: score.compare(a, []), "compare", "no HalfScore")
+    # Twelve matches is more than the t table holds (ten degrees of freedom): refused by the interval, with its limit.
+    many_a = [spell_half("N{:02d}".format(i), 4, 4, 2) for i in range(12)]
+    many_b = [spell_half("N{:02d}".format(i), 4, 4, 3) for i in range(12)]
+    expect_error(ValueError, lambda: score.compare(many_a, many_b), "t_interval", "10 degrees of freedom")
 
 
 # -- a real match -----------------------------------------------------------------------------------------------------
