@@ -445,7 +445,8 @@ tracklets (75 more tracklets, 162 more NaN-speed runs on the graded blocks than 
 
 **Ball** (from the kick-offs). 146 gaps (143 interior), in seconds: p10 2.68, p25 6.18, median 10.74, p75 21.15, p90
 35.3, p99 107.5, max 221.5; the interior ones: median 10.76, p90 36.4. Interior onsets per 10 minutes of a half: 22, 27,
-28, 29, 32, 5 (the last is the 3 minutes left of 53). The ball is missing on 12% to 80% of each 5-minute stretch of the
+28, 29, 32, 5 (the spans last 52.98 and 50.97 minutes, so the last bin holds about 3.0 minutes of half 1 and 1.0 minute
+of half 2). The ball is missing on 12% to 80% of each 5-minute stretch of the
 graded blocks (A02), and on 33.6% of the dead frames of the public window. `gap_durations_s` holds every gap, and
 `interior_durations_s`, `gap_onset_minute` and `gap_onset_near_line` hold the 143 interior ones, entry by entry, so a
 duration can be read with its class and its minute of the half.

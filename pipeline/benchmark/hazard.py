@@ -175,22 +175,22 @@ class LogisticModel:
 def fit_logistic(X, y, l2=1.0, iterations=50):
     """LogisticModel fitted to the (n, k) features X and the 0/1 outcomes y by damped Newton/IRLS.
 
-    It minimises  -log-likelihood + l2 / 2 * |coef|^2  on features standardised by their mean and population SD
-    (ddof 0). The mean and scale are rounded to 1e-9 first and the fit is made on the rounded ones, so that predict
-    reproduces exactly what was fitted. A constant column keeps its value as its mean and gets a scale of 1 and a
-    coefficient of 0. The intercept is not penalised. Newton runs from the base-rate intercept and zero coefficients
-    for at most `iterations` steps and stops once no parameter would move by more than 1e-10. Each step is halved, up to
-    30 times, until it does not raise the penalised objective: a plain Newton step overshoots, cycles or blows up on a
-    rare 0/1 column with a strong effect (a few onsets in a flagged sliver of the rows; coefficients of -88,000 were
-    seen on synthetic data of that shape). The result is rounded to 1e-9. The iteration count and the output are
-    deterministic.
+    It minimises -log-likelihood + l2 / 2 * |coef|^2 on features standardised by their mean and population SD (ddof 0).
+    The mean and scale are rounded to 1e-9 first and the fit is made on the rounded ones, so that predict reproduces
+    exactly what was fitted. A constant column keeps its value as its mean and gets a scale of 1 and a coefficient of 0
+    -- with a penalty (l2 > 0). Without one (l2 = 0) its column of the design is all zeros, the Hessian is singular, and
+    the fit raises. The intercept is not penalised. Newton runs from the base-rate intercept and zero coefficients for
+    at most `iterations` steps and stops once no parameter would move by more than 1e-10. Each step is halved, up to 30
+    times, until it does not raise the penalised objective: a plain Newton step overshoots, cycles or blows up on a rare
+    0/1 column with a strong effect (a few onsets in a flagged sliver of the rows; coefficients of -88,000 were seen on
+    synthetic data of that shape). The result is rounded to 1e-9. The iteration count and the output are deterministic.
 
     X must have no NaN: the caller chooses the at-risk rows. ValueError, naming what to change, for a bad shape, a NaN
     or an outcome that is not 0 or 1, a single class, an l2 below 0, a column whose standard deviation rounds to 0, a
     Hessian that is singular to working precision, and above all for a fit that has NOT converged in `iterations`
     steps: a model that stopped half-way is never returned, because it would flow silently into the AUCs of the
-    calibration's go/no-go and into where the benchmark's gaps fall. The message gives the last step and suggests a
-    larger l2, which is what holds such a feature in check.
+    calibration's go/no-go and into where the benchmark's gaps fall. The message gives the size of the last Newton step
+    and suggests a larger l2, which is what holds such a feature in check.
     """
     X = np.asarray(X, dtype=np.float64)
     y = np.asarray(y, dtype=np.float64)
@@ -247,8 +247,10 @@ def fit_logistic(X, y, l2=1.0, iterations=50):
             singular = True
         if singular:
             raise ValueError("hazard.fit_logistic: the penalised Hessian is singular to working precision after {} "
-                             "steps. {}".format(count, "With l2 = 0 that means a column repeats another or is a "
-                                                "combination of the others: use l2 > 0 or drop it." if l2 == 0 else
+                             "steps. {}".format(count, "With l2 = 0 that means a column repeats another, is a "
+                                                "combination of the others or is constant, or a feature separates "
+                                                "the outcomes (the probabilities saturate at 0 and 1): use l2 > 0, "
+                                                "or drop the column." if l2 == 0 else
                                                 "With l2 > 0 it means the probabilities saturated at 0 or 1: check "
                                                 "for a feature that separates the outcomes, or use a larger l2."))
         step = np.linalg.solve(curvature, score)
@@ -270,7 +272,7 @@ def fit_logistic(X, y, l2=1.0, iterations=50):
                              "the features are extreme: use a larger l2".format(count, MAX_HALVINGS, last_step))
         beta, current = candidate, value
     if not converged:
-        raise ValueError("hazard.fit_logistic: no convergence in {} Newton steps (the last step still moved a "
+        raise ValueError("hazard.fit_logistic: no convergence in {} Newton steps (the last Newton step would move a "
                          "parameter by {:.3g}, against a tolerance of {:g}); use a larger l2, which is what holds a "
                          "rare or strongly predictive feature in check, or allow more iterations"
                          .format(iterations, last_step, NEWTON_TOLERANCE))
@@ -375,10 +377,11 @@ def sample_mask(prob, onset_class, third, durations, rng):
     itself) separates them. An event on the last frame leaves nothing to mark. It stops once no event falls in the
     block.
 
-    The draws are exactly one rng.exponential(1.0) then one rng.choice(options) per event, in that order, plus one
-    more exponential that overshoots the block when the last gap ended inside it (or when there was no gap at all).
-    When the last gap runs off the end of the block, or the event is on the last frame, no further draw is made. A
-    seeded Generator therefore gives the same gaps on every machine.
+    The draws are exactly one rng.exponential(1.0) then one rng.choice(options) per event, in that order, plus ONE
+    more exponential (which overshoots the block) if and only if r + 1 + d < n after the last event, that is, a
+    visible frame is left after its gap, or there was no event and n > 0. So no further draw is made when the last gap
+    runs off the end of the block, when it ends exactly on the last frame (r + 1 + d = n), when the event is on the
+    last frame, or when the block is empty. A seeded Generator therefore gives the same gaps on every machine.
     """
     prob = np.asarray(prob, dtype=np.float64)
     if prob.ndim != 1:

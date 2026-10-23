@@ -58,16 +58,17 @@ quantile lists only, and the cache sits under <data dir>/cache/benchmark/calibra
 The cache. load() keeps a Calibration as .npy arrays and a manifest.json whose key holds everything the numbers depend
 on: the ATD cache's record of its source files and its cache_version (how they were parsed), CALIBRATION_VERSION, the
 sha256 of this very file (CALIBRATION_SHA256, taken once as the module is imported, with CRLF read as LF, as dfl.py does
-for its parser), the numpy version, the sha256 of the four yardstick configs, the public truth, and the graded blocks
-and kick-offs. A cache is reused only if the whole key matches, so an edited config or an edited definition cannot reuse
-old numbers. Each key has a folder of its own, <data dir>/cache/benchmark/calibration/<digest>/ (cache_folder), where
-the digest is the first 16 hex digits of the sha256 of the key's canonical JSON: checkouts that run different code, and
-so have different keys, can share one data dir without rebuilding each other's cache in turn or interleaving their
-writes. A folder of an old key is never removed (a few MB each); the key is what says whether one is still wanted. An
-unreadable cache (a manifest that is not JSON or lacks a field, an array missing or cut short) is absent, never an
-error: everything in it can be measured again from the sources. The arrays are written first and the manifest last,
-with the old manifest removed up front, as pipeline/inputs/atd_cache.py and dfl.load_match do, so a run killed
-half-way leaves no manifest.
+for its parser), the numpy version, the sha256 of the four yardstick configs, the public truth, the pitch and the frame
+rate (games.py's constants, which every distance and duration is measured with), and the graded blocks and kick-offs. A
+cache is reused only if the whole key matches, so an edited config or an edited definition cannot reuse old numbers.
+Each key has a folder of its own, <data dir>/cache/benchmark/calibration/<digest>/ (cache_folder), where the digest is
+the first 16 hex digits of the sha256 of the key's canonical JSON: checkouts that run different code, and so have
+different keys, can share one data dir without rebuilding each other's cache in turn or interleaving their writes. A
+folder of an old key is never removed (a few MB each); the key is what says whether one is still wanted. An unreadable
+cache (a manifest that is not JSON or lacks a field, an array missing or cut short) is absent, never an error:
+everything in it can be measured again from the sources. The arrays are written first and the manifest last, with the
+old manifest removed up front, as pipeline/inputs/atd_cache.py and dfl.load_match do, so a run killed half-way leaves no
+manifest.
 """
 
 import dataclasses
@@ -595,9 +596,9 @@ def load(data_dir=None, rebuild=False, inputs=None, public_gt_codes=None):
     """The Calibration of BAR-ATH, from the cache when it is fresh, otherwise measured and stored.
 
     data_dir defaults to games.DATA_DIR (MTAH_DATA_DIR); the cache is <data dir>/cache/benchmark/calibration/<digest>/
-    (cache_folder: one folder per key) and nothing else is written. The ATD comes from the pipeline's own cache and is never rebuilt here beyond what Inputs
-    does when that cache is stale. rebuild=True measures again. `inputs` and `public_gt_codes` stand in for the real
-    match and its public truth (the self-checks pass a synthetic bundle).
+    (cache_folder: one folder per key) and nothing else is written. The ATD comes from the pipeline's own cache and is
+    never rebuilt here beyond what Inputs does when that cache is stale. rebuild=True measures again. `inputs` and
+    `public_gt_codes` stand in for the real match and its public truth (the self-checks pass a synthetic bundle).
     """
     if inputs is None:
         from pipeline.inputs import Inputs  # here, not above: it pulls in pandas and the starter loaders
@@ -645,6 +646,8 @@ def _key(inputs, gt):
                     for width in YARDSTICK_WIDTHS},
         "public_gt_sha256": hashlib.sha256(np.ascontiguousarray(gt, dtype=np.int8).tobytes()).hexdigest(),
         "n_frames": inputs.n_frames,
+        "pitch": [float(side) for side in inputs.pitch],   # games.py's constants: every distance and duration uses them
+        "fps": inputs.fps,
         "graded": [list(block) for block in inputs.graded],
         "kickoffs": {str(half): kickoff for half, kickoff in sorted(inputs.kickoffs.items())},
     }

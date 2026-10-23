@@ -296,12 +296,12 @@ def test_hazard_fit_logistic_reaches_the_penalised_optimum():
 
 
 def test_hazard_fit_logistic_converges_on_a_rare_strong_flag():
-    # The case plain Newton cannot do: about 147 onsets in 90,000 rows and a 0/1 flag on 0.3% to 4% of the rows whose
-    # odds ratio is 12 to 64 (the features of every other check are continuous). The first Newton step overshoots, and
-    # the next ones cycle (the flag's coefficient went 3.7, -4,388, 549, ...) or saturate the probabilities: the first
-    # version of this fit returned a coefficient of -88,000 on some of these and refused the rest as "collinear".
-    # Halving each step until the penalised objective does not rise converges in at most 8 steps on all of them, so
-    # 15 are allowed here, and a fit that has not converged would raise.
+    # Cases that plain Newton mostly cannot do (it failed 3 of these 4): about 147 onsets in 90,000 rows and a 0/1 flag
+    # on 0.3% to 4% of the rows whose odds ratio is 12 to 64 (the features of every other check are continuous). The
+    # first Newton step overshoots, and the next ones cycle (the flag's coefficient went 3.7, -4,388, 549, ...) or
+    # saturate the probabilities: the first version of this fit returned a coefficient of -88,000 on some of these and
+    # refused the rest as "collinear". Halving each step until the penalised objective does not rise converges in at
+    # most 8 steps on all of them, so 15 are allowed here, and a fit that has not converged would raise.
     for index, (prevalence, odds_ratio) in enumerate(((0.003, 20), (0.01, 12), (0.01, 64), (0.04, 20))):
         X, y, p = rare_flag_rows([15, 12, index], 90_000, prevalence, odds_ratio)
         model = hazard.fit_logistic(X, y, iterations=15)
@@ -342,8 +342,10 @@ def test_hazard_fit_logistic_standardises_and_rounds():
     # `iterations` caps the Newton steps, and a fit that is not done by then is refused, never returned: one step is not
     # the optimum. The error gives the size of the last step and suggests a larger l2. By 50 steps this fit has
     # stopped moving, so more steps change nothing.
+    # The size it gives is the undamped Newton step, which is not necessarily the step that was taken (that one is
+    # halved until the objective falls), so it says "would move", not "moved".
     expect_error(ValueError, lambda: hazard.fit_logistic(X, y, iterations=1), "hazard.fit_logistic", "no convergence",
-                 "1 Newton steps", "moved a parameter by", "larger l2")
+                 "1 Newton steps", "the last Newton step would move a parameter by", "larger l2")
     long = hazard.fit_logistic(X, y, iterations=200)
     assert np.array_equal(long.coef, model.coef) and long.intercept == model.intercept
     # The mean and the scale that are stored are the ones the fit used (the optimum check above has a column in tiny
@@ -370,6 +372,19 @@ def test_hazard_fit_logistic_refuses_what_it_cannot_fit():
     expect_error(ValueError, lambda: hazard.fit_logistic(twin, y, l2=0.0), "hazard.fit_logistic", "singular",
                  "repeats another", "l2 > 0")
     assert np.allclose(hazard.fit_logistic(twin, y).coef[0], hazard.fit_logistic(twin, y).coef[1], atol=1e-6)
+    # A repeated column is not the only way to a singular Hessian without a penalty: a constant column (nothing in the
+    # design but zeros once it is centred) is another, and so is a feature that separates the outcomes (the
+    # probabilities saturate at 0 and 1 and the curvature vanishes). The message names all three. With a penalty the
+    # constant column is fine: its coefficient is 0.
+    flat = np.column_stack([X[:, 0], np.full(60, 3.0)])
+    message = expect_error(ValueError, lambda: hazard.fit_logistic(flat, y, l2=0.0), "hazard.fit_logistic",
+                           "singular", "l2 > 0")
+    assert "constant" in message and "separat" in message and "repeats another" in message, message
+    assert hazard.fit_logistic(flat, y).coef[1] == 0.0
+    separated = np.array([[-2.0], [-1.0], [1.0], [2.0]] * 5)
+    expect_error(ValueError, lambda: hazard.fit_logistic(separated, (separated[:, 0] > 0).astype(float), l2=0.0,
+                                                         iterations=500),
+                 "hazard.fit_logistic", "singular", "separat", "l2 > 0")
 
 
 def test_hazard_predict_applies_the_stored_standardisation():
@@ -486,6 +501,26 @@ def test_hazard_sample_mask_follows_the_cumulative_hazard():
     mask = hazard.sample_mask(prob[:12], onset_class[:12], third[:12], durations, rng)
     assert runs_of_true(mask) == [(3, 6)], runs_of_true(mask)
     assert [call for call, _ in rng.log] == ["exponential", "choice", "exponential"], rng.log
+
+    # The exact rule for the draws (the docstring's): an exponential and a length per event, and ONE more exponential
+    # if and only if r + 1 + d < n after the last event, or there was no event and n > 0. E = 2.5 puts the event at
+    # r = 2 (class 0, first third: d = 3), so r + 1 + d = 6, and the block length n decides:
+    #   n = 2  no frame reaches E: no event, one exponential
+    #   n = 3  the event is on the last frame, which has nothing to mark: no more draws
+    #   n = 5  the gap runs off the end of the block (3, 4, cut): no more draws
+    #   n = 6  the gap ends exactly on the last frame: 6 is not < 6, so no more draws
+    #   n = 7  one visible frame is left after the gap: one more exponential, which overshoots
+    for n_block, marked, more in ((2, [], 0), (3, [], 0), (5, [(3, 5)], 0), (6, [(3, 6)], 0), (7, [(3, 6)], 1)):
+        rng = ScriptedRng([2.5])
+        mask = hazard.sample_mask(prob[:n_block], onset_class[:n_block], third[:n_block], durations, rng)
+        assert runs_of_true(mask) == marked, (n_block, runs_of_true(mask))
+        calls = [call for call, _ in rng.log]
+        events = 0 if n_block == 2 else 1
+        assert calls == ["exponential", "choice"] * events + ["exponential"] * (more + (n_block == 2)), (n_block, calls)
+    # An empty block draws nothing at all.
+    rng = ScriptedRng([2.5])
+    assert hazard.sample_mask(np.zeros(0), onset_class[:0], third[:0], durations, rng).shape == (0,)
+    assert rng.log == [], rng.log
 
     # The condition is "L(r) - L(t - 1) >= E": a draw that lands exactly on a cumulative value picks that frame, not the
     # next. (A continuous draw never does; the scripted one is the cumulative sum itself, at frame 4.)

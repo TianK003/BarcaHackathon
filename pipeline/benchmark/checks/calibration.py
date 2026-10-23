@@ -648,6 +648,7 @@ def test_calibration_cache_is_keyed_and_unreadable_means_absent():
         assert key["atd_sources"] == inputs.atd_manifest["sources"], "the ATD cache's own record of its sources"
         assert key["atd_cache_version"] == inputs.atd_manifest["cache_version"] == atd_cache.CACHE_VERSION
         assert key["numpy"] == np.__version__ and sorted(key["configs"]) == ["0", "125", "25", "50"], key
+        assert key["pitch"] == list(inputs.pitch) and key["fps"] == inputs.fps, "games.py's constants are in the key"
 
         # An edited config must not reuse the baseline outputs of the old one.
         real_folder = calibration.CONFIG_FOLDER
@@ -667,7 +668,8 @@ def test_calibration_cache_is_keyed_and_unreadable_means_absent():
         adds_nothing(load)   # the unedited configs are the first key again: its own folder, read as it is
         assert manifest()["key"] == key
 
-        # A new version, another definition (the hash of calibration.py), another public truth, other kick-offs.
+        # A new version, another definition (the hash of calibration.py), another public truth, other kick-offs, and
+        # another pitch or frame rate (games.py's constants, which every distance and every duration depends on).
         calibration.CALIBRATION_VERSION += 1
         try:
             adds_a_folder(load)
@@ -692,6 +694,14 @@ def test_calibration_cache_is_keyed_and_unreadable_means_absent():
         adds_a_folder(load)
         assert manifest()["key"]["kickoffs"]["1"] == 61
         inputs.kickoffs = {1: 60, 2: 340}
+        real_pitch, real_fps = inputs.pitch, inputs.fps
+        inputs.pitch = (105.0, 68.0)
+        adds_a_folder(load)
+        assert manifest()["key"]["pitch"] == [105.0, 68.0]
+        inputs.pitch, inputs.fps = real_pitch, 30
+        adds_a_folder(load)
+        assert manifest()["key"]["fps"] == 30
+        inputs.fps = real_fps
         adds_nothing(load)
         assert manifest()["key"] == key
 
@@ -706,7 +716,7 @@ def test_calibration_cache_is_keyed_and_unreadable_means_absent():
             atd_cache.CACHE_VERSION -= 1
         restored, _ = synthetic_calibration_inputs(root)
         adds_nothing(lambda: load(given=restored))
-        assert manifest()["key"] == key and len(folders()) == 7, folders()
+        assert manifest()["key"] == key and len(folders()) == 9, folders()
 
         # Unreadable is absent: an array cut short, an array gone, a manifest that is not JSON or lacks a field. The
         # damaged folder is the current key's own, and it is rebuilt in place.
@@ -733,7 +743,7 @@ def test_calibration_cache_is_keyed_and_unreadable_means_absent():
                 os.remove(manifest_path)
             assert calibration.digest(load()) == good, damage
             assert os.path.getsize(os.path.join(mine, "gap_durations_s.npy")) > 10, damage
-            assert len(folders()) == 7, damage
+            assert len(folders()) == 9, damage
         assert calibration.digest(load()) == good
 
 
@@ -859,6 +869,10 @@ def test_data_calibration_replicates_a01():
         print("      {:<30} graded {:>9.4f}  (expected {} +/- {})   from kick-off {:>9.4f}".format(
             name, value, expected, tolerance, spanned))
 
+    def shown(name, value, spanned):
+        """A figure that is printed and not asserted (the two that A07 says do not reproduce)."""
+        print("      {:<30} graded {:>9.4f}  (not asserted)   from kick-off {:>9.4f}".format(name, value, spanned))
+
     near("missing share", ball["missing_share"], *A01["missing_share"], stored["missing_share"])
     assert (ball["gaps"], ball["interior_gaps"], ball["near_line_onsets"]) == (
         A01["gaps"], A01["interior_gaps"], A01["near_line_onsets"]), (
@@ -887,15 +901,14 @@ def test_data_calibration_replicates_a01():
     near("present mean", players["present_mean"], *PLAN["present_mean"], stored["present_mean"])
     near("share with 22 present", players["present_share_22"], *PLAN["present_share_22"],
          stored["present_share_22"])
-    near("share with <= 14 present", players["present_share_le14"], players["present_share_le14"], 0.0,
-         stored["present_share_le14"])
+    shown("share with <= 14 present", players["present_share_le14"], stored["present_share_le14"])
     near("tracklet median (s)", float(np.median(players["tracklet_lengths_s"])), *PLAN["tracklet_median_s"],
          float(np.median(cal.tracklet_lengths_s)))
     near("jitter RMS (mm)", 1000 * players["jitter_rms_m"], *PLAN["jitter_rms_mm"], 1000 * cal.player_jitter_rms_m)
     graded_speed = float(np.isnan(atd.ball_speed[inputs.graded_mask & atd.ball_present]).mean())
     near("ball-speed NaN share (T31)", graded_speed, *PLAN["ball_speed_nan_share"], stored["ball_speed_nan_share"])
-    near("p99 of NaN-speed runs", float(np.quantile(players["speed_nan_runs"], 0.99)),
-         float(np.quantile(players["speed_nan_runs"], 0.99)), 0.0, float(np.quantile(cal.speed_nan_runs, 0.99)))
+    shown("p99 of NaN-speed runs", float(np.quantile(players["speed_nan_runs"], 0.99)),
+          float(np.quantile(cal.speed_nan_runs, 0.99)))
 
     # The public window and the yardsticks, over the graded halves.
     near("nearest-player agreement", cal.public_window["nearest_agreement"], *A01["nearest_agreement"],
