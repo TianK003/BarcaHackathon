@@ -20,7 +20,8 @@ python pipeline/benchmark/selftest.py [--dfl] [--data]   # the checks
 ## Setup
 
 ```
-.venv/Scripts/python -m pip install -r requirements-benchmark.txt    # the pipeline's pins + lxml==6.1.3 (macOS/Linux: .venv/bin/python)
+# macOS/Linux: .venv/bin/python instead of .venv/Scripts/python
+.venv/Scripts/python -m pip install -r requirements-benchmark.txt    # the pipeline's pins + lxml==6.1.3
 .venv/Scripts/python pipeline/benchmark/sources.py                   # download, then check every size and md5
 .venv/Scripts/python pipeline/benchmark/sources.py --verify          # only check what is on disk
 .venv/Scripts/python pipeline/benchmark/sources.py --data-dir D      # another bundle (default data/, or $MTAH_DATA_DIR)
@@ -129,8 +130,9 @@ Calibration is measured once and cached). A benchmark half of n frames takes the
 2 with the same chance), read from an offset drawn uniformly over 0 to max(0, M - n) (the frames that leave room for
 it; `degrade.choose_transplant`), so frame j of the benchmark half is missing where frame `offset + j` of ours was. A
 half longer than the mask (n > M) has only the offset 0, and if the mask runs out, it goes on round the last 7,500
-frames of ours: 3 of R003's 42 half-draws did, a DFL second half of 77,080 or 78,456 frames against our 76,456. In short, the gaps are transplanted **with their pattern and not their clock**, and they
-are not placed by the play, which is a separate matter:
+frames of ours: 3 of R003's 42 half-draws did, a DFL second half of 77,080 or 78,456 frames against our 76,456. In
+short, the gaps are transplanted **with their pattern and not their clock**, and they are not placed by the play, which
+is a separate matter:
 
 - *What it keeps of ours:* the gaps' lengths and the pattern of the mask over a stretch of the half.
 - *It does not keep the clock.* The offset is drawn uniformly, so the stretch is not at the benchmark half's own
@@ -345,7 +347,8 @@ older report of the same name; compare the digests before comparing two reports.
 ### Fidelity: does the benchmark look like our match?
 
 ```
-.venv/Scripts/python pipeline/benchmark/fidelity.py --profile tracking --seeds 3   # -> data/runs/benchmark/fidelity_tracking.json
+# -> data/runs/benchmark/fidelity_tracking.json
+.venv/Scripts/python pipeline/benchmark/fidelity.py --profile tracking --seeds 3
 ```
 
 `fidelity.py` degrades each match under seeds 0 .. N-1, measures it with **the same two functions that measured ours**
@@ -381,8 +384,8 @@ anything was measured and never tuned towards:
   degradation's (A06).
 
 The report also lists the benchmark's other statistics next to ours (tracklets, wrong-team frames, NaN speeds,
-jitter...), which `gaps` does not model, so that what a later profile has to fix is on the page, and the degrader's draws
-(two integers a half). For `tracking` and `context` it holds the pooled counts of the players' draws
+jitter...), which `gaps` does not model, so that what a later profile has to fix is on the page, and the degrader's
+draws (two integers a half). For `tracking` and `context` it holds the pooled counts of the players' draws
 (`players_draws`, `fidelity.PLAYERS_DRAWS`: tracklets, onsets, episodes, skipped_far, skipped_overlap, episode_frames,
 speed_nan_runs, speed_nan_frames, the cap's capped_frames, cap_slot_frames and cap_pieces_cut, and the shortest-piece
 rule's short_pieces, short_slot_frames and short_episode_pieces), and for `context` those of the ball's
@@ -569,18 +572,19 @@ leaderboard's, and a ranking that holds under both truths and in both competitio
   the play.
 - **`context` does not fix that, and its measured reason (R005).** It places the gaps by the play (lines, slow balls
   and a crowd of players round the ball, as ours are: A08) and fails two of its gates, the near-line one badly and on
-  every seed: **56% of its gaps start within 2 m of a line against our 28%**. The cause is not the model, whose hazard is 2.9 times higher near a line on
-  ours and 3.9 times on DFL's rows (the same ratios at any scale), but the rows it is applied to: **DFL tracks the ball
-  out of play**, so 25.2% of the benchmark's at-risk rows are within 2 m of a line against 9.0% of ours, and 17.7% are
-  beyond one against 4.1%. No remedy was applied (R005). The other gate it fails is the share missing, narrowly and pooled
-  (0.4313 against 0.4110 +-0.02), and it warns on the ball visible on dead frames, 0.4622 against the public window's 0.6637 (`tracking` version 3:
-  0.5684): the hazard puts gaps on slow balls and a dead ball is slow (a reading, not measured), and the window is far
-  better covered than the match, so some of that miss is the window's. The hazard is a model of six features fitted on
-  143 onsets of one match. Its ball features come from the clean ball, so on the five frames after a gap the speed is
-  the true one, where ours carries the speed from before the gap: 0.83% of the at-risk rows are in that window (0.84%,
-  0.81% and 0.84% by seed), and the approximation is counted in the record (`post_gap_rows`). And `tracking` reads the
-  cap's counts and the ball's mask from one window of ours, so both follow our camera, where here the cap reads a window
-  of ours and the gaps are drawn from the play. So `context` is a sensitivity check and not the default.
+  every seed: **56% of its gaps start within 2 m of a line against our 28%**. The cause is not the model, whose hazard
+  is 2.9 times higher near a line on ours and 3.9 times on DFL's rows (the same ratios at any scale), but the rows it is
+  applied to: **DFL tracks the ball out of play**, so 25.2% of the benchmark's at-risk rows are within 2 m of a line
+  against 9.0% of ours, and 17.7% are beyond one against 4.1%. No remedy was applied (R005). The other gate it fails is
+  the share missing, narrowly and pooled (0.4313 against 0.4110 +-0.02), and it warns on the ball visible on dead
+  frames, 0.4622 against the public window's 0.6637 (`tracking` version 3: 0.5684): the hazard puts gaps on slow balls
+  and a dead ball is slow (a reading, not measured), and the window is far better covered than the match, so some of
+  that miss is the window's. The hazard is a model of six features fitted on 143 onsets of one match. Its ball features
+  come from the clean ball, so on the five frames after a gap the speed is the true one, where ours carries the speed
+  from before the gap: 0.83% of the at-risk rows are in that window (0.84%, 0.81% and 0.84% by seed), and the
+  approximation is counted in the record (`post_gap_rows`). And `tracking` reads the cap's counts and the ball's mask
+  from one window of ours, so both follow our camera, where here the cap reads a window of ours and the gaps are drawn
+  from the play. So `context` is a sensitivity check and not the default.
 - **Tracklets and slots are not ours.** The tracklet median is 26.52 s against our 41.28 s, 36% below ours and inside
   the gate's +-50% (R004c, T37). A slot's index is not as empty of the player as in ours. The profile gives each
   tracklet the lowest free slot, so a team uses fewer of its slots than ours does over a whole match (J03WMX, seed 0,

@@ -58,10 +58,10 @@ Bold is the first of the four. For comparison, the published full-match scores (
   spellF1 at most); superseded by R004c, which corrected its account of the jitter (T35).
 - **`tracking` v3 (R004c), the default:** all eight gates and all ten checks pass; no order moves from R004b (no config
   by more than 0.6 points); the jitter per slot is 1.80 cm and not R004b's 8.5 cm, which was slot handovers (T35).
-- **`context` v1 (R005):** fails two of its gates, the near-line share badly (0.5586 against 0.2797 +-0.05;
-  `tracking` v3's transplanted gaps measure 36.0% on it, R003, but have no gate) and the share missing narrowly
-  (0.4313 against 0.4110 +-0.02, pooled), so it is a sensitivity check and not the default; it gives `tracking` v3's order under both truths (Kendall tau +1.000 between the two profiles' orders)
-  with every config 0.3 to 2.2 points higher.
+- **`context` v1 (R005):** fails two of its gates, the near-line share badly (0.5586 against 0.2797 +-0.05; `tracking`
+  v3's transplanted gaps measure 36.0% on it, R003, but have no gate) and the share missing narrowly (0.4313 against
+  0.4110 +-0.02, pooled), so it is a sensitivity check and not the default; it gives `tracking` v3's order under both
+  truths (Kendall tau +1.000 between the two profiles' orders) with every config 0.3 to 2.2 points higher.
 
 What every row says: `w0` is last under both truths, and the rest of the order follows the truth. The raw truth puts
 `w50` first and the coarse one puts `w125` first, and neither gives the published order `w50 > w125 > w25 > w0` (R000).
@@ -192,11 +192,11 @@ rows, the second half starts at row 70,733).
 - **Fields that are missing:** none of X, Y, S, Z, BallPossession or BallStatus is missing on any ball or player frame
   of J03WMX, and no row lacks a ball frame; the same holds for all seven matches (below), and in all seven no player
   frame lies outside the two halves (0 dropped).
-- **Bench players** (2026-10-23, aggregates only). The position arrays have a column for every squad member (40, 40,
-  39, 40, 40, 40 and 40 for J03WMX, J03WN1, J03WOH, J03WOY, J03WPY, J03WQQ and J03WR9), and a column of a player who
-  never had a position is NaN on every row: 8, 11, 7, 8, 9, 9 and 9 of them (home and away: 4 and 4, 4 and 7, 4 and 3,
-  4 and 4, 5 and 4, 5 and 4, 5 and 4), so 7 to 11 a match. Method: `np.load` of `players_xy.npy` and `player_team.npy`
-  of each match's folder under `data/cache/dfl/`, and a count of the columns whose x is NaN on all rows. `nearest_player`
+- **Bench players** (2026-10-23, aggregates only). The position arrays have a column for every squad member (40, 40, 39,
+  40, 40, 40 and 40 for J03WMX, J03WN1, J03WOH, J03WOY, J03WPY, J03WQQ and J03WR9), and a column of a player who never
+  had a position is NaN on every row: 8, 11, 7, 8, 9, 9 and 9 of them (home and away: 4 and 4, 4 and 7, 4 and 3, 4 and
+  4, 5 and 4, 5 and 4, 5 and 4), so 7 to 11 a match. Method: `np.load` of `players_xy.npy` and `player_team.npy` of each
+  match's folder under `data/cache/dfl/`, and a count of the columns whose x is NaN on all rows. `nearest_player`
   ignores an absent slot, and the degrader walks only the players who have positions (`degrade.py`).
 
 Ball frames, by match, from the same parse (`rows w/o ball`, `no possession` and `no status` are 0 everywhere, and the
@@ -1269,8 +1269,8 @@ more than 18 slots present on 89.4% of its frames), the mean tracked span 2,797 
 (home / away; the first version of these figures came from a throwaway script, and the check has printed them itself
 since `6144685`, which added the print, `slot_use`, the same function for both sides): of the pools of
 24 / 22 slots the degraded match has 13 / 13 ever present, 11 / 12 present on at least a tenth of the frames and 12 / 12
-on at least a hundredth, against ours 22 / 21, 21 / 20 and 22 / 21 (A09 had 11 + 11 on a tenth before the episodes, which
-take a slot in the other team's pool). The lost
+on at least a hundredth, against ours 22 / 21, 21 / 20 and 22 / 21 (A09 had 11 + 11 on a tenth before the episodes,
+which take a slot in the other team's pool). The lost
 share over the 7 matches and seeds 0 to 4 is 2.59% against d = 2.50% (the check allows 0.003; per match 2.47% to 2.66%).
 
 | | degraded | ours |
@@ -1988,15 +1988,14 @@ R004c, and the fidelity checks are compared with its public window's figures (77
 Validation (P01 benchmark): 7 DFL matches x 3 degradation seeds (0, 1, 2), profile `context` version 1, 2,005.3 graded
 minutes (668.4 per seed), as R004c. Raw truth: pooled spellF1 0.2193 (`nearest_w50`), 0.2097 (`w25`), 0.1774 (`w125`),
 0.0812 (`w0`). Coarse truth: 0.2443 (`w125`), 0.2057 (`w50`), 0.1608 (`w25`), 0.0369 (`w0`).
-Changed vs the previous best: a benchmark entry against R004c, and **only the ball changed**. R004c's `tracking` v3 gives
-the DFL matches our players and puts the holes in the ball where our own match's masks are, transplanted with their
-pattern and not their clock; `context` gives them the same players, draw for draw
-(`test_context_players_equal_tracking`), and puts the holes where a hazard
-fitted on our match says our tracker loses the ball (the distance to the nearest line, whether the ball is beyond it,
-its speed, the nearest player, the players within 3 m and the minute of the half; A08). The seeds, the matches, the
-configs, the truths and the scorer are R004c's. **`context` fails two of its nine gates and one warning check, and is
-not the benchmark's default: these tables are a sensitivity check, and `DEFAULT_PROFILE` stays `tracking` (version
-3).** The failure comes first, the scores after it.
+Changed vs the previous best: a benchmark entry against R004c, and **only the ball changed**. R004c's `tracking` v3
+gives the DFL matches our players and puts the holes in the ball where our own match's masks are, transplanted with
+their pattern and not their clock; `context` gives them the same players, draw for draw
+(`test_context_players_equal_tracking`), and puts the holes where a hazard fitted on our match says our tracker loses
+the ball (the distance to the nearest line, whether the ball is beyond it, its speed, the nearest player, the players
+within 3 m and the minute of the half; A08). The seeds, the matches, the configs, the truths and the scorer are R004c's.
+**`context` fails two of its nine gates and one warning check, and is not the benchmark's default: these tables are a
+sensitivity check, and `DEFAULT_PROFILE` stays `tracking` (version 3).** The failure comes first, the scores after it.
 Reports: `data/runs/benchmark/context/<stem>.json` and `<stem>.coarse.json`, and
 `data/runs/benchmark/fidelity_context.json` (not committed; each carries the Calibration's digest). R004c's `tracking`
 v3 reports (`data/runs/benchmark/tracking/`, at `7fb0a52`) are what the comparison at the end reads.
@@ -2134,8 +2133,8 @@ config minus `nearest_w50`:
 | `nearest_w0` | 0.0369 | 0.5088 | 0.6453 | 0.0371 [0.0330, 0.0411] | 29,393 (14.66) | -0.1688 [-0.1793, -0.1583] | 0.0156 | 0 / 7 |
 
 What the tables say, and what they do not:
-- **The yardstick check holds in its robust part: `nearest_w0` is last under both truths**, by far more than the noise (7
-  losses of 7 against `w50` under each, Δ -0.1385 raw and -0.1688 coarse, and the gap from `w0` to the next config is
+- **The yardstick check holds in its robust part: `nearest_w0` is last under both truths**, by far more than the noise
+  (7 losses of 7 against `w50` under each, Δ -0.1385 raw and -0.1688 coarse, and the gap from `w0` to the next config is
   0.0962 raw and 0.1239 coarse). Per-seed yardstick scores were not computed for `context`, so, unlike R004c, nothing is
   claimed about the order within each seed; the intervals above are over the matches and say nothing of the seeds'
   spread.
@@ -2188,9 +2187,9 @@ v3 had 0.0002 apart under the raw truth).
   (+0.667), and the same `w0` last by a margin that is far outside the noise. That is what `context` was kept for, and
   it is all that it is evidence for.
 - **The sizes are not the same, and they all move the same way.** Every config scores higher on `context`: spellF1 by
-  +0.0027 (`w0`, coarse) to +0.0217 (`w125`, coarse) pooled, with `w50`, `w25` and `w125` winning in 7 matches of 7 under
-  both truths and `w0` in 6 of 7; macroF1 by +0.036 to +0.070 pooled, in 7 of 7 matches for every config under both
-  truths; alive/dead F1 by +0.028 to +0.069. R004c's seeds moved a pooled spellF1 by up to about 0.013 (v3 only: no
+  +0.0027 (`w0`, coarse) to +0.0217 (`w125`, coarse) pooled, with `w50`, `w25` and `w125` winning in 7 matches of 7
+  under both truths and `w0` in 6 of 7; macroF1 by +0.036 to +0.070 pooled, in 7 of 7 matches for every config under
+  both truths; alive/dead F1 by +0.028 to +0.069. R004c's seeds moved a pooled spellF1 by up to about 0.013 (v3 only: no
   per-seed score exists for `context`): the deltas of `w0` are under that, and the other six, +0.011 to +0.022, are of
   its size or up to 1.7 times it, where R004c's v3-against-v2 differences (0.6 points at most) were inside it.
   **The mechanism was not measured.** What the numbers do say is that `context` hides the ball on dead frames more than
