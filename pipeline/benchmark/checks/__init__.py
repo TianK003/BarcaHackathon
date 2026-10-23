@@ -8,6 +8,10 @@ module of its topic:
     hazard.py    the gap-onset hazard: features, logistic fit, AUC and the mask sampler (synthetic arrays only)
     truth.py     the benchmark's truth from the DFL flags: codes, summary, line timing, nearest team, the coarse
                  truth and the cost of a lag (synthetic, and the downloaded matches with --dfl)
+    inputs.py    a DFL match served to the pipeline as MatchInputs and clean_atd: contract, no truth (synthetic, and
+                 a downloaded match with --dfl)
+    score.py     HalfScore, pooled and per_match against the official pm.evaluate, predict against pipeline.run.run,
+                 and the yardstick configs (synthetic, and a downloaded match with --dfl)
     harness.py   the harness itself: what it collects, how it reports NOT RUN, the console set-up
     common.py    what several modules share: the synthetic DFL match, real_match, damaged, NotRun (no checks of its own)
 
@@ -27,6 +31,6 @@ Import with absolute imports (from pipeline.benchmark import dfl): a check modul
 cannot then shadow it.
 """
 
-from pipeline.benchmark.checks import dfl, harness, hazard, sources, truth
+from pipeline.benchmark.checks import dfl, harness, hazard, inputs, score, sources, truth
 
-MODULES = (sources, dfl, truth, hazard, harness)
+MODULES = (sources, dfl, truth, inputs, score, hazard, harness)

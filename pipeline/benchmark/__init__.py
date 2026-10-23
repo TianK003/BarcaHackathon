@@ -13,8 +13,11 @@ real tracking with the ball's own alive/dead and possession flags, to be degrade
 This file grows with the benchmark: sources.py is the registry and the download; dfl.py parses a match and keeps it
 parsed under data/cache/dfl/ (dfl.load_match is the one way every later stage gets a match); hazard.py is the maths of
 where our tracker loses the ball (per-frame features, a logistic fit, a sampler of ball gaps) and reads no data;
-truth.py turns a match's flags into the scorer's H/A/D/X codes and reads off them what A06 measured; the scorer and the
-degrader land in their own modules next to it.
+truth.py turns a match's flags into the scorer's H/A/D/X codes and reads off them what A06 measured; inputs.py serves
+a match to the pipeline as an Inputs (MatchInputs, clean_atd), with no truth in it; run.py runs a config on it through
+the pipeline's own functions (predict); score.py scores the result half by half and pools the counts into the official
+scorer's number (HalfScore, score_halves, pooled, per_match); configs/ holds the yardsticks, the organisers' four
+baselines as per-half configs. The degrader lands in its own module next to them.
 
 The self-checks live in checks/, one module per topic, and selftest.py is the harness that collects and runs them (to
 add a check, see checks/__init__.py).

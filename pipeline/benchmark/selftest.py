@@ -5,9 +5,12 @@
                                                     #   the 7 matches loaded through the cache, J03WMX's cache
                                                     #   compared with a fresh parse, J03WMX cross-checked against
                                                     #   kloppy and by frame number, the T30 counts on all 7
-                                                    #   matches, and the truth's conventions on all 7 (A06) (measured:
-                                                    #   532 s while the 7 caches are built under data/cache/dfl/, then
-                                                    #   99 to 221 s: the machine's load decides)
+                                                    #   matches, the truth's conventions on all 7 (A06), the 7
+                                                    #   matches served through MatchInputs and J03WMX scored through
+                                                    #   predict and pooled() against pm.evaluate (measured: 532 s
+                                                    #   while the 7 caches are built under data/cache/dfl/, then 99 to
+                                                    #   221 s, 111 s with the last two included: the machine's load
+                                                    #   decides)
     python pipeline/benchmark/selftest.py --data    # + checks that read the real match's data (aggregates only)
 
 This file is the harness and the one command: it collects the checks, filters them by flag, runs them and reports.
