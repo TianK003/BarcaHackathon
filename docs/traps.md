@@ -142,23 +142,24 @@ If you do use kloppy on these files, index frames by `frame_id` rather than by p
 yourself for the away team.
 
 **T31 — The ATD ball-speed channel is unusable.** Where the ball's position exists, its speed is NaN on 92.2% of the
-graded frames (measured again on 2026-10-23: 92.17% of the 94,214 ball-present graded frames, A07). Where it is given,
-its median is 1.3 m/s against 4.8 m/s for the ball's speed from its own positions, and its correlation with that speed
-is at most 0.11 at any lag (the 2026-10-22 measurement, P01's plan): it behaves like a player's speed, not the ball's.
-Compute the ball's speed from successive positions (`hazard.features` does) and never read `atd.ball_speed`: a feature
-built on it is missing on nine frames in ten and noise on the tenth. The benchmark's degraded tracking is to set
-`ball_speed` to NaN everywhere for this reason. T28 says the speed channel is not presence; this says it is not the
-ball's speed either.
+graded frames (measured again on 2026-10-23: 92.17% of the 94,214 ball-present graded frames, 91.97% of those from each
+half's kick-off, A07). Where it is given, its median is 1.3 m/s against 4.8 m/s for the ball's speed from its own
+positions, and its correlation with that speed is at most 0.11 at any lag (the 2026-10-22 measurement, P01's plan): it
+behaves like a player's speed, not the ball's. Compute the ball's speed from successive positions (`hazard.features`
+does) and never read `atd.ball_speed`: a feature built on it is missing on nine frames in ten and noise on the tenth.
+The benchmark's degraded tracking is to set `ball_speed` to NaN everywhere for this reason. T28 says the speed channel
+is not presence; this says it is not the ball's speed either.
 
 **T32 — A slot can carry the other team's player.** After an identity switch a slot keeps its team in the metadata while
 it follows a player of the other side, so a team shows more than 11 slots while the other shows fewer than 11, which a
 real match cannot do. Measured on the graded frames (A07): this happens on 10.8% of them (17,156 of 158,857), in 108
-episodes (63 with the home team in surplus, 45 the away team), median 2.7 s, p90 16 s, longest 50 s. A team shows more
-than 11 slots on 12.9% of frames, and on 84% of those the other shows fewer than 11 (the 2026-10-22 measurement, P01's
-plan). So `atd.slot_team` is the label of the slot and not of the player on it, and a feature that trusts one slot's
-team (the nearest player's, say) is wrong on those frames. The 10.8% is a lower bound: a swap inside an 11 against 11
-cannot be seen. P01's `tracking` profile is to put such episodes into the degraded matches, and is checked against this
-share.
+episodes (63 with the home team in surplus, 45 the away team), median 2.7 s, p90 16 s, longest 50 s; from each half's
+kick-off, the span that the calibration stores, it is 10.5% of the frames (16,433 of 155,923) in 104 episodes. A team
+shows more than 11 slots on 12.9% of frames, and on 84% of those the other shows fewer than 11 (the 2026-10-22
+measurement, P01's plan). So `atd.slot_team` is the label of the slot and not of the player on it, and a feature that
+trusts one slot's team (the nearest player's, say) is wrong on those frames. The 10.8% is a lower bound: a swap inside
+an 11 against 11 cannot be seen. P01's `tracking` profile is to put such episodes into the degraded matches, and is
+checked against this share.
 
 ## Reproducibility and environment
 

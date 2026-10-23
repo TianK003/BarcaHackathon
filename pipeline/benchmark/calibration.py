@@ -13,17 +13,22 @@ difference between the matches and not between two ways of counting. They are pu
 about either match.
 
 Definitions (metres throughout: normalised coordinates times the pitch, 105.3 x 68.0; Inputs.metres)
-    block           a graded half, (half, start, stop), half-open. Every statistic is taken inside the blocks only: the
-                    second half is graded from 2,934 frames before its kick-off, and those frames count.
+    block           (half, start, stop), half-open: the stretch of one half that a statistic is taken on (see Spans).
+    usable          a ball or a slot counts as present only if its flag says so and BOTH coordinates are finite. A
+                    position with one coordinate missing is absent, and is counted (dropped_frames, dropped_slot_frames)
+                    so that it is visible: the line distance and the jitter use y as well as x. A flag that says absent
+                    over a finite position is a ValueError: the two come from different trackings.
     gap             a maximal run of frames without a ball inside a block. A gap that touches the block's first or last
                     frame is a gap (its duration counts, and so does its share of missing frames) but is not interior.
     interior gap    a gap with a visible frame on both sides; the frame before it is its onset. Only these have an
                     onset, a minute and a line distance, because only they can be asked where the tracker lost the ball.
+                    interior_durations_s, gap_onset_minute and gap_onset_near_line are PARALLEL arrays, one entry per
+                    interior gap in the same order, so that the duration of a gap can be read with its class and
+                    minute; gap_durations_s holds every gap, interior or not.
     line distance   min(x, L - x, y, W - y) of the ball, negative beyond a line.
     near-line onset an interior gap whose onset frame has a line distance below 2 m (strictly: 2.0 is not near).
-    onset minute    the onset frame's time in minutes from the start of its block, so the second half's minutes start
-                    117 s before its kick-off. (The hazard of hazard.py counts from the kick-off; that is the fit's
-                    own feature, measured on the frames the fit uses.)
+    onset minute    the onset frame's time in minutes from the start of its block. The spans that measure() passes start
+                    at the kick-off, so it counts from the kick-off, as hazard.features does, and none is negative.
     5-minute share  the share of missing ball frames in each stretch of 5 minutes, counted from the block's first frame
                     (the last stretch is whatever is left): A02's table.
     tracklet        a maximal run of one slot being present inside a block (its length is in seconds).
@@ -35,9 +40,15 @@ Definitions (metres throughout: normalised coordinates times the pitch, 105.3 x 
     jitter          the RMS of the norm of p[t+1] - 2 p[t] + p[t-1] over present triples: the second difference of a
                     slot's position in metres, one frame apart, which a tracker's smoothing makes small (3 mm here).
 
-Two spans. The statistics above are those of the graded blocks, the frames that are scored. The two fields that the
-benchmark transplants, Calibration.ball_masks and present_counts, run from each half's kick-off to the end of its graded
-block instead: a benchmark match starts at its kick-off, and the second half's 117 s before ours are all D, not play.
+Spans. A benchmark match starts at its kick-off, so everything that drives the degradation and centres the fidelity
+gates is measured on the same stretch of ours: each half from its KICK-OFF to the end of its graded block (measure()
+passes those spans as the blocks of ball_stats and player_stats; ball_masks and present_counts run over them too). Our
+second half is graded from 2,934 frames (117 s) before its kick-off, all of them D: short tracklets and NaN-speed runs
+that no benchmark half has, which distort the graded-block figures (A07 gives both). Three things are not on the spans:
+missing_share_5min is A02's published table, counted from each half's first graded frame; baseline_outputs are over the
+graded halves, as the published baselines are, so that they can be compared with them; and the published figures
+themselves (A01, A02, R001, the plan) are graded-block figures, which test_data_calibration_replicates_a01 computes by
+calling these same two functions on the graded blocks and asserts, without storing them.
 
 What a Calibration holds is frame-level data of BAR-ATH (the ball's mask and the slot counts of every frame), which must
 never reach a log, a report, a CSV or git. Every array field has repr=False, describe() returns scalars and short
@@ -45,12 +56,14 @@ quantile lists only, and the cache sits under <data dir>/cache/benchmark/calibra
 (baseline_outputs) go through run.predict and pipeline.output.summarise: no CSV of labels of this match is written.
 
 The cache. load() keeps a Calibration as .npy arrays and a manifest.json whose key holds everything the numbers depend
-on: the ATD cache's record of its source files, CALIBRATION_VERSION, the numpy version, the sha256 of the four yardstick
-configs, the public truth, and the graded blocks and kick-offs. A cache is reused only if the whole key matches, so an
-edited config cannot reuse the old baseline outputs. An unreadable cache (a manifest that is not JSON or lacks a field,
-an array missing or cut short) is absent, never an error: everything in it can be measured again from the sources. The
-arrays are written first and the manifest last, with the old manifest removed up front, as pipeline/inputs/atd_cache.py
-and dfl.load_match do, so a run killed half-way leaves no manifest.
+on: the ATD cache's record of its source files and its cache_version (how they were parsed), CALIBRATION_VERSION, the
+sha256 of this very file (CALIBRATION_SHA256, taken once as the module is imported, with CRLF read as LF, as dfl.py does
+for its parser), the numpy version, the sha256 of the four yardstick configs, the public truth, and the graded blocks
+and kick-offs. A cache is reused only if the whole key matches, so an edited config or an edited definition cannot reuse
+old numbers. An unreadable cache (a manifest that is not JSON or lacks a field, an array missing or cut short) is
+absent, never an error: everything in it can be measured again from the sources. The arrays are written first and the
+manifest last, with the old manifest removed up front, as pipeline/inputs/atd_cache.py and dfl.load_match do, so a run
+killed half-way leaves no manifest.
 """
 
 import dataclasses
@@ -66,9 +79,11 @@ import numpy as np
 from pipeline.contracts import D
 
 # Params
-# Bump it whenever the numbers change for a reason the key cannot see: a change to the statistics below, and above all a
-# change to the pipeline code the baselines run through (pipeline/evidence/, pipeline/decode/, pipeline/refine/,
-# pipeline/output/summarise, benchmark/run.py), because the key hashes the four configs and not the code they call.
+# A manual switch, like dfl.CACHE_VERSION: bump it to invalidate every cache at once. Any edit to this file does that
+# already (CALIBRATION_SHA256, in the key), and so does a new ATD parse (the ATD cache's cache_version, in the key).
+# What still needs a bump is a change to the code that the yardsticks run through, which the key hashes the configs of
+# but not the code of: pipeline/inputs/ (other than the parse), pipeline/evidence/, pipeline/decode/, pipeline/refine/,
+# pipeline/output/ (summarise) and pipeline/benchmark/run.py, for these decide baseline_outputs and public_window.
 CALIBRATION_VERSION = 1
 CACHE_FOLDER = ("cache", "benchmark", "calibration")   # <data dir>/cache/benchmark/calibration/
 MANIFEST = "manifest.json"
@@ -85,13 +100,15 @@ MAX_BINS = 20                           # and no list of describe() is longer th
 QUANTILES = (("p10", 0.10), ("p25", 0.25), ("median", 0.50), ("p75", 0.75), ("p90", 0.90), ("p99", 0.99))
 HIST_QUANTILES = (("p5", 0.05), ("p25", 0.25), ("median", 0.50))
 # dtype of every array the cache keeps, by field; the arrays of a mapping are kept one file per half, name_half.npy.
-FLAT_ARRAYS = {"gap_durations_s": np.float64, "gap_onset_minute": np.float64, "gap_onset_near_line": np.bool_,
-               "tracklet_lengths_s": np.float64, "wrong_team_episodes_s": np.float64, "present_hist": np.int64,
-               "speed_nan_runs": np.int64}
+FLAT_ARRAYS = {"gap_durations_s": np.float64, "interior_durations_s": np.float64, "gap_onset_minute": np.float64,
+               "gap_onset_near_line": np.bool_, "tracklet_lengths_s": np.float64, "wrong_team_episodes_s": np.float64,
+               "present_hist": np.int64, "speed_nan_runs": np.int64}
 HALF_ARRAYS = {"ball_masks": np.bool_, "present_counts": np.int16, "missing_share_5min": np.float64}
 # The three statistics that have a field of their own in the Calibration (wrong_team_share, speed_nan_share and
 # player_jitter_rms_m); scalars holds the others.
 OWN_FIELDS = ("wrong_team_share", "speed_nan_share", "jitter_rms_m")
+# The source whose agreement with the public truth is A01's 77.8% (R001's method), looked up by name in every yardstick.
+NEAREST_SOURCE = "nearest_player"
 
 
 # -- the statistics ---------------------------------------------------------------------------------------------------
@@ -100,18 +117,23 @@ def ball_stats(ball_present, blocks, ball_xy_m, pitch, fps):
     """The ball's gaps inside the blocks, as a dict; arrays are in time order, block by block.
 
     ball_present  (n,) bool: the tracker sees the ball.
-    blocks        [(half, start, stop)], half-open, disjoint, one per half: the graded blocks (Inputs.graded).
-    ball_xy_m     (n, 2) metres from a pitch corner, NaN exactly where ball_present is False.
+    blocks        [(half, start, stop)], half-open, disjoint, one per half: the stretches to measure (measure() gives
+                  the spans from each kick-off to the end of the graded block; the graded blocks reproduce A01).
+    ball_xy_m     (n, 2) metres from a pitch corner, NaN where the ball is missing.
     pitch         (length, width) in metres; fps frames a second.
 
-    Scalars: graded_frames, missing_frames, missing_share, gaps, interior_gaps, near_line_onsets and near_line_share
-    (of the interior gaps; NaN when there are none). Arrays: gap_durations_s (one per gap), then one per interior gap:
-    gap_onset_minute, gap_onset_line_m (the line distance at the onset frame) and gap_onset_near_line (bool). And
+    The ball is present on a frame only if ball_present is True and both coordinates are finite; a frame that fails
+    the second test is absent and counted (dropped_frames).
+
+    Scalars: frames (in the blocks), missing_frames, missing_share, dropped_frames, gaps, interior_gaps,
+    near_line_onsets and near_line_share (of the interior gaps; NaN when there are none). Arrays: gap_durations_s (one
+    per gap, in seconds), then one per interior gap, in the same order: interior_durations_s, gap_onset_minute (from the
+    block's first frame), gap_onset_line_m (the line distance at the onset frame) and gap_onset_near_line (bool). And
     missing_share_5min, {half: float64 array} of the missing share of each 5-minute stretch of the block.
     ValueError, naming the argument, for anything that would make a number meaningless.
     """
-    present = _bool_array("ball_present", ball_present, 1)
-    n = len(present)
+    flag = _bool_array("ball_present", ball_present, 1)
+    n = len(flag)
     xy = np.asarray(ball_xy_m, dtype=np.float64)
     if xy.shape != (n, 2):
         raise ValueError("ball_present has {} frames but ball_xy_m has shape {}; both are one value per frame of the "
@@ -119,35 +141,54 @@ def ball_stats(ball_present, blocks, ball_xy_m, pitch, fps):
     length, width = _pitch(pitch)
     fps = _fps(fps)
     blocks = _blocks(blocks, n)
-    disagree = int((present != ~np.isnan(xy[:, 0])).sum())
-    if disagree:
-        raise ValueError("ball_present and ball_xy_m disagree on {} frames: the ball is present where its position is "
-                         "NaN or the reverse; build both from the same tracking".format(disagree))
+    finite = np.isfinite(xy).all(axis=1)
+    stray = int((~flag & finite).sum())
+    if stray:
+        raise ValueError("ball_present and ball_xy_m disagree on {} frames: the ball is marked absent where a position "
+                         "is given; build both from the same tracking".format(stray))
+    present = flag & finite
 
-    segment = int(round(SEGMENT_MINUTES * 60 * fps))
-    durations, minutes, lines, shares = [], [], [], {}
-    graded = missing = 0
-    for half, start, stop in blocks:
+    durations, interior_durations, minutes, lines = [], [], [], []
+    graded = missing = dropped = 0
+    for _, start, stop in blocks:
         gone = ~present[start:stop]
         graded += stop - start
         missing += int(gone.sum())
+        dropped += int((flag[start:stop] & ~finite[start:stop]).sum())
         first, last = _runs(gone)
-        durations.append((last - first) / fps)
+        block_durations = (last - first) / fps
+        durations.append(block_durations)
         interior = (first > 0) & (last < stop - start)
         onset = first[interior] - 1                      # the last visible frame before each interior gap
+        interior_durations.append(block_durations[interior])
         x, y = xy[start + onset, 0], xy[start + onset, 1]
         lines.append(np.minimum.reduce([x, length - x, y, width - y]))
         minutes.append(onset / fps / 60.0)
-        shares[half] = np.array([gone[lo:lo + segment].mean() for lo in range(0, stop - start, segment)])
-    durations, minutes, lines = (np.concatenate(part) for part in (durations, minutes, lines))
+    durations, interior_durations, minutes, lines = (
+        np.concatenate(part) for part in (durations, interior_durations, minutes, lines))
     near = lines < NEAR_LINE_M
     return {
-        "graded_frames": graded, "missing_frames": missing, "missing_share": missing / graded,
+        "frames": graded, "missing_frames": missing, "missing_share": missing / graded, "dropped_frames": dropped,
         "gaps": int(durations.size), "interior_gaps": int(minutes.size), "near_line_onsets": int(near.sum()),
         "near_line_share": float(near.sum()) / minutes.size if minutes.size else math.nan,
-        "gap_durations_s": durations, "gap_onset_minute": minutes, "gap_onset_line_m": lines,
-        "gap_onset_near_line": near, "missing_share_5min": shares,
+        "gap_durations_s": durations, "interior_durations_s": interior_durations, "gap_onset_minute": minutes,
+        "gap_onset_line_m": lines, "gap_onset_near_line": near,
+        "missing_share_5min": segment_shares(present, blocks, fps),
     }
+
+
+def segment_shares(ball_visible, blocks, fps):
+    """{half: float64 array}: the share of frames without a ball in each 5-minute stretch of each block.
+
+    The stretches are counted from the block's first frame and the last one is whatever is left: A02's table, when the
+    blocks are the graded halves. `ball_visible` is (n,) bool, already the ball being usable (a position with both
+    coordinates finite).
+    """
+    visible = _bool_array("ball_visible", ball_visible, 1)
+    fps = _fps(fps)
+    segment = int(round(SEGMENT_MINUTES * 60 * fps))
+    return {half: np.array([(~visible[lo:min(lo + segment, stop)]).mean() for lo in range(start, stop, segment)])
+            for half, start, stop in _blocks(blocks, len(visible))}
 
 
 def player_stats(players_present, slot_team, players_xy_m, players_speed, blocks, fps):
@@ -156,15 +197,18 @@ def player_stats(players_present, slot_team, players_xy_m, players_speed, blocks
     players_present  (n, S) bool; slot_team (S,) 0 home, 1 away; players_xy_m (n, S, 2) metres, NaN where absent;
     players_speed (n, S), NaN where the speed is not given (always where absent); blocks and fps as in ball_stats.
 
-    Scalars: slots, present_mean, present_share_22 (frames with 22 present), present_share_le14, present_slot_frames,
-    tracklets, wrong_team_frames, wrong_team_share, wrong_team_episodes_home and _away (episodes with that team in
-    surplus), speed_nan_frames, speed_nan_share, jitter_triples and jitter_rms_m (NaN with no present triple). Arrays:
-    present_hist (S + 1,) int64, the frames with 0..S present; tracklet_lengths_s; wrong_team_episodes_s in time order,
-    both teams together; speed_nan_runs, in frames, int64. ValueError, naming the argument, for anything that would
-    make a number meaningless.
+    A slot is present on a frame only if players_present is True and both coordinates are finite; a slot-frame that
+    fails the second test is absent and counted (dropped_slot_frames).
+
+    Scalars: frames (in the blocks), slots, dropped_slot_frames, present_mean, present_share_22 (frames with 22
+    present), present_share_le14, present_slot_frames, tracklets, wrong_team_frames, wrong_team_share,
+    wrong_team_episodes_home and _away (episodes with that team in surplus), speed_nan_frames, speed_nan_share,
+    jitter_triples and jitter_rms_m (NaN with no present triple). Arrays: present_hist (S + 1,) int64, the frames with
+    0..S present; tracklet_lengths_s; wrong_team_episodes_s in time order, both teams together; speed_nan_runs, in
+    frames, int64. ValueError, naming the argument, for anything that would make a number meaningless.
     """
-    present = _bool_array("players_present", players_present, 2)
-    n, slots = present.shape
+    flag = _bool_array("players_present", players_present, 2)
+    n, slots = flag.shape
     team = np.asarray(slot_team)
     if team.shape != (slots,):
         raise ValueError("slot_team has {} entries but players_present has {} slots; it says which team each slot "
@@ -181,14 +225,16 @@ def player_stats(players_present, slot_team, players_xy_m, players_speed, blocks
                          .format(n, slots, speed.shape))
     fps = _fps(fps)
     blocks = _blocks(blocks, n)
-    disagree = int((present != ~np.isnan(xy[:, :, 0])).sum())
-    if disagree:
-        raise ValueError("players_present and players_xy_m disagree on {} slot-frames: a slot is present where its "
-                         "position is NaN or the reverse; build both from the same tracking".format(disagree))
+    finite = np.isfinite(xy).all(axis=2)
+    stray = int((~flag & finite).sum())
+    if stray:
+        raise ValueError("players_present and players_xy_m disagree on {} slot-frames: a slot is marked absent where "
+                         "a position is given; build both from the same tracking".format(stray))
+    present = flag & finite
 
     home, away = team == 0, team == 1
     hist = np.zeros(slots + 1, dtype=np.int64)
-    frames = nan_frames = triples = 0
+    frames = nan_frames = triples = dropped = 0
     squares = 0.0
     tracklets, episodes, runs = [], [], []
     surplus = {"home": 0, "away": 0}
@@ -198,6 +244,7 @@ def player_stats(players_present, slot_team, players_xy_m, players_speed, blocks
         counts = inside.sum(axis=1)
         hist += np.bincount(counts, minlength=slots + 1)
         frames += stop - start
+        dropped += int((flag[start:stop] & ~finite[start:stop]).sum())
 
         _, first, last = _column_runs(inside)
         tracklets.append((last - first) / fps)
@@ -227,7 +274,8 @@ def player_stats(players_present, slot_team, players_xy_m, players_speed, blocks
     slot_frames = int((hist * np.arange(slots + 1)).sum())
     tracklet_lengths = np.concatenate(tracklets)
     return {
-        "slots": slots, "present_hist": hist, "present_slot_frames": slot_frames, "present_mean": slot_frames / frames,
+        "frames": frames, "slots": slots, "dropped_slot_frames": dropped, "present_hist": hist,
+        "present_slot_frames": slot_frames, "present_mean": slot_frames / frames,
         "present_share_22": int(hist[FULL_COUNT:FULL_COUNT + 1].sum()) / frames,
         "present_share_le14": int(hist[:LOW_COUNT + 1].sum()) / frames,
         "tracklets": int(tracklet_lengths.size), "tracklet_lengths_s": tracklet_lengths,
@@ -238,6 +286,11 @@ def player_stats(players_present, slot_team, players_xy_m, players_speed, blocks
         "speed_nan_runs": np.concatenate(runs).astype(np.int64),
         "jitter_triples": triples, "jitter_rms_m": math.sqrt(squares / triples) if triples else math.nan,
     }
+
+
+def _usable(flag, xy):
+    """The flag AND both coordinates finite: what ball_stats and player_stats count as present."""
+    return flag & np.isfinite(xy).all(axis=-1)
 
 
 def _runs(mask):
@@ -306,7 +359,7 @@ def _blocks(blocks, n):
             raise ValueError("blocks: half {} is frames {}-{}, an empty block".format(half, start, stop))
         checked.append((half, start, stop))
     if not checked:
-        raise ValueError("blocks is empty: give the graded blocks, [(half, start, stop), ...]")
+        raise ValueError("blocks is empty: give the stretches to measure, [(half, start, stop), ...]")
     halves = [half for half, _, _ in checked]
     for half in sorted(set(halves)):
         if halves.count(half) > 1:
@@ -326,19 +379,22 @@ class Calibration:
     """What BAR-ATH's tracking looks like, for the degrader to reproduce and fidelity.py to check against.
 
     Frame-level data of the match: nothing here is printed or exported (every array field has repr=False; use
-    describe() for a report). Compare two with digest(), not ==. Every array is read-only. The masks and the counts of
-    a half run from its kick-off to the end of its graded block; everything else is measured on the graded blocks.
+    describe() for a report). Compare two with digest(), not ==. Every array is read-only. Everything is measured on
+    each half's span from its kick-off to the end of its graded block, except missing_share_5min (the graded blocks,
+    A02's published table) and baseline_outputs (the graded halves, as the published baselines are).
     """
     ball_masks: dict = field(repr=False)             # {half: bool array}, True where the ball is missing
     present_counts: dict = field(repr=False)         # {half: int16 array}, slots present, the same frames
     gap_durations_s: np.ndarray = field(repr=False)  # every gap, in seconds
-    gap_onset_minute: np.ndarray = field(repr=False)     # per interior gap, minutes from the block's start
-    gap_onset_near_line: np.ndarray = field(repr=False)  # per interior gap, line distance of the onset < 2 m
-    missing_share_5min: dict = field(repr=False)     # {half: float64 array}, one per 5 minutes from the block's start
+    # The next three are PARALLEL: entry i of each is the same interior gap, in time order.
+    interior_durations_s: np.ndarray = field(repr=False)  # its duration in seconds
+    gap_onset_minute: np.ndarray = field(repr=False)      # the minute of its onset frame, from the kick-off
+    gap_onset_near_line: np.ndarray = field(repr=False)   # its onset's line distance < 2 m
+    missing_share_5min: dict = field(repr=False)     # {half: float64 array}, per 5 minutes from the first graded frame
     tracklet_lengths_s: np.ndarray = field(repr=False)
     wrong_team_episodes_s: np.ndarray = field(repr=False)
-    wrong_team_share: float                          # of graded frames
-    present_hist: np.ndarray = field(repr=False)     # (47,) int64, graded frames with 0..46 slots present
+    wrong_team_share: float                          # of the frames of the spans
+    present_hist: np.ndarray = field(repr=False)     # (47,) int64, frames of the spans with 0..46 slots present
     speed_nan_share: float                           # NaN speeds over present slot-frames
     speed_nan_runs: np.ndarray = field(repr=False)   # in frames
     player_jitter_rms_m: float
@@ -351,7 +407,8 @@ def measure(inputs, public_gt_codes):
     """The Calibration of a match (Inputs, with its ATD) and the public truth's codes, (n_frames,), X where unlabelled.
 
     The yardstick configs run on the inputs through run.predict and output.summarise: no file is written. ValueError
-    for a truth of another length, and for a kick-off that is not inside its graded block.
+    for a truth of another length, a kick-off that is not inside its graded block, and a yardstick without the
+    nearest_player source.
     """
     # Here, not at the top: from Task 11 pipeline/benchmark/run.py imports this module, and a module-level import of
     # run would make a cycle.
@@ -363,25 +420,30 @@ def measure(inputs, public_gt_codes):
     if gt.shape != (inputs.n_frames,):
         raise ValueError("public_gt_codes has {} frames but the match has {}; a truth covers every frame, X where it "
                          "has no label".format(gt.size, inputs.n_frames))
-    spans = {}
+    spans = []
     for half, start, stop in inputs.graded:
         if half not in inputs.kickoffs:
             raise ValueError("inputs.kickoffs has no kick-off for half {}".format(half))
         if not start <= inputs.kickoffs[half] < stop:
             raise ValueError("half {}: the kick-off, frame {}, is not inside its graded block {}-{}".format(
                 half, inputs.kickoffs[half], start, stop))
-        spans[half] = (inputs.kickoffs[half], stop)
+        spans.append((half, inputs.kickoffs[half], stop))
 
     atd = inputs.atd
-    ball = ball_stats(atd.ball_present, inputs.graded, inputs.metres(atd.ball_xy), inputs.pitch, inputs.fps)
+    ball = ball_stats(atd.ball_present, spans, inputs.metres(atd.ball_xy), inputs.pitch, inputs.fps)
     players = player_stats(atd.players_present, atd.slot_team, inputs.metres(atd.players_xy), atd.players_speed,
-                           inputs.graded, inputs.fps)
-    counts = atd.players_present.sum(axis=1).astype(np.int16)
-    seen = inputs.graded_mask & atd.ball_present   # the graded frames that have a ball: T31 asks about those
+                           spans, inputs.fps)
+    ball_ok = _usable(atd.ball_present, atd.ball_xy)
+    counts = _usable(atd.players_present, atd.players_xy).sum(axis=1).astype(np.int16)
+    in_span = np.zeros(inputs.n_frames, dtype=bool)
+    for _, start, stop in spans:
+        in_span[start:stop] = True
+    seen = in_span & ball_ok   # the frames of the spans that have a ball: T31 asks about those
 
     baselines, nearest = {}, None
     for width in YARDSTICK_WIDTHS:
-        codes, sources = predict(load_config(_config_path(width)), inputs)
+        config = load_config(_config_path(width))
+        codes, sources = predict(config, inputs)
         summary = output.summarise(codes, inputs.graded, inputs.fps)
         baselines[width] = {
             "possessions": summary["possessions"],
@@ -391,25 +453,30 @@ def measure(inputs, public_gt_codes):
             # The evidence is the same in all four configs (nearest_player has no parameter): the first one's is read.
             # This is R001's method for A01's 77.8%: pipeline.evidence.describe against the public truth, which counts
             # the frames on which the source and the truth both have an opinion.
-            nearest = next(row for row in evidence.describe(sources, inputs.graded_mask, gt)
-                           if row["name"] == "nearest_player")
+            nearest = next((row for row in evidence.describe(sources, inputs.graded_mask, gt)
+                            if row["name"] == NEAREST_SOURCE), None)
+            if nearest is None:
+                raise ValueError("{}: the config has no evidence source named {!r}, whose agreement with the public "
+                                 "truth the calibration records; the yardsticks nearest_w*.toml all have it".format(
+                                     config.stem, NEAREST_SOURCE))
     dead = gt == D
     window = {"nearest_agreement": _round(nearest["home_agreement"]),
               "judged_frames": int(nearest["home_judged_frames"]), "dead_frames": int(dead.sum()),
-              "dead_ball_visible_share": _round(atd.ball_present[dead].mean()) if dead.any() else None}
+              "dead_ball_visible_share": _round(ball_ok[dead].mean()) if dead.any() else None}
 
     scalars = {}
     for stats in (ball, players):
         for name, value in stats.items():
             if not isinstance(value, (np.ndarray, dict)) and name not in OWN_FIELDS:
-                scalars[name] = _round(value)
+                scalars.setdefault(name, _round(value))   # "frames" is in both: the same number, from the same spans
     scalars["ball_speed_nan_share"] = _round(np.isnan(atd.ball_speed[seen]).mean()) if seen.any() else None
     return Calibration(
-        ball_masks={half: _frozen(~atd.ball_present[kickoff:stop]) for half, (kickoff, stop) in spans.items()},
-        present_counts={half: _frozen(counts[kickoff:stop]) for half, (kickoff, stop) in spans.items()},
-        gap_durations_s=_frozen(ball["gap_durations_s"]), gap_onset_minute=_frozen(ball["gap_onset_minute"]),
-        gap_onset_near_line=_frozen(ball["gap_onset_near_line"]),
-        missing_share_5min={half: _frozen(array) for half, array in ball["missing_share_5min"].items()},
+        ball_masks={half: _frozen(~ball_ok[kickoff:stop]) for half, kickoff, stop in spans},
+        present_counts={half: _frozen(counts[kickoff:stop]) for half, kickoff, stop in spans},
+        gap_durations_s=_frozen(ball["gap_durations_s"]), interior_durations_s=_frozen(ball["interior_durations_s"]),
+        gap_onset_minute=_frozen(ball["gap_onset_minute"]), gap_onset_near_line=_frozen(ball["gap_onset_near_line"]),
+        missing_share_5min={half: _frozen(array)
+                            for half, array in segment_shares(ball_ok, inputs.graded, inputs.fps).items()},
         tracklet_lengths_s=_frozen(players["tracklet_lengths_s"]),
         wrong_team_episodes_s=_frozen(players["wrong_team_episodes_s"]),
         wrong_team_share=_round(players["wrong_team_share"]),
@@ -434,13 +501,16 @@ def describe(cal):
     cumulative = np.cumsum(hist)
     present = {name: int(np.searchsorted(cumulative, level * cumulative[-1], side="left")) for name, level in
                HIST_QUANTILES}
-    bins = np.minimum((cal.gap_onset_minute // ONSET_BIN_MINUTES).astype(np.int64), MAX_BINS - 1)
+    # A minute before the kick-off (none in a calibration, whose spans start there) goes into the first bin, and one
+    # past the last bin into the last, so that no onset can break the count or make the list longer than MAX_BINS.
+    bins = np.clip(np.floor(cal.gap_onset_minute / ONSET_BIN_MINUTES).astype(np.int64), 0, MAX_BINS - 1)
     return {
         "version": CALIBRATION_VERSION,
         "scalars": dict(sorted(cal.scalars.items())),
         "wrong_team_share": cal.wrong_team_share, "speed_nan_share": cal.speed_nan_share,
         "player_jitter_rms_m": cal.player_jitter_rms_m,
-        "gap_s": _quantiles(cal.gap_durations_s), "tracklet_s": _quantiles(cal.tracklet_lengths_s),
+        "gap_s": _quantiles(cal.gap_durations_s), "interior_gap_s": _quantiles(cal.interior_durations_s),
+        "tracklet_s": _quantiles(cal.tracklet_lengths_s),
         "wrong_team_episode_s": _quantiles(cal.wrong_team_episodes_s),
         "speed_nan_run_frames": _quantiles(cal.speed_nan_runs),
         "present_slots": present,
@@ -503,6 +573,19 @@ def _frozen(array):
 
 # -- the cache --------------------------------------------------------------------------------------------------------
 
+def _text_sha256(path):
+    """The sha256 of a text file's bytes with CRLF read as LF: a checkout that changes only the line endings (git does,
+    on Windows, when core.autocrlf is on) is not a change of the file."""
+    with open(path, "rb") as handle:
+        return hashlib.sha256(handle.read().replace(b"\r\n", b"\n")).hexdigest()
+
+
+# The hash of this file, taken now, as the module is imported, like dfl.PARSER_SHA256: the part of the cache key that
+# says which definitions made a cache. A process that imported the module before the file changed goes on running the
+# old definitions, and keeps using the cache that fits them; a process that starts later rebuilds.
+CALIBRATION_SHA256 = _text_sha256(__file__)
+
+
 def load(data_dir=None, rebuild=False, inputs=None, public_gt_codes=None):
     """The Calibration of BAR-ATH, from the cache when it is fresh, otherwise measured and stored.
 
@@ -537,7 +620,9 @@ def _key(inputs, gt):
     from pipeline.config import load_config
     key = {
         "calibration_version": CALIBRATION_VERSION,
+        "code_sha256": CALIBRATION_SHA256,
         "atd_sources": inputs.atd_manifest["sources"],
+        "atd_cache_version": inputs.atd_manifest["cache_version"],
         "numpy": np.__version__,
         "configs": {str(width): hashlib.sha256(load_config(_config_path(width)).text.encode("utf-8")).hexdigest()
                     for width in YARDSTICK_WIDTHS},
@@ -596,6 +681,9 @@ def _read(folder, manifest):
         for half in halves:
             if by_half["ball_masks"][half].shape != by_half["present_counts"][half].shape:
                 return None
+        parallel = (flat["interior_durations_s"], flat["gap_onset_minute"], flat["gap_onset_near_line"])
+        if len({array.shape for array in parallel}) != 1:
+            return None   # the three are parallel: one entry per interior gap
         return Calibration(
             wrong_team_share=manifest["wrong_team_share"], speed_nan_share=manifest["speed_nan_share"],
             player_jitter_rms_m=manifest["player_jitter_rms_m"], public_window=dict(manifest["public_window"]),

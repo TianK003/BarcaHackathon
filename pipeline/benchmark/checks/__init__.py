@@ -9,7 +9,7 @@ module of its topic:
     calibration.py
                  the calibration, our own tracking measured for the benchmark: every statistic exact on hand-built
                  objects, a synthetic bundle, the cache, and with --data the figures of A01, A02 and R001
-    truth.py    the benchmark's truth from the DFL flags: codes, summary, line timing, nearest team, the coarse
+    truth.py     the benchmark's truth from the DFL flags: codes, summary, line timing, nearest team, the coarse
                  truth and the cost of a lag (synthetic, and the downloaded matches with --dfl)
     inputs.py    a DFL match served to the pipeline as MatchInputs and clean_atd: contract, no truth (synthetic, and
                  a downloaded match with --dfl)

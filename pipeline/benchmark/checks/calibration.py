@@ -6,15 +6,19 @@ the objects' construction and written down with its working, never read off what
 that runs across the edge of a block, two blocks that touch (a naive run-length count would fuse the gaps either side
 of the join), a ball that sits exactly 2.0 m from a line (the near-line test is strict), a slot that is present before
 and after a block (a tracklet must not run over its edge) and a second difference that would be huge if a triple
-straddled the edge. test_data_calibration_replicates_a01 then runs the same code on our match, with the figures A01,
-A02 and R001 published; it prints aggregates (counts, shares, quantiles) and never a frame or a row of the match.
+straddled the edge. test_data_calibration_replicates_a01 then runs the same code on our match: on the graded blocks,
+where A01, A02 and R001 published their figures, and on the spans from each kick-off that the Calibration stores. It
+prints aggregates (counts, shares, quantiles) and never a frame or a row of the match.
 """
 
 import dataclasses
+import hashlib
+import importlib.util
 import json
 import math
 import os
 import shutil
+import sys
 import tempfile
 
 import numpy as np
@@ -27,7 +31,7 @@ from pipeline.selftest import expect_error, make_synthetic_bundle, quiet, synthe
 H, A, D, X = pm.H, pm.A, pm.D, pm.X
 PITCH = (105.3, 68.0)
 MAX_SEQUENCE = 20     # describe() may hold no sequence longer than this: nothing that could rebuild a frame
-# The figures the plan and the brief give for our match (A01, A02, R001), asserted by
+# The figures the plan and the brief give for our match (A01, A02, R001; graded blocks), asserted by
 # test_data_calibration_replicates_a01.
 A01 = {"missing_share": (0.4069, 0.0001), "gaps": 150, "interior_gaps": 147, "near_line_onsets": 42,
        "median_gap_s": (10.7, 0.05), "tracklets": 1219, "wrong_team_share": (0.108, 0.001),
@@ -36,10 +40,11 @@ A01 = {"missing_share": (0.4069, 0.0001), "gaps": 150, "interior_gaps": 147, "ne
 # 1-3 of the first half; the whole table reproduces).
 A02_PERCENT = {1: (12, 17, 24, 28, 44, 35, 63, 43, 71, 46, 80), 2: (12, 33, 26, 55, 26, 39, 80, 51, 52, 40, 28)}
 BASELINE_POSSESSIONS = {0: 1949, 25: 746, 50: 594, 125: 398}
+BASELINE_FILES = {0: "baseline_raw", 25: "baseline_smooth25", 50: "baseline_smooth50", 125: "baseline_smooth125"}
 POSSESSION_TOLERANCE = 5
-# Figures of the plan (measured 2026-10-22 by a read-only script) that the calibration reproduces; the two that it does
-# not (5.26% of frames with 14 or fewer present against the plan's 6.6%, and p99 of the NaN-speed runs, 2,305 frames
-# against 1,209, which the plan measured on the whole file) are in A07 and not asserted here.
+# Figures of the plan (measured 2026-10-22 by a read-only script, on the graded blocks) that the calibration
+# reproduces; the two that it does not (5.26% of frames with 14 or fewer present against the plan's 6.6%, and p99 of the
+# NaN-speed runs, 2,305 frames against 1,209, which the plan measured on the whole file) are in A07, not asserted here.
 PLAN = {"wrong_team_episodes": (63, 45), "ball_speed_nan_share": (0.922, 0.0005), "present_mean": (20.5, 0.05),
         "present_share_22": (0.495, 0.0005), "tracklet_median_s": (35.5, 0.05), "jitter_rms_mm": (3.3, 0.05)}
 
@@ -80,15 +85,17 @@ def ball_fixture():
     return present, xy, [(1, 10, 710), (2, 710, 1010)], PITCH, 1
 
 
-def test_calibration_ball_stats_exact():
+def check_ball_stats():
     present, xy, blocks, pitch, fps = ball_fixture()
     got = calibration.ball_stats(present, blocks, xy, pitch, fps)
 
-    # 20 + 5 + 20 + 100 + 10 + 5 + 5 = 165 missing frames of the 1,000 that are graded.
-    assert got["graded_frames"] == 1000 and got["missing_frames"] == 165, got
+    # 20 + 5 + 20 + 100 + 10 + 5 + 5 = 165 missing frames of the 1,000 in the blocks.
+    assert got["frames"] == 1000 and got["missing_frames"] == 165 and got["dropped_frames"] == 0, got
     assert got["missing_share"] == 0.165, got["missing_share"]
     assert got["gaps"] == 7 and got["interior_gaps"] == 5, (got["gaps"], got["interior_gaps"])
     assert got["gap_durations_s"].tolist() == [20.0, 5.0, 20.0, 100.0, 10.0, 5.0, 5.0], got["gap_durations_s"]
+    # The interior gaps are g1, g2, g3, g6 and g7, and three arrays describe them in step: duration, minute, flag.
+    assert got["interior_durations_s"].tolist() == [20.0, 5.0, 20.0, 5.0, 5.0], got["interior_durations_s"]
     # The line distance, min(x, L - x, y, W - y), at the last visible frame of each interior gap. Block 2's last
     # entry is 105.3 - 104.0, which a float spells 1.2999999999999972.
     assert np.allclose(got["gap_onset_line_m"], [1.5, 2.0, -0.5, 1.0, 105.3 - 104.0], rtol=0, atol=1e-12), (
@@ -105,11 +112,15 @@ def test_calibration_ball_stats_exact():
     assert np.allclose(got["missing_share_5min"][1], [25 / 300, 20 / 300, 100 / 100], rtol=0, atol=1e-15), (
         got["missing_share_5min"][1])
     assert np.allclose(got["missing_share_5min"][2], [20 / 300], rtol=0, atol=1e-15), got["missing_share_5min"][2]
+    # segment_shares is that table alone, from the visible frames.
+    alone = calibration.segment_shares(present, blocks, fps)
+    assert all(np.array_equal(alone[half], got["missing_share_5min"][half]) for half in (1, 2)), alone
 
     # The frame rate turns frames into seconds and minutes, and sets the segment: at 2 frames a second the same
     # gaps last half as long in seconds, and a 5-minute segment is 600 frames, so block 1 is a segment and 100 frames.
     twice = calibration.ball_stats(present, blocks, xy, pitch, 2)
     assert twice["gap_durations_s"].tolist() == [10.0, 2.5, 10.0, 50.0, 5.0, 2.5, 2.5], twice["gap_durations_s"]
+    assert twice["interior_durations_s"].tolist() == [10.0, 2.5, 10.0, 2.5, 2.5], twice["interior_durations_s"]
     assert np.allclose(twice["gap_onset_minute"], np.array([99, 149, 329, 199, 249]) / 120.0, rtol=0, atol=1e-12)
     # Segment 1 of block 1 now holds g1, g2 and g3 (45 of 600 frames) and segment 2 holds g4 (100 of 100); block 2 is
     # still one segment of 300 frames, with 20 missing.
@@ -120,9 +131,36 @@ def test_calibration_ball_stats_exact():
     clear = calibration.ball_stats(np.ones(50, dtype=bool), [(1, 0, 50)], np.full((50, 2), 10.0), pitch, 25)
     assert clear["gaps"] == 0 and clear["interior_gaps"] == 0 and clear["missing_share"] == 0.0, clear
     assert clear["gap_durations_s"].size == 0 and clear["gap_onset_minute"].size == 0
+    assert clear["interior_durations_s"].size == 0
     blind = calibration.ball_stats(np.zeros(50, dtype=bool), [(1, 5, 45)], np.full((50, 2), np.nan), pitch, 25)
     assert blind["gaps"] == 1 and blind["interior_gaps"] == 0 and blind["missing_share"] == 1.0, blind
     assert blind["gap_durations_s"].tolist() == [40 / 25], blind["gap_durations_s"]
+
+
+def test_calibration_half_missing_ball_is_absent_and_counted():
+    """A position with one coordinate NaN is no position: the frame is a gap of its own, and the count says so."""
+    present, xy, blocks, pitch, fps = ball_fixture()
+    xy[410, 1] = np.nan     # block 1, frame 400 of it: x = 52.65 is there, y is not, and the flag still says present
+    assert present[410]
+    got = calibration.ball_stats(present, blocks, xy, pitch, fps)
+    # One more missing frame, one more gap (1 s, between visible frames: interior), 166 of 1,000 missing.
+    assert got["dropped_frames"] == 1 and got["missing_frames"] == 166 and got["frames"] == 1000, got
+    assert got["gaps"] == 8 and got["interior_gaps"] == 6, (got["gaps"], got["interior_gaps"])
+    assert got["gap_durations_s"].tolist() == [20.0, 5.0, 20.0, 1.0, 100.0, 10.0, 5.0, 5.0], got["gap_durations_s"]
+    # The new gap sits between g3 and g4, so between g3 and g6 among the interior ones; its onset is frame 399 of block
+    # 1, at the centre of the pitch: 34 m from the nearest line, so not near.
+    assert got["interior_durations_s"].tolist() == [20.0, 5.0, 20.0, 1.0, 5.0, 5.0], got["interior_durations_s"]
+    assert np.allclose(got["gap_onset_minute"], np.array([99, 149, 329, 399, 199, 249]) / 60.0, rtol=0, atol=1e-12)
+    assert got["gap_onset_near_line"].tolist() == [True, False, True, False, True, True], got["gap_onset_near_line"]
+    assert np.isclose(got["gap_onset_line_m"][3], 34.0), got["gap_onset_line_m"]
+    # Segment 2 of block 1 (frames 300-599 of it) holds g3 and the new frame: 21 of 300.
+    assert np.allclose(got["missing_share_5min"][1], [25 / 300, 21 / 300, 1.0], rtol=0, atol=1e-15)
+
+    # The reverse is not a half-missing position but two trackings that disagree: refused, by name.
+    lying = present.copy()
+    lying[300] = False
+    expect_error(ValueError, lambda: calibration.ball_stats(lying, blocks, ball_fixture()[1], pitch, fps),
+                 "ball_present", "ball_xy_m", "disagree")
 
 
 # -- the players, by hand ---------------------------------------------------------------------------------------------
@@ -190,17 +228,18 @@ def player_fixture():
     return present, slot_team, xy, speed, [(1, 5, 45), (2, 60, 90)], 4
 
 
-def test_calibration_player_stats_exact():
+def check_player_stats():
     present, slot_team, xy, speed, blocks, fps = player_fixture()
     got = calibration.player_stats(present, slot_team, xy, speed, blocks, fps)
 
     # Present per frame is 21 (20 frames) and 20 (20 frames) in A, and 20 (5), 21 (13), 22 (12) in B: 25 frames of 20,
-    # 33 of 21 and 12 of 22, 70 graded frames and 20*25 + 21*33 + 22*12 = 1,457 present slot-frames.
+    # 33 of 21 and 12 of 22, 70 frames in the blocks and 20*25 + 21*33 + 22*12 = 1,457 present slot-frames.
     expected_hist = np.zeros(25, dtype=np.int64)
     expected_hist[[20, 21, 22]] = (25, 33, 12)
     assert got["present_hist"].dtype == np.int64 and got["present_hist"].tolist() == expected_hist.tolist(), (
         got["present_hist"])
-    assert got["present_slot_frames"] == 1457 and got["slots"] == 24, (got["present_slot_frames"], got["slots"])
+    assert got["present_slot_frames"] == 1457 and got["slots"] == 24 and got["frames"] == 70, got
+    assert got["dropped_slot_frames"] == 0, got["dropped_slot_frames"]
     assert got["present_mean"] == 1457 / 70, got["present_mean"]
     assert got["present_share_22"] == 12 / 70 and got["present_share_le14"] == 0.0, got
 
@@ -238,8 +277,49 @@ def test_calibration_player_stats_exact():
 
 def test_calibration_synthetic():
     """Every statistic exact on a small hand-built object: the ball's (A01, A02) and the players' (A07)."""
-    test_calibration_ball_stats_exact()
-    test_calibration_player_stats_exact()
+    check_ball_stats()
+    check_player_stats()
+
+
+def test_calibration_half_missing_slot_is_absent_and_counted():
+    """A slot whose position has one coordinate NaN is absent on that frame, for every statistic, and is counted."""
+    present, slot_team, xy, speed, blocks, fps = player_fixture()
+    xy[5 + 15, 0, 1] = np.nan    # slot 0, frame 15 of block A: x is there, y is not, and the flag still says present
+    assert present[5 + 15, 0]
+    got = calibration.player_stats(present, slot_team, xy, speed, blocks, fps)
+    assert got["dropped_slot_frames"] == 1, got["dropped_slot_frames"]
+
+    # Frame 15 of A had 21 present and now has 20: 25 -> 26 frames of 20, 33 -> 32 of 21, 1,456 present slot-frames.
+    expected_hist = np.zeros(25, dtype=np.int64)
+    expected_hist[[20, 21, 22]] = (26, 32, 12)
+    assert got["present_hist"].tolist() == expected_hist.tolist(), got["present_hist"]
+    assert got["present_slot_frames"] == 1456 and got["present_mean"] == 1456 / 70, got
+
+    # Slot 0's 40-frame tracklet in A is two now, frames 0-14 and 16-39 of the block: 15 and 24.
+    frames = [40] * 18 + [15, 24] + [20] * 2 + [10] * 2 + [30] * 20 + [10] * 2 + [17]
+    assert got["tracklets"] == 47 == len(frames) and sum(frames) == 1456
+    assert sorted(got["tracklet_lengths_s"].tolist()) == sorted(length / 4 for length in frames)
+
+    # The home surplus of r 10-19 loses r 15 (home shows 11 there now): two episodes, r 10-14 and r 16-19, 5 and 4
+    # frames; 21 wrong-team frames of 70, and the away episodes of block B as before.
+    assert got["wrong_team_frames"] == 21 and got["wrong_team_share"] == 21 / 70, got
+    assert got["wrong_team_episodes_s"].tolist() == [1.25, 1.0, 1.75, 1.25], got["wrong_team_episodes_s"]
+    assert (got["wrong_team_episodes_home"], got["wrong_team_episodes_away"]) == (2, 2), got
+
+    # Speed: nothing of the 26 NaN frames is slot 0's, so only the denominator changes.
+    assert got["speed_nan_frames"] == 26 and got["speed_nan_share"] == 26 / 1456, got
+
+    # Jitter: three triples lose the dropped frame (those centred on r 14, 15 and 16): slot 0 has 13 + 22 = 35 left of
+    # its 38, and the other slots' 1,327 are as before.
+    assert got["jitter_triples"] == 1362, got["jitter_triples"]
+    assert abs(got["jitter_rms_m"] - math.sqrt((35 * 0.03125 ** 2 + 28 * 0.0625 ** 2) / 1362)) < 1e-12, (
+        got["jitter_rms_m"])
+
+    # A position that is given where the flag says absent is two trackings that disagree: refused, by name.
+    positioned = player_fixture()[2]
+    positioned[10, 22, :] = 1.0   # slot 22 is never present in block A
+    expect_error(ValueError, lambda: calibration.player_stats(present, slot_team, positioned, speed, blocks, fps),
+                 "players_present", "players_xy_m", "disagree")
 
 
 def test_calibration_stats_refuse_what_they_cannot_measure():
@@ -250,13 +330,12 @@ def test_calibration_stats_refuse_what_they_cannot_measure():
     expect_error(ValueError, lambda: ball(present, [(1, 10, 710), (1, 710, 1010)], xy, pitch, fps), "half", "twice")
     expect_error(ValueError, lambda: ball(present, [(1, 10, 1101)], xy, pitch, fps), "blocks", "1101", "1100")
     expect_error(ValueError, lambda: ball(present, [(1, 10, 10)], xy, pitch, fps), "blocks", "empty")
+    expect_error(ValueError, lambda: ball(present, [], xy, pitch, fps), "blocks", "empty")
     expect_error(ValueError, lambda: ball(present, blocks, xy, (0.0, 68.0), fps), "pitch")
     expect_error(ValueError, lambda: ball(present, blocks, xy, pitch, 0), "fps")
-    # A ball that is "present" with no position, or the reverse, would put a NaN into a line distance: refused by name.
-    lying = present.copy()
-    lying[300] = False
-    expect_error(ValueError, lambda: ball(lying, blocks, xy, pitch, fps), "ball_present", "ball_xy_m", "disagree")
     expect_error(ValueError, lambda: ball(present.astype(int), blocks, xy, pitch, fps), "ball_present", "bool")
+    expect_error(ValueError, lambda: calibration.segment_shares(present.astype(int), blocks, fps), "ball_visible",
+                 "bool")
 
     have, slot_team, pxy, speed, pblocks, pfps = player_fixture()
     players = calibration.player_stats
@@ -266,10 +345,6 @@ def test_calibration_stats_refuse_what_they_cannot_measure():
     expect_error(ValueError, lambda: players(have, slot_team, pxy[:, :, :1], speed, pblocks, pfps), "players_xy_m")
     expect_error(ValueError, lambda: players(have, slot_team, pxy, speed[:-1], pblocks, pfps), "players_speed")
     expect_error(ValueError, lambda: players(have, slot_team, pxy, speed, [(1, 5, 101)], pfps), "blocks", "101")
-    positioned = np.where(have[:, :, None], pxy, np.nan)
-    positioned[10, 3, 0] = np.nan   # present with no position: the second difference would be NaN
-    expect_error(ValueError, lambda: players(have, slot_team, positioned, speed, pblocks, pfps),
-                 "players_present", "players_xy_m", "disagree")
 
 
 # -- a whole Calibration, on the synthetic bundle ---------------------------------------------------------------------
@@ -323,33 +398,47 @@ def test_calibration_measure_synthetic():
         cal = calibration.measure(inputs, gt)
         atd = inputs.atd
         counts = atd.players_present.sum(axis=1)
+        spans = [(1, 60, 280), (2, 340, 560)]    # from each kick-off to the end of the graded block
 
-        # The ball's mask and the players' count run from the kick-off to the end of the graded block, per half: True
-        # where the ball is missing, int16 counts, 220 frames (60-279) and 220 (340-559) here.
+        # The ball's mask and the players' count run over the spans, per half: True where the ball is missing, int16
+        # counts, 220 frames (60-279) and 220 (340-559) here.
         assert sorted(cal.ball_masks) == [1, 2] and sorted(cal.present_counts) == [1, 2]
-        for half, kickoff, stop in ((1, 60, 280), (2, 340, 560)):
+        for half, kickoff, stop in spans:
             mask, per_frame = cal.ball_masks[half], cal.present_counts[half]
             assert mask.dtype == bool and per_frame.dtype == np.int16, (mask.dtype, per_frame.dtype)
             assert np.array_equal(mask, ~atd.ball_present[kickoff:stop]), half
             assert np.array_equal(per_frame, counts[kickoff:stop]), half
             assert not mask.flags.writeable and not per_frame.flags.writeable
 
-        # The statistics are the graded blocks' (frames 50-279 and 320-559), 470 frames, not the kick-off spans'.
-        graded = inputs.graded_mask
-        assert cal.scalars["graded_frames"] == 470 == int(graded.sum())
-        assert cal.scalars["missing_frames"] == int((~atd.ball_present[graded]).sum())
+        # So do the statistics (the graded blocks, frames 50-279 and 320-559, hold 470 frames, and are not used): 440.
+        in_span = np.zeros(inputs.n_frames, dtype=bool)
+        in_span[60:280] = in_span[340:560] = True
+        assert cal.scalars["frames"] == 440 == int(in_span.sum()) and int(inputs.graded_mask.sum()) == 470
+        assert cal.scalars["missing_frames"] == int((~atd.ball_present[in_span]).sum())
+        assert cal.scalars["dropped_frames"] == cal.scalars["dropped_slot_frames"] == 0
         assert cal.present_hist.shape == (47,) and cal.present_hist.tolist() == np.bincount(
-            counts[graded], minlength=47).tolist()
-        assert abs(cal.scalars["present_mean"] - float(counts[graded].mean())) < 1e-9
-        direct = calibration.ball_stats(atd.ball_present, inputs.graded, inputs.metres(atd.ball_xy), inputs.pitch,
-                                        inputs.fps)
+            counts[in_span], minlength=47).tolist()
+        assert abs(cal.scalars["present_mean"] - float(counts[in_span].mean())) < 1e-9
+        direct = calibration.ball_stats(atd.ball_present, spans, inputs.metres(atd.ball_xy), inputs.pitch, inputs.fps)
         assert cal.gap_durations_s.tolist() == direct["gap_durations_s"].tolist()
-        assert cal.gap_onset_near_line.tolist() == direct["gap_onset_near_line"].tolist()
         assert cal.gap_onset_minute.tolist() == direct["gap_onset_minute"].tolist()
-        assert cal.missing_share_5min[1].tolist() == direct["missing_share_5min"][1].tolist()
+        assert cal.gap_onset_near_line.tolist() == direct["gap_onset_near_line"].tolist()
+        # The interior gaps are three parallel arrays, and every gap is in the first.
+        assert cal.interior_durations_s.tolist() == direct["interior_durations_s"].tolist()
+        assert cal.interior_durations_s.shape == cal.gap_onset_minute.shape == cal.gap_onset_near_line.shape
+        assert 0 < cal.interior_durations_s.size <= cal.gap_durations_s.size == cal.scalars["gaps"]
+        assert cal.scalars["interior_gaps"] == cal.interior_durations_s.size
+        assert cal.gap_onset_minute.min() >= 0.0, "the spans start at the kick-offs: no minute is before one"
+        assert set(cal.interior_durations_s.tolist()) <= set(cal.gap_durations_s.tolist())
 
-        # The ball's speed channel is NaN on this share of the graded frames that have a ball (T31).
-        seen = graded & atd.ball_present
+        # A02's table is the exception: the graded blocks, from their first frames (50 and 320), whole blocks of 230 and
+        # 240 frames here, one segment each.
+        for half, start, stop in inputs.graded:
+            assert cal.missing_share_5min[half].shape == (1,)
+            assert abs(cal.missing_share_5min[half][0] - float((~atd.ball_present[start:stop]).mean())) < 1e-12, half
+
+        # The ball's speed channel is NaN on this share of the frames of the spans that have a ball (T31).
+        seen = in_span & atd.ball_present
         assert abs(cal.scalars["ball_speed_nan_share"] - float(np.isnan(atd.ball_speed[seen]).mean())) < 1e-9
 
         # The public window: the nearest player's agreement by pipeline.evidence.describe, against a frame-by-frame
@@ -363,7 +452,7 @@ def test_calibration_measure_synthetic():
         assert abs(cal.public_window["dead_ball_visible_share"] - float(atd.ball_present[dead].mean())) < 1e-9
 
         # The yardsticks: through run.predict and summarise, against pipeline.run.run on the same config, its CSV
-        # written in the temporary folder and read nowhere else.
+        # written in the temporary folder and read nowhere else. Over the graded halves, as the published ones are.
         assert sorted(cal.baseline_outputs) == [0, 25, 50, 125], cal.baseline_outputs
         for width in sorted(cal.baseline_outputs):
             config = load_config(os.path.join(calibration.CONFIG_FOLDER, "nearest_w{}.toml".format(width)))
@@ -391,6 +480,42 @@ def test_calibration_measure_refuses_what_it_cannot_measure():
         expect_error(ValueError, lambda: calibration.measure(inputs, gt), "half 2", "kick-off", "560", "320")
         inputs.kickoffs = {1: 60}
         expect_error(ValueError, lambda: calibration.measure(inputs, gt), "kick-off", "half 2")
+
+
+def test_calibration_names_the_yardstick_without_the_nearest_source():
+    """measure() reads the public window from the nearest_player source: a config without it is named, not a crash."""
+    with tempfile.TemporaryDirectory() as root:
+        inputs, gt = synthetic_calibration_inputs(root)
+        folder = os.path.join(root, "configs")
+        shutil.copytree(calibration.CONFIG_FOLDER, folder)
+        path = os.path.join(folder, "nearest_w0.toml")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        assert text.count('kind = "nearest_player"') == 1
+        renamed = text.replace('kind = "nearest_player"', 'kind = "nearest_player"' + chr(10) + 'name = "nearest"')
+        with open(path, "w", encoding="utf-8", newline=chr(10)) as handle:   # the same source, under another name
+            handle.write(renamed)
+        real = calibration.CONFIG_FOLDER
+        calibration.CONFIG_FOLDER = folder
+        try:
+            expect_error(ValueError, lambda: calibration.measure(inputs, gt), "nearest_w0", "nearest_player")
+        finally:
+            calibration.CONFIG_FOLDER = real
+
+
+def test_calibration_describe_survives_a_minute_before_the_kickoff():
+    """A negative onset minute (a Calibration of graded blocks, say) is counted in the first bin, not a crash."""
+    with tempfile.TemporaryDirectory() as root:
+        inputs, gt = synthetic_calibration_inputs(root)
+        cal = calibration.measure(inputs, gt)
+        odd = dataclasses.replace(cal, gap_onset_minute=np.array([-1.5, 3.0, 25.0, 1000.0]),
+                                  interior_durations_s=np.ones(4), gap_onset_near_line=np.zeros(4, dtype=bool))
+        bins = calibration.describe(odd)["onsets_per_10_min"]
+        assert len(bins) == calibration.MAX_BINS and bins[0] == 2 and bins[2] == 1 and bins[-1] == 1, bins
+        assert sum(bins) == 4, bins
+        assert calibration.describe(dataclasses.replace(
+            cal, gap_onset_minute=np.zeros(0), interior_durations_s=np.zeros(0),
+            gap_onset_near_line=np.zeros(0, dtype=bool)))["onsets_per_10_min"] == []
 
 
 # -- the cache --------------------------------------------------------------------------------------------------------
@@ -467,7 +592,8 @@ def test_calibration_cache_inside_data_dir():
 
 
 def test_calibration_cache_is_keyed_and_unreadable_means_absent():
-    """A changed config, version, truth or source rebuilds; a damaged cache is rebuilt, never an error."""
+    """A changed config, definition, version, truth or source rebuilds; a damaged cache is rebuilt, never an error."""
+    from pipeline.inputs import atd_cache
     with tempfile.TemporaryDirectory() as root:
         inputs, gt = synthetic_calibration_inputs(root)
         folder = os.path.join(root, "cache", "benchmark", "calibration")
@@ -477,13 +603,15 @@ def test_calibration_cache_is_keyed_and_unreadable_means_absent():
             with open(manifest_path, encoding="utf-8") as handle:
                 return json.load(handle)
 
-        def load(codes=gt):
-            return calibration.load(data_dir=root, inputs=inputs, public_gt_codes=codes)
+        def load(codes=gt, given=None):
+            return calibration.load(data_dir=root, inputs=given or inputs, public_gt_codes=codes)
 
         cal = load()
         key = manifest()["key"]
         assert key["calibration_version"] == calibration.CALIBRATION_VERSION
+        assert key["code_sha256"] == calibration.CALIBRATION_SHA256
         assert key["atd_sources"] == inputs.atd_manifest["sources"], "the ATD cache's own record of its sources"
+        assert key["atd_cache_version"] == inputs.atd_manifest["cache_version"] == atd_cache.CACHE_VERSION
         assert key["numpy"] == np.__version__ and sorted(key["configs"]) == ["0", "125", "25", "50"], key
 
         # An edited config must not reuse the baseline outputs of the old one.
@@ -503,7 +631,7 @@ def test_calibration_cache_is_keyed_and_unreadable_means_absent():
         load()
         assert manifest()["key"] == key
 
-        # A new version, another public truth, other kick-offs.
+        # A new version, another definition (the hash of calibration.py), another public truth, other kick-offs.
         calibration.CALIBRATION_VERSION += 1
         try:
             load()
@@ -511,6 +639,15 @@ def test_calibration_cache_is_keyed_and_unreadable_means_absent():
         finally:
             calibration.CALIBRATION_VERSION -= 1
         load()
+        real_hash = calibration.CALIBRATION_SHA256
+        calibration.CALIBRATION_SHA256 = "0" * 64
+        try:
+            load()
+            assert manifest()["key"]["code_sha256"] == "0" * 64, "a different code hash must rebuild"
+        finally:
+            calibration.CALIBRATION_SHA256 = real_hash
+        load()
+        assert manifest()["key"] == key
         other = gt.copy()
         other[60:70] = A
         load(other)
@@ -522,9 +659,20 @@ def test_calibration_cache_is_keyed_and_unreadable_means_absent():
         inputs.kickoffs = {1: 60, 2: 340}
         load()
 
+        # A new ATD parse (the ATD cache's cache_version) means new arrays under the same source files: rebuilt.
+        atd_cache.CACHE_VERSION += 1
+        try:
+            reparsed, _ = synthetic_calibration_inputs(root)   # its ATD cache is stale, so it parses again
+            load(given=reparsed)
+            assert manifest()["key"]["atd_cache_version"] == atd_cache.CACHE_VERSION == key["atd_cache_version"] + 1
+        finally:
+            atd_cache.CACHE_VERSION -= 1
+        restored, _ = synthetic_calibration_inputs(root)
+        assert load(given=restored) is not None and manifest()["key"] == key
+
         # Unreadable is absent: an array cut short, an array gone, a manifest that is not JSON or lacks a field.
         good = calibration.digest(cal)
-        for damage in ("truncate", "delete", "garbage", "field", "empty"):
+        for damage in ("truncate", "delete", "garbage", "field", "empty", "not parallel"):
             if damage == "truncate":
                 with open(os.path.join(folder, "gap_durations_s.npy"), "wb") as handle:
                     handle.write(b"\x93NUMPY")
@@ -538,6 +686,8 @@ def test_calibration_cache_is_keyed_and_unreadable_means_absent():
                 del content["public_window"]
                 with open(manifest_path, "w", encoding="utf-8", newline="\n") as handle:
                     json.dump(content, handle)
+            elif damage == "not parallel":
+                np.save(os.path.join(folder, "gap_onset_minute.npy"), np.zeros(1))   # valid array, wrong length
             else:
                 os.remove(manifest_path)
             assert calibration.digest(load()) == good, damage
@@ -545,63 +695,141 @@ def test_calibration_cache_is_keyed_and_unreadable_means_absent():
         assert calibration.digest(load()) == good
 
 
+def import_copy(path, name):
+    """The file at `path` imported as a module called `name`, which runs its code and takes its hash right now."""
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module  # a dataclass looks its module up here
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_calibration_code_hash_is_the_files_and_ignores_line_endings():
+    """CALIBRATION_SHA256 is the hash of calibration.py with CRLF read as LF: CRLF is the same definitions."""
+    with open(calibration.__file__, "rb") as handle:
+        raw = handle.read()
+    assert calibration.CALIBRATION_SHA256 == hashlib.sha256(raw.replace(b"\r\n", b"\n")).hexdigest()
+
+    names = ("calibration_copy_lf", "calibration_copy_crlf", "calibration_copy_edited")
+    try:
+        with tempfile.TemporaryDirectory() as folder:
+            text = raw.replace(b"\r\n", b"\n").decode("utf-8")
+            copies = {}
+            for name, ending, extra in ((names[0], "\n", ""), (names[1], "\r\n", ""), (names[2], "\n", "# an edit\n")):
+                path = os.path.join(folder, name + ".py")
+                with open(path, "w", encoding="utf-8", newline="") as handle:
+                    handle.write((text + extra).replace("\n", ending))
+                copies[name] = import_copy(path, name)
+            with open(copies[names[1]].__file__, "rb") as handle:
+                crlf = handle.read()
+            assert crlf.count(b"\r\n") > 100 and crlf.count(b"\n") == crlf.count(b"\r\n"), "the copy is not all CRLF"
+            assert copies[names[0]].CALIBRATION_SHA256 == copies[names[1]].CALIBRATION_SHA256 == \
+                calibration.CALIBRATION_SHA256, "line endings changed the hash"
+            assert copies[names[2]].CALIBRATION_SHA256 != calibration.CALIBRATION_SHA256, "an edit did not change it"
+    finally:
+        for name in names:
+            sys.modules.pop(name, None)
+
+
 # -- our match --------------------------------------------------------------------------------------------------------
 
 def test_data_calibration_replicates_a01():
     """The calibration of BAR-ATH reproduces what A01, A02 and R001 published, by the same definitions.
 
-    Prints aggregates only: counts, shares and quantiles of the match, never a frame, a position or a label.
+    The published figures are those of the graded blocks, so they are measured here by calling ball_stats and
+    player_stats on the graded blocks and asserted; the Calibration stores the spans from each kick-off, whose values
+    are printed beside them. Prints aggregates only: counts, shares and quantiles of the match, never a frame, a
+    position or a label.
     """
+    from pipeline import ROOT
+    from pipeline.benchmark.run import predict
+    from pipeline.config import load_config
     from pipeline.inputs import Inputs
     inputs = Inputs()
+    atd = inputs.atd
     gt = calibration.public_gt()
     cal = calibration.load()
     # Measured twice, the same: arrays, scalars and all (the cache is not what makes it so).
     assert calibration.digest(calibration.measure(inputs, gt)) == calibration.digest(cal), "not deterministic"
-    description = calibration.describe(cal)
-    assert_no_frame_data(description)
+    assert_no_frame_data(calibration.describe(cal))
 
-    scalars = cal.scalars
+    # What is stored is on the spans from the kick-offs: their lengths, no minute before a kick-off, parallel gaps.
+    for half, start, stop in inputs.graded:
+        assert len(cal.ball_masks[half]) == len(cal.present_counts[half]) == stop - inputs.kickoffs[half], half
+    assert cal.gap_onset_minute.min() >= 0.0
+    assert cal.interior_durations_s.shape == cal.gap_onset_minute.shape == cal.gap_onset_near_line.shape
+    stored = cal.scalars
+    assert stored["dropped_frames"] == stored["dropped_slot_frames"] == 0, "x and y are missing together in the ATD"
 
-    def near(name, value, expected, tolerance):
+    # The published figures: the same two functions, on the graded blocks.
+    ball = calibration.ball_stats(atd.ball_present, inputs.graded, inputs.metres(atd.ball_xy), inputs.pitch, inputs.fps)
+    players = calibration.player_stats(atd.players_present, atd.slot_team, inputs.metres(atd.players_xy),
+                                       atd.players_speed, inputs.graded, inputs.fps)
+
+    def near(name, value, expected, tolerance, spanned):
         assert abs(value - expected) <= tolerance, "{}: {} is not {} +/- {}".format(name, value, expected, tolerance)
-        print("      {:<26} {:>10.4f}   (expected {} +/- {})".format(name, value, expected, tolerance))
+        print("      {:<30} graded {:>9.4f}  (expected {} +/- {})   from kick-off {:>9.4f}".format(
+            name, value, expected, tolerance, spanned))
 
-    near("missing share", scalars["missing_share"], *A01["missing_share"])
-    assert (scalars["gaps"], scalars["interior_gaps"], scalars["near_line_onsets"]) == (
+    near("missing share", ball["missing_share"], *A01["missing_share"], stored["missing_share"])
+    assert (ball["gaps"], ball["interior_gaps"], ball["near_line_onsets"]) == (
         A01["gaps"], A01["interior_gaps"], A01["near_line_onsets"]), (
-        scalars["gaps"], scalars["interior_gaps"], scalars["near_line_onsets"])
-    print("      gaps / interior / near-line onsets   {} / {} / {}".format(
-        scalars["gaps"], scalars["interior_gaps"], scalars["near_line_onsets"]))
-    near("near-line share of interior", scalars["near_line_share"], 42 / 147, 5e-5)
-    near("median gap (s)", float(np.median(cal.gap_durations_s)), *A01["median_gap_s"])
+        ball["gaps"], ball["interior_gaps"], ball["near_line_onsets"])
+    print("      gaps / interior / near-line    graded {} / {} / {}   from kick-off {} / {} / {}".format(
+        ball["gaps"], ball["interior_gaps"], ball["near_line_onsets"],
+        stored["gaps"], stored["interior_gaps"], stored["near_line_onsets"]))
+    near("near-line share of interior", ball["near_line_share"], 42 / 147, 5e-5, stored["near_line_share"])
+    near("median gap (s)", float(np.median(ball["gap_durations_s"])), *A01["median_gap_s"],
+         float(np.median(cal.gap_durations_s)))
     for half, expected in A02_PERCENT.items():
-        percent = tuple(int(round(100 * share)) for share in cal.missing_share_5min[half])
-        assert percent == expected, "A02, half {}: {} instead of {}".format(half, percent, expected)
+        for table in (ball["missing_share_5min"], cal.missing_share_5min):   # the stored table is the graded one
+            percent = tuple(int(round(100 * share)) for share in table[half])
+            assert percent == expected, "A02, half {}: {} instead of {}".format(half, percent, expected)
     print("      A02 (%), half 1 {}".format(A02_PERCENT[1]))
     print("                half 2 {}".format(A02_PERCENT[2]))
-    assert scalars["tracklets"] == A01["tracklets"] == len(cal.tracklet_lengths_s), scalars["tracklets"]
-    print("      tracklets                           {}".format(scalars["tracklets"]))
-    near("wrong-team share", cal.wrong_team_share, *A01["wrong_team_share"])
-    near("speed-NaN share", cal.speed_nan_share, *A01["speed_nan_share"])
-    assert (scalars["wrong_team_episodes_home"], scalars["wrong_team_episodes_away"]) == PLAN["wrong_team_episodes"], (
-        scalars["wrong_team_episodes_home"], scalars["wrong_team_episodes_away"])
-    print("      wrong-team episodes (home / away)   {} / {}".format(
-        scalars["wrong_team_episodes_home"], scalars["wrong_team_episodes_away"]))
-    near("present mean", scalars["present_mean"], *PLAN["present_mean"])
-    near("share with 22 present", scalars["present_share_22"], *PLAN["present_share_22"])
-    near("tracklet median (s)", float(np.median(cal.tracklet_lengths_s)), *PLAN["tracklet_median_s"])
-    near("jitter RMS (mm)", 1000 * cal.player_jitter_rms_m, *PLAN["jitter_rms_mm"])
-    near("nearest-player agreement", cal.public_window["nearest_agreement"], *A01["nearest_agreement"])
+    assert players["tracklets"] == A01["tracklets"] == len(players["tracklet_lengths_s"]), players["tracklets"]
+    print("      tracklets                      graded {}   from kick-off {}".format(
+        players["tracklets"], stored["tracklets"]))
+    near("wrong-team share", players["wrong_team_share"], *A01["wrong_team_share"], cal.wrong_team_share)
+    near("speed-NaN share", players["speed_nan_share"], *A01["speed_nan_share"], cal.speed_nan_share)
+    episodes = (players["wrong_team_episodes_home"], players["wrong_team_episodes_away"])
+    assert episodes == PLAN["wrong_team_episodes"], episodes
+    print("      wrong-team episodes (h / a)    graded {} / {}   from kick-off {} / {}".format(
+        *episodes, stored["wrong_team_episodes_home"], stored["wrong_team_episodes_away"]))
+    near("present mean", players["present_mean"], *PLAN["present_mean"], stored["present_mean"])
+    near("share with 22 present", players["present_share_22"], *PLAN["present_share_22"],
+         stored["present_share_22"])
+    near("share with <= 14 present", players["present_share_le14"], players["present_share_le14"], 0.0,
+         stored["present_share_le14"])
+    near("tracklet median (s)", float(np.median(players["tracklet_lengths_s"])), *PLAN["tracklet_median_s"],
+         float(np.median(cal.tracklet_lengths_s)))
+    near("jitter RMS (mm)", 1000 * players["jitter_rms_m"], *PLAN["jitter_rms_mm"], 1000 * cal.player_jitter_rms_m)
+    graded_speed = float(np.isnan(atd.ball_speed[inputs.graded_mask & atd.ball_present]).mean())
+    near("ball-speed NaN share (T31)", graded_speed, *PLAN["ball_speed_nan_share"], stored["ball_speed_nan_share"])
+    near("p99 of NaN-speed runs", float(np.quantile(players["speed_nan_runs"], 0.99)),
+         float(np.quantile(players["speed_nan_runs"], 0.99)), 0.0, float(np.quantile(cal.speed_nan_runs, 0.99)))
+
+    # The public window and the yardsticks, over the graded halves.
+    near("nearest-player agreement", cal.public_window["nearest_agreement"], *A01["nearest_agreement"],
+         cal.public_window["nearest_agreement"])
     assert cal.public_window["judged_frames"] == 5640, cal.public_window
-    print("      judged frames                       {}".format(cal.public_window["judged_frames"]))
-    print("      dead-ball visible share             {:.4f}   of {} dead frames".format(
+    print("      judged frames                  {}".format(cal.public_window["judged_frames"]))
+    print("      dead-ball visible share        {:.4f}   of {} dead frames".format(
         cal.public_window["dead_ball_visible_share"], cal.public_window["dead_frames"]))
+    graded = inputs.graded_mask
     for width, expected in BASELINE_POSSESSIONS.items():
         got = cal.baseline_outputs[width]
         assert abs(got["possessions"] - expected) <= POSSESSION_TOLERANCE, (
             "nearest_w{}: {} possessions, A07 expects {} +/- {}".format(width, got["possessions"], expected,
                                                                       POSSESSION_TOLERANCE))
-        print("      nearest_w{:<4} possessions {:>5}  ({} expected)  per graded minute {:.2f}  D share {:.4f}".format(
-            width, got["possessions"], expected, got["poss_per_min"], got["d_share"]))
-    near("ball-speed NaN share (T31)", scalars["ball_speed_nan_share"], *PLAN["ball_speed_nan_share"])
+        # Stronger than the count: the per-half yardstick's codes ARE the published baseline's on every graded frame.
+        codes, _ = predict(load_config(os.path.join(calibration.CONFIG_FOLDER, "nearest_w{}.toml".format(width))),
+                           inputs)
+        published = pm.label_codes(pm.read_label_csv(os.path.join(ROOT, "evaluation", "results",
+                                                                  BASELINE_FILES[width] + ".csv")))
+        differ = int((codes[graded] != published[graded]).sum())
+        assert differ == 0, "nearest_w{} differs from {} on {} graded frames".format(width, BASELINE_FILES[width],
+                                                                                   differ)
+        print("      nearest_w{:<4} possessions {:>5}  ({} expected)  per graded minute {:.2f}  D share {:.4f}  "
+              "= {} on all {} graded frames".format(width, got["possessions"], expected, got["poss_per_min"],
+                                                    got["d_share"], BASELINE_FILES[width], int(graded.sum())))
