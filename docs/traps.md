@@ -159,8 +159,19 @@ kick-off, the span that the calibration stores, it is 10.5% of the frames (16,43
 shows more than 11 slots on 12.9% of frames, and on 84% of those the other shows fewer than 11 (the 2026-10-22
 measurement, P01's plan). So `atd.slot_team` is the label of the slot and not of the player on it, and a feature that
 trusts one slot's team (the nearest player's, say) is wrong on those frames. The 10.8% is a lower bound: a swap inside
-an 11 against 11 cannot be seen. P01's `tracking` profile is to put such episodes into the degraded matches, and is
-checked against this share.
+an 11 against 11 cannot be seen. P01's `tracking` profile puts such episodes into the degraded matches, and is checked
+against this share (R004).
+
+**T35 — DFL's jitter is a few jumps on a 1 cm grid: the RMS says "smooth" and a moving average removes little.** The RMS
+of the second difference of a DFL player's position (what `calibration.player_stats` calls jitter) is 9.0 cm over the 7
+matches, against 3.3 mm on ours, which is what a rule of the kind "smooth if more than twice ours" reads, and it is not
+noise. In the five 2. Bundesliga matches 98% of its squares sit in the largest 0.05% of the triples: rare jumps (in one
+half 61 steps of 1.52 million exceed 25 m/s, and the largest is 30 m). The rest is quantisation: the median second
+difference is 1.00 cm in every match and the 99th percentile 2.83 cm, against 1.4 mm and 9.6 mm on ours. A centred
+5-frame average lowers the RMS only from 9.0 to 6.5 cm (white noise would fall to 16%). The `tracking` profile smooths
+because its rule says so and leaves the jumps in. So when a method reads positions, speeds or accelerations, compare
+medians and percentiles and not an RMS, and know that the benchmark's players are rougher than ours
+(`test_data_tracking_constants_follow_from_the_measurements` prints them; R004).
 
 ## Reproducibility and environment
 

@@ -6,8 +6,8 @@ We may not hand-label our own match, not even to validate (the organisers' clari
 matches**: the seven open DFL/IDSSE Bundesliga matches (CC BY 4.0), which carry the ball's own alive/dead flag and the
 team in possession on every frame. A config runs on them through the pipeline's own functions, is scored the way the
 organisers' scorer scores, and is compared with another config with the uncertainty that seven matches allow.
-The plan is [P01](../../docs/proposals.md); what was measured is in [results.md](../../docs/results.md) (A05 to A07,
-R002, R003).
+The plan is [P01](../../docs/proposals.md); what was measured is in [results.md](../../docs/results.md) (A05 to A09,
+R002 to R004).
 
 ```
 python pipeline/benchmark/sources.py          # data -> data/external/dfl/   (21 files, 2.6 GB, size and md5 checked)
@@ -59,7 +59,7 @@ What to know about the files (A05; `dfl.py` has the details and refuses what it 
 | option | meaning |
 |---|---|
 | `CONFIG ...` | pipeline TOML configs (`pipeline/config.py`), per half (`scope = "halves"`). **The first one is the reference**: every other config is compared with it, and a delta is `other - first`, so positive means the other is better. Put the config you want to beat first. |
-| `--profile P` | how the tracking is made (below): `gaps` (the default), `clean` or `tracking` (work in progress). |
+| `--profile P` | how the tracking is made (below): `gaps` (the default), `clean` or `tracking`. |
 | `--seeds N` | degradation seeds per match (default 3: seeds 0, 1 and 2). The clean profile has nothing random to repeat, so it always runs seed 0 only; if you pass `--seeds` with more than 1 it says that it ignored it, and says nothing when you pass none. |
 | `--matches ID ...` | the matches to run, in this order (default: all seven). Fewer than seven are filed under a name that says which (see the report, below). |
 | `--truth raw\|coarse` | the truth to score against (below). Default `raw`. |
@@ -101,7 +101,7 @@ which goes into every report: change what a profile does and bump it.
 |---|---|---|---|
 | `clean` | 1 | DFL's, as it is: on every frame | DFL's, one slot per player |
 | `gaps` | 1 | missing where **ours** was: our own missing-ball masks, transplanted onto each half; its speed is NaN everywhere (T31) | untouched |
-| `tracking` | 1 | `gaps`'s, byte for byte | broken into tracklets of ours and given 46 slots, 24 home and 22 away, as ours are; the speeds are finite differences. **Work in progress** (below) |
+| `tracking` | 1 | `gaps`'s, byte for byte | broken into tracklets of ours and given 46 slots, 24 home and 22 away, as ours are; a wrong-team slot now and then (10.5% of frames), NaN speeds in runs (7.8% of the slot-frames), 5-frame smoothing. **No frames with few players tracked yet** (below) |
 
 **The transplant.** `Calibration.ball_masks[half]` is our match's missing-ball mask of each half from its kick-off to the
 end of its graded block (`calibration.py`; the Calibration is measured once and cached). A benchmark half of n frames
@@ -115,28 +115,69 @@ general: 33.6% of the dead frames against 11.8% of all of them, A01), and where 
 ball's own place at a random frame (36.0% of the onsets within 2 m of a line, against 28.0% of ours, R003). The
 warnings and statistics of the fidelity report show how much that matters.
 
-**The tracklets (`tracking`, work in progress).** DFL has one column per player. Ours has 46 anonymous slots for 22
-players, and a slot is a tracklet: it ends when the tracker loses the player and is taken over by whoever it finds next
-(T15). The profile breaks each player's time on the pitch (each contiguous run of frames where DFL has a position) into
-tracked spans and lost spans. A tracked span is one of **our own tracklet lengths** (`Calibration.tracklet_lengths_s`,
-at the match's rate, at least 1 frame), drawn uniformly; a lost span is geometric (at least 1 frame) with the mean that
-makes the lost share d: d is 1 minus the mean number of slots present over the frames of ours with more than 18 present,
-over 22, which is 0.0250, the mean tracked span 2,797 frames (111.9 s) and the mean lost span 71.7 frames (2.87 s)
-(A09). Frames with 18 or fewer present, 10.6% of ours, are the profile's tail, which is another part's and is left out
-so as not to count it twice. Each tracklet takes the lowest free slot of its team's pool (home 0 to 23, away 24 to 45),
-in order of (start frame, player column); a slot is free when its previous tracklet has ended. All draws come from
-`rng_for(seed, match_index, "tracklets", half)`, players by column and runs in time order. The speeds are finite
-differences within a tracklet (NaN on its first frame), and the ball is exactly `gaps`'s, so that the two profiles
-differ by the players alone (`test_tracking_ball_is_exactly_gaps`).
+**The tracklets (`tracking`).** DFL has one column per player. Ours has 46 anonymous slots for 22 players, and a slot is
+a tracklet: it ends when the tracker loses the player and is taken over by whoever it finds next (T15). The profile
+breaks each player's time on the pitch (each contiguous run of frames where DFL has a position) into tracked spans and
+lost spans. A tracked span is one of **our own tracklet lengths** (`Calibration.tracklet_lengths_s`, at the match's
+rate, at least 1 frame), drawn uniformly; a lost span is geometric (at least 1 frame) with the mean that makes the lost
+share d: d is 1 minus the mean number of slots present over the frames of ours with more than 18 present, over 22, which
+is 0.0250, the mean tracked span 2,797 frames (111.9 s) and the mean lost span 71.7 frames (2.87 s) (A09). Frames with
+18 or fewer present, 10.6% of ours, are the profile's tail, which is another part's and is left out so as not to count
+it twice. All draws of the walk come from `rng_for(seed, match_index, "tracklets", half)`, players by column and runs in
+time order.
 
-What this part does not have yet: our wrong-team slots (10.5% of our frames), our NaN-speed runs (7.8% of the present
-slot-frames) and our frames with few players tracked (5.2% with 14 or fewer). Until the profile has them it has **no
-fidelity gates and no yardstick results**: `fidelity.py --profile tracking` says so, and nothing here ranks a config on
-it. A09 prints, for information, how far the players are from ours. The checks that pin it:
-`test_tracklets_never_overlap_in_a_slot`, `test_each_tracklet_takes_the_lowest_free_slot_of_its_pool`,
-`test_slot_team_matches_pool`, `test_tracking_degenerate_equals_gaps` (one endless tracklet per stretch of a player is
-`gaps`'s players), `test_lost_share_on_long_synthetic`, and on the downloaded matches
-`test_dfl_tracking_never_exhausts_a_pool_on_the_real_matches` (11 players a side fit in 22 and 24 slots).
+**The wrong-team episodes (T32).** On 10.5% of our frames a team shows more than 11 slots while the other shows fewer: a
+slot of one team carries a player of the other, because the tracker's identity followed the wrong one out of a duel.
+Between the walk and the slot assignment (so the walk's draws are untouched), the profile cuts the tracked spans with
+episodes of that kind. The onsets are a Bernoulli process over the rows of the half's graded block at the rate r = s *
+target / mean episode frames per row, the target being `Calibration.wrong_team_share` and the episode lengths ours
+(`Calibration.wrong_team_episodes_s`, both directions together, at least 1 frame). At an onset row, among the players
+tracked then, it finds the closest home-away pair, in metres, ties to the lowest columns; **only if they are within 2.0
+m** (identity swaps happen where players come close) does a random one of the two become an episode: his rows from the
+onset to the end of the episode (or of his tracked span) form a separate tracklet in **the other team's pool**, and the
+rest of his span is cut into a piece before it and a new tracklet after it (the split is an identity switch). An onset
+with no such pair is skipped and counted (`skipped_far`), and so is one whose player is already in an episode
+(`skipped_overlap`). Everything an onset needs is drawn up front from `rng_for(seed, match_index, "wrong_team", half)`,
+in the order: one uniform per row (the onsets), one pick per onset, one duration per onset, so that no draw depends on
+which onsets are skipped. Over the seven matches and three seeds of R004, 5,330 onsets made 3,445 episodes (64.6%) and
+skipped 1,759 as far (33.0%) and 126 as overlaps (2.4%). **s is 2.658, rescaled once** (it was 1.0): it calibrates the
+observable share, which `calibration.player_stats` measures as ours was, and which is lower than the share of frames in
+an episode (a team shows a surplus only while the other team has all 11 tracked and no episode of the other team runs
+the other way at the same time). At s = 1.0 the observable share was 0.0397 against our 0.1054 +-0.03, so s became 1.0 *
+0.1054 / 0.0397 and was frozen (`degrade.WRONG_TEAM_SCALE`, with the measurement in its comment; R004). It is a
+label-free statistic and is never touched again because of a WARN or a score.
+
+**The speeds, and the smoothing.** The speed is a finite difference in m/s on the match's pitch, within a tracklet
+piece, NaN on its first row. Then NaN-speed runs are placed: each starts at a present slot-frame chosen uniformly over
+the half's present slot-frames, takes its length from our own runs (`Calibration.speed_nan_runs`, frames) and marks the
+next L frames of that slot NaN, stopping at its tracklet's end; runs are placed one after another until the half's NaN
+speeds, the first rows of the tracklets included, reach `Calibration.speed_nan_share` (7.83%) (`rng_for(...,
+"speed_nan", half)`, the start and then the length for each run). The ball's speed stays NaN (T31). **Smoothing:** DFL's
+players' jitter, the RMS of the second difference of a position (the statistic `calibration.player_stats` measured on
+ours), is 8.996 cm in the seven matches, pooled by sums of squares, against 3.280 mm in ours: 27 times. The rule, set
+before measuring, was to smooth every tracklet piece with a centred 5-frame moving average (the window shrinks at a
+piece's ends to the rows inside it, and nothing crosses a piece) if DFL's is more than twice ours, so the profile is
+smoothed (`degrade.SMOOTH_WINDOW`). It lowers the pooled jitter to 6.47 cm (fidelity report, three seeds), still 20
+times ours, and that is not the average's failure. Five of the seven matches (all the 2. Bundesliga ones) have 98% of
+the squares of their second differences in the largest 0.05% of triples: rare jumps (in J03WOY's first half, 61 steps of
+1,520,419 exceed 25 m/s) that an average spreads out and does not remove. And the bulk is a 1 cm grid: the median second
+difference of every match is 1.00 cm and its 99th percentile 2.83 cm, against 1.4 mm and 9.6 mm in ours, which a 5-frame
+average lowers by a factor of about 6 on white noise. Nothing was tuned to close that gap (R004).
+
+**What this profile does not have yet.** Our frames with few players tracked (the tail: 10.6% of ours have 18 or fewer
+present, 5.2% have 14 or fewer), which the next task adds. Until then two of its gates, the mean number of slots present
+and the share with 14 or fewer, are **pending**: printed with their numbers, not counted by the exit code, and listed in
+one constant (`fidelity.PENDING_GATES`), which that task empties. The checks that pin the rest:
+`test_wrong_team_starts_at_close_pairs`, `test_wrong_team_moves_one_player_to_other_pool`,
+`test_wrong_team_draws_come_from_the_wrong_team_stream_in_a_fixed_order`, `test_speed_nan_share`,
+`test_speed_nan_runs_follow_the_documented_draws`, `test_smoothing_is_a_centred_moving_average_inside_each_piece`,
+`test_profiles_nest`, `test_tracking_without_the_new_parts_is_task_12s_players` (with the new parts off the players are
+Task 12's, byte for byte), and on the downloaded matches `test_dfl_tracking_never_exhausts_a_pool_on_the_real_matches`
+and `test_data_tracking_constants_follow_from_the_measurements` (the rule that gave s and the window, applied again).
+The earlier ones stay: `test_tracklets_never_overlap_in_a_slot`,
+`test_each_tracklet_takes_the_lowest_free_slot_of_its_pool`, `test_slot_team_matches_pool`,
+`test_tracking_degenerate_equals_gaps` (one endless tracklet per stretch of a player is `gaps`'s players),
+`test_lost_share_on_long_synthetic`.
 
 **No truth reaches the degrader.** It is handed a `TrackingView`, which has the tracking and the match's scalars and no
 `ball_status` or `ball_possession` (`test_degrade_never_sees_truth`, which also reads the degrader's source, and the deep
@@ -162,17 +203,22 @@ anything was measured and never tuned towards:
 
 - **Gates**: the profile is not frozen until they pass, and the command exits 1 if one fails. Each is our Calibration's
   own value, measured on the kick-off spans (a benchmark half starts at its kick-off, so both sides are measured alike),
-  plus or minus the plan's tolerance. For `gaps`: the share of frames without a ball, +-0.02, and the median gap, +-1.5 s.
-  The plan's own figures (0.407, 10.7 s) were measured on other spans and are not used.
+  plus or minus the plan's tolerance. For `gaps`: the share of frames without a ball, +-0.02, and the median gap, +-1.5
+  s. For `tracking`, those two and: the share of frames with exactly 22 slots present +-0.06, the mean number present
+  +-0.5, the share with 14 or fewer present +-0.02, the wrong-team share +-0.03, the tracklet median **+-50% of the
+  centre** (a relative tolerance; the rest are absolute) and the NaN-speed share +-0.01. The plan's own figures (0.407,
+  10.7 s, 0.108, 35.5 s, ...) were measured on other spans and are not used. **Pending gates**
+  (`fidelity.PENDING_GATES`) are printed and not counted: today the mean number present and the share with 14 or fewer,
+  which depend on the low-count tail that `tracking` does not have yet.
 - **Warnings**: the nearest player's agreement with the truth on alive, ball-visible frames (our public window's, +-0.05),
   the share of dead frames with the ball visible (+-0.10), and for each yardstick its possessions per graded minute
   (+-25%) and its D share (+-0.05), against what the yardsticks output on ours (over our graded halves, as the published
   baselines are: an accepted offset of at most 1% of the frames). A WARN is printed and discussed in `results.md`; the
   degradation is not adjusted towards it, because some misses are the truth's conventions and not the degradation's (A06).
-
-The report also lists the benchmark's other statistics next to ours (tracklets, wrong-team frames, NaN speeds, jitter...),
-which `gaps` does not model, so that what a later profile has to fix is on the page, and the degrader's draws (two
-integers a half). It holds no frame of our match, and it carries the Calibration's digest. It is named
+ The report also lists the benchmark's other statistics next to ours (tracklets, wrong-team frames, NaN speeds,
+jitter...), which `gaps` does not model, so that what a later profile has to fix is on the page, the degrader's draws
+(two integers a half) and, for `tracking`, the pooled counts of the players' draws (onsets, episodes, skips, NaN-speed
+runs). It holds no frame of our match, and it carries the Calibration's digest. It is named
 `fidelity_<profile>[.m-<ids>][.s<n>].json` by the runner's rule.
 
 ### What the clean profile cannot show
@@ -253,13 +299,12 @@ renamed over the old report; the same inputs, seed and versions give the same by
 ```
 
 (The first time, while the seven caches are built, the `--dfl` run took 532 s; the machine's load decides the rest.)
-
-`checks/run.py` holds the runner's, `checks/degrade.py` the degrader's (the transplant and the tracklets worked out
-exactly, determinism, what is touched and what is not, no truth, the order of the matches) and `checks/fidelity.py` the
-fidelity report's
-(every gate and check worked out by other code, pooling by sums, the exit code). The one that anchors the rest is
-`test_dfl_oracle_scores_perfectly`: an evidence source that is the truth itself, decoded by `majority_vote` with
-half-width 0, must score exactly 1.0 on spellF1, macroF1 and alive/dead F1 on every one of the seven matches.
+ `checks/run.py` holds the runner's, `checks/degrade.py` the degrader's (the transplant, the tracklets, the episodes,
+the NaN-speed runs and the smoothing worked out exactly, determinism, what is touched and what is not, no truth, the
+order of the matches) and `checks/fidelity.py` the fidelity report's (every gate and check worked out by other code,
+pooling by sums, the exit code, the pending gates). The one that anchors the rest is `test_dfl_oracle_scores_perfectly`:
+an evidence source that is the truth itself, decoded by `majority_vote` with half-width 0, must score exactly 1.0 on
+spellF1, macroF1 and alive/dead F1 on every one of the seven matches.
 
 **What the oracle checks, and what it cannot.** It checks the chain from the *loaded match* to the score: the runner,
 `MatchInputs` and the separator rows between the halves, both halves and each one's first and last row, the decoder path
@@ -302,15 +347,28 @@ that this README names only checks that exist.
   has our gaps and nothing else of our tracking: its players are DFL's (one slot per player, no wrong-team slot, no
   NaN speeds), and its gaps are not placed by the play. The warnings and statistics of the fidelity report say by how
   much.
-- The `tracking` profile is work in progress: its players have our tracklets and slots and none of our wrong-team
-  slots, NaN-speed runs or frames with few players tracked, and it has no gates yet. Its slots are the lowest free ones,
-  so a team uses 11 of its slots over a whole match where ours has 21 of 24 and 20 of 22 present on at least a tenth
-  of the frames, and a slot's index is not as empty of the player as in ours: a player who comes back after a lost span
-  lands in the slot he had 76.0% of the time (948 of 1,247 returns, J03WMX, seed 0), and a slot idles between two
-  tracklets for a median of 2.0 s (67.1% of its gaps at most 3 s, none over 60 s), where ours idles for 7.4 s (17.7%
-  and 15.0%; A09). No evidence source reads a slot's identity today, beyond `nearest_player`'s argmin on exact ties,
-  which goes to the lower slot; but **a method that follows a slot across a loss would be validated optimistically
-  here**, and the tail's part of the profile re-measures this.
+- The `tracking` profile has our tracklets, slots, wrong-team episodes, NaN-speed runs and smoothing, and **not our
+  frames with few players tracked** (the tail, which the next task adds; two of its gates are pending until then). Its
+  slots are the lowest free ones, so a team uses 11 of its slots over a whole match where ours has 21 of 24 and 20 of 22
+  present on at least a tenth of the frames, and a slot's index is not as empty of the player as in ours: a player who
+  comes back after a lost span lands in the slot he had 76.0% of the time (948 of 1,247 returns, J03WMX, seed 0), and a
+  slot idles between two tracklets for a median of 2.0 s (67.1% of its gaps at most 3 s, none over 60 s), where ours
+  idles for 7.4 s (17.7% and 15.0%; A09). No evidence source reads a slot's identity today, beyond `nearest_player`'s
+  argmin on exact ties, which goes to the lower slot; but **a method that follows a slot across a loss would be
+  validated optimistically here**, and the tail's part of the profile re-measures this. The episodes are cut at pairs
+  within 2 m only, in both directions at one rate, and what is matched is the observable share, not the episodes: on
+  seed 0 the benchmark shows 105 to 200 observed episodes a match (mean 163), medians of 1.4 to 2.2 s and 90th
+  percentiles of 6.2 to 9.4 s, against ours 104, 2.7 s and 15.8 s: more of them and shorter (a swap inside 11 against 11
+  is invisible on ours, so the true number of ours is unknown).
+- **No positional bias.** The profile matches the players' jitter and nothing else of their positional error. A slowly
+  varying bias against the true position cannot be measured on ours (there is no reference to measure it against), so
+  none is added. Published accuracies for video-derived positions run from 0.08 to 0.09 m RMSE for a multi-camera
+  stadium system against a motion-capture reference (Linke, Link and Lames 2020, PLoS ONE 15(3): e0230179) to a median
+  of 1.1 to 1.7 m (mean 1.8 to 2.8 m) for a pipeline on broadcast video (Theiner et al., WACV 2022, arXiv:2110.11107,
+  Table 3), so a bias of the order of 0.5 to 2 m is plausible for ours and would hurt a method that reads distances more
+  than the benchmark says (the plan's range of 0.5 to 2 m is not stated by either source, which are the nearest
+  published figures; it is not our measurement). DFL's own positions are not noise-free either: their second difference
+  is dominated by rare jumps (R004), which the smoothing leaves in.
 - A transplanted mask is cut at the edge of the window it is read from, so up to two gaps of a benchmark half (the ones
   at its ends) are fragments of ours, and where the mask runs out and goes round there is one more at the seam (3 of the
   42 halves of R003: a DFL second half of 77,080 or 78,456 frames, against the 76,456 of ours); the gates are on the

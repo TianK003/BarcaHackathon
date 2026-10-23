@@ -23,6 +23,7 @@ from pipeline.benchmark import inputs as match_inputs
 from pipeline.benchmark import truth as truths
 from pipeline.benchmark.checks.calibration import brute_force_agreement
 from pipeline.benchmark.checks.common import synthetic_calibration
+from pipeline.benchmark.checks.degrade import made_up_calibration, steady_match
 from pipeline.benchmark.checks.inputs import random_match
 from pipeline.benchmark.checks.run import loading, read, strict_json, synthetic_matches, yardstick_path
 from pipeline.contracts import D
@@ -33,7 +34,13 @@ SEEDS = 2
 WIDTHS = (0, 25, 50, 125)
 SUBSET = ".m-RND001-RND002"
 IDS = ("J03WMX", "J03WN1")
-PLAN_FIGURES = {0.407, 0.4069, 10.7, 0.778, 0.66, 0.066, 0.108}     # the plan's measurements, which gates must not hold
+# The plan's measurements, which gates must not hold: the share missing, the median gap, the agreement, the dead-ball
+# visibility, and the tracking profile's 14-or-fewer share, wrong-team share, 22-present share, mean present, tracklet
+# median and NaN-speed share. They were measured on other spans than the kick-off ones, so a centre comes from the
+# Calibration.
+PLAN_FIGURES = {0.407, 0.4069, 10.7, 0.778, 0.66, 0.066, 0.108, 0.495, 20.5, 35.5, 0.0796, 0.080}
+TRACKING_GATES = ["missing_share", "median_gap_s", "present_share_22", "present_mean", "present_share_le14",
+                  "wrong_team_share", "tracklet_median_s", "speed_nan_share"]
 
 
 def inside(measured, centre, band, kind):
@@ -71,7 +78,8 @@ def test_fidelity_report_synthetic():
         lines = []
         result = fidelity.report("gaps", seeds=SEEDS, matches=matches, calibration=cal, data_dir=root, log=lines.append)
         assert sorted(result) == sorted(["profile", "seeds", "matches", "calibration", "gates", "checks", "statistics",
-                                         "draws", "passed", "warnings", "notes"])
+                                         "draws", "players_draws", "passed", "warnings", "notes"])
+        assert result["players_draws"] == {}, "gaps degrades no player"
         assert result["profile"] == {"name": "gaps", "version": 1} and result["seeds"] == [0, 1]
         assert result["matches"] == ["RND001", "RND002"]
         assert result["calibration"] == {"sha256": calibration.digest(cal), "version": calibration.CALIBRATION_VERSION}
@@ -84,7 +92,8 @@ def test_fidelity_report_synthetic():
         assert [(gate["tolerance"]) for gate in result["gates"]] == [0.02, 1.5]
         for gate in result["gates"]:
             name = gate["name"]
-            assert set(gate) == {"name", "text", "measured", "centre", "tolerance", "status"}
+            assert set(gate) == {"name", "text", "measured", "centre", "tolerance", "kind", "status"}
+            assert gate["kind"] == "absolute"
             assert abs(gate["centre"] - centres[name]) < 1e-9, (name, gate, centres[name])
             assert abs(gate["measured"] - ours[name]) < 1e-9, (name, gate["measured"], ours[name])
             assert gate["status"] == ("pass" if abs(gate["measured"] - gate["centre"]) <= gate["tolerance"] else "FAIL")
@@ -226,7 +235,30 @@ def test_fidelity_gates_are_the_calibrations_values_with_the_plans_tolerances():
     assert fidelity.GATES["gaps"][0]["name"] == "missing_share" and fidelity.GATES["gaps"][0]["tolerance"] == 0.02
     assert fidelity.GATES["gaps"][1]["name"] == "median_gap_s" and fidelity.GATES["gaps"][1]["tolerance"] == 1.5
     assert len(fidelity.GATES["gaps"]) == 2 and "clean" not in fidelity.GATES
+    # The tracking profile's gates are gaps' two and six more, with the plan's tolerances; the tracklet median's is
+    # relative (50% of the centre) and the rest are absolute. Two of them are pending until the low-count tail is built.
+    tracking = {gate["name"]: gate for gate in fidelity.GATES["tracking"]}
+    assert list(tracking) == TRACKING_GATES and fidelity.GATES["tracking"][:2] == fidelity.GATES["gaps"]
+    assert {name: (gate["tolerance"], gate["kind"]) for name, gate in tracking.items()} == {
+        "missing_share": (0.02, "absolute"), "median_gap_s": (1.5, "absolute"), "present_share_22": (0.06, "absolute"),
+        "present_mean": (0.5, "absolute"), "present_share_le14": (0.02, "absolute"),
+        "wrong_team_share": (0.03, "absolute"), "tracklet_median_s": (0.5, "relative"),
+        "speed_nan_share": (0.01, "absolute")}
+    assert fidelity.PENDING_GATES == ("present_mean", "present_share_le14")
+    assert set(fidelity.PENDING_GATES) <= set(tracking)
     cal = synthetic_calibration()
+    for name, expected in (("present_share_22", cal.scalars["present_share_22"]),
+                           ("present_mean", cal.scalars["present_mean"]),
+                           ("present_share_le14", cal.scalars["present_share_le14"]),
+                           ("wrong_team_share", cal.wrong_team_share),
+                           ("tracklet_median_s", float(np.median(cal.tracklet_lengths_s))),
+                           ("speed_nan_share", cal.speed_nan_share)):
+        assert fidelity.centre_of(name, cal) == expected, name
+    moved = dataclasses.replace(cal, scalars={**cal.scalars, "present_mean": 17.25, "present_share_22": 0.4,
+                                              "present_share_le14": 0.3}, wrong_team_share=0.2, speed_nan_share=0.3,
+                                tracklet_lengths_s=np.array([7.0, 9.0, 100.0]))
+    assert [fidelity.centre_of(name, moved) for name in TRACKING_GATES[2:]] == [0.4, 17.25, 0.3, 0.2, 9.0, 0.3], \
+        "another Calibration, other centres"
     assert fidelity.centre_of("missing_share", cal) == cal.scalars["missing_share"]
     assert fidelity.centre_of("median_gap_s", cal) == float(np.median(cal.gap_durations_s))
     # Another Calibration, another centre: nothing in the module holds the plan's 0.407 or 10.7 s.
@@ -240,6 +272,182 @@ def test_fidelity_gates_are_the_calibrations_values_with_the_plans_tolerances():
     expect_error(KeyError, lambda: fidelity.centre_of("nothing", cal), "nothing")
 
 
+def tracking_calibration():
+    """A Calibration with what the tracking profile reads: synthetic_calibration with the made-up tracklets, episodes
+    and NaN-speed runs of checks/degrade.py (its other fields are the synthetic bundle's)."""
+    made = made_up_calibration()
+    return dataclasses.replace(
+        synthetic_calibration(), present_counts=made.present_counts, tracklet_lengths_s=made.tracklet_lengths_s,
+        wrong_team_episodes_s=made.wrong_team_episodes_s, wrong_team_share=made.wrong_team_share,
+        speed_nan_runs=made.speed_nan_runs, speed_nan_share=made.speed_nan_share)
+
+
+def steady_matches():
+    """Two matches whose players stand on the pitch for whole stretches (checks/degrade.py's steady_match)."""
+    return {"RND001": steady_match("RND001", 0), "RND002": steady_match("RND002", 1, rows=(260, 190))}
+
+
+def worked_out_tracking(matches, cal, seeds=SEEDS):
+    """The pooled figures of the tracking gates by other routes than the report's: each match and seed degraded and
+    measured by calibration.player_stats on its own, the histograms and counts added, the tracklets laid end to end."""
+    frames = slot_frames = wrong = nan = 0
+    hist = np.zeros(degrade.N_SLOTS + 2, dtype=np.int64)
+    tracklets, drawn = [], {}
+    for match in matches.values():
+        for seed in range(seeds):
+            atd, info = degrade.degrade(degrade.tracking_view(match), "tracking", cal, seed)
+            inputs = match_inputs.MatchInputs(match, atd, profile="tracking", seed=seed)
+            spans = [(half, inputs.kickoffs[half], stop) for half, _, stop in inputs.graded]
+            stats = calibration.player_stats(atd.players_present, atd.slot_team, inputs.metres(atd.players_xy),
+                                             atd.players_speed, spans, inputs.fps)
+            frames, slot_frames = frames + stats["frames"], slot_frames + stats["present_slot_frames"]
+            wrong, nan = wrong + stats["wrong_team_frames"], nan + stats["speed_nan_frames"]
+            hist[:stats["present_hist"].size] += stats["present_hist"]
+            tracklets.append(stats["tracklet_lengths_s"])
+            for name in fidelity.PLAYERS_DRAWS:
+                drawn[name] = drawn.get(name, 0) + info["players"][name]
+    return {"present_share_22": hist[22] / frames, "present_mean": slot_frames / frames,
+            "present_share_le14": hist[:15].sum() / frames, "wrong_team_share": wrong / frames,
+            "tracklet_median_s": float(np.median(np.concatenate(tracklets))), "speed_nan_share": nan / slot_frames,
+            "players_draws": drawn}
+
+
+def test_fidelity_tracking_report_synthetic():
+    """The tracking profile's eight gates, each worked out by other code, with the two pending ones not counted.
+
+    Two steady matches and the made-up tracklets, episodes and NaN runs: every pooled number is the sums of
+    calibration.player_stats called on each degraded (match, seed) here and not by the report, the median is that of
+    the tracklets laid end to end, the centres are the Calibration's, a relative tolerance is a share of its centre,
+    and a pending gate is pending whatever it measures. The pooled counts of what was drawn are the degrader's own."""
+    matches, cal = steady_matches(), tracking_calibration()
+    with tempfile.TemporaryDirectory() as root:
+        result = fidelity.report("tracking", seeds=SEEDS, matches=matches, calibration=cal, data_dir=root, log=quiet)
+        assert result["profile"] == {"name": "tracking", "version": 1} and result["matches"] == ["RND001", "RND002"]
+        assert [gate["name"] for gate in result["gates"]] == TRACKING_GATES
+        ours = worked_out_tracking(matches, cal)
+        gaps = worked_out(matches, cal)
+        centres = {"missing_share": cal.scalars["missing_share"], "median_gap_s": float(np.median(cal.gap_durations_s)),
+                   "present_share_22": cal.scalars["present_share_22"], "present_mean": cal.scalars["present_mean"],
+                   "present_share_le14": cal.scalars["present_share_le14"], "wrong_team_share": cal.wrong_team_share,
+                   "tracklet_median_s": float(np.median(cal.tracklet_lengths_s)),
+                   "speed_nan_share": cal.speed_nan_share}
+        for gate in result["gates"]:
+            name = gate["name"]
+            assert set(gate) == {"name", "text", "measured", "centre", "tolerance", "kind", "status"}
+            assert abs(gate["centre"] - centres[name]) < 1e-9, (name, gate)
+            expected = ours[name] if name in ours else gaps[name]    # the ball's two are those of the gaps profile
+            if name in ("missing_share", "median_gap_s"):
+                assert gate["status"] in ("pass", "FAIL")
+            else:
+                assert abs(gate["measured"] - expected) < 1e-9, (name, gate["measured"], expected)
+            limit = gate["tolerance"] * (abs(gate["centre"]) if gate["kind"] == "relative" else 1)
+            inside = abs(gate["measured"] - gate["centre"]) <= limit
+            want = "pending" if name in fidelity.PENDING_GATES else ("pass" if inside else "FAIL")
+            assert gate["status"] == want, (name, gate)
+        assert {gate["name"] for gate in result["gates"] if gate["status"] == "pending"} == set(fidelity.PENDING_GATES)
+        assert result["passed"] == (not any(gate["status"] == "FAIL" for gate in result["gates"]))
+        assert any("pending" in note.lower() and "present_mean" in note and "present_share_le14" in note
+                   and "tail" in note for note in result["notes"]), result["notes"]
+        # The ball is the gaps profile's, whatever the players do: the same two gate values.
+        by_name = {gate["name"]: gate for gate in result["gates"]}
+        assert abs(by_name["missing_share"]["measured"] - gaps["missing_share"]) < 1e-9
+        assert abs(by_name["median_gap_s"]["measured"] - gaps["median_gap_s"]) < 1e-9
+        # What was drawn, pooled: the degrader's own counts, none of them zero here.
+        assert result["players_draws"] == ours["players_draws"], (result["players_draws"], ours["players_draws"])
+        assert set(result["players_draws"]) == set(fidelity.PLAYERS_DRAWS)
+        assert result["players_draws"]["speed_nan_runs"] > 0 and result["players_draws"]["tracklets"] > 0
+        stats = result["statistics"]
+        for name in ("present_share_22", "present_mean", "present_share_le14", "wrong_team_share", "speed_nan_share"):
+            assert abs(stats[name]["benchmark"] - by_name[name]["measured"]) < 1e-9, name
+            assert abs(stats[name]["bar_ath"] - by_name[name]["centre"]) < 1e-9, name
+        assert abs(stats["tracklet_s_median"]["benchmark"] - by_name["tracklet_median_s"]["measured"]) < 1e-9
+        # Aggregates only, JSON-ready and the same twice; a different calibration is a different digest, not a crash.
+        assert json.loads(json.dumps(result, allow_nan=False)) == result
+        assert all(len(value) <= 64 for value in leaves(result) if isinstance(value, list)), "no frame-sized list"
+        assert fidelity.report("tracking", seeds=SEEDS, matches=matches, calibration=cal, data_dir=root,
+                               log=quiet) == result
+        text = "\n".join(fidelity.render(result))
+        for fragment in ("tracklet_median_s", "50%", "pending", "present_mean", "players' draws", "episodes",
+                         "(2 pending, not counted)"):
+            assert fragment in text, (fragment, text)
+
+
+def test_fidelity_relative_gate_is_a_share_of_its_centre():
+    """A relative tolerance is that share of the centre, inclusive, and the pooled median decides it.
+
+    A Calibration whose tracklets have a median of 20 s: a pooled median of 10 s is exactly 50% below it, inside; one
+    of 9.99 s is outside. The tracklets are laid end to end over the parts and not averaged: parts of 1, 10 and 100 s
+    and of 2 and 10 s have the median of all five lengths, 10 s (neither part's own median, 10 s and 6 s, nor their
+    mean). The same distance from a centre of 40 s is the edge again, so the width grows with the centre."""
+    cal = dataclasses.replace(synthetic_calibration(), tracklet_lengths_s=np.array([5.0, 20.0, 80.0]))
+    spec = next(gate for gate in fidelity.GATES["tracking"] if gate["name"] == "tracklet_median_s")
+    pool = fidelity.Pool()
+    pool.players["tracklets"] += [np.array([1.0, 10.0, 100.0]), np.array([2.0, 10.0])]
+    assert fidelity.measured("tracklet_median_s", pool) == 10.0 and fidelity.centre_of("tracklet_median_s", cal) == 20.0
+    gate = fidelity._gate(spec, pool, cal)
+    assert (gate["status"], gate["kind"], gate["tolerance"]) == ("pass", "relative", 0.5), gate
+    below = fidelity.Pool()
+    below.players["tracklets"] += [np.array([1.0, 9.99, 100.0]), np.array([2.0, 9.99])]
+    assert fidelity.measured("tracklet_median_s", below) == 9.99
+    assert fidelity._gate(spec, below, cal)["status"] == "FAIL"
+    wide = dataclasses.replace(cal, tracklet_lengths_s=np.array([40.0]))
+    edge = fidelity.Pool()
+    edge.players["tracklets"].append(np.array([20.0]))
+    assert fidelity._gate(spec, edge, wide)["status"] == "pass", "20 s is 50% below 40 s: inside"
+    edge.players["tracklets"][0] = np.array([19.0])
+    assert fidelity._gate(spec, edge, wide)["status"] == "FAIL", "19 s is not"
+    edge.players["tracklets"][0] = np.array([20.0])
+    absolute = {**spec, "kind": "absolute", "tolerance": 10.0}
+    assert fidelity._gate(absolute, pool, cal)["status"] == "pass", "10 s from 20 s is inside +-10 s"
+    assert fidelity._gate(absolute, edge, wide)["status"] == "FAIL", "20 s from 40 s is not: the same width everywhere"
+
+
+def test_fidelity_pending_gates_do_not_change_the_exit_code_and_a_failing_gate_does():
+    """A pending gate is printed with its numbers and never counted; a required gate that misses fails the command.
+
+    The gates' tolerances are opened and closed on purpose (the profile's own are the plan's): wide open, every
+    required gate passes and the two pending ones are printed as pending, exit 0, whatever they would measure; with the
+    required NaN-speed gate closed to a tolerance of 0 the command exits 1 and says so; with only a pending gate closed
+    (it would FAIL if it were counted) the exit code is 0 again. An empty PENDING_GATES counts all eight."""
+    cal = tracking_calibration()
+    matches = {match_id: steady_match(match_id, seed=sources.MATCH_IDS.index(match_id)) for match_id in IDS}
+    real_load, real_load_match = calibration.load, dfl.load_match
+    real_gates, real_pending = fidelity.GATES, fidelity.PENDING_GATES
+
+    def serve(match_id):
+        return matches[match_id]
+
+    def with_tolerance(**tolerances):
+        return {**real_gates, "tracking": tuple(
+            {**spec, "tolerance": tolerances.get(spec["name"], 1e9), "kind": "absolute"}
+            for spec in real_gates["tracking"])}
+
+    try:
+        with tempfile.TemporaryDirectory() as root:
+            def command(gates, pending=real_pending):
+                calibration.load = lambda data_dir=None, **keywords: cal
+                fidelity.GATES, fidelity.PENDING_GATES = gates, pending
+                shown = io.StringIO()
+                with contextlib.redirect_stdout(shown), loading(serve):
+                    code = fidelity.main(["--profile", "tracking", "--seeds", "1", "--matches", *IDS,
+                                          "--data-dir", root, "--no-write"])
+                return code, shown.getvalue()
+
+            code, out = command(with_tolerance())
+            assert code == 0 and "all pass (2 pending, not counted)" in out and "pending" in out, out
+            assert out.count("pending") >= 3, "each pending gate says it is, and the note says why"
+            code, out = command(with_tolerance(speed_nan_share=0.0))
+            assert code == 1 and "DO NOT ALL PASS" in out and "FAIL" in out, out
+            code, out = command(with_tolerance(present_mean=0.0, present_share_le14=0.0))
+            assert code == 0 and "all pass (2 pending, not counted)" in out, out
+            code, out = command(with_tolerance(present_mean=0.0, present_share_le14=0.0), pending=())
+            assert code == 1 and "DO NOT ALL PASS" in out and "pending" not in out, (
+                "with the list empty the same gates are counted: " + out)
+    finally:
+        calibration.load, dfl.load_match = real_load, real_load_match
+        fidelity.GATES, fidelity.PENDING_GATES = real_gates, real_pending
+
+
 def test_fidelity_report_refuses_what_it_cannot_measure():
     matches, cal = synthetic_matches(), synthetic_calibration()
     with tempfile.TemporaryDirectory() as root:
@@ -249,8 +457,8 @@ def test_fidelity_report_refuses_what_it_cannot_measure():
             return fidelity.report(keywords.pop("profile", "gaps"), data_dir=root, log=quiet, **keywords)
 
         expect_error(fidelity.FidelityError, lambda: measure(profile="clean"), "clean", "no gates", "gaps")
-        expect_error(fidelity.FidelityError, lambda: measure(profile="tracking"), "tracking", "still being built",
-                     "no gates", "gaps")
+        expect_error(fidelity.FidelityError, lambda: measure(profile="clean"), "clean", "degrades nothing", "gaps",
+                     "tracking")
         expect_error(fidelity.FidelityError, lambda: measure(profile="context"), "context", "not one of", "clean",
                      "gaps", "tracking")
         expect_error(fidelity.FidelityError, lambda: measure(seeds=0), "seeds", "at least 1")

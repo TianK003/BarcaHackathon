@@ -1,6 +1,7 @@
 """How far a degraded benchmark looks like our match, measured as our match was: gates and warnings.
 
     python pipeline/benchmark/fidelity.py --profile gaps --seeds 3     # -> <data dir>/runs/benchmark/fidelity_gaps.json
+    python pipeline/benchmark/fidelity.py --profile tracking --seeds 3     # -> .../fidelity_tracking.json
     report = fidelity.report("gaps", seeds=3)                          # the same, as a dict (aggregates only)
 
 What it is for. P01 validates pipeline choices on matches that are not ours, after degrading them until their tracking
@@ -15,9 +16,18 @@ Two kinds of criteria, as the plan fixes them. Neither is ever tuned towards.
 
 Gates (GATES, per profile). The profile does not count as built until they hold: they say that the code reproduces what
 it was calibrated on. Each is the Calibration's own value (measured on the kick-off spans, never a number copied from
-the plan, which was measured on other spans) plus or minus a tolerance. For gaps: the missing share of the ball +-0.02
-and the median gap +-1.5 s. A gate is printed as measured, centre, tolerance, and pass or FAIL; a FAIL makes the
-command exit 1, and the profile is not frozen until it passes.
+the plan, which was measured on other spans) plus or minus a tolerance, which is absolute (+- tolerance) or relative
+(+- tolerance of the centre: the tracklet median's). For gaps: the missing share of the ball +-0.02 and the median gap
++-1.5 s. For tracking, those two and: the share of frames with exactly 22 slots present +-0.06, the mean number present
++-0.5, the share with 14 or fewer present +-0.02, the wrong-team share +-0.03, the tracklet median +-50% and the
+NaN-speed share +-0.01. A gate is printed as measured, centre, tolerance, and pass or FAIL; a FAIL makes the command
+exit 1, and the profile is not frozen until it passes.
+
+Pending gates (PENDING_GATES). A gate that cannot be met yet, because the part of the profile it depends on is not
+built, is printed as measured, centre and tolerance with the status `pending`, is not counted by `passed` nor by the
+exit code, and the report says why (NOTES). Today these are the mean number present and the share with 14 or fewer
+present: they depend on the low-count tail (our frames with 18 or fewer slots present, 10.6%), which the tracking
+profile does not have yet. The task that builds the tail empties the list, and then they are gates like the rest.
 
 Checks (the warnings). Pre-registered bands on things the degradation does not fit but a benchmark that resembles our
 match should show anyway: the nearest player's agreement with the truth on alive, ball-visible frames (compared with
@@ -72,27 +82,53 @@ from pipeline.contracts import D  # noqa: E402
 
 # Params
 DEFAULT_SEEDS = 3
-PASS, FAIL, OK, WARN = "pass", "FAIL", "ok", "WARN"
+PASS, FAIL, PENDING, OK, WARN = "pass", "FAIL", "pending", "ok", "WARN"
 DECIMALS = run.DECIMALS
-# The gates of each profile, in the order they are printed: name, tolerance, and what the number is. The centre of each
-# is the Calibration's (centre_of). A later profile's gates include the earlier one's, as the plan says.
+# The gates of each profile, in the order they are printed: name, tolerance (absolute, or relative to the centre when
+# "kind" says so), and what the number is. The centre of each is the Calibration's (centre_of). A later profile's gates
+# include the earlier one's, as the plan says.
+BALL_GATES = (
+    {"name": "missing_share", "tolerance": 0.02, "kind": "absolute", "text": "share of the frames without a ball"},
+    {"name": "median_gap_s", "tolerance": 1.5, "kind": "absolute",
+     "text": "median length of a gap in the ball, seconds"},
+)
 GATES = {
-    "gaps": (
-        {"name": "missing_share", "tolerance": 0.02, "text": "share of the frames without a ball"},
-        {"name": "median_gap_s", "tolerance": 1.5, "text": "median length of a gap in the ball, seconds"},
+    "gaps": BALL_GATES,
+    "tracking": BALL_GATES + (
+        {"name": "present_share_22", "tolerance": 0.06, "kind": "absolute",
+         "text": "share of the frames with exactly 22 slots present"},
+        {"name": "present_mean", "tolerance": 0.5, "kind": "absolute", "text": "mean number of slots present"},
+        {"name": "present_share_le14", "tolerance": 0.02, "kind": "absolute",
+         "text": "share of the frames with 14 or fewer slots present"},
+        {"name": "wrong_team_share", "tolerance": 0.03, "kind": "absolute",
+         "text": "share of the frames with a team in surplus (a wrong-team slot)"},
+        {"name": "tracklet_median_s", "tolerance": 0.5, "kind": "relative",
+         "text": "median length of a tracklet, seconds"},
+        {"name": "speed_nan_share", "tolerance": 0.01, "kind": "absolute",
+         "text": "share of the present slot-frames with a NaN speed"},
     ),
 }
+# The gates that cannot be met until the low-count tail is built: both are about how many slots are present, which
+# the tail's frames (18 or fewer present) bring down. Printed with the status "pending" and never counted; the tail's
+# task empties this tuple.
+PENDING_GATES = ("present_mean", "present_share_le14")
 # The warning checks: the band, and whether it is absolute (+- band) or relative (+- band of the centre).
 NEAREST_BAND = ("absolute", 0.05)
 DEAD_VISIBLE_BAND = ("absolute", 0.10)
 POSSESSIONS_BAND = ("relative", 0.25)
 D_SHARE_BAND = ("absolute", 0.05)
 FILE_FOLDER = run.REPORT_FOLDER                   # <data dir>/runs/benchmark/fidelity_<profile>[.m-<ids>][.s<n>].json
+# The counts of what the players' degradation drew that a report adds up over matches, seeds and halves.
+PLAYERS_DRAWS = ("tracklets", "onsets", "episodes", "skipped_far", "skipped_overlap", "episode_frames",
+                 "speed_nan_runs", "speed_nan_frames")
 NOTES = ("The yardsticks' outputs of ours (possessions per minute, D share) are over our graded halves, as the "
          "published baselines are, and not over the kick-off spans of the rest of the Calibration: an accepted offset "
          "of at most 1% of the frames.",
          "The centre of a gate is the Calibration's own value, measured on the kick-off spans; the plan's figures were "
          "measured on other spans, and are not used.")
+PENDING_NOTE = ("Pending gates ({}) are printed and not counted: they depend on the low-count tail (our frames with 18 "
+                "or fewer slots present), which the tracking profile does not have yet, and the task that builds it "
+                "empties PENDING_GATES.")
 
 
 class FidelityError(ValueError):
@@ -110,20 +146,21 @@ def report(profile, seeds=DEFAULT_SEEDS, match_ids=None, matches=None, calibrati
     visibility and the four yardsticks' outputs. `calibration` is the Calibration of BAR-ATH, calibration.load() if
     none is given. One match is in memory at a time.
 
-    Returns {"profile", "seeds", "matches", "calibration", "gates", "checks", "statistics", "draws", "passed",
-    "warnings", "notes"}. "gates" is a list of {name, text, measured, centre, tolerance, status} (status pass or FAIL),
-    "checks" a list of {name, measured, centre, band, kind, status} (ok or WARN), "passed" is whether every gate
-    passed and "warnings" how many checks warn. FidelityError for a profile that has no gates (clean, which degrades
-    nothing, and tracking, which is still being built) or that is not one, for seeds below 1 and for a calibration that
-    is not a Calibration, and run.BenchmarkError for matches that are not as asked.
+    Returns {"profile", "seeds", "matches", "calibration", "gates", "checks", "statistics", "draws", "players_draws",
+    "passed", "warnings", "notes"}. "gates" is a list of {name, text, measured, centre, tolerance, kind, status}
+    (status pass, FAIL or pending: PENDING_GATES), "checks" a list of {name, measured, centre, band, kind, status} (ok
+    or WARN), "passed" is whether no gate failed (a pending one is not counted) and "warnings" how many checks warn.
+    "players_draws" is {} for a profile that draws nothing for its players and, for tracking, the counts of what was
+    drawn, pooled over matches, seeds and halves (onsets, episodes, skipped_far, skipped_overlap, episode_frames,
+    speed_nan_runs, tracklets). FidelityError for a profile that has no gates (clean, which degrades nothing) or that
+    is not one, for seeds below 1 and for a calibration that is not a Calibration, and run.BenchmarkError for matches
+    that are not as asked.
     """
     if profile not in degrade.PROFILES:
         raise FidelityError("profile {!r} is not one of: {}".format(profile, ", ".join(sorted(degrade.PROFILES))))
     if profile not in GATES:
-        why = ("degrades nothing" if profile == degrade.CLEAN
-               else "is still being built, and its gates come with its last part")
-        raise FidelityError("profile {!r} {}, so it has no gates to hold it to; fidelity is measured for: {}".format(
-            profile, why, ", ".join(sorted(GATES))))
+        raise FidelityError("profile {!r} degrades nothing, so it has no gates to hold it to; fidelity is measured "
+                            "for: {}".format(profile, ", ".join(sorted(GATES))))
     if isinstance(seeds, bool) or not isinstance(seeds, int) or seeds < 1:
         raise FidelityError("seeds must be a whole number of at least 1, got {!r}".format(seeds))
     ids = run.resolve_match_ids(match_ids, matches)
@@ -158,6 +195,7 @@ def report(profile, seeds=DEFAULT_SEEDS, match_ids=None, matches=None, calibrati
                     inputs.fps))
             pool.add_players(measured_players[1])
             pool.add_draws(match_id, seed, info)
+            pool.add_players_draws(info)
             dead = codes_true == D
             pool.add_dead(int(dead.sum()), int(atd.ball_present[dead].sum()))
             for position, config in enumerate(configs):
@@ -175,6 +213,7 @@ def report(profile, seeds=DEFAULT_SEEDS, match_ids=None, matches=None, calibrati
         del match, codes_true, view, measured_players
 
     gates = [_gate(spec, pool, calibration) for spec in GATES[profile]]
+    pending = [gate["name"] for gate in gates if gate["status"] == PENDING]
     result = {
         "profile": {"name": profile, "version": degrade.PROFILES[profile]},
         "seeds": list(range(seeds)),
@@ -185,9 +224,10 @@ def report(profile, seeds=DEFAULT_SEEDS, match_ids=None, matches=None, calibrati
         "checks": _checks(pool, calibration),
         "statistics": statistics(pool, calibration),
         "draws": pool.draws,
-        "notes": list(NOTES),
+        "players_draws": dict(pool.players_draws),
+        "notes": list(NOTES) + ([PENDING_NOTE.format(", ".join(pending))] if pending else []),
     }
-    result["passed"] = all(gate["status"] == PASS for gate in gates)
+    result["passed"] = not any(gate["status"] == FAIL for gate in gates)
     result["warnings"] = sum(1 for check in result["checks"] if check["status"] == WARN)
     return run.plain(result)
 
@@ -201,6 +241,7 @@ class Pool:
         self.players = {"frames": 0, "present_slot_frames": 0, "present_hist": np.zeros(0, dtype=np.int64),
                         "tracklets": [], "wrong_team_frames": 0, "speed_nan_frames": 0, "jitter_squares": 0.0,
                         "jitter_triples": 0}
+        self.players_draws = {}
         self.agreed = self.judged = 0
         self.dead_frames = self.dead_visible = 0
         self.yardsticks = {}
@@ -249,6 +290,12 @@ class Pool:
         for half, record in sorted(info.get("transplants", {}).items()):
             self.draws.append({"match": match_id, "seed": seed, "half": half, **record})
 
+    def add_players_draws(self, info):
+        """Add up the counts of what the players' degradation drew (info["players"]); none for a profile without one."""
+        for name in PLAYERS_DRAWS:
+            if name in info.get("players", {}):
+                self.players_draws[name] = self.players_draws.get(name, 0) + info["players"][name]
+
     # What the statistics are, from the sums.
     def gap_durations(self):
         return np.concatenate(self.ball["gap_durations_s"]) if self.ball["gap_durations_s"] else np.zeros(0)
@@ -261,28 +308,61 @@ class Pool:
 
 def centre_of(name, calibration):
     """The Calibration's value of the quantity a gate is about: measured on our kick-off spans, as the benchmark is."""
+    scalars = calibration.scalars
     if name == "missing_share":
-        return calibration.scalars["missing_share"]
+        return scalars["missing_share"]
     if name == "median_gap_s":
         return float(np.median(calibration.gap_durations_s))
+    if name in ("present_share_22", "present_mean", "present_share_le14"):
+        return scalars[name]
+    if name == "wrong_team_share":
+        return calibration.wrong_team_share
+    if name == "tracklet_median_s":
+        return float(np.median(calibration.tracklet_lengths_s))
+    if name == "speed_nan_share":
+        return calibration.speed_nan_share
     raise KeyError(name)
 
 
 def measured(name, pool):
     """The benchmark's value of the quantity a gate is about, from the pool's sums (Pool): never a mean of means."""
+    players = pool.players
+    frames, slot_frames, hist = players["frames"], players["present_slot_frames"], players["present_hist"]
     if name == "missing_share":
         return pool.ball["missing_frames"] / pool.ball["frames"]
     if name == "median_gap_s":
         gaps = pool.gap_durations()
         return float(np.median(gaps)) if gaps.size else float("nan")
+    if name == "present_share_22":
+        return int(hist[calibration_module.FULL_COUNT:calibration_module.FULL_COUNT + 1].sum()) / frames
+    if name == "present_mean":
+        return slot_frames / frames
+    if name == "present_share_le14":
+        return int(hist[:calibration_module.LOW_COUNT + 1].sum()) / frames
+    if name == "wrong_team_share":
+        return players["wrong_team_frames"] / frames
+    if name == "tracklet_median_s":
+        lengths = pool.tracklet_lengths()
+        return float(np.median(lengths)) if lengths.size else float("nan")
+    if name == "speed_nan_share":
+        return players["speed_nan_frames"] / slot_frames if slot_frames else float("nan")
     raise KeyError(name)
 
 
 def _gate(spec, pool, calibration):
+    """One gate as the report holds it: the pooled value, the Calibration's centre, the tolerance, its kind, the status.
+
+    The tolerance is +- spec["tolerance"], or that share of the centre's size when the spec's kind is "relative". A gate
+    in PENDING_GATES is "pending" whatever it measures: it is printed and never counted.
+    """
     got, centre = _round(measured(spec["name"], pool)), _round(centre_of(spec["name"], calibration))
-    inside = abs(got - centre) <= spec["tolerance"]
+    limit = spec["tolerance"] if spec["kind"] == "absolute" else spec["tolerance"] * abs(centre)
+    if spec["name"] in PENDING_GATES:
+        status = PENDING
+    else:
+        status = PASS if abs(got - centre) <= limit else FAIL
     return {"name": spec["name"], "text": spec["text"], "measured": got, "centre": centre,
-            "tolerance": spec["tolerance"], "status": PASS if inside else FAIL}
+            "tolerance": spec["tolerance"], "kind": spec["kind"], "status": status}
 
 
 def _check(name, got, centre, band):
@@ -319,8 +399,6 @@ def statistics(pool, calibration):
     gaps are, who is tracked, how long, with the wrong team, with what speeds.
     """
     scalars, ball, players = calibration.scalars, pool.ball, pool.players
-    frames = players["frames"]
-    hist = players["present_hist"]
     gaps, tracklets = pool.gap_durations(), pool.tracklet_lengths()
     ours_gaps, ours_tracklets = calibration.gap_durations_s, calibration.tracklet_lengths_s
 
@@ -335,15 +413,12 @@ def statistics(pool, calibration):
         "gap_s_p90": (quantile(gaps, 0.90), quantile(ours_gaps, 0.90)),
         "near_line_onset_share": (ball["near_line_onsets"] / ball["interior_gaps"] if ball["interior_gaps"]
                                   else float("nan"), scalars["near_line_share"]),
-        "present_mean": (players["present_slot_frames"] / frames, scalars["present_mean"]),
-        "present_share_22": (int(hist[calibration_module.FULL_COUNT:calibration_module.FULL_COUNT + 1].sum()) / frames,
-                             scalars["present_share_22"]),
-        "present_share_le14": (int(hist[:calibration_module.LOW_COUNT + 1].sum()) / frames,
-                               scalars["present_share_le14"]),
+        "present_mean": (measured("present_mean", pool), centre_of("present_mean", calibration)),
+        "present_share_22": (measured("present_share_22", pool), centre_of("present_share_22", calibration)),
+        "present_share_le14": (measured("present_share_le14", pool), centre_of("present_share_le14", calibration)),
         "tracklet_s_median": (quantile(tracklets, 0.50), quantile(ours_tracklets, 0.50)),
-        "wrong_team_share": (players["wrong_team_frames"] / frames, calibration.wrong_team_share),
-        "speed_nan_share": (players["speed_nan_frames"] / players["present_slot_frames"]
-                            if players["present_slot_frames"] else float("nan"), calibration.speed_nan_share),
+        "wrong_team_share": (measured("wrong_team_share", pool), centre_of("wrong_team_share", calibration)),
+        "speed_nan_share": (measured("speed_nan_share", pool), centre_of("speed_nan_share", calibration)),
         "jitter_rms_m": (float(np.sqrt(players["jitter_squares"] / players["jitter_triples"]))
                          if players["jitter_triples"] else float("nan"), calibration.player_jitter_rms_m),
     }
@@ -367,11 +442,11 @@ def render(result):
                  result["profile"]["name"], result["profile"]["version"], len(result["matches"]),
                  ",".join(str(seed) for seed in result["seeds"]), result["calibration"]["sha256"][:12]),
              "", "gates (centre = our Calibration's value, measured on the kick-off spans; the plan's tolerance)",
-             "  {:<16}{:>12}{:>12}{:>12}   {}".format("gate", "measured", "centre", "+-", "status")]
+             "  {:<18}{:>12}{:>12}{:>12}   {}".format("gate", "measured", "centre", "+-", "status")]
     for gate in result["gates"]:
-        lines.append("  {:<16}{:>12}{:>12}{:>12}   {}   ({})".format(
-            gate["name"], _cell(gate["measured"]), _cell(gate["centre"]), _cell(gate["tolerance"]), gate["status"],
-            gate["text"]))
+        tolerance = "{:g}%".format(100 * gate["tolerance"]) if gate["kind"] == "relative" else _cell(gate["tolerance"])
+        lines.append("  {:<18}{:>12}{:>12}{:>12}   {}   ({})".format(
+            gate["name"], _cell(gate["measured"]), _cell(gate["centre"]), tolerance, gate["status"], gate["text"]))
     lines += ["", "checks (pre-registered warning bands; the degradation is never adjusted towards them)",
               "  {:<32}{:>10}{:>10}{:>10}   {}".format("check", "measured", "ours", "band", "status")]
     for check in result["checks"]:
@@ -385,11 +460,18 @@ def render(result):
         lines.append("  {:<38}{:>12}{:>12}".format(
             name, _cell(row["benchmark"]), _cell(row["bar_ath"])))
     halves = [draw["source_half"] for draw in result["draws"]]
+    pending = [gate["name"] for gate in result["gates"] if gate["status"] == PENDING]
+    if result["players_draws"]:
+        lines += ["", "players' draws, pooled over matches, seeds and halves: " + ", ".join(
+            "{} {:,}".format(name, count) for name, count in result["players_draws"].items())]
     lines += ["", "draws: {} half-draws, {} from our first half and {} from our second".format(
-        len(halves), halves.count(1), halves.count(2)),
-        "{} gates {}; {} of {} checks warn".format(
-            len(result["gates"]), "all pass" if result["passed"] else "DO NOT ALL PASS", result["warnings"],
-            len(result["checks"]))]
+        len(halves), halves.count(1), halves.count(2))]
+    if pending:
+        lines.append(PENDING_NOTE.format(", ".join(pending)))
+    lines.append("{} gates {}{}; {} of {} checks warn".format(
+        len(result["gates"]), "all pass" if result["passed"] else "DO NOT ALL PASS",
+        " ({} pending, not counted)".format(len(pending)) if pending else "", result["warnings"],
+        len(result["checks"])))
     return lines
 
 

@@ -41,6 +41,19 @@ PRODUCTION = degrade.__file__
 LENGTHS_S = (0.4, 1.0, 2.0, 3.2, 4.0)
 PRESENT_COUNTS = {1: {22: 30, 20: 20, 19: 10, 18: 4, 10: 2, 0: 1}, 2: {22: 20, 20: 10, 19: 10, 18: 3, 10: 1, 0: 1}}
 MADE_UP_D, MADE_UP_MEAN, MADE_UP_MU = 3 / 55, 53.0, 53 * 3 / 52
+# And of the wrong-team episodes and the NaN-speed runs: episodes of 0.4, 1.2, 2 and 4 s (10, 30, 50 and 100 frames at
+# 25 Hz, mean 47.5), 10% of the frames wrong-team, and NaN-speed runs of 3, 8, 21 and 40 frames (mean 18), 8% of the
+# present slot-frames.
+EPISODES_S = (0.4, 1.2, 2.0, 4.0)
+NAN_RUNS = (3, 8, 21, 40)
+MADE_UP_WRONG_TEAM, MADE_UP_SPEED_NAN = 0.1, 0.08
+# The record of what was drawn (info["players"]): the parameters and counts, per half and in all. No frame.
+HALF_KEYS = ("tracklets", "slots_used", "on_pitch_frames", "lost_frames", "onsets", "episodes", "skipped_far",
+             "skipped_overlap", "episode_frames", "speed_nan_runs", "speed_nan_frames")
+PLAYERS_KEYS = ("d", "mean_tracked_frames", "mean_lost_frames", "tracklets", "on_pitch_frames", "lost_frames",
+                "lost_share", "scale", "wrong_team_target", "mean_episode_frames", "onset_rate", "smooth_window",
+                "speed_nan_target", "onsets", "episodes", "skipped_far", "skipped_overlap", "episode_frames",
+                "speed_nan_runs", "speed_nan_frames", "speed_nan_share", "halves")
 
 
 # -- helpers ----------------------------------------------------------------------------------------------------------
@@ -81,7 +94,9 @@ def steady_match(match_id="RND001", seed=0, rows=ROWS, teams=(0, 0, 0, 1, 1, 1),
 
 def made_up_calibration(seed=0, rows=MASK_ROWS):
     """What the degrader reads of a Calibration: `ball_masks`, with long runs of missing ball as ours has, and what the
-    tracking profile reads, `tracklet_lengths_s` and `present_counts` (LENGTHS_S and PRESENT_COUNTS)."""
+    tracking profile reads: `tracklet_lengths_s` and `present_counts` (LENGTHS_S and PRESENT_COUNTS),
+    `wrong_team_episodes_s` and `wrong_team_share`, `speed_nan_runs` and `speed_nan_share` (EPISODES_S, NAN_RUNS and
+    the two shares above)."""
     rng = np.random.default_rng([7, seed])
     masks = {}
     for half, length in enumerate(rows, start=1):
@@ -96,9 +111,17 @@ def made_up_calibration(seed=0, rows=MASK_ROWS):
         counts[half] = np.array([slots for slots, frames in sorted(table.items()) for _ in range(frames)],
                                 dtype=np.int16)
         counts[half].setflags(write=False)
-    lengths = np.array(LENGTHS_S)
-    lengths.setflags(write=False)
-    return types.SimpleNamespace(ball_masks=masks, present_counts=counts, tracklet_lengths_s=lengths)
+    lengths, episodes, runs = np.array(LENGTHS_S), np.array(EPISODES_S), np.array(NAN_RUNS, dtype=np.int64)
+    for array in (lengths, episodes, runs):
+        array.setflags(write=False)
+    return types.SimpleNamespace(ball_masks=masks, present_counts=counts, tracklet_lengths_s=lengths,
+                                 wrong_team_episodes_s=episodes, wrong_team_share=MADE_UP_WRONG_TEAM,
+                                 speed_nan_runs=runs, speed_nan_share=MADE_UP_SPEED_NAN)
+
+
+def without_new_parts(calibration, **more):
+    """The Calibration with no wrong-team share and no NaN-speed share: its players are tracklets and slots alone."""
+    return types.SimpleNamespace(**{**vars(calibration), "wrong_team_share": 0.0, "speed_nan_share": 0.0, **more})
 
 
 def ball_bytes(atd):
@@ -552,8 +575,8 @@ def test_slot_persistence_helpers_count_what_they_say():
     records = {1: [T(0, 0, 10, 3), T(0, 15, 20, 3), T(0, 25, 30, 5), T(1, 0, 10, 1), T(1, 10, 20, 2),
                    T(2, 5, 8, 7), T(2, 9, 12, 8), T(2, 20, 21, 7)],
                2: [T(0, 100, 110, 4), T(0, 112, 120, 4), T(1, 100, 105, 6)]}
-    # Player 0 of half 1: 3 -> 3 (return, same), 3 -> 5 (return, other); player 1 hands over on the frame (not a return);
-    # player 2: 7 -> 8 (return, other) and 8 -> 7 (return, other). Half 2, player 0: 4 -> 4 (return, same).
+    # Player 0 of half 1: 3 -> 3 (return, same), 3 -> 5 (return, other); player 1 hands over on the frame (not a
+    # return); player 2: 7 -> 8 (return, other) and 8 -> 7 (return, other). Half 2, player 0: 4 -> 4 (return, same).
     assert same_slot_returns(records) == (5, 2)
     assert same_slot_returns({1: [T(0, 0, 5, 1)]}) == (0, 0) and same_slot_returns({}) == (0, 0)
 
@@ -579,15 +602,15 @@ def test_tracking_parameters_are_worked_out_from_the_calibration():
 
     # A tracked span is at least a frame, and the seconds are rounded as round() does (halves to even).
     seconds = (0.0, 0.01, 0.02, 0.07, 0.1, 0.14, 4.0, 40.0)   # x 25: 0, 0.25, 0.5, 1.75, 2.5, 3.5, 100, 1000 frames
-    short = types.SimpleNamespace(present_counts=calibration.present_counts, tracklet_lengths_s=np.array(seconds))
+    short = without_new_parts(calibration, tracklet_lengths_s=np.array(seconds))
     assert degrade.calibrated_parameters(short, 25).lengths.tolist() == [max(1, round(s * 25)) for s in seconds] == [
         1, 1, 1, 2, 2, 4, 100, 1000]
     # Only the frames above CAP: a 19 is in and an 18 is not, and the halves are pooled.
     counts = {1: np.array([18, 18, 19], dtype=np.int16), 2: np.array([22, 3], dtype=np.int16)}
     assert abs(degrade.lost_share(counts) - (1 - 20.5 / 22)) < 1e-12
     # Nobody lost: d = 0, no lost span (mu = 0).
-    nobody = degrade.calibrated_parameters(types.SimpleNamespace(
-        present_counts={1: np.full(10, 22, dtype=np.int16)}, tracklet_lengths_s=np.array([1.0])), 25)
+    nobody = degrade.calibrated_parameters(without_new_parts(
+        calibration, present_counts={1: np.full(10, 22, dtype=np.int16)}, tracklet_lengths_s=np.array([1.0])), 25)
     assert (nobody.d, nobody.mu, nobody.mean_tracked) == (0.0, 0.0, 25.0)
 
     expect_error(ValueError, lambda: degrade.lost_share({1: np.array([18, 4, 0], dtype=np.int16)}),
@@ -602,7 +625,13 @@ def test_tracking_parameters_are_worked_out_from_the_calibration():
     expect_error(ValueError, lambda: degrade.tracking_parameters([3], 1.0), "d", "below 1")
     expect_error(ValueError, lambda: degrade.tracking_parameters([3], -0.1), "d", "at least 0")
     expect_error(ValueError, lambda: degrade.calibrated_parameters(types.SimpleNamespace(), 25), "present_counts",
-                 "tracklet_lengths_s", "calibration.load()")
+                 "tracklet_lengths_s", "wrong_team_episodes_s", "wrong_team_share", "speed_nan_runs", "speed_nan_share",
+                 "calibration.load()")
+    # A Calibration of an older layout, with the tracklets and not the new parts, is named for what it lacks.
+    older = types.SimpleNamespace(present_counts=calibration.present_counts,
+                                  tracklet_lengths_s=calibration.tracklet_lengths_s)
+    expect_error(ValueError, lambda: degrade.calibrated_parameters(older, 25), "wrong_team_episodes_s",
+                 "speed_nan_runs", "calibration.load()")
 
 
 def test_walk_alternates_tracked_and_lost_spans_and_is_cut_by_the_run():
@@ -695,7 +724,7 @@ def test_tracklets_never_overlap_in_a_slot():
     parameters = degrade.tracking_parameters([3, 5, 8, 20], 0.3)
     reused = jumped = 0
     for seed in range(6):
-        xy, speed, tracklets = degrade.degraded_players(view, parameters, seed)
+        xy, speed, tracklets, _ = degrade.degraded_players(view, parameters, seed)
         frames = 0
         for half, records in tracklets.items():
             assert len(records) > 30, (seed, half, len(records))
@@ -724,7 +753,7 @@ def test_each_tracklet_takes_the_lowest_free_slot_of_its_pool():
     parameters = degrade.tracking_parameters([3, 5, 8, 20], 0.3)
     checked = taken_over = 0
     for seed in range(4):
-        _, _, tracklets = degrade.degraded_players(view, parameters, seed)
+        _, _, tracklets, _ = degrade.degraded_players(view, parameters, seed)
         for records in tracklets.values():
             assert [(t.start, t.player) for t in records] == sorted((t.start, t.player) for t in records)
             for index, t in enumerate(records):
@@ -741,9 +770,15 @@ def test_slot_team_matches_pool():
     """slot_team is 24 home slots then 22 away, and every slot of a pool carries only players of its team."""
     match = steady_match()
     view = degrade.tracking_view(match)
-    calibration = made_up_calibration()
+    calibration = without_new_parts(made_up_calibration())     # nobody is carried by the other team's pool here
+    # The smoothing moves a position off the player's own, so who is in a slot is read from positions that are not
+    # smoothed (the same walk and slots: the draws do not depend on the smoothing).
+    plain = dataclasses.replace(degrade.calibrated_parameters(calibration, match.fps), smooth=0)
+    assert degrade.SMOOTH_WINDOW > 0 and plain.smooth == 0
     for seed in (0, 1, 2):
         atd, info = degrade.degrade(view, "tracking", calibration, seed)
+        unsmoothed = degrade.degraded_players(view, plain, seed)[0]
+        assert np.array_equal(np.isnan(unsmoothed), np.isnan(atd.players_xy)), "the same slots, smoothed or not"
         assert atd.slot_team.dtype == np.int8 and atd.slot_team.tolist() == [0] * 24 + [1] * 22
         assert (degrade.HOME_SLOTS, degrade.AWAY_SLOTS, degrade.N_SLOTS) == (24, 22, 46)
         assert atd.players_xy.shape == (match.n_frames, 46, 2) and atd.players_speed.shape == (match.n_frames, 46)
@@ -754,7 +789,7 @@ def test_slot_team_matches_pool():
         # pitch then, and the same for the away ones (the made-up positions are all different).
         for row in range(match.n_frames):
             for team, slots in ((0, slice(0, 24)), (1, slice(24, 46))):
-                shown = {tuple(position) for position in atd.players_xy[row, slots] if not np.isnan(position).any()}
+                shown = {tuple(position) for position in unsmoothed[row, slots] if not np.isnan(position).any()}
                 own = {tuple(position) for position in match.players_xy[row][match.player_team == team]
                        if not np.isnan(position).any()}
                 assert shown <= own, (seed, row, team)
@@ -800,7 +835,7 @@ def test_tracking_degenerate_equals_gaps():
     calibration = made_up_calibration()
     endless = degrade.tracking_parameters([10 ** 9], 0.0)
     assert endless.mu == 0.0
-    xy, speed, tracklets = degrade.degraded_players(view, endless, 3)
+    xy, speed, tracklets, _ = degrade.degraded_players(view, endless, 3)
     expected = {
         1: [(0, 0, 240, 0), (1, 0, 240, 1), (3, 0, 240, 24), (4, 0, 150, 25), (5, 0, 100, 26), (2, 60, 240, 2),
             (5, 130, 240, 26)],
@@ -881,7 +916,7 @@ def test_tracking_speeds_are_finite_differences_within_a_tracklet():
     length, width = match.pitch
     handed_over = checked = 0
     for seed in range(3):
-        xy, speed, tracklets = degrade.degraded_players(view, parameters, seed)
+        xy, speed, tracklets, _ = degrade.degraded_players(view, parameters, seed)
         expected = np.full(speed.shape, np.nan)
         firsts = []
         for records in tracklets.values():
@@ -904,7 +939,7 @@ def test_tracking_speeds_are_finite_differences_within_a_tracklet():
     assert degrade.degraded_players(other, parameters, 2)[1].tobytes() == speed.tobytes()
     # A one-frame tracklet has a first frame and nothing else.
     one = degrade.tracking_parameters([1], 0.5)
-    _, speed, _ = degrade.degraded_players(view, one, 0)
+    _, speed, _, _ = degrade.degraded_players(view, one, 0)
     assert np.isnan(speed).all()
 
 
@@ -955,11 +990,14 @@ def test_tracking_is_deterministic_and_independent_of_the_other_matches():
     elsewhere, _ = degrade.degrade(degrade.tracking_view(matches["RND001"], match_index=3), "tracking", calibration, 0)
     assert everything(elsewhere) != everything(first) and elsewhere.players_xy.tobytes() != first.players_xy.tobytes()
     assert json.loads(json.dumps(info, sort_keys=True)) == json.loads(json.dumps(info_again, sort_keys=True))
-    assert sorted(info["players"]) == ["d", "halves", "lost_frames", "lost_share", "mean_lost_frames",
-                                       "mean_tracked_frames", "on_pitch_frames", "tracklets"]
+    assert sorted(info["players"]) == sorted(PLAYERS_KEYS), sorted(info["players"])
     assert sorted(info["players"]["halves"]) == [1, 2]
-    assert all(sorted(record) == ["lost_frames", "on_pitch_frames", "slots_used", "tracklets"]
-               for record in info["players"]["halves"].values())
+    assert all(sorted(record) == sorted(HALF_KEYS) for record in info["players"]["halves"].values())
+    for name in ("onsets", "episodes", "skipped_far", "skipped_overlap", "episode_frames", "speed_nan_runs",
+                 "speed_nan_frames"):
+        assert info["players"][name] == sum(record[name] for record in info["players"]["halves"].values()), name
+    assert info["players"]["onsets"] == info["players"]["episodes"] + info["players"]["skipped_far"] + \
+        info["players"]["skipped_overlap"]
     assert info["players"]["tracklets"] == sum(record["tracklets"] for record in info["players"]["halves"].values())
     assert info["players"]["lost_frames"] == info["players"]["on_pitch_frames"] - int(
         np.isfinite(first.players_xy[:, :, 0]).sum())
@@ -984,16 +1022,518 @@ def test_tracking_serves_inputs_without_the_truth():
     assert "array" not in repr(atd), "no frame in a repr"
 
 
+# -- the wrong-team episodes, the NaN-speed runs and the smoothing -----------------------------------------------------
+
+def pairs_match(windows, rows=(1000, 1000), pitch=(128.0, 64.0)):
+    """Six players (home 0-2, away 3-5) who stand far apart all through both halves, and come close in windows.
+
+    Home k stands at x = 0.125 (k + 1), y = 0.25 and away k at x = 0.5 + 0.125 k, y = 0.75, so every opposing pair is at
+    least 32 m apart. The pitch is 128 x 64 m, so that a distance in metres is a short dyadic number and comes out
+    exactly: 1/64 of the pitch's length is 2.0 m, to the bit. `windows` is [(half, first row, stop row, pairs)] with
+    the rows counted from the half's start; in a window, away player `away` of each (home, away, offset) pair stands at
+    home player `home`'s place plus the normalised x `offset`, so the pair is offset * 128 m apart and no other opposing
+    pair is within 16 m. Everybody is on the pitch all through both halves, so with nobody lost a player is one
+    tracklet."""
+    base = steady_match(rows=rows, substitutions=False)
+    xy = np.array(base.players_xy)
+    starts = {half: start for half, start, _ in base.graded}
+    for _, start, stop in base.graded:
+        xy[start:stop, 0:3, 0], xy[start:stop, 0:3, 1] = [0.125, 0.25, 0.375], 0.25
+        xy[start:stop, 3:6, 0], xy[start:stop, 3:6, 1] = [0.5, 0.625, 0.75], 0.75
+    for half, first, last, pairs in windows:
+        lo, hi = starts[half] + first, starts[half] + last
+        for home, away, offset in pairs:
+            xy[lo:hi, away, 0], xy[lo:hi, away, 1] = xy[lo:hi, home, 0] + offset, xy[lo:hi, home, 1]
+    xy.setflags(write=False)
+    return dataclasses.replace(base, players_xy=xy, pitch=pitch)
+
+
+def episode_parameters(share=0.45, scale=1.0, episodes=(10, 20), lengths=(10 ** 9,), d=0.0, **more):
+    """Parameters with episodes of 10 and 20 frames (mean 15) at the rate scale * share / 15 = 0.03 per row, and nobody
+    lost unless `lengths` and `d` say so."""
+    return degrade.tracking_parameters(list(lengths), d, episodes=list(episodes), wrong_team_share=share, scale=scale,
+                                       **more)
+
+
+def is_carried(t, view):
+    """A tracklet is an episode piece if its slot is in the pool of the team that its player is not in."""
+    return (t.slot >= degrade.HOME_SLOTS) != (int(view.player_team[t.player]) == 1)
+
+
+def reference_episodes(view, half, spans, parameters, seed):
+    """(pieces, counts) of the wrong-team episodes as degrade.py documents them, written out one onset at a time.
+
+    The draws are read from a generator made from the documented key, in the documented order (the onset rows as one
+    uniform per row of the half's block, then one pick per onset, then one duration per onset), and every onset is
+    judged by loops over players and pieces. pieces is [(first, player, last, pool)] sorted, pool being the team whose
+    slots carry the piece."""
+    start, stop = next((first, last) for number, first, last in view.graded if number == half)
+    team, xy = list(view.player_team), view.players_xy
+    length, width = view.pitch
+    rate = parameters.scale * parameters.wrong_team_share / parameters.mean_episode
+    rng = np.random.default_rng([seed, view.match_index, 2, half])
+    uniform = rng.random(stop - start)
+    onsets = [start + index for index in range(stop - start) if uniform[index] < rate]
+    picks = rng.integers(2, size=len(onsets))
+    durations = rng.integers(len(parameters.episodes), size=len(onsets))
+    own = {}
+    for first, player, last in spans:
+        own.setdefault(player, []).append([first, last, False])
+    counts = {"onsets": len(onsets), "episodes": 0, "skipped_far": 0, "skipped_overlap": 0, "episode_frames": 0}
+    for k, t in enumerate(onsets):
+        tracked = [player for player in range(len(team)) if any(f <= t < l for f, p, l in spans if p == player)]
+        best = None
+        for home in (p for p in tracked if team[p] == 0):
+            for away in (p for p in tracked if team[p] == 1):
+                distance = np.hypot((xy[t, home, 0] - xy[t, away, 0]) * length,
+                                    (xy[t, home, 1] - xy[t, away, 1]) * width)
+                if best is None or distance < best[0]:
+                    best = (distance, home, away)
+        if best is None or best[0] > 2.0:
+            counts["skipped_far"] += 1
+            continue
+        player = (best[1], best[2])[int(picks[k])]
+        index = next(i for i, (a, b, _) in enumerate(own[player]) if a <= t < b)
+        a, b, inside = own[player][index]
+        if inside:
+            counts["skipped_overlap"] += 1
+            continue
+        end = min(t + int(parameters.episodes[int(durations[k])]), b)
+        own[player][index:index + 1] = ([[a, t, False]] if t > a else []) + [[t, end, True]] + (
+            [[end, b, False]] if end < b else [])
+        counts["episodes"] += 1
+        counts["episode_frames"] += end - t
+    pieces = sorted((a, player, b, 1 - team[player] if inside else team[player])
+                    for player, parts in own.items() for a, b, inside in parts)
+    return pieces, counts
+
+
+def test_wrong_team_starts_at_close_pairs():
+    """An episode starts only where an opposing pair is within 2 m, inclusive, and the player is one of the pair.
+
+    Six players stand far apart except in windows (pairs_match): in half 1, rows 100-400, home 1 and away 4 are exactly
+    2.0 m apart (inside: 2 m is within) and in rows 600-900 they are 2.0000001 m apart (beyond); in half 2, rows
+    200-500, two pairs are exactly 1.0 m apart (a tie), (home 0, away 3) and (home 1, away 4), and the tie goes to the
+    lowest columns. The onsets are read back from the documented generator, and each is classed by where it falls: an
+    onset in a window where a pair is within 2 m is an episode or an overlap, every other one is skipped as far, and
+    both are counted."""
+    windows = [(1, 100, 400, [(1, 4, 1 / 64)]), (1, 600, 900, [(1, 4, 1 / 64 + 2 ** -20)]),
+               (2, 200, 500, [(0, 3, 1 / 128), (1, 4, 1 / 128)])]
+    match = pairs_match(windows)
+    view = degrade.tracking_view(match)
+    parameters = episode_parameters()
+    rate = 1.0 * 0.45 / 15
+    near = {1: (100, 400), 2: (200, 500)}
+    seen, totals = {1: set(), 2: set()}, {"episodes": 0, "skipped_far": 0, "skipped_overlap": 0}
+    for seed in range(8):
+        _, _, records, counts = degrade.degraded_players(view, parameters, seed)
+        for half, start, stop in match.graded:
+            onsets = start + np.flatnonzero(np.random.default_rng([seed, view.match_index, 2, half]).random(
+                stop - start) < rate)
+            lo, hi = start + near[half][0], start + near[half][1]
+            close = sum(1 for t in onsets if lo <= t < hi)
+            record = counts[half]
+            assert record["onsets"] == len(onsets) and record["skipped_far"] == len(onsets) - close, (seed, half)
+            assert record["episodes"] + record["skipped_overlap"] == close, (seed, half, record)
+            carried = [t for t in records[half] if is_carried(t, view)]
+            assert len(carried) == record["episodes"] and sum(t.stop - t.start for t in carried) == \
+                record["episode_frames"]
+            assert all(lo <= t.start < hi for t in carried), "an episode starts where a pair is within 2 m"
+            seen[half] |= {t.player for t in carried}
+            for name in totals:
+                totals[name] += record[name]
+    assert seen[1] == {1, 4} and seen[2] == {0, 3}, "one of the pair, and the lowest columns of a tie: " + str(seen)
+    assert all(count > 0 for count in totals.values()), totals
+
+    # No pair within 2 m anywhere: every onset is skipped, and nothing is carried.
+    far = degrade.tracking_view(pairs_match([]))
+    _, _, records, counts = degrade.degraded_players(far, parameters, 0)
+    assert counts[1]["onsets"] > 0 and all(c["episodes"] == c["skipped_overlap"] == 0 for c in counts.values())
+    assert all(c["skipped_far"] == c["onsets"] for c in counts.values())
+    assert not any(is_carried(t, far) for records_ in records.values() for t in records_)
+    # A team with nobody tracked at the onset has no pair: counted as far too.
+    alone = steady_match(teams=(0, 0, 0, 0, 0, 0), substitutions=False)
+    _, _, _, counts = degrade.degraded_players(degrade.tracking_view(alone), parameters, 0)
+    assert counts[1]["onsets"] > 0 and counts[1]["skipped_far"] == counts[1]["onsets"]
+
+
+def test_wrong_team_moves_one_player_to_other_pool():
+    """An episode piece is its own tracklet in a slot of the other team's pool, and its player leaves his own pool.
+
+    Everybody is tracked all the time (nobody lost) and there is always a pair within 2 m (pairs_match), so every row
+    has 3 home and 3 away players, and the slots must show 3 - (home players carried) + (away players carried) at home.
+    Worked out from the records one row at a time, and read back from the arrays: the carried player's position is
+    in the other pool's slot and in none of his own pool's, on every row of the episode, and his pieces tile the half
+    (before, the episode, after) with a new tracklet after it."""
+    windows = [(1, 0, 1000, [(1, 4, 1 / 128)]), (2, 0, 500, [(0, 3, 1 / 128)]), (2, 500, 1000, [(2, 5, 1 / 128)])]
+    match = pairs_match(windows)
+    view = degrade.tracking_view(match)
+    parameters = episode_parameters()
+    checked = 0
+    for seed in range(4):
+        xy, _, records, counts = degrade.degraded_players(view, parameters, seed)
+        for half, start, stop in match.graded:
+            carried = [t for t in records[half] if is_carried(t, view)]
+            assert carried and len(carried) == counts[half]["episodes"], (seed, half)
+            for row in range(start, stop):
+                moved = [0, 0]                       # players carried at this row, by their own team
+                for t in carried:
+                    moved[int(view.player_team[t.player])] += t.start <= row < t.stop
+                home = int(np.isfinite(xy[row, :degrade.HOME_SLOTS, 0]).sum())
+                away = int(np.isfinite(xy[row, degrade.HOME_SLOTS:, 0]).sum())
+                assert (home, away) == (3 - moved[0] + moved[1], 3 - moved[1] + moved[0]), (seed, row, moved)
+            for t in carried:
+                own, other = (slice(0, 24), slice(24, 46)) if view.player_team[t.player] == 0 else (slice(24, 46),
+                                                                                                    slice(0, 24))
+                position = match.players_xy[t.start:t.stop, t.player]
+                assert np.array_equal(xy[t.start:t.stop, t.slot], position), "the piece is his own track"
+                assert (t.slot >= degrade.HOME_SLOTS) == (view.player_team[t.player] == 0), "a slot of the other pool"
+                for row in (t.start, t.stop - 1):
+                    assert not (xy[row, own] == match.players_xy[row, t.player]).all(axis=-1).any(), "he left his pool"
+                    assert (xy[row, other] == match.players_xy[row, t.player]).all(axis=-1).sum() == 1
+                checked += 1
+            for player in range(6):
+                pieces = sorted((t.start, t.stop, t.slot) for t in records[half] if t.player == player)
+                assert pieces[0][0] == start and pieces[-1][1] == stop
+                assert all(a[1] == b[0] for a, b in zip(pieces, pieces[1:])), "before, the episode, after: no gap"
+    assert checked > 50, checked
+
+
+def test_wrong_team_draws_come_from_the_wrong_team_stream_in_a_fixed_order():
+    """The pieces and the counts are what rng_for(seed, match_index, "wrong_team", half) gives, read as documented.
+
+    The onset rows are one uniform per row of the half's graded block (a row is an onset when its uniform is below the
+    rate s * target / mean episode frames), then one pick per onset (0 is the home player of the closest pair, 1 the
+    away player) and one duration per onset, each as one call, so that what an onset draws never depends on what the
+    others do. Written out here with plain loops and a generator made from the documented key, including the skipped
+    onsets, on tracklets that the walk has cut into several spans (d = 0.2): the pieces, their pools and the counts
+    must be equal."""
+    windows = [(1, 50, 900, [(1, 4, 1 / 64)]), (2, 0, 400, [(0, 3, 1 / 128)]), (2, 400, 1000, [(2, 5, 3 / 256)])]
+    match = pairs_match(windows)
+    view = degrade.tracking_view(match)
+    parameters = episode_parameters(lengths=(30, 60, 200), d=0.2, episodes=(5, 10, 40, 300), share=0.9)
+    totals = {"episodes": 0, "skipped_far": 0, "skipped_overlap": 0}
+    for seed in range(6):
+        for half, _, _ in match.graded:
+            spans = degrade.walk_spans(view, half, parameters, seed)
+            expected, expected_counts = reference_episodes(view, half, spans, parameters, seed)
+            got = degrade.choose_half(view, half, parameters, seed)
+            pieces = sorted((t.start, t.player, t.stop, int(t.slot >= degrade.HOME_SLOTS)) for t in got.tracklets)
+            assert pieces == expected, (seed, half)
+            assert got.counts == expected_counts, (seed, half, got.counts, expected_counts)
+            for name in totals:
+                totals[name] += expected_counts[name]
+    assert all(count > 0 for count in totals.values()), "every kind of onset happens: " + str(totals)
+    # The same key and nothing else decides: another seed or half draws other onsets.
+    first, second = ([(t.player, t.start, t.stop) for t in degrade.choose_half(view, 1, parameters, seed).tracklets]
+                     for seed in (0, 1))
+    assert first != second
+
+
+def test_wrong_team_onsets_are_a_bernoulli_process_at_the_documented_rate():
+    """Over many rows the onsets are binomial with r = s * target / mean episode frames per row of the graded block.
+
+    A steady match of 2 x 20,000 rows and the made-up Calibration's episodes (10, 30, 50 and 100 frames, mean 47.5) and
+    share (0.1): r = s * 0.1 / 47.5. Counted over 6 seeds with the scale at 1 and at 3, within 5 standard errors of
+    n * r (the binomial's own, sqrt(n r (1 - r))); the share of the onsets that are far is high on random positions,
+    which are nowhere near a close pair, and every onset is an episode, far or an overlap."""
+    match = steady_match(rows=(20000, 20000))
+    view = degrade.tracking_view(match)
+    calibration = made_up_calibration()
+    for scale in (1.0, 3.0):
+        parameters = dataclasses.replace(degrade.calibrated_parameters(calibration, 25), scale=scale)
+        rate = scale * MADE_UP_WRONG_TEAM / 47.5
+        assert abs(parameters.onset_rate - rate) < 1e-15
+        onsets = rows = 0
+        for seed in range(6):
+            _, _, _, counts = degrade.degraded_players(view, parameters, seed)
+            for record in counts.values():
+                assert record["onsets"] == record["episodes"] + record["skipped_far"] + record["skipped_overlap"]
+                onsets += record["onsets"]
+            rows += sum(stop - start for _, start, stop in match.graded)
+        expected, error = rows * rate, math.sqrt(rows * rate * (1 - rate))
+        assert abs(onsets - expected) < 5 * error, (scale, onsets, expected, error)
+    none = dataclasses.replace(parameters, scale=0.0)
+    assert none.onset_rate == 0.0
+    _, _, _, counts = degrade.degraded_players(view, none, 0)
+    assert all(record["onsets"] == 0 for record in counts.values())
+
+
+def reference_players(view, parameters, seed):
+    """Task 12's players, written out: (xy, speed, [(half, player, start, stop, slot)]), with no episodes, NaN runs
+    or smoothing.
+
+    The spans are the walk's (degrade.walk_run, drawn from the "tracklets" stream as documented), the slots the lowest
+    free one of the player's own pool for a tracklet taken in order of (start, player), a speed the step from the frame
+    before in m/s, NaN on a tracklet's first row."""
+    pitch = np.asarray(view.pitch)
+    xy = np.full((view.n_frames, 46, 2), np.nan)
+    speed = np.full((view.n_frames, 46), np.nan)
+    records = []
+    for half, start, stop in view.graded:
+        rng = degrade.rng_for(seed, view.match_index, "tracklets", half)
+        spans = []
+        for player in range(view.players_xy.shape[1]):
+            column = [not math.isnan(view.players_xy[row, player, 0]) for row in range(start, stop)]
+            for first, last in present_runs(column):
+                for a, b in degrade.walk_run(rng, last - first, parameters):
+                    spans.append((start + first + a, player, start + first + b))
+        free = [0] * 46
+        for first, player, last in sorted(spans):
+            pool = range(24) if view.player_team[player] == 0 else range(24, 46)
+            slot = next(candidate for candidate in pool if free[candidate] <= first)
+            free[slot] = last
+            records.append((half, player, first, last, slot))
+            xy[first:last, slot] = view.players_xy[first:last, player]
+            if last - first > 1:
+                step = np.diff(view.players_xy[first:last, player] * pitch, axis=0)
+                speed[first + 1:last, slot] = np.hypot(step[:, 0], step[:, 1]) * view.fps
+    return xy, speed, records
+
+
+def test_tracking_without_the_new_parts_is_task_12s_players():
+    """With no episodes (s = 0), no NaN runs (a target of 0) and no smoothing, the players are exactly Task 12's.
+
+    Compared with the reference above, byte for byte: the positions, the speeds and the records of every tracklet,
+    on two steady matches and three seeds, under two sets of parameters. The new parts draw only from their own
+    generators, so with them on the walk (the spans) is the same too, and so is the ball (test_profiles_nest)."""
+    cases = ((steady_match(rows=(400, 300)), degrade.tracking_parameters([3, 5, 8, 20], 0.3)),
+             (steady_match(), degrade.calibrated_parameters(made_up_calibration(), 25)))
+    for match, parameters in cases:
+        view = degrade.tracking_view(match)
+        plain = dataclasses.replace(parameters, scale=0.0, speed_nan_share=0.0, smooth=0)
+        for seed in range(3):
+            xy, speed, records, counts = degrade.degraded_players(view, plain, seed)
+            ref_xy, ref_speed, ref_records = reference_players(view, parameters, seed)
+            assert xy.tobytes() == ref_xy.tobytes() and speed.tobytes() == ref_speed.tobytes(), seed
+            got = [(half, t.player, t.start, t.stop, t.slot) for half, tracklets in records.items() for t in tracklets]
+            assert got == ref_records, seed
+            assert all(record["onsets"] == record["episodes"] == record["speed_nan_runs"] == 0
+                       for record in counts.values())
+            for half, _, _ in view.graded:
+                assert degrade.walk_spans(view, half, plain, seed) == degrade.walk_spans(view, half, parameters, seed)
+
+
+def test_profiles_nest():
+    """For the same seed the tracking profile's ball is the gaps profile's, mask and arrays, with the new parts on.
+
+    The ball is drawn from the "transplant" stream and the players from others, so what tracking adds is the players
+    alone: the same missing-ball mask, the same positions, the same NaN speed (T31), the same record of the draws."""
+    match, calibration = steady_match(), made_up_calibration()
+    view = degrade.tracking_view(match)
+    for seed in (0, 1, 2):
+        tracking, tracking_info = degrade.degrade(view, "tracking", calibration, seed)
+        gaps, gaps_info = degrade.degrade(view, "gaps", calibration, seed)
+        assert tracking.ball_present.tolist() == gaps.ball_present.tolist(), "the same mask"
+        assert ball_bytes(tracking) == ball_bytes(gaps) and np.isnan(tracking.ball_speed).all()
+        assert tracking_info["transplants"] == gaps_info["transplants"]
+        assert tracking_info["mask_share"] == gaps_info["mask_share"]
+        players = tracking_info["players"]
+        assert players["scale"] == degrade.WRONG_TEAM_SCALE > 0 and players["speed_nan_target"] == MADE_UP_SPEED_NAN
+        assert players["speed_nan_runs"] > 0, "the new parts are on, so this is not vacuous"
+        assert degrade.PROFILES["tracking"] == 1 and degrade.PROFILES["gaps"] == 1, "version 1 is frozen"
+
+
+def test_speed_nan_share():
+    """The share of the present slot-frames with a NaN speed lands on the target, to within 0.005 and in each half.
+
+    A steady match of 2 x 20,000 rows, 6 players, a third of them lost now and then, runs of 3, 8, 21 and 40 frames and
+    a target of 0.08: the share is counted by calibration.player_stats (the statistic the fidelity gate uses) on the
+    graded blocks, and its numerator counts the tracklets' first rows too, which are NaN to begin with. A run goes on
+    until the share reaches the target, so the last one overshoots by at most its own length: 40 frames of about 100,000
+    present slot-frames a half."""
+    match = steady_match(rows=(20000, 20000))
+    view = degrade.tracking_view(match)
+    parameters = degrade.tracking_parameters([200, 500, 900], 0.1, nan_runs=list(NAN_RUNS), speed_nan_share=0.08)
+    length, width = match.pitch
+    for seed in range(3):
+        atd_xy, speed, records, counts = degrade.degraded_players(view, parameters, seed)
+        present = np.isfinite(atd_xy[:, :, 0])
+        stats = calibration.player_stats(present, degrade.slot_team(), atd_xy * np.array([length, width]), speed,
+                                         match.graded, match.fps)
+        assert abs(stats["speed_nan_share"] - 0.08) < 0.005, (seed, stats["speed_nan_share"])
+        for half, start, stop in match.graded:
+            here = present[start:stop]
+            share = np.isnan(speed[start:stop])[here].mean()
+            assert 0.08 <= share < 0.08 + max(NAN_RUNS) / here.sum(), (seed, half, share)
+            assert counts[half]["speed_nan_runs"] > 100 and counts[half]["speed_nan_frames"] == int(
+                np.isnan(speed[start:stop])[here].sum())
+        assert np.isnan(speed[~present]).all(), "no speed where nobody is"
+        # Nothing but the speed: the positions are the walk's, whether or not there are runs.
+        plain, _, _, _ = degrade.degraded_players(view, dataclasses.replace(parameters, speed_nan_share=0.0), seed)
+        assert plain.tobytes() == atd_xy.tobytes()
+    # A target of 0 places no run: the NaN speeds are the tracklets' first rows and nothing else.
+    xy, speed, records, counts = degrade.degraded_players(view, dataclasses.replace(parameters, speed_nan_share=0.0), 0)
+    assert all(record["speed_nan_runs"] == 0 for record in counts.values())
+    firsts = sum(len(tracklets) for tracklets in records.values())
+    assert int(np.isnan(speed[np.isfinite(xy[:, :, 0])]).sum()) == firsts
+
+
+def reference_speed_nan(view, half, xy, speed, tracklets, parameters, seed):
+    """`speed` of a half with the NaN-speed runs placed as degrade.py documents them, one frame at a time.
+
+    The present slot-frames of the half's graded block are listed in time order and, within a row, by slot; each run
+    takes one draw for the start (an index into that list) and one for its length (an index into the run lengths),
+    both from the half's "speed_nan" stream, marks the next L frames of that slot NaN, stops at the end of its
+    tracklet, and the loop ends when the NaN speeds of the present slot-frames reach the target."""
+    start, stop = next((first, last) for number, first, last in view.graded if number == half)
+    rng = degrade.rng_for(seed, view.match_index, "speed_nan", half)
+    present = [(row, slot) for row in range(start, stop) for slot in range(xy.shape[1])
+               if not math.isnan(xy[row, slot, 0])]
+    marked = {cell for cell in present if math.isnan(speed[cell])}
+    out = np.array(speed)
+    while len(marked) < parameters.speed_nan_share * len(present):
+        row, slot = present[int(rng.integers(len(present)))]
+        length = int(parameters.nan_runs[int(rng.integers(len(parameters.nan_runs)))])
+        piece = next(t for t in tracklets if t.slot == slot and t.start <= row < t.stop)
+        for later in range(row, min(row + length, piece.stop)):
+            out[later, slot] = np.nan
+            marked.add((later, slot))
+    return out
+
+
+def test_speed_nan_runs_follow_the_documented_draws():
+    """The NaN speeds are what the "speed_nan" stream gives, read as documented, and a run never leaves its tracklet.
+
+    The runs' starts are uniform over the present slot-frames of the graded block and their lengths come from the
+    Calibration's runs (the loop of reference_speed_nan: plain Python, a generator made from the documented key);
+    the speeds with runs must be equal to the speeds without them with the reference's runs added, frame for frame. A
+    tracklet's NaN speeds are its first row and the runs that started inside it: the frame after a tracklet's last
+    is another tracklet's own, so a run stopped there."""
+    match = steady_match(rows=(400, 300))
+    view = degrade.tracking_view(match)
+    base = degrade.tracking_parameters([3, 5, 8, 20], 0.3, nan_runs=list(NAN_RUNS), speed_nan_share=0.25)
+    plain = dataclasses.replace(base, speed_nan_share=0.0)
+    runs = 0
+    for seed in range(3):
+        xy, speed, records, counts = degrade.degraded_players(view, base, seed)
+        bare_xy, bare_speed, bare_records, _ = degrade.degraded_players(view, plain, seed)
+        assert xy.tobytes() == bare_xy.tobytes() and records == bare_records
+        for half, _, _ in match.graded:
+            expected = reference_speed_nan(view, half, bare_xy, bare_speed, bare_records[half], base, seed)
+            start, stop = next((first, last) for number, first, last in match.graded if number == half)
+            assert np.array_equal(speed[start:stop], expected[start:stop], equal_nan=True), (seed, half)
+            runs += counts[half]["speed_nan_runs"]
+    assert runs > 20, runs
+
+
+def smoothed_plain(run, window):
+    """The centred moving average of `window` rows of a list of (x, y), the window shrinking to the rows inside."""
+    half, out = window // 2, []
+    for index in range(len(run)):
+        rows = run[max(0, index - half):index + half + 1]
+        out.append((sum(x for x, _ in rows) / len(rows), sum(y for _, y in rows) / len(rows)))
+    return np.array(out)
+
+
+def test_smoothing_is_a_centred_moving_average_inside_each_piece():
+    """A 5-frame centred moving average whose window shrinks at the ends to the rows inside; nothing crosses a piece.
+
+    Worked out with loops on a few rows, then on every tracklet of a steady match under d = 0.3: the positions of a
+    piece are the plain average of that piece's own rows (a window never reaches into another piece of the same
+    player, or into the lost span between them), the lengths are unchanged, the speeds are the steps of the smoothed
+    positions, and on white noise the second difference falls by the factor that the filter has on white noise,
+    sqrt(4 / 25 / 6) = 0.163."""
+    run = np.array([[0.0, 1.0], [1.0, 3.0], [4.0, 2.0], [9.0, 6.0], [16.0, 5.0], [25.0, 9.0], [36.0, 7.0]])
+    out = degrade.smoothed(run, 5)
+    assert out.shape == run.shape
+    assert np.allclose(out, smoothed_plain(run.tolist(), 5), rtol=1e-12, atol=1e-12)
+    assert np.allclose(out[0], run[:3].mean(axis=0)) and np.allclose(out[1], run[:4].mean(axis=0))
+    assert np.allclose(out[3], run[1:6].mean(axis=0)) and np.allclose(out[6], run[4:].mean(axis=0))
+    assert np.array_equal(degrade.smoothed(run[:1], 5), run[:1]), "one row has no neighbour"
+    assert np.allclose(degrade.smoothed(run[:2], 5), run[:2].mean(axis=0)), "two rows: each is their mean"
+    assert np.array_equal(degrade.smoothed(run, 1), run) and degrade.smoothed(run[:0], 5).shape == (0, 2)
+
+    match = steady_match(rows=(400, 300))
+    view = degrade.tracking_view(match)
+    parameters = degrade.tracking_parameters([3, 5, 8, 20, 90], 0.3, smooth=5)
+    length, width = match.pitch
+    pieces = 0
+    for seed in range(3):
+        xy, speed, records, _ = degrade.degraded_players(view, parameters, seed)
+        for half_records in records.values():
+            for t in half_records:
+                source = match.players_xy[t.start:t.stop, t.player].tolist()
+                expected = smoothed_plain(source, 5)
+                assert xy[t.start:t.stop, t.slot].shape == expected.shape == (t.stop - t.start, 2)
+                assert np.allclose(xy[t.start:t.stop, t.slot], expected, rtol=1e-12, atol=1e-12), (seed, t)
+                for row in range(t.start + 1, t.stop):
+                    dx = (xy[row, t.slot, 0] - xy[row - 1, t.slot, 0]) * length
+                    dy = (xy[row, t.slot, 1] - xy[row - 1, t.slot, 1]) * width
+                    assert abs(speed[row, t.slot] - math.hypot(dx, dy) * match.fps) < 1e-9
+                assert math.isnan(speed[t.start, t.slot])
+                pieces += 1
+    assert pieces > 100, pieces
+    # White noise: the second difference of a 5-frame moving average is 0.163 of the raw one.
+    noise = np.random.default_rng(3).normal(size=(60000, 2))
+    second = lambda positions: float(np.sqrt(np.mean(np.sum((positions[2:] - 2 * positions[1:-1] + positions[:-2]) ** 2,
+                                                            axis=1))))
+    ratio = second(degrade.smoothed(noise, 5)[2:-2]) / second(noise[2:-2])
+    assert abs(ratio - math.sqrt(4 / 25 / 6)) < 0.005, ratio
+    expect_error(ValueError, lambda: degrade.smoothed(run, 4), "window", "odd")
+    expect_error(ValueError, lambda: degrade.smoothed(run, 0), "window", "odd")
+
+
+def test_tracking_parameters_hold_the_new_parts():
+    """Episodes in frames from seconds at the rate, their mean, the NaN runs, the targets, the scale and the window.
+
+    The made-up Calibration has episodes of 0.4, 1.2, 2 and 4 s: 10, 30, 50 and 100 frames at 25 Hz (mean 47.5) and 20,
+    60, 100 and 200 at 50 Hz, each at least 1 frame; its NaN runs (frames) are not converted, its shares are 0.1 and
+    0.08, and the scale and the window are the module's constants. The onset rate is s * target / the mean episode."""
+    calibration = made_up_calibration()
+    parameters = degrade.calibrated_parameters(calibration, 25)
+    assert parameters.episodes.tolist() == [10, 30, 50, 100] and parameters.episodes.dtype == np.int64
+    assert parameters.mean_episode == 47.5 and parameters.nan_runs.tolist() == list(NAN_RUNS)
+    assert (parameters.wrong_team_share, parameters.speed_nan_share) == (MADE_UP_WRONG_TEAM, MADE_UP_SPEED_NAN)
+    assert parameters.scale == degrade.WRONG_TEAM_SCALE and parameters.smooth == degrade.SMOOTH_WINDOW
+    assert abs(parameters.onset_rate - degrade.WRONG_TEAM_SCALE * 0.1 / 47.5) < 1e-15
+    assert not parameters.episodes.flags.writeable and not parameters.nan_runs.flags.writeable
+    other = degrade.calibrated_parameters(calibration, 50)
+    assert other.episodes.tolist() == [20, 60, 100, 200] and other.nan_runs.tolist() == list(NAN_RUNS)
+    short = types.SimpleNamespace(**{**vars(calibration), "wrong_team_episodes_s": np.array([0.0, 0.01, 0.07])})
+    assert degrade.calibrated_parameters(short, 25).episodes.tolist() == [1, 1, 2]
+    assert degrade.calibrated_parameters(short, 25).mean_episode == 4 / 3, "the mean of the lengths drawn, in frames"
+    assert degrade.WRONG_TEAM_SCALE > 0 and degrade.SMOOTH_WINDOW in (0, 3, 5, 7, 9) and degrade.NEAR_PAIR_M == 2.0
+    # Nothing to draw: no share, no episodes drawn, no runs; and the neutral parameters have none of the new parts.
+    nothing = degrade.calibrated_parameters(without_new_parts(calibration), 25)
+    assert nothing.onset_rate == 0.0 and nothing.speed_nan_share == 0.0
+    bare = degrade.tracking_parameters([30, 50], 0.1)
+    assert (bare.onset_rate, bare.scale, bare.speed_nan_share, bare.smooth) == (0.0, 0.0, 0.0, 0)
+    # Refusals say what to change.
+    expect_error(ValueError, lambda: degrade.tracking_parameters([30], 0.1, wrong_team_share=1.0, scale=1.0,
+                                                                  episodes=[5]), "wrong_team_share", "below 1")
+    expect_error(ValueError, lambda: degrade.tracking_parameters([30], 0.1, scale=-1.0), "scale", "at least 0")
+    expect_error(ValueError, lambda: degrade.tracking_parameters([30], 0.1, wrong_team_share=0.5, scale=1.0),
+                 "episodes", "wrong_team_share")
+    expect_error(ValueError, lambda: degrade.tracking_parameters([30], 0.1, episodes=[5, 0]), "episodes", "at least 1")
+    expect_error(ValueError, lambda: degrade.tracking_parameters([30], 0.1, episodes=[2], wrong_team_share=0.9,
+                                                                  scale=5.0), "onset rate", "below 1")
+    expect_error(ValueError, lambda: degrade.tracking_parameters([30], 0.1, speed_nan_share=0.1), "nan_runs",
+                 "speed_nan_share")
+    expect_error(ValueError, lambda: degrade.tracking_parameters([30], 0.1, nan_runs=[3, 0], speed_nan_share=0.1),
+                 "nan_runs", "at least 1")
+    expect_error(ValueError, lambda: degrade.tracking_parameters([30], 0.1, nan_runs=[3], speed_nan_share=0.6),
+                 "speed_nan_share", "below")
+    expect_error(ValueError, lambda: degrade.tracking_parameters([30], 0.1, smooth=4), "smooth", "odd")
+    expect_error(ValueError, lambda: degrade.tracking_parameters([30], 0.1, smooth=-5), "smooth")
+    expect_error(ValueError, lambda: degrade.tracking_parameters([30], 0.1, scale=True), "scale")
+    expect_error(ValueError, lambda: degrade.calibrated_parameters(types.SimpleNamespace(
+        **{**vars(calibration), "wrong_team_episodes_s": np.zeros(0)}), 25), "wrong_team_episodes_s")
+
+
 def test_dfl_tracking_never_exhausts_a_pool_on_the_real_matches():
     """No pool of slots runs out on any of the 7 downloaded matches, under several seeds and losses: they fit.
 
     The slots are assigned from the players' stretches on the pitch (where DFL gives a position), with parameters that
     make a slot change hands as often as it can (tracked spans of 1 to 250 frames, 30% of the time lost) and with the
-    ones that lose nobody. The most players of one team on the pitch at once on any frame of the graded halves, and the
-    most slots a team uses, are printed per match (aggregates of public data); a pool has 24 and 22."""
+    ones that lose nobody, and with wrong-team episodes at a rate far above ours (a team's pool then carries players of
+    the other team as well as its own). The most players of one team on the pitch at once on any frame of the graded
+    halves, and the most slots a pool uses, are printed per match (aggregates of public data); a pool has 24 and 22."""
     from pipeline.benchmark import sources
     stressing = degrade.tracking_parameters([1, 2, 5, 25, 250], 0.3)
     nobody = degrade.tracking_parameters([10 ** 9], 0.0)
+    carrying = degrade.tracking_parameters([1, 2, 5, 25, 250], 0.3, episodes=[1, 5, 50, 500], wrong_team_share=0.5,
+                                           scale=1.0)
     print("      {:<8} {:>10} {:>16} {:>14}".format("match", "tracklets", "most on, h / a", "slots, h / a"))
     for match_id in sources.MATCH_IDS:
         match = real_match(match_id)
@@ -1002,13 +1542,14 @@ def test_dfl_tracking_never_exhausts_a_pool_on_the_real_matches():
         most = [int(present[:, match.player_team == team].sum(axis=1).max()) for team in (0, 1)]
         assert most[0] <= degrade.HOME_SLOTS and most[1] <= degrade.AWAY_SLOTS, (match_id, most)
         tracklets, slots = 0, [0, 0]
-        for seed, parameters in ((0, stressing), (1, stressing), (2, stressing), (0, nobody)):
+        for seed, parameters in ((0, stressing), (1, stressing), (2, stressing), (0, nobody), (0, carrying),
+                                 (1, carrying)):
             for half, _, _ in view.graded:
                 records = degrade.choose_tracklets(view, half, parameters, seed)     # raises if a pool runs out
                 if parameters is stressing and seed == 0:
                     tracklets += len(records)
                 for team, first in ((0, 0), (1, degrade.HOME_SLOTS)):
-                    used = [t.slot - first + 1 for t in records if view.player_team[t.player] == team]
+                    used = [t.slot - first + 1 for t in records if (t.slot >= degrade.HOME_SLOTS) == (team == 1)]
                     slots[team] = max([slots[team]] + used)
         print("      {:<8} {:>10,} {:>16} {:>14}".format(match_id, tracklets, "{} / {}".format(*most),
                                                          "{} / {}".format(*slots)))
@@ -1016,21 +1557,21 @@ def test_dfl_tracking_never_exhausts_a_pool_on_the_real_matches():
 
 
 def test_data_tracking_profile_on_a_real_match_with_our_real_calibration():
-    """Our own Calibration on a downloaded DFL match: what the tracking profile's first part makes, for information.
+    """Our own Calibration on a downloaded DFL match: what the tracking profile makes, for information.
 
     Needs both our match (the Calibration is measured from it, or read from its cache) and a downloaded DFL match, so
     it runs with --data and says NOT RUN where the DFL files are not there. It prints d, the mean tracked span and the
     mean lost span of ours, and the statistics that calibration.player_stats gives on the degraded match beside the
-    Calibration's: the histogram of slots present, the tracklets' median and the NaN-speed share. Nothing of that
-    table is asserted: this part of the profile has no wrong-team episodes, no NaN speeds and no low-count tail, and
-    the table is there to say by how much; its gates come with the last part. What is asserted is the layout, that the
-    ball is gaps', that the draws are the same twice, that nothing of the truth is reachable and that no pool runs out;
-    and that the lost share, pooled over the 7 matches and 5 seeds, is d to within 0.003 (the observed 2.59% is 0.09
-    points over d = 2.50%: a DFL half is 68,000 to 78,000 frames, where a cut at the end of a run is not negligible).
-    A mu without the (1 - d) would give about 2.53%, which no tolerance here can separate from 2.59%: the synthetic
-    test_lost_share_on_long_synthetic, whose d = 0.3 makes it 23.1% against 30%, is what catches that. It also prints
-    the slot persistence of the degraded match and of ours: the idle gaps of a slot and the returns to the same slot.
-    Aggregates only.
+    Calibration's: the histogram of slots present, the tracklets' median, the wrong-team share and the NaN-speed share.
+    Nothing of that table is asserted: the gates of the profile are fidelity.py's (R004), and the table is there to say
+    by how much one match and one seed are off (the profile has no low-count tail yet). What is asserted is the layout,
+    that the ball is gaps', that the draws are the same twice, that nothing of the truth is reachable and that no pool
+    runs out; and that the lost share, pooled over the 7 matches and 5 seeds, is d to within 0.003 (the observed 2.59%
+    is 0.09 points over d = 2.50%: a DFL half is 68,000 to 78,000 frames, where a cut at the end of a run is not
+    negligible). A mu without the (1 - d) would give about 2.53%, which no tolerance here can separate from 2.59%:
+    the synthetic test_lost_share_on_long_synthetic, whose d = 0.3 makes it 23.1% against 30%, is what catches that. It
+    also prints the slot persistence of the degraded match and of ours: the idle gaps of a slot and the returns to the
+    same slot. Aggregates only.
     """
     from pipeline.benchmark import sources
     match_id = sources.MATCH_IDS[0]
@@ -1101,8 +1642,8 @@ def test_data_tracking_profile_on_a_real_match_with_our_real_calibration():
                                   ("over 60 s", 3, "{:.1%}")):
         print("      {:<26} {:>10} {:>10}".format(name, template.format(gaps_degraded[index]),
                                                   template.format(gaps_ours[index])))
-    print("      returns after a lost span: {:,}, {:,} of them to the same slot ({:.1%}); ours has no identities".format(
-        returns, same, same / returns if returns else math.nan))
+    print("      returns after a lost span: {:,}, {:,} of them to the same slot ({:.1%}); ours has no identities"
+          .format(returns, same, same / returns if returns else math.nan))
     assert gaps_degraded[0] > 0 and gaps_ours[0] > 0 and returns > 0
 
     # The lost share over the 7 matches and 5 seeds: the walk and the slots only, no arrays.
@@ -1122,3 +1663,129 @@ def test_data_tracking_profile_on_a_real_match_with_our_real_calibration():
     print("      lost share, seeds 0-4: {}; pooled {:.2%} against d {:.2%}".format(
         ", ".join(by_match), lost / on_pitch, parameters.d))
     assert abs(lost / on_pitch - parameters.d) < 0.003, (lost / on_pitch, parameters.d)
+
+
+def second_difference_shape(xy_m, present, spans):
+    """(triples, RMS, median, 99th percentile, share of the squares in the largest 0.05% of triples) of the second
+    difference p[t+1] - 2 p[t] + p[t-1] of the slots present at all three frames, inside each span, in metres.
+
+    The RMS is calibration.player_stats' jitter, and the rest says what it is made of: a jitter that is a few rare jumps
+    (a large share of its squares in a tiny share of the triples) is not what a moving average removes."""
+    norms = []
+    for _, start, stop in spans:
+        inside = present[start:stop]
+        triple = inside[2:] & inside[1:-1] & inside[:-2]
+        second = xy_m[start + 2:stop] - 2.0 * xy_m[start + 1:stop - 1] + xy_m[start:stop - 2]
+        norms.append(np.sqrt((second * second).sum(axis=2))[triple])
+    norms = np.concatenate(norms)
+    squares = np.sort(norms * norms)[::-1]
+    top = max(1, int(0.0005 * squares.size))
+    return (int(norms.size), float(np.sqrt(squares.mean())), float(np.median(norms)), float(np.quantile(norms, 0.99)),
+            float(squares[:top].sum() / squares.sum()))
+
+
+def test_second_difference_shape_counts_what_it_says():
+    """One slot on a line at 0, 1, 0, 0, 3, 0, 0: the second differences are 2, 1, 3, 6 and 3 (worked out by hand).
+
+    RMS = sqrt((4 + 1 + 9 + 36 + 9) / 5), the median is 3, the 99th percentile 3 + 0.96 * (6 - 3) by the linear rule,
+    and the largest 0.05% of 5 triples is one triple, whose square is 36 of the 59. A triple with a missing frame is
+    left out, and so is one that crosses the end of a span."""
+    line = np.zeros((7, 1, 2))
+    line[:, 0, 0] = [0, 1, 0, 0, 3, 0, 0]
+    present = np.ones((7, 1), dtype=bool)
+    count, rms, median, p99, share = second_difference_shape(line, present, [(1, 0, 7)])
+    assert count == 5 and abs(rms - math.sqrt(59 / 5)) < 1e-12 and median == 3.0
+    assert abs(p99 - 5.88) < 1e-12 and abs(share - 36 / 59) < 1e-12
+    present[3, 0] = False                       # the triples 2-4, 3-5 and 4-6... all those with row 3 are gone
+    assert second_difference_shape(line, present, [(1, 0, 7)])[0] == 2
+    assert second_difference_shape(line, np.ones((7, 1), dtype=bool), [(1, 0, 4), (2, 4, 7)])[0] == 2 + 1
+
+
+def test_data_tracking_constants_follow_from_the_measurements():
+    """The frozen scale and the smoothing window, re-derived from the 7 DFL matches and our Calibration (aggregates).
+
+    Needs our match (the Calibration) and the seven downloaded matches, so it runs with --data and says NOT RUN where
+    they are not there. Two rules were set before anything was measured, and this applies them to the code as it is:
+    (1) smoothing: the players' second-difference RMS of the 7 clean matches (calibration.player_stats' own statistic,
+    from each kick-off to the end of the graded block, pooled by sums of squares) against
+    Calibration.player_jitter_rms_m:
+    SMOOTH_WINDOW is not 0 if and only if DFL's is more than twice ours; (2) the scale: the observable wrong-team share
+    (player_stats on the degraded match, seed 0, the 7 matches pooled by sums) at s = 1.0 either is within 0.03 of ours,
+    and then WRONG_TEAM_SCALE is 1.0, or it is not, and then WRONG_TEAM_SCALE is s = 1.0 rescaled once by target /
+    observed (to 3 decimals). At the frozen scale the share must be within 0.03 of ours: the gate's own band. It prints
+    both, per match and pooled, the degraded players' jitter after the smoothing beside DFL's and ours, what the
+    jitter is made of (its median, 99th percentile and the share of its squares in rare jumps) and the wrong-team
+    episodes that player_stats sees in the degraded matches beside ours (information).
+    """
+    from pipeline.benchmark import sources
+    for match_id in sources.MATCH_IDS:
+        for kind in dfl.SOURCE_KINDS:
+            if not os.path.isfile(sources.local_path(match_id, kind)):
+                raise NotRun("{} is not downloaded ({}); {} to fetch the DFL matches".format(
+                    match_id, kind, dfl.FETCH_ADVICE))
+    cal = calibration.load()
+    target = cal.wrong_team_share
+    jitter, seen_episodes = {"clean": [0.0, 0], "degraded": [0.0, 0]}, []
+    wrong = {"first": [0, 0], "frozen": [0, 0]}
+    from pipeline.inputs import Inputs
+    ours = Inputs()
+    ours_spans = [(half, ours.kickoffs[half], stop) for half, _, stop in ours.graded]
+    shapes = {"ours": second_difference_shape(ours.metres(ours.atd.players_xy), ours.atd.players_present, ours_spans)}
+    print("      {:<8} {:>14} {:>16} {:>16}".format("match", "clean jitter m", "wrong, s = 1.0", "wrong, frozen s"))
+    for match_id in sources.MATCH_IDS:
+        match = real_match(match_id)
+        view = degrade.tracking_view(match)
+        spans = [(half, view.kickoffs[half], stop) for half, _, stop in view.graded]
+        pitch = np.asarray(view.pitch)
+        clean = match_inputs.clean_atd(match)
+        stats = {"clean": calibration.player_stats(clean.players_present, clean.slot_team, clean.players_xy * pitch,
+                                                   clean.players_speed, spans, view.fps)}
+        base = degrade.calibrated_parameters(cal, view.fps)
+        assert base.scale == degrade.WRONG_TEAM_SCALE and base.smooth == degrade.SMOOTH_WINDOW
+        for name, parameters in (("first", dataclasses.replace(base, scale=1.0, smooth=0)), ("frozen", base)):
+            xy, speed, _, _ = degrade.degraded_players(view, parameters, 0)
+            stats[name] = calibration.player_stats(np.isfinite(xy[:, :, 0]), degrade.slot_team(), xy * pitch, speed,
+                                                   spans, view.fps)
+            wrong[name][0] += stats[name]["wrong_team_frames"]
+            wrong[name][1] += stats[name]["frames"]
+            if name == "frozen":
+                jitter["degraded"][0] += stats[name]["jitter_rms_m"] ** 2 * stats[name]["jitter_triples"]
+                jitter["degraded"][1] += stats[name]["jitter_triples"]
+        jitter["clean"][0] += stats["clean"]["jitter_rms_m"] ** 2 * stats["clean"]["jitter_triples"]
+        jitter["clean"][1] += stats["clean"]["jitter_triples"]
+        print("      {:<8} {:>14.4f} {:>16.4f} {:>16.4f}".format(
+            match_id, stats["clean"]["jitter_rms_m"], stats["first"]["wrong_team_share"],
+            stats["frozen"]["wrong_team_share"]))
+        shapes[match_id] = second_difference_shape(clean.players_xy * pitch, clean.players_present, spans)
+        episodes = stats["frozen"]["wrong_team_episodes_s"]
+        seen_episodes.append((match_id, int(episodes.size), float(np.median(episodes)),
+                              float(np.quantile(episodes, 0.9))))
+        del match, view, clean
+    rms = {name: math.sqrt(squares / triples) for name, (squares, triples) in jitter.items()}
+    first, frozen = (wrong[name][0] / wrong[name][1] for name in ("first", "frozen"))
+    print("      jitter, RMS of the second difference: DFL clean {:.4f} m ({:.1f} x ours), degraded with the {}-frame "
+          "average {:.4f} m, ours {:.4f} m".format(rms["clean"], rms["clean"] / cal.player_jitter_rms_m,
+                                                   degrade.SMOOTH_WINDOW, rms["degraded"], cal.player_jitter_rms_m))
+    print("      wrong-team share, seed 0, pooled by sums: s = 1.0 gives {:.5f} ({:,} of {:,} frames), s = {} gives "
+          "{:.5f} ({:,}); ours {:.5f}, gate +-0.03".format(first, *wrong["first"], degrade.WRONG_TEAM_SCALE, frozen,
+                                                          wrong["frozen"][0], target))
+    print("      what the jitter is made of (second difference of a position, m): RMS, median, 99th percentile, "
+          "share of the squares in the largest 0.05% of triples")
+    for name, (count, rms_m, median, p99, share) in shapes.items():
+        print("      {:<8} {:>9,} triples   {:.4f} {:.4f} {:.4f}   {:.2f}".format(
+            name, count, rms_m, median, p99, share))
+    print("      wrong-team episodes as player_stats sees them at the frozen scale (seed 0, count, median, 90th "
+          "percentile): {}; ours {} of median {:.2f} s and 90th percentile {:.2f} s".format(
+              ", ".join("{} {} ({:.1f} s, {:.1f} s)".format(*row) for row in seen_episodes),
+              cal.wrong_team_episodes_s.size, float(np.median(cal.wrong_team_episodes_s)),
+              float(np.quantile(cal.wrong_team_episodes_s, 0.9))))
+    assert (degrade.SMOOTH_WINDOW > 0) == (rms["clean"] > 2 * cal.player_jitter_rms_m), (degrade.SMOOTH_WINDOW, rms)
+    assert abs(shapes["ours"][1] - cal.player_jitter_rms_m) < 1e-6, "the same statistic, here and in the Calibration"
+    assert rms["degraded"] < rms["clean"], "smoothing lowers the jitter"
+    if abs(first - target) > 0.03:
+        assert abs(degrade.WRONG_TEAM_SCALE - round(target / first, 3)) < 1e-9, (
+            "s is not the one-time rescale of the measurement at 1.0: {} against {:.3f}".format(
+                degrade.WRONG_TEAM_SCALE, target / first))
+    else:
+        assert degrade.WRONG_TEAM_SCALE == 1.0, "the share at s = 1.0 is within the band: s stays 1.0"
+    assert abs(frozen - target) <= 0.03, (frozen, target)

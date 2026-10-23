@@ -20,6 +20,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R001 | 2026-10-22 | `main`: pipeline skeleton, i.e. R000c per half | 0.6207 | 0.3256 | 26 / 10.8 s | — | keep as the base; the floor, not a candidate |
 | R002 | 2026-10-23 | the four yardsticks `nearest_w{0,25,50,125}` on the benchmark's `clean` profile | — | — | — | 0.3073 raw (`w50`), 0.3257 coarse (`w125`); clean, so not our match's | the benchmark's floor, not a candidate; the truth reorders them |
 | R003 | 2026-10-23 | the same four yardsticks on the benchmark's `gaps` profile: our own ball gaps transplanted onto the DFL matches | — | — | — | 0.2102 raw (`w50`), 0.2302 coarse (`w125`); `w0` last under both | `gaps` v1 frozen, the first benchmark that looks like our match; the yardstick check holds (`w0` last), the rest of the order follows the truth |
+| R004 | 2026-10-23 | the same four yardsticks on the benchmark's `tracking` profile: our players' tracklets and slots, wrong-team slots, NaN-speed runs and smoothing on top of `gaps`' ball | — | — | — | 0.2000 raw (`w50`), 0.2195 coarse (`w125`); `w0` last under both | `tracking` v1 frozen (six gates pass, two pending until the low-count tail, no WARN); the yardstick check holds, no order changes from `gaps` |
 
 ## Reference: the organisers' baselines (R000)
 
@@ -710,6 +711,9 @@ a pass; the gates come with the last part, centred on the Calibration's own valu
 NaN-speed runs are what the next two parts bring. Its figures here are a baseline for them: they say what the profile
 looks like before those parts are added, and by how much each is short of ours.
 
+*Later:* the wrong-team episodes, the NaN-speed runs and the smoothing were added in Task 13, which also ran the gates
+and the yardsticks (R004); the tables above are of the profile as it was at this entry, before them.
+
 ## Experiments
 
 Copy this template for each run, and add a scoreboard row for anything worth comparing.
@@ -1010,6 +1014,210 @@ Verdict: keep `gaps` v1 as the benchmark's profile, and the four yardsticks as i
 yardstick check passes in its robust part under both truths, and the profile reproduces what it was calibrated on (both
 gates). It does not make the truth's grain a non-issue: choose between `w125` and the others only where the raw and the
 coarse truth agree.
+
+### R004 — The four yardsticks on the benchmark's `tracking` profile (2026-10-23, Tian)
+Proposal: P01 · Commit: `TBD` (the commit that adds this entry; the reports were first made on the working tree it
+was committed from, and the fidelity report and the run reports re-made on its clean tree, `dirty: false`, are the same
+to the last digit apart from the commit they name) · Commands:
+`python pipeline/benchmark/fidelity.py --profile tracking --seeds 3` first, whose required gates passed, and then
+`python pipeline/benchmark/run.py pipeline/benchmark/configs/nearest_w50.toml pipeline/benchmark/configs/nearest_w0.toml pipeline/benchmark/configs/nearest_w25.toml pipeline/benchmark/configs/nearest_w125.toml --profile tracking --seeds 3`
+(the first config is the reference; run once more with `--truth coarse`, and `w25` first with `w125` second for the
+paired comparison)
+Public: not applicable. The scores read no BAR-ATH data; the profile does: the gaps, the tracklets, the episodes, the
+NaN-speed runs and the jitter are our match's own measurements (the Calibration, A07 to A09, digest `65b0c1915194…`,
+version 2), and the fidelity checks are compared with its public window's figures (77.8%, 66.4%).
+Validation (P01 benchmark): 7 DFL matches x 3 degradation seeds (0, 1, 2), profile `tracking` version 1, 2,005.3 graded
+minutes (668.4 per seed). Raw truth: pooled spellF1 0.2000 (`nearest_w50`), 0.1895 (`w25`), 0.1660 (`w125`), 0.0768
+(`w0`). Coarse truth: 0.2195 (`w125`), 0.1826 (`w50`), 0.1426 (`w25`), 0.0332 (`w0`). Intervals, fidelity and
+sign-flip p below.
+Changed vs the previous best: the third benchmark entry, and the first with **our players**. The ball is R003's, byte
+for byte (`test_profiles_nest`); what changed is the players: broken into tracklets in 46 slots, with a wrong-team slot
+now and then, NaN speeds in runs and smoothed positions. Not yet our frames with few players tracked (the tail, the next
+task), so two of the eight fidelity gates are pending. Reports: `data/runs/benchmark/tracking/<stem>.json` and
+`<stem>.coarse.json`, and `data/runs/benchmark/fidelity_tracking.json` (not committed; each carries the Calibration's
+digest).
+Checks: `pipeline/benchmark/selftest.py --dfl --data` passes all 235 checks (215 synthetic, 20 with `--dfl` and
+`--data`), `pipeline/selftest.py` 35 of 35 and its `--data` run 37 of 37 (the four baselines identical byte for byte).
+The new checks were written first and failed first (16 of 29 checks of the degrader and 6 of 10 of the fidelity report,
+for the missing parts). The new code was run against 18 mutants, each caught by a check: a tie that goes to the highest
+columns, 2.0 m not counted as within, an overlap not skipped, the draws of picks and durations swapped, the pick the
+other way, an episode left in its own pool, a NaN run that goes on past its tracklet, the first rows not counted towards
+the NaN target, a smoothing window that does not shrink, onsets drawn from the walk's stream, an onset rate without the
+scale, lengths rounded down, calibrated parameters with no smoothing, a relative tolerance read as an absolute one, a
+pending gate that is counted, a failed gate that does not fail the run, a median of medians, a NaN share over all
+frames. With the new parts off the players are Task 12's byte for byte, and that was checked against the code of
+`ac940b2` itself, not only by the reference in the check: the same digest of positions, speeds and records on two
+synthetic matches under three seeds and on J03WMX under seeds 0 and 1.
+
+**The two measurements that fixed a constant** (label-free, once, before any yardstick score was looked at; the rules
+were set in the plan):
+
+| | measured | rule | decision |
+|---|---|---|---|
+| wrong-team share seen by `calibration.player_stats`, s = 1.0, seed 0, 7 matches pooled by sums | 0.03965 (39,756 of 1,002,644 frames) | ours 0.10539 +-0.03 | misses: s <- 1.0 * 0.10539 / 0.03965 = **2.658**, frozen (`degrade.WRONG_TEAM_SCALE`) |
+| the same at s = 2.658 | 0.09828 (98,537 frames) | ours 0.10539 +-0.03 | inside (-0.0071); not touched again |
+| DFL's second-difference RMS of the clean players, 7 matches pooled by sums of squares | 8.996 cm (per match 1.44, 1.68, 9.27, 10.36, 11.30, 10.45, 11.31) | smooth if more than 2 x ours = 6.56 mm; ours 3.280 mm | 27.4 x: **smooth**, a centred 5-frame moving average per tracklet piece (`degrade.SMOOTH_WINDOW`) |
+| the degraded players' jitter after smoothing: seed 0 on 7 matches / the fidelity report (3 seeds) | 6.78 cm / 6.47 cm | information | still 20 x ours |
+
+Both rules are applied again by `test_data_tracking_constants_follow_from_the_measurements`, which prints these figures.
+
+The jitter is not noise that an average removes (T35). In the five 2. Bundesliga matches 98% of the squares of DFL's
+second differences are in the largest 0.05% of the triples (rare jumps: 61 of the 1,520,419 steps of J03WOY's first half
+exceed 25 m/s, and the largest second difference is 29.7 m), in the two Bundesliga matches 5% and 29%, against 24% in
+ours. The bulk is a 1 cm grid: the median second difference is 1.00 cm and the 99th percentile 2.83 cm in all seven
+matches (ours 1.4 mm and 9.6 mm). A 5-frame average lowers white noise to 16.3% (checked); here 8.996 cm goes to 6.78
+cm. Nothing was done about the rest: the rule was applied as set, and the benchmark's players keep DFL's jumps and are
+rougher than ours, which matters to a method that reads positions or speeds more than to the nearest-player vote that
+the four yardsticks use.
+
+**Fidelity first** (`fidelity.py --profile tracking`, 7 matches x 3 seeds, 78 s with the caches warm; the centres are
+the Calibration's own values on our kick-off spans, the tolerances the plan's; `tracking` was frozen at version 1 once
+the six required gates passed, and nothing of it was changed after, whatever the checks said):
+
+| gate | benchmark | our match (centre) | tolerance | |
+|---|---|---|---|---|
+| ball missing, share of frames | 0.4189 | 0.4110 | +-0.02 | pass |
+| median gap in the ball | 10.76 s | 10.74 s | +-1.5 s | pass |
+| exactly 22 slots present, share of frames | 0.4598 | 0.5019 | +-0.06 | pass |
+| mean slots present | 21.252 | 20.522 | +-0.5 | **pending** (off by 0.73) |
+| 14 or fewer slots present, share | 0.0000 | 0.0525 | +-0.02 | **pending** (off by 0.0525) |
+| wrong-team share of frames | 0.1005 | 0.1054 | +-0.03 | pass |
+| tracklet median | 29.26 s | 41.28 s | +-50% (+-20.64 s) | pass (-29%) |
+| NaN-speed share of the present slot-frames | 0.0787 | 0.0783 | +-0.01 | pass |
+
+The two pending gates depend on the low-count tail (our frames with 18 or fewer slots present, 10.6%), which the profile
+does not have yet: they are printed and not counted, and `fidelity.PENDING_GATES` is the list that the tail's task
+empties. Both would miss if they were counted, by the amounts in the table, which is what the tail is for. The tracklet
+median is the nearest of the others to its edge: 29.3 s is 29% below ours (the gate allows 50%), because the episodes
+cut tracked spans into more and shorter tracklets (31,398 tracklets over the 21 (match, seed) runs, 1,495 each, against
+1,144 in ours). The 42 half-draws took 21 masks from our first half and 21 from our second, as in R003.
+
+What was drawn, pooled over the 21 runs and both halves: 5,330 onsets made 3,445 episodes (64.6%); 1,759 were skipped
+because no opposing pair of tracked players was within 2 m (33.0%) and 126 because the player was already in an episode
+(2.4%); the episodes carried 498,167 slot-frames; 86,686 NaN-speed runs were placed. The episodes that `player_stats`
+sees in the degraded matches (seed 0) are 105 to 200 a match (mean 163), with medians of 1.4 to 2.2 s and 90th
+percentiles of 6.2 to 9.4 s, against ours 104, 2.7 s and 15.8 s: the share is matched and the episodes are more numerous
+and shorter (an episode that starts while another runs the other way, or while a player is lost, is seen in pieces or
+not at all).
+
+The ten warning checks (WARN is printed and discussed here; none was tuned towards): **none warns**.
+
+| check | benchmark | our match | band | |
+|---|---|---|---|---|
+| nearest player agrees with the truth, alive and ball visible | 0.7611 | 0.7784 (public window) | +-0.05 | ok |
+| ball visible on dead frames | 0.5684 | 0.6637 (public window) | +-0.10 | ok |
+| `w0` possessions per graded minute | 14.11 | 18.40 | +-25% | ok (-23.3%) |
+| `w0` D share | 0.4189 | 0.4069 | +-0.05 | ok |
+| `w25` possessions per graded minute | 5.42 | 7.04 | +-25% | ok (-23.0%) |
+| `w25` D share | 0.3764 | 0.3649 | +-0.05 | ok |
+| `w50` possessions per graded minute | 4.33 | 5.61 | +-25% | ok (-22.7%) |
+| `w50` D share | 0.3341 | 0.3234 | +-0.05 | ok |
+| `w125` possessions per graded minute | 3.07 | 3.76 | +-25% | ok (-18.4%) |
+| `w125` D share | 0.2329 | 0.2233 | +-0.05 | ok |
+
+The WARN on the nearest player's agreement that R003 expected did not come: the wrong-team episodes lowered it from
+0.7741 (`gaps`) to 0.7611, 1.7 points under the public window's 0.7784 and inside the band (0.05). The two
+possessions-per-minute WARNs of R003 (`w25` -26.0%, `w50` -25.8%) are gone as well: three of the four yardsticks now
+output 4% to 5% more possessions per minute than on `gaps` (`w50` 4.16 to 4.33, `w25` 5.21 to 5.42, `w125` 2.97 to 3.07;
+`w0` 14.14 to 14.11), still 18% to 23% fewer than on ours. That the arrangement of the errors and not their amount
+drives the flicker is, as in R003, a reading of these figures and not something measured. The
+ball-visible-on-dead-frames figure is `gaps`' (0.5684), and so are the D shares and the alive/dead F1 of all four
+configs (0.6094, 0.5935, 0.6428, 0.5761): the ball is the same, and these depend on it alone.
+
+**Raw truth** (9,183 true possessions, 4.58 per graded minute; `D` is 44.8% of the graded frames). Δ is the config minus
+`nearest_w50`, the first config; the interval is the 90% t interval of the seven matches' deltas.
+
+| config | pooled spellF1 | macroF1 | alive/dead F1 | mean per-match spellF1 [90% t] | possessions predicted (per min) | Δ spellF1, mean per match [90% t] | sign-flip p | wins / losses |
+|---|---|---|---|---|---|---|---|---|
+| `nearest_w50` (reference) | **0.2000** | 0.4598 | 0.6094 | 0.2004 [0.1931, 0.2076] | 8,692 (4.33) | | | |
+| `nearest_w25` | 0.1895 | 0.4571 | 0.5935 | 0.1898 [0.1834, 0.1962] | 10,872 (5.42) | -0.0106 [-0.0156, -0.0055] | 0.0156 | 0 / 7 |
+| `nearest_w125` | 0.1660 | 0.4414 | 0.6428 | 0.1671 [0.1505, 0.1837] | 6,148 (3.07) | -0.0332 [-0.0441, -0.0224] | 0.0156 | 0 / 7 |
+| `nearest_w0` | 0.0768 | 0.4406 | 0.5761 | 0.0768 [0.0711, 0.0825] | 28,301 (14.11) | -0.1236 [-0.1357, -0.1115] | 0.0156 | 0 / 7 |
+
+**Coarse truth** (`COARSE_MIN_S` = 5 s: 4,977 true possessions, 2.48 per graded minute; the same `D`). Δ is again the
+config minus `nearest_w50`:
+
+| config | pooled spellF1 | macroF1 | alive/dead F1 | mean per-match spellF1 [90% t] | possessions predicted (per min) | Δ spellF1, mean per match [90% t] | sign-flip p | wins / losses |
+|---|---|---|---|---|---|---|---|---|
+| `nearest_w125` | **0.2195** | 0.4516 | 0.6428 | 0.2198 [0.2026, 0.2369] | 6,148 (3.07) | +0.0368 [+0.0253, +0.0483] | 0.0156 | 7 / 0 |
+| `nearest_w50` (reference) | 0.1826 | 0.4606 | 0.6094 | 0.1829 [0.1725, 0.1933] | 8,692 (4.33) | | | |
+| `nearest_w25` | 0.1426 | 0.4556 | 0.5935 | 0.1428 [0.1363, 0.1492] | 10,872 (5.42) | -0.0402 [-0.0472, -0.0331] | 0.0156 | 0 / 7 |
+| `nearest_w0` | 0.0332 | 0.4389 | 0.5761 | 0.0334 [0.0291, 0.0377] | 28,301 (14.11) | -0.1495 [-0.1601, -0.1389] | 0.0156 | 0 / 7 |
+
+What the tables say, and what they do not:
+- **The yardstick check holds in its robust part: `nearest_w0` is last under both truths**, by far more than the noise
+  (7 losses of 7 against `w50` under each, Δ -0.1236 raw and -0.1495 coarse, and the gap from `w0` to the next config is
+  0.0892 raw and 0.1094 coarse), and in each of the three seeds. Nothing had to be fixed or changed to get it; the check
+  is a check, not a goal.
+- **The rest of the order follows the truth, as on `clean` and on `gaps`, and neither truth gives the published
+  order.** Raw: `w50 > w25 > w125 > w0`; coarse: `w125 > w50 > w25 > w0`; published (R000, full match):
+  `w50 > w125 > w25 > w0`. Kendall tau against the published order is **+0.667 under each truth** (5 of the 6 pairs
+  concordant, 1 discordant: `w125` below `w25` under raw, above `w50` under coarse). Each truth keeps the same order in
+  each of the three seeds (pooled spellF1 by seed, 0 / 1 / 2: raw `w50` 0.1984 / 0.1985 / 0.2030, `w25` 0.1819 / 0.1904
+  / 0.1964, `w125` 0.1634 / 0.1672 / 0.1674, `w0` 0.0741 / 0.0759 / 0.0805; coarse `w50` 0.1746 / 0.1876 / 0.1857, `w25`
+  0.1355 / 0.1426 / 0.1497, `w125` 0.2113 / 0.2242 / 0.2231, `w0` 0.0326 / 0.0312 / 0.0357). The seeds move a pooled
+  score by up to about 0.015, and the intervals above are over the matches and say nothing of that spread.
+- **The published gaps are inside the noise (about 0.04), and two of the three lie between the raw and the coarse
+  ones.** Pooled spellF1 gaps, published against raw against coarse: `w50` - `w25` +0.044 / +0.011 / +0.040; `w125` -
+  `w25` +0.025 / -0.024 / +0.077; `w50` - `w125` +0.019 / +0.034 / -0.037. Paired over the matches, `w125` against `w25`
+  is -0.0227 [-0.0357, -0.0097], 0 wins of 7, under the raw truth, and +0.0770 [+0.0607, +0.0934], 7 wins of 7, under
+  the coarse one
+  (`python pipeline/benchmark/run.py pipeline/benchmark/configs/nearest_w25.toml pipeline/benchmark/configs/nearest_w125.toml --profile tracking --seeds 3 --no-write`,
+  with `--truth coarse` for the second). That the published value of each of the two gaps that involve `w125` lies
+  between the raw and the coarse one fits A06's reading (DFL's grain is finer than ours, and the coarse truth stands in
+  for how much); it is two numbers, not a measurement of ours, and it is not used to choose anything (T26). The third
+  gap, `w50` - `w25`, is not between them (published +0.044, coarse +0.040).
+- **The choice of truth decides `w125` against `w50` and `w25`, not the profile.** The sign of every paired delta
+  against `w50` is the same on both competitions: raw `w125` -0.0431 on the two Bundesliga matches and -0.0293 on the
+  five 2. Bundesliga ones, coarse +0.0368 and +0.0369; `w25` -0.0080 and -0.0116 raw, -0.0362 and -0.0418 coarse. Mean
+  spellF1 per competition (BL1, BL2): raw `w50` 0.1951, 0.2025; `w25` 0.1871, 0.1909; `w125` 0.1520, 0.1732; `w0`
+  0.0841, 0.0738; coarse `w50` 0.1832, 0.1828; `w25` 0.1470, 0.1411; `w125` 0.2200, 0.2197; `w0` 0.0317, 0.0341. Five of
+  the seven matches are one club's home games and the Bundesliga mean is of two matches.
+- **`w25` against `w50` is the one raw gap that is not decided.** -0.0106 [-0.0156, -0.0055], p 0.0156, 0 wins in 7
+  (macroF1: -0.0027 with an interval whose upper end is -0.0002, 2 wins in 7, p 0.1094): about a hundredth of a point,
+  which the interval excludes by a little; it is not a result, and the published `w50` - `w25` of 0.044 is not
+  reproduced under the raw truth (+0.011) and nearly is under the coarse (+0.040).
+- **Each yardstick predicts the share of `D` that it did on `gaps`**, because the ball is `gaps`' and `majority_vote`
+  takes `D` only where nobody voted inside its window (`w0` 41.9%, `w25` 37.6%, `w50` 33.4%, `w125` 23.3%, against the
+  truth's 44.8%).
+
+**How R004 differs from R003** (only the players changed: the ball, the seeds, the matches, the configs and the scorer
+are the same, so the two are paired; `tracking` minus `gaps`, from the two sets of reports, over the matches):
+
+| config | raw: pooled spellF1 `gaps` to `tracking` | Δ mean per match [90% t] | wins / losses | coarse: pooled spellF1 | Δ mean per match [90% t] | wins / losses |
+|---|---|---|---|---|---|---|
+| `nearest_w50` | 0.2102 to 0.2000 | -0.0104 [-0.0135, -0.0073] | 0 / 7 | 0.1960 to 0.1826 | -0.0136 [-0.0179, -0.0093] | 0 / 7 |
+| `nearest_w25` | 0.2021 to 0.1895 | -0.0125 [-0.0155, -0.0096] | 0 / 7 | 0.1541 to 0.1426 | -0.0114 [-0.0145, -0.0084] | 0 / 7 |
+| `nearest_w125` | 0.1712 to 0.1660 | -0.0053 [-0.0075, -0.0030] | 0 / 7 | 0.2302 to 0.2195 | -0.0107 [-0.0154, -0.0061] | 0 / 7 |
+| `nearest_w0` | 0.0784 to 0.0768 | -0.0016 [-0.0026, -0.0006] | 1 / 6 | 0.0342 to 0.0332 | -0.0010 [-0.0012, -0.0008] | 0 / 7 |
+
+- **Our players cost the four yardsticks 0.1 to 1.4 points of spellF1 and about half a point of macroF1** (macroF1 by
+  config -0.0047 to -0.0062 under both truths), in every match for three of the four configs (`w0` under the raw truth:
+  6 of 7), and **change no order**: both truths rank the four configs exactly as on `gaps`, with the same Kendall tau,
+  and the paired deltas against `w50` move by at most 0.005 (`w125` raw -0.0384 to -0.0332, coarse +0.0340 to +0.0368;
+  `w25` raw -0.0084 to -0.0106, coarse -0.0423 to -0.0402). The two truths still disagree about `w125`. What `tracking`
+  adds to the benchmark is therefore not a different ranking of these four configs but a harder place to run a method
+  that follows a slot, an identity, a speed or a position; its size here is about one point of spellF1 for a decoder
+  that reads the nearest player's team and nothing else.
+- The nearest player is wrong more often than on `gaps` (agreement 0.7611 against 0.7741, 1.3 points) and the
+  yardsticks flicker a little more (possessions per minute up by 4% to 5% for three of the four), which is the direction
+  R003 expected, and small.
+- The `gaps` figures of R003's reports carry the Calibration digest `2415f32e29ea…` (version 1) and the `tracking` ones
+  the digest `65b0c1915194…` (version 2): the Calibration gained its hazard fit, and the gaps profile reads only the
+  masks, which did not change. Re-running the `gaps` profile on the version-2 Calibration gives R003's pooled spellF1,
+  macroF1, alive/dead F1 and per-match means and intervals to the last digit under both truths (raw 0.2102, 0.2021,
+  0.1712, 0.0784 and coarse 0.2302, 0.1960, 0.1541, 0.0342 for `w50`, `w25`, `w125`, `w0`), so the pairing above is of
+  the same gaps.
+
+Runtime: 78 s for `fidelity.py` on all seven matches and three seeds, and 52 s for a run of the four configs (7 matches
+x 3 seeds x 4 configs, against 31 s on `gaps`), with the DFL caches and the Calibration cached; the same command twice
+writes the same bytes (the figures of the working-tree run and of a second run are identical).
+Verdict: keep `tracking` v1 as the benchmark's profile for what depends on identities, wrong-team slots and speeds, and
+the four yardsticks as its floor, not as candidates; `DEFAULT_PROFILE` stays `gaps` until the tail is built and its two
+gates count. The yardstick check passes in its robust part under both truths, the profile reproduces what it was
+calibrated on (six required gates, no WARN), and it does not make the truth's grain a non-issue: choose between `w125`
+and the others only where the raw and the coarse truth agree. The profile's players are rougher than ours (jumps, T35)
+and have no positional bias (the README's limitations), and it has no tail yet.
 
 ## Submission log
 
