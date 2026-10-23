@@ -387,6 +387,26 @@ def test_hazard_fit_logistic_refuses_what_it_cannot_fit():
                  "hazard.fit_logistic", "singular", "separat", "l2 > 0")
 
 
+def test_hazard_fit_that_does_not_converge_is_its_own_error():
+    """A fit that stops short (the iteration cap, a flat objective, a singular Hessian) raises hazard.NotConverged, a
+    ValueError that a caller can tell from a bad input and answer with a larger l2; a bad input stays a plain one."""
+    X, y = synthetic_rows([15, 14], 60, [1.0, -1.0], 0.0, [0.0, 0.0], [1.0, 1.0])
+    assert issubclass(hazard.NotConverged, ValueError)
+    expect_error(hazard.NotConverged, lambda: hazard.fit_logistic(X, y, iterations=1), "no convergence", "larger l2")
+    twin = np.column_stack([X[:, 0], X[:, 0]])
+    expect_error(hazard.NotConverged, lambda: hazard.fit_logistic(twin, y, l2=0.0), "singular")
+    holed = X.copy()
+    holed[3, 1] = np.nan
+    for bad in (lambda: hazard.fit_logistic(holed, y), lambda: hazard.fit_logistic(X, y[:-1]),
+                lambda: hazard.fit_logistic(X, np.zeros(60)), lambda: hazard.fit_logistic(X, y, l2=-1.0)):
+        try:
+            bad()
+        except ValueError as error:
+            assert not isinstance(error, hazard.NotConverged), "a bad input is no convergence problem: {}".format(error)
+        else:
+            raise AssertionError("expected a ValueError")
+
+
 def test_hazard_predict_applies_the_stored_standardisation():
     model = hazard.LogisticModel(coef=np.array([1.0, -2.0]), intercept=0.5, mean=np.array([10.0, 0.0]),
                                  scale=np.array([2.0, 4.0]))

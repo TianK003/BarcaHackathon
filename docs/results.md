@@ -499,6 +499,96 @@ Two figures of the plan did **not** reproduce, and the check does not assert the
   (`pipeline/inputs/`, `evidence/`, `decode/`, `refine/`, `output/`, `benchmark/run.py`) is not seen by the key and
   needs a bump of `calibration.CALIBRATION_VERSION`.
 
+### A08 — Where our tracker loses the ball: a hazard fitted on BAR-ATH, and the go decision (2026-10-23)
+
+BAR-ATH's ATD (ball and slots), read by `pipeline/benchmark/calibration.py` (`fit_hazard`, on `hazard.py`'s features,
+logistic fit and AUC); no DFL data. `load()` measures it in 2.5 s and reads it back in 0.4 s; the Calibration is version
+2 and sits in a folder of its own per cache key, `data/cache/benchmark/calibration/<digest>/` (0.5 MB). Command:
+`MTAH_DATA_DIR=<data dir> python pipeline/benchmark/selftest.py --data`, check `test_data_hazard_fit` (it prints every
+number below, asserts that they are finite, that a second fit and the cache give the same bytes, and that the counts add
+up; it does not assert how large the AUCs are, because a no-go would have been a result too). The code is checked on
+hand-built objects by `test_calibration_v2_synthetic` and the `test_calibration_hazard_*` checks.
+
+**What was fitted.**
+- **At risk:** every ball-visible frame of the spans from each kick-off to the end of its graded block (the spans of
+  A07, and its clock: the minute counts from the kick-off), as the frame `r` whose features say how likely the *next*
+  frame is to start a gap. **Event:** frame `r + 1` starts an *interior* gap (A07's definition: a visible frame follows
+  it inside the span).
+- **Not at risk, counted:** the frame before a gap that runs to the span's end (an edge gap: neither an onset nor a
+  non-onset), the last frame of a span if the ball is seen on it, and a frame with an undefined feature (the ball's
+  speed before its first step; nobody present).
+- **Features** (`hazard.features`, in metres, from BAR-ATH's own ball and 46 slots): distance to the nearest line
+  (negative beyond it), the beyond-the-line flag, the ball's speed (mean of its last 5 step speeds), the distance to the
+  nearest player, the players within 3 m, and the minute of the half. Standardised by their mean and SD on the rows
+  fitted.
+- **Fit:** L2-penalised logistic regression, `l2 = 1` on the standardised features, the intercept unpenalised; a fit
+  that does not converge would be refitted with `l2` times 10, at most 3 times, and the `l2` used recorded. **None
+  needed it: all five fits (the pooled one and the four cross-half ones) converged at `l2 = 1`.**
+
+| | frames | rows used | onsets | rate per row |
+|---|---|---|---|---|
+| half 1 (from the kick-off) | 79,467 | 47,161 | 67 | 0.00142 |
+| half 2 (from the kick-off) | 76,456 | 44,679 | 76 | 0.00170 |
+| both | 155,923 (91,844 with the ball) | 91,840 | 143 | 0.001557 (1 in 642) |
+
+The 4 visible frames not used: 2 before an edge gap (the ball is missing at the end of both halves' graded blocks), 0
+last frames, and 2 with an undefined feature (the first visible frame of each half has no step yet, so no ball speed;
+neither is an onset). So the 143 onsets are the 143 interior gaps of A07.
+
+**The model** (both halves pooled; coefficients are on the standardised features; intercept -6.894113980):
+
+| feature | coefficient | odds x per SD | per unit | mean | SD (scale) |
+|---|---|---|---|---|---|
+| `line_distance_m` | -0.394332679 | 0.674 | x0.959 per m | 13.81 | 9.51 |
+| `beyond_line` | +0.120581120 | 1.128 | x1.84 if beyond | 0.041 | 0.198 |
+| `ball_speed_mps` | -0.692766907 | 0.500 | x0.883 per m/s | 6.58 | 5.58 |
+| `nearest_player_m` | -0.026116903 | 0.974 | x0.993 per m | 3.04 | 3.74 |
+| `players_within_3m` | +0.220885663 | 1.247 | x1.339 per player | 0.848 | 0.756 |
+| `minute_of_half` | +0.329593166 | 1.390 | x1.022 per minute | 22.76 | 15.18 |
+
+The signs are those of A01: the tracker loses the ball near the lines (and beyond them) and when it is slow, and later
+in a half (A02). A crowd around the ball (more players within 3 m) raises it too; the distance to the nearest player
+adds nothing once the others are in.
+
+**Cross-half AUCs** (fitted on one half, scored on the other; the same procedure for a model of `minute_of_half` alone;
+standard errors by Hanley-McNeil, approximate):
+
+| fitted on, scored on | onsets scored | full model | time only | what the features add |
+|---|---|---|---|---|
+| half 1, half 2 | 76 | **0.7110** (SE 0.034) | 0.5612 (0.034) | +0.150 |
+| half 2, half 1 | 67 | **0.6475** (SE 0.037) | 0.6260 (0.037) | +0.022 |
+
+**c = 1.000000000.** It is the onsets per row (143 / 91,840) over the model's mean probability on the same rows, and
+that is 1 up to the 1e-9 rounding for any penalty, because the intercept is not penalised: the model's mean probability
+is the base rate. The L2 shrinkage changes who gets the probability, not how much there is. So `c` only does something
+on a match whose rows have another rate, which is what the `context` profile's one-time rescale is for.
+
+**Gap durations by onset class and third of the half** (interior gaps, seconds; class 1 = the onset is within 2 m of a
+line, 40 of the 143; thirds are minutes 0-15, 15-30 and 30 on, from the kick-off). The rule that a cell with fewer than
+5 durations uses its class's durations pooled over the thirds was fixed in advance. **No cell fell back: the smallest
+has 11.**
+
+| | third 0 | third 1 | third 2 | class |
+|---|---|---|---|---|
+| class 0 (away from the lines), n / median | 23 / 6.76 | 30 / 8.42 | 50 / 11.16 | 103 |
+| class 1 (near a line), n / median | 13 / 14.64 | 11 / 19.40 | 16 / 12.24 | 40 |
+
+**Decision: go.** The rule, set in the plan before the fit, is both full-model cross-half AUCs at least 0.60: 0.7110 and
+0.6475 are. Nothing was tuned to pass it (one penalty, no feature chosen). So the `context` profile goes ahead.
+
+**So:**
+- The signal is real but modest, and it is not equally clear in both directions. 0.7110 is 3.3 SE above 0.60; 0.6475
+  only 1.3 SE above it, on 67 onsets. On that split the minute alone scores 0.626, so the five other features add 0.02
+  there, inside the noise (and 0.15 on the other split, beyond it). The model is a coarse placement of the gaps (near
+  lines, on slow balls, later in the half), not a predictor of the next one: AUC 0.65 to 0.71.
+- Near-line gaps last longer (median 12 to 19 s against 7 to 11 s), and class 0 gaps lengthen through the half (6.8,
+  8.4, 11.2 s), as A02's coverage worsens; the sampler draws a gap's length from the cell of its onset's class and
+  third.
+- Everything the `context` profile needs is in the Calibration: `hazard_model`, `hazard_l2`, `hazard_c`, `hazard_auc`,
+  `hazard_go`, `hazard_durations_s` (seconds; convert with the DFL fps), `hazard_fallback_cells` (none), and the counts
+  as `hazard_*` scalars. The model is applied to the features of the *degraded* benchmark players and ball, at the
+  at-risk frame, and `sample_mask` takes its probability unshifted.
+
 ## Experiments
 
 Copy this template for each run, and add a scoreboard row for anything worth comparing.

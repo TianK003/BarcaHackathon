@@ -159,6 +159,12 @@ def third_of_minute(minute):
 
 # -- the logistic fit -------------------------------------------------------------------------------------------------
 
+class NotConverged(ValueError):
+    """fit_logistic stopped short: the iteration cap, a flat objective or a singular Hessian. It is a ValueError, so
+    nothing that catches one changes, and a caller that fits for a living (the calibration's) can tell it from a bad
+    input and answer it with a larger l2, which is what holds a rare or strongly predictive feature in check."""
+
+
 @dataclass(frozen=True, eq=False)
 class LogisticModel:
     """P(y = 1 | x) = sigmoid(intercept + sum_j coef[j] * (x[j] - mean[j]) / scale[j]).
@@ -190,7 +196,9 @@ def fit_logistic(X, y, l2=1.0, iterations=50):
     Hessian that is singular to working precision, and above all for a fit that has NOT converged in `iterations`
     steps: a model that stopped half-way is never returned, because it would flow silently into the AUCs of the
     calibration's go/no-go and into where the benchmark's gaps fall. The message gives the size of the last Newton step
-    and suggests a larger l2, which is what holds such a feature in check.
+    and suggests a larger l2, which is what holds such a feature in check. Those three failures to converge (the cap, a
+    flat objective, a singular Hessian) raise NotConverged, a ValueError of its own that a caller can answer with a
+    larger l2; every other error is a plain ValueError.
     """
     X = np.asarray(X, dtype=np.float64)
     y = np.asarray(y, dtype=np.float64)
@@ -246,13 +254,13 @@ def fit_logistic(X, y, l2=1.0, iterations=50):
         except np.linalg.LinAlgError:
             singular = True
         if singular:
-            raise ValueError("hazard.fit_logistic: the penalised Hessian is singular to working precision after {} "
-                             "steps. {}".format(count, "With l2 = 0 that means a column repeats another, is a "
-                                                "combination of the others or is constant, or a feature separates "
-                                                "the outcomes (the probabilities saturate at 0 and 1): use l2 > 0, "
-                                                "or drop the column." if l2 == 0 else
-                                                "With l2 > 0 it means the probabilities saturated at 0 or 1: check "
-                                                "for a feature that separates the outcomes, or use a larger l2."))
+            raise NotConverged("hazard.fit_logistic: the penalised Hessian is singular to working precision after {} "
+                               "steps. {}".format(count, "With l2 = 0 that means a column repeats another, is a "
+                                                  "combination of the others or is constant, or a feature separates "
+                                                  "the outcomes (the probabilities saturate at 0 and 1): use l2 > 0, "
+                                                  "or drop the column." if l2 == 0 else
+                                                  "With l2 > 0 it means the probabilities saturated at 0 or 1: check "
+                                                  "for a feature that separates the outcomes, or use a larger l2."))
         step = np.linalg.solve(curvature, score)
         last_step = float(np.abs(step).max())
         if last_step < NEWTON_TOLERANCE:
@@ -267,15 +275,15 @@ def fit_logistic(X, y, l2=1.0, iterations=50):
                 break
             damping /= 2.0
         else:
-            raise ValueError("hazard.fit_logistic: after {} steps no step down to 2^-{} of a Newton step lowers the "
-                             "penalised objective (the last full step was {:.3g}); the fit is numerically flat or "
-                             "the features are extreme: use a larger l2".format(count, MAX_HALVINGS, last_step))
+            raise NotConverged("hazard.fit_logistic: after {} steps no step down to 2^-{} of a Newton step lowers the "
+                               "penalised objective (the last full step was {:.3g}); the fit is numerically flat or "
+                               "the features are extreme: use a larger l2".format(count, MAX_HALVINGS, last_step))
         beta, current = candidate, value
     if not converged:
-        raise ValueError("hazard.fit_logistic: no convergence in {} Newton steps (the last Newton step would move a "
-                         "parameter by {:.3g}, against a tolerance of {:g}); use a larger l2, which is what holds a "
-                         "rare or strongly predictive feature in check, or allow more iterations"
-                         .format(iterations, last_step, NEWTON_TOLERANCE))
+        raise NotConverged("hazard.fit_logistic: no convergence in {} Newton steps (the last Newton step would move a "
+                           "parameter by {:.3g}, against a tolerance of {:g}); use a larger l2, which is what holds a "
+                           "rare or strongly predictive feature in check, or allow more iterations"
+                           .format(iterations, last_step, NEWTON_TOLERANCE))
 
     return LogisticModel(coef=_stored(beta[1:]), intercept=float(_stored(beta[:1])[0]), mean=mean, scale=scale)
 

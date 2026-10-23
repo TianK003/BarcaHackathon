@@ -12,8 +12,10 @@
                                                     #   221 s, 111 s with the last two included: the machine's load
                                                     #   decides)
     python pipeline/benchmark/selftest.py --data    # + checks that read the real match's data (aggregates only): the
-                                                    #   calibration reproduces A01's, A02's and R001's figures (measured:
-                                                    #   12 s with the ATD cache and the calibration cache present)
+                                                    #   calibration reproduces A01's, A02's and R001's figures, and the
+                                                    #   hazard of our ball gaps is fitted again and printed (A08)
+                                                    #   (measured: about 19 s with the ATD cache and the calibration
+                                                    #   cache present, 22 s while the calibration is built)
 
 This file is the harness and the one command: it collects the checks, filters them by flag, runs them and reports.
 The checks themselves live in pipeline/benchmark/checks/, one module per topic (sources.py, dfl.py, ...), listed in

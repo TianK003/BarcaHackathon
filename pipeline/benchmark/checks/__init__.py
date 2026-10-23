@@ -8,7 +8,8 @@ module of its topic:
     hazard.py    the gap-onset hazard: features, logistic fit, AUC and the mask sampler (synthetic arrays only)
     calibration.py
                  the calibration, our own tracking measured for the benchmark: every statistic exact on hand-built
-                 objects, a synthetic bundle, the cache, and with --data the figures of A01, A02 and R001
+                 objects, a synthetic bundle, the cache, the hazard fit of our ball gaps (rows, AUCs, the go rule, the
+                 duration cells), and with --data the figures of A01, A02 and R001 and A08's fit
     truth.py     the benchmark's truth from the DFL flags: codes, summary, line timing, nearest team, the coarse
                  truth and the cost of a lag (synthetic, and the downloaded matches with --dfl)
     inputs.py    a DFL match served to the pipeline as MatchInputs and clean_atd: contract, no truth (synthetic, and
