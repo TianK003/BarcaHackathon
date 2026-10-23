@@ -638,6 +638,7 @@ def test_dfl_match_inputs_serve_the_real_matches():
     so and requires that every row where the two differ is such a tie, and that there are no others. The comparison
     is not loosened for any other frame. It also requires that nearest_player names a team on every graded row of
     every match (the rows it cannot answer are the ungraded gap between the halves), and prints the share of all rows.
+    A hand-built match under each real id must not be reported as made from that match's files.
     """
     from pipeline.benchmark import sources
     from pipeline.contracts import RunContext
@@ -655,6 +656,12 @@ def test_dfl_match_inputs_serve_the_real_matches():
             ("players_xy", "players_xy"), ("ball_xy", "ball_xy"), ("slot_team", "player_team"))), "copied, not served"
         assert leaks(inputs, match) == [], leaks(inputs, match)
         assert all(len(source["sha256"]) == 64 for source in inputs.atd_manifest["sources"].values())
+        assert inputs.atd_manifest["sources_reason"] is None
+        # A hand-built match under this real id is not made from this match's files: its halves are other, and the
+        # manifest names no sources and says which of the cache's fields it differs in.
+        built = random_match(match_id=match_id)
+        manifest = match_inputs.MatchInputs(built, match_inputs.clean_atd(built)).atd_manifest
+        assert manifest["sources"] is None and "graded" in manifest["sources_reason"], manifest
 
         evidence = REGISTRY["nearest_player"](RunContext(inputs=inputs, seed=0))
         nearest = truth.nearest_team(match)
