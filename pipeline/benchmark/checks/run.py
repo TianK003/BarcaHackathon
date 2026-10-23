@@ -855,7 +855,8 @@ def test_runner_gaps_json_identical_across_processes():
 def identical_across_processes(profile, suffix):
     """Run cross_process_run on `profile` in two processes with another PYTHONHASHSEED each and here: the one report.
 
-    Asserts that every file is the same bytes in the three places, and returns the parsed report of the last config.
+    Asserts that every file is the same bytes in the three places, and returns the parsed report of the last file by
+    name.
     """
     with tempfile.TemporaryDirectory() as root:
         os.makedirs(os.path.join(root, "source"))

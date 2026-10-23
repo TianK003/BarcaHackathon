@@ -45,11 +45,12 @@ each half (A02), a benchmark half starts at its kick-off, and the Calibration me
 What the transplant keeps of ours, by construction: the gaps' durations and the share missing, per half and through
 the half. What it does not: where the gaps are in the play. They are drawn without looking at the DFL play, so
 nothing that ties ours to it is in them: a dead ball is no likelier to be missing than any other frame (in the public
-window ours is about three times as likely, A01), and where on the pitch a gap starts is the DFL ball's own place at a
-random frame, not ours (the share of onsets within 2 m of a line differs from ours, 36.0% against 28.0% in R003; the
-direction is not the one the plan guessed, and there is no base rate of ours to say what ours is relative to). That is
-the difference between this profile and the `context` one that comes later, and it is why fidelity.py checks the
-share of dead frames with the ball visible and the nearest player's agreement as warnings, and prints the statistic.
+window ours is about three times as likely as a frame of the window in general, 33.6% of the dead frames against 11.8%
+of all of them, A01), and where on the pitch a gap starts is the DFL ball's own place at a random frame, not ours (the
+share of onsets within 2 m of a line differs from ours, 36.0% against 28.0% in R003; the direction is not the one the
+plan guessed, and there is no base rate of ours to say what ours is relative to). That is the difference between this
+profile and the `context` one, if it is built, and it is why fidelity.py checks the share of dead frames with the ball
+visible and the nearest player's agreement as warnings, and prints the statistic.
 
 The ball is missing where the mask says so, and where DFL has no ball itself (a row with none stays NaN). Position x
 and y are removed together, as an Atd requires (atd_cache._check_presence). Every array of a degraded Atd is read-only.

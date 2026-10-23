@@ -20,11 +20,13 @@ import os
 import shutil
 import sys
 import tempfile
+import threading
 
 import numpy as np
 
 import possession_metrics as pm
 from pipeline.benchmark import calibration, hazard
+from pipeline.benchmark.checks.common import NotRun
 from pipeline.selftest import expect_error, make_synthetic_bundle, quiet, synthetic_inputs
 
 # Params
@@ -1286,14 +1288,16 @@ def test_calibration_each_key_has_its_own_folder():
             root, key)
 
 
-def test_calibration_manifest_is_written_whole_and_a_manifest_held_open_does_not_stop_a_build():
+def test_calibration_manifest_is_written_whole_and_a_manifest_held_briefly_does_not_stop_a_build():
     """The manifest is moved into place complete, last, and an old one that cannot be removed is no reason to fail.
 
     On Windows a file that another process has open cannot be removed. Two checkouts with the same code share a key and
     so a folder; while one still had the manifest open to write it, the other's os.remove raised PermissionError out of
     load(). Now the manifest is written to a temp file of its own in the folder and moved over the old one (os.replace),
     after the arrays, and an old manifest that cannot be removed counts as absent. The refusal is simulated by an
-    os.remove that refuses the manifest, which is the same on every platform."""
+    os.remove that refuses the manifest, which is the same on every platform. The move itself is retried while the OS
+    refuses it, which the next two checks look at; a hold that lasts past the retries fails the build, and a rerun
+    recovers."""
     with tempfile.TemporaryDirectory() as root:
         inputs, gt = synthetic_calibration_inputs(root)
         cal = calibration.measure(inputs, gt)
@@ -1374,6 +1378,156 @@ def test_calibration_manifest_is_written_whole_and_a_manifest_held_open_does_not
         again = calibration.load(data_dir=root, inputs=inputs, public_gt_codes=gt)
         assert calibration.digest(again) == calibration.digest(cal)
         assert tidy() == sorted(names + ["manifest.json"]) and read(manifest_path) == first
+
+
+def test_calibration_manifest_move_is_retried_briefly_and_then_fails():
+    """A move that the OS refuses is tried again REPLACE_RETRIES times, REPLACE_WAIT_S apart, and then it is an error.
+
+    On Windows os.replace raises PermissionError while another process has the target open, and a reader of the other
+    checkout that shares this folder (same code, same key) has it open for milliseconds: waiting a little is enough.
+    A hold that outlasts the retries fails the build, with no temp file left, and a rerun recovers. Simulated by an
+    os.replace that refuses its first calls, which is the same on every platform; the next check holds a real handle.
+    Only PermissionError is waited for: any other OSError is the caller's at once."""
+    assert (calibration.REPLACE_RETRIES, calibration.REPLACE_WAIT_S) == (5, 0.05)
+    retries = calibration.REPLACE_RETRIES
+    with tempfile.TemporaryDirectory() as root:
+        inputs, gt = synthetic_calibration_inputs(root)
+        cal = calibration.measure(inputs, gt)
+        key = calibration._key(inputs, gt)
+        folder = calibration.cache_folder(root, key)
+        manifest_path = os.path.join(folder, "manifest.json")
+        real_replace, real_sleep = os.replace, calibration.time.sleep
+
+        def written(refusals, refusal=lambda: PermissionError(13, "the manifest is in use")):
+            """_write with os.replace refusing its first `refusals` calls: (the calls made, the waits made, the error)."""
+            calls, waits = [], []
+
+            def refusing(source, target, *args, **kwargs):
+                calls.append(os.path.basename(target))
+                if len(calls) <= refusals:
+                    raise refusal()
+                return real_replace(source, target, *args, **kwargs)
+
+            os.replace, calibration.time.sleep = refusing, waits.append
+            try:
+                calibration._write(cal, folder, key)
+                failure = None
+            except OSError as caught:
+                failure = caught
+            finally:
+                os.replace, calibration.time.sleep = real_replace, real_sleep
+            return calls, waits, failure
+
+        def tidy():
+            names = sorted(os.listdir(folder))
+            assert not [name for name in names if name.endswith(".tmp")], names
+            return names
+
+        for refusals in (0, 1, 3, retries):    # the last one succeeds on the last retry
+            calls, waits, failure = written(refusals)
+            assert failure is None and len(calls) == refusals + 1 and waits == [calibration.REPLACE_WAIT_S] * refusals, (
+                refusals, len(calls), waits, failure)
+            assert "manifest.json" in tidy() and calibration._read_manifest(folder) is not None
+        reference = calibration.digest(calibration.load(data_dir=root, inputs=inputs, public_gt_codes=gt))
+        assert reference == calibration.digest(cal)
+
+        # A hold that outlasts the retries: the error is the OS's own, after exactly retries + 1 tries and retries waits.
+        calls, waits, failure = written(retries + 1)
+        assert isinstance(failure, PermissionError) and "in use" in str(failure), failure
+        assert len(calls) == retries + 1 and waits == [calibration.REPLACE_WAIT_S] * retries, (len(calls), waits)
+        names = tidy()
+        assert "manifest.json" not in names, "the old manifest was removed up front, and the new one never arrived"
+        assert calibration._read_manifest(folder) is None, "the folder reads as absent"
+        # The rerun recovers: it measures again and the cache is whole.
+        again = calibration.load(data_dir=root, inputs=inputs, public_gt_codes=gt)
+        assert calibration.digest(again) == reference and "manifest.json" in tidy()
+        assert os.path.isfile(manifest_path)
+
+        # Another kind of OSError is not a hold: one try, no waiting (errno 5 is EIO; OSError(13, ...) would be a
+        # PermissionError, which Python picks by the errno).
+        calls, waits, failure = written(1, refusal=lambda: OSError(5, "the disk failed"))
+        assert type(failure) is OSError and len(calls) == 1 and waits == [], (calls, waits, failure)
+        tidy()
+
+
+def test_calibration_manifest_move_waits_for_a_real_handle_on_windows():
+    """A real handle on the old manifest, released while the move is being retried: the build goes through (Windows).
+
+    Windows refuses os.replace over a file that another handle has open (Python's open() does not share delete
+    access), which is what a reader of a manifest does for a moment. Here the handle is real and the refusal is the
+    OS's own: the first os.replace raises PermissionError, the handle is released on the second try (that is, during
+    the retries), and the move completes. A handle held through every retry fails the build with the OS's error, no temp
+    file is left, and once it is released a rerun recovers. Not run on other systems, which let a file be replaced
+    whoever has it open: the retry is then checked by test_calibration_manifest_move_is_retried_briefly_and_then_fails
+    alone."""
+    if sys.platform != "win32":
+        raise NotRun("only Windows refuses os.replace over a file that another handle has open ({}); the retries are "
+                     "checked with a simulated refusal by "
+                     "test_calibration_manifest_move_is_retried_briefly_and_then_fails".format(sys.platform))
+    with tempfile.TemporaryDirectory() as root:
+        inputs, gt = synthetic_calibration_inputs(root)
+        cal = calibration.measure(inputs, gt)
+        key = calibration._key(inputs, gt)
+        folder = calibration.cache_folder(root, key)
+        manifest_path = os.path.join(folder, "manifest.json")
+        calibration._write(cal, folder, key)
+        with open(manifest_path, "rb") as handle:
+            first = handle.read()
+        real_replace = os.replace
+
+        def written(release_on):
+            """_write while a reader holds the manifest; it lets go at the call of os.replace numbered `release_on`."""
+            reader = open(manifest_path, "rb")
+            outcomes = []
+
+            def watching(source, target, *args, **kwargs):
+                if len(outcomes) + 1 == release_on:
+                    reader.close()
+                try:
+                    result = real_replace(source, target, *args, **kwargs)
+                except PermissionError as refused:
+                    outcomes.append(refused)
+                    raise
+                outcomes.append(None)
+                return result
+
+            os.replace = watching
+            try:
+                calibration._write(cal, folder, key)
+                failure = None
+            except PermissionError as caught:
+                failure = caught
+            finally:
+                os.replace = real_replace
+                reader.close()
+            return outcomes, failure
+
+        outcomes, failure = written(release_on=2)
+        assert failure is None and len(outcomes) == 2, (len(outcomes), failure)
+        assert isinstance(outcomes[0], PermissionError) and outcomes[1] is None, "the OS refused once, then let it in"
+        with open(manifest_path, "rb") as handle:
+            assert handle.read() == first, "the same key, the same bytes"
+        assert not [name for name in os.listdir(folder) if name.endswith(".tmp")]
+
+        # Released by another thread while the retries wait: the build goes through whenever it lets go in time.
+        reader = open(manifest_path, "rb")
+        timer = threading.Timer(calibration.REPLACE_WAIT_S * 2, reader.close)
+        timer.start()
+        try:
+            calibration._write(cal, folder, key)
+        finally:
+            timer.join()
+            reader.close()
+
+        # Held through every retry: an error, no temp file, and a rerun recovers once the handle is released.
+        outcomes, failure = written(release_on=calibration.REPLACE_RETRIES + 2)
+        assert isinstance(failure, PermissionError), failure
+        assert len(outcomes) == calibration.REPLACE_RETRIES + 1 and all(isinstance(o, PermissionError) for o in outcomes)
+        assert not [name for name in os.listdir(folder) if name.endswith(".tmp")]
+        again = calibration.load(data_dir=root, inputs=inputs, public_gt_codes=gt)
+        assert calibration.digest(again) == calibration.digest(cal)
+        with open(manifest_path, "rb") as handle:
+            assert handle.read() == first
 
 
 def import_copy(path, name):

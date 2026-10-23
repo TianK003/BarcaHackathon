@@ -677,13 +677,14 @@ def test_clean_atd_has_the_layout_of_the_bar_ath_cache():
 
 
 def test_atd_repr_shows_no_array():
-    """repr(atd) holds no value of the tracking: the BAR-ATH Atd's, a clean one's, and a degraded one's.
+    """repr(atd) holds no value of the tracking: a clean one's, a degraded one's and one of the BAR-ATH layout's.
 
     A dataclass shows its fields, and numpy shows the head and tail of an array: an Atd printed by a log line, an
     assertion message or a debugger would put our match's tracking (and, once degraded, where the ball was removed) in
-    a log. Every array field has repr=False, and a distinctive value planted in each does not appear.
+    a log. Every array field has repr=False, and the first value of each array does not appear. The BAR-ATH layout is
+    a synthetic bundle's Atd here, as the check reads nothing of the real match; pipeline/selftest.py checks the Atd
+    and the Homography of pipeline/inputs/ the same way, for whoever changes that package.
     """
-    import dataclasses
     from pipeline.benchmark import degrade
     from pipeline.benchmark.checks.degrade import made_up_calibration, tracked_match
     assert all(field.repr is False for field in dataclasses.fields(atd_cache.Atd)), [

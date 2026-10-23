@@ -90,7 +90,10 @@ old manifest removed up front, as pipeline/inputs/atd_cache.py and dfl.load_matc
 manifest. The manifest is written to a temp file of its own in the folder and moved into place (os.replace), so that no
 reader sees half of it, and an old manifest that cannot be removed (Windows refuses to remove a file that another
 process has open) counts as absent: two checkouts with the same code share a key and so a folder, and one must not
-fail because the other is reading or writing it.
+fail because the other is reading or writing it. Windows refuses the move over a manifest that is open as well, so the
+move is tried again, REPLACE_RETRIES times and REPLACE_WAIT_S apart, which outlasts a reader that holds the file for a
+moment. A hold that lasts past the retries fails the build with the OS's own error (PermissionError), and a rerun
+recovers: nothing is left half-written, and the next load() reads or measures the cache again.
 """
 
 import dataclasses
@@ -99,6 +102,7 @@ import json
 import math
 import operator
 import os
+import time
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -117,6 +121,8 @@ from pipeline.contracts import D
 CALIBRATION_VERSION = 2
 CACHE_FOLDER = ("cache", "benchmark", "calibration")   # <data dir>/cache/benchmark/calibration/<digest of the key>/
 KEY_DIGITS = 16                                        # hex digits of the key's sha256 that name its folder
+REPLACE_RETRIES = 5     # a manifest move that the OS refuses (PermissionError: a reader has the target open, on Windows)
+REPLACE_WAIT_S = 0.05   # is tried again this many times, this long apart: 250 ms in all, a reader holds a file for less
 MANIFEST = "manifest.json"
 CONFIG_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "configs")
 YARDSTICK_WIDTHS = (0, 25, 50, 125)     # half-widths of nearest_w{width}.toml: the organisers' four baselines, per half
@@ -949,7 +955,9 @@ def _write(cal, folder, key):
     The manifest is written whole to a temp file of this process in the folder and moved over the old one (os.replace),
     so that no reader sees half of it. An old manifest that cannot be removed counts as absent: Windows refuses to
     remove a file that another process has open, and a checkout with the same code (the same key, so this folder) may
-    be reading it or building it as well. Whatever it holds is the same measurement, and it is replaced below."""
+    be reading it or building it as well. Whatever it holds is the same measurement, and it is replaced below. Windows
+    refuses the move over an open manifest too, so the move is retried (_move_into_place): a hold that lasts past the
+    retries raises PermissionError out of here, with no temp file left, and a rerun recovers."""
     os.makedirs(folder, exist_ok=True)
     manifest_path = os.path.join(folder, MANIFEST)
     try:
@@ -975,13 +983,29 @@ def _write(cal, folder, key):
         with open(temp_path, "w", encoding="utf-8", newline="\n") as handle:
             json.dump(manifest, handle, indent=2, sort_keys=True)
             handle.write("\n")
-        os.replace(temp_path, manifest_path)
+        _move_into_place(temp_path, manifest_path)
     except BaseException:   # no temp file is left behind, and the error is the caller's
         try:
             os.remove(temp_path)
         except OSError:
             pass
         raise
+
+
+def _move_into_place(temp_path, manifest_path):
+    """os.replace, tried again while the OS refuses it with PermissionError: REPLACE_RETRIES times, REPLACE_WAIT_S apart.
+
+    On Windows the move fails while another process has the target open, and a reader of the other checkout that
+    shares this folder has it open for milliseconds. After the last retry the PermissionError is the caller's; any other
+    error is raised at once, as there is nothing to wait for."""
+    for attempt in range(REPLACE_RETRIES + 1):
+        try:
+            os.replace(temp_path, manifest_path)
+            return
+        except PermissionError:
+            if attempt == REPLACE_RETRIES:
+                raise
+            time.sleep(REPLACE_WAIT_S)
 
 
 def _arrays(cal):

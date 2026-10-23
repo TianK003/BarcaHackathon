@@ -9,11 +9,11 @@ Why this exists
 ---------------
 P01 degrades the DFL matches until their tracking looks like ours (docs/proposals.md), and the ball is the part that
 matters most: ours is missing on 40.7% of graded frames, in long gaps. Those gaps do not start at random. They cluster
-at the lines and on slow balls (A01; the calibration measures them as A07). So the benchmark places its ball gaps where
-our tracker loses the ball: a hazard fitted on our own match (A08) is carried to the benchmark matches, where it
-gives each frame the probability that the next frame starts a gap, and sample_mask draws the gaps from it. This module
-is the maths of that and nothing else -- it reads no data and knows no match; the calibration fits it and the degrader
-uses it.
+at the lines and on slow balls (the plan's measurement of the onsets, which A01 does not report; A07 measures them
+again). So the benchmark places its ball gaps where our tracker loses the ball: a hazard fitted on our own match (A08)
+is carried to the benchmark matches, where it gives each frame the probability that the next frame starts a gap, and
+sample_mask draws the gaps from it. This module is the maths of that and nothing else -- it reads no data and knows no
+match; the calibration fits it and the degrader uses it.
 
 A model small enough for 147 onsets: about six features and a logistic link, the standard discrete-time event-history
 model. numpy and nothing else (no scikit-learn, no scipy), so the pins stay as they are.

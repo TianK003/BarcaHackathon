@@ -109,9 +109,10 @@ frames that leave room for it, so frame j of the benchmark half is missing where
 mask runs out, it goes on round the last 7,500 frames of ours. What it keeps of ours: the gaps' lengths, how much of the
 half is missing and how that grows through the half (coverage worsens, A02). What it does not: **where** the gaps are.
 They are drawn without looking at the play, so nothing that ties ours to it is in them: a dead ball is no likelier to be
-missing than any other frame (in the public window ours is about three times as likely), and where on the pitch a gap
-starts is the DFL ball's own place at a random frame (36.0% of the onsets within 2 m of a line, against 28.0% of ours,
-R003). The warnings and statistics of the fidelity report show how much that matters.
+missing than any other frame (in the public window ours is about three times as likely as a frame of the window in
+general: 33.6% of the dead frames against 11.8% of all of them, A01), and where on the pitch a gap starts is the DFL
+ball's own place at a random frame (36.0% of the onsets within 2 m of a line, against 28.0% of ours, R003). The
+warnings and statistics of the fidelity report show how much that matters.
 
 **No truth reaches the degrader.** It is handed a `TrackingView`, which has the tracking and the match's scalars and no
 `ball_status` or `ball_possession` (`test_degrade_never_sees_truth`, which also reads the degrader's source, and the deep
@@ -276,7 +277,7 @@ that this README names only checks that exist.
   has our gaps and nothing else of our tracking: its players are DFL's (one slot per player, no wrong-team slot, no
   NaN speeds), and its gaps are not placed by the play. The warnings and statistics of the fidelity report say by how
   much.
-- A transplanted mask is cut at the edge of the window it is read from, so the gaps at the two ends of a benchmark half
-  are fragments of ours, and where the mask runs out and goes round there is one more at the seam (3 of the 42 halves
-  of R003: a DFL second half of 77,080 or 78,456 frames, against the 76,456 of ours); the gates are on the share and the
-  median, which this barely moves.
+- A transplanted mask is cut at the edge of the window it is read from, so up to two gaps of a benchmark half (the ones
+  at its ends) are fragments of ours, and where the mask runs out and goes round there is one more at the seam (3 of the
+  42 halves of R003: a DFL second half of 77,080 or 78,456 frames, against the 76,456 of ours); the gates are on the
+  share and the median, which this barely moves.

@@ -17,7 +17,7 @@ pipeline/inputs/README.md explains the stage; docs/traps.md T08-T11 and T15-T19 
 
 import functools
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -37,10 +37,14 @@ KICKOFFS = {1: load_smart_tagging.KICKOFF_VIDEO_FRAMES["1st Half"],
 
 @dataclass(frozen=True, eq=False)
 class Homography:
-    """The tactical homography, one row per frame. Maps NORMALISED pitch coordinates (0-1) to pixels."""
-    matrices: np.ndarray  # (n, 3, 3) float64, NaN where valid is False (never, on the tactical file)
-    error: np.ndarray     # (n,) reprojection error -- lower is better, no upper bound
-    valid: np.ndarray     # (n,) bool
+    """The tactical homography, one row per frame. Maps NORMALISED pitch coordinates (0-1) to pixels.
+
+    No array is in its repr (repr=False): numpy prints the head and tail of an array, and a Homography printed by a log
+    line or a debugger would put frames of the match's homography in a log (the same as atd_cache.Atd).
+    """
+    matrices: np.ndarray = field(repr=False)  # (n, 3, 3) float64, NaN where valid is False (never, tactical)
+    error: np.ndarray = field(repr=False)     # (n,) reprojection error -- lower is better, no upper bound
+    valid: np.ndarray = field(repr=False)     # (n,) bool
 
 
 class Inputs:
