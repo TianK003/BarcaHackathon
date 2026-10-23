@@ -185,6 +185,19 @@ players (`fidelity.COUNT_GATES`, `fidelity.full_strength_blocks`), and look at t
 its value before trusting it. The wrong-team episodes are about half unobservable on 10 against 11, which lowers that
 share in those two matches (R004).
 
+**T37 — The walk's tracked spans are ours *after* the cuts, so every part of the profile that cuts counts them twice.**
+The `tracking` profile draws a tracked span from our tracklet lengths, which are our FINAL tracklets: they already end
+where our tracker loses a player, where an identity swaps and where the camera leaves players out. It then cuts the
+spans again, with the wrong-team episodes and with the cap of our low-count frames, and the benchmark's tracklets come
+out too short: pooled over the seven matches and three seeds the walk alone gives a median of 40.88 s against ours 41.28
+s, the episodes alone 29.26 s, the cap alone 24.44 s, both 19.68 s (R004b), and the first version of the cap failed the
+tracklet-median gate for it. A piece that a cut leaves under 8 frames is also no tracklet of ours (A09: the shortest is
+8 frames), and 2.2% of the cap's were, because our count crosses the threshold 18 on 155 frames, 147 of them by one slot
+(18 and 19), and the dropped players come back for a few frames and go again. `degrade.TRACKED_SCALE` (2.042, the walk's
+drawn lengths multiplied once, from one label-free measurement, frozen) and `degrade.MIN_PIECE_FRAMES` (8) are the
+corrections. Any later part that cuts tracklets in the benchmark must be set against the tracklet median first, and a
+rescale of this kind is made once, logged with its measurement and never tuned.
+
 ## Reproducibility and environment
 
 **T20 — Use the team venv.** It runs Python 3.11.9 in `.venv`, with numpy 2.4.6, pandas 3.0.6 and kloppy 3.18.0.

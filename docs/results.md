@@ -21,6 +21,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R002 | 2026-10-23 | the four yardsticks `nearest_w{0,25,50,125}` on the benchmark's `clean` profile | — | — | — | 0.3073 raw (`w50`), 0.3257 coarse (`w125`); clean, so not our match's | the benchmark's floor, not a candidate; the truth reorders them |
 | R003 | 2026-10-23 | the same four yardsticks on the benchmark's `gaps` profile: our own ball gaps transplanted onto the DFL matches | — | — | — | 0.2102 raw (`w50`), 0.2302 coarse (`w125`); `w0` last under both | `gaps` v1 frozen, the first benchmark that looks like our match; the yardstick check holds (`w0` last), the rest of the order follows the truth |
 | R004 | 2026-10-23 | the same four yardsticks on the benchmark's `tracking` profile: our players' tracklets and slots, wrong-team slots, NaN-speed runs and smoothing on top of `gaps`' ball | — | — | — | 0.2000 raw (`w50`), 0.2195 coarse (`w125`); `w0` last under both | `tracking` v1 frozen as it is: the five counted gates pass and `fidelity.py` exits 0; its three count gates stay pending because they depend on the low-count tail, which v2 adds (exactly 22 present: 0.5631 of the full-strength frames against 0.5019 +-0.06; about 0.503 after the tail, an estimate that assumes its cap is placed by our counts), no WARN; the yardstick check holds, no order changes from `gaps` |
+| R004b | 2026-10-23 | the same four yardsticks on `tracking` version 2: R004's players plus our low-count frames (a cap that keeps the players nearest the ball), no piece shorter than 8 frames and the walk's tracked spans rescaled once | — | — | — | 0.1989 raw (`w50`), 0.2173 coarse (`w125`); `w0` last under both | `tracking` v2 frozen, `fidelity.py` exits 0: all eight gates pass (the three on how many slots are present are gates now: exactly 22 present 0.4938 against 0.5019 +-0.06, mean 20.60 against 20.52 +-0.5, 14 or fewer 0.0469 against 0.0525 +-0.02), no WARN; the yardstick check holds and the ranking does not move from R004 (the four configs move by 0.4 points of spellF1 at most) |
 
 ## Reference: the organisers' baselines (R000)
 
@@ -1342,7 +1343,275 @@ counts), so `fidelity.py --profile tracking` exits 0 and `tracking` v1 is frozen
 README's rule does not count a pending gate, and the tail is version 2, so v1's list is never emptied. It
 does not make the truth's grain a non-issue: choose between `w125` and the others only where the raw and the coarse
 truth agree. The profile's players are rougher than ours (jumps, T35) and have no positional bias (the README's
-limitations), and it has no tail yet.
+limitations), and it has no tail yet. **Superseded by R004b** (`tracking` v2: the tail, the shortest
+piece and the scale of the tracked spans; the ranking is the same).
+
+### R004b — The four yardsticks on `tracking` version 2 (2026-10-23, Tian)
+Proposal: P01 · Commit: `95583d9` (the code every report below was made at, on a clean tree, `dirty: false`; the
+entry and the README are the commit that follows it) · Commands:
+`python pipeline/benchmark/fidelity.py --profile tracking --seeds 3` first, whose gates all passed, and then
+`python pipeline/benchmark/run.py pipeline/benchmark/configs/nearest_w50.toml pipeline/benchmark/configs/nearest_w0.toml pipeline/benchmark/configs/nearest_w25.toml pipeline/benchmark/configs/nearest_w125.toml --profile tracking --seeds 3`
+(the first config is the reference; run once more with `--truth coarse`, and `w25` first with `w125` second for the
+paired comparison; `--profile tracking` is the default now)
+Public: not applicable. The scores read no BAR-ATH data; the profile does: the gaps, the tracklets, the episodes, the
+NaN-speed runs, the jitter and now the slot counts are our match's own measurements (the Calibration, A07 to A09, digest
+`65b0c1915194…`, version 2), and the fidelity checks are compared with its public window's figures (77.8%, 66.4%).
+Validation (P01 benchmark): 7 DFL matches x 3 degradation seeds (0, 1, 2), profile `tracking` version 2, 2,005.3 graded
+minutes (668.4 per seed). Raw truth: pooled spellF1 0.1989 (`nearest_w50`), 0.1897 (`w25`), 0.1624 (`w125`), 0.0779
+(`w0`). Coarse truth: 0.2173 (`w125`), 0.1811 (`w50`), 0.1422 (`w25`), 0.0341 (`w0`). Intervals, fidelity and sign-flip
+p below.
+Changed vs the previous best: the fifth benchmark entry, and the second with our players: version 2 of the `tracking`
+profile. R004's players (version 1) had no frames with few players tracked, so three of its eight fidelity gates were
+pending; version 2 adds those frames, and two corrections that the first measurement of them forced (below). The ball is
+R003's and R004's, byte for byte (`test_profiles_nest`). **The ranking does not move**: both truths order the four
+configs as they did in R004 and as they did on `gaps`, with the same Kendall tau, and no config's pooled spellF1 moves
+by more than 0.4 points; what changed is the players, and the checks below say how.
+Reports: `data/runs/benchmark/tracking/<stem>.json` and `<stem>.coarse.json` (R004's, version 1, were kept in
+`tracking_v1/` for the paired comparison below), and `data/runs/benchmark/fidelity_tracking.json` (not committed; each
+carries the Calibration's digest).
+Checks: `pipeline/benchmark/selftest.py --dfl --data` passes all 257 checks (237 synthetic, 20 with `--dfl` and
+`--data`; 238 and 218 in R004), `pipeline/selftest.py` 35 of 35 and its `--data` run 37 of 37 (the four baselines
+identical byte for byte). The checks of each part were written first and failed first (the cap's 12 for a missing
+`cap_pieces`, `cap_limits` and `transplant_counts` and a `choose_half` that took no limit; the 5 of the shortest piece,
+the scale and the draws' record for a missing `MIN_PIECE_FRAMES` and missing `min_piece` and `tracked_scale` parameters;
+the 4 of the fidelity gates, the report, the pending list and the runner for a gate still pending and a default still
+`gaps`). The code was run against 34 mutants (21 of the cap and what it touches, 13 of the shortest piece, lambda and
+their record), each caught by a check in the end: for the cap, `CAP` itself not capped, a tie to the higher column, the
+farthest kept, membership that is not sticky, the nearest dropped when there are too many, the farthest added when there
+are too few, a centre spot that is a corner, no last place for a missing ball, another Transplant, a window of counts
+that goes round the whole source and not its tail, a drop counted once per piece, a profile that does not cap, a float
+count accepted, pieces returned unsorted, counts and masks of different lengths, a ball lost on every third row, rows
+before the kick-off capped and a piece that is not there yet pre-marked as kept (it survived until a hand-built scene
+was added); for the shortest piece, the minimum itself dropped, one frame short kept, an episode piece not counted as
+one, the frames counted as one, a rule that does not run, a profile with no rule; for lambda, not applied, rounded down,
+zero accepted, a bool accepted, the record forgetting it, and the counts not pooled by the report; and the default
+profile, the pending list and a moved lambda. Three survived at first, none of them for the same reason: a window of
+counts that did not go round (a no-op, replaced by a sharper mutant that goes round the whole source), a piece that is
+not present kept (a hand-built scene with spare room was added) and the rule's counts not pooled by the report (the
+check now names the pooled counts explicitly). The moved lambda is caught only by `--data`: the check of the constants
+fails on it, but on the assertion of the smoothing (fragile: below) before it reaches the one on lambda.
+
+**What happened, in order** (the first two steps were stops: the notes say to stop and report when a gate misses).
+1. The cap alone (the first version of v2) passed the three count gates it was built for and failed one gate it was not
+   about: exactly 22 present 0.5068 against 0.5019 +-0.06, mean 20.62, 14 or fewer 0.0468, wrong-team 0.0910, and **the
+   tracklet median 19.68 s against ours 41.28 s, 52% below, 0.96 s past the +-50% floor** (v1: 29.26 s). The three count
+   gates came out as the estimate of R004 said (0.503 for the first), so the cap and its placement by our counts work.
+2. Where the median went (information; the same 7 matches and 3 seeds, the lengths laid end to end, tracklets as
+   `player_stats` sees them):
+
+   | variant | tracklets | median | quartiles | under 8 frames |
+   |---|---|---|---|---|
+   | neither the episodes nor the cap (the walk alone) | 24,459 | 40.88 s | 8.32, 145.24 s | 2 (0.01%) |
+   | episodes only (version 1) | 31,162 | 29.26 s | 6.40, 111.40 s | 206 (0.66%) |
+   | cap only | 33,759 | 24.44 s | 5.56, 97.48 s | 671 (1.99%) |
+   | both | 40,231 | 19.68 s | 4.56, 79.40 s | 875 (2.17%) |
+   | ours | 1,144 (one match) | 41.28 s | 8.28, 152.26 s | 0 (the shortest is 8 frames, 0.32 s) |
+
+   The walk alone reproduces ours, as it should: it draws its tracked spans from our tracklets. And every part that cuts
+   takes the median further down, because those tracklets are our **final** ones and already hold the cuts that the
+   episodes and the cap add: the profile counted our cuts twice (T37).
+3. The shortest pieces. 906 of 40,866 pieces (2.2%) were shorter than 8 frames, where ours has none: 410 of them
+   between two runs of low counts (the count crosses 18 on 155 frames of ours, 147 of them by one slot, 18 and 19, and
+   the dropped players come back for a few frames and go again; 9.2% of the gaps between our 78 runs are under 8
+   frames), 22 at one edge of a run, 195 short before the cap (the walk's run ends and the episodes) and 279 made inside
+   the runs by membership changes. The ruling was a rule and no machinery: `degrade.MIN_PIECE_FRAMES = 8` (A09's
+   shortest tracklet of ours), and after the cap and before the slots every piece shorter than that is dropped, whatever
+   made it (the player is absent there). Over the 21 runs it dropped 794 pieces holding 3,177 slot-frames, 172 of them
+   episode pieces.
+4. The scale of the tracked spans, rescaled once, label-free (`degrade.TRACKED_SCALE`, lambda). The lengths the walk
+   draws are multiplied by lambda and rounded (at least 1 frame); the lost spans follow through mu, so the lost share
+   stays d. **One measurement fixed it**: the pooled tracklet median of this profile at lambda = 1 with the
+   shortest-piece rule in, seed 0, over the 7 matches laid end to end as the fidelity report pools, was **20.22 s**
+   (13,192 tracklets), against ours **41.28 s**, so lambda = 41.28 / 20.22 = 2.0415, **2.042** (2026-10-23). It was
+   applied whether or not the gate would pass, and frozen: it is not to be touched again because of a gate, a WARN or a
+   score. The median at lambda 2.042 is 26.24 s on seed 0 and 27.08 s on the three seeds (the ratio is a one-shot on a
+   statistic that does not grow linearly with lambda, so it does not reach ours: -34%). Both measurements are in the
+   comment of the constant, and `test_data_tracking_constants_follow_from_the_measurements` re-derives lambda from the
+   recorded 20.22 s and makes the measurement again (it must reproduce it).
+5. Lost share against d after lambda: the walk, the episodes and the rule (no cap), pooled over the 7 matches and
+   seeds 0 to 4, lose **2.71% against d = 2.50%**, per match 2.73%, 2.76%, 2.49%, 2.76%, 2.61%, 2.71%, 2.90% (R004:
+   2.59%): longer spans mean fewer cycles per run, so the cut at the end of a run weighs more, as A09 says, and the rule
+   drops a little. The existing check allows 0.3 points and holds (0.21); it was kept and not loosened. With the cap,
+   J03WMX on seed 0 loses 7.76% of its on-pitch frames (the cap takes the rest).
+
+**Fidelity** (`fidelity.py --profile tracking`, 7 matches x 3 seeds, 93 to 110 s with the caches warm; the same digits
+in the last two runs; the centres are the Calibration's own values on our kick-off spans, the
+tolerances the plan's; the constants were fixed before any yardstick score was looked at, and nothing was changed after
+because of one). **`tracking` v2 is frozen: all eight gates are counted and pass, `fidelity.py` exits 0**:
+
+| gate | benchmark | our match (centre) | tolerance | |
+|---|---|---|---|---|
+| ball missing, share of frames | 0.4189 | 0.4110 | +-0.02 | pass |
+| median gap in the ball | 10.76 s | 10.74 s | +-1.5 s | pass |
+| exactly 22 slots present, share of full-strength frames | 0.4938 | 0.5019 | +-0.06 | pass (-0.0081, 14% of the band) |
+| mean slots present, full-strength frames | 20.599 | 20.522 | +-0.5 | pass (+0.076, 15%) |
+| 14 or fewer slots present, share of full-strength frames | 0.0469 | 0.0525 | +-0.02 | pass (-0.0056, 28%) |
+| wrong-team share of frames | 0.0942 | 0.1054 | +-0.03 | pass (-0.0112, 37%) |
+| tracklet median | 27.08 s | 41.28 s | +-50% (+-20.64 s) | pass (-34%, 69% of the band) |
+| NaN-speed share of the present slot-frames | 0.0788 | 0.0783 | +-0.01 | pass |
+
+The count gates are measured on full-strength frames as R004 says (T36); on all frames the same statistics are 0.4032
+(22 present), 20.436 (mean) and 0.0467 (14 or fewer), against ours on all its frames. The wrong-team share on the
+full-strength frames is 0.1038. The tracklet median is the gate nearest its edge, as it was in R004. The 42 half-draws
+took 21 masks from our first half and 21 from our second, and the draws' record pooled over the 21 runs and both halves
+says: 5,330 onsets made 3,447 episodes (64.7%), 1,757 skipped for no opposing pair within 2 m (33.0%) and 126 for a
+player already in an episode (2.4%); 79,277 NaN-speed runs; **the cap: 303,259 frames at or below 18 of our count, 10.1%
+of the 3,007,932 frames of the spans (ours 10.6% and 5.2% at or below 14), 2,363,692 slot-frames dropped and 4,463
+pieces cut; the shortest-piece rule: 794 pieces dropped, 3,177 slot-frames, 172 episode pieces**; 28,880 pieces, 1,375 a
+run (ours 1,144 tracklets in a match). The jitter after the 5-frame smoothing is 8.5 cm (ours 3.3 mm; T35).
+
+The ten warning checks (WARN is printed and discussed here; none was tuned towards): **none warns**, as in R004.
+
+| check | benchmark | our match | band | |
+|---|---|---|---|---|
+| nearest player agrees with the truth, alive and ball visible | 0.7586 | 0.7784 (public window) | +-0.05 | ok |
+| ball visible on dead frames | 0.5684 | 0.6637 (public window) | +-0.10 | ok |
+| `w0` possessions per graded minute | 13.91 | 18.40 | +-25% | ok (-24.4%) |
+| `w0` D share | 0.4189 | 0.4069 | +-0.05 | ok |
+| `w25` possessions per graded minute | 5.39 | 7.04 | +-25% | ok (-23.5%) |
+| `w25` D share | 0.3764 | 0.3649 | +-0.05 | ok |
+| `w50` possessions per graded minute | 4.32 | 5.61 | +-25% | ok (-23.0%) |
+| `w50` D share | 0.3341 | 0.3234 | +-0.05 | ok |
+| `w125` possessions per graded minute | 3.06 | 3.76 | +-25% | ok (-18.7%) |
+| `w125` D share | 0.2329 | 0.2233 | +-0.05 | ok |
+
+**What version 2 did to the WARNs: almost nothing** (the cap, the rule and the scale together: they were not separated).
+The cap keeps the players nearest the true ball, and the nearest player is what the four yardsticks read, so the nearest
+player's agreement moves only from 0.7611 (R004) to 0.7586 and the possessions per minute from 14.11, 5.42, 4.33 and
+3.07 to 13.91, 5.39, 4.32 and 3.06; the D shares and the alive/dead F1 of all four configs are R004's to the last digit,
+since they depend on the ball alone. `w0` is the one near its edge (-24.4% of ours against a band of 25%), as it was
+(-23.3%). The ball-visible-on-dead-frames figure is `gaps`' (0.5684).
+
+**The degraded match against ours, with the cap (information; J03WMX, seed 0, our real Calibration).** This is
+`test_data_tracking_profile_on_a_real_match_with_our_real_calibration` as it runs at `95583d9`; only the layout, the
+determinism, the leaks, the Transplant of the cap, the count of players on every row and the lost share are asserted.
+d is 0.0250, the mean tracked span 5,712 frames (228.5 s) after lambda and the mean lost span 146.5 frames (5.86 s); the
+cap reads 20,031 of the 145,967 frames from the kick-offs (13.7%: the window of our counts that this half got) and drops
+162,263 slot-frames in 236 pieces.
+
+| | degraded | ours |
+|---|---|---|
+| slots present, mean | 20.29 | 20.52 |
+| 23 or more present | 0.0% | 2.2% |
+| all 22 present | 48.4% | 50.2% |
+| 19 to 21 present | 37.5% | 37.0% |
+| 15 to 18 present | 7.3% | 5.4% |
+| 14 or fewer present | 6.7% | 5.2% |
+| tracklets | 1,454 | 1,144 |
+| tracklet median | 22.8 s | 41.3 s |
+| tracklets under 8 frames | 0.00% | 0.00% |
+| speeds NaN of the present | 7.85% | 7.83% |
+| wrong-team frames | 8.7% | 10.5% |
+
+**Slot persistence with the cap** (§B6 of the notes; the same two functions on both sides, J03WMX, seed 0; "no cap" is
+the same code with lambda and the rule and without the cap):
+
+| | v2 | v2 without the cap | v1 (R004) | ours |
+|---|---|---|---|---|
+| slot idle gaps, count | 1,402 | | 1,537 | 1,065 |
+| median | 4.12 s | | 2.28 s | 7.40 s |
+| at most 3 s | 42.0% | | 59.7% | 17.7% |
+| over 60 s | 5.3% | | 3.8% | 15.0% |
+| returns to the same slot | 552 of 1,147 (48.1%) | 384 of 598 (64.2%) | 860 of 1,247 (69.0%) | no identities |
+| slots ever present, home / away of 24 / 22 | 14 / 13 | | 13 / 13 | 22 / 21 |
+| on at least a tenth of the frames | 12 / 12 | | 11 / 12 | 21 / 20 |
+| on at least a hundredth | 12 / 13 | | 12 / 12 | 22 / 21 |
+
+The cap does what the notes expected of it, a drop breaks a slot's identity: a player who comes back takes the lowest
+free slot, which is now often not his own (48.1% against 69.0%), and the slots idle longer (4.1 s against 2.3 s) and
+more of them idle for a minute (5.3%). It is still far from ours (7.4 s and 15.0%; 17.7% of ours at most 3 s against
+42.0%): the lowest-free rule gives a team 12 slots that carry most of the frames where ours has 21. The warning of A09
+and R004 stands, a little weaker: **a method that follows a slot across a loss would be validated optimistically on this
+profile**. (The final review decides whether a slot-anonymising variant is needed.)
+
+**Raw truth** (9,183 true possessions, 4.58 per graded minute; `D` is 44.8% of the graded frames). Δ is the config minus
+`nearest_w50`, the first config; the interval is the 90% t interval of the seven matches' deltas.
+
+| config | pooled spellF1 | macroF1 | alive/dead F1 | mean per-match spellF1 [90% t] | possessions predicted (per min) | Δ spellF1, mean per match [90% t] | sign-flip p | wins / losses |
+|---|---|---|---|---|---|---|---|---|
+| `nearest_w50` (reference) | **0.1989** | 0.4579 | 0.6094 | 0.1993 [0.1918, 0.2068] | 8,660 (4.32) | | | |
+| `nearest_w25` | 0.1897 | 0.4557 | 0.5935 | 0.1898 [0.1853, 0.1943] | 10,800 (5.39) | -0.0094 [-0.0147, -0.0042] | 0.0312 | 1 / 6 |
+| `nearest_w125` | 0.1624 | 0.4395 | 0.6428 | 0.1634 [0.1485, 0.1784] | 6,127 (3.06) | -0.0358 [-0.0458, -0.0259] | 0.0156 | 0 / 7 |
+| `nearest_w0` | 0.0779 | 0.4397 | 0.5761 | 0.0778 [0.0721, 0.0834] | 27,895 (13.91) | -0.1215 [-0.1328, -0.1101] | 0.0156 | 0 / 7 |
+
+**Coarse truth** (`COARSE_MIN_S` = 5 s: 4,977 true possessions, 2.48 per graded minute; the same `D`). Δ is again the
+config minus `nearest_w50`:
+
+| config | pooled spellF1 | macroF1 | alive/dead F1 | mean per-match spellF1 [90% t] | possessions predicted (per min) | Δ spellF1, mean per match [90% t] | sign-flip p | wins / losses |
+|---|---|---|---|---|---|---|---|---|
+| `nearest_w125` | **0.2173** | 0.4494 | 0.6428 | 0.2176 [0.2017, 0.2334] | 6,127 (3.06) | +0.0360 [+0.0279, +0.0441] | 0.0156 | 7 / 0 |
+| `nearest_w50` (reference) | 0.1811 | 0.4584 | 0.6094 | 0.1815 [0.1705, 0.1926] | 8,660 (4.32) | | | |
+| `nearest_w25` | 0.1422 | 0.4541 | 0.5935 | 0.1423 [0.1374, 0.1472] | 10,800 (5.39) | -0.0392 [-0.0475, -0.0309] | 0.0156 | 0 / 7 |
+| `nearest_w0` | 0.0341 | 0.4378 | 0.5761 | 0.0343 [0.0309, 0.0376] | 27,895 (13.91) | -0.1473 [-0.1588, -0.1357] | 0.0156 | 0 / 7 |
+
+What the tables say, and what they do not:
+- **The yardstick check holds in its robust part: `nearest_w0` is last under both truths**, by far more than the noise
+  (7 losses of 7 against `w50` under each, Δ -0.1215 raw and -0.1473 coarse, and the gap from `w0` to the next config is
+  0.0845 raw and 0.1081 coarse), and in each of the three seeds. Nothing had to be fixed or changed to get it.
+- **The rest of the order follows the truth, as on `clean`, `gaps` and R004, and neither truth gives the published
+  order.** Raw: `w50 > w25 > w125 > w0`; coarse: `w125 > w50 > w25 > w0`; published (R000, full match): `w50 > w125 >
+  w25 > w0`. **Kendall tau against the published order is +0.667 under each truth** (5 of the 6 pairs concordant, 1
+  discordant), as in R004: **the ranking did not move**. Each truth keeps the same order in each of the three seeds
+  (pooled spellF1 by seed, 0 / 1 / 2: raw `w50` 0.1973 / 0.1970 / 0.2026, `w25` 0.1830 / 0.1874 / 0.1990, `w125` 0.1616
+  / 0.1615 / 0.1640, `w0` 0.0751 / 0.0770 / 0.0817; coarse `w50` 0.1768 / 0.1804 / 0.1861, `w25` 0.1381 / 0.1393 /
+  0.1494, `w125` 0.2092 / 0.2225 / 0.2202, `w0` 0.0345 / 0.0316 / 0.0362). The seeds move a pooled score by up to about
+  0.015, and the intervals above are over the matches and say nothing of that spread.
+- **The published gaps are inside the noise (about 0.04), and two of the three lie between the raw and the coarse
+  ones.** Pooled spellF1 gaps, published against raw against coarse: `w50` - `w25` +0.044 / +0.009 / +0.039; `w125` -
+  `w25` +0.025 / -0.027 / +0.075; `w50` - `w125` +0.019 / +0.037 / -0.036. Paired over the matches, `w125` against `w25`
+  is -0.0264 [-0.0389, -0.0139], 1 win of 7, under the raw truth, and +0.0752 [+0.0613, +0.0892], 7 wins of 7, under the
+  coarse one (`... nearest_w25.toml ... nearest_w125.toml --profile tracking --seeds 3 --no-write`, with `--truth
+  coarse` for the second). That the published value of each of the gaps that involve `w125` lies between the raw and the
+  coarse one fits A06's reading (DFL's grain is finer than ours, and the coarse truth stands in for how much); it is two
+  numbers, not a measurement of ours, and it is not used to choose anything (T26).
+- **The choice of truth decides `w125` against `w50` and `w25`, not the profile.** The sign of every paired delta
+  against `w50` is the same on both competitions: raw `w125` -0.0486 on the two Bundesliga matches and -0.0307 on the
+  five 2. Bundesliga ones, coarse +0.0381 and +0.0352; `w25` -0.0079 and -0.0101 raw, -0.0354 and -0.0408 coarse. Mean
+  spellF1 per competition (BL1, BL2): raw `w50` 0.1978, 0.1999; `w25` 0.1899, 0.1898; `w125` 0.1492, 0.1691; `w0`
+  0.0865, 0.0743; coarse `w50` 0.1823, 0.1812; `w25` 0.1469, 0.1405; `w125` 0.2203, 0.2164; `w0` 0.0333, 0.0347.
+- **`w25` against `w50` is the one raw gap that is not decided**: -0.0094 [-0.0147, -0.0042], p 0.0312, 1 win in 7
+  (macroF1: -0.0021 [-0.0043, +0.0002], 3 wins in 7, p 0.1250): about a hundredth of a point, which the interval
+  excludes by a little; it is not a result.
+
+**How R004b differs from R004** (only the players changed: the ball, the seeds, the matches, the configs and the scorer
+are the same, so the two are paired; `tracking` v2 minus v1, from the two sets of reports, over the matches):
+
+| config | raw: pooled spellF1 v1 to v2 | Δ mean per match [90% t] | wins / losses | coarse: pooled spellF1 | Δ mean per match [90% t] | wins / losses |
+|---|---|---|---|---|---|---|
+| `nearest_w50` | 0.2000 to 0.1989 | -0.0011 [-0.0038, +0.0016] | 3 / 4 | 0.1826 to 0.1811 | -0.0014 [-0.0047, +0.0019] | 3 / 4 |
+| `nearest_w25` | 0.1895 to 0.1897 | +0.0000 [-0.0031, +0.0031] | 4 / 3 | 0.1426 to 0.1422 | -0.0004 [-0.0028, +0.0019] | 3 / 4 |
+| `nearest_w125` | 0.1660 to 0.1624 | -0.0037 [-0.0063, -0.0011] | 2 / 5 | 0.2195 to 0.2173 | -0.0022 [-0.0051, +0.0006] | 2 / 5 |
+| `nearest_w0` | 0.0768 to 0.0779 | +0.0010 [-0.0002, +0.0023] | 4 / 3 | 0.0332 to 0.0341 | +0.0009 [-0.0001, +0.0018] | 4 / 3 |
+
+- **The low-count frames cost the four yardsticks no more than 0.4 points of spellF1 and about 0.1 to 0.2 points of
+  macroF1** (macroF1 by config -0.0009 to -0.0022 under both truths; its 90% interval excludes 0 for three of the four
+  configs under the raw truth and for all four under the coarse one), and **change no order**: both truths rank the four
+  configs exactly as in R004, with the same Kendall tau. Most spellF1 deltas have an interval that includes 0 (`w125`
+  under the raw truth is the exception, -0.0037 [-0.0063, -0.0011], 5 losses of 7). What `tracking` v2 adds to the
+  benchmark is therefore not a different ranking of these four configs but a harder place for a method that reads the
+  players far from the ball, follows a slot through a loss or a drop, or needs the count of players to be 22: the
+  nearest player to the ball is always kept, so a decoder that reads only that is nearly blind to the cap, as expected.
+- The `tracking` v1 figures of this table are R004's reports (the Calibration digest `65b0c1915194…`, version 2, commit
+  `39d86cf`); the v2 ones are at `95583d9`.
+- A fragile assertion, noted and not touched: `test_data_tracking_constants_follow_from_the_measurements` asserts that
+  smoothing lowers the pooled second-difference RMS (0.0873 m degraded against DFL's clean 0.0900 m, seed 0). The RMS is
+  98% rare jumps in the 2. Bundesliga matches (T35), so where a jump falls (in a dropped frame, at the edge of a piece)
+  moves it by a few percent: with lambda at 2.0 instead of 2.042 the margin was gone. It is a margin of 3% and not a
+  result.
+
+Runtime: 93 to 110 s for `fidelity.py` on all seven matches and three seeds (three runs; it was 109 s for v1), and the
+runner's own line for the yardstick says 5.4 to 6.0 s per config (the whole run was not timed), with the DFL caches and
+the Calibration cached. The last two runs of `fidelity.py`, which are of the final code, print the same figures to
+the last digit.
+Verdict: keep `tracking` v2 as the benchmark's profile (it is `DEFAULT_PROFILE` now) and the four yardsticks as its
+floor, not as candidates. All eight gates and all ten checks hold, with the three count gates counted for the first
+time, and the yardstick check passes in its robust part under both truths. Two figures to keep in mind: the tracklet
+median is 34% below ours (inside the gate's 50%, after a single rescale that was applied whether or not it would have
+passed), and slot identity is better broken than in R004 (48% of the returns to the same slot, against 69%) but still
+not ours. Do not choose between `w125` and the others where the raw and the coarse truth disagree. The profile's players
+are rougher than ours (jumps, T35), have no positional bias (the README's limitations), take our counts from the frames
+of the ball's gaps and not from the same play, and keep the players nearest the true ball: a method that reads only the
+nearest player sees little of what this profile adds to `gaps`.
 
 ## Submission log
 

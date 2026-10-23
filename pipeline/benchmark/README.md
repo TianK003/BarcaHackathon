@@ -7,7 +7,7 @@ matches**: the seven open DFL/IDSSE Bundesliga matches (CC BY 4.0), which carry 
 team in possession on every frame. A config runs on them through the pipeline's own functions, is scored the way the
 organisers' scorer scores, and is compared with another config with the uncertainty that seven matches allow.
 The plan is [P01](../../docs/proposals.md); what was measured is in [results.md](../../docs/results.md) (A05 to A09,
-R002 to R004).
+R002 to R004b).
 
 ```
 python pipeline/benchmark/sources.py          # data -> data/external/dfl/   (21 files, 2.6 GB, size and md5 checked)
@@ -59,7 +59,7 @@ What to know about the files (A05; `dfl.py` has the details and refuses what it 
 | option | meaning |
 |---|---|
 | `CONFIG ...` | pipeline TOML configs (`pipeline/config.py`), per half (`scope = "halves"`). **The first one is the reference**: every other config is compared with it, and a delta is `other - first`, so positive means the other is better. Put the config you want to beat first. |
-| `--profile P` | how the tracking is made (below): `gaps` (the default), `clean` or `tracking`. |
+| `--profile P` | how the tracking is made (below): `tracking` (the default), `gaps` or `clean`. |
 | `--seeds N` | degradation seeds per match (default 3: seeds 0, 1 and 2). The clean profile has nothing random to repeat, so it always runs seed 0 only; if you pass `--seeds` with more than 1 it says that it ignored it, and says nothing when you pass none. |
 | `--matches ID ...` | the matches to run, in this order (default: all seven). Fewer than seven are filed under a name that says which (see the report, below). |
 | `--truth raw\|coarse` | the truth to score against (below). Default `raw`. |
@@ -101,7 +101,7 @@ which goes into every report: change what a profile does and bump it.
 |---|---|---|---|
 | `clean` | 1 | DFL's, as it is: on every frame | DFL's, one slot per player |
 | `gaps` | 1 | missing where **ours** was: our own missing-ball masks, transplanted onto each half; its speed is NaN everywhere (T31) | untouched |
-| `tracking` | 1 | `gaps`'s, byte for byte | broken into tracklets of ours and given 46 slots, 24 home and 22 away, as ours are; a wrong-team slot now and then (10.5% of frames), NaN speeds in runs (7.8% of the slot-frames), 5-frame smoothing. **No frames with few players tracked yet** (below) |
+| `tracking` | 2 | `gaps`'s, byte for byte | broken into tracklets of ours and given 46 slots, 24 home and 22 away, as ours are; a wrong-team slot now and then (10.5% of frames), NaN speeds in runs (7.8% of the slot-frames), 5-frame smoothing; **since version 2** only the players nearest the ball are tracked where ours has few (the cap), no piece is shorter than 8 frames, and the walk's spans are rescaled once (below). Version 1 (R004) had none of the three |
 
 **The transplant.** `Calibration.ball_masks[half]` is our match's missing-ball mask of each half from its kick-off to the
 end of its graded block (`calibration.py`; the Calibration is measured once and cached). A benchmark half of n frames
@@ -119,12 +119,12 @@ warnings and statistics of the fidelity report show how much that matters.
 a tracklet: it ends when the tracker loses the player and is taken over by whoever it finds next (T15). The profile
 breaks each player's time on the pitch (each contiguous run of frames where DFL has a position) into tracked spans and
 lost spans. A tracked span is one of **our own tracklet lengths** (`Calibration.tracklet_lengths_s`, at the match's
-rate, at least 1 frame), drawn uniformly; a lost span is geometric (at least 1 frame) with the mean that makes the lost
-share d: d is 1 minus the mean number of slots present over the frames of ours with more than 18 present, over 22, which
-is 0.0250, the mean tracked span 2,797 frames (111.9 s) and the mean lost span 71.7 frames (2.87 s) (A09). Frames with
-18 or fewer present, 10.6% of ours, are the profile's tail, which is another part's and is left out so as not to count
-it twice. All draws of the walk come from `rng_for(seed, match_index, "tracklets", half)`, players by column and runs in
-time order.
+rate, at least 1 frame), drawn uniformly and multiplied by `TRACKED_SCALE` (below); a lost span is geometric (at least 1
+frame) with the mean that makes the lost share d: d is 1 minus the mean number of slots present over the frames of ours
+with more than 18 present, over 22, which is 0.0250 (A09), and the mean lost span follows the scaled tracked spans
+(5.86 s against a mean tracked span of 228.5 s, J03WMX; before the scale 2.87 s and 111.9 s). Frames with 18 or fewer
+present, 10.6% of ours, are the cap's (below) and are left out of d so as not to count them twice. All draws of the walk
+come from `rng_for(seed, match_index, "tracklets", half)`, players by column and runs in time order.
 
 **The wrong-team episodes (T32).** On 10.5% of our frames a team shows more than 11 slots while the other shows fewer: a
 slot of one team carries a player of the other, because the tracker's identity followed the wrong one out of a duel.
@@ -164,26 +164,63 @@ the squares of their second differences in the largest 0.05% of triples: rare ju
 difference of every match is 1.00 cm and its 99th percentile 2.83 cm, against 1.4 mm and 9.6 mm in ours, which a 5-frame
 average lowers by a factor of about 6 on white noise. Nothing was tuned to close that gap (R004).
 
-**What this profile does not have yet.** Our frames with few players tracked (the tail: 10.6% of ours have 18 or fewer
-present, 5.2% have 14 or fewer), which the next task adds as version 2 of the profile. Version 1 is **frozen as it is**,
-and its three gates about how many slots are present, the share with exactly 22, the mean number and the share with 14
-or fewer, are **pending**: printed with their numbers, not counted by the exit code, and listed in one constant
-(`fidelity.PENDING_GATES`, with the reason for each), which the task that builds version 2 empties for it. Without the
-tail too many frames have all 22 slots present: measured on full-strength frames (as it has to be) the share is 0.5631
-against ours 0.5019 +-0.06, 0.0012 over the ceiling (R004), and the mean is 21.43 against 20.52 +-0.5 and the share with
-14 or fewer 0.0000 against 0.0525 +-0.02. If the tail's cap is placed by our counts, independently of the benchmark's
-own, each upper bucket loses about 10.6% of its frames and the first share becomes 0.5631 x (1 - 0.106) = 0.503 (an
-estimate, not a measurement). The checks that pin the rest: `test_wrong_team_starts_at_close_pairs`,
-`test_wrong_team_moves_one_player_to_other_pool`,
+**The cap, the shortest piece and the scale of the tracked spans (version 2).** Our tracker has 18 or fewer slots
+present on 10.6% of its frames (5.2% have 14 or fewer): the camera is on a part of the pitch and the rest of the players
+are not tracked. The cap (`degrade.cap_limits`, `cap_pieces`) puts that into the benchmark between the episodes and the
+slots: on each frame where OUR count k is at most 18, only the k pieces nearest the ball are kept and the rest are
+dropped on that frame. Our counts are read through **the same Transplant as the ball's mask** (same source half, same
+offset, the same cyclic tail), so the cap and the ball's gaps come from the same frames of ours, which keeps what ties
+them (both follow our camera); the ball is DFL's clean one, standing in for where our camera points, and where DFL has
+none its last place in the half, then the centre spot. Membership is sticky: within a run of frames at or below 18 the
+pieces kept stay kept, and it changes only when the count requires it (it falls: the farthest go; it rises or a kept
+piece ends: the nearest present piece that is not kept comes in), never because two distances swap; at the run's end
+everybody is back. A piece that loses frames is cut into the pieces between them, each a new tracklet that takes the
+lowest free slot, so a player who comes back after a drop may not get his own slot back (the first thing the cap does to
+slot identity, R004b). The cap draws nothing, so no stream of the other parts moves. Over the seven matches and three
+seeds 10.1% of the frames are capped (ours 10.6%), 2,363,692 slot-frames are dropped and 4,463 pieces are cut.
+
+**No piece is shorter than 8 frames** (`degrade.MIN_PIECE_FRAMES`, `drop_short_pieces`): ours has none (A09: the
+shortest tracklet is 8 frames, 0.32 s), and the first version of the cap made 2.2% of its pieces so (906 of 40,866),
+mostly where our count flickers across the threshold (147 of the 155 crossings of 18 are a step of one slot) and the
+dropped players come back for a few frames and go again. After the cap and before the slots every piece shorter than 8
+frames is dropped, whatever made it (the walk's run ends, an episode, the cap), the player being absent there. Over the
+21 runs it drops 794 pieces, holding 3,177 slot-frames, 172 of them episode pieces (`short_pieces`, `short_slot_frames`,
+`short_episode_pieces` in the draws' record).
+
+**The scale of the tracked spans** (`degrade.TRACKED_SCALE` = 2.042, frozen). The walk draws its tracked spans from our
+*final* tracklets, which already hold the cuts that the cap and the episodes add, so the profile counted our cuts twice:
+pooled over the seven matches, the walk alone gave a tracklet median of 40.88 s against ours 41.28 s, and each part that
+cuts took it further down (the episodes alone 29.26 s, the cap alone 24.44 s, both 19.68 s, three seeds, R004b). The
+drawn lengths are therefore multiplied by lambda once (the lost spans follow through mu, so the lost share stays d):
+lambda = ours' median over the profile's pooled median at lambda = 1 with the shortest-piece rule in (seed 0, the seven
+matches laid end to end as fidelity pools them, 20.22 s), 41.28 / 20.22 = 2.0415, **2.042**, set on 2026-10-23 and
+applied whether or not the tracklet-median gate would pass; it is never touched again because of a gate, a WARN or a
+score (`test_data_tracking_constants_follow_from_the_measurements` re-derives it from the recorded measurement and
+measures that again). The pooled median of version 2 is then 27.08 s (three seeds), 34% below ours and inside the gate's
+50%; the lost share of the walk, the episodes and the rule is 2.71% against d = 2.50% (the check allows 0.3 points:
+2.59% before the scale and the rule, since a longer span makes the cut at the end of a run weigh more).
+
+The checks that pin the parts: `test_cap_keeps_nearest`, `test_cap_inactive_above_threshold`,
+`test_cap_is_deterministic_and_draws_nothing`, `test_cap_membership_changes_only_when_the_count_requires_it`,
+`test_cap_ball_fallbacks`, `test_cap_matches_the_documented_rule_on_random_pieces` (against a plain-loop reference),
+`test_cap_leaves_min_of_the_count_and_the_tracked_players_on_every_row`, `test_cap_drop_breaks_slot_identity`,
+`test_cap_limits_are_the_transplants_window_of_our_counts`, `test_cap_reads_dfls_ball_and_not_the_degraded_one`,
+`test_cap_limits_refuse_counts_that_are_not_the_masks_frames`,
+`test_transplant_counts_read_the_same_window_as_the_mask`, `test_min_piece_rule_drops_every_piece_shorter_than_it`,
+`test_min_piece_rule_runs_after_the_cap_and_before_the_slots`, `test_min_piece_rule_counts_the_episode_pieces`,
+`test_tracked_scale_multiplies_the_drawn_lengths_and_the_lost_share_stays_d` and
+`test_tracking_version_2_with_no_low_count_frame_is_version_1s_players` (with no frame at or below 18, and lambda 1 and
+no shortest-piece rule through the parameters, the players are version 1's byte for byte). The rest:
+`test_wrong_team_starts_at_close_pairs`, `test_wrong_team_moves_one_player_to_other_pool`,
 `test_wrong_team_draws_come_from_the_wrong_team_stream_in_a_fixed_order`, `test_speed_nan_share`,
 `test_speed_nan_runs_follow_the_documented_draws`, `test_smoothing_is_a_centred_moving_average_inside_each_piece`,
 `test_profiles_nest`, `test_tracking_without_the_new_parts_is_task_12s_players` (with the new parts off the players are
 Task 12's, byte for byte), and on the downloaded matches `test_dfl_tracking_never_exhausts_a_pool_on_the_real_matches`
-and `test_data_tracking_constants_follow_from_the_measurements` (the rule that gave s and the window, applied again).
-The earlier ones stay: `test_tracklets_never_overlap_in_a_slot`,
-`test_each_tracklet_takes_the_lowest_free_slot_of_its_pool`, `test_slot_team_matches_pool`,
-`test_tracking_degenerate_equals_gaps` (one endless tracklet per stretch of a player is `gaps`'s players),
-`test_lost_share_on_long_synthetic`.
+and `test_data_tracking_constants_follow_from_the_measurements` (the rules that gave the scale of the episodes, the
+smoothing window and the scale of the tracked spans, applied again). The earlier ones stay:
+`test_tracklets_never_overlap_in_a_slot`, `test_each_tracklet_takes_the_lowest_free_slot_of_its_pool`,
+`test_slot_team_matches_pool`, `test_tracking_degenerate_equals_gaps` (one endless tracklet per stretch of a player is
+`gaps`'s players), `test_lost_share_on_long_synthetic`.
 
 **No truth reaches the degrader.** It is handed a `TrackingView`, which has the tracking and the match's scalars and no
 `ball_status` or `ball_possession` (`test_degrade_never_sees_truth`, which also reads the degrader's source, and the deep
@@ -220,10 +257,10 @@ anything was measured and never tuned towards:
   that it has 22 players on the pitch throughout. Every other gate and every warning stays on all frames; the report
   holds the count statistics on both sets of frames, how many frames are at full strength and which matches are not all
   of them (`full_strength`). The plan's own figures (0.407, 10.7 s, 0.108, 35.5 s, ...) were measured on other spans and
-  are not used. **Pending gates** (`fidelity.PENDING_GATES`) are printed and not counted: today the three about how many
-  slots are present (exactly 22, the mean, 14 or fewer), which depend on the low-count tail that `tracking` does not
-  have yet ("What this profile does not have yet", above, says how). A pending gate is not counted, so version 1 is
-  frozen with those three pending, and the tail is version 2.
+  are not used. **Pending gates** (`fidelity.PENDING_GATES`) are printed and not counted, and none is pending now:
+  version 1 of `tracking` had the three about how many slots are present (exactly 22, the mean, 14 or fewer) pending,
+  because it had no low-count tail, and version 2 has the cap ("The cap, the shortest piece...", above), so they are
+  gates like the rest. The mechanism stays for the next part of a profile that a gate waits for.
 - **Warnings**: the nearest player's agreement with the truth on alive, ball-visible frames (our public window's, +-0.05),
   the share of dead frames with the ball visible (+-0.10), and for each yardstick its possessions per graded minute
   (+-25%) and its D share (+-0.05), against what the yardsticks output on ours (over our graded halves, as the published
@@ -366,24 +403,25 @@ that this README names only checks that exist.
   has our gaps and nothing else of our tracking: its players are DFL's (one slot per player, no wrong-team slot, no
   NaN speeds), and its gaps are not placed by the play. The warnings and statistics of the fidelity report say by how
   much.
-- The `tracking` profile has our tracklets, slots, wrong-team episodes, NaN-speed runs and smoothing, and **not our
-  frames with few players tracked** (the tail, which the next task adds; three of its gates, the ones about how many
-  slots are present, are pending until then). Its slots are the lowest free ones, so a team uses 13 of its slots over a
-  whole match (J03WMX, seed 0: 11 home and 12 away slots are present on at least a tenth of the frames) where ours has
-  21 of 24 and 20 of 22 present on at least a tenth of the frames (printed, with the slots ever present and those
-  present on at least a hundredth of the frames, by `test_data_tracking_profile_on_a_real_match_with_our_real_calibration`),
-  and a slot's index is not as empty of the player as
-  in ours: a player who comes back after a lost span lands in the slot he had 69.0% of the time (860 of 1,247 returns,
-  J03WMX, seed 0, with the episodes on, as in version 1 of the profile), and a slot idles between two tracklets for a
-  median of 2.3 s (59.7% of its gaps at most 3 s, 3.8% over 60 s), where ours idles for 7.4 s (17.7% and 15.0%; A09,
-  R004). Before the wrong-team episodes were added the figures were 76.0%, 2.0 s, 67.1% and none over 60 s (A09; the
-  same code with the scale set to 0 gives them again). No evidence source reads a slot's identity today, beyond
-  `nearest_player`'s argmin on exact ties, which goes to the lower slot; but **a method that follows a slot across a
-  loss would be validated optimistically here**, and the tail's part of the profile re-measures this. The episodes are
-  cut at pairs within 2 m only, in both directions at one rate, and what is matched is the observable share, not the
-  episodes: on seed 0 the benchmark shows 105 to 200 observed episodes a match (mean 163), medians of 1.4 to 2.2 s and
-  90th percentiles of 6.2 to 9.4 s, against ours 104, 2.7 s and 15.8 s: more of them and shorter (a swap inside 11
-  against 11 is invisible on ours, so the true number of ours is unknown).
+- The `tracking` profile has our tracklets, slots, wrong-team episodes, NaN-speed runs, smoothing and low-count frames
+  (the cap), and its slots are still not ours. They are the lowest free ones, so a team uses fewer of its slots than
+  ours does over a whole match (J03WMX, seed 0, version 2: of the pools of 24 and 22, 14 and 13 slots are ever present,
+  12 and 12 on at least a tenth of the frames and 12 and 13 on at least a hundredth, where ours has 22 and 21, 21 and
+  20, 22 and 21; printed by `test_data_tracking_profile_on_a_real_match_with_our_real_calibration`), and a slot's index
+  is not as empty of the player as in ours: a player who comes back after a lost span lands in the slot he had 48.1% of
+  the time (552 of 1,147 returns; 69.0% in version 1, R004, and 64.2% of 598 returns with the walk, the episodes, the
+  scale and the shortest piece but no cap), and a slot idles between two tracklets for a median of 4.1 s (42.0% of its
+  gaps at most 3 s, 5.3% over 60 s), where ours idles for 7.4 s (17.7% and 15.0%; A09, R004b; version 1: 2.3 s, 59.7%,
+  3.8%). No evidence source reads a slot's identity today, beyond `nearest_player`'s argmin on exact ties, which goes to
+  the lower slot; but **a method that follows a slot across a loss would be validated optimistically here**, a little
+  less than before the cap. The episodes are cut at pairs within 2 m only, in both directions at one rate, and what is
+  matched is the observable share, not the episodes: on seed 0 the benchmark shows 82 to 151 observed episodes a match
+  (mean 122), medians of 1.8 to 2.7 s and 90th percentiles of 9.4 to 14.4 s, against ours 104, 2.7 s and 15.8 s (a swap
+  inside 11 against 11 is invisible on ours, so the true number of ours is unknown). **The cap keeps the players nearest
+  the true ball**, so a method that decodes from the nearest player to the ball is hurt little by it (R004b: the four
+  yardsticks move by 0.4 points of spellF1 at most) and one that needs the players far from the ball sees fewer of them
+  than the real match gave it, as it does on ours; and the cap takes our counts from the frames that the ball's gaps
+  come from, not from the same play, so what ties the two to the play is not in them.
 - **No positional bias.** The profile matches the players' jitter and nothing else of their positional error. A slowly
   varying bias against the true position cannot be measured on ours (there is no reference to measure it against), so
   none is added. Published accuracies for video-derived positions run from 0.08 to 0.09 m RMSE for a multi-camera
