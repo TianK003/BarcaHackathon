@@ -45,10 +45,13 @@ The transplant. Our missing-ball mask of each half (Calibration.ball_masks: True
 kick-off to the end of the graded block, M frames) is copied onto the benchmark's half. A half of n frames takes the
 mask of a source half, 1 or 2 with the same chance, from an offset drawn uniformly over 0..max(0, M - n): frame j of
 the benchmark's half is missing where frame offset + j of the source half was. If the source runs out (a benchmark
-half longer than M - offset) the mask goes on from the start of its last TAIL_FRAMES frames, round and round: the
-kick-off clock of the mask is kept as far as the mask goes, and what follows is a stretch of the late half's pattern
-repeated, not a hole in the degradation. The clock is the half's own, from its kick-off: coverage worsens through
-each half (A02), a benchmark half starts at its kick-off, and the Calibration measures ours from there too.
+half longer than M - offset) the mask goes on from the start of its last TAIL_FRAMES frames, round and round: what
+follows is a stretch of the late half's pattern repeated, not a hole in the degradation. The mask is read from the
+half's kick-off, as ours was measured (a benchmark half starts at its kick-off, and the Calibration measures ours from
+there too), but its offset is drawn uniformly, so frame j of the benchmark's half has the gap pattern of the minute of
+frame offset + j of ours: up to M - n frames later than its own, 7.6 minutes for a 68,000-frame half and our
+79,467-frame first half. Coverage worsens through each half (A02), and a gap falls at another minute of the half than
+the one it fell at in ours.
 
 What the transplant keeps of ours, by construction: the gaps' durations and the share missing, per half and through
 the half. What it does not: where the gaps are in the play. They are drawn without looking at the DFL play, so
@@ -120,16 +123,18 @@ identity further: test_data_tracking_profile_on_a_real_match_with_our_real_calib
   a lost span. A d of 0 loses nobody, and then a run is one tracklet and nothing is drawn.
 * The slots (choose_tracklets) are 46 as ours are: 24 for the home team (0 to 23) and 22 for the away team (24 to 45).
   The tracklets of a half are taken in order of (start frame, player column) and each takes the LOWEST FREE slot of its
-  team's pool; a slot is free for a tracklet that starts at t when its previous tracklet ended before t, which is when
-  that tracklet's half-open stop is at most t. A pool with no free slot is a ValueError (a team has 11 players on the
-  pitch and 22 or 24 slots, so it means that DFL gave positions to players who are not playing).
+  team's pool; a slot is free for a tracklet that starts at t only when its previous tracklet stopped before t: its
+  half-open stop is at most t - 1, so that there is at least one empty row between two tracklets in a slot, and a slot
+  never changes player between two adjacent rows (version 3; versions 1 and 2 let a tracklet take a slot on the very
+  row it was freed, which put about 22 jumps of 12 to 17 m into every match and seed, where ours has none: R004c). A
+  pool with no free slot is a ValueError (a team has 11 players on the pitch and 22 or 24 slots, so it means that DFL
+  gave positions to players who are not playing).
 * The players cover each graded block, from its first row: not from the kick-off as the ball's mask does, because the
   mask's clock is a property of the gaps (coverage worsens through a half) and a player is tracked or lost whatever the
   clock. A DFL half starts at its kick-off, so the two are the same rows for the 7 matches. The rows between the halves
   have no players, as in DFL.
 * The speed is a finite difference in m/s on the match's pitch: the step from the frame before, over the frame's
-  duration, within a tracklet piece, and NaN on its first frame (also where another player's tracklet took the slot on
-  the frame it was freed: a step between two players is no speed). DFL's own speed channel is not used. Then the NaN
+  duration, within a tracklet piece, and NaN on its first frame. DFL's own speed channel is not used. Then the NaN
   runs of ours are placed (below).
 * The ball is exactly the gaps profile's: the same transplant draws. The profiles nest, so the difference between two
   of their results is one component.
@@ -186,9 +191,9 @@ its frames, and the pieces, their slot-frames and the episode pieces among them 
 short_slot_frames, short_episode_pieces). The walk draws its tracked spans from our FINAL tracklets, which already hold
 the cuts that the cap and the episodes add, so the profile counts our cuts twice, and its tracklet median would fall far
 below ours (the walk alone 40.88 s against ours 41.28 s, with the episodes 29.26 s, with the cap 24.44 s, with both
-19.68 s). The drawn lengths are therefore multiplied once by TRACKED_SCALE = 2.042 (lambda; the lost spans follow
-through mu, so the lost share stays d), worked out once from one label-free measurement and frozen: the comment at the
-constant has both figures and the date. calibrated_parameters reads the two constants when it is called (None is the
+19.68 s: R004b, with version 2's slot rule). The drawn lengths are therefore multiplied once by TRACKED_SCALE = 2.072
+(lambda; the lost spans follow through mu, so the lost share stays d), worked out once from one label-free measurement
+and frozen: the comment at the constant has the figures of versions 2 and 3 and the date. calibrated_parameters reads the two constants when it is called (None is the
 constant) and a call can set them aside (tracked_scale=1.0 and min_piece=0 are version 1's).
 
 The NaN-speed runs (place_speed_nan): ours come in runs (7.8% of the present slot-frames, median 21 frames, p99 2,300).
@@ -232,7 +237,8 @@ CLEAN = "clean"
 GAPS = "gaps"
 TRACKING = "tracking"
 CONTEXT = "context"
-PROFILES = {CLEAN: 1, GAPS: 1, TRACKING: 2, CONTEXT: 1}   # name -> version of how its tracking is made (reports say it)
+# name -> version of how its tracking is made (reports say it). tracking 3: a slot is free from the row after its tracklet.
+PROFILES = {CLEAN: 1, GAPS: 1, TRACKING: 3, CONTEXT: 1}
 # The streams of random numbers, by the part of the degradation that draws them. The number is the stream's place in the
 # key of rng_for, so it never changes for a component and a new component takes the next one. The transplant, the
 # tracklets, the wrong-team episodes and the NaN-speed runs are drawn so far; the hazard's is the context profile's.
@@ -249,11 +255,15 @@ MIN_PIECE_FRAMES = 8
 # twice: the walk alone gives a pooled tracklet median of 40.88 s against ours 41.28 s, and each part that cuts takes it
 # further down (episodes 29.26 s, cap 24.44 s, both 19.68 s: R004b). It is rescaled ONCE, label-free, from one
 # measurement: the pooled tracklet median of this profile at lambda = 1 with the shortest-piece rule in, seed 0, over
-# the 7 DFL matches, laid end to end as fidelity.py pools it, was 20.22 s (13,192 tracklets), against ours 41.28 s
-# (Calibration), so lambda = 41.28 / 20.22 = 2.0415..., 2.042 to three decimals (2026-10-23, Task 14, R004b). It is
+# the 7 DFL matches, laid end to end as fidelity.py pools it, against ours 41.28 s (Calibration). With version 2's slot
+# rule (a tracklet could take a slot on the row it was freed, which merged two tracklets into one run of a slot) it was
+# 20.22 s (13,192 tracklets), so lambda was 41.28 / 20.22 = 2.0415..., 2.042 to three decimals (2026-10-23, Task 14,
+# R004b). The slot rule of version 3 (a slot is free from the row after its tracklet stopped: R004c) gives 19.92 s
+# (13,396 tracklets), so lambda = 41.28 / 19.92 = 2.0723..., 2.072 (2026-10-23, Task 17, R004c): the bug that the slot
+# rule fixed moved the measurement, so the constant was reopened once, and not for a gate, a WARN or a score. It is
 # applied whether or not the tracklet-median gate would pass with it, and it is frozen: never touch it again because of
 # a gate, a WARN or a score.
-TRACKED_SCALE = 2.042
+TRACKED_SCALE = 2.072
 CENTRE_SPOT = 0.5                   # the cap's ball until DFL's has been seen in a half: the middle, in x and in y
 FULL = calibration_module.FULL_COUNT    # 22: players on the pitch, so slots present on a frame where nobody is lost
 HOME_SLOTS, AWAY_SLOTS = 24, 22     # our tracker's slots (the ATD metadata): the home team's first, then the away's
@@ -934,22 +944,25 @@ def drop_short_pieces(view, pieces, minimum):
 def assign_slots(view, half, pieces):
     """[Tracklet] of the pieces (first, player, last, pool), in order of (start, player), each in the lowest free slot.
 
-    Each piece takes the lowest slot of its pool's team (home 0-23, away 24-45) that its previous tracklet has left: a
-    slot is free from the stop of its last tracklet, and a tracklet that starts on that very row can take it.
-    ValueError, naming the match, the half and the row, for a pool with no free slot.
+    Each piece takes the lowest slot of its pool's team (home 0-23, away 24-45) that its previous tracklet has left, at
+    least one row before: a slot is free for a piece that starts at t only when its last tracklet stopped before t (its
+    half-open stop is at most t - 1), so that two tracklets of a slot are never on adjacent rows and a slot never
+    changes player between two frames. A tracklet that took the slot on the row it was freed would put the position of
+    another player into the slot's trajectory (versions 1 and 2 did, about 22 times a match and seed). ValueError,
+    naming the match, the half and the row, for a pool with no free slot.
     """
-    free_from = [0] * N_SLOTS
+    free_from = [-1] * N_SLOTS
     tracklets = []
     for first, player, last, pool in pieces:
         home = pool == 0
         slots = range(HOME_SLOTS) if home else range(HOME_SLOTS, N_SLOTS)
-        slot = next((candidate for candidate in slots if free_from[candidate] <= first), None)
+        slot = next((candidate for candidate in slots if free_from[candidate] < first), None)
         if slot is None:
             raise ValueError("{}: half {}: no free {} slot for the player in column {}, whose tracklet starts at frame "
-                             "{}: the {} slots of its pool are all taken by players tracked at that frame. A team has "
-                             "11 players on the pitch, so look at where the match's players_xy gives a position to a "
-                             "player who is not playing".format(view.match_id, half, "home" if home else "away", player,
-                                                                first, len(slots)))
+                             "{}: the {} slots of its pool are all taken by players tracked at that frame or the one "
+                             "before. A team has 11 players on the pitch, so look at where the match's players_xy "
+                             "gives a position to a player who is not playing".format(
+                                 view.match_id, half, "home" if home else "away", player, first, len(slots)))
         free_from[slot] = last
         tracklets.append(Tracklet(player=player, start=first, stop=last, slot=slot))
     return tracklets

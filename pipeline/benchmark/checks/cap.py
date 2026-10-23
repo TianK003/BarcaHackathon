@@ -16,10 +16,10 @@ import types
 import numpy as np
 
 from pipeline.benchmark import degrade
-from pipeline.benchmark.checks.common import (RECORDED_MEDIAN_S, RECORDED_OURS_MEDIAN_S, episode_parameters,
-                                              is_carried, made_up_calibration, pairs_match, reference_episodes,
-                                              smoothed_plain, steady_match, tracked_scale_from_the_record,
-                                              without_new_parts)
+from pipeline.benchmark.checks.common import (RECORDED_MEDIAN_S, RECORDED_MEDIAN_V2_S, RECORDED_OURS_MEDIAN_S,
+                                              episode_parameters, is_carried, made_up_calibration, pairs_match,
+                                              reference_episodes, smoothed_plain, steady_match,
+                                              tracked_scale_from_the_record, without_new_parts)
 from pipeline.selftest import expect_error
 
 # Params
@@ -559,9 +559,10 @@ def test_tracking_version_2_with_no_low_count_frame_is_version_1s_players():
     full squad and on a steady match, under three seeds; and so do counts that are all just above CAP (19). The record
     says that nothing was capped. With the scale of the tracked spans at 1 and the shortest-piece rule off, set through
     the parameters (what version 1 was), the same holds for the players that those parameters make: a cap that finds no
-    frame to act on is the walk, the episodes, the slots, the speeds and the smoothing of version 1, and nothing else.
-    The profile's version is 2 and the gaps, clean and context ones' are 1."""
-    assert degrade.PROFILES == {"clean": 1, "gaps": 1, "tracking": 2, "context": 1}
+    frame to act on is the walk, the episodes, the slots, the speeds and the smoothing of version 1 (with version 3's
+    slot rule: a slot is free from the row after its tracklet stopped), and nothing else. The profile's version is 3 and
+    the gaps, clean and context ones' are 1."""
+    assert degrade.PROFILES == {"clean": 1, "gaps": 1, "tracking": 3, "context": 1}
     for match in (steady_match(rows=(240, 200), teams=FULL_SQUAD, substitutions=True), steady_match()):
         view = degrade.tracking_view(match)
         for level in (22, 19):
@@ -575,7 +576,7 @@ def test_tracking_version_2_with_no_low_count_frame_is_version_1s_players():
                 atd, info = degrade.degrade(view, "tracking", cal, seed)
                 xy, speed, records, counts = degrade.degraded_players(view, parameters, seed)
                 assert atd.players_xy.tobytes() == xy.tobytes() and atd.players_speed.tobytes() == speed.tobytes()
-                assert info["version"] == 2 and info["players"]["capped_frames"] == 0
+                assert info["version"] == 3 and info["players"]["capped_frames"] == 0
                 assert info["players"]["cap_slot_frames"] == info["players"]["cap_pieces_cut"] == 0
                 limits = degrade.cap_limits(view, cal, seed)
                 for own in (parameters, version_1):
@@ -826,19 +827,22 @@ def test_cap_is_applied_to_the_pieces_after_the_episodes_and_leaves_their_counts
 # -- the frozen scale of the tracked spans ----------------------------------------------------------------------------
 
 def test_tracked_scale_is_the_frozen_one_and_follows_from_the_recorded_measurements():
-    """TRACKED_SCALE is 2.042, and 2.042 is what the two recorded measurements give: 41.28 / 20.22 = 2.0415..., to 3
-    decimals. Only recorded constants are compared, none measured, so the default run pins the frozen constant: it
-    moves with a change of the code that nobody meant to be one, or with a retune towards a gate, a WARN or a score
-    (R004b says never), and a moved constant fails here and says which one. The profile reads it and the shortest piece
-    when it is called (calibrated_parameters), and degrade.MIN_PIECE_FRAMES is A09's 8 frames."""
-    assert abs(RECORDED_OURS_MEDIAN_S / RECORDED_MEDIAN_S - 2.0415) < 5e-5
-    assert tracked_scale_from_the_record() == 2.042
-    assert degrade.TRACKED_SCALE == tracked_scale_from_the_record() == 2.042, (
-        "TRACKED_SCALE is frozen: it was worked out once, from 41.28 s and 20.22 s, and is never touched again",
-        degrade.TRACKED_SCALE)
+    """TRACKED_SCALE is 2.072, and 2.072 is what the two recorded measurements give: 41.28 / 19.92 = 2.0723, to 3
+    decimals (with version 2's slot rule it was 41.28 / 20.22 = 2.042, R004b, and the slot rule of version 3 moved the
+    median, R004c: a bug finding that reopened the constant once). Only recorded constants are compared, none measured,
+    so the default run pins the frozen constant: it moves with a change of the code that nobody meant to be one, or with
+    a retune towards a gate, a WARN or a score (R004b says never), and a moved constant fails here and says which one.
+    The profile reads it and the shortest piece when it is called (calibrated_parameters), and
+    degrade.MIN_PIECE_FRAMES is A09's 8 frames."""
+    assert abs(RECORDED_OURS_MEDIAN_S / RECORDED_MEDIAN_S - 2.0723) < 5e-5
+    assert round(RECORDED_OURS_MEDIAN_S / RECORDED_MEDIAN_V2_S, 3) == 2.042, "what version 2's constant was"
+    assert tracked_scale_from_the_record() == 2.072
+    assert degrade.TRACKED_SCALE == tracked_scale_from_the_record() == 2.072, (
+        "TRACKED_SCALE is frozen: it was worked out once for version 3, from 41.28 s and 19.92 s, and is never "
+        "touched again", degrade.TRACKED_SCALE)
     assert degrade.MIN_PIECE_FRAMES == 8
     profile = degrade.calibrated_parameters(made_up_calibration(), 25)
-    assert profile.tracked_scale == 2.042 and profile.min_piece == 8
+    assert profile.tracked_scale == 2.072 and profile.min_piece == 8
 
 
 def test_calibrated_parameters_read_the_scale_and_the_shortest_piece_when_called():

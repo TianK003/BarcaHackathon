@@ -373,23 +373,27 @@ def test_each_tracklet_takes_the_lowest_free_slot_of_its_pool():
     """In the order of (start, player), a tracklet takes the lowest slot of its team's pool that is free at its start.
 
     Worked out from the records alone: the slots below the one taken were all busy at the start (an earlier tracklet,
-    still tracked on that frame, had each of them), and the one taken was not. A slot is free for a tracklet starting at
-    t when its previous tracklet ended before t, so one that ends at t (half-open: its last frame is t - 1) is free."""
+    still tracked on that frame or on the one before it, had each of them), and the one taken was not. A slot is free for
+    a tracklet starting at t only when its previous tracklet stopped before t: one that ends at t (half-open: its last
+    frame is t - 1) still holds the slot, and one that ends at t - 1 (so that row t - 1 is empty) has freed it. Since
+    tracking version 3 there are never two tracklets of a slot on adjacent rows: that was the bug of versions 1 and 2."""
     view = degrade.tracking_view(steady_match(rows=(400, 300)))
     parameters = degrade.tracking_parameters([3, 5, 8, 20], 0.3)
-    checked = taken_over = 0
+    checked = taken_over = after_one_empty_row = 0
     for seed in range(4):
         _, _, tracklets, _ = degrade.degraded_players(view, parameters, seed)
         for records in tracklets.values():
             assert [(t.start, t.player) for t in records] == sorted((t.start, t.player) for t in records)
             for index, t in enumerate(records):
                 pool = range(0, 24) if view.player_team[t.player] == 0 else range(24, 46)
-                busy = {u.slot for u in records[:index] if u.stop > t.start}
+                busy = {u.slot for u in records[:index] if u.stop >= t.start}
                 assert t.slot in pool and t.slot not in busy, (seed, t)
                 assert all(slot in busy for slot in pool if slot < t.slot), (seed, t, sorted(busy))
                 checked += 1
                 taken_over += any(u.stop == t.start and u.slot == t.slot for u in records[:index])
-    assert checked > 500 and taken_over > 0, "a slot freed on a frame is taken on that frame, by another player's"
+                after_one_empty_row += any(u.stop + 1 == t.start and u.slot == t.slot for u in records[:index])
+    assert checked > 500 and taken_over == 0, "a slot freed on a frame is not taken on that frame"
+    assert after_one_empty_row > 0, "the row after it is: the rule is `before`, and both sides of it are exercised"
 
 
 def test_slot_team_matches_pool():
@@ -534,9 +538,11 @@ def test_tracking_draws_come_from_the_tracklets_stream_in_a_fixed_order():
 def test_tracking_speeds_are_finite_differences_within_a_tracklet():
     """A slot's speed is the step from the frame before, in m/s on the pitch, within a tracklet; NaN on its first.
 
-    Worked out with math.hypot, one frame at a time, from the match's own positions through each tracklet's records. A
-    slot that another player's tracklet takes over on the very frame it is freed has NaN on that frame: a step from one
-    player to another is no speed. The DFL speed channel is not used."""
+    Worked out with math.hypot, one frame at a time, from the match's own positions through each tracklet's records.
+    The first frame of a tracklet has no speed, and the frame before it in the same slot, if the slot had a player then,
+    is another player's: there is none, since a slot is taken only from the row after it was freed (version 3; in
+    versions 1 and 2 the step from one player to another had no speed, and the position jumped). The DFL speed channel
+    is not used."""
     match = steady_match(rows=(400, 300))
     view = degrade.tracking_view(match)
     parameters = degrade.tracking_parameters([3, 5, 8, 20], 0.3)
@@ -557,8 +563,10 @@ def test_tracking_speeds_are_finite_differences_within_a_tracklet():
         assert np.allclose(speed, expected, rtol=1e-12, atol=0, equal_nan=True), seed
         assert all(np.isnan(speed[row, slot]) for row, slot in firsts), "NaN on the first frame of every tracklet"
         handed_over += sum(np.isfinite(xy[row - 1, slot, 0]) for row, slot in firsts if row > 0)
+        assert (np.isfinite(xy[1:, :, 0]) & np.isfinite(xy[:-1, :, 0])).sum() == sum(
+            t.stop - t.start - 1 for records in tracklets.values() for t in records), "adjacent pairs are within tracklets"
         assert np.isnan(speed[~np.isfinite(xy[:, :, 0])]).all(), "no speed where nobody is"
-    assert checked > 1000 and handed_over > 0, (checked, handed_over)
+    assert checked > 1000 and handed_over == 0, (checked, handed_over)
     # DFL's own speed channel is not used: with another one, the same speeds.
     silent = np.zeros_like(match.players_speed)
     silent.setflags(write=False)
@@ -568,6 +576,134 @@ def test_tracking_speeds_are_finite_differences_within_a_tracklet():
     one = degrade.tracking_parameters([1], 0.5)
     _, speed, _, _ = degrade.degraded_players(view, one, 0)
     assert np.isnan(speed).all()
+
+
+def owners_of(tracklets, n_frames, n_slots=46):
+    """(n_frames, n_slots) int: the number of the tracklet that holds each slot on each row (every tracklet of every half
+    has a number of its own), -1 where nobody does."""
+    owner = np.full((n_frames, n_slots), -1, dtype=np.int64)
+    number = 0
+    for half in sorted(tracklets):
+        for t in tracklets[half]:
+            owner[t.start:t.stop, t.slot] = number
+            number += 1
+    return owner
+
+
+def handovers_of(owner):
+    """[(row, slot)] of every pair of adjacent rows (row - 1, row) on which a slot is present on both and held by two
+    different tracklets: a slot that changes player between two frames, which ours never does (A07)."""
+    both = (owner[1:] >= 0) & (owner[:-1] >= 0) & (owner[1:] != owner[:-1])
+    rows, slots = np.nonzero(both)
+    return sorted(zip((rows + 1).tolist(), slots.tolist()))
+
+
+def test_a_slot_never_changes_player_between_adjacent_present_rows():
+    """On two adjacent rows a slot that is present on both is held by one tracklet: it never changes player.
+
+    Ours cannot: its jitter is 3.28 mm over 3.2 million triples (A07), and one jump of 12 m between two frames would be
+    34 times all of it. A slot is free for a tracklet that starts at t only from the row after the one on which the last
+    tracklet in it stopped, so there is at least one empty row between two tracklets in a slot. Version 2 let the next
+    tracklet take the slot on the very row it was freed (that row's position was another player's), which put about 22
+    jumps of 12 to 17 m into every match and seed and made most of the 8.5 cm jitter per slot (R004c).
+
+    Worked out from the records, on rows that are frames of the match: every pair of adjacent rows of every slot, over the
+    steady match (6 players, the walk, the episodes, the cap and the rule, all on) for twelve seeds, and the same for the
+    positions: on two adjacent rows where a slot is present the position is the same player's, so it differs by no more
+    than a player moves in a frame (the made-up players here jump about the pitch, so the check is on who it is, not on
+    how far). The tracklets that share a slot are counted, so that a rule that stopped sharing slots at all (and passed
+    vacuously) would be seen: at least one slot is taken again after exactly one empty row, the closest the rule allows."""
+    cal = made_up_calibration()
+    shared = taken_again = 0
+    for match in (steady_match(), steady_match("RND002", 1, rows=(260, 190))):
+        view = degrade.tracking_view(match)
+        parameters = degrade.calibrated_parameters(cal, view.fps)
+        for seed in range(12):
+            limits = degrade.cap_limits(view, cal, seed)
+            xy, _, tracklets, _ = degrade.degraded_players(view, parameters, seed, limits)
+            owner = owners_of(tracklets, match.n_frames)
+            assert handovers_of(owner) == [], (seed, handovers_of(owner)[:5])
+            for records in tracklets.values():
+                last = {}
+                for t in sorted(records, key=lambda t: (t.slot, t.start)):
+                    if t.slot in last:
+                        shared += 1
+                        taken_again += t.start == last[t.slot] + 1
+                    last[t.slot] = t.stop
+            present = np.isfinite(xy[:, :, 0])
+            adjacent = present[1:] & present[:-1]
+            for row, slot in zip(*np.nonzero(adjacent)):
+                a, b = int(owner[row, slot]), int(owner[row + 1, slot])
+                assert a == b and a >= 0, (seed, row, slot)
+    assert shared > 50 and taken_again > 0, (shared, taken_again)
+
+
+def test_a_handover_on_the_row_a_slot_is_freed_is_what_the_check_would_catch():
+    """The check above does see a slot that changes player: on hand-built records it lists exactly the handovers.
+
+    Slot 3 holds the tracklet of rows 0-4 and then another of rows 5-9 (a handover on row 5), slot 4 one of rows 0-4 and
+    one of rows 6-9 (an empty row between: no handover), and slot 5 one of rows 2-6 alone."""
+    records = {1: [degrade.Tracklet(player=0, start=0, stop=5, slot=3), degrade.Tracklet(player=1, start=5, stop=10, slot=3),
+                   degrade.Tracklet(player=2, start=0, stop=5, slot=4), degrade.Tracklet(player=3, start=6, stop=10, slot=4),
+                   degrade.Tracklet(player=4, start=2, stop=7, slot=5)]}
+    assert handovers_of(owners_of(records, 12)) == [(5, 3)]
+    assert handovers_of(owners_of({1: records[1][2:]}, 12)) == []
+
+
+def test_dfl_a_slot_never_changes_player_on_a_real_match():
+    """The same check on a real DFL match, J03WMX, with the made-up tracking figures (the rule is not about ours):
+    over four seeds, with the cap on, no slot changes player between two adjacent rows on which it is present, and the
+    tracklets of a slot are separated by at least one empty row. Aggregates only."""
+    from pipeline.benchmark import sources
+    match_id = sources.MATCH_IDS[0]
+    for kind in dfl.SOURCE_KINDS:
+        if not os.path.isfile(sources.local_path(match_id, kind)):
+            raise NotRun("{} is not downloaded ({}); {} to fetch the DFL matches".format(
+                match_id, kind, dfl.FETCH_ADVICE))
+    cal = made_up_calibration()
+    match = real_match(match_id)
+    view = degrade.tracking_view(match)
+    parameters = degrade.calibrated_parameters(cal, view.fps)
+    pairs = 0
+    for seed in range(4):
+        _, _, tracklets, _ = degrade.degraded_players(view, parameters, seed, degrade.cap_limits(view, cal, seed))
+        owner = owners_of(tracklets, match.n_frames)
+        assert handovers_of(owner) == [], (seed, handovers_of(owner)[:5])
+        pairs += int(((owner[1:] >= 0) & (owner[:-1] >= 0)).sum())
+    print("      {}: no slot changed player on any of the {:,} adjacent present pairs of 4 seeds".format(match_id, pairs))
+    assert pairs > 10 ** 6
+
+
+def jitter_inside_tracklets(xy_m, tracklets):
+    """(triples, RMS in metres) of the second difference p[t+1] - 2 p[t] + p[t-1] taken inside one tracklet: the three
+    rows of a triple all belong to it. `tracklets` is {half: [Tracklet]} as degraded_players gives it, `xy_m` the slots'
+    positions in metres, (n_frames, n_slots, 2)."""
+    squares, triples = 0.0, 0
+    for records in tracklets.values():
+        for t in records:
+            run = xy_m[t.start:t.stop, t.slot]
+            if run.shape[0] >= 3:
+                second = run[2:] - 2.0 * run[1:-1] + run[:-2]
+                squares += float((second * second).sum())
+                triples += second.shape[0]
+    return triples, math.sqrt(squares / triples) if triples else math.nan
+
+
+def test_jitter_inside_tracklets_counts_what_it_says():
+    """One slot on a line holds a tracklet of rows 0-3 at 0, 1, 2, 3 and another of rows 4-6 at 10, 11, 12 (a handover
+    on row 4, as version 2 made them): inside the tracklets the second differences are 0, 0 (rows 1 and 2 of the first)
+    and 0 (row 5 of the second), 3 triples with an RMS of 0; per slot they are those three and the two that straddle
+    the handover, 6 and -6, so 5 triples and sqrt((36 + 36) / 5) by second_difference_shape. A tracklet of two rows has
+    no triple."""
+    xy = np.zeros((8, 1, 2))
+    xy[:7, 0, 0] = [0, 1, 2, 3, 10, 11, 12]
+    records = {1: [degrade.Tracklet(player=0, start=0, stop=4, slot=0), degrade.Tracklet(player=1, start=4, stop=7, slot=0),
+                   degrade.Tracklet(player=2, start=7, stop=8, slot=0)]}
+    assert jitter_inside_tracklets(xy, records) == (3, 0.0)
+    present = np.array([True] * 7 + [False])[:, None]
+    count, rms, _, _, _ = second_difference_shape(xy, present, [(1, 0, 8)])
+    assert count == 5 and abs(rms - math.sqrt(72 / 5)) < 1e-12
+    assert jitter_inside_tracklets(xy, {1: [degrade.Tracklet(player=0, start=0, stop=2, slot=0)]})[0] == 0
 
 
 def test_tracking_is_deterministic_and_independent_of_the_other_matches():
@@ -796,8 +932,9 @@ def reference_players(view, parameters, seed):
     or smoothing.
 
     The spans are the walk's (degrade.walk_run, drawn from the "tracklets" stream as documented), the slots the lowest
-    free one of the player's own pool for a tracklet taken in order of (start, player), a speed the step from the frame
-    before in m/s, NaN on a tracklet's first row."""
+    free one of the player's own pool for a tracklet taken in order of (start, player) (free: its last tracklet stopped
+    before this one starts, so that a row separates them; version 3), a speed the step from the frame before in m/s, NaN
+    on a tracklet's first row."""
     pitch = np.asarray(view.pitch)
     xy = np.full((view.n_frames, 46, 2), np.nan)
     speed = np.full((view.n_frames, 46), np.nan)
@@ -810,10 +947,10 @@ def reference_players(view, parameters, seed):
             for first, last in present_runs(column):
                 for a, b in degrade.walk_run(rng, last - first, parameters):
                     spans.append((start + first + a, player, start + first + b))
-        free = [0] * 46
+        free = [-1] * 46
         for first, player, last in sorted(spans):
             pool = range(24) if view.player_team[player] == 0 else range(24, 46)
-            slot = next(candidate for candidate in pool if free[candidate] <= first)
+            slot = next(candidate for candidate in pool if free[candidate] < first)
             free[slot] = last
             records.append((half, player, first, last, slot))
             xy[first:last, slot] = view.players_xy[first:last, player]
@@ -864,12 +1001,12 @@ def test_profiles_nest():
         assert tracking_info["transplants"] == gaps_info["transplants"]
         assert tracking_info["mask_share"] == gaps_info["mask_share"]
         assert sorted(tracking_info) == sorted(list(gaps_info) + ["players"]), sorted(tracking_info)
-        assert (tracking_info["profile"], tracking_info["version"]) == ("tracking", 2)
+        assert (tracking_info["profile"], tracking_info["version"]) == ("tracking", 3)
         assert tracking.players_xy.shape[1] == 46 and gaps.players_xy.shape[1] == 6, "the players are what differs"
         players = tracking_info["players"]
         assert players["scale"] == degrade.WRONG_TEAM_SCALE > 0 and players["speed_nan_target"] == MADE_UP_SPEED_NAN
         assert players["speed_nan_runs"] > 0, "the new parts are on, so this is not vacuous"
-        assert degrade.PROFILES["tracking"] == 2 and degrade.PROFILES["gaps"] == 1, "version 2 is frozen"
+        assert degrade.PROFILES["tracking"] == 3 and degrade.PROFILES["gaps"] == 1, "version 3 is frozen"
 
 
 def test_speed_nan_share():
@@ -1287,13 +1424,15 @@ def test_data_tracking_constants_follow_from_the_measurements():
     from each kick-off to the end of the graded block, pooled by sums of squares) against
     Calibration.player_jitter_rms_m: SMOOTH_WINDOW is not 0 if and only if DFL's is more than twice ours, and the
     smoothing lowers the pooled RMS of the profile's own draws (smooth=0 against the profile's, the same pieces and the
-    same triples; not against the clean players, whose RMS the cuts change as much as the smoothing does: T35); (2) the
+    same triples; not against the clean players, whose RMS the cuts change as much as the smoothing does, and, in
+    versions 1 and 2, a slot's handovers changed more than either: T35); (2) the
     scale: the observable wrong-team share (player_stats on the degraded match, seed 0, the 7 matches pooled by sums) at
     s = 1.0 was not within 0.03 of ours, so WRONG_TEAM_SCALE is s = 1.0 rescaled once by target / observed (to 3
     decimals): the constant is compared with that one recorded measurement (RECORDED_OBSERVED, RECORDED_TARGET), and not
     with a scale worked out again from this run's, which it would follow wherever the code went. At the frozen scale the
     share must be within 0.03 of ours, the gate's own band, measured now. It prints both, per match and pooled, the
-    degraded players' jitter after the smoothing beside DFL's and ours, what the jitter is made of (its median, 99th
+    degraded players' jitter after the smoothing beside DFL's and ours, the same measured inside tracklets (equal to it:
+    asserted, since no slot changes player between two adjacent rows), what the jitter is made of (its median, 99th
     percentile and the share of its squares in rare jumps) and the wrong-team episodes that player_stats sees in the
     degraded matches beside ours (information). (3) the scale of the tracked spans: the walk draws its spans from our
     final tracklets, which already hold the cuts that the cap and the episodes add, so TRACKED_SCALE is lambda = ours'
@@ -1315,11 +1454,12 @@ def test_data_tracking_constants_follow_from_the_measurements():
                     match_id, kind, dfl.FETCH_ADVICE))
     # The frozen scale of the tracked spans first: it is compared with recorded constants only, so that a constant that
     # has moved is reported as that, and not as whatever else a different scale makes of the measurements below.
-    assert degrade.TRACKED_SCALE == tracked_scale_from_the_record() == 2.042, (
+    assert degrade.TRACKED_SCALE == tracked_scale_from_the_record() == 2.072, (
         "TRACKED_SCALE is frozen at the value worked out once from the recorded measurements", degrade.TRACKED_SCALE)
     cal = calibration.load()
     target = cal.wrong_team_share
     jitter, seen_episodes = {"clean": [0.0, 0], "unsmoothed": [0.0, 0], "degraded": [0.0, 0]}, []
+    inside = {"unsmoothed": [0.0, 0], "degraded": [0.0, 0]}     # the same two, taken inside tracklets (squares, triples)
     wrong = {"first": [0, 0], "frozen": [0, 0]}
     medians = {"one": [], "frozen": []}
     spells = {"frozen": [0, 0, 0]}                      # frames on the pitch, frames lost, pieces dropped by the rule
@@ -1344,7 +1484,7 @@ def test_data_tracking_constants_follow_from_the_measurements():
         limits = degrade.cap_limits(view, cal, 0)
         for name, parameters, caps in (("first", dataclasses.replace(version_1, scale=1.0, smooth=0), None),
                                        ("one", unit, limits), ("frozen", base, limits)):
-            xy, speed, _, counts = degrade.degraded_players(view, parameters, 0, caps)
+            xy, speed, records, counts = degrade.degraded_players(view, parameters, 0, caps)
             stats[name] = calibration.player_stats(np.isfinite(xy[:, :, 0]), degrade.slot_team(), xy * pitch, speed,
                                                    spans, view.fps)
             if name in medians:
@@ -1357,7 +1497,7 @@ def test_data_tracking_constants_follow_from_the_measurements():
                 jitter["degraded"][0] += stats[name]["jitter_rms_m"] ** 2 * stats[name]["jitter_triples"]
                 jitter["degraded"][1] += stats[name]["jitter_triples"]
                 # The same draws with no smoothing: the same pieces, so the same slots present and the same triples.
-                rough_xy, rough_speed, _, _ = degrade.degraded_players(
+                rough_xy, rough_speed, rough_records, _ = degrade.degraded_players(
                     view, dataclasses.replace(base, smooth=0), 0, limits)
                 assert np.array_equal(np.isfinite(rough_xy[:, :, 0]), np.isfinite(xy[:, :, 0])), match_id
                 rough = calibration.player_stats(np.isfinite(rough_xy[:, :, 0]), degrade.slot_team(), rough_xy * pitch,
@@ -1365,6 +1505,17 @@ def test_data_tracking_constants_follow_from_the_measurements():
                 assert rough["jitter_triples"] == stats[name]["jitter_triples"], match_id
                 jitter["unsmoothed"][0] += rough["jitter_rms_m"] ** 2 * rough["jitter_triples"]
                 jitter["unsmoothed"][1] += rough["jitter_triples"]
+                # The jitter taken inside tracklets only. Since version 3 a slot never changes player between two
+                # adjacent present rows, so every triple of a slot is inside one tracklet and the two figures are the
+                # same: asserted, and printed side by side (in versions 1 and 2 the per-slot one held the handovers,
+                # and was 8.5 cm against 0.4 to 2.0 cm inside the tracklets: R004c).
+                for name_, array, own in (("degraded", xy, records), ("unsmoothed", rough_xy, rough_records)):
+                    count, rms_inside = jitter_inside_tracklets(array * pitch, own)
+                    per_slot = stats[name] if name_ == "degraded" else rough
+                    assert count == per_slot["jitter_triples"], (match_id, name_, count, per_slot["jitter_triples"])
+                    assert abs(rms_inside - per_slot["jitter_rms_m"]) < 1e-9, (match_id, name_, rms_inside)
+                    inside[name_][0] += rms_inside ** 2 * count
+                    inside[name_][1] += count
                 clean_present = np.isfinite(np.asarray(view.players_xy)[:, :, 0])
                 for half, start, stop in view.graded:
                     spells["frozen"][0] += int(clean_present[start:stop].sum())
@@ -1382,11 +1533,16 @@ def test_data_tracking_constants_follow_from_the_measurements():
                               float(np.quantile(episodes, 0.9))))
         del match, view, clean
     rms = {name: math.sqrt(squares / triples) for name, (squares, triples) in jitter.items()}
+    rms_inside = {name: math.sqrt(squares / triples) for name, (squares, triples) in inside.items()}
     first, frozen = (wrong[name][0] / wrong[name][1] for name in ("first", "frozen"))
     print("      jitter, RMS of the second difference: DFL clean {:.4f} m ({:.1f} x ours), degraded with the {}-frame "
           "average {:.4f} m ({:.1f} x ours) and, the same draws without it, {:.4f} m; ours {:.4f} m".format(
               rms["clean"], rms["clean"] / cal.player_jitter_rms_m, degrade.SMOOTH_WINDOW, rms["degraded"],
               rms["degraded"] / cal.player_jitter_rms_m, rms["unsmoothed"], cal.player_jitter_rms_m))
+    print("      jitter inside tracklets (the same draws, the triples of one tracklet): with the {}-frame average {:.4f} m, "
+          "without it {:.4f} m; per slot, above, {:.4f} m and {:.4f} m: the same, as no slot changes player between "
+          "two adjacent rows".format(degrade.SMOOTH_WINDOW, rms_inside["degraded"], rms_inside["unsmoothed"],
+                                     rms["degraded"], rms["unsmoothed"]))
     print("      wrong-team share, seed 0, pooled by sums: s = 1.0 gives {:.5f} ({:,} of {:,} frames), s = {} gives "
           "{:.5f} ({:,}); ours {:.5f}, gate +-0.03".format(first, *wrong["first"], degrade.WRONG_TEAM_SCALE, frozen,
                                                           wrong["frozen"][0], target))
@@ -1404,8 +1560,8 @@ def test_data_tracking_constants_follow_from_the_measurements():
     assert abs(shapes["ours"][1] - cal.player_jitter_rms_m) < 1e-6, "the same statistic, here and in the Calibration"
     # The smoothing is tested on the same draws with and without it (smooth=0: the same pieces, the same slots present,
     # the same triples), and not against DFL's clean players: the degraded ones are cut by the walk, the episodes, the
-    # cap and the shortest-piece rule first, 98% of the RMS is a few rare jumps (T35), and which of them the cuts leave
-    # decides the sign of a comparison with the clean players, whatever the smoothing does.
+    # cap and the shortest-piece rule first, and which of DFL's jumps the cuts leave decides the sign of a comparison
+    # with the clean players, whatever the smoothing does (and, in versions 1 and 2, a slot's handovers did too: T35).
     assert rms["degraded"] < rms["unsmoothed"], ("smoothing lowers the jitter of the same draws", rms)
     # The frozen scale is the value that was worked out once, from the measurement recorded in R004 (39,756 of 1,002,644
     # frames, 0.03965, at s = 1.0, against ours 0.105391764), and not one worked out again from what this run measures:
@@ -1427,6 +1583,6 @@ def test_data_tracking_constants_follow_from_the_measurements():
               spells["frozen"][1] / spells["frozen"][0], spells["frozen"][2]))
     assert abs(ours_median - RECORDED_OURS_MEDIAN_S) < 1e-9, "the Calibration is the one lambda was worked out against"
     assert abs(unit_median - RECORDED_MEDIAN_S) < 1e-9, "the recorded measurement reproduces with this code"
-    assert degrade.TRACKED_SCALE == round(ours_median / RECORDED_MEDIAN_S, 3) == 2.042, degrade.TRACKED_SCALE
+    assert degrade.TRACKED_SCALE == round(ours_median / RECORDED_MEDIAN_S, 3) == 2.072, degrade.TRACKED_SCALE
     assert degrade.MIN_PIECE_FRAMES == int(round(float(cal.tracklet_lengths_s.min()) * ours.fps)) == 8, (
         "the shortest tracklet of ours (A09)")

@@ -590,7 +590,7 @@ def test_runner_gaps_runs_on_degraded_tracking():
     its own draws, the report holds the Calibration's digest and version, the file name carries `.s<n>` for a number of
     seeds that is not the default, and the printout names the calibration that made the run.
     """
-    assert benchmark_run.PROFILES == degrade.PROFILES == {"clean": 1, "gaps": 1, "tracking": 2, "context": 1}
+    assert benchmark_run.PROFILES == degrade.PROFILES == {"clean": 1, "gaps": 1, "tracking": 3, "context": 1}
     matches, cal = synthetic_matches(), synthetic_calibration()
     paths = [yardstick_path(50), yardstick_path(0)]
     with tempfile.TemporaryDirectory() as root:
@@ -639,13 +639,13 @@ def test_runner_gaps_runs_on_degraded_tracking():
 
 
 def test_runner_default_profile_is_tracking_and_runs_it():
-    """With no --profile the runner degrades with the tracking profile: its version 2, its Calibration, its report.
+    """With no --profile the runner degrades with the tracking profile: its version 3, its Calibration, its report.
 
     The default is the profile that looks most like our match (R004b); a run that does not name one is the same run as
-    one that names tracking, to the byte of its reports, and says tracking version 2 in the report and in the printout.
+    one that names tracking, to the byte of its reports, and says tracking version 3 in the report and in the printout.
     The synthetic Calibration here has the made-up tracking figures (common.tracking_calibration), whose counts and
     masks are as long as each other."""
-    assert benchmark_run.DEFAULT_PROFILE == "tracking" and benchmark_run.PROFILES["tracking"] == 2
+    assert benchmark_run.DEFAULT_PROFILE == "tracking" and benchmark_run.PROFILES["tracking"] == 3
     matches, cal = synthetic_matches(), tracking_calibration()
     paths = [yardstick_path(50), yardstick_path(0)]
     with tempfile.TemporaryDirectory() as root:
@@ -654,10 +654,10 @@ def test_runner_default_profile_is_tracking_and_runs_it():
                                                  log=lines.append)
         named = benchmark_run.evaluate_configs(paths, profile="tracking", seeds=2, matches=matches, calibration=cal,
                                                data_dir=root, log=quiet)
-        assert default["profile"] == {"name": "tracking", "version": 2}
+        assert default["profile"] == {"name": "tracking", "version": 3}
         assert [entry["report"] for entry in default["configs"]] == [entry["report"] for entry in named["configs"]]
-        assert all(entry["report"]["profile"] == {"name": "tracking", "version": 2} for entry in default["configs"])
-        assert "profile   tracking (version 2)" in "\n".join(lines), lines
+        assert all(entry["report"]["profile"] == {"name": "tracking", "version": 3} for entry in default["configs"])
+        assert "profile   tracking (version 3)" in "\n".join(lines), lines
 
 
 def test_runner_refuses_a_calibration_it_cannot_use():
@@ -857,7 +857,7 @@ def test_runner_tracking_json_identical_across_processes():
     report = identical_across_processes("tracking", ".m-RND001-RND002-SYN001.s2.json")
     assert [record["id"] for record in report["matches"]] == ["SYN001", "RND001", "RND002"]
     assert report["seeds"] == [0, 1] and len(report["halves"]) == 3 * 2 * 2
-    assert report["profile"] == {"name": "tracking", "version": 2}
+    assert report["profile"] == {"name": "tracking", "version": 3}
     assert report["calibration"]["sha256"] == calibration.digest(tracking_calibration())
 
 

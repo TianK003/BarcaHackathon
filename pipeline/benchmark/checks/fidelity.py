@@ -514,7 +514,7 @@ def test_fidelity_tracking_report_synthetic():
     matches, cal = steady_matches(), tracking_calibration()
     with tempfile.TemporaryDirectory() as root:
         result = fidelity.report("tracking", seeds=SEEDS, matches=matches, calibration=cal, data_dir=root, log=quiet)
-        assert result["profile"] == {"name": "tracking", "version": 2} and result["matches"] == ["RND001", "RND002"]
+        assert result["profile"] == {"name": "tracking", "version": 3} and result["matches"] == ["RND001", "RND002"]
         assert [gate["name"] for gate in result["gates"]] == TRACKING_GATES
         ours = worked_out_tracking(matches, cal)
         gaps = worked_out(matches, cal)

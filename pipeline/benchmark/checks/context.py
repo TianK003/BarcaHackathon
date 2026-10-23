@@ -11,7 +11,7 @@ frame (capped_match), so that the mask is a pattern that can be written down. re
 construction one row at a time, from the documentation and not from the code. What no check may see is the truth:
 test_context_never_sees_truth gives two matches that differ only in their flags and asks for the same bytes.
 
-The players are `tracking` version 2's (test_context_players_equal_tracking), and so are the draws that the cap reads
+The players are `tracking`'s (test_context_players_equal_tracking), and so are the draws that the cap reads
 (the Transplant): the profile changes the ball's mask and nothing else. The checks that need a real match and our own
 Calibration (the one measurement of the stop conditions, R005) are test_data_* (--data, NOT RUN where the DFL files are
 not there) and print aggregates only. The frozen scale of the odds, and the fidelity gates, are checked where the other
@@ -510,7 +510,7 @@ def test_context_refuses_what_it_cannot_make():
 def test_context_profile_is_registered_with_its_own_stream():
     """The profile is version 1, the hazard has the stream after the speed_nan one, and what the profile read of the
     Calibration is named: the profiles nest (context's players are tracking's, and the draws of the earlier parts stay)."""
-    assert degrade.PROFILES == {"clean": 1, "gaps": 1, "tracking": 2, "context": 1}
+    assert degrade.PROFILES == {"clean": 1, "gaps": 1, "tracking": 3, "context": 1}
     assert degrade.CONTEXT == "context" and degrade.COMPONENTS["hazard"] == 4
     assert degrade.COMPONENTS == {"transplant": 0, "tracklets": 1, "wrong_team": 2, "speed_nan": 3, "hazard": 4}
     assert degrade.CONTEXT_FIELDS == ("hazard_model", "hazard_c", "hazard_durations_s")
