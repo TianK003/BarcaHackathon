@@ -183,9 +183,10 @@ DFL has none, its last place in the half, and before the first the centre spot (
 tracker makes no tracklet shorter than 8 frames, A09): within a run of frames at or below CAP the pieces kept stay kept
 and membership changes only when the count requires it (it falls: the farthest go; it rises, or a kept piece ends: the
 nearest present piece that is not kept comes in), never because two distances swap; at the run's end everybody is back.
-With no frame at or below CAP the cap changes nothing: the players are the profile's without it, and version 1's byte
-for byte with the scale of the tracked spans at 1 and the shortest-piece rule off, set through the parameters
-(test_tracking_version_2_with_no_low_count_frame_is_version_1s_players).
+With no frame at or below CAP the cap changes nothing: the players are the profile's without it, and the same holds with
+the scale of the tracked spans at 1 and the shortest-piece rule off, set through the parameters, which are version 1's
+parameters and make the walk, episodes, slots, speeds and smoothing of version 1 under version 3's slot rule, not
+version 1's players (test_tracking_with_no_low_count_frame_is_the_players_without_the_cap).
 
 The shortest piece and the scale of the tracked spans (version 2; MIN_PIECE_FRAMES, drop_short_pieces, TRACKED_SCALE).
 Ours has no tracklet shorter than 8 frames (A09), and version 2 without this rule made 2.2% of its pieces so (906 of
@@ -198,8 +199,10 @@ the cuts that the cap and the episodes add, so the profile counts our cuts twice
 below ours (the walk alone 40.88 s against ours 41.28 s, with the episodes 29.26 s, with the cap 24.44 s, with both
 19.68 s: R004b, with version 2's slot rule). The drawn lengths are therefore multiplied once by TRACKED_SCALE = 2.072
 (lambda; the lost spans follow through mu, so the lost share stays d), worked out once from one label-free measurement
-and frozen: the comment at the constant has the figures of versions 2 and 3 and the date. calibrated_parameters reads the two constants when it is called (None is the
-constant) and a call can set them aside (tracked_scale=1.0 and min_piece=0 are version 1's).
+and frozen: the comment at the constant has the figures of versions 2 and 3 and the date. calibrated_parameters reads
+the two constants when it is called (None is the constant) and a call can set them aside (tracked_scale=1.0 and
+min_piece=0 are version 1's parameters; the players they make are the walk's with version 3's slot rule, not version
+1's).
 
 The NaN-speed runs (place_speed_nan): ours come in runs (7.8% of the present slot-frames, median 21 frames, p99 2,300).
 After the speeds, runs are placed from the half's "speed_nan" stream: a present slot-frame chosen uniformly, a length
@@ -489,7 +492,7 @@ class TrackingParameters:
     one of them, drawn uniformly. `d` is the share of an on-pitch player's frames that are lost, `mean_tracked` the mean
     of `lengths` and `mu` = mean_tracked * d / (1 - d) the mean lost span (0 for d = 0: nobody is lost).
 
-    The rest is each part's own, and neutral by default (none of the new parts, which is Task 12's profile): `episodes`
+    The rest is each part's own, and neutral by default (none of the new parts: the walk's players alone): `episodes`
     are the wrong-team episodes of ours in frames (`mean_episode` their mean), `wrong_team_share` the share of frames
     that ours has a team in surplus on (the target), and `scale` is s: the onsets come at the rate
     onset_rate = s * wrong_team_share / mean_episode per row (0 with no scale, no share or no episodes). `nan_runs` are
@@ -1011,7 +1014,8 @@ def choose_tracklets(view, half, parameters, seed):
     """[Tracklet] of one half of a match, in order of (start, player), each with the lowest free slot of its pool.
 
     The tracklets of choose_half, with no cap: with no wrong-team episodes (the parameters' defaults) they are the
-    ones of Task 12.
+    walk's spans, each in the lowest free slot of its pool (version 3's rule: a slot is free from the row after its last
+    tracklet stopped).
     """
     return choose_half(view, half, parameters, seed).tracklets
 
@@ -1082,8 +1086,9 @@ def degraded_players(view, parameters, seed, limits=None):
     and the counts {half: {...}} of what was drawn for each half (_players_record).
 
     `limits` is {half: cap_limits of the half}, the counts of ours that cap the players present; None is no cap. The
-    players are then version 1's only with version 1's parameters (tracked_scale 1, min_piece 0); with the profile's own
-    they are version 2's without the cap.
+    players are then those of the same parameters without the cap: with version 1's parameters (tracked_scale 1,
+    min_piece 0) the walk, episodes, slots, speeds and smoothing of version 1 under version 3's slot rule, and with the
+    profile's own the profile's players without the cap.
 
     players_xy is (n, N_SLOTS, 2) and players_speed (n, N_SLOTS), NaN where no tracklet has the slot; a tracklet's slot
     holds the player's position on its rows, smoothed by parameters.smooth if it is not 0 (smoothed: inside the piece),

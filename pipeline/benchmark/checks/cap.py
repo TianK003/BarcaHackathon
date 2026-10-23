@@ -551,17 +551,19 @@ def test_cap_limits_refuse_counts_that_are_not_the_masks_frames():
     expect_error(ValueError, lambda: degrade.degrade(view, "tracking", short, 0), "present_counts", "ball_masks")
 
 
-def test_tracking_version_2_with_no_low_count_frame_is_version_1s_players():
-    """Nesting: with no frame at or below CAP, the cap changes nothing, and the players are version 1's byte for byte.
+def test_tracking_with_no_low_count_frame_is_the_players_without_the_cap():
+    """Nesting: with no frame at or below CAP, the cap changes nothing, and the players are the players without it.
 
     Counts all 22 (as long as the masks): the whole profile's players equal degraded_players without the cap, bytes of
     the positions and speeds, and so do its tracklets and the counts of the walk, the episodes and the NaN runs, on a
     full squad and on a steady match, under three seeds; and so do counts that are all just above CAP (19). The record
     says that nothing was capped. With the scale of the tracked spans at 1 and the shortest-piece rule off, set through
-    the parameters (what version 1 was), the same holds for the players that those parameters make: a cap that finds no
-    frame to act on is the walk, the episodes, the slots, the speeds and the smoothing of version 1 (with version 3's
-    slot rule: a slot is free from the row after its tracklet stopped), and nothing else. The profile's version is 3 and
-    the gaps, clean and context ones' are 1."""
+    the parameters (version 1's parameters), the same holds for the players that those parameters make: a cap that finds
+    no frame to act on is the walk, the episodes, the slots, the speeds and the smoothing, and nothing else. They are
+    the players of version 3's slot rule (a slot is free from the row after its tracklet stopped), not version 1's or
+    2's, which let a tracklet take a slot on the row it was freed: the check is the cap nested in the same code, and is
+    not a comparison with an older version's output. The profile's version is 3 and the gaps, clean and context ones'
+    are 1."""
     assert degrade.PROFILES == {"clean": 1, "gaps": 1, "tracking": 3, "context": 1}
     for match in (steady_match(rows=(240, 200), teams=FULL_SQUAD, substitutions=True), steady_match()):
         view = degrade.tracking_view(match)

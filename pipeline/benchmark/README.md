@@ -7,7 +7,7 @@ matches**: the seven open DFL/IDSSE Bundesliga matches (CC BY 4.0), which carry 
 team in possession on every frame. A config runs on them through the pipeline's own functions, is scored the way the
 organisers' scorer scores, and is compared with another config with the uncertainty that seven matches allow.
 The plan is [P01](../../docs/proposals.md); what was measured is in [results.md](../../docs/results.md) (A05 to A09,
-R002 to R004c).
+R002 to R005).
 
 ```
 python pipeline/benchmark/sources.py          # data -> data/external/dfl/   (21 files, 2.6 GB, size and md5 checked)
@@ -191,7 +191,7 @@ piece ends: the nearest present piece that is not kept comes in), never because 
 everybody is back. A piece that loses frames is cut into the pieces between them, each a new tracklet that takes the
 lowest free slot, so a player who comes back after a drop may not get his own slot back (the first thing the cap does to
 slot identity, R004b). The cap draws nothing, so no stream of the other parts moves. Over the seven matches and three
-seeds 10.1% of the frames are capped (ours 10.6%), 2,363,692 slot-frames are dropped and 4,463 pieces are cut.
+seeds 10.1% of the frames are capped (ours 10.6%), 2,363,692 slot-frames are dropped and 4,513 pieces are cut.
 
 **No piece is shorter than 8 frames** (`degrade.MIN_PIECE_FRAMES`, `drop_short_pieces`): ours has none (A09: the
 shortest tracklet is 8 frames, 0.32 s), and version 2 without this rule made 2.2% of its pieces so (906 of 40,866;
@@ -199,7 +199,7 @@ shortest tracklet is 8 frames, 0.32 s), and version 2 without this rule made 2.2
 crossings of 18 are a step of one slot) and the dropped players come back for a few frames and go again. After the cap
 and before the slots every piece shorter than 8
 frames is dropped, whatever made it (the walk's run ends, an episode, the cap), the player being absent there. Over the
-21 runs it drops 794 pieces, holding 3,177 slot-frames, 172 of them episode pieces (`short_pieces`, `short_slot_frames`,
+21 runs it drops 823 pieces, holding 3,268 slot-frames, 169 of them episode pieces (`short_pieces`, `short_slot_frames`,
 `short_episode_pieces` in the draws' record).
 
 **The slots (version 3).** The pieces of a half, after the cap and the shortest-piece rule, are taken in order of (start
@@ -245,16 +245,18 @@ The checks that pin the parts: `test_cap_keeps_nearest`, `test_cap_inactive_abov
 `test_tracked_scale_is_the_frozen_one_and_follows_from_the_recorded_measurements` (2.072 from 41.28 s and 19.92 s, and
 version 2's 2.042 from 20.22 s, in the default run),
 `test_calibrated_parameters_read_the_scale_and_the_shortest_piece_when_called` (the constants are read when the function
-is called) and `test_tracking_version_2_with_no_low_count_frame_is_version_1s_players` (with no frame at or below 18,
-and lambda 1 and no shortest-piece rule through the parameters, the players are version 1's byte for byte). The order of
-the parts is pinned by two scenes: `test_cap_is_applied_to_the_pieces_after_the_episodes_and_leaves_their_counts_alone`
+is called) and `test_tracking_with_no_low_count_frame_is_the_players_without_the_cap` (with no frame at or below 18 the
+cap changes nothing, for the profile's parameters and for version 1's, lambda 1 and no shortest-piece rule, under
+version 3's slot rule). The order of the parts is pinned by two scenes:
+`test_cap_is_applied_to_the_pieces_after_the_episodes_and_leaves_their_counts_alone`
 (an onset on a capped row is still counted, as the cap comes after the episodes) and
 `test_cap_cuts_the_smoothing_and_the_speeds_at_the_drops` (nothing is smoothed or differenced across a drop). The rest:
 `test_wrong_team_starts_at_close_pairs`, `test_wrong_team_moves_one_player_to_other_pool`,
 `test_wrong_team_draws_come_from_the_wrong_team_stream_in_a_fixed_order`, `test_speed_nan_share`,
 `test_speed_nan_runs_follow_the_documented_draws`, `test_smoothing_is_a_centred_moving_average_inside_each_piece`,
-`test_profiles_nest`, `test_tracking_without_the_new_parts_is_task_12s_players` (with the new parts off the players are
-Task 12's, byte for byte), and on the downloaded matches `test_dfl_tracking_never_exhausts_a_pool_on_the_real_matches`
+`test_profiles_nest`, `test_tracking_without_the_new_parts_is_the_walk_in_the_lowest_free_slots` (with the new parts off
+the players are the walk's, each tracklet in the lowest free slot of its pool, byte for byte against a reference written
+out), and on the downloaded matches `test_dfl_tracking_never_exhausts_a_pool_on_the_real_matches`
 and `test_data_tracking_constants_follow_from_the_measurements` (the rules that gave the scale of the episodes, the
 smoothing window and the scale of the tracked spans, applied again). The earlier ones stay:
 `test_tracklets_never_overlap_in_a_slot`, `test_each_tracklet_takes_the_lowest_free_slot_of_its_pool`,
@@ -268,34 +270,37 @@ match, `test_dfl_a_slot_never_changes_player_on_a_real_match`;
 freed, and `test_jitter_inside_tracklets_counts_what_it_says` pins the figure that the data check prints beside the
 per-slot jitter.
 
-**The `context` profile** (version 1; `degrade.context_probabilities`, `_context_ball`, `HAZARD_SCALE`). The `gaps` profile
-copies our masks in time and ignores the play. `context` keeps `tracking`'s players, draw for draw, and places each
-half's gaps with the hazard that the Calibration fitted on our own gaps (A08): a logistic model of six features on the
-91,840 at-risk frames of our kick-off spans and their 143 onsets, with cross-half AUCs of 0.71 and 0.65. Per half, from
-its kick-off to the end of its graded block, `hazard.features` is computed in metres on the clean DFL ball and the
+**The `context` profile** (version 1; `degrade.context_probabilities`, `_context_ball`, `HAZARD_SCALE`). The `gaps`
+profile copies our masks in time and ignores the play. `context` keeps `tracking`'s players, draw for draw, and places
+each half's gaps with the hazard that the Calibration fitted on our own gaps (A08): a logistic model of six features on
+the 91,840 at-risk frames of our kick-off spans and their 143 onsets, with cross-half AUCs of 0.71 and 0.65. Per half,
+from its kick-off to the end of its graded block, `hazard.features` is computed in metres on the clean DFL ball and the
 degraded players: the distance to the nearest line, whether the ball is beyond it, its speed over the last five steps,
 the nearest player, the players within 3 m, and the minute of the half. The chance that the next frame starts a gap is
-`hazard_c` x `HAZARD_SCALE` x the model's probability, at most 1 - 1e-9, and 0 where a feature is undefined (14 rows
-of 1,002,644 on seed 0). `hazard.sample_mask` draws the gaps from `rng_for(seed, match_index, "hazard", half)`: the class
-of an onset is "within 2 m of a line at the frame before it", its third of the half is that frame's, and its length is
-one of ours for that class and third at the match's rate. The ball is then made by the function that makes `gaps`'s (x
-and y together, the speed NaN). **`HAZARD_SCALE` is 0.699, rescaled once.** At 1.0 the share missing was 0.4997 against
-our 0.4110, and the rescale is on the odds, 0.6986 (gaps start only from visible frames, so the odds are about linear in
-the hazard and a plain ratio would undershoot); it is frozen, with both measurements, in the comment of the constant
-(`test_hazard_scale_is_the_frozen_one_and_follows_from_the_recorded_measurements`).
+`hazard_c` x `HAZARD_SCALE` x the model's probability, at most 1 - 1e-9, and 0 where a feature is undefined (42 rows of
+3,007,932 over the three seeds, R005). `hazard.sample_mask` draws the gaps from `rng_for(seed, match_index, "hazard",
+half)`: the class of an onset is "within 2 m of a line at the frame before it", its third of the half is that frame's,
+and its length is one of ours for that class and third at the match's rate. The ball is then made by the function that
+makes `gaps`'s (x and y together, the speed NaN). **`HAZARD_SCALE` is 0.699, rescaled once.** At 1.0 the share missing
+was 0.4997 against our 0.4110, and the rescale is on the odds, 0.6986 (gaps start only from visible frames, so the odds
+are about linear in the hazard and a plain ratio would undershoot); it is frozen, with both measurements, in the comment
+of the constant (`test_hazard_scale_is_the_frozen_one_and_follows_from_the_recorded_measurements`).
 
 **`context` fails two gates, and is not the default (R005).** Over the three seeds the share of the gaps that start
 within 2 m of a line is 0.5586 against our 0.2797 +-0.05 (0.5647, 0.5644 and 0.5465 on the seeds: a fail on each), and
-the share missing is 0.4313 against 0.4110 +-0.02 (0.4236, 0.4275 and 0.4427: a fail pooled, by 0.0003, and on seed 2;
-the scale was set on seed 0 alone). The cause is not the model, whose hazard is 2.9 times higher near a line on ours and
-3.9 times on DFL's rows (the same ratios at any scale), but the rows that it is applied to: **DFL tracks the ball out of play**, so 25.2% of the benchmark's at-risk rows are within 2 m of a line
-against 9.0% of ours, and 17.7% are beyond one against 4.1%. Two remedies were measured and not applied: a chance of 0
-beyond a line gives a near-line share of 0.163, and a model that sees the distance clipped at 0 gives 0.489. Thinning
-the chance beyond a line to our share of such rows (a factor of 0.23) was rejected: it would pass the gate by leaving
-even more of the out-of-play ball visible, which moves the visible rows further from ours, and so would be tuning
-towards a gate; a mask for the ball out of the pitch would be a new mechanism with a parameter that cannot be measured on
-ours (where the ball is during our gaps is unobservable). There was no second rescale of the scale either: the rule is
-once. The profile is kept for the check that the ranking of the configs does not depend on the generator (R005).
+the share missing is 0.4313 against 0.4110 +-0.02 (0.4236, 0.4275 and 0.4427: a fail pooled, by 0.0003, and on seed 2).
+Seed 0, where the scale was set, is itself 0.0126 above ours after the odds rescale, so most of the pooled +0.0203 is
+the residual of that approximation and the rest the spread across seeds (0.0165 and 0.0317 above on seeds 1 and 2),
+which were not used to set it. The cause is not the model, whose hazard is 2.9 times higher near a line on ours and 3.9
+times on DFL's rows (the same ratios at any scale), but the rows that it is applied to: **DFL tracks the ball out of
+play**, so 25.2% of the benchmark's at-risk rows are within 2 m of a line against 9.0% of ours, and 17.7% are beyond one
+against 4.1%. Two remedies were measured and not applied: a chance of 0 beyond a line gives a near-line share of 0.163,
+and a model that sees the distance clipped at 0 gives 0.489. Thinning the chance beyond a line to our share of such rows
+(a factor of 0.23) was rejected: it would pass the gate by leaving even more of the out-of-play ball visible, which
+moves the visible rows further from ours, and so would be tuning towards a gate; a mask for the ball out of the pitch
+would be a new mechanism with a parameter that cannot be measured on ours (where the ball is during our gaps is
+unobservable). There was no second rescale of the scale either: the rule is once. The profile is kept for the check that
+the ranking of the configs does not depend on the generator (R005).
 
 **No truth reaches the degrader.** It is handed a `TrackingView`, which has the tracking and the match's scalars and no
 `ball_status` or `ball_possession` (`test_degrade_never_sees_truth`, which also reads the degrader's source, and the deep

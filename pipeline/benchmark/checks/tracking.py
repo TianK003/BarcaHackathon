@@ -953,7 +953,7 @@ def test_wrong_team_onsets_are_a_bernoulli_process_at_the_documented_rate():
 
 
 def reference_players(view, parameters, seed):
-    """Task 12's players, written out: (xy, speed, [(half, player, start, stop, slot)]), with no episodes, NaN runs
+    """The walk's players, written out: (xy, speed, [(half, player, start, stop, slot)]), with no episodes, NaN runs
     or smoothing.
 
     The spans are the walk's (degrade.walk_run, drawn from the "tracklets" stream as documented), the slots the lowest
@@ -985,8 +985,9 @@ def reference_players(view, parameters, seed):
     return xy, speed, records
 
 
-def test_tracking_without_the_new_parts_is_task_12s_players():
-    """With no episodes (s = 0), no NaN runs (a target of 0) and no smoothing, the players are exactly Task 12's.
+def test_tracking_without_the_new_parts_is_the_walk_in_the_lowest_free_slots():
+    """With no episodes (s = 0), no NaN runs (a target of 0) and no smoothing, the players are exactly the walk's,
+    each tracklet in the lowest free slot of its pool (version 3's rule).
 
     Compared with the reference above, byte for byte: the positions, the speeds and the records of every tracklet,
     on two steady matches and three seeds, under two sets of parameters. The new parts draw only from their own
@@ -1501,8 +1502,9 @@ def test_data_tracking_constants_follow_from_the_measurements():
     rule in (seed 0, the 7 matches laid end to end, as fidelity pools them), to 3 decimals, once: the constant is
     compared with the recorded measurement (RECORDED_MEDIAN_S), the measurement is made again here and must reproduce it
     (the code is the code that it was made with), and the median, the share of the frames lost and the pieces dropped at
-    the frozen lambda are printed (information). The first scale is measured on version 1's players (no cap, no rule,
-    lambda 1) and the frozen one, with the tracklet median, on the profile's. The frozen scale of the tracked spans is
+    the frozen lambda are printed (information). The first scale is measured on the players of version 1's
+    parameters (no cap, no rule, lambda 1; version 3's slot rule) and the frozen one, with the tracklet median, on
+    the profile's. The frozen scale of the tracked spans is
     asserted first, against the recorded constants alone (the synthetic
     test_tracked_scale_is_the_frozen_one_and_follows_from_the_recorded_measurements asserts it too), so that a moved
     constant is reported as that.
