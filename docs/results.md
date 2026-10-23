@@ -494,20 +494,24 @@ Two figures of the plan did **not** reproduce, and the check does not assert the
   stand-in for the baselines on the benchmark, and their outputs here are the published files' (R000).
 - The ball-speed channel is unusable ([T31](traps.md)) and slots do carry the wrong team ([T32](traps.md), which answers
   [T15](traps.md)). The wrong-team share is a lower bound: a swap inside 11 against 11 is invisible.
-- The cache key holds the hash of `calibration.py`, the ATD parse version and the four configs, so a change of
-  definition, of parse or of a config rebuilds it. A change to the code that the yardsticks run through
+- The cache key holds the hashes of `calibration.py` and `hazard.py`, the ATD parse version and the four configs, so a
+  change of definition, of parse or of a config rebuilds it. A change to the code that the yardsticks run through
   (`pipeline/inputs/`, `evidence/`, `decode/`, `refine/`, `output/`, `benchmark/run.py`) is not seen by the key and
   needs a bump of `calibration.CALIBRATION_VERSION`.
 
 ### A08 — Where our tracker loses the ball: a hazard fitted on BAR-ATH, and the go decision (2026-10-23)
 
 BAR-ATH's ATD (ball and slots), read by `pipeline/benchmark/calibration.py` (`fit_hazard`, on `hazard.py`'s features,
-logistic fit and AUC); no DFL data. `load()` measures it in 2.5 s and reads it back in 0.4 s; the Calibration is version
-2 and sits in a folder of its own per cache key, `data/cache/benchmark/calibration/<digest>/` (0.5 MB). Command:
-`MTAH_DATA_DIR=<data dir> python pipeline/benchmark/selftest.py --data`, check `test_data_hazard_fit` (it prints every
-number below, asserts that they are finite, that a second fit and the cache give the same bytes, and that the counts add
-up; it does not assert how large the AUCs are, because a no-go would have been a result too). The code is checked on
-hand-built objects by `test_calibration_v2_synthetic` and the `test_calibration_hazard_*` checks.
+logistic fit and AUC); no DFL data. `load()` measures it in 2.3 s and reads it back in 0.1 to 0.4 s; the Calibration
+is version 2 and sits in a folder of its own per cache key, `data/cache/benchmark/calibration/<digest>/` (0.5 MB).
+Command: `MTAH_DATA_DIR=<data dir> python pipeline/benchmark/selftest.py --data`, check `test_data_hazard_fit`. It
+prints the counts, the penalties, the intercept, the coefficients with each feature's mean and SD, the four AUCs, c, the
+decision and each cell's count and median; it asserts that they are finite, that a second fit and the cache give the
+same bytes, and that the counts add up (it does not assert how large the AUCs are, because a no-go would have been a
+result too). **Worked out by hand from those and not printed:** the rates per row and "1 in 642", the odds columns, the
+Hanley-McNeil standard errors, the AUC differences ("what the features add") and the SE multiples under "So"; the frames
+per half are A07's spans, and the timings and the cache's size come from timing `load()` apart from the check. The code
+is checked on hand-built objects by `test_calibration_v2_synthetic` and the `test_calibration_hazard_*` checks.
 
 **What was fitted.**
 - **At risk:** every ball-visible frame of the spans from each kick-off to the end of its graded block (the spans of
@@ -546,9 +550,12 @@ neither is an onset). So the 143 onsets are the 143 interior gaps of A07.
 | `players_within_3m` | +0.220885663 | 1.247 | x1.339 per player | 0.848 | 0.756 |
 | `minute_of_half` | +0.329593166 | 1.390 | x1.022 per minute | 22.76 | 15.18 |
 
-The signs are those of A01: the tracker loses the ball near the lines (and beyond them) and when it is slow, and later
-in a half (A02). A crowd around the ball (more players within 3 m) raises it too; the distance to the nearest player
-adds nothing once the others are in.
+The line and slow-ball signs are those of the plan's measurement of the gap onsets (A01 does not report it): 28.6% of
+the onsets (42 of 147) have the ball within 2 m of a line or beyond it, against 8.5% of all visible frames, and the
+median ball speed at an onset is 2.2 m/s against 5.1 m/s (A07 re-measures the near-line share: 28.57% of the interior
+gaps on the graded blocks, 27.97% from the kick-offs). The sign of the minute is A02's: the ball is missing more
+through each half. A crowd around the ball (more players within 3 m) raises the hazard too; the distance to the nearest
+player adds nothing once the others are in.
 
 **Cross-half AUCs** (fitted on one half, scored on the other; the same procedure for a model of `minute_of_half` alone;
 standard errors by Hanley-McNeil, approximate):

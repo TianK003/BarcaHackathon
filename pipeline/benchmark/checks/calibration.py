@@ -667,13 +667,13 @@ def check_duration_cells():
 
     # No gap of a class at all: there is nothing to draw its durations from, and the error says which class.
     expect_error(ValueError, lambda: calibration.duration_cells(durations[~near], minutes[~near], near[~near]),
-                 "onset class 1", "near")
+                 "duration_cells", "onset class 1", "near")
     expect_error(ValueError, lambda: calibration.duration_cells(durations[near], minutes[near], near[near]),
-                 "onset class 0")
-    expect_error(ValueError, lambda: calibration.duration_cells(durations[:-1], minutes, near), "interior_durations_s",
-                 "gap_onset_minute", "parallel")
+                 "duration_cells", "onset class 0")
+    expect_error(ValueError, lambda: calibration.duration_cells(durations[:-1], minutes, near), "duration_cells",
+                 "interior_durations_s", "gap_onset_minute", "parallel")
     expect_error(ValueError, lambda: calibration.duration_cells(durations, np.where(near, np.nan, minutes), near),
-                 "NaN")
+                 "third_of_minute", "NaN")
 
 
 def hazard_match(seed, near_rate, far_rate, frames=60_000):
@@ -925,9 +925,10 @@ def test_calibration_hazard_refuses_what_it_cannot_fit():
 
     fit()()   # the arguments are good
     expect_error(ValueError, fit(present=present.astype(int)), "ball_present", "bool")
-    expect_error(ValueError, fit(xy=xy[:-1]), "ball_present", "ball_xy_m")
-    expect_error(ValueError, fit(players=players[:-1]), "players_xy_m")
-    expect_error(ValueError, fit(players_present=players_present[:, :2]), "players_present", "players_xy_m")
+    expect_error(ValueError, fit(xy=xy[:-1]), "hazard_rows", "ball_present", "ball_xy_m")
+    expect_error(ValueError, fit(players=players[:-1]), "hazard_rows", "players_xy_m")
+    expect_error(ValueError, fit(players_present=players_present[:, :2]), "hazard_rows", "players_present",
+                 "players_xy_m")
     # The hazard is fitted on one half and scored on the other: it needs halves 1 and 2.
     expect_error(ValueError, fit(spans=spans[:1]), "halves 1 and 2")
     expect_error(ValueError, fit(spans=[(1, 0, 10_000), (3, 10_000, 20_000)]), "halves 1 and 2")
@@ -1097,6 +1098,7 @@ def test_calibration_cache_is_keyed_and_unreadable_means_absent():
         assert folders() == [expected_digest(key)], (folders(), key)
         assert key["calibration_version"] == calibration.CALIBRATION_VERSION
         assert key["code_sha256"] == calibration.CALIBRATION_SHA256
+        assert key["hazard_sha256"] == calibration.HAZARD_SHA256, "hazard.py makes version 2's fields: it is in the key"
         assert key["atd_sources"] == inputs.atd_manifest["sources"], "the ATD cache's own record of its sources"
         assert key["atd_cache_version"] == inputs.atd_manifest["cache_version"] == atd_cache.CACHE_VERSION
         assert key["numpy"] == np.__version__ and sorted(key["configs"]) == ["0", "125", "25", "50"], key
@@ -1137,6 +1139,19 @@ def test_calibration_cache_is_keyed_and_unreadable_means_absent():
         finally:
             calibration.CALIBRATION_SHA256 = real_hash
         adds_nothing(load)
+        # The same for hazard.py (its features, fit, AUC and thirds make the version-2 fields), with calibration.py as
+        # it is: a checkout with another hazard.py must not read this one's fit.
+        real_hazard_hash = calibration.HAZARD_SHA256
+        calibration.HAZARD_SHA256 = "0" * 64
+        try:
+            adds_a_folder(load)
+            changed = manifest()["key"]
+            assert changed["hazard_sha256"] == "0" * 64, "a different hazard hash must rebuild"
+            assert {k: v for k, v in changed.items() if k != "hazard_sha256"} == {
+                k: v for k, v in key.items() if k != "hazard_sha256"}, "only the hazard hash differs"
+        finally:
+            calibration.HAZARD_SHA256 = real_hazard_hash
+        adds_nothing(load)
         other = gt.copy()
         other[60:70] = A
         adds_a_folder(lambda: load(other))
@@ -1168,7 +1183,7 @@ def test_calibration_cache_is_keyed_and_unreadable_means_absent():
             atd_cache.CACHE_VERSION -= 1
         restored, _ = synthetic_calibration_inputs(root)
         adds_nothing(lambda: load(given=restored))
-        assert manifest()["key"] == key and len(folders()) == 9, folders()
+        assert manifest()["key"] == key and len(folders()) == 10, folders()
 
         # Unreadable is absent: an array cut short, an array gone, a manifest that is not JSON or lacks a field. The
         # damaged folder is the current key's own, and it is rebuilt in place.
@@ -1221,7 +1236,7 @@ def test_calibration_cache_is_keyed_and_unreadable_means_absent():
                 os.remove(manifest_path)
             assert calibration.digest(load()) == good, damage
             assert os.path.getsize(os.path.join(mine, "gap_durations_s.npy")) > 10, damage
-            assert len(folders()) == 9, damage
+            assert len(folders()) == 10, damage
         assert calibration.digest(load()) == good
 
 
@@ -1271,6 +1286,96 @@ def test_calibration_each_key_has_its_own_folder():
             root, key)
 
 
+def test_calibration_manifest_is_written_whole_and_a_manifest_held_open_does_not_stop_a_build():
+    """The manifest is moved into place complete, last, and an old one that cannot be removed is no reason to fail.
+
+    On Windows a file that another process has open cannot be removed. Two checkouts with the same code share a key and
+    so a folder; while one still had the manifest open to write it, the other's os.remove raised PermissionError out of
+    load(). Now the manifest is written to a temp file of its own in the folder and moved over the old one (os.replace),
+    after the arrays, and an old manifest that cannot be removed counts as absent. The refusal is simulated by an
+    os.remove that refuses the manifest, which is the same on every platform."""
+    with tempfile.TemporaryDirectory() as root:
+        inputs, gt = synthetic_calibration_inputs(root)
+        cal = calibration.measure(inputs, gt)
+        key = calibration._key(inputs, gt)
+        folder = calibration.cache_folder(root, key)
+        manifest_path = os.path.join(folder, "manifest.json")
+
+        def read(path):
+            with open(path, "rb") as handle:
+                return handle.read()
+
+        real_replace, real_remove, real_save = os.replace, os.remove, np.save
+        calls = []
+
+        def watching_replace(source, target, *args, **kwargs):
+            # What a reader sees before the move: no manifest (the old one is gone), the arrays all there, and the new
+            # manifest complete in a file of its own beside the target, so that the move is within one folder.
+            have = sorted(os.listdir(folder))
+            calls.append({"same_folder": os.path.dirname(os.path.abspath(source)) == os.path.dirname(
+                os.path.abspath(target)), "target": os.path.basename(target), "manifest_there": "manifest.json" in have,
+                "arrays": sum(name.endswith(".npy") for name in have), "key": json.loads(read(source))["key"]})
+            return real_replace(source, target, *args, **kwargs)
+
+        def saves_before_the_manifest(path, *args, **kwargs):
+            calls.append("save " + os.path.basename(path))
+            return real_save(path, *args, **kwargs)
+
+        def refuses_the_manifest(path, *args, **kwargs):
+            if os.path.basename(path) == "manifest.json":
+                raise PermissionError(13, "The process cannot access the file: it is being used by another process")
+            return real_remove(path, *args, **kwargs)
+
+        def tidy():
+            """Nothing but the arrays and the manifest is left in the folder: no temp file."""
+            names = sorted(os.listdir(folder))
+            assert "manifest.json" in names and not [name for name in names if name.endswith(".tmp")], names
+            return names
+
+        def written(*patches):
+            """Run _write with the given (object, name, replacement) patched in, whatever happens; the error if any."""
+            originals = [(target, name, getattr(target, name)) for target, name, _ in patches]
+            try:
+                for target, name, replacement in patches:
+                    setattr(target, name, replacement)
+                calibration._write(cal, folder, key)
+            finally:
+                for target, name, original in originals:
+                    setattr(target, name, original)
+
+        # The first write: arrays, then one move of a complete manifest from its own file into place.
+        written((os, "replace", watching_replace), (np, "save", saves_before_the_manifest))
+        moves = [call for call in calls if isinstance(call, dict)]
+        assert len(moves) == 1, "the manifest must be moved into place once (os.replace): {}".format(calls)
+        move = dict(moves[0])
+        assert move.pop("arrays") == len(calibration._arrays(cal)) == sum(
+            call.startswith("save ") for call in calls if isinstance(call, str)), "arrays first, manifest last"
+        assert move == {"same_folder": True, "target": "manifest.json", "manifest_there": False, "key": key}, move
+        assert calls.index(moves[0]) == len(calls) - 1, "the manifest is the last thing written"
+        names = tidy()
+        first = read(manifest_path)
+        loaded = calibration.load(data_dir=root, inputs=inputs, public_gt_codes=gt)
+        assert calibration.digest(loaded) == calibration.digest(cal), "and the cache reads back"
+
+        # Another process holds the old manifest: it cannot be removed. That is "absent", the build goes on, and the
+        # new manifest is moved over it, the same bytes (the key is the same).
+        written((os, "remove", refuses_the_manifest))
+        assert tidy() == names and read(manifest_path) == first
+
+        # A manifest that cannot be moved into place is an error, and leaves neither a temp file nor a manifest that
+        # claims the arrays: the folder reads as absent and load() measures again.
+        def refuses_the_move(source, target, *args, **kwargs):
+            raise PermissionError(13, "the manifest is in use")
+
+        expect_error(OSError, lambda: written((os, "replace", refuses_the_move)), "in use")
+        names = sorted(os.listdir(folder))
+        assert "manifest.json" not in names and not [name for name in names if name.endswith(".tmp")], names
+        assert calibration._read_manifest(folder) is None
+        again = calibration.load(data_dir=root, inputs=inputs, public_gt_codes=gt)
+        assert calibration.digest(again) == calibration.digest(cal)
+        assert tidy() == sorted(names + ["manifest.json"]) and read(manifest_path) == first
+
+
 def import_copy(path, name):
     """The file at `path` imported as a module called `name`, which runs its code and takes its hash right now."""
     spec = importlib.util.spec_from_file_location(name, path)
@@ -1302,6 +1407,73 @@ def test_calibration_code_hash_is_the_files_and_ignores_line_endings():
             assert copies[names[0]].CALIBRATION_SHA256 == copies[names[1]].CALIBRATION_SHA256 == \
                 calibration.CALIBRATION_SHA256, "line endings changed the hash"
             assert copies[names[2]].CALIBRATION_SHA256 != calibration.CALIBRATION_SHA256, "an edit did not change it"
+    finally:
+        for name in names:
+            sys.modules.pop(name, None)
+
+
+def calibration_copy(folder, name, hazard_module):
+    """An unedited copy of calibration.py, imported while `hazard_module` is pipeline.benchmark.hazard, so that its
+    HAZARD_SHA256 is the hash of that module's file. Its configs are the real ones (the copy has no folder of its
+    own)."""
+    import pipeline.benchmark as package
+    path = os.path.join(folder, name + ".py")
+    shutil.copyfile(calibration.__file__, path)
+    real_module, real_attribute = sys.modules["pipeline.benchmark.hazard"], package.hazard
+    sys.modules["pipeline.benchmark.hazard"] = package.hazard = hazard_module   # what `from ... import hazard` finds
+    try:
+        copy = import_copy(path, name)
+    finally:
+        sys.modules["pipeline.benchmark.hazard"], package.hazard = real_module, real_attribute
+    copy.CONFIG_FOLDER = calibration.CONFIG_FOLDER
+    return copy
+
+
+def test_calibration_key_holds_the_hazard_code_and_ignores_its_line_endings():
+    """HAZARD_SHA256 is the hash of hazard.py with CRLF read as LF, and another hazard.py is another key and folder.
+
+    hazard.py makes the version-2 fields (the features, the fit, the AUC, the thirds), so a checkout whose hazard.py
+    differs must not read this one's fit: changing hazard.NEAR_PLAYER_M used to leave the key and the folder as they
+    were, and load() gave back the first fit while measure() gave a different one."""
+    with open(hazard.__file__, "rb") as handle:
+        raw = handle.read()
+    assert calibration.HAZARD_SHA256 == hashlib.sha256(raw.replace(b"\r\n", b"\n")).hexdigest()
+    assert calibration.HAZARD_SHA256 != calibration.CALIBRATION_SHA256
+
+    text = raw.replace(b"\r\n", b"\n").decode("utf-8")
+    assert text.count("NEAR_PLAYER_M = 3.0 ") == 1, "the constant to edit is not where this check looks for it"
+    names = ("hazard_copy_lf", "hazard_copy_crlf", "hazard_copy_edited", "calibration_copy_lf", "calibration_copy_crlf",
+             "calibration_copy_edited")
+    try:
+        with tempfile.TemporaryDirectory() as folder, tempfile.TemporaryDirectory() as root:
+            inputs, gt = synthetic_calibration_inputs(root)
+            hazards = {}
+            edited_text = text.replace("NEAR_PLAYER_M = 3.0 ", "NEAR_PLAYER_M = 2.5 ")
+            for name, ending, content in ((names[0], "\n", text), (names[1], "\r\n", text),
+                                          (names[2], "\n", edited_text)):
+                path = os.path.join(folder, name + ".py")
+                with open(path, "w", encoding="utf-8", newline="") as handle:
+                    handle.write(content.replace("\n", ending))
+                hazards[name] = import_copy(path, name)
+            copies = {name: calibration_copy(folder, name, hazards[hazard_name])
+                      for name, hazard_name in zip(names[3:], names[:3])}
+            lf, crlf, edited = (copies[name] for name in names[3:])
+            assert hazards[names[2]].NEAR_PLAYER_M == 2.5 and hazards[names[0]].NEAR_PLAYER_M == 3.0
+
+            # Line endings are not a change of the file; an edit is. calibration.py is the same text in all three.
+            assert lf.HAZARD_SHA256 == crlf.HAZARD_SHA256 == calibration.HAZARD_SHA256, "line endings changed the hash"
+            assert edited.HAZARD_SHA256 != calibration.HAZARD_SHA256, "an edit to hazard.py did not change it"
+            assert lf.CALIBRATION_SHA256 == edited.CALIBRATION_SHA256 == calibration.CALIBRATION_SHA256
+
+            # So the key is the same for the same code, and for the edited one it differs in that hash alone: another
+            # folder, which is a rebuild.
+            key = calibration._key(inputs, gt)
+            assert lf._key(inputs, gt) == crlf._key(inputs, gt) == key
+            other = edited._key(inputs, gt)
+            assert other != key and {k: v for k, v in other.items() if k != "hazard_sha256"} == {
+                k: v for k, v in key.items() if k != "hazard_sha256"}, "only the hazard hash differs"
+            assert other["hazard_sha256"] == edited.HAZARD_SHA256
+            assert calibration.cache_folder(root, other) != calibration.cache_folder(root, key)
     finally:
         for name in names:
             sys.modules.pop(name, None)

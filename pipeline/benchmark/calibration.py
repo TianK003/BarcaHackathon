@@ -58,13 +58,15 @@ ball and players. The model is fitted on both halves pooled (hazard_model, with 
 ten times that, at most three times: hazard_l2 is the penalty that was used); on one half and scored on the other, both
 ways, for the cross-half AUCs of the full model and of a model of the minute alone (hazard_auc); and the decision for
 the `context` profile is that both full AUCs are at least 0.60 (hazard_go; the plan's rule, taken as it comes). c
-(hazard_c) is the onsets per at-risk frame over the model's mean probability on the same rows: 1 on BAR-ATH's own rows,
-because the intercept is not penalised, and the factor that carries the hazard to a match with another rate. The interior
-gaps' durations are kept in seconds by onset class (near a line or not) and third of the half (hazard_durations_s); a
-cell with fewer than 5 uses its class's durations over all thirds, and hazard_fallback_cells lists those that did.
-Visible frames that are not at risk are counted, never dropped silently: the frame before a gap that runs to the span's
-end (neither onset nor non-onset), the last frame of a span, and a frame with a feature the tracking cannot give (the
-scalars hazard_edge, hazard_last_frame, hazard_nan_rows and hazard_nan_events, beside hazard_rows, hazard_events, ...).
+(hazard_c) is the onsets per at-risk frame over the model's mean probability on the same rows, which is 1 on BAR-ATH's
+own rows by construction: the intercept is not penalised, so the model's mean probability is the rate. It is stored for
+completeness and carries nothing to another match; the rate transfer to the benchmark is the `context` profile's own
+one-time, label-free rescale (the plan's Task 17). The interior gaps' durations are kept in seconds by onset class (near
+a line or not) and third of the half (hazard_durations_s); a cell with fewer than 5 uses its class's durations over all
+thirds, and hazard_fallback_cells lists those that did. Visible frames that are not at risk are counted, never dropped
+silently: the frame before a gap that runs to the span's end (neither onset nor non-onset), the last frame of a span,
+and a frame with a feature the tracking cannot give (the scalars hazard_edge, hazard_last_frame, hazard_nan_rows and
+hazard_nan_events, beside hazard_rows, hazard_events, ...).
 
 What a Calibration holds is frame-level data of BAR-ATH (the ball's mask and the slot counts of every frame), which must
 never reach a log, a report, a CSV or git. Every array field has repr=False, describe() returns scalars and short
@@ -74,9 +76,10 @@ quantile lists only, and the cache sits under <data dir>/cache/benchmark/calibra
 The cache. load() keeps a Calibration as .npy arrays and a manifest.json whose key holds everything the numbers depend
 on: the ATD cache's record of its source files and its cache_version (how they were parsed), CALIBRATION_VERSION, the
 sha256 of this very file (CALIBRATION_SHA256, taken once as the module is imported, with CRLF read as LF, as dfl.py does
-for its parser), the numpy version, the sha256 of the four yardstick configs, the public truth, the pitch and the frame
-rate (games.py's constants, which every distance and duration is measured with), and the graded blocks and kick-offs. A
-cache is reused only if the whole key matches, so an edited config or an edited definition cannot reuse old numbers.
+for its parser) and of hazard.py, which makes the hazard fields (HAZARD_SHA256, the same way), the numpy version, the
+sha256 of the four yardstick configs, the public truth, the pitch and the frame rate (games.py's constants, which every
+distance and duration is measured with), and the graded blocks and kick-offs. A cache is reused only if the whole key
+matches, so an edited config or an edited definition cannot reuse old numbers.
 Each key has a folder of its own, <data dir>/cache/benchmark/calibration/<digest>/ (cache_folder), where the digest is
 the first 16 hex digits of the sha256 of the key's canonical JSON: checkouts that run different code, and so have
 different keys, can share one data dir without rebuilding each other's cache in turn or interleaving their writes. A
@@ -84,7 +87,10 @@ folder of an old key is never removed (a few MB each); the key is what says whet
 cache (a manifest that is not JSON or lacks a field, an array missing or cut short) is absent, never an error:
 everything in it can be measured again from the sources. The arrays are written first and the manifest last, with the
 old manifest removed up front, as pipeline/inputs/atd_cache.py and dfl.load_match do, so a run killed half-way leaves no
-manifest.
+manifest. The manifest is written to a temp file of its own in the folder and moved into place (os.replace), so that no
+reader sees half of it, and an old manifest that cannot be removed (Windows refuses to remove a file that another
+process has open) counts as absent: two checkouts with the same code share a key and so a folder, and one must not
+fail because the other is reading or writing it.
 """
 
 import dataclasses
@@ -101,12 +107,12 @@ from pipeline.benchmark import hazard
 from pipeline.contracts import D
 
 # Params
-# A manual switch, like dfl.CACHE_VERSION: bump it to invalidate every cache at once. Any edit to this file does that
-# already (CALIBRATION_SHA256, in the key), and so does a new ATD parse (the ATD cache's cache_version, in the key).
-# What still needs a bump is a change to the code that the yardsticks run through, which the key hashes the configs of
-# but not the code of: pipeline/inputs/ (other than the parse), pipeline/evidence/, pipeline/decode/, pipeline/refine/,
-# pipeline/output/ (summarise) and pipeline/benchmark/run.py, for these decide baseline_outputs and public_window; and
-# a change to pipeline/benchmark/hazard.py, which decides the hazard fit and which the key does not hash.
+# A manual switch, like dfl.CACHE_VERSION: bump it to invalidate every cache at once. Any edit to this file or to
+# hazard.py does that already (CALIBRATION_SHA256 and HAZARD_SHA256, in the key), and so does a new ATD parse (the ATD
+# cache's cache_version, in the key). What still needs a bump is a change to the code that the yardsticks run through,
+# which the key hashes the configs of but not the code of: pipeline/inputs/ (other than the parse), pipeline/evidence/,
+# pipeline/decode/, pipeline/refine/, pipeline/output/ (summarise) and pipeline/benchmark/run.py, for these decide
+# baseline_outputs and public_window.
 # 1: the measurements (A07). 2: and the hazard fit, the durations by class and third, and c (A08).
 CALIBRATION_VERSION = 2
 CACHE_FOLDER = ("cache", "benchmark", "calibration")   # <data dir>/cache/benchmark/calibration/<digest of the key>/
@@ -433,14 +439,14 @@ def hazard_rows(ball_present, ball_xy_m, players_present, players_xy_m, spans, p
     n = len(flag)
     ball = np.asarray(ball_xy_m, dtype=np.float64)
     if ball.shape != (n, 2):
-        raise ValueError("ball_present has {} frames but ball_xy_m has shape {}; both are one value per frame of the "
-                         "match, the position in metres".format(n, ball.shape))
+        raise ValueError("calibration.hazard_rows: ball_present has {} frames but ball_xy_m has shape {}; both are one "
+                         "value per frame of the match, the position in metres".format(n, ball.shape))
     slots = _bool_array("players_present", players_present, 2)
     players = np.asarray(players_xy_m, dtype=np.float64)
     if slots.shape[0] != n or players.shape != slots.shape + (2,):
-        raise ValueError("players_present has shape {} and players_xy_m {}; players_present is (n, slots) with one row "
-                         "per frame of the match, and players_xy_m (n, slots, 2), the positions in metres".format(
-                             slots.shape, players.shape))
+        raise ValueError("calibration.hazard_rows: players_present has shape {} and players_xy_m {}; players_present "
+                         "is (n, slots) with one row per frame of the match, and players_xy_m (n, slots, 2), the "
+                         "positions in metres".format(slots.shape, players.shape))
     spans = _blocks(spans, n)
     visible = _usable(flag, ball)
     here = _usable(slots, players)
@@ -492,18 +498,21 @@ def duration_cells(interior_durations_s, gap_onset_minute, gap_onset_near_line):
     minute = np.asarray(gap_onset_minute, dtype=np.float64)
     near = np.asarray(gap_onset_near_line)
     if durations.ndim != 1 or minute.shape != durations.shape or near.shape != durations.shape:
-        raise ValueError("interior_durations_s, gap_onset_minute and gap_onset_near_line are parallel, one entry per "
-                         "interior gap, but have shapes {}, {} and {}".format(durations.shape, minute.shape, near.shape))
+        raise ValueError("calibration.duration_cells: interior_durations_s, gap_onset_minute and gap_onset_near_line "
+                         "are parallel, one entry per interior gap, but have shapes {}, {} and {}".format(
+                             durations.shape, minute.shape, near.shape))
     if near.dtype != np.bool_:
-        raise ValueError("gap_onset_near_line must be a bool array, got {}".format(near.dtype))
+        raise ValueError("calibration.duration_cells: gap_onset_near_line must be a bool array, got {}".format(
+            near.dtype))
     third = hazard.third_of_minute(minute)
     table, fallback, own = {}, [], {}
     for cls in CLASSES:
         inside = near == bool(cls)
         pooled = durations[inside]
         if not pooled.size:
-            raise ValueError("no interior gap has onset class {} ({}): the hazard needs the lengths of the gaps of both "
-                             "classes to draw from".format(cls, "near a line" if cls else "away from the lines"))
+            raise ValueError("calibration.duration_cells: no interior gap has onset class {} ({}): the hazard needs "
+                             "the lengths of the gaps of both classes to draw from".format(
+                                 cls, "near a line" if cls else "away from the lines"))
         table[cls] = {}
         for part in THIRDS:
             cell = durations[inside & (third == part)]
@@ -530,8 +539,8 @@ def fit_hazard(ball_present, ball_xy_m, players_present, players_xy_m, spans, pi
     go (both full AUCs >= HAZARD_GO_AUC, on the stored values), durations / fallback_cells (duration_cells), counts
     (hazard_rows' and "cell_<class>_<third>", the durations a cell has of its own) and cross_l2 (the penalty used by
     each of the four cross-half fits). c is the onsets per at-risk frame divided by the model's mean probability over
-    the same rows: 1, to the precision of the fit, because the intercept is not penalised. It is the scale that
-    carries the hazard to a match whose rows have another rate.
+    the same rows: 1, to the precision of the fit, by construction (the intercept is not penalised). It is stored for
+    completeness; the rate transfer to the benchmark is the `context` profile's own one-time, label-free rescale.
     """
     rows, counts = hazard_rows(ball_present, ball_xy_m, players_present, players_xy_m, spans, pitch, fps)
     if sorted(rows) != [1, 2]:
@@ -570,10 +579,10 @@ def fit_hazard(ball_present, ball_xy_m, players_present, players_xy_m, spans, pi
 def rate_scale(onsets, prob):
     """c: the onsets per at-risk frame divided by the model's mean probability over the same frames, rounded to 1e-9.
 
-    onsets is the 0/1 outcome of each at-risk frame and prob the model's probability for it. It is what scales a hazard
-    to a rate: a hazard with c times the probabilities expects the observed number of onsets on these frames. On the
-    rows a model was fitted on it is 1 to the precision of the fit (the intercept is not penalised, so the mean
-    probability is the rate), whatever the penalty; on a match whose rows have another rate it is not.
+    onsets is the 0/1 outcome of each at-risk frame and prob the model's probability for it: a hazard with c times the
+    probabilities expects the observed number of onsets on these frames. On the rows a model was fitted on it is 1 to
+    the precision of the fit, by construction (the intercept is not penalised, so the mean probability is the rate),
+    whatever the penalty, and fit_hazard takes it on those rows only; it differs from 1 only on rows with another rate.
     """
     onsets, prob = np.asarray(onsets, dtype=np.float64), np.asarray(prob, dtype=np.float64)
     if onsets.ndim != 1 or onsets.shape != prob.shape or not onsets.size:
@@ -614,10 +623,10 @@ class Calibration:
 
     The hazard_* fields (A08, version 2) are where our tracker loses the ball, fitted on those spans: the logistic
     model of "the next frame starts an interior gap" (on the standardised hazard.FEATURES), the penalty it was fitted
-    with, the scale c (1 on BAR-ATH's own rows, to the precision of the fit; it is for a match whose rows have another
-    rate), the four cross-half AUCs, the go decision for the `context` profile, the interior gaps' durations in SECONDS
-    by onset class and third of the half ({class: {third: array}}, where a cell with fewer than 5 uses its class's
-    pooled durations) and the cells that fell back. The counts behind them are scalars named hazard_*.
+    with, the scale c (1 on BAR-ATH's own rows by construction, stored for completeness), the four cross-half AUCs,
+    the go decision for the `context` profile, the interior gaps' durations in SECONDS by onset class and third of the
+    half ({class: {third: array}}, where a cell with fewer than 5 uses its class's pooled durations) and the cells that
+    fell back. The counts behind them are scalars named hazard_*.
     """
     ball_masks: dict = field(repr=False)             # {half: bool array}, True where the ball is missing
     present_counts: dict = field(repr=False)         # {half: int16 array}, slots present, the same frames
@@ -639,7 +648,7 @@ class Calibration:
     scalars: dict            # every other scalar of ball_stats and player_stats, ball_speed_nan_share and hazard_*
     hazard_model: hazard.LogisticModel = field(repr=False)   # the pooled fit: coef on the standardised FEATURES
     hazard_l2: float                                         # the penalty it was fitted with (1, or 10 x that ...)
-    hazard_c: float                                          # onsets per at-risk frame / the model's mean probability
+    hazard_c: float                                          # onsets per row / mean probability: 1 by construction
     hazard_auc: dict                                         # HAZARD_AUC_KEYS: full and time-only, cross-half
     hazard_go: bool                                          # both full-model cross-half AUCs >= HAZARD_GO_AUC
     hazard_durations_s: dict = field(repr=False)             # {class: {third: float64 array}}, seconds
@@ -856,6 +865,9 @@ def _text_sha256(path):
 # says which definitions made a cache. A process that imported the module before the file changed goes on running the
 # old definitions, and keeps using the cache that fits them; a process that starts later rebuilds.
 CALIBRATION_SHA256 = _text_sha256(__file__)
+# And of hazard.py, which makes the version-2 fields (the features, the fit, the AUC, the thirds): a checkout with
+# another hazard.py has another key and so another folder, and cannot read a fit that this one's would not make.
+HAZARD_SHA256 = _text_sha256(hazard.__file__)
 
 
 def load(data_dir=None, rebuild=False, inputs=None, public_gt_codes=None):
@@ -888,8 +900,8 @@ def cache_folder(data_dir, key):
 
     The digest is the first 16 hex digits of the sha256 of the key's canonical JSON (sorted keys, no spaces), so a key
     is the same folder whatever order its entries come in. Checkouts that run different code (their keys differ in
-    code_sha256) can share one data dir and never touch each other's files. Old folders stay where they are: each is a
-    few MB, and the key is what says whether one is still wanted.
+    code_sha256 or hazard_sha256) can share one data dir and never touch each other's files. Old folders stay where
+    they are: each is a few MB, and the key is what says whether one is still wanted.
     """
     canonical = json.dumps(key, sort_keys=True, separators=(",", ":"))
     return os.path.join(data_dir, *CACHE_FOLDER, hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:KEY_DIGITS])
@@ -905,6 +917,7 @@ def _key(inputs, gt):
     key = {
         "calibration_version": CALIBRATION_VERSION,
         "code_sha256": CALIBRATION_SHA256,
+        "hazard_sha256": HAZARD_SHA256,
         "atd_sources": inputs.atd_manifest["sources"],
         "atd_cache_version": inputs.atd_manifest["cache_version"],
         "numpy": np.__version__,
@@ -931,11 +944,18 @@ def _read_manifest(folder):
 
 
 def _write(cal, folder, key):
-    """Arrays first, manifest last, with the old manifest removed up front (atd_cache._save does the same)."""
+    """Arrays first, manifest last, with the old manifest removed up front (atd_cache._save does the same).
+
+    The manifest is written whole to a temp file of this process in the folder and moved over the old one (os.replace),
+    so that no reader sees half of it. An old manifest that cannot be removed counts as absent: Windows refuses to
+    remove a file that another process has open, and a checkout with the same code (the same key, so this folder) may
+    be reading it or building it as well. Whatever it holds is the same measurement, and it is replaced below."""
     os.makedirs(folder, exist_ok=True)
     manifest_path = os.path.join(folder, MANIFEST)
-    if os.path.exists(manifest_path):
+    try:
         os.remove(manifest_path)
+    except OSError:   # none (FileNotFoundError), or one that another process holds open (PermissionError on Windows)
+        pass
     for name, array in _arrays(cal).items():
         np.save(os.path.join(folder, name + ".npy"), array, allow_pickle=False)
     manifest = {
@@ -950,9 +970,18 @@ def _write(cal, folder, key):
             "fallback_cells": [list(cell) for cell in cal.hazard_fallback_cells],
         },
     }
-    with open(manifest_path, "w", encoding="utf-8", newline="\n") as handle:
-        json.dump(manifest, handle, indent=2, sort_keys=True)
-        handle.write("\n")
+    temp_path = "{}.{}.tmp".format(manifest_path, os.getpid())
+    try:
+        with open(temp_path, "w", encoding="utf-8", newline="\n") as handle:
+            json.dump(manifest, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+        os.replace(temp_path, manifest_path)
+    except BaseException:   # no temp file is left behind, and the error is the caller's
+        try:
+            os.remove(temp_path)
+        except OSError:
+            pass
+        raise
 
 
 def _arrays(cal):
