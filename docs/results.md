@@ -624,7 +624,7 @@ Verdict: keep / drop / inconclusive — because …
 
 ### A09 — The tracking profile's first part: the parameters from our match, and how far its players are from ours (2026-10-23)
 
-Proposal: P01 · Commit: the one that adds this entry (the commit after it cites its SHA) · Command: `python
+Proposal: P01 · Commit: `66cae73` (the commit that adds this entry) · Command: `python
 pipeline/benchmark/selftest.py --dfl --data`, checks
 `test_data_tracking_profile_on_a_real_match_with_our_real_calibration` (prints d, the mean spans, the second table and
 the lost share, and asserts that the lost share pooled over the matches is d to within 0.01) and
