@@ -30,6 +30,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 |---|---|---|---|---|---|
 | [P01](#p01--a-validation-set-we-can-trust) | Validation set we can trust: other matches, degraded to look like ours | deciding anything at all | M | enabling | doing (Tian) |
 | [P02](#p02--learn-the-ground-truths-conventions-from-the-public-window) | Learn the GT's conventions from the public window | boundary timing | S | high | idea |
+| [P16](#p16--metricas-sample-games-in-our-ground-truth-providers-conventions) | Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing | boundary timing, grain | M | medium | idea |
 | [P03](#p03--one-command-deterministic-cached) | One-command, deterministic, cached pipeline | reproducibility | S–M | enabling | done → R001 |
 | [P04](#p04--sticky-ownership-from-controlled-touches) | Sticky ownership from controlled touches | facts 3, 5 | S | high | idea |
 | [P05](#p05--a-real-dead-ball-detector) | Dead-ball detector | fact 4 | M | high | idea |
@@ -77,34 +78,58 @@ a coin flip.
 
 **What.** A benchmark of other matches whose tracking carries labels of the same kind as our ground truth, degraded
 to look like our ATD and run through our own pipeline.
-1. **Source: the DFL/IDSSE open data** (Bassek et al., *Sci Data* 12, 195, 2025; CC BY 4.0): seven full Bundesliga
-   matches at 25 Hz. Each frame carries `BallStatus` (alive/dead) and `BallPossession` (which team): the same two
-   things our GT encodes. Their truth is therefore `D` where `BallStatus` is dead and otherwise the team
-   `BallPossession` names, exactly how our GT is built. The loader is `kloppy.sportec.load_open_tracking_data(match_id=...)`
-   in our pinned kloppy 3.18.0; it downloads the files, and they go under `data/external/` (gitignored).
-   Two traps sit in the loader ([T30](traps.md)):
-   - it drops every dead-ball frame unless you pass `only_alive=False`;
+1. **Source: the DFL/IDSSE open data** (Bassek et al., *Sci Data* 12, 195, 2025; CC BY 4.0): seven full matches (two
+   Bundesliga, five 2. Bundesliga) at 25 Hz. Each frame carries `BallStatus` (alive/dead) and `BallPossession` (which
+   team): the same two things our GT encodes. Their truth is therefore `D` where `BallStatus` is dead and otherwise the
+   team `BallPossession` names, exactly how our GT is built (`pipeline/benchmark/truth.py`).
+   **Our own download and parser read them, not kloppy's loader** (`sources.py` and `dfl.py`): kloppy 3.18's download
+   fails (figshare sits behind a bot challenge), and its loader has two traps ([T30](traps.md)):
+   - it drops every dead-ball frame unless you pass `only_alive=False`, which is 41% to 52% of every match;
    - it reads `BallPossession` as "1 is home, anything else is away", so a frame with no possession value comes out
-     as away.
-2. **An adapter** turns each match into an `Inputs`-compatible object, plus a `frame,label` truth for it. The object
-   carries the same arrays as `atd_cache.Atd` (players, the team of each slot, ball, speeds), its own `graded`
-   blocks per half, pitch size and fps. Every evidence source, decoder and refiner then runs on it unchanged.
-   A benchmark runner runs one config over every match and reports scores per match and pooled.
-3. **Degrade it to look like our ATD**, with the degradation seeded ([T22](traps.md)):
-   - Drop the ball in gaps drawn from A01's distribution (median 10.7 s; 75% of the missing frames in gaps of 15 s
-     or more), at a rate that climbs through each half as in A02. Our gaps are not random: they cluster in crowded
-     and aerial play. Random gaps would flatter ball-free methods (P07), so where the data allows, also build a
-     variant that places gaps in crowded play, and report both.
-   - Break identities into anonymous, team-labelled tracklets that appear, vanish and swap ([T15](traps.md)).
-   - Add positional noise.
-   - Before trusting the copy, check that it matches our data on A01's numbers: ball-missing share, gap lengths,
-     the nearest player agreeing with the truth on about 78% of in-play ball-visible frames, and the ball visible on
-     about 66% of dead-ball frames.
+     as away (it never happens in these files, and our parser refuses any code other than 1 or 2).
+
+   `sources.py` fetches the 21 files (2.6 GB) into `data/external/dfl/` (gitignored), checks every size and md5 against
+   pinned values and falls back to a Hugging Face mirror of the same data. `dfl.load_match` parses a match once and
+   caches it under `data/cache/dfl/`. kloppy stays only as a cross-check of the parser, with 0 disagreements
+   ([A05](results.md)).
+2. **An adapter** (`pipeline/benchmark/inputs.py`) serves each match as an `Inputs`-compatible object, `MatchInputs`,
+   which holds no flag of the truth, and `truth.py` builds a `frame,label` truth for it. The object carries the same
+   arrays as `atd_cache.Atd` (players, the team of each slot, ball, speeds), its own `graded` blocks per half, pitch
+   size and fps. Every evidence source, decoder and refiner then runs on it unchanged. `run.py` runs one config over
+   every match and reports scores per match and pooled.
+3. **Degrade it to look like our ATD**, with the degradation seeded ([T22](traps.md)), in profiles that add one part
+   of our tracking at a time (`degrade.py`; `clean`, `gaps`, `tracking`, and `context` with R005):
+   - **Drop the ball where ours was** (`gaps`, R003): our own missing-ball masks are transplanted onto each half, which
+     keeps the gap lengths (A01: median 10.7 s; 75% of the missing frames in gaps of 15 s or more) and the climb
+     through each half (A02). Our gaps are not random, and the plan's "crowded and aerial" became **lines and slow
+     balls** once measured: 28.6% of their onsets are within 2 m of a line against 8.5% of the visible frames, and the
+     median ball speed at an onset is 2.2 m/s against 5.1 m/s (A07, A08). The ATD has no ball height, so aerial play
+     cannot be measured on ours, and a crowd around the ball raises the hazard too, less than the lines and slow balls
+     do (A08). A transplanted mask is placed without looking at the play, so the `context` profile (R005) places the
+     gaps with a hazard fitted on our own tracker (A08); random gaps would flatter ball-free methods (P07), so both are
+     reported.
+   - **Break identities** into anonymous, team-labelled tracklets that appear, vanish and swap ([T15](traps.md); the
+     `tracking` profile, R004 and R004b): our own tracklet lengths in 46 slots, wrong-team slots ([T32](traps.md)), NaN
+     speeds in runs, and our low-count frames.
+   - **Match the positional jitter, by smoothing and not by adding noise**: DFL's players' second difference has an RMS
+     of 9.0 cm against 3.3 mm in ours, so each tracklet piece is smoothed with a 5-frame average by a rule set before
+     measuring, and DFL's rare jumps stay in ([T35](traps.md)). No positional bias is added: it cannot be measured on
+     ours.
+   - **Before trusting the copy**, `fidelity.py` checks it against our match: gates fixed before anything was measured
+     (the ball-missing share, the median gap, the slots present, the wrong-team share, the tracklet median and the
+     NaN-speed share; eight for `tracking`) and WARN checks on A01's numbers (the nearest player agreeing with the
+     truth on about 78% of in-play ball-visible frames, the ball visible on about 66% of dead-ball frames) and on what
+     the four yardsticks output on our match (A07: possessions per minute and D shares). A degradation is fitted once,
+     on label-free statistics of our tracking, and never tuned towards a WARN or a score ([T37](traps.md)).
 4. **Score with the official metric** (`possession_metrics.evaluate`), per match and half, never stitched across
-   halves, with bootstrap intervals. Seven full matches replace 17 possessions.
+   halves. Uncertainty is a 90% t-interval over the matches' paired deltas against a reference config, the exact
+   sign-flip test and wins out of seven, never a bootstrap: seven matches are not a sample to resample, and five of them
+   are one club's home games. Seven full matches replace 17 possessions.
 5. **Check the yardstick.** The benchmark should rank the four baselines in their published full-match order
    (`smooth50` > `smooth125` > `smooth25` > `raw`, EVALUATION.md), the order the public window gets wrong. That is a
-   check, not a target. Never tune the degradation towards the published numbers ([T26](traps.md)).
+   check, not a target. Never tune the degradation towards the published numbers ([T26](traps.md)). R002 to R004b: the
+   check holds in its robust part (`nearest_w0`, the raw baseline, is last under both truths), the rest of the order
+   follows the truth, and neither truth gives the published order.
 
 **What it cannot settle.**
 - **Conventions.** The DFL flags may flip at different moments from Metrica's corrected tracking. Use the benchmark
@@ -113,8 +138,9 @@ to look like our ATD and run through our own pipeline.
   possessions a match, median 3.7 s) and found that the public window cannot say how far ours differs, because it is
   livelier than 96% of DFL's windows:
   [A06](results.md#a06--dfls-conventions-against-the-public-window-and-the-literature-2026-10-23).
-  So rank the choices that depend on possession length under the raw and the coarse truth (`truth.coarse_codes`) side
-  by side, and treat a disagreement as a warning ([T33](traps.md)).
+  So rank the choices that depend on possession length under the raw and the coarse truth (`truth.coarse_codes`,
+  `--truth coarse`: a sensitivity check, not a correction) side by side, and treat a disagreement as a warning
+  ([T33](traps.md)).
 - **Our other assets.** DFL comes without video, audio, homography or Smart Tagging, so P08, P09, P10, P14 and P15
   cannot be benchmarked directly. Either simulate them from the benchmark's truth with the noise measured on our match
   (A03 for P09), or check them on the public window only.
@@ -142,6 +168,32 @@ aggregates and frame numbers only.
 With no hand labels allowed on this match, this is the only place we can learn *this* GT's timing: P01's benchmark
 follows the DFL's conventions, not Metrica's. Watching the video and measuring around the published transitions is
 fine. Writing labels for frames of this match is not ([T27](traps.md)).
+
+### P16 — Metrica's sample games, in our ground truth provider's conventions
+
+**Why.** P01's truth follows DFL's conventions, and P02 learns Metrica's from 20 transitions in one 5-minute window,
+which is livelier than 96% of DFL's windows (A06). When the flags flip and how fine our GT's possessions are remain the
+two things the benchmark cannot settle ([T33](traps.md)). Metrica's three public sample games come from the provider
+of our GT, and ship with event data to derive possession from (P13 lists them). Whether possession derived from events
+follows the conventions of our GT is what P16 tests: our GT comes from corrected tracking flags, and labels derived
+from events may not follow them. If they do, they give far more transitions than the public window's 20.
+
+**What.** Do it alongside P02.
+
+- Test first whether events reproduce our GT's conventions: compare the derived grain and `D` timing with what the
+  public window shows (P02), before trusting them for anything else.
+- Derive `H`, `A` and `D` per frame from each game's events and tracking, the way our GT is built: `D` where the ball
+  is dead, otherwise the team that has it. The events tell where a possession starts and where play stops.
+- Study the switch timing as P02 does around the public transitions, but on many more of them: the lag between the
+  touch that wins the ball and the flip, the `D` onset against the ball crossing a line, and the grain (possessions
+  per alive minute, median length), set beside DFL's in A06.
+- Feed P04's back-dating, P05's `D` onset and P12's shift, and check each against the public window through P02. If
+  the grain lands between DFL's raw truth and the coarse one, add a truth of that grain next to the two, and never
+  retune a degradation towards it ([T37](traps.md)).
+
+**Rules.** Hand-labelled data from other matches is allowed, in any amount; BAR-ATH is never labelled
+([T27](traps.md)). Check each source's licence first, keep it public so that the organisers can access it, and cite it
+in the technical document (P13's rule). Use nothing about this fixture ([T26](traps.md)).
 
 ### P03 — One command, deterministic, cached
 
@@ -231,8 +283,9 @@ This is the backbone that everything else plugs into.
 - Train H-vs-A on ball-visible frames where P04 is confident (pseudo-labels, tens of thousands of frames), on P01's
   matches with the ball masked (P13), and on the public GT, predicted out of fold ([T27](traps.md)).
 - Measure on P01's **simulated ball gaps**, where the truth is known, and check against the public window's
-  ball-missing frames (few: 6.5% of its in-play frames). Real gaps are harder than simulated ones: crowded, aerial,
-  and late in halves.
+  ball-missing frames (few: 6.5% of its in-play frames). Real gaps are harder than the `gaps` profile's, which are
+  placed without looking at the play: ours start near the lines and on slow balls, with more players around the ball,
+  and late in the half (A08). The `context` profile (R005) places them that way.
 - Feed the probabilities into P06.
 
 ### P08 — Smart Tagging as soft evidence
@@ -317,11 +370,12 @@ hand labels of our own on it ([T27](traps.md)). Public datasets of other matches
 amount. The benchmark half of this idea moved to [P01](#p01--a-validation-set-we-can-trust); what stays here is
 training on them.
 
-**What.** Three sources, all with kloppy loaders in our pinned 3.18.0:
-- **DFL/IDSSE open data** (Bassek et al., *Sci Data* 12, 195, 2025): 7 Bundesliga matches. Their 25 Hz positional
-  data carries per-frame `BallStatus` (alive/dead) and `BallPossession` — the same two things our GT encodes. Loader:
-  `kloppy.sportec.load_open_tracking_data(match_id=..., only_alive=False)` ([T30](traps.md)). P01 builds the
-  adapter and the degradation for it.
+**What.** Three sources (kloppy 3.18.0 has loaders for the last two; the first has our own, below):
+- **DFL/IDSSE open data** (Bassek et al., *Sci Data* 12, 195, 2025): 7 matches, two Bundesliga and five 2. Bundesliga.
+  Their 25 Hz positional data carries per-frame `BallStatus` (alive/dead) and `BallPossession` — the same two things
+  our GT encodes. P01 already downloads and parses them with our own code (`pipeline/benchmark/sources.py` and
+  `dfl.load_match`, [A05](results.md)), because kloppy's loader and its download do not work for them
+  ([T30](traps.md)). P01 builds the adapter and the degradation for it.
 - **Metrica sample games 1–3** (`kloppy.metrica.load_open_data`; game 3 is in our FIFA/EPTS format), with event data
   to derive possession from.
 - **SkillCorner open data** (`kloppy.skillcorner.load_open_data`): 10 fps broadcast tracking. kloppy derives its

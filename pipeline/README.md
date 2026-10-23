@@ -153,10 +153,74 @@ Each stage's README has a template, its rules and the traps that apply. After an
 | the scores | `python pipeline/run.py <config> --score` | public-window scores plus each source's agreement with the GT. Today `nearest_player` agrees on 77.8% of 5,640 frames, exactly [A01](../docs/results.md) |
 
 The public window is for correctness only. It holds 17 possessions and ranks the baselines the wrong way round
-([T01](../docs/traps.md)). Choose between versions on P01's benchmark of other matches (DFL open data, degraded to
-look like ours), with per-match t-intervals and a sign-flip test, never a bootstrap
-([benchmark README](benchmark/README.md)). Hand labels on this match are not allowed, not even for validation
-([T27](../docs/traps.md)).
+([T01](../docs/traps.md)). Choose between versions on P01's benchmark of other matches, as the next section says. Hand
+labels on this match are not allowed, not even for validation ([T27](../docs/traps.md)).
+
+## Validation
+
+Every choice between two versions of the pipeline (a decoder, a smoothing width, an evidence weight, a threshold) is
+made on **P01's benchmark**, never on the public window. The window checks that a run is correct (alignment, the file,
+each source's agreement) and is where we learn this ground truth's timing conventions (P02); it cannot rank versions
+([T01](../docs/traps.md)). With no hand labels allowed on this match, the labels come from other matches: the seven open
+DFL/IDSSE Bundesliga matches (CC BY 4.0), whose tracking is degraded to look like ours, run through the pipeline's own
+components and scored by the organisers' scorer half by half.
+
+```bash
+pip install -r requirements-benchmark.txt && python pipeline/benchmark/sources.py     # once: the 7 matches, md5-checked
+python pipeline/benchmark/run.py pipeline/benchmark/configs/nearest_w50.toml pipeline/configs/MINE.toml
+python pipeline/benchmark/run.py pipeline/benchmark/configs/nearest_w50.toml pipeline/configs/MINE.toml --truth coarse
+```
+
+The first config is the reference, and every other one is compared with it (delta = other minus first, so positive
+means the other is better). The first run parses the seven matches (174 to 326 s, [A05](../docs/results.md)); later
+runs read them from `data/cache/` and take about 6 s a config on the default profile
+([R004b](../docs/results.md)). A config must run per graded half and use only what a benchmark match has: a source that
+needs the video's homography or the Smart Tagging stops the run and names the asset.
+
+**How to read the printout.**
+
+| it says | read it as |
+|---|---|
+| pooled spellF1, macroF1, alive/dead F1 | the official scorer's numbers for all halves of all matches as one file |
+| per match, mean [90% t] | each match counts once; the 90% Student t interval of the seven is the only one used |
+| delta vs the reference, per match [90% t] | paired over the matches; excludes 0 only if it clears 0 by more than 1e-12 |
+| sign-flip p | exact two-sided test of the seven deltas, all 2^7 sign patterns; the smallest p is 2/128 = 0.0156 |
+| wins / losses | matches with delta above / below 0 by more than 1e-12, of seven |
+| possessions per graded minute, D share | predicted against true: flicker shows here before it shows in a score |
+
+- **By competition and by match.** For spellF1 the printout also gives the mean delta per competition, named by its DFL
+  code (`DFL-COM-000001`: 2 matches, `DFL-COM-000002`: 5), and the delta of each match.
+- **Never a bootstrap.** Seven matches are not a sample to resample, and five of them are one club's home games, so they
+  are not seven independent draws either. A gap that holds in every match and in both competitions is worth more than
+  one that does not. A degradation seed moves a pooled spellF1 by up to about 0.015 (R003 to R004b) and the intervals
+  say nothing of that spread, so read a gap of that size with care.
+- **Both truths.** `--truth raw` is DFL's flags as they are. DFL's possessions are fine-grained (437 a match, median
+  3.7 s) and how fine ours are is not known ([A06](../docs/results.md), [T33](../docs/traps.md)), so `--truth coarse`
+  absorbs every possession under 5 s that sits between two possessions of the other team. Run both and read them side
+  by side: a choice that depends on possession length and ranks differently under the two is a warning, not a licence
+  to pick the truth that suits. Absolute spellF1 on the benchmark is not our leaderboard's under either truth.
+- **The yardstick check.** `nearest_w{0,25,50,125}.toml` are the organisers' four baselines decoded per half, and a
+  change has to beat them here before it is worth anything. They are also the benchmark's own test: the check holds in
+  its robust part (`w0` is last under both truths, R002 to R004b), the rest of the order follows the truth, and neither
+  truth gives the published full-match order (Kendall tau +0.667 under each, from R003 on). It is a check, not a target
+  ([T26](../docs/traps.md)).
+- **Fidelity.** `python pipeline/benchmark/fidelity.py --profile tracking --seeds 3` measures how far the degraded copy
+  looks like our match: eight gates, all of which must pass (it exits 1 otherwise), and ten WARN checks that are printed
+  and discussed in `docs/results.md` and never tuned towards. Run it after any change to a profile. Degradations are
+  fitted once on label-free statistics of our tracking, then frozen ([T37](../docs/traps.md)).
+
+**The default profile, as of R004b, is `tracking` version 2.** The ball is missing where ours was (our own masks,
+transplanted). The players have our tracklets in 46 slots, wrong-team slots (10.5% of our frames from each kick-off,
+10.8% of the graded ones, T32), NaN speeds in runs, smoothing, and our low-count frames (only the players nearest the
+ball tracked). All eight gates pass and none of the ten checks warns ([R004b](../docs/results.md)). R005 adds a
+`context` profile that places the ball's gaps where our tracker loses the ball ([A08](../docs/results.md)) and may
+change the default: `run.DEFAULT_PROFILE` and the benchmark README say which is current,
+`run.py --profile clean|gaps|tracking` picks another, and every report names its profile and version.
+
+What it cannot test: whatever uses the homography, the Smart Tagging, the camera or the audio (DFL has no video), and
+the conventions of our ground truth beyond what the public window shows. Check those on the public window. The details
+(profiles, gates and WARN bands, the report, limitations) are in [`benchmark/README.md`](benchmark/README.md), and what
+was measured is in [`docs/results.md`](../docs/results.md) (A05 to A09, R002 to R004b).
 
 ## Rules that the code enforces, and ones it can't
 
@@ -169,6 +233,10 @@ look like ours), with per-match t-intervals and a sign-flip test, never a bootst
   ([T20–T22](../docs/traps.md)).
 - **One index everywhere.** Row *i* = tactical video frame *i*. Only stage 1 converts indices ([T08](../docs/traps.md)).
 - **Labels come from an algorithm.** No component may edit particular frames by hand (RULES.md).
+- **Per-frame arrays in reprs (a note for the team).** `Evidence`, `Decoded` and `run.RunResult` print their per-frame
+  arrays in their default reprs, so a `print(decoded)` in a notebook shows values of this match. `contracts.py` is
+  team-owned and the benchmark work left it alone; at the next change to the contracts, give those fields `repr=False`,
+  as `benchmark/calibration.Calibration` does for its arrays.
 - **Don't modify `evaluation/` or `starter/`.** The pipeline imports the official scorer and the organisers' loaders,
   so its checks are theirs.
 
@@ -197,5 +265,6 @@ pipeline/
 ├── evidence/            stage 2: REGISTRY, nearest_player                    README.md
 ├── decode/              stage 3: REGISTRY, majority_vote                     README.md
 ├── refine/              stage 4: REGISTRY (empty)                            README.md
-└── output/              stage 5: write, validate, summarise, score, manifest README.md
+├── output/              stage 5: write, validate, summarise, score, manifest README.md
+└── benchmark/           validation (P01): DFL matches degraded like ours     README.md
 ```
