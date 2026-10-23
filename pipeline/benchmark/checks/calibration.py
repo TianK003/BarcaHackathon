@@ -548,20 +548,30 @@ def assert_no_frame_data(value, where="describe()"):
             where, type(value).__name__)
 
 
+def expected_digest(key):
+    """The folder name of a cache key, worked out here from its definition: the first 16 hex digits of the sha256 of the
+    key's canonical JSON (sorted keys, no spaces)."""
+    return hashlib.sha256(json.dumps(key, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()[:16]
+
+
 def test_calibration_cache_inside_data_dir():
-    """load() writes only under <data dir>/cache/benchmark/calibration/, and what it keeps there is reused."""
+    """load() writes only under <data dir>/cache/benchmark/calibration/<digest>/, and what it keeps there is reused."""
     with tempfile.TemporaryDirectory() as root:
         inputs, gt = synthetic_calibration_inputs(root)
         inputs.atd  # the ATD cache is the pipeline's, not this module's: build it first, so that it is not new below
         before = snapshot(root)
         cal = calibration.load(data_dir=root, inputs=inputs, public_gt_codes=gt)
         written = snapshot(root)
-        folder = "cache/benchmark/calibration/"
+        # One folder per key: its name is the first 16 hex digits of the sha256 of the key's canonical JSON.
+        digest = expected_digest(calibration._key(inputs, gt))
+        folder = "cache/benchmark/calibration/{}/".format(digest)
         new = sorted(set(written) - set(before))
         assert new and all(path.startswith(folder) for path in new), new
         assert not [path for path in new if path.endswith((".csv", ".tmp"))], "no CSV, no leftover: {}".format(new)
         assert {path: stat for path, stat in written.items() if path in before} == before, "load() touched a file"
         assert folder + "manifest.json" in new
+        assert os.path.join(root, *calibration.CACHE_FOLDER, digest) == calibration.cache_folder(
+            root, calibration._key(inputs, gt))
 
         # Reused when fresh: nothing is rewritten, and what comes back is what was built.
         loaded = calibration.load(data_dir=root, inputs=inputs, public_gt_codes=gt)
@@ -592,22 +602,47 @@ def test_calibration_cache_inside_data_dir():
 
 
 def test_calibration_cache_is_keyed_and_unreadable_means_absent():
-    """A changed config, definition, version, truth or source rebuilds; a damaged cache is rebuilt, never an error."""
+    """A changed config, definition, version, truth or source gets a folder of its own; a damaged cache is rebuilt."""
     from pipeline.inputs import atd_cache
     with tempfile.TemporaryDirectory() as root:
         inputs, gt = synthetic_calibration_inputs(root)
-        folder = os.path.join(root, "cache", "benchmark", "calibration")
-        manifest_path = os.path.join(folder, "manifest.json")
+        parent = os.path.join(root, "cache", "benchmark", "calibration")
 
-        def manifest():
-            with open(manifest_path, encoding="utf-8") as handle:
+        def folder(codes=gt, given=None):
+            """The folder the current key (code, configs, versions, ... as they stand right now) is kept in."""
+            return calibration.cache_folder(root, calibration._key(given or inputs, codes))
+
+        def manifest(codes=gt, given=None):
+            with open(os.path.join(folder(codes, given), "manifest.json"), encoding="utf-8") as handle:
                 return json.load(handle)
 
         def load(codes=gt, given=None):
             return calibration.load(data_dir=root, inputs=given or inputs, public_gt_codes=codes)
 
+        def folders():
+            return sorted(os.listdir(parent))
+
+        def trees():
+            return {name: snapshot(os.path.join(parent, name)) for name in folders()}
+
+        def adds_a_folder(action):
+            """Run `action`; exactly one folder is new, and every old one is exactly as it was. Its name."""
+            before = trees()
+            action()
+            after = trees()
+            added = sorted(set(after) - set(before))
+            assert len(added) == 1, (sorted(before), sorted(after))
+            assert all(after[name] == files for name, files in before.items()), "an old key's folder was touched"
+            return added[0]
+
+        def adds_nothing(action):
+            before = trees()
+            action()
+            assert trees() == before, "a key that is already cached must be read, not rebuilt or rewritten"
+
         cal = load()
         key = manifest()["key"]
+        assert folders() == [expected_digest(key)], (folders(), key)
         assert key["calibration_version"] == calibration.CALIBRATION_VERSION
         assert key["code_sha256"] == calibration.CALIBRATION_SHA256
         assert key["atd_sources"] == inputs.atd_manifest["sources"], "the ATD cache's own record of its sources"
@@ -622,62 +657,68 @@ def test_calibration_cache_is_keyed_and_unreadable_means_absent():
             handle.write("# edited\n")
         calibration.CONFIG_FOLDER = edited
         try:
-            load()
+            name = adds_a_folder(load)
+            assert name == expected_digest(manifest()["key"]) != expected_digest(key)
             changed = manifest()["key"]
             assert changed["configs"]["25"] != key["configs"]["25"]
             assert changed["configs"]["0"] == key["configs"]["0"] and changed["configs"]["50"] == key["configs"]["50"]
         finally:
             calibration.CONFIG_FOLDER = real_folder
-        load()
+        adds_nothing(load)   # the unedited configs are the first key again: its own folder, read as it is
         assert manifest()["key"] == key
 
         # A new version, another definition (the hash of calibration.py), another public truth, other kick-offs.
         calibration.CALIBRATION_VERSION += 1
         try:
-            load()
+            adds_a_folder(load)
             assert manifest()["key"]["calibration_version"] == calibration.CALIBRATION_VERSION
         finally:
             calibration.CALIBRATION_VERSION -= 1
-        load()
+        adds_nothing(load)
         real_hash = calibration.CALIBRATION_SHA256
         calibration.CALIBRATION_SHA256 = "0" * 64
         try:
-            load()
+            adds_a_folder(load)
             assert manifest()["key"]["code_sha256"] == "0" * 64, "a different code hash must rebuild"
         finally:
             calibration.CALIBRATION_SHA256 = real_hash
-        load()
-        assert manifest()["key"] == key
+        adds_nothing(load)
         other = gt.copy()
         other[60:70] = A
-        load(other)
-        assert manifest()["key"]["public_gt_sha256"] != key["public_gt_sha256"]
-        load()
+        adds_a_folder(lambda: load(other))
+        assert manifest(other)["key"]["public_gt_sha256"] != key["public_gt_sha256"]
+        adds_nothing(load)
         inputs.kickoffs = {1: 61, 2: 340}
-        load()
+        adds_a_folder(load)
         assert manifest()["key"]["kickoffs"]["1"] == 61
         inputs.kickoffs = {1: 60, 2: 340}
-        load()
+        adds_nothing(load)
+        assert manifest()["key"] == key
 
         # A new ATD parse (the ATD cache's cache_version) means new arrays under the same source files: rebuilt.
         atd_cache.CACHE_VERSION += 1
         try:
             reparsed, _ = synthetic_calibration_inputs(root)   # its ATD cache is stale, so it parses again
-            load(given=reparsed)
-            assert manifest()["key"]["atd_cache_version"] == atd_cache.CACHE_VERSION == key["atd_cache_version"] + 1
+            adds_a_folder(lambda: load(given=reparsed))
+            assert manifest(given=reparsed)["key"]["atd_cache_version"] == atd_cache.CACHE_VERSION == (
+                key["atd_cache_version"] + 1)
         finally:
             atd_cache.CACHE_VERSION -= 1
         restored, _ = synthetic_calibration_inputs(root)
-        assert load(given=restored) is not None and manifest()["key"] == key
+        adds_nothing(lambda: load(given=restored))
+        assert manifest()["key"] == key and len(folders()) == 7, folders()
 
-        # Unreadable is absent: an array cut short, an array gone, a manifest that is not JSON or lacks a field.
+        # Unreadable is absent: an array cut short, an array gone, a manifest that is not JSON or lacks a field. The
+        # damaged folder is the current key's own, and it is rebuilt in place.
         good = calibration.digest(cal)
+        mine = folder()
+        manifest_path = os.path.join(mine, "manifest.json")
         for damage in ("truncate", "delete", "garbage", "field", "empty", "not parallel"):
             if damage == "truncate":
-                with open(os.path.join(folder, "gap_durations_s.npy"), "wb") as handle:
+                with open(os.path.join(mine, "gap_durations_s.npy"), "wb") as handle:
                     handle.write(b"\x93NUMPY")
             elif damage == "delete":
-                os.remove(os.path.join(folder, "ball_masks_1.npy"))
+                os.remove(os.path.join(mine, "ball_masks_1.npy"))
             elif damage == "garbage":
                 with open(manifest_path, "wb") as handle:
                     handle.write(b"\x00 not json")
@@ -687,12 +728,59 @@ def test_calibration_cache_is_keyed_and_unreadable_means_absent():
                 with open(manifest_path, "w", encoding="utf-8", newline="\n") as handle:
                     json.dump(content, handle)
             elif damage == "not parallel":
-                np.save(os.path.join(folder, "gap_onset_minute.npy"), np.zeros(1))   # valid array, wrong length
+                np.save(os.path.join(mine, "gap_onset_minute.npy"), np.zeros(1))   # valid array, wrong length
             else:
                 os.remove(manifest_path)
             assert calibration.digest(load()) == good, damage
-            assert os.path.getsize(os.path.join(folder, "gap_durations_s.npy")) > 10, damage
+            assert os.path.getsize(os.path.join(mine, "gap_durations_s.npy")) > 10, damage
+            assert len(folders()) == 7, damage
         assert calibration.digest(load()) == good
+
+
+def test_calibration_each_key_has_its_own_folder():
+    """Two checkouts with different code share one data dir: neither rebuilds the other's cache or touches its files."""
+    with tempfile.TemporaryDirectory() as root:
+        inputs, gt = synthetic_calibration_inputs(root)
+        inputs.atd
+        parent = os.path.join(root, *calibration.CACHE_FOLDER)
+
+        def tree(name):
+            return snapshot(os.path.join(parent, name))
+
+        first = calibration.load(data_dir=root, inputs=inputs, public_gt_codes=gt)
+        name_a = expected_digest(calibration._key(inputs, gt))
+        assert os.listdir(parent) == [name_a] and len(name_a) == 16 and set(name_a) <= set("0123456789abcdef"), name_a
+        files_a = tree(name_a)
+
+        # The second checkout: other code, which is another key. It gets a folder, and leaves the first one as it was.
+        real_hash = calibration.CALIBRATION_SHA256
+        calibration.CALIBRATION_SHA256 = "f" * 64
+        try:
+            second = calibration.load(data_dir=root, inputs=inputs, public_gt_codes=gt)
+            name_b = expected_digest(calibration._key(inputs, gt))
+            assert name_b != name_a and sorted(os.listdir(parent)) == sorted([name_a, name_b]), os.listdir(parent)
+            assert tree(name_a) == files_a, "the first key's folder was touched"
+            files_b = tree(name_b)
+            assert files_b, "the second key has files of its own"
+
+            # Both are reused: loading either again rewrites nothing, in either folder.
+            calibration.load(data_dir=root, inputs=inputs, public_gt_codes=gt)
+            assert tree(name_a) == files_a and tree(name_b) == files_b
+        finally:
+            calibration.CALIBRATION_SHA256 = real_hash
+        again = calibration.load(data_dir=root, inputs=inputs, public_gt_codes=gt)
+        assert tree(name_a) == files_a and tree(name_b) == files_b and len(os.listdir(parent)) == 2
+        assert calibration.digest(again) == calibration.digest(first) == calibration.digest(second)
+
+        # A key is the same key whatever order its entries come in: the folder name is of the canonical JSON.
+        key = calibration._key(inputs, gt)
+        shuffled = dict(reversed(list(key.items())))
+        assert list(shuffled) != list(key) and expected_digest(shuffled) == expected_digest(key) == name_a
+        assert calibration.cache_folder(root, shuffled) == calibration.cache_folder(root, key) == os.path.join(
+            parent, name_a)
+        # And a key that differs in one entry is another folder.
+        assert calibration.cache_folder(root, {**key, "n_frames": key["n_frames"] + 1}) != calibration.cache_folder(
+            root, key)
 
 
 def import_copy(path, name):

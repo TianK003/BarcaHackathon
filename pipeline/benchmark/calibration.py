@@ -60,10 +60,14 @@ on: the ATD cache's record of its source files and its cache_version (how they w
 sha256 of this very file (CALIBRATION_SHA256, taken once as the module is imported, with CRLF read as LF, as dfl.py does
 for its parser), the numpy version, the sha256 of the four yardstick configs, the public truth, and the graded blocks
 and kick-offs. A cache is reused only if the whole key matches, so an edited config or an edited definition cannot reuse
-old numbers. An unreadable cache (a manifest that is not JSON or lacks a field, an array missing or cut short) is
-absent, never an error: everything in it can be measured again from the sources. The arrays are written first and the
-manifest last, with the old manifest removed up front, as pipeline/inputs/atd_cache.py and dfl.load_match do, so a run
-killed half-way leaves no manifest.
+old numbers. Each key has a folder of its own, <data dir>/cache/benchmark/calibration/<digest>/ (cache_folder), where
+the digest is the first 16 hex digits of the sha256 of the key's canonical JSON: checkouts that run different code, and
+so have different keys, can share one data dir without rebuilding each other's cache in turn or interleaving their
+writes. A folder of an old key is never removed (a few MB each); the key is what says whether one is still wanted. An
+unreadable cache (a manifest that is not JSON or lacks a field, an array missing or cut short) is absent, never an
+error: everything in it can be measured again from the sources. The arrays are written first and the manifest last,
+with the old manifest removed up front, as pipeline/inputs/atd_cache.py and dfl.load_match do, so a run killed
+half-way leaves no manifest.
 """
 
 import dataclasses
@@ -85,7 +89,8 @@ from pipeline.contracts import D
 # but not the code of: pipeline/inputs/ (other than the parse), pipeline/evidence/, pipeline/decode/, pipeline/refine/,
 # pipeline/output/ (summarise) and pipeline/benchmark/run.py, for these decide baseline_outputs and public_window.
 CALIBRATION_VERSION = 1
-CACHE_FOLDER = ("cache", "benchmark", "calibration")   # <data dir>/cache/benchmark/calibration/
+CACHE_FOLDER = ("cache", "benchmark", "calibration")   # <data dir>/cache/benchmark/calibration/<digest of the key>/
+KEY_DIGITS = 16                                        # hex digits of the key's sha256 that name its folder
 MANIFEST = "manifest.json"
 CONFIG_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "configs")
 YARDSTICK_WIDTHS = (0, 25, 50, 125)     # half-widths of nearest_w{width}.toml: the organisers' four baselines, per half
@@ -589,8 +594,8 @@ CALIBRATION_SHA256 = _text_sha256(__file__)
 def load(data_dir=None, rebuild=False, inputs=None, public_gt_codes=None):
     """The Calibration of BAR-ATH, from the cache when it is fresh, otherwise measured and stored.
 
-    data_dir defaults to games.DATA_DIR (MTAH_DATA_DIR); the cache is <data dir>/cache/benchmark/calibration/ and
-    nothing else is written. The ATD comes from the pipeline's own cache and is never rebuilt here beyond what Inputs
+    data_dir defaults to games.DATA_DIR (MTAH_DATA_DIR); the cache is <data dir>/cache/benchmark/calibration/<digest>/
+    (cache_folder: one folder per key) and nothing else is written. The ATD comes from the pipeline's own cache and is never rebuilt here beyond what Inputs
     does when that cache is stale. rebuild=True measures again. `inputs` and `public_gt_codes` stand in for the real
     match and its public truth (the self-checks pass a synthetic bundle).
     """
@@ -600,7 +605,7 @@ def load(data_dir=None, rebuild=False, inputs=None, public_gt_codes=None):
     data_dir = data_dir or inputs.data_dir
     gt = public_gt() if public_gt_codes is None else np.asarray(public_gt_codes)
     key = _key(inputs, gt)
-    folder = os.path.join(data_dir, *CACHE_FOLDER)
+    folder = cache_folder(data_dir, key)
     manifest = None if rebuild else _read_manifest(folder)
     if manifest is not None and manifest.get("key") == key:
         cal = _read(folder, manifest)
@@ -609,6 +614,18 @@ def load(data_dir=None, rebuild=False, inputs=None, public_gt_codes=None):
     cal = measure(inputs, gt)
     _write(cal, folder, key)
     return cal
+
+
+def cache_folder(data_dir, key):
+    """The folder of one cache key: <data dir>/cache/benchmark/calibration/<digest>/.
+
+    The digest is the first 16 hex digits of the sha256 of the key's canonical JSON (sorted keys, no spaces), so a key
+    is the same folder whatever order its entries come in. Checkouts that run different code (their keys differ in
+    code_sha256) can share one data dir and never touch each other's files. Old folders stay where they are: each is a
+    few MB, and the key is what says whether one is still wanted.
+    """
+    canonical = json.dumps(key, sort_keys=True, separators=(",", ":"))
+    return os.path.join(data_dir, *CACHE_FOLDER, hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:KEY_DIGITS])
 
 
 def _config_path(width):
