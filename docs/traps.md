@@ -38,6 +38,15 @@ baselines over the graded halves.
 **T07 — Noise floors.** On the full match, spellF1 gaps below ~0.04 and macroF1 gaps below ~0.01 are not real. On the
 public window, one possession is worth ~0.06.
 
+**T31 — The lag table is not a law, and DFL's possessions are shorter than ours.** EVALUATION.md says perfect labels
+3, 8 and 25 frames late score 0.9818, 0.8933 and 0.6539 (T03), and does not say on what. The same shift on the public GT
+scores 1.0000, 0.9529 and 0.7765, and on the seven DFL matches of P01, pooled, 0.9590, 0.8594 and 0.5522
+([A06](results.md#a06--dfls-conventions-against-the-public-window-and-the-literature-2026-10-23)). The cost of a lag
+depends on how long the possessions are. DFL's are about half as long as ours (median 3.7 s against 7.6 s, 8.30
+possessions per alive minute against 4.23), so a switch penalty, a duration prior or a hysteresis fitted on the benchmark
+alone would suit 3.7 s possessions and over-fragment ours. Use the benchmark to rank methods; take the scale of
+possession length from the public window (P02) or the literature.
+
 ## Alignment
 
 **T08 — Off by one.** ATD `frame_id` runs 1…199,319, while submission rows, homography `frame` and video frames all

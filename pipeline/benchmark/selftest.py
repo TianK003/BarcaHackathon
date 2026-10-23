@@ -4,9 +4,10 @@
     python pipeline/benchmark/selftest.py --dfl     # + the 21 downloaded DFL files: size and md5 (reads 2.6 GB),
                                                     #   the 7 matches loaded through the cache, J03WMX's cache
                                                     #   compared with a fresh parse, J03WMX cross-checked against
-                                                    #   kloppy and by frame number, and the T30 counts on all 7
-                                                    #   matches (measured: 532 s while the 7 caches are built under
-                                                    #   data/cache/dfl/, 221 s after that)
+                                                    #   kloppy and by frame number, the T30 counts on all 7
+                                                    #   matches, and the truth's conventions on all 7 (A06) (measured:
+                                                    #   532 s while the 7 caches are built under data/cache/dfl/, then
+                                                    #   99 to 221 s: the machine's load decides)
     python pipeline/benchmark/selftest.py --data    # + checks that read the real match's data (aggregates only)
 
 This file is the harness and the one command: it collects the checks, filters them by flag, runs them and reports.
@@ -138,8 +139,9 @@ def main(argv=None, modules=None):
     parser.add_argument("--dfl", action="store_true",
                         help="also check the downloaded DFL files: size and md5 of all 21 (reads 2.6 GB), parse the 7 "
                              "match information files, load the 7 matches through the cache, compare J03WMX's "
-                             "cache with a fresh parse, cross-check J03WMX against kloppy and by frame number, and "
-                             "count T30's facts on all 7 (measured: 532 s while the caches are built, 221 s after)")
+                             "cache with a fresh parse, cross-check J03WMX against kloppy and by frame number, "
+                             "count T30's facts on all 7, and measure the truth's conventions on all 7 (A06) "
+                             "(measured: 532 s while the caches are built, then 99 to 221 s)")
     parser.add_argument("--data", action="store_true", help="also run the checks that read the real match's data")
     args = parser.parse_args(argv)
 

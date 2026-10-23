@@ -108,7 +108,9 @@ to look like our ATD and run through our own pipeline.
 
 **What it cannot settle.**
 - **Conventions.** The DFL flags may flip at different moments from Metrica's corrected tracking. Use the benchmark
-  to rank methods and to fit what transfers (switch penalties, duration priors, model weights). Fit timing (P04's
+  to rank methods and to fit what transfers (model weights, evidence). [A06](results.md#a06--dfls-conventions-against-the-public-window-and-the-literature-2026-10-23)
+  measured the grain: DFL has about twice our possessions per alive minute (3.7 s median against 7.6 s), so what
+  depends on possession length (switch penalties, duration priors) does not transfer ([T31](traps.md)). Fit timing (P04's
   back-dating, P05's `D` onset, P12's shift) on the public window through P02.
 - **Our other assets.** DFL comes without video, audio, homography or Smart Tagging, so P08, P09, P10, P14 and P15
   cannot be benchmarked directly. Either simulate them from the benchmark's truth with the noise measured on our match
@@ -206,7 +208,10 @@ weighs the evidence against the cost of each change, over a whole half at once.
 - A switch penalty λ, plus semi-Markov duration priors with minimum durations.
 - Viterbi per half via `games.half_video_blocks` — never across halftime.
 - The posterior also shows where an `X` is free, namely inside a possession.
-- Tune λ and the priors on P01. Sanity-check possession counts against football sense, but never tune to them.
+- Compare decoders and fit the evidence weights on P01, but take the scale of λ and of the duration priors from the
+  public window (P02) and the literature: DFL's possessions are about half as long as ours
+  ([A06](results.md#a06--dfls-conventions-against-the-public-window-and-the-literature-2026-10-23), [T31](traps.md)).
+  Sanity-check possession counts against football sense, but never tune to them.
 
 This is the backbone that everything else plugs into.
 

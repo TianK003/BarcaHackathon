@@ -186,6 +186,158 @@ quote the ranges, never one figure.
 - What the reused `--dfl` run still spends: kloppy's own loads (about 100 s), the fresh parse of the cache check (about
   50 s), the spot check's own pass over the file (about 34 s) and the 2.6 GB md5 check (about 10 s).
 
+### A06 — DFL's conventions against the public window and the literature (2026-10-23)
+
+The seven DFL matches (public data, CC BY 4.0) and our public GT; no BAR-ATH tracking is read. Command:
+`python pipeline/benchmark/selftest.py --dfl`, check `test_dfl_truth_conventions` (it prints every number below, asserts
+the integer counts and the 60% agreement, and takes 8 s with the caches warm); the rules are checked on hand-built
+matches by `test_truth_*` (`pipeline/benchmark/checks/truth.py`). The truth is `pipeline/benchmark/truth.py`'s, built as
+our GT is: `D` where `BallStatus` is 0, otherwise the team `BallPossession` names (set on dead frames too, and ignored
+there), `X` outside the two halves. All seven matches have both flags on every frame, so the truth carried 0 frames
+and guessed none. The literature ranges are the ones collected for P01: ball in play 55–60% of match time, 100–115
+stoppages per match, 175–220 team possessions per match under Metrica-like rules and up to about 420 if every touch
+counts.
+
+**Possessions and stoppages.** Possession lengths come from `pm.possession_spells`, stoppages are `D` runs, both
+inside each half. *pooled* is one summary of the seven matches laid end to end, never an average; *first 5′* pools the
+first 5 minutes of each first half, as long as the public window.
+
+| | minutes | alive | possessions | per alive min | median | mean | under 5 s | ≤ 2 frames | ≤ 12 frames | stoppages | stoppage median |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| J03WMX | 97.3 | 58.5% | 511 | 8.98 | 3.00 s | 6.68 s | 64.2% | 3 | 29 | 103 | 15.5 s |
+| J03WN1 | 94.4 | 48.3% | 500 | 10.97 | 3.12 s | 5.47 s | 66.2% | 2 | 32 | 107 | 23.8 s |
+| J03WOH | 91.5 | 52.4% | 402 | 8.38 | 3.94 s | 7.16 s | 58.2% | 2 | 14 | 102 | 19.1 s |
+| J03WOY | 95.0 | 53.5% | 456 | 8.97 | 3.60 s | 6.69 s | 63.8% | 1 | 17 | 113 | 19.2 s |
+| J03WPY | 97.5 | 55.7% | 421 | 7.75 | 3.84 s | 7.74 s | 60.1% | 3 | 27 | 97 | 22.8 s |
+| J03WQQ | 94.9 | 59.3% | 401 | 7.13 | 4.68 s | 8.41 s | 52.9% | 3 | 14 | 99 | 19.6 s |
+| J03WR9 | 97.9 | 58.1% | 370 | 6.51 | 4.24 s | 9.22 s | 55.1% | 1 | 23 | 92 | 20.0 s |
+| **pooled** | 668.4 | 55.2% | 3,061 | **8.30** | **3.68 s** | 7.23 s | **60.5%** | 15 | 156 | 713 | 19.6 s |
+| **public window** | 5.0 | 80.4% | 17 | **4.23** | **7.56 s** | 14.19 s | **35.3%** | 0 | 0 | 4 | 16.4 s |
+| DFL first 5′ | 35.0 | 64.8% | 211 | 9.30 | 3.12 s | 6.45 s | 64.5% | 3 | 11 | 44 | 13.5 s |
+| literature | | 55–60% | 175–220 (up to ~420) | | | | | | | 100–115 | |
+
+- **Ball in play:** 48.3% to 59.3% of the graded frames, 55.2% pooled; four matches are inside 55–60%, three below.
+  The first halves are livelier than the second (54.5–68.0% against 41.0–52.5%). The public window, at 80.4%, is
+  livelier than 96% of DFL's 5-minute windows.
+- **Stoppages:** 92 to 113 per match, 101.9 on average; four matches are inside 100–115, three below.
+- **Possessions:** 370 to 511 per match, 437 on average, all seven above the Metrica-like range and four of them above
+  420: DFL's flag is at the every-touch end of the literature's range. The public window holds 17 possessions in 4.0
+  alive minutes, 4.23 per alive minute against DFL's 8.30 (1.96 times). Spread over ~58 alive minutes (DFL's pooled
+  55% of our 106 graded minutes, an assumption) that would be ~250 possessions, with a one-standard-error band (17
+  events: 24%) of 190–310 that overlaps the 175–220 range; DFL's rate would give ~485.
+- **Short runs:** 15 of 3,061 pooled possessions (0.49%) last 2 frames or less, and 156 (5.1%) last 12 frames or less
+  (0.48 s); the shortest public possession is 0.76 s. The flicker is not material (the 2% rule): the truth is the raw
+  one, and the de-flickered variant (`min_run`) is not built.
+
+**Where the public window sits among DFL's 129 whole 5-minute windows** (each half cut from its first frame):
+
+| | min | p10 | median | p90 | max | share at or below the public window |
+|---|---|---|---|---|---|---|
+| possessions | 8 | 16 | 23 | 32 | 41 | 18.6% (24 windows; the public window has 17) |
+| per alive minute | 2.08 | 5.23 | 8.91 | 13.44 | 22.77 | **5.4%** (7 windows; the public window has 4.23) |
+| alive share | 11% | 36% | 54% | 77% | 89% | 96.1% (the public window has 80.4%) |
+
+**DFL's own playing time.** `OtherGameInformation@PlayingTime…` over `@TotalTime…` from each match information file,
+against the alive share of the truth:
+
+| match | playing / total | of half 1 | of half 2 | alive frames | alive frames less PlayingTime (frames) |
+|---|---|---|---|---|---|
+| J03WMX | 58.5% | 66.8% | 50.7% | 85,369 | +2 |
+| J03WN1 | 48.3% | 55.9% | 41.0% | 68,377 | +1 |
+| J03WOH | 52.4% | 54.5% | 50.3% | 71,945 | +1 |
+| J03WOY | 53.5% | 54.6% | 52.5% | 76,286 | +1 |
+| J03WPY | 55.7% | 66.8% | 45.8% | 81,460 | +2 |
+| J03WQQ | 59.3% | 68.0% | 51.0% | 84,352 | +2 |
+| J03WR9 | 58.1% | 64.8% | 52.3% | 85,316 | +2 |
+
+The alive frames of the flags are DFL's official ball-in-play time to within 2 frames in every match, so `D` is DFL's
+own stoppage clock and the 55–60% of the literature is a mean over matches that range from 48% to 59%.
+
+**The cost of being late.** spellF1 of the truth against itself shifted k frames later within each half (the first k
+frames `X`, which the scorer back-fills), through `pm.evaluate`:
+
+| | k = 3 | k = 8 | k = 25 |
+|---|---|---|---|
+| J03WMX | 0.9503 | 0.8184 | 0.4943 |
+| J03WN1 | 0.9476 | 0.8352 | 0.5048 |
+| J03WOH | 0.9706 | 0.8746 | 0.5816 |
+| J03WOY | 0.9732 | 0.8829 | 0.5395 |
+| J03WPY | 0.9492 | 0.8518 | 0.5639 |
+| J03WQQ | 0.9731 | 0.8933 | 0.6125 |
+| J03WR9 | 0.9524 | 0.8751 | 0.6011 |
+| **pooled** | **0.9590** | **0.8594** | **0.5522** |
+| public GT, same function | 1.0000 | 0.9529 | 0.7765 |
+| EVALUATION.md | 0.9818 | 0.8933 | 0.6539 |
+
+- **EVALUATION.md's table does not reproduce on the public GT.** k = 1 does (1.0000), k = 3, 8 and 25 do not: the
+  public GT gives 1.0000, 0.9529 and 0.7765 against the table's 0.9818, 0.8933 and 0.6539. Shifting the other way, or
+  keeping the head instead of `X`, changes nothing. Its 17 long possessions (shortest 0.76 s) lose less to a shift
+  than the table says, so the table presumably comes from the full match, whose possessions include shorter ones
+  ([T31](traps.md)); the organisers do not say.
+- Every DFL match loses more to a shift than the table does: the table is above all seven at k = 3 and k = 25 and
+  level with the best at k = 8. On the benchmark, being 1 s late costs 0.45 and being 8 frames late 0.14, against 0.35
+  and 0.11 in the table.
+
+**The flip to dead against the ball leaving the pitch.** At each alive → dead change (710 in all), the ball's
+normalised centre is checked against the lines (x or y outside 0–1) over the 10 s before the change; the lead is the
+time from the first such frame to the change. In the first measurement the window reaches back into an earlier
+stoppage (a throw-in taken less than 10 s before the next stop), which puts the ball beyond a line on dead frames:
+that is why its upper quartile is 7.6 s (10.00 s, the window's whole length, in four matches). The second measurement
+looks only at the frames the truth calls alive.
+
+| | changes | ball beyond a line | median lead | p25 | p75 |
+|---|---|---|---|---|---|
+| any frame of the window, pooled | 710 | 518 (73.0%) | 0.16 s | 0.12 s | 7.61 s |
+| alive frames of the window, pooled | 710 | 490 (69.0%) | **0.16 s** | 0.08 s | **0.28 s** |
+| alive frames, per match | 92–112 | 41.4%–79.6% | 0.12–0.16 s | 0.08–0.12 s | 0.20–0.32 s |
+
+- DFL's flag turns dead 4 frames (0.16 s) after the ball is first seen beyond a line while the flag still says alive,
+  and within 0.28 s in three cases out of four. The other 31% of the changes have no alive frame with the ball beyond
+  a line in the 10 s before (fouls, offsides and the like).
+- J03WQQ has the lowest share (41.4% of its changes) because its ball is tracked beyond a line on 30% of its dead
+  frames, against 59–74% in the others (not investigated further). The tracked ball is never more than 4 m outside a
+  line (x from −0.022 to 1.029 and y from −0.059 to 1.046 of the pitch, over all seven matches).
+- Our match has no counterpart yet: it needs BAR-ATH's ball against the public GT's `D` onsets, which is P02.
+
+**The nearest player against the truth** (A01: 77.8% of 5,640 alive ball-visible frames on the public window). Brute
+force, in metres, present players only:
+
+| match | all | half 1 | half 2 | frames |
+|---|---|---|---|---|
+| J03WMX | 77.9% | 80.4% | 74.9% | 85,369 |
+| J03WN1 | 75.0% | 78.3% | 70.6% | 68,377 |
+| J03WOH | 76.5% | 76.3% | 76.8% | 71,945 |
+| J03WOY | 75.3% | 77.0% | 73.6% | 76,286 |
+| J03WPY | 78.6% | 81.2% | 75.3% | 81,460 |
+| J03WQQ | 77.4% | 79.2% | 75.3% | 84,352 |
+| J03WR9 | 80.8% | 82.2% | 79.2% | 85,316 |
+| **pooled** | **77.5%** | | | 553,105 |
+
+Every match and every half is above 60% (the check asserts it), so home is team 0 everywhere and no half is
+misaligned. The second halves are 4 points lower on average (six of the seven).
+
+**So:**
+- **The flags mean the same thing.** `D` is DFL's own ball-out-of-play time (alive frames equal `PlayingTime` to
+  within 2 frames), stoppages are 102 a match, the flag flips a median 0.16 s after the ball leaves, and the nearest
+  player names the truth's team on 77.5% of frames, against 77.8% on our window. The *evidence* about teams and about
+  `D` therefore transfers: use the benchmark to rank evidence sources, decoders and degradation handling.
+- **The grain is not the same.** DFL has twice the possessions per alive minute (8.30 against 4.23; our window is
+  below 94.6% of DFL's windows), a median of 3.7 s against 7.6 s, 60.5% under 5 s against 35.3%, 437 possessions a
+  match against a Metrica-like 175–220, and every DFL match loses more to a late flag than the organisers' table.
+  DFL's truth sits at the every-touch end of the literature; ours looks nearer the Metrica-like end. One caveat: the
+  public window has 17 possessions, so its rate is ±24%; the organisers' lag table, presumably from the full match,
+  points the same way.
+- **What does not transfer:** absolute scores (a method's spellF1 on the benchmark is lower than on our match, and
+  every frame of lag costs more), and anything that learns possession length: duration priors, switch penalties and
+  hysteresis (P04, P06) fitted on DFL would suit 3.7 s possessions and over-fragment ours. Fit those on the public
+  window through P02, or set them from the literature, not on the benchmark ([T31](traps.md)).
+- **What the benchmark cannot test:** DFL's halves start at the kick-off (11 of 14 start alive; the other three have
+  1, 1 and 48 leading `D` frames) and all 14 end in `D`, whereas our graded second half starts 117 s before the
+  kick-off, all `D` (T02).
+- **Open:** whether the ranking of two methods depends on the grain. The benchmark runner should show it by reporting
+  the possessions of each method next to the truth's. The `min_run` variant would not help: most short possessions are
+  0.5 to 5 s long (60.5% are under 5 s, 5.1% under 0.5 s), not 2-frame flicker.
+
 ## Experiments
 
 Copy this template for each run, and add a scoreboard row for anything worth comparing.
