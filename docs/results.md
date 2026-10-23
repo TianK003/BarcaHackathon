@@ -1201,9 +1201,12 @@ configs (0.6094, 0.5935, 0.6428, 0.5761): the ball is the same, and these depend
 `test_data_tracking_profile_on_a_real_match_with_our_real_calibration` as it runs at `47bde9f`, the commit that
 corrected this entry; only the layout, the determinism, the leaks and the lost share are asserted. d is 0.0250 (ours has
 more than 18 slots present on 89.4% of its frames), the mean tracked span 2,797 frames (111.9 s) and the mean lost span
-71.7 frames (2.87 s); 2.80% of the 3,211,274 on-pitch frames are lost, in 1,605 tracklets and 13 + 13 slots (11 home
-and 12 away slots are present on at least a tenth of the frames, against ours 21 of 24 and 20 of 22; A09 had 11 + 11
-before the episodes, which take a slot in the other team's pool). The lost
+71.7 frames (2.87 s); 2.80% of the 3,211,274 on-pitch frames are lost, in 1,605 tracklets. **Slots used per team**
+(home / away; the first version of these figures came from a throwaway script, and the check has printed them itself
+since the commit after `811732d` that added the print, `slot_use`, the same function for both sides): of the pools of
+24 / 22 slots the degraded match has 13 / 13 ever present, 11 / 12 present on at least a tenth of the frames and 12 / 12
+on at least a hundredth, against ours 22 / 21, 21 / 20 and 22 / 21 (A09 had 11 + 11 on a tenth before the episodes, which
+take a slot in the other team's pool). The lost
 share over the 7 matches and seeds 0 to 4 is 2.59% against d = 2.50% (the check allows 0.003; per match 2.47% to 2.66%).
 
 | | degraded | ours |

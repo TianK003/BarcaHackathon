@@ -187,12 +187,12 @@ def report(profile, seeds=DEFAULT_SEEDS, match_ids=None, matches=None, calibrati
     checks warn. "players_draws" is {} for a profile that draws nothing for its players and, for tracking, the counts of
     what was drawn, pooled over matches, seeds and halves (tracklets, onsets, episodes, skipped_far, skipped_overlap,
     episode_frames, speed_nan_runs, speed_nan_frames). The report also holds "full_strength": {"frames", "full_frames",
-    "share", "below_full"}, the frames in the spans of all the matches (once each, whatever the seeds), those at full
+    "share", "share_at_full"}, the frames in the spans of all the matches (once each, whatever the seeds), those at full
     strength (COUNT_GATES are measured on them only), their share, and {match: share of its frames AT full strength} for
-    each match with fewer than all of them (the key says which matches fall short, the value is the share that does
-    not). FidelityError for a profile that has no gates (clean, which degrades nothing) or that is not one, for seeds
-    below 1, for a calibration that is not a Calibration, and for count gates with no full-strength frame to measure;
-    run.BenchmarkError for matches that are not as asked.
+    each match that is not at full strength throughout (the keys say which matches fall short, the value is the share
+    of its frames that is at full strength, not the share that is not). FidelityError for a profile that has no gates
+    (clean, which degrades nothing) or that is not one, for seeds below 1, for a calibration that is not a Calibration,
+    and for count gates with no full-strength frame to measure; run.BenchmarkError for matches that are not as asked.
     """
     if profile not in degrade.PROFILES:
         raise FidelityError("profile {!r} is not one of: {}".format(profile, ", ".join(sorted(degrade.PROFILES))))
@@ -370,13 +370,13 @@ class Pool:
         self.full_strength[match_id] = [int(full_frames), int(frames)]
 
     def full_strength_report(self):
-        """{"frames", "full_frames", "share", "below_full"}: counts over the matches, and {match: share of its frames at
-        full strength} for each match whose share is below 1."""
+        """{"frames", "full_frames", "share", "share_at_full"}: counts over the matches, and {match: share of its frames
+        AT full strength} for each match whose share is below 1 (the matches not at full strength throughout)."""
         full = sum(counts[0] for counts in self.full_strength.values())
         frames = sum(counts[1] for counts in self.full_strength.values())
         return {"frames": frames, "full_frames": full, "share": _round(full / frames) if frames else None,
-                "below_full": {match_id: _round(counts[0] / counts[1]) for match_id, counts
-                               in sorted(self.full_strength.items()) if counts[0] < counts[1]}}
+                "share_at_full": {match_id: _round(counts[0] / counts[1]) for match_id, counts
+                                  in sorted(self.full_strength.items()) if counts[0] < counts[1]}}
 
     def add_agreement(self, judged, agreement):
         if judged:
@@ -595,8 +595,8 @@ def render(result):
                      "{:,} frames ({:.1%}){}".format(
                          seen["full_frames"], seen["frames"], seen["share"],
                          "; not at full strength throughout, share of their frames at full strength: " + ", ".join(
-                             "{} {:.1%}".format(match_id, share) for match_id, share in seen["below_full"].items())
-                         if seen["below_full"] else ""))
+                             "{} {:.1%}".format(match_id, share) for match_id, share in seen["share_at_full"].items())
+                         if seen["share_at_full"] else ""))
     lines += ["", "checks (pre-registered warning bands; the degradation is never adjusted towards them)",
               "  {:<32}{:>10}{:>10}{:>10}   {}".format("check", "measured", "ours", "band", "status")]
     for check in result["checks"]:

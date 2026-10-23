@@ -370,7 +370,9 @@ that this README names only checks that exist.
   frames with few players tracked** (the tail, which the next task adds; three of its gates, the ones about how many
   slots are present, are pending until then). Its slots are the lowest free ones, so a team uses 13 of its slots over a
   whole match (J03WMX, seed 0: 11 home and 12 away slots are present on at least a tenth of the frames) where ours has
-  21 of 24 and 20 of 22 present on at least a tenth of the frames, and a slot's index is not as empty of the player as
+  21 of 24 and 20 of 22 present on at least a tenth of the frames (printed, with the slots ever present and those
+  present on at least a hundredth of the frames, by `test_data_tracking_profile_on_a_real_match_with_our_real_calibration`),
+  and a slot's index is not as empty of the player as
   in ours: a player who comes back after a lost span lands in the slot he had 69.0% of the time (860 of 1,247 returns,
   J03WMX, seed 0, with the episodes on, as in version 1 of the profile), and a slot idles between two tracklets for a
   median of 2.3 s (59.7% of its gaps at most 3 s, 3.8% over 60 s), where ours idles for 7.4 s (17.7% and 15.0%; A09,

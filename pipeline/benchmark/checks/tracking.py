@@ -155,6 +155,58 @@ def test_slot_persistence_helpers_count_what_they_say():
     assert same_slot_returns({1: [T(0, 0, 5, 1)]}) == (0, 0) and same_slot_returns({}) == (0, 0)
 
 
+def slot_use(present, team, spans):
+    """{0: (pool, ever, tenth, hundredth), 1: (...)}: for each team, how many slots it has, how many are present on at
+    least one frame of the spans, on at least a tenth of the frames of the spans and on at least a hundredth of them.
+
+    What the two sides of the slot comparison are made of (R004, the README): the same function counts the degraded
+    match and ours, over the rows of the spans (half, start, stop), all halves together. The shares are compared in
+    integers (10 x the frames present against the frames, so that exactly a tenth counts), and a slot present only
+    outside the spans does not count. Aggregates only."""
+    present, team = np.asarray(present), np.asarray(team)
+    frames = sum(stop - start for _, start, stop in spans)
+    seen = np.zeros(present.shape[1], dtype=np.int64)
+    for _, start, stop in spans:
+        seen += present[start:stop].sum(axis=0, dtype=np.int64)
+    out = {}
+    for number in (0, 1):
+        mine = seen[team == number]
+        out[number] = (int(mine.size), int((mine >= 1).sum()), int((10 * mine >= frames).sum()),
+                       int((100 * mine >= frames).sum()))
+    return out
+
+
+def test_slot_use_counts_what_it_says():
+    """Slots ever present, on at least a tenth and on at least a hundredth of the frames of the spans, per team.
+
+    240 rows, spans of 200 frames in all (rows 10-110 and 130-229, each 100). Home slots 0 to 3 are present on 1, 2, 20
+    and 19 of those frames: ever 4, a hundredth (2 frames of 200, exactly) 3, a tenth (20 frames, exactly) 1; a slot
+    with 1 frame is under a hundredth (0.5%), 19 frames are under a tenth (9.5%). Away slot 4 is present only outside the
+    spans (rows 0-9, 230-239): it is not used; away slot 5 is present on every frame of the spans: 1 of 2 in all three
+    counts. The frames outside the spans, and a frame at the very edge, count for nothing in the shares."""
+    present = np.zeros((240, 6), dtype=bool)
+    spans = [(1, 10, 110), (2, 130, 230)]
+    present[10:11, 0] = True                      # 1 frame
+    present[50:52, 1] = True                      # 2 frames
+    present[100:110, 2] = True                    # 10 + 10 frames, over the two spans
+    present[130:140, 2] = True
+    present[20:39, 3] = True                      # 19 frames
+    present[0:10, 4] = True
+    present[230:240, 4] = True
+    present[10:110, 5] = True
+    present[130:230, 5] = True
+    team = np.array([0, 0, 0, 0, 1, 1])
+    assert slot_use(present, team, spans) == {0: (4, 4, 1, 3), 1: (2, 1, 1, 1)}, slot_use(present, team, spans)
+    plain = {}
+    frames = [row for _, start, stop in spans for row in range(start, stop)]
+    for number in (0, 1):
+        counts = [sum(1 for row in frames if present[row, slot]) for slot in range(6) if team[slot] == number]
+        plain[number] = (len(counts), sum(c >= 1 for c in counts), sum(c / len(frames) >= 0.1 for c in counts),
+                         sum(c / len(frames) >= 0.01 for c in counts))
+    assert plain == slot_use(present, team, spans), (plain, slot_use(present, team, spans))
+    assert len(frames) == 200
+
+
 def test_tracking_parameters_are_worked_out_from_the_calibration():
     """d from the frames with more than 18 present, the lengths in frames at the match's rate, mu from both.
 
@@ -1131,8 +1183,10 @@ def test_data_tracking_profile_on_a_real_match_with_our_real_calibration():
     is 0.09 points over d = 2.50%: a DFL half is 68,000 to 78,000 frames, where a cut at the end of a run is not
     negligible). A mu without the (1 - d) would give about 2.53%, which no tolerance here can separate from 2.59%:
     the synthetic test_lost_share_on_long_synthetic, whose d = 0.3 makes it 23.1% against 30%, is what catches that. It
-    also prints the slot persistence of the degraded match and of ours: the idle gaps of a slot and the returns to the
-    same slot. Aggregates only.
+    also prints how many slots each team uses, in the degraded match and in ours (slot_use: the slots of the pool, those
+    ever present, and those present on at least a tenth and at least a hundredth of the frames: the figures that R004
+    and the README quote), and the slot persistence of both: the idle gaps of a slot and the returns to the same slot.
+    Aggregates only.
     """
     from pipeline.benchmark import sources
     match_id = sources.MATCH_IDS[0]
@@ -1176,14 +1230,12 @@ def test_data_tracking_profile_on_a_real_match_with_our_real_calibration():
             ("speeds NaN of the present", mine["speed_nan_share"], cal.speed_nan_share, "{:.2%}"),
             ("wrong-team frames", mine["wrong_team_share"], cal.wrong_team_share, "{:.1%}"))
     counts = np.concatenate([cal.present_counts[half] for half in sorted(cal.present_counts)])
-    used = np.flatnonzero(atd.players_present.any(axis=0))
     print("      {}: d {:.4f} (ours has more than {} slots present on {:.1%} of its frames), mean tracked span {:,.0f} "
           "frames ({:.1f} s), mean lost span {:.1f} frames ({:.2f} s)".format(
               match_id, parameters.d, degrade.CAP, (counts > degrade.CAP).mean(), parameters.mean_tracked,
               parameters.mean_tracked / view.fps, parameters.mu, parameters.mu / view.fps))
-    print("      lost {:.2%} of the {:,} on-pitch frames, {:,} tracklets, {} + {} slots used".format(
-        info["players"]["lost_share"], info["players"]["on_pitch_frames"], info["players"]["tracklets"],
-        int((used < degrade.HOME_SLOTS).sum()), int((used >= degrade.HOME_SLOTS).sum())))
+    print("      lost {:.2%} of the {:,} on-pitch frames, {:,} tracklets".format(
+        info["players"]["lost_share"], info["players"]["on_pitch_frames"], info["players"]["tracklets"]))
     print("      {:<26} {:>10} {:>10}".format("information, not gated", "degraded", "ours"))
     for name, degraded, measured, template in rows:
         print("      {:<26} {:>10} {:>10}".format(name, template.format(degraded), template.format(measured)))
@@ -1194,6 +1246,13 @@ def test_data_tracking_profile_on_a_real_match_with_our_real_calibration():
     from pipeline.inputs import Inputs
     ours_inputs = Inputs()
     ours_spans = [(half, ours_inputs.kickoffs[half], stop) for half, _, stop in ours_inputs.graded]
+    use = {"degraded": slot_use(atd.players_present, atd.slot_team, spans),
+           "ours": slot_use(ours_inputs.atd.players_present, ours_inputs.atd.slot_team, ours_spans)}
+    print("      {:<28} {:>10} {:>10}".format("slots per team, home / away", "degraded", "ours"))
+    for name, index in (("in the pool", 0), ("ever present", 1), ("present on >= 10% of frames", 2),
+                        ("present on >= 1% of frames", 3)):
+        print("      {:<28} {:>10} {:>10}".format(name, *("{} / {}".format(use[side][0][index], use[side][1][index])
+                                                         for side in ("degraded", "ours"))))
     gaps_degraded = gap_figures(slot_idle_gaps_s(atd.players_present, spans, inputs.fps))
     gaps_ours = gap_figures(slot_idle_gaps_s(ours_inputs.atd.players_present, ours_spans, ours_inputs.fps))
     returns, same = same_slot_returns({half: degrade.choose_tracklets(view, half, parameters, 0)

@@ -312,7 +312,7 @@ def worked_out_tracking(matches, cal, seeds=SEEDS):
     The figures that the report measures on the full-strength frames only (the share with 22 present, the mean present,
     the share with 14 or fewer) and the wrong-team share there are counted again here one frame at a time, in plain
     loops, over the frames where the clean match has 22 players; they are under "full", with the number of those frames
-    and, for each match with fewer than all of them, their share, under "below_full". The flat figures are over all
+    and, for each match with fewer than all of them, their share, under "share_at_full". The flat figures are over all
     frames."""
     frames = slot_frames = wrong = nan = 0
     hist = np.zeros(degrade.N_SLOTS + 2, dtype=np.int64)
@@ -358,7 +358,7 @@ def worked_out_tracking(matches, cal, seeds=SEEDS):
                      "present_share_le14": full["hist"][:15].sum() / full["frames"],
                      "wrong_team_share": full["wrong"] / full["frames"], "frames": full["frames"]},
             "full_strength": {"frames": total_frames, "full_frames": full_frames, "share": full_frames / total_frames},
-            "below_full": below}
+            "share_at_full": below}
 
 
 def test_fidelity_tracking_report_synthetic():
@@ -441,7 +441,7 @@ def test_fidelity_count_gates_leave_out_frames_below_full_strength():
         result = fidelity.report("tracking", seeds=SEEDS, matches=matches, calibration=cal, data_dir=root, log=quiet)
     ours = worked_out_tracking(matches, cal)
     by_name = {gate["name"]: gate for gate in result["gates"]}
-    assert ours["below_full"] == {"RND002": 370 / 450} and set(ours["below_full"]) == {"RND002"}
+    assert ours["share_at_full"] == {"RND002": 370 / 450} and set(ours["share_at_full"]) == {"RND002"}
     for name in fidelity.COUNT_GATES:
         assert abs(by_name[name]["measured"] - ours["full"][name]) < 1e-9, (name, by_name[name], ours["full"][name])
     assert abs(ours["full"]["present_mean"] - ours["present_mean"]) > 0.02, "all frames give another mean present"
@@ -459,8 +459,8 @@ def test_fidelity_count_gates_leave_out_frames_below_full_strength():
     seen = result["full_strength"]
     assert seen["frames"] == ours["full_strength"]["frames"] and seen["full_frames"] == \
         ours["full_strength"]["full_frames"], seen
-    assert abs(seen["share"] - ours["full_strength"]["share"]) < 1e-9 and set(seen["below_full"]) == {"RND002"}
-    assert abs(seen["below_full"]["RND002"] - 370 / 450) < 1e-9
+    assert abs(seen["share"] - ours["full_strength"]["share"]) < 1e-9 and set(seen["share_at_full"]) == {"RND002"}
+    assert abs(seen["share_at_full"]["RND002"] - 370 / 450) < 1e-9
     assert any("full strength" in note and "22" in note and "all its frames" in note for note in result["notes"]), \
         result["notes"]
     # The printout says which share it prints: the match's frames AT full strength, not those below it.
