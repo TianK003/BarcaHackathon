@@ -14,9 +14,9 @@ as bad as ours, and fidelity.py measures with the Calibration's own statistics f
               The players are untouched.
     tracking  the gaps' ball, exactly, and the players broken up the way ours are: tracked spans and lost spans, and
               46 anonymous slots that tracklets take and leave; a wrong-team slot now and then, NaN speeds in runs and
-              positions smoothed (below). Not yet our frames with few players tracked, which is the profile's last
-              part: three of its fidelity gates, the ones about how many slots are present, are pending until then
-              (fidelity.PENDING_GATES, R004).
+              positions smoothed (below). Not our frames with few players tracked, which are the next version's (2):
+              version 1 is frozen as it is, with three of its fidelity gates, the ones about how many slots are
+              present, pending (fidelity.PENDING_GATES, R004).
 
 The version of a profile (PROFILES) is part of what a report says about its tracking: change what a profile does and
 bump it, so that two reports of different tracking never carry one version.
@@ -68,7 +68,7 @@ in ours: under the lowest-free rule (below) a player who comes back after a lost
 the time (860 of 1,247 returns, J03WMX, seed 0, with the wrong-team episodes on, as in version 1), and a slot idles
 between two tracklets for a median of 2.3 s (59.7% of its gaps last at most 3 s and 3.8% over 60 s), where ours idles
 for 7.4 s (17.7% at most 3 s, 15.0% over 60 s: A09, R004). Before the episodes were added it was 76.0%, 2.0 s, 67.1% and
-none over 60 s (R003): the same code with the scale at 0 gives those again. No evidence source reads a slot's identity
+none over 60 s (A09): the same code with the scale at 0 gives those again. No evidence source reads a slot's identity
 today, beyond nearest_player's argmin on exact ties, which goes to the lower slot; but a method that follows a slot
 across a loss would be validated optimistically here. The tail's part of the profile (the frames with few players
 tracked) re-measures this.

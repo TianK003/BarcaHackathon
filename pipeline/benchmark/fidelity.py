@@ -39,9 +39,11 @@ built, is printed as measured, centre and tolerance with the status `pending`, i
 exit code, and the report says why (NOTES). Today these are the three gates about how many slots are present: the
 share with exactly 22, the mean number present and the share with 14 or fewer. They depend on the low-count tail (our
 frames with 18 or fewer slots present, 10.6%), which the tracking profile does not have yet: without it the profile
-keeps too many frames at 22 slots (0.5631 of the full-strength frames against ours 0.5019, +-0.06, in R004), and the
-cap of the tail is what moves about 10.6% of the frames out of the upper buckets (about 0.503, an estimate). The task
-that builds the tail empties the list, and then they are gates like the rest.
+keeps too many frames at 22 slots (0.5631 of the full-strength frames against ours 0.5019, +-0.06, in R004). If the
+cap of the tail is placed by our counts, independently of the benchmark's own, each upper bucket loses about 10.6% of
+its frames and the share becomes about 0.5631 x (1 - 0.106) = 0.503 (an estimate, not a measurement). The tail is a new
+version of the profile (2): version 1 is frozen as it is, with these three pending, and the task that builds version 2
+empties the list for it, and then they are gates like the rest.
 
 Checks (the warnings). Pre-registered bands on things the degradation does not fit but a benchmark that resembles our
 match should show anyway: the nearest player's agreement with the truth on alive, ball-visible frames (compared with
@@ -124,11 +126,13 @@ GATES = {
     ),
 }
 # The gates that cannot be met until the low-count tail is built, each of them about how many slots are present, which
-# the tail's frames (18 or fewer present) bring down. Printed with the status "pending" and never counted; the tail's
-# task empties this tuple. Why each is pending:
+# the tail's frames (18 or fewer present) bring down. Printed with the status "pending" and never counted. The tail is
+# version 2 of the profile: version 1 stays frozen with these pending, and the task that builds version 2 empties this
+# tuple for it. Why each is pending:
 #   present_share_22    without the tail too many frames have all 22 present: 0.5631 of the full-strength frames
-#                       against ours 0.5019 +-0.06 (R004). The tail's cap moves about 10.6% of the frames out of the
-#                       upper buckets, which gives about 0.5631 x (1 - 0.106) = 0.503 (an estimate, not a measurement);
+#                       against ours 0.5019 +-0.06 (R004). If the tail's cap is placed by our counts, independently of
+#                       the benchmark's own, each upper bucket loses about 10.6% of its frames, which gives about
+#                       0.5631 x (1 - 0.106) = 0.503 (an estimate, not a measurement);
 #   present_mean        21.43 against 20.52 +-0.5: the same frames at the bottom are missing;
 #   present_share_le14  none of the frames has 14 or fewer, where ours has 5.25% (+-0.02).
 PENDING_GATES = ("present_share_22", "present_mean", "present_share_le14")
@@ -177,17 +181,18 @@ def report(profile, seeds=DEFAULT_SEEDS, match_ids=None, matches=None, calibrati
     none is given. One match is in memory at a time.
 
     Returns {"profile", "seeds", "matches", "calibration", "gates", "checks", "statistics", "draws", "players_draws",
-    "passed", "warnings", "notes"}. "gates" is a list of {name, text, measured, centre, tolerance, kind, status}
-    (status pass, FAIL or pending: PENDING_GATES), "checks" a list of {name, measured, centre, band, kind, status} (ok
-    or WARN), "passed" is whether no gate failed (a pending one is not counted) and "warnings" how many checks warn.
-    "players_draws" is {} for a profile that draws nothing for its players and, for tracking, the counts of what was
-    drawn, pooled over matches, seeds and halves (tracklets, onsets, episodes, skipped_far, skipped_overlap,
+    "full_strength", "passed", "warnings", "notes"}. "gates" is a list of {name, text, measured, centre, tolerance,
+    kind, status} (status pass, FAIL or pending: PENDING_GATES), "checks" a list of {name, measured, centre, band, kind,
+    status} (ok or WARN), "passed" is whether no gate failed (a pending one is not counted) and "warnings" how many
+    checks warn. "players_draws" is {} for a profile that draws nothing for its players and, for tracking, the counts of
+    what was drawn, pooled over matches, seeds and halves (tracklets, onsets, episodes, skipped_far, skipped_overlap,
     episode_frames, speed_nan_runs, speed_nan_frames). The report also holds "full_strength": {"frames", "full_frames",
     "share", "below_full"}, the frames in the spans of all the matches (once each, whatever the seeds), those at full
-    strength (COUNT_GATES are measured on them only), their share, and {match: share} for each match with fewer than
-    all of them. FidelityError for a profile that has no gates (clean, which degrades nothing) or that is not one, for
-    seeds below 1, for a calibration that is not a Calibration, and for count gates with no full-strength frame
-    to measure; run.BenchmarkError for matches that are not as asked.
+    strength (COUNT_GATES are measured on them only), their share, and {match: share of its frames AT full strength} for
+    each match with fewer than all of them (the key says which matches fall short, the value is the share that does
+    not). FidelityError for a profile that has no gates (clean, which degrades nothing) or that is not one, for seeds
+    below 1, for a calibration that is not a Calibration, and for count gates with no full-strength frame to measure;
+    run.BenchmarkError for matches that are not as asked.
     """
     if profile not in degrade.PROFILES:
         raise FidelityError("profile {!r} is not one of: {}".format(profile, ", ".join(sorted(degrade.PROFILES))))
@@ -365,7 +370,8 @@ class Pool:
         self.full_strength[match_id] = [int(full_frames), int(frames)]
 
     def full_strength_report(self):
-        """{"frames", "full_frames", "share", "below_full"}: counts over the matches, and {match: share} below 1."""
+        """{"frames", "full_frames", "share", "below_full"}: counts over the matches, and {match: share of its frames at
+        full strength} for each match whose share is below 1."""
         full = sum(counts[0] for counts in self.full_strength.values())
         frames = sum(counts[1] for counts in self.full_strength.values())
         return {"frames": frames, "full_frames": full, "share": _round(full / frames) if frames else None,
@@ -479,7 +485,14 @@ def _gate(spec, pool, calibration):
 
 
 def _check(name, got, centre, band):
+    """One warning check as the report holds it: the pooled value, ours, the band, its kind and ok or WARN.
+
+    The band is (kind, width), with kind one of KINDS: +- width, or that share of the centre. Anything else is a
+    FidelityError naming the check and the kinds, as in _gate."""
     kind, width = band
+    if kind not in KINDS:
+        raise FidelityError("check {!r} has a band of the kind {!r}; the band of a check is of one of the kinds: "
+                            "{}".format(name, kind, ", ".join(KINDS)))
     got, centre = _round(got), _round(centre)
     limit = width if kind == "absolute" else width * abs(centre)
     inside = abs(got - centre) <= limit
@@ -581,7 +594,7 @@ def render(result):
         lines.append("  the gates on how many slots are present are measured on full strength frames only: {:,} of "
                      "{:,} frames ({:.1%}){}".format(
                          seen["full_frames"], seen["frames"], seen["share"],
-                         "; below full strength: " + ", ".join(
+                         "; not at full strength throughout, share of their frames at full strength: " + ", ".join(
                              "{} {:.1%}".format(match_id, share) for match_id, share in seen["below_full"].items())
                          if seen["below_full"] else ""))
     lines += ["", "checks (pre-registered warning bands; the degradation is never adjusted towards them)",

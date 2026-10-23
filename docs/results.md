@@ -20,7 +20,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R001 | 2026-10-22 | `main`: pipeline skeleton, i.e. R000c per half | 0.6207 | 0.3256 | 26 / 10.8 s | — | keep as the base; the floor, not a candidate |
 | R002 | 2026-10-23 | the four yardsticks `nearest_w{0,25,50,125}` on the benchmark's `clean` profile | — | — | — | 0.3073 raw (`w50`), 0.3257 coarse (`w125`); clean, so not our match's | the benchmark's floor, not a candidate; the truth reorders them |
 | R003 | 2026-10-23 | the same four yardsticks on the benchmark's `gaps` profile: our own ball gaps transplanted onto the DFL matches | — | — | — | 0.2102 raw (`w50`), 0.2302 coarse (`w125`); `w0` last under both | `gaps` v1 frozen, the first benchmark that looks like our match; the yardstick check holds (`w0` last), the rest of the order follows the truth |
-| R004 | 2026-10-23 | the same four yardsticks on the benchmark's `tracking` profile: our players' tracklets and slots, wrong-team slots, NaN-speed runs and smoothing on top of `gaps`' ball | — | — | — | 0.2000 raw (`w50`), 0.2195 coarse (`w125`); `w0` last under both | `tracking` v1: the five counted gates pass and `fidelity.py` exits 0; the three about how many slots are present are pending until the low-count tail (exactly 22 present: 0.5631 of the full-strength frames against 0.5019 +-0.06, about 0.503 after the tail's cap, an estimate), no WARN; the yardstick check holds, no order changes from `gaps` |
+| R004 | 2026-10-23 | the same four yardsticks on the benchmark's `tracking` profile: our players' tracklets and slots, wrong-team slots, NaN-speed runs and smoothing on top of `gaps`' ball | — | — | — | 0.2000 raw (`w50`), 0.2195 coarse (`w125`); `w0` last under both | `tracking` v1 frozen as it is: the five counted gates pass and `fidelity.py` exits 0; its three count gates stay pending because they depend on the low-count tail, which v2 adds (exactly 22 present: 0.5631 of the full-strength frames against 0.5019 +-0.06; about 0.503 after the tail, an estimate that assumes its cap is placed by our counts), no WARN; the yardstick check holds, no order changes from `gaps` |
 
 ## Reference: the organisers' baselines (R000)
 
@@ -1032,18 +1032,21 @@ minutes (668.4 per seed). Raw truth: pooled spellF1 0.2000 (`nearest_w50`), 0.18
 sign-flip p below.
 Changed vs the previous best: the third benchmark entry, and the first with **our players**. The ball is R003's, byte
 for byte (`test_profiles_nest`); what changed is the players: broken into tracklets in 46 slots, with a wrong-team slot
-now and then, NaN speeds in runs and smoothed positions. Not yet our frames with few players tracked (the tail, the next
-task), so three of the eight fidelity gates are pending. Reports: `data/runs/benchmark/tracking/<stem>.json` and
-`<stem>.coarse.json`, and `data/runs/benchmark/fidelity_tracking.json` (not committed; each carries the Calibration's
-digest).
+now and then, NaN speeds in runs and smoothed positions. Not our frames with few players tracked (the tail, which is
+version 2), so three of the eight fidelity gates are pending, and version 1 is frozen as it is with them pending.
+Reports: `data/runs/benchmark/tracking/<stem>.json` and `<stem>.coarse.json`, and
+`data/runs/benchmark/fidelity_tracking.json` (not committed; each carries the Calibration's digest).
 **Corrected after review**, in `47bde9f` (the code, the checks and the README) and `ee0959e` (this entry and T36), which
 follow `c89fe8c`; the degradation, the yardsticks' reports and their numbers are unchanged. The three fidelity gates on
 how many slots are present were measured on all frames and are now measured on full-strength frames (below): the first
 version of this entry said that six required gates passed; measured on full-strength frames the one on exactly 22
-present misses by 0.0012, and it is now pending with the other two (the commit after `1736fc9`). And the
-slot-persistence figures that the README and the degrader's docstring quoted for this profile were R003's, from before
-the wrong-team episodes: "The degraded match against ours" below has them with the episodes on.
-Checks: `pipeline/benchmark/selftest.py --dfl --data` passes all 237 checks (217 synthetic, 20 with `--dfl` and
+present misses by 0.0012, and it is now pending with the other two (`0d12a4e`). And the slot-persistence figures that
+the README and the degrader's docstring quoted for this profile were A09's, from before the wrong-team episodes: "The
+degraded match against ours" below has them with the episodes on, and the number of slots a team uses (13, not 11). A
+second round of review corrected, in the commit after `0d12a4e`, the citation of those figures (A09, not R003), the
+printout of the full-strength shares, the statement that `tracking` v1 is frozen (with its three count gates pending),
+and the assumption behind the estimate of 0.503.
+Checks: `pipeline/benchmark/selftest.py --dfl --data` passes all 238 checks (218 synthetic, 20 with `--dfl` and
 `--data`; 235 and 215 before the correction), `pipeline/selftest.py` 35 of 35 and its `--data` run 37 of 37 (the four
 baselines identical byte for byte). The new checks were written first and failed first (16 of 29 checks of the degrader
 and 6 of 10 of the fidelity report, for the missing parts). The new code was run against 18 mutants, each caught by a
@@ -1085,10 +1088,12 @@ the four yardsticks use.
 
 **Fidelity first** (`fidelity.py --profile tracking`, 7 matches x 3 seeds, 109 s with the caches warm; the centres are
 the Calibration's own values on our kick-off spans, the tolerances the plan's; the constants of the degradation were
-fixed before any of this was looked at, and nothing of it was changed after, whatever the checks said). **The three
-gates on how many slots are present are measured on full-strength frames only**, those where the clean DFL match has
-exactly 22 players with positions (the paragraph on full strength below says why; the first version of this entry
-measured them on all frames, and that was wrong):
+fixed before any of this was looked at, and nothing of it was changed after, whatever the checks said). **`tracking`
+v1 is frozen as it is**: its five counted gates pass, and its three count gates stay pending because they depend on the
+low-count tail, which is version 2 (a pending gate is not counted, and the tail is a new version, so v1's pending list
+is never emptied). **The three gates on how many slots are present are measured on full-strength frames only**, those
+where the clean DFL match has exactly 22 players with positions (the paragraph on full strength below says why; the
+first version of this entry measured them on all frames, and that was wrong):
 
 | gate | benchmark | our match (centre) | tolerance | |
 |---|---|---|---|---|
@@ -1102,21 +1107,22 @@ measured them on all frames, and that was wrong):
 | NaN-speed share of the present slot-frames | 0.0787 | 0.0783 | +-0.01 | pass |
 
 All five counted gates pass and `fidelity.py --profile tracking` exits 0, with three gates pending: the three about how
-many slots are present, which depend on the low-count tail that the profile does not have yet (the cap of the tail moves
-about 10.6% of the frames, those with 18 or fewer slots present in ours, out of the upper buckets). Ours has such frames
-and the degradation has none, so it keeps too many frames at 22: a player is lost 2.59% of the time, and 0.9741^22 =
-0.561 of the frames would have all 22 if the players were lost independently, which is nearly what the profile does. The
-share of full-strength frames with all 22 present is 0.5631 against ours 0.5019, 0.0012 over its ceiling, and would FAIL
-if it were counted. If the tail's frames come out of the ones with 22 present, the share becomes 0.5631 x (1 - 0.106) =
-0.503, against ours 0.5019 (an estimate under that assumption, not a measurement; Task 14 measures it). The mean (21.429
-against 20.522 +-0.5) and the share with 14 or fewer (0.0000 against 0.0525 +-0.02) are the same story. The three are
-printed and not counted (`fidelity.PENDING_GATES`, whose comment says why each is pending, is the list that the tail's
-task empties), and all three would miss if they were counted, by the amounts in the table. The five gates that are not
-about the count use 40% (the ball's missing share), 1% (the median gap), 16% (the wrong-team share) and 4% (the
-NaN-speed share) of their bands, and the tracklet median 58% of its band: 29.3 s is 29% below ours, because the episodes
-cut tracked spans into more and shorter tracklets (31,398 tracklets over the 21 (match, seed) runs, 1,495 each, against
-1,144 in ours), and it is the passing gate nearest its edge. The 42 half-draws took 21 masks from our first half and
-21 from our second, as in R003.
+many slots are present, which depend on the low-count tail that the profile does not have yet (10.6% of our frames have
+18 or fewer slots present, and the cap of the tail takes frames out of the upper buckets). Ours has such frames and the
+degradation has none, so it keeps too many frames at 22: a player is lost 2.59% of the time, and 0.9741^22 = 0.561 of
+the frames would have all 22 if the players were lost independently, which is nearly what the profile does. The share of
+full-strength frames with all 22 present is 0.5631 against ours 0.5019, 0.0012 over its ceiling, and would FAIL if it
+were counted. If the cap of the tail is placed by our counts, independently of the benchmark's own, each upper bucket
+loses about 10.6% of its frames and the share becomes 0.5631 x (1 - 0.106) = 0.503, against ours 0.5019 (an estimate
+under that assumption, not a measurement; Task 14 measures it). The mean (21.429 against 20.522 +-0.5) and the share
+with 14 or fewer (0.0000 against 0.0525 +-0.02) are the same story. The three are printed and not counted
+(`fidelity.PENDING_GATES`, whose comment says why each is pending), and all three would miss if they were counted, by
+the amounts in the table. The tail is version 2 of the profile: version 1 is frozen as it is, with those three pending,
+and the task that builds version 2 empties the list for it. The five gates that are not about the count use 40% (the
+ball's missing share), 1% (the median gap), 16% (the wrong-team share) and 4% (the NaN-speed share) of their bands, and
+the tracklet median 58% of its band: 29.3 s is 29% below ours, because the episodes cut tracked spans into more and
+shorter tracklets (31,398 tracklets over the 21 (match, seed) runs, 1,495 each, against 1,144 in ours), and it is the
+passing gate nearest its edge. The 42 half-draws took 21 masks from our first half and 21 from our second, as in R003.
 
 **Full strength, and what the first version of this entry got wrong.** Two of the seven DFL matches have a team down to
 10 players for much of the match: in J03WN1 the away team from minute 7.1 of the first half to the end of the match
@@ -1129,7 +1135,7 @@ frames: 0.4598 of them with 22 present against ours 0.5019, a pass at 70% of its
 median was the gate nearest its edge, which it was not. That pass was two effects that cancel: the profile has too many
 frames at 22 (0.5631 on full-strength frames, 0.061 above ours) and 18.3% of the frames cannot have 22 (0.5631 x 0.8166
 = 0.4598). The pass would not have outlived the tail: 0.4598 x 0.894 is about 0.41, under the floor of 0.442, for a
-reason that has nothing to do with the tail (also an estimate, not a measurement).
+reason that has nothing to do with the tail (also an estimate, under the same assumption, not a measurement).
 
 The filter is the frames where the clean match has exactly 22 players with positions, inside the same spans
 (`fidelity.full_strength_blocks`, `fidelity.COUNT_GATES`). Ours is measured on all its frames, which **assumes that ours
@@ -1195,7 +1201,9 @@ configs (0.6094, 0.5935, 0.6428, 0.5761): the ball is the same, and these depend
 `test_data_tracking_profile_on_a_real_match_with_our_real_calibration` as it runs at `47bde9f`, the commit that
 corrected this entry; only the layout, the determinism, the leaks and the lost share are asserted. d is 0.0250 (ours has
 more than 18 slots present on 89.4% of its frames), the mean tracked span 2,797 frames (111.9 s) and the mean lost span
-71.7 frames (2.87 s); 2.80% of the 3,211,274 on-pitch frames are lost, in 1,605 tracklets and 13 + 13 slots. The lost
+71.7 frames (2.87 s); 2.80% of the 3,211,274 on-pitch frames are lost, in 1,605 tracklets and 13 + 13 slots (11 home
+and 12 away slots are present on at least a tenth of the frames, against ours 21 of 24 and 20 of 22; A09 had 11 + 11
+before the episodes, which take a slot in the other team's pool). The lost
 share over the 7 matches and seeds 0 to 4 is 2.59% against d = 2.50% (the check allows 0.003; per match 2.47% to 2.66%).
 
 | | degraded | ours |
@@ -1212,13 +1220,13 @@ share over the 7 matches and seeds 0 to 4 is 2.59% against d = 2.50% (the check 
 | wrong-team frames | 10.1% | 10.5% |
 
 (All frames of the match, which has 22 players throughout; one match and one seed, which is why the gates are measured
-on the pooled benchmark and not here.) **Slot persistence with the episodes on.** R003's table of the idle gaps and of
+on the pooled benchmark and not here.) **Slot persistence with the episodes on.** A09's table of the idle gaps and of
 the returns (1,245 gaps, 76.0% of the returns to the same slot) is of the profile as it was before the wrong-team
 episodes, and the README and the degrader's docstring quoted it for version 1 by mistake. At this commit, for the same
 match and seed, by the same two functions on both sides (`scale = 0` is the same code with the episodes off, and gives
-R003's figures again to the last digit):
+A09's figures again to the last digit):
 
-| | v1, episodes on | `scale = 0` (R003) | ours |
+| | v1, episodes on | `scale = 0` (A09) | ours |
 |---|---|---|---|
 | slot idle gaps, count | 1,537 | 1,245 | 1,065 |
 | median | 2.28 s | 1.96 s | 7.40 s |
@@ -1229,7 +1237,7 @@ R003's figures again to the last digit):
 A piece of a track that goes into the other team's pool takes a slot there, and the figures move the way one would
 expect: a player comes back to his own slot less often (69.0% against 76.0%) and some slots sit idle for a minute or
 more (3.8% of the gaps against none), but the profile is still far from ours (a median of 2.3 s against 7.4 s, and 15.0%
-of ours over a minute). The warning of R003 stands, and is a little weaker: **a method that follows a slot across a loss
+of ours over a minute). The warning of A09 stands, and is a little weaker: **a method that follows a slot across a loss
 would be validated optimistically on this profile**.
 
 **Raw truth** (9,183 true possessions, 4.58 per graded minute; `D` is 44.8% of the graded frames). Δ is the config minus
@@ -1326,8 +1334,9 @@ the four yardsticks as its floor, not as candidates; `DEFAULT_PROFILE` stays `ga
 gates count. The yardstick check passes in its robust part under both truths. The profile reproduces what it was
 calibrated on in all five counted gates and in all ten checks (no WARN); the three gates about how many slots are
 present are pending, because it is the profile before its tail (the share of full-strength frames with all 22 present is
-0.5631 against ours 0.5019 +-0.06, and about 0.503 after the tail's cap, an estimate), so `fidelity.py --profile
-tracking` exits 0 and the profile is not fully frozen by the README's rule until the tail's task empties the list. It
+0.5631 against ours 0.5019 +-0.06, and about 0.503 after the tail, an estimate that assumes its cap is placed by our
+counts), so `fidelity.py --profile tracking` exits 0 and `tracking` v1 is frozen as it is, with those three pending: the
+README's rule does not count a pending gate, and the tail is version 2, so v1's list is never emptied. It
 does not make the truth's grain a non-issue: choose between `w125` and the others only where the raw and the coarse
 truth agree. The profile's players are rougher than ours (jumps, T35) and have no positional bias (the README's
 limitations), and it has no tail yet.

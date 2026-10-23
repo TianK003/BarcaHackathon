@@ -165,14 +165,16 @@ difference of every match is 1.00 cm and its 99th percentile 2.83 cm, against 1.
 average lowers by a factor of about 6 on white noise. Nothing was tuned to close that gap (R004).
 
 **What this profile does not have yet.** Our frames with few players tracked (the tail: 10.6% of ours have 18 or fewer
-present, 5.2% have 14 or fewer), which the next task adds. Until then its three gates about how many slots are present,
-the share with exactly 22, the mean number and the share with 14 or fewer, are **pending**: printed with their numbers,
-not counted by the exit code, and listed in one constant (`fidelity.PENDING_GATES`, with the reason for each), which
-that task empties. Without the tail too many frames have all 22 slots present: measured on full-strength frames (as it
-has to be) the share is 0.5631 against ours 0.5019 +-0.06, 0.0012 over the ceiling (R004), and the mean is 21.43 against
-20.52 +-0.5 and the share with 14 or fewer 0.0000 against 0.0525 +-0.02. The tail's cap moves about 10.6% of the frames
-out of the upper buckets, which would give 0.5631 x (1 - 0.106) = 0.503 for the first (an estimate, not a measurement).
-The checks that pin the rest: `test_wrong_team_starts_at_close_pairs`, `test_wrong_team_moves_one_player_to_other_pool`,
+present, 5.2% have 14 or fewer), which the next task adds as version 2 of the profile. Version 1 is **frozen as it is**,
+and its three gates about how many slots are present, the share with exactly 22, the mean number and the share with 14
+or fewer, are **pending**: printed with their numbers, not counted by the exit code, and listed in one constant
+(`fidelity.PENDING_GATES`, with the reason for each), which the task that builds version 2 empties for it. Without the
+tail too many frames have all 22 slots present: measured on full-strength frames (as it has to be) the share is 0.5631
+against ours 0.5019 +-0.06, 0.0012 over the ceiling (R004), and the mean is 21.43 against 20.52 +-0.5 and the share with
+14 or fewer 0.0000 against 0.0525 +-0.02. If the tail's cap is placed by our counts, independently of the benchmark's
+own, each upper bucket loses about 10.6% of its frames and the first share becomes 0.5631 x (1 - 0.106) = 0.503 (an
+estimate, not a measurement). The checks that pin the rest: `test_wrong_team_starts_at_close_pairs`,
+`test_wrong_team_moves_one_player_to_other_pool`,
 `test_wrong_team_draws_come_from_the_wrong_team_stream_in_a_fixed_order`, `test_speed_nan_share`,
 `test_speed_nan_runs_follow_the_documented_draws`, `test_smoothing_is_a_centred_moving_average_inside_each_piece`,
 `test_profiles_nest`, `test_tracking_without_the_new_parts_is_task_12s_players` (with the new parts off the players are
@@ -220,7 +222,8 @@ anything was measured and never tuned towards:
   of them (`full_strength`). The plan's own figures (0.407, 10.7 s, 0.108, 35.5 s, ...) were measured on other spans and
   are not used. **Pending gates** (`fidelity.PENDING_GATES`) are printed and not counted: today the three about how many
   slots are present (exactly 22, the mean, 14 or fewer), which depend on the low-count tail that `tracking` does not
-  have yet ("What this profile does not have yet", above, says how).
+  have yet ("What this profile does not have yet", above, says how). A pending gate is not counted, so version 1 is
+  frozen with those three pending, and the tail is version 2.
 - **Warnings**: the nearest player's agreement with the truth on alive, ball-visible frames (our public window's, +-0.05),
   the share of dead frames with the ball visible (+-0.10), and for each yardstick its possessions per graded minute
   (+-25%) and its D share (+-0.05), against what the yardsticks output on ours (over our graded halves, as the published
@@ -363,19 +366,20 @@ that this README names only checks that exist.
   much.
 - The `tracking` profile has our tracklets, slots, wrong-team episodes, NaN-speed runs and smoothing, and **not our
   frames with few players tracked** (the tail, which the next task adds; three of its gates, the ones about how many
-  slots are present, are pending until then). Its slots are the lowest free ones, so a team uses 11 of its slots over a
-  whole match where ours has 21 of 24 and 20 of 22 present on at least a tenth of the frames, and a slot's index is not
-  as empty of the player as in ours: a player who comes back after a lost span lands in the slot he had 69.0% of the
-  time (860 of 1,247 returns, J03WMX, seed 0, with the episodes on, as in version 1 of the profile), and a slot idles
-  between two tracklets for a median of 2.3 s (59.7% of its gaps at most 3 s, 3.8% over 60 s), where ours idles for 7.4
-  s (17.7% and 15.0%; A09, R004). Before the wrong-team episodes were added the figures were 76.0%, 2.0 s, 67.1% and
-  none over 60 s (R003; the same code with the scale set to 0 gives them again). No evidence source reads a slot's
-  identity today, beyond `nearest_player`'s argmin on exact ties, which goes to the lower slot; but **a method that
-  follows a slot across a loss would be validated optimistically here**, and the tail's part of the profile re-measures
-  this. The episodes are cut at pairs within 2 m only, in both directions at one rate, and what is matched is the
-  observable share, not the episodes: on seed 0 the benchmark shows 105 to 200 observed episodes a match (mean 163),
-  medians of 1.4 to 2.2 s and 90th percentiles of 6.2 to 9.4 s, against ours 104, 2.7 s and 15.8 s: more of them and
-  shorter (a swap inside 11 against 11 is invisible on ours, so the true number of ours is unknown).
+  slots are present, are pending until then). Its slots are the lowest free ones, so a team uses 13 of its slots over a
+  whole match (J03WMX, seed 0: 11 home and 12 away slots are present on at least a tenth of the frames) where ours has
+  21 of 24 and 20 of 22 present on at least a tenth of the frames, and a slot's index is not as empty of the player as
+  in ours: a player who comes back after a lost span lands in the slot he had 69.0% of the time (860 of 1,247 returns,
+  J03WMX, seed 0, with the episodes on, as in version 1 of the profile), and a slot idles between two tracklets for a
+  median of 2.3 s (59.7% of its gaps at most 3 s, 3.8% over 60 s), where ours idles for 7.4 s (17.7% and 15.0%; A09,
+  R004). Before the wrong-team episodes were added the figures were 76.0%, 2.0 s, 67.1% and none over 60 s (A09; the
+  same code with the scale set to 0 gives them again). No evidence source reads a slot's identity today, beyond
+  `nearest_player`'s argmin on exact ties, which goes to the lower slot; but **a method that follows a slot across a
+  loss would be validated optimistically here**, and the tail's part of the profile re-measures this. The episodes are
+  cut at pairs within 2 m only, in both directions at one rate, and what is matched is the observable share, not the
+  episodes: on seed 0 the benchmark shows 105 to 200 observed episodes a match (mean 163), medians of 1.4 to 2.2 s and
+  90th percentiles of 6.2 to 9.4 s, against ours 104, 2.7 s and 15.8 s: more of them and shorter (a swap inside 11
+  against 11 is invisible on ours, so the true number of ours is unknown).
 - **No positional bias.** The profile matches the players' jitter and nothing else of their positional error. A slowly
   varying bias against the true position cannot be measured on ours (there is no reference to measure it against), so
   none is added. Published accuracies for video-derived positions run from 0.08 to 0.09 m RMSE for a multi-camera

@@ -275,7 +275,7 @@ def test_fidelity_gates_are_the_calibrations_values_with_the_plans_tolerances():
 
 def tracking_calibration():
     """A Calibration with what the tracking profile reads: synthetic_calibration with the made-up tracklets, episodes
-    and NaN-speed runs of checks/degrade.py (its other fields are the synthetic bundle's)."""
+    and NaN-speed runs of checks/common.py (its other fields are the synthetic bundle's)."""
     made = made_up_calibration()
     return dataclasses.replace(
         synthetic_calibration(), present_counts=made.present_counts, tracklet_lengths_s=made.tracklet_lengths_s,
@@ -463,6 +463,11 @@ def test_fidelity_count_gates_leave_out_frames_below_full_strength():
     assert abs(seen["below_full"]["RND002"] - 370 / 450) < 1e-9
     assert any("full strength" in note and "22" in note and "all its frames" in note for note in result["notes"]), \
         result["notes"]
+    # The printout says which share it prints: the match's frames AT full strength, not those below it.
+    printed = "\n".join(fidelity.render(result))
+    line = [row for row in printed.splitlines() if "full strength frames only" in row]
+    assert len(line) == 1 and "RND002 82.2%" in line[0] and "share of their frames at full strength" in line[0], printed
+    assert "below full strength" not in printed, "370 of 450 frames at full strength is not 82.2% below it"
 
     # Matches that never have 22 players (these have 6) have no full-strength frame: no count gate can be measured, and
     # the report says so instead of dividing by zero; a gaps report on them has no such gate and says nothing of it.
@@ -508,6 +513,25 @@ def test_fidelity_gate_kind_is_validated():
     expect_error(fidelity.FidelityError, lambda: fidelity._gate(missing, pool, cal), "tracklet_median_s", "kind")
     assert fidelity.KINDS == ("absolute", "relative")
     assert all(spec["kind"] in fidelity.KINDS for gates in fidelity.GATES.values() for spec in gates)
+
+
+def test_fidelity_check_band_kind_is_validated():
+    """A warning check's band is (kind, width) with kind absolute or relative; anything else is a FidelityError.
+
+    Like a gate's (above), an unknown kind used to count as relative, which widens or narrows a band without a word.
+    The error names the check and the kinds; the four bands the report uses are valid; and a valid band still judges
+    as it did: around 0.8 an absolute band of 0.05 holds 0.76 and not 0.74, and a relative one of 5% (0.04) holds 0.77
+    and not 0.75."""
+    expect_error(fidelity.FidelityError, lambda: fidelity._check("nearest_agreement", 0.7, 0.8, ("proportional", 0.1)),
+                 "nearest_agreement", "proportional", "absolute", "relative")
+    expect_error(fidelity.FidelityError, lambda: fidelity._check("d_share:nearest_w50", 0.7, 0.8, (None, 0.1)),
+                 "d_share:nearest_w50", "None")
+    bands = (fidelity.NEAREST_BAND, fidelity.DEAD_VISIBLE_BAND, fidelity.POSSESSIONS_BAND, fidelity.D_SHARE_BAND)
+    assert all(kind in fidelity.KINDS for kind, _ in bands)
+    assert fidelity._check("c", 0.74, 0.8, ("absolute", 0.05))["status"] == "WARN"
+    assert fidelity._check("c", 0.76, 0.8, ("absolute", 0.05))["status"] == "ok"
+    assert fidelity._check("c", 0.77, 0.8, ("relative", 0.05))["status"] == "ok"
+    assert fidelity._check("c", 0.75, 0.8, ("relative", 0.05))["status"] == "WARN"
 
 
 def test_fidelity_relative_gate_is_a_share_of_its_centre():
