@@ -17,13 +17,53 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 
 | ID | date | what | public macroF1 | public spellF1 | poss / dur | val spellF1 | verdict |
 |---|---|---|---|---|---|---|---|
-| R001 | 2026-10-22 | `main`: pipeline skeleton, i.e. R000c per half | 0.6207 | 0.3256 | 26 / 10.8 s | — | keep as the base; the floor, not a candidate |
+| R001 | 2026-10-22 | `main`: pipeline skeleton, i.e. R000c per half | 0.6207 | 0.3256 | 26 / 10.8 s | 0.2018 raw, 0.1842 coarse (`main` is the `nearest_w50` yardstick, on `tracking` v3, R004c) | keep as the base; the floor, not a candidate |
 | R002 | 2026-10-23 | the four yardsticks `nearest_w{0,25,50,125}` on the benchmark's `clean` profile | — | — | — | 0.3073 raw (`w50`), 0.3257 coarse (`w125`); clean, so not our match's | the benchmark's floor, not a candidate; the truth reorders them |
 | R003 | 2026-10-23 | the same four yardsticks on the benchmark's `gaps` profile: our own ball gaps transplanted onto the DFL matches | — | — | — | 0.2102 raw (`w50`), 0.2302 coarse (`w125`); `w0` last under both | `gaps` v1 frozen, the first benchmark that looks like our match; the yardstick check holds (`w0` last), the rest of the order follows the truth |
 | R004 | 2026-10-23 | the same four yardsticks on the benchmark's `tracking` profile: our players' tracklets and slots, wrong-team slots, NaN-speed runs and smoothing on top of `gaps`' ball | — | — | — | 0.2000 raw (`w50`), 0.2195 coarse (`w125`); `w0` last under both | `tracking` v1 frozen as it is: the five counted gates pass and `fidelity.py` exits 0; its three count gates stay pending because they depend on the low-count tail, which v2 adds (exactly 22 present: 0.5631 of the full-strength frames against 0.5019 +-0.06; about 0.503 after the tail, an estimate that assumes its cap is placed by our counts), no WARN; the yardstick check holds, no order changes from `gaps` |
 | R004b | 2026-10-23 | the same four yardsticks on `tracking` version 2: R004's players plus our low-count frames (a cap that keeps the players nearest the ball), no piece shorter than 8 frames and the walk's tracked spans rescaled once | — | — | — | 0.1989 raw (`w50`), 0.2173 coarse (`w125`); `w0` last under both | `tracking` v2 frozen, `fidelity.py` exits 0: all eight gates pass (the three on how many slots are present are gates now: exactly 22 present 0.4938 against 0.5019 +-0.06, mean 20.60 against 20.52 +-0.5, 14 or fewer 0.0469 against 0.0525 +-0.02), no WARN; the yardstick check holds and the ranking does not move from R004 (the four configs move by 0.4 points of spellF1 at most) |
 | R004c | 2026-10-23 | the same four yardsticks on `tracking` version 3: R004b's players, but a slot is taken by a new tracklet only from the row after its last one stopped (versions 1 and 2 let it take the slot on the row it was freed), and the walk's tracked spans rescaled again, 2.042 to 2.072 | — | — | — | 0.2018 raw (`w50`), 0.2226 coarse (`w125`); `w0` last under both | `tracking` v3 frozen, `fidelity.py` exits 0: all eight gates pass (exactly 22 present 0.4925 against 0.5019 +-0.06, mean 20.60 against 20.52 +-0.5, 14 or fewer 0.0469 against 0.0525 +-0.02, tracklet median 26.52 s against 41.28 s, -36%), no WARN; the yardstick check holds and the ranking does not move from R004b (no config moves by more than 0.6 points of spellF1); the jitter per slot after smoothing is 1.80 cm and not R004b's 8.5 cm: that was the slot handovers and not DFL's jumps (T35) |
 | R005 | 2026-10-23 | the same four yardsticks on the `context` profile: `tracking` v3's players, and the ball's holes placed by a hazard fitted on our own match (A08: the line, the ball's speed, the players near it, the minute) instead of copied from our masks in time | — | — | — | 0.2193 raw (`w50`), 0.2443 coarse (`w125`); `w0` last under both | **`context` v1 fails two gates**, so `DEFAULT_PROFILE` stays `tracking`: the gaps that start within 2 m of a line 0.5586 against our 0.2797 +-0.05 (on each seed: DFL tracks the ball out of play, so a quarter of its at-risk rows are near a line against 9% of ours) and the share missing 0.4313 against 0.4110 +-0.02 (pooled, by 0.0003, and on seed 2), and one WARN (the ball visible on dead frames 0.4622 against 0.6637; `tracking` v3 0.5684); no fix, no second rescale; the order of the four configs is `tracking` v3's under both truths (Kendall tau +1.000 between the two profiles' orders on pooled spellF1, +0.667 against the published order under each), and every config scores 0.3 to 2.2 points higher; sensitivity only; fails the near-line gate |
+
+### The four yardsticks on every profile, in one table
+
+The organisers' four baselines decoded per graded half (`nearest_w{0,25,50,125}`, the benchmark's yardsticks), as pooled
+spellF1 on the seven DFL matches, per profile and under each truth ([the two
+truths](../pipeline/benchmark/README.md#the-two-truths)). Every number is copied from the entry in its first column,
+where the intervals, the paired deltas and the sign-flip tests are. The profiles differ in what they take from our
+tracking, so a row is read against the others only for its order, and absolute spellF1 on the benchmark is not our
+leaderboard's.
+
+| profile (entry) | raw: `w0` | `w25` | `w50` | `w125` | coarse: `w0` | `w25` | `w50` | `w125` |
+|---|---|---|---|---|---|---|---|---|
+| `clean` v1 (R002) | 0.0983 | 0.2958 | **0.3073** | 0.2166 | 0.0434 | 0.2280 | 0.3037 | **0.3257** |
+| `gaps` v1 (R003) | 0.0784 | 0.2021 | **0.2102** | 0.1712 | 0.0342 | 0.1541 | 0.1960 | **0.2302** |
+| `tracking` v1 (R004) | 0.0768 | 0.1895 | **0.2000** | 0.1660 | 0.0332 | 0.1426 | 0.1826 | **0.2195** |
+| `tracking` v2 (R004b) | 0.0779 | 0.1897 | **0.1989** | 0.1624 | 0.0341 | 0.1422 | 0.1811 | **0.2173** |
+| **`tracking` v3 (R004c), the default** | 0.0777 | 0.1900 | **0.2018** | 0.1665 | 0.0342 | 0.1432 | 0.1842 | **0.2226** |
+| `context` v1 (R005), sensitivity only | 0.0812 | 0.2097 | **0.2193** | 0.1774 | 0.0369 | 0.1608 | 0.2057 | **0.2443** |
+
+Bold is the first of the four. For comparison, the published full-match scores (R000) are `w50` 0.2433, `w125` 0.2242,
+`w25` 0.1996 and `w0` 0.0486. One line of verdict for each row:
+
+- **`clean` (R002):** the benchmark's floor, with the ball on every frame, so `majority_vote` predicts `D` on 0.0% of
+  the graded frames (alive/dead F1 0.7110 for all four, "always alive"); the truth reorders the yardsticks, and nothing
+  here ranks a dead-ball detector.
+- **`gaps` (R003):** frozen at v1, the first benchmark that looks like our match (our own ball gaps); the yardstick
+  check holds in its robust part (`w0` last under both truths), the rest of the order follows the truth.
+- **`tracking` v1 (R004):** superseded by R004b; the five counted gates passed and three count gates stayed pending
+  until the low-count tail existed; no order changes from `gaps`.
+- **`tracking` v2 (R004b):** all eight gates pass and no WARN; no order moves from R004 (the four move by 0.4 points of
+  spellF1 at most); superseded by R004c, which corrected its account of the jitter (T35).
+- **`tracking` v3 (R004c), the default:** all eight gates and all ten checks pass; no order moves from R004b (no config
+  by more than 0.6 points); the jitter per slot is 1.80 cm and not R004b's 8.5 cm, which was slot handovers (T35).
+- **`context` v1 (R005):** fails the near-line gate (0.5586 against 0.2797 +-0.05) and the share missing pooled, so it
+  is a sensitivity check and not the default; it gives `tracking` v3's order under both truths (Kendall tau +1.000
+  between the two profiles' orders) with every config 0.3 to 2.2 points higher.
+
+What every row says: `w0` is last under both truths, and the rest of the order follows the truth. The raw truth puts
+`w50` first and the coarse one puts `w125` first, and neither gives the published order `w50 > w125 > w25 > w0` (R000).
+So rank any choice that depends on possession length under both truths, and treat a disagreement as a warning (T33).
 
 ## Reference: the organisers' baselines (R000)
 
@@ -734,7 +774,10 @@ Verdict: keep / drop / inconclusive — because …
 Proposal: P03 · Commit: `787c6e4` · Command: `python pipeline/run.py pipeline/configs/main.toml --score`
 Public: macroF1 0.6207 (bootstrap 0.460 – 0.742) · spellF1 0.3256 (bootstrap 0.214 – 0.447) · poss 26 · dur 10.8 s ·
 lat_f +4.0
-Validation (P01): none yet.
+Validation (P01): filled in after the benchmark existed. `main.toml` is the benchmark's `nearest_w50` yardstick (the
+same evidence source, decoder and half width, per graded half), so its val spellF1 is `nearest_w50` on the default
+profile, `tracking` version 3 (R004c, 7 DFL matches x 3 seeds): pooled 0.2018 under the raw truth and 0.1842 under the
+coarse one. That is the floor a change has to beat on the benchmark, not our match's score.
 Changed vs the previous best: nothing in substance. `main.toml` is R000c run through the pipeline: nearest player
 (`nearest_player`) and a ±50-frame vote (`majority_vote`), decoded per half with `X` outside the graded frames. The
 public scores are identical and it reports the same 594 possessions over the graded halves. Its `D` is still "the
