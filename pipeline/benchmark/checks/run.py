@@ -660,6 +660,67 @@ def test_runner_default_profile_is_tracking_and_runs_it():
         assert "profile   tracking (version 3)" in "\n".join(lines), lines
 
 
+# -- what the profile says of itself ------------------------------------------------------------------------------------
+
+def run_on(profile, cal, paths, root, lines, seeds=1):
+    """evaluate_configs on `profile` with the synthetic matches and `cal`, its printout collected in `lines`."""
+    return benchmark_run.evaluate_configs(paths, profile=profile, seeds=seeds, matches=synthetic_matches(),
+                                          calibration=cal, data_dir=root, log=lines.append)
+
+
+def test_runner_labels_context_as_sensitivity_only_and_says_where_each_profiles_gaps_come_from():
+    """A profile that fails its gates is not offered as the yardstick: the help, the printout and the report say so.
+
+    `context` is in SENSITIVITY_ONLY with the reason (R005: two of its gates fail), and the --profile help, a `note` line
+    of the printout and a "sensitivity_only" key of the report carry it; `tracking`, the default, carries none of them,
+    and its report has no such key. The line that names the Calibration says where the ball's gaps came from, which
+    differs by profile: the transplant of ours for gaps and tracking (and tracking's tracklets, slots and counts besides),
+    the hazard fitted on our match for context, whose gaps are drawn and not transplanted; the old line, that the gaps
+    are 'as measured by calibration.py', was false for context. The report of a context run says which version of
+    tracking its players are built from."""
+    assert benchmark_run.SENSITIVITY_ONLY.keys() == {"context"} and benchmark_run.DEFAULT_PROFILE == "tracking"
+    reason = benchmark_run.SENSITIVITY_ONLY["context"]
+    assert "R005" in reason and "two of its gates" in reason and "sensitivity check" in reason, reason
+    assert benchmark_run.PROVENANCE.keys() == set(degrade.PROFILES) - {degrade.CLEAN}, "a line for every degraded profile"
+    path = [yardstick_path(50)]
+    calibrations = {"gaps": synthetic_calibration(), "tracking": tracking_calibration(),
+                    "context": context_calibration()}
+    with tempfile.TemporaryDirectory() as root:
+        lines, reports, calibration_lines = {}, {}, {}
+        for profile, cal in calibrations.items():
+            lines[profile] = []
+            result = run_on(profile, cal, path, root, lines[profile])
+            reports[profile] = result["configs"][0]["report"]
+            calibration_lines[profile] = [line for line in lines[profile] if line.startswith("calibration")]
+            assert len(calibration_lines[profile]) == 1 and calibration.digest(cal)[:12] in calibration_lines[profile][0]
+        # The note: for context, with the reason; for the others, nothing.
+        notes = [line for line in lines["context"] if line.startswith("note")]
+        assert notes == ["note      profile context {}".format(reason)], notes
+        for profile in ("gaps", "tracking"):
+            assert not [line for line in lines[profile] if "sensitivity" in line or line.startswith("note")], profile
+            assert "sensitivity_only" not in reports[profile], profile
+        assert reports["context"]["sensitivity_only"] == reason
+        assert reports["context"]["profile"] == {"name": "context", "version": 1, "tracking_version": 3}
+        assert reports["tracking"]["profile"] == {"name": "tracking", "version": 3}
+        # Where the gaps come from, by profile.
+        gaps, tracking, context = (calibration_lines[profile][0] for profile in ("gaps", "tracking", "context"))
+        assert len({gaps, tracking, context}) == 3, "one line for each profile"
+        assert "transplanted" in gaps and "transplanted" in tracking and "tracklets" in tracking, (gaps, tracking)
+        assert "tracklets" not in gaps and "hazard" not in gaps and "hazard" not in tracking, (gaps, tracking)
+        assert "hazard" in context and "A08" in context and "transplanted" not in context, context
+        assert "as measured by calibration.py" not in context, "false for context: its gaps are drawn"
+        # The help carries the note for context and for no other profile.
+        shown = io.StringIO()
+        with contextlib.redirect_stdout(shown):
+            try:
+                benchmark_run.main(["--help"])
+            except SystemExit as stop:
+                assert stop.code == 0, stop.code
+        helped = " ".join(shown.getvalue().split())
+        assert "context " + reason in helped and helped.count("sensitivity") == 1, helped
+        assert benchmark_run.DEFAULT_PROFILE + " " + reason not in helped and "(default tracking)" in helped, helped
+
+
 def test_runner_refuses_a_calibration_it_cannot_use():
     """A degraded profile needs a Calibration (loaded from the data directory if none is given), clean takes none."""
     matches, cal = synthetic_matches(), synthetic_calibration()
@@ -870,7 +931,8 @@ def test_runner_context_json_identical_across_processes():
     report = identical_across_processes("context", ".m-RND001-RND002-SYN001.s2.json")
     assert [record["id"] for record in report["matches"]] == ["SYN001", "RND001", "RND002"]
     assert report["seeds"] == [0, 1] and len(report["halves"]) == 3 * 2 * 2
-    assert report["profile"] == {"name": "context", "version": 1}
+    assert report["profile"] == {"name": "context", "version": 1, "tracking_version": 3}
+    assert report["sensitivity_only"] == benchmark_run.SENSITIVITY_ONLY["context"]
     assert report["calibration"]["sha256"] == calibration.digest(context_calibration())
 
 

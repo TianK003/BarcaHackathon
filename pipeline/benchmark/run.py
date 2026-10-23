@@ -117,6 +117,18 @@ REPORT_FOLDER = ("runs", "benchmark")        # <data dir>/runs/benchmark/<profil
 DECIMALS = 9                       # floats in a report are rounded to this: BLAS summation order varies by machine
 LEVEL = score.INTERVAL_LEVEL       # the coverage of the t intervals (the printout names it, checks tie T_95 to it)
 METRICS = (("spell_f1_mean", "spellF1"), ("macro_f1", "macroF1"))   # what a comparison reports, ranking metric first
+# A profile that is kept for a sensitivity check and not offered as the yardstick: name -> why. The --profile help, the
+# printout and the report of a run on it say so (R005: context fails two of its gates).
+SENSITIVITY_ONLY = {"context": "fails two of its gates (R005), the near-line share badly and the missing share narrowly: "
+                               "a sensitivity check, not the yardstick"}
+# Where a degraded profile's tracking comes from in our Calibration, as the printout names it beside the digest.
+PROVENANCE = {
+    "gaps": "the ball's gaps are our match's, transplanted (calibration.py)",
+    "tracking": "the ball's gaps are our match's, transplanted, and the players' tracklets, slots and counts are ours "
+                "(calibration.py)",
+    "context": "the ball's gaps are drawn by the hazard fitted on our match (A08), the players are tracking's, from our "
+               "tracklets, slots and counts",
+}
 
 
 class BenchmarkError(ValueError):
@@ -256,7 +268,7 @@ def evaluate_configs(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_id
 
     git = pipeline_run.git_state()
     environment = _environment()
-    profile_info = {"name": profile, "version": PROFILES[profile]}
+    profile_info = degrade.profile_record(profile)       # name, version and, for context, tracking's version
     calibration_info = None if profile == CLEAN else {"sha256": calibration_module.digest(calibration),
                                                       "version": calibration_module.CALIBRATION_VERSION}
     truth_info = {"name": truth, "min_s": truths.COARSE_MIN_S if truth == "coarse" else None}
@@ -395,6 +407,8 @@ def _report(config, halves, records, seed_list, profile, truth, git, environment
         "versus": versus,
         "calibration": calibration,          # {sha256, version} of the Calibration degraded with; None for clean
     }
+    if profile["name"] in SENSITIVITY_ONLY:
+        report["sensitivity_only"] = SENSITIVITY_ONLY[profile["name"]]      # only for a profile that is one
     return plain(report)
 
 
@@ -544,14 +558,18 @@ def render(result):
     reports = [(entry["stem"], entry["report"], entry["seconds"]) for entry in result["configs"]]
     git = result["git"]
     ids = [record["id"] for record in result["matches"]]
+    profile = result["profile"]
+    versions = "version {}".format(profile["version"]) + (
+        ", on tracking version {}".format(profile["tracking_version"]) if "tracking_version" in profile else "")
     lines = ["",
-             "profile   {} (version {})   truth {}   seeds {}   {} matches   commit {}{}".format(
-                 result["profile"]["name"], result["profile"]["version"], result["truth"]["name"],
-                 ",".join(str(seed) for seed in result["seeds"]), len(ids), git["commit"] or "?",
-                 " +dirty" if git["dirty"] else "")]
+             "profile   {} ({})   truth {}   seeds {}   {} matches   commit {}{}".format(
+                 profile["name"], versions, result["truth"]["name"], ",".join(str(seed) for seed in result["seeds"]),
+                 len(ids), git["commit"] or "?", " +dirty" if git["dirty"] else "")]
+    if profile["name"] in SENSITIVITY_ONLY:
+        lines.append("note      profile {} {}".format(profile["name"], SENSITIVITY_ONLY[profile["name"]]))
     if result["calibration"] is not None:
-        lines.append("calibration   {}... (version {}): the gaps are our match's, as measured by calibration.py".format(
-            result["calibration"]["sha256"][:12], result["calibration"]["version"]))
+        lines.append("calibration   {}... (version {}): {}".format(
+            result["calibration"]["sha256"][:12], result["calibration"]["version"], PROVENANCE[profile["name"]]))
     for stem, report, seconds in reports:
         pooled, interval = report["pooled"], report["t_interval"]["spell_f1_mean"]
         rate, labels = report["possessions_per_graded_minute"], report["labels"]
@@ -649,6 +667,13 @@ def _interval(interval, excludes=None, signed=False):
 
 # -- the command line -------------------------------------------------------------------------------------------------
 
+def profile_help():
+    """The --profile help: the profiles, the default, and which of them are a sensitivity check and not the yardstick."""
+    return "how the tracking is made: {} (default {}){}".format(
+        ", ".join(sorted(PROFILES)), DEFAULT_PROFILE,
+        "".join("; {} {}".format(name, reason) for name, reason in sorted(SENSITIVITY_ONLY.items())))
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Run pipeline configs on the benchmark's matches; the first config is the reference that the "
@@ -656,9 +681,7 @@ def main(argv=None):
     parser.add_argument("configs", nargs="+", metavar="CONFIG",
                         help="TOML configs, e.g. pipeline/benchmark/configs/nearest_w50.toml; the first is the "
                              "reference that the others are compared with")
-    parser.add_argument("--profile", default=DEFAULT_PROFILE,
-                        help="how the tracking is made: {} (default {})".format(", ".join(sorted(PROFILES)),
-                                                                                DEFAULT_PROFILE))
+    parser.add_argument("--profile", default=DEFAULT_PROFILE, help=profile_help())
     parser.add_argument("--seeds", type=int,
                         help="degradation seeds per match (default {}; the clean profile has just one, and says so "
                              "if you ask for more)".format(DEFAULT_SEEDS))

@@ -290,7 +290,8 @@ def test_fidelity_context_report_synthetic():
         tracking = fidelity.report("tracking", seeds=SEEDS, matches=matches, calibration=cal, data_dir=root, log=quiet)
         again = fidelity.report("context", seeds=SEEDS, matches=matches, calibration=cal, data_dir=root, log=quiet)
     assert again == result and json.loads(json.dumps(result, allow_nan=False)) == result
-    assert result["profile"] == {"name": "context", "version": 1} and result["matches"] == ["RND001", "RND002"]
+    assert result["profile"] == {"name": "context", "version": 1, "tracking_version": 3}, "and the players' version"
+    assert tracking["profile"] == {"name": "tracking", "version": 3} and result["matches"] == ["RND001", "RND002"]
     assert [gate["name"] for gate in result["gates"]] == TRACKING_GATES + ["near_line_share"]
     assert not any(gate["status"] == "pending" for gate in result["gates"])
     by_name = {gate["name"]: gate for gate in result["gates"]}

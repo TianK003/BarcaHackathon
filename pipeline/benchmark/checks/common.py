@@ -553,8 +553,9 @@ def context_calibration(**more):
     """A real Calibration with a made-up hazard: tracking_calibration, its hazard fields replaced by made_up_hazard's.
 
     The runner and the fidelity report need a real one (a digest, a public window, baseline outputs): the bundle's own
-    hazard is fitted on a few hundred frames and means nothing, so the context profile's checks put theirs in."""
-    return dataclasses.replace(tracking_calibration(), **made_up_hazard(**more))
+    hazard is fitted on a few hundred frames and means nothing, so the context profile's checks put theirs in. It is a
+    go (hazard_go True): the profile refuses a Calibration whose hazard is not, and the bundle's own fit may not be."""
+    return dataclasses.replace(tracking_calibration(), hazard_go=True, **made_up_hazard(**more))
 
 
 # -- what the tracking profile's checks share with the cap's ----------------------------------------------------------

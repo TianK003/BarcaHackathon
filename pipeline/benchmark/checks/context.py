@@ -28,8 +28,9 @@ import numpy as np
 from pipeline.benchmark import calibration, degrade, dfl, fidelity, hazard
 from pipeline.benchmark import inputs as match_inputs
 from pipeline.benchmark import run as benchmark_run
-from pipeline.benchmark.checks.common import (HAZARD_SECONDS, NotRun, context_namespace, leaks, made_up_calibration,
-                                              made_up_hazard, real_match, steady_match, without_new_parts)
+from pipeline.benchmark.checks.common import (HAZARD_SECONDS, NotRun, context_calibration, context_namespace, leaks,
+                                              made_up_calibration, made_up_hazard, real_match, steady_match,
+                                              without_new_parts)
 from pipeline.selftest import expect_error
 
 # Params
@@ -37,7 +38,8 @@ from pipeline.selftest import expect_error
 BALL_COUNTS = ("rows", "ball_missing_rows", "nan_feature_rows", "capped_rows", "onsets", "missing_frames",
                "at_risk_rows", "post_gap_rows")
 BALL_KEYS = ("scale", "c") + BALL_COUNTS + ("halves",)
-INFO_KEYS = ["ball", "mask_share", "match_id", "match_index", "players", "profile", "seed", "transplants", "version"]
+INFO_KEYS = ["ball", "mask_share", "match_id", "match_index", "players", "profile", "seed", "tracking_version",
+             "transplants", "version"]
 NEAR_M = 2.0                     # a ball closer than this to a line is near it (calibration.NEAR_LINE_M, strict)
 # A hazard with a weight on every feature, in hazard.FEATURES' order (line distance, beyond a line, ball speed,
 # nearest player, players within 3 m, minute of the half), so that the value of a feature moves the mask in the
@@ -629,6 +631,46 @@ def test_context_refuses_what_it_cannot_make():
     late = dataclasses.replace(match, kickoffs={1: 500, 2: match.kickoffs[2]})
     expect_error(ValueError, lambda: degrade.degrade(degrade.tracking_view(late), "context", context_namespace(), 0),
                  "RND001", "half 1", "kicks off")
+
+
+def test_context_refuses_a_calibration_whose_hazard_is_no_go():
+    """A Calibration whose cross-half AUCs miss the plan's bar (hazard_go False) makes no context profile: A08.
+
+    The hazard is what places the ball's gaps, and a model that does not rank the frames before a gap above the others
+    (both full-model AUCs at least calibration.HAZARD_GO_AUC) would place them by nothing that ours learned. The error
+    names hazard_go and A08 and says to use the tracking profile, or to fit again. The other profiles do not read it,
+    and a go Calibration is served."""
+    view = degrade.tracking_view(steady_match())
+    cal = context_calibration()
+    assert cal.hazard_go is True, "the made-up hazard of the context checks is a go"
+    no_go = dataclasses.replace(cal, hazard_go=False)
+    message = expect_error(ValueError, lambda: degrade.degrade(view, "context", no_go, 0), "context", "hazard_go",
+                           "A08", "tracking", "calibration.load(rebuild=True)")
+    assert str(calibration.HAZARD_GO_AUC) in message, message
+    degrade.degrade(view, "context", cal, 0)
+    for profile in ("gaps", "tracking"):
+        degrade.degrade(view, profile, no_go, 0)
+
+
+def test_context_reuses_trackings_players_and_says_which_version_of_them():
+    """context's players are built from tracking's version: pinned together, recorded in the info and in the reports.
+
+    Tracking's version is the version of how the players are made. A change to it changes the players of `context`
+    too, which would stay at version 1 unless it is bumped with it; CONTEXT_TRACKING_VERSION is the version that the
+    profile's players are built from, so that the two cannot drift apart without this check failing, and a report of
+    a context run says it beside the profile's own version (profile_record: name, version, tracking_version)."""
+    assert degrade.CONTEXT_TRACKING_VERSION == degrade.PROFILES["tracking"], (
+        "context reuses tracking's players: when tracking's version changes, bump PROFILES['context'] and "
+        "CONTEXT_TRACKING_VERSION")
+    view = degrade.tracking_view(steady_match())
+    cal = context_calibration()
+    _, info = degrade.degrade(view, "context", cal, 0)
+    assert info["tracking_version"] == degrade.CONTEXT_TRACKING_VERSION and info["version"] == 1
+    assert "tracking_version" not in degrade.degrade(view, "tracking", cal, 0)[1], "tracking is not built from another"
+    assert degrade.profile_record("context") == {"name": "context", "version": degrade.PROFILES["context"],
+                                                 "tracking_version": degrade.CONTEXT_TRACKING_VERSION}
+    for profile in ("clean", "gaps", "tracking"):
+        assert degrade.profile_record(profile) == {"name": profile, "version": degrade.PROFILES[profile]}, profile
 
 
 def test_context_profile_is_registered_with_its_own_stream():

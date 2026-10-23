@@ -247,6 +247,10 @@ TRACKING = "tracking"
 CONTEXT = "context"
 # name -> version of how its tracking is made (reports say it). tracking 3: a slot is free from the row after its tracklet.
 PROFILES = {CLEAN: 1, GAPS: 1, TRACKING: 3, CONTEXT: 1}
+# The version of the tracking profile that the context profile's players are built from: its players ARE tracking's, by
+# the same code and the same draws, so a new version of tracking's players is a new version of context's. Pinned to
+# PROFILES[TRACKING] by a check, recorded in context's info and in the reports of a context run (profile_record).
+CONTEXT_TRACKING_VERSION = 3
 # The streams of random numbers, by the part of the degradation that draws them. The number is the stream's place in the
 # key of rng_for, so it never changes for a component and a new component takes the next one. The transplant, the
 # tracklets, the wrong-team episodes and the NaN-speed runs are drawn so far; the hazard's is the context profile's.
@@ -1204,6 +1208,14 @@ def degrade(view, profile, calibration, seed):
         if absent:
             raise ValueError("profile {!r} needs the Calibration's {}, and this one has no {}; pass calibration.load()"
                              .format(profile, ", ".join(CONTEXT_FIELDS), " and no ".join(absent)))
+        # A Calibration always has the field (a test double of one may not, and is not judged on it).
+        if getattr(calibration, "hazard_go", True) is False:
+            raise ValueError("profile {!r} places the ball's gaps by the hazard fitted on our match, and this Calibration's "
+                             "hazard_go is False: a cross-half AUC of the full model is below {} (A08), so the model "
+                             "does not rank the frames before a gap above the others and would place them by nothing "
+                             "that ours learned. Use the {} profile (the default), or measure again with "
+                             "calibration.load(rebuild=True) and read A08 before trusting this one".format(
+                                 profile, calibration_module.HAZARD_GO_AUC, TRACKING))
     else:
         ball_xy, ball_speed, info["transplants"], info["mask_share"] = _gap_ball(view, atd, calibration, seed)
     if profile == GAPS:
@@ -1214,11 +1226,24 @@ def degrade(view, profile, calibration, seed):
         info["players"] = _players_record(view, parameters, records, counts)
         players = (xy, speed, slot_team())
         if profile == CONTEXT:
+            info["tracking_version"] = CONTEXT_TRACKING_VERSION
             info["transplants"] = _transplant_records(view, calibration, seed)
             ball_xy, ball_speed, info["ball"], info["mask_share"] = _context_ball(view, atd, xy, calibration, seed)
     degraded = Atd(players_xy=players[0], players_speed=players[1], ball_xy=ball_xy, ball_speed=ball_speed,
                    slot_team=players[2])
     return degraded, info
+
+
+def profile_record(profile):
+    """{"name", "version"} of a profile as the reports of a run state it; context's also has "tracking_version".
+
+    That is the version of the tracking profile that context's players are built from (CONTEXT_TRACKING_VERSION): a
+    report of a context run says it beside the profile's own, so that it names the players' version as well as the
+    ball's. KeyError for a name that is not in PROFILES (the callers have checked)."""
+    record = {"name": profile, "version": PROFILES[profile]}
+    if profile == CONTEXT:
+        record["tracking_version"] = CONTEXT_TRACKING_VERSION
+    return record
 
 
 def _remove_ball(view, atd, masks):

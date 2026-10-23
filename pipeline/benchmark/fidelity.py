@@ -270,7 +270,7 @@ def report(profile, seeds=DEFAULT_SEEDS, match_ids=None, matches=None, calibrati
     gates = [_gate(spec, pool, calibration) for spec in GATES[profile]]
     pending = [gate["name"] for gate in gates if gate["status"] == PENDING]
     result = {
-        "profile": {"name": profile, "version": degrade.PROFILES[profile]},
+        "profile": degrade.profile_record(profile),
         "seeds": list(range(seeds)),
         "matches": list(ids),
         "calibration": {"sha256": calibration_module.digest(calibration),
