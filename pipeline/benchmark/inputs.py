@@ -21,8 +21,10 @@ ball_status and ball_possession (truth.py builds the benchmark's truth from them
 or any array made of those two flags, would let a component read the answer, and the benchmark would quietly measure
 that leak. So only the scalars are copied out of the match (its id, length, rate, pitch, halves and kick-offs) and the
 tracking is held as an Atd, which has positions and speeds and no flags. The checks assert it
-(checks/inputs.py: test_match_inputs_hold_no_truth); whatever oracle a check wants gets the truth by closure from its
-own test, never from here.
+(checks/inputs.py: test_match_inputs_hold_no_truth walks everything the inputs reach, to any depth, for the match, the
+flags and the codes made of them). A second check asserts that no component under pipeline/evidence, decode or refine
+imports pipeline.benchmark, which would let it load the truth itself by the match id. Whatever oracle a check wants
+gets the truth by closure from its own test, never from here.
 
 clean_atd is the tracking as DFL gives it. The degrader (a later module) makes an Atd of the same layout from it, with
 BAR-ATH's gaps in the ball, and serves that through MatchInputs with its own profile and seed, which name where the
@@ -61,9 +63,20 @@ def clean_atd(match):
     already of the right dtype and read-only (which is what dfl.load_match gives) is used as it is, with no copy; one
     that is writeable, or of another dtype, becomes a read-only view or a cast copy, and the match's own array is never
     frozen or changed by this.
+
+    ValueError, naming the match, where a position has one coordinate and not the other: the Atd's invariant is that x
+    and y are missing together (atd_cache._check_presence on BAR-ATH's file), and nearest_player tells a present slot
+    by its x alone. The 7 downloaded matches have no such position; this is for a hand-built one.
     """
     arrays = {name: _frozen(getattr(match, name), dtype) for name, dtype in ATD_DTYPES.items()}
-    return Atd(slot_team=_frozen(match.player_team, np.int8), **arrays)
+    atd = Atd(slot_team=_frozen(match.player_team, np.int8), **arrays)
+    slots = int((np.isnan(atd.players_xy[:, :, 0]) != np.isnan(atd.players_xy[:, :, 1])).sum())
+    balls = int((np.isnan(atd.ball_xy[:, 0]) != np.isnan(atd.ball_xy[:, 1])).sum())
+    if slots or balls:
+        raise ValueError("{}: x and y are missing apart on {} slot-frames and {} ball frames; the pipeline reads a "
+                         "position as present when its x is, so decide what a half-missing position means before "
+                         "serving this match".format(match.match_id, slots, balls))
+    return atd
 
 
 def _frozen(array, dtype):
@@ -108,9 +121,10 @@ class MatchInputs(Inputs):
         self.rebuild = False
         self.atd_status = "benchmark"
         self._atd = atd
-        cache = _dfl_cache_manifest(match.match_id, self.data_dir)
+        cache, reason = _dfl_cache_manifest(match, self.data_dir)
         self._atd_manifest = {"match_id": match.match_id, "profile": profile, "seed": seed,
-                              "cache_version": cache.get("cache_version"), "sources": cache.get("sources")}
+                              "cache_version": cache.get("cache_version"), "sources": cache.get("sources"),
+                              "sources_reason": reason}
 
     @property
     def atd(self):
@@ -121,8 +135,11 @@ class MatchInputs(Inputs):
     def atd_manifest(self):
         """What a report says about the run's inputs: the match, the profile and seed, and the DFL source files.
 
-        `sources` is {"information": {"bytes", "sha256"}, "positions": {...}} as the match's DFL cache recorded them
-        (None for a match that was not read through that cache), so that a result names the files it came from.
+        `sources` is {"information": {"bytes", "sha256"}, "positions": {...}} as the match's DFL cache recorded them,
+        so that a result names the files it came from, and `sources_reason` is None. It is copied only from a cache
+        that is of this very match: the id alone finds the cache, so the manifest's match_id, fps, pitch and graded
+        must also be the match's own. Otherwise (no cache, one that cannot be read, one of another match) `sources` and
+        `cache_version` are None and `sources_reason` says why.
         """
         return self._atd_manifest
 
@@ -135,12 +152,31 @@ class MatchInputs(Inputs):
         raise AssetUnavailable(ASSET_MESSAGE.format("smart_tagging"))
 
 
-def _dfl_cache_manifest(match_id, data_dir):
-    """The manifest of the match's DFL cache under `data_dir`, or {} if there is none or it cannot be read."""
-    path = os.path.join(data_dir, *dfl.CACHE_FOLDER, match_id, dfl.MANIFEST)
+def _dfl_cache_manifest(match, data_dir):
+    """(its manifest, None) if the match's DFL cache under `data_dir` is of this match, else ({}, the reason why not).
+
+    "Of this match" is that the manifest's match_id, fps, pitch and graded are the match's own, and that it records its
+    sources: a hand-built match under a real id, or a cache folder copied under another id, is not served as made from
+    the files of the match whose id it carries.
+    """
+    path = os.path.join(data_dir, *dfl.CACHE_FOLDER, match.match_id, dfl.MANIFEST)
     try:
         with open(path, encoding="utf-8") as handle:
             manifest = json.load(handle)
-    except (OSError, ValueError):
-        return {}
-    return manifest if isinstance(manifest, dict) else {}
+    except OSError:
+        return {}, ("no DFL cache manifest for {} (the match was not read through dfl.load_match, or its cache was "
+                    "removed)".format(match.match_id))
+    except ValueError:
+        manifest = None
+    if not isinstance(manifest, dict):
+        return {}, "the DFL cache manifest of {} cannot be read as a JSON object".format(match.match_id)
+    own = {"match_id": match.match_id, "fps": match.fps, "pitch": [float(side) for side in match.pitch],
+           "graded": [[int(value) for value in block] for block in match.graded]}
+    differ = ["{} is {} and the manifest says {}".format(name, value, manifest.get(name))
+              for name, value in own.items() if manifest.get(name) != value]
+    if differ:
+        return {}, "the DFL cache manifest filed under {} is of another match: {}".format(
+            match.match_id, "; ".join(differ))
+    if not isinstance(manifest.get("sources"), dict):
+        return {}, "the DFL cache manifest of {} records no sources".format(match.match_id)
+    return manifest, None

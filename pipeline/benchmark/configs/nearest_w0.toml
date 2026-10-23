@@ -7,7 +7,8 @@
 # pipeline/configs/smooth50_repro.toml, which pipeline/selftest.py --data checks byte for byte against the four
 # baselines.
 #
-# nearest_w0, nearest_w25, nearest_w50 and nearest_w125 differ in half_width and in this paragraph, and in nothing else.
+# nearest_w0, nearest_w25, nearest_w50 and nearest_w125 differ in line 1, in the description and in half_width, and
+# in nothing else.
 
 description = "baseline_raw's rule, decoded per half: the nearest player's team on every frame, no smoothing. The published file is decoded per file (scope = file), this one per half, so it is a yardstick for the benchmark and not a rebuild of baseline_raw."
 seed = 0
@@ -18,5 +19,5 @@ kind = "nearest_player"
 
 [decoder]
 kind = "majority_vote"
-half_width = 0    # frames each side of a frame; 0 is the raw label of each frame
+half_width = 0       # frames each side of a frame; 0 is the raw label of each frame
 fallback = "D"       # where no source had an opinion anywhere in the window (the ball is not tracked)

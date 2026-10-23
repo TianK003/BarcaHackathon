@@ -191,9 +191,10 @@ quote the ranges, never one figure.
 The seven DFL matches (public data, CC BY 4.0) and our public GT; no BAR-ATH tracking is read. Command:
 `python pipeline/benchmark/selftest.py --dfl`, checks `test_dfl_truth_conventions`, `test_dfl_window_confound` and
 `test_dfl_coarse_truth` (they print every number below and take 8 s together with the caches warm). They assert every
-integer count quoted here (possessions, short runs, stoppages, window counts, changes, the coarse truth's possessions),
-the 60% agreement and DFL's playing time to within 2 frames; the rates, shares, medians, lags and line timings are
-printed, not asserted. The rules are checked on hand-built matches by `test_truth_*`
+integer count quoted here (possessions, short runs, stoppages, window counts and that the windows are drawn from all
+seven matches, changes, the three matches whose upper quartile of the lead is the whole 10 s window, the coarse truth's
+possessions), the 60% agreement and DFL's playing time to within 2 frames; the rates, shares, medians, lags and line
+timings are printed, not asserted. The rules are checked on hand-built matches by `test_truth_*`
 (`pipeline/benchmark/checks/truth.py`). The truth is `pipeline/benchmark/truth.py`'s, built as our GT is: `D` where
 `BallStatus` is 0, otherwise the team `BallPossession` names (set on dead frames too, and ignored there), `X` outside
 the two halves. All seven matches have both flags on every frame, so the truth carried 0 frames and guessed none. The
@@ -329,6 +330,13 @@ force, in metres, present players only:
 
 Every match and every half is above 60% (the check asserts it), so home is team 0 everywhere and no half is
 misaligned. The second halves are 4 points lower on average (six of the seven).
+
+The pipeline's own `nearest_player`, served through `MatchInputs` (`test_dfl_match_inputs_serve_the_real_matches`),
+names a team on every graded row of the seven matches (asserted; it prints 100.0% of the rows of each match, the 25
+rows per match it cannot answer being the ungraded gap between the halves), and differs from the brute-force team
+above on 1 row of the 1,002,819: J03WMX row 58523, a tie between the best home and the best away player. In
+`nearest_player`'s arithmetic their squared distances are exactly equal and `argmin` takes the lower slot, which is
+home; in the brute force's they are 5e-15 m² apart, with the away player nearer.
 
 **The coarse truth, a side-by-side check.** `truth.coarse_codes` absorbs a possession shorter than `min_s` into the
 other team when that team has the ball on both sides of it with no `D` between (A·B·A becomes A·A·A), the shortest

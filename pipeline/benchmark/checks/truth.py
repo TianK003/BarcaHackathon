@@ -56,8 +56,11 @@ MAX_PLAYING_DIFF = (2, 1)
 # The 5-minute windows of A06: how many there are, how many are at or below the public window's alive share, and per
 # selection (n windows, how many with a rate at or below the public window's, how many with a median possession at least
 # as long, how many with a share of possessions under 5 s at most as large). Filled in from the first run.
-EXPECTED_WINDOWS = {"all": 129, "alive_at_or_below": 124,
+EXPECTED_WINDOWS = {"all": 129, "alive_at_or_below": 124, "matches": 7,
                     "counts": {"all": (129, 7, 7, 9), "alive >= 70%": (32, 7, 5, 7), "alive >= 75%": (19, 5, 4, 5)}}
+# The matches whose first line-timing measurement (any frame of the 10 s before a flip to dead) has an upper quartile
+# at the window's whole length, 10.00 s: the window reaches back into an earlier stoppage there (A06).
+EXPECTED_LEAD_CAPPED = ("J03WMX", "J03WN1", "J03WOY")
 # Pooled possessions of the coarse truth for each candidate shortest possession (s). Filled in from the first run.
 EXPECTED_COARSE = {1: 2707, 2: 2271, 3: 1979, 4: 1799, 5: 1659}
 # The coarse truth at COARSE_MIN_S: its pooled possessions of at most 2 and at most 12 frames, and its possessions per
@@ -628,7 +631,8 @@ def test_dfl_truth_conventions():
     the coarse truth is test_dfl_coarse_truth's.) Asserts that the nearest player's team is the truth's on more than
     60% of alive ball-visible frames in every match and every half (which proves the home mapping), that every truth is
     a perfect score against itself, that the alive frames are DFL's PlayingTime to within MAX_PLAYING_DIFF, and the
-    integer counts that A06 quotes for the 7 matches, the public window and the first 5 minutes.
+    integer counts that A06 quotes for the 7 matches, the public window and the first 5 minutes, and the three matches
+    whose first line-timing measurement has its upper quartile at the window's whole length (EXPECTED_LEAD_CAPPED).
     """
     from pipeline.benchmark import sources
     ids = sources.MATCH_IDS
@@ -684,6 +688,8 @@ def test_dfl_truth_conventions():
         print("      {:<8} {:>8} {:>8} {:>7.1%} {:>9.2f} {:>8.2f} {:>8.2f}".format(
             "pooled", t["changes"], t["with_beyond_line"], t["share_beyond_line"], t["median_s"], t["p25_s"],
             t["p75_s"]))
+    capped = tuple(m for m in ids if found[m]["timing"]["p75_s"] >= truth.LINE_WINDOW_S - 1e-9)
+    assert capped == EXPECTED_LEAD_CAPPED, "the upper quartile is the window's whole length in {}".format(capped)
 
     print("\n      dead frames with the ball beyond a line, and how far the ball goes (x min, x max, y min, y max):")
     for m in ids:
@@ -751,7 +757,8 @@ def test_dfl_window_confound():
     The public window is alive on 80.4% of its frames, livelier than 96% of DFL's windows, and in DFL the possession
     rate per alive minute falls as the alive share rises (a possession is split by every stoppage and a lively stretch
     has fewer of them). So the public window is set against the DFL windows that are as lively, and a line fitted to
-    all of DFL's windows says what rate that liveliness predicts. Prints the table that A06 quotes.
+    all of DFL's windows says what rate that liveliness predicts. Prints the table that A06 quotes, and asserts its
+    integer counts, and that every selection of windows is drawn from all 7 matches.
     """
     from pipeline.benchmark import sources
     found = measurements()
@@ -761,6 +768,7 @@ def test_dfl_window_confound():
     alive, rate, median, under = (np.array([window[key] for _, window in rows]) for key in
                                   ("alive_share", "per_alive_minute", "median_s", "share_under_5s"))
     assert len(rows) == EXPECTED_WINDOWS["all"] and np.isfinite(rate).all() and np.isfinite(median).all()
+    assert len({m for m, _ in rows}) == EXPECTED_WINDOWS["matches"] == len(ids), "the windows are of all the matches"
     print("      the public window: {} possessions, {:.1%} alive, {:.2f} per alive minute, median {:.2f} s, {:.1%} "
           "under 5 s".format(public["possessions"], public["alive_share"], public["per_alive_minute"],
                              public["median_s"], public["share_under_5s"]))
@@ -774,6 +782,8 @@ def test_dfl_window_confound():
         long_median = int((median[chosen] >= public["median_s"]).sum())
         few_short = int((under[chosen] <= public["share_under_5s"] + 1e-9).sum())
         counts[name] = (n, slow, long_median, few_short)
+        assert len({m for (m, _), keep in zip(rows, chosen) if keep}) == EXPECTED_WINDOWS["matches"], (
+            "{}: the windows are no longer drawn from all {} matches".format(name, EXPECTED_WINDOWS["matches"]))
         print("      {:<14} {:>4} {:>8} {:>12.2f} {:>14} {:>14.2f} {:>14} {:>14}".format(
             name, n, len({m for (m, _), keep in zip(rows, chosen) if keep}), np.median(rate[chosen]),
             "{} ({:.1%})".format(slow, slow / n), np.median(median[chosen]),

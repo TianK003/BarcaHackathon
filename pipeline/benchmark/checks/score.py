@@ -378,6 +378,25 @@ def test_yardstick_configs_load_and_pass_the_signature_checks():
         "the yardsticks differ beyond half_width and their descriptions")
     assert len({texts[width] for width in YARDSTICKS}) == 4
 
+    # Their header says how they differ, and it is true: in line 1 (the baseline each mirrors), the description and
+    # half_width. So the other comment lines are the same in all four, the comment on the half_width line is too, and
+    # the # of that line is in the column of the # on the fallback line under it.
+    sentence = "differ in line 1, in the description and in half_width, and in nothing else."
+    def comment_lines(text):
+        return [line for line in text.splitlines()[1:] if line.startswith("#")]
+    def trailing_comment(text, key):
+        line = next(line for line in text.splitlines() if line.startswith(key))
+        return line.partition("#")[2], line.index("#")
+    for width in YARDSTICKS:
+        assert comment_lines(texts[width]) == comment_lines(texts[0]), width
+        assert " ".join(line.lstrip("# ") for line in comment_lines(texts[width])).count(sentence) == 1, width
+        assert "in this paragraph" not in texts[width], "the header claims the files differ in a paragraph"
+        note, column = trailing_comment(texts[width], "half_width")
+        fallback_column = trailing_comment(texts[width], "fallback")[1]
+        assert note == trailing_comment(texts[0], "half_width")[0] and column == fallback_column, (
+            "{}: the # on the half_width line is in column {}, the one on the fallback line in {}".format(
+                width, column, fallback_column))
+
 
 # -- a real match -----------------------------------------------------------------------------------------------------
 
