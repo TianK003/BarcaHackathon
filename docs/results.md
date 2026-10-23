@@ -394,6 +394,81 @@ rate is at or below the literature's upper bound, 220 possessions a match, which
   1 and 48 leading `D` frames) and all 14 end in `D`, whereas our graded second half starts 117 s before the kick-off,
   all `D` (T02).
 
+### A07 — Our tracking, measured for the benchmark's calibration (2026-10-23)
+
+BAR-ATH's ATD and the public GT, read by `pipeline/benchmark/calibration.py` (`load()`, ATD cache present: 1.9 s to
+measure, 0.4 s to read back, 0.5 MB under `data/cache/benchmark/calibration/`); no DFL data. Command:
+`MTAH_DATA_DIR=<data dir> python pipeline/benchmark/selftest.py --data`, check `test_data_calibration_replicates_a01`
+(it prints the headline figures, asserts those marked ✓ and the plan's mean of slots present, share with 22 present,
+tracklet median and jitter, and measures twice to check that the result is the same to the byte). The definitions are
+in the module's docstring and are checked on hand-built objects by `test_calibration_*`: a gap is a maximal run of
+missing ball inside a graded block, **interior** if a visible frame lies on both sides of it; a tracklet is a maximal
+run of one slot being present inside a block; a frame is *wrong-team* if a team shows more than 11 slots while the
+other shows fewer than 11. Everything is taken over the 158,857 graded frames (79,467 and 79,390), except the two
+arrays that the degrader transplants, which run from each half's kick-off to the end of its block (79,467 and 76,456
+frames).
+
+**What was already published, re-measured by the same definitions.**
+
+| statistic | published | measured |
+|---|---|---|
+| ball missing, share of graded frames ✓ | 0.4069 (A01) | 0.4069 (64,643 frames) |
+| gaps / interior gaps / near-line onsets ✓ | 150 / 147 / 42 (plan) | 150 / 147 / 42 (28.57% of the interior gaps) |
+| median gap ✓ | 10.7 s (A01) | 10.72 s |
+| share missing per 5 minutes, both halves ✓ | A02's 22 blocks | all 22 equal, in whole percent |
+| tracklets ✓ | 1,219 (plan) | 1,219 |
+| wrong-team frames ✓ | 0.108 (plan) | 0.1080 (17,156 frames) |
+| NaN speeds over present slot-frames ✓ | 0.0796 (plan) | 0.0796 (258,995 of 3,254,570) |
+| nearest player = GT team, public window ✓ | 77.8% of 5,640 (A01, R001) | 77.84% of 5,640 |
+| ball visible on dead frames, public window | 66% (A01) | 66.4% of 1,469 dead frames |
+| ball-speed channel NaN, ball-present graded frames ✓ | 92.2% (plan) | 92.17% ([T31](traps.md)) |
+| wrong-team episodes, home / away in surplus ✓ | 63 / 45 (plan) | 63 / 45 |
+
+The nearest-player agreement is R001's own method: `pipeline.evidence.describe` of the `nearest_player` source against
+the public GT, on the frames both have an opinion on.
+
+**Ball.** 150 gaps, in seconds: p10 0.47, p25 6.1, median 10.7, p75 21.1, p90 33.8, p99 104.8, max 221.5. Interior
+onsets per 10 minutes of a block (both halves pooled): 25, 27, 27, 28, 32, 8 (the last is the 3 minutes left of 53).
+The ball is missing on 12% to 80% of each 5-minute stretch (A02), and on 33.6% of dead frames of the public window.
+
+**Players** (46 slots).
+
+| | |
+|---|---|
+| present per frame | mean 20.49; p5 14, p25 21, median 22; exactly 22 on 49.48% of frames, ≤ 14 on 5.26%, ≤ 15 on 6.38%, ≤ 9 on 3.05% |
+| tracklets (s) | 1,219: p10 2.6, p25 7.9, median 35.5, p75 145.3, p90 284.6, p99 774.4, max 2,937 |
+| wrong team ([T32](traps.md)) | 10.80% of frames in 108 episodes (63 home in surplus, 45 away): median 2.7 s, p90 16.1 s, max 50.2 s |
+| NaN speed, runs of one present slot | 3,005 runs: median 21 frames, p75 21, p90 68, p99 2,305, max 9,268 |
+| jitter | RMS of the second difference 3.31 mm per frame, over 3,252,132 present triples |
+
+**The four yardsticks** (`nearest_w{0,25,50,125}.toml`, through `run.predict` and `pipeline.output.summarise`; no CSV is
+written), over the graded halves (asserted to ±5 possessions):
+
+| | w0 (raw) | w25 | w50 | w125 |
+|---|---|---|---|---|
+| possessions | 1,949 | 746 | 594 | 398 |
+| per graded minute (105.9 min) | 18.40 | 7.04 | 5.61 | 3.76 |
+| D share of graded frames | 0.4069 | 0.3649 | 0.3234 | 0.2233 |
+
+Two figures of the plan did **not** reproduce, and the check does not assert them:
+- **Frames with 14 or fewer slots present: 6.6% in the plan, 5.26% here.** The rest of the plan's table does (22:
+  49.5%, 21: 25.6%, 20: 7.7%, ≤ 9: 3.0%, p5 14); no cut-off from 14 to 16 gives 6.6% (5.26%, 6.38%, 7.66%), and the
+  whole file gives 16.4%. The `tracking` gate (0.066 ± 0.02) holds for BAR-ATH's own 0.0526, 0.013 from its centre.
+- **p99 of the NaN-speed runs: 1,209 frames in the plan, 2,305 here.** The plan's figure is the whole file (all 199,319
+  frames: 5,296 runs, median 21, p90 66, p99 1,209.9, max 14,509); the calibration measures the graded blocks, like the
+  share they belong to. The median agrees in both.
+
+**So:**
+- Every earlier figure that the calibration re-measures is reproduced by one set of definitions, so the benchmark can
+  be held to BAR-ATH by the same two functions (`ball_stats`, `player_stats`).
+- The yardsticks' possessions equal the organisers' published files' (R000: 1,949, 746, 594 and 398) to the unit,
+  although ours are decoded per half and theirs per file, so the per-half yardsticks are a faithful stand-in for the
+  baselines on the benchmark.
+- The ball-speed channel is unusable ([T31](traps.md)) and slots do carry the wrong team ([T32](traps.md), which answers
+  [T15](traps.md)). The wrong-team share is a lower bound: a swap inside 11 against 11 is invisible.
+- A change to the statistics, or to the pipeline code the yardsticks run through (the key hashes the four configs, not
+  the code they call), needs a bump of `calibration.CALIBRATION_VERSION`.
+
 ## Experiments
 
 Copy this template for each run, and add a scoreboard row for anything worth comparing.

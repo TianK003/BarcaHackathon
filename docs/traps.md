@@ -87,7 +87,8 @@ ball-visible public frames (A01): passes in flight, duels, deflections.
 
 **T15 — Track slots are tracklets, not players.** There are 46 slots for 22 players; they appear, vanish, swap, and
 occasionally duplicate someone (more than 22 objects). `ShirtNumber` is just the slot index. Build collective,
-permutation-invariant features. Not yet checked: does a slot ever carry the wrong team after an identity switch?
+permutation-invariant features. A slot does carry the wrong team at times, after an identity switch: a team shows more
+than 11 slots while the other shows fewer on 10.8% of graded frames (T32, A07).
 
 **T16 — Units and orientation.** Coordinates are normalised 0–1, and the pitch is not square.
 - Scale by 105.3 × 68.0 m (`games.py`; the metadata says 105 × 68) before computing distances.
@@ -139,6 +140,25 @@ bot challenge, so `load_open_tracking_data` cannot get the files. P01 downloads 
 
 If you do use kloppy on these files, index frames by `frame_id` rather than by position, and read `BallPossession`
 yourself for the away team.
+
+**T31 — The ATD ball-speed channel is unusable.** Where the ball's position exists, its speed is NaN on 92.2% of the
+graded frames (measured again on 2026-10-23: 92.17% of the 94,214 ball-present graded frames, A07). Where it is given,
+its median is 1.3 m/s against 4.8 m/s for the ball's speed from its own positions, and its correlation with that speed
+is at most 0.11 at any lag (the 2026-10-22 measurement, P01's plan): it behaves like a player's speed, not the ball's.
+Compute the ball's speed from successive positions (`hazard.features` does) and never read `atd.ball_speed`: a feature
+built on it is missing on nine frames in ten and noise on the tenth. The benchmark's degraded tracking is to set
+`ball_speed` to NaN everywhere for this reason. T28 says the speed channel is not presence; this says it is not the
+ball's speed either.
+
+**T32 — A slot can carry the other team's player.** After an identity switch a slot keeps its team in the metadata while
+it follows a player of the other side, so a team shows more than 11 slots while the other shows fewer than 11, which a
+real match cannot do. Measured on the graded frames (A07): this happens on 10.8% of them (17,156 of 158,857), in 108
+episodes (63 with the home team in surplus, 45 the away team), median 2.7 s, p90 16 s, longest 50 s. A team shows more
+than 11 slots on 12.9% of frames, and on 84% of those the other shows fewer than 11 (the 2026-10-22 measurement, P01's
+plan). So `atd.slot_team` is the label of the slot and not of the player on it, and a feature that trusts one slot's
+team (the nearest player's, say) is wrong on those frames. The 10.8% is a lower bound: a swap inside an 11 against 11
+cannot be seen. P01's `tracking` profile is to put such episodes into the degraded matches, and is checked against this
+share.
 
 ## Reproducibility and environment
 
