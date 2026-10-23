@@ -1,7 +1,9 @@
 """Checks of the harness itself (pipeline/benchmark/selftest.py): what it collects, how it reports, and the console."""
 
+import ast
 import contextlib
 import io
+import os
 import re
 import sys
 import tempfile
@@ -27,6 +29,34 @@ def run_main(modules, *flags):
     with contextlib.redirect_stdout(shown):
         code = selftest.main(list(flags), modules=modules)
     return code, [re.sub(r"  \([0-9.]+ s\)$", "", line) for line in shown.getvalue().rstrip("\n").split("\n")]
+
+
+def imports_of_other_check_modules(folder, package):
+    """[(file, line, module)] of every import in the modules of `folder` that reaches a module of `package` other than
+    common, sorted by file and line. The package's own __init__ is not scanned: it imports all the modules to list them.
+
+    `package` is the dotted name of the folder (pipeline.benchmark.checks). An import is found wherever it stands, at the
+    top or inside a function, whether it names the module (from package.run import x, import package.run) or takes it
+    from the package (from package import run). A module of another package whose name only starts like it
+    (pipeline.benchmark.checks_elsewhere) is not one.
+    """
+    allowed = package + ".common"
+    found = []
+    for name in sorted(os.listdir(folder)):
+        if not name.endswith(".py") or name == "__init__.py":
+            continue
+        with open(os.path.join(folder, name), encoding="utf-8") as handle:
+            tree = ast.parse(handle.read(), name)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module == package:
+                found += [(name, node.lineno, package + "." + alias.name) for alias in node.names
+                          if package + "." + alias.name != allowed]
+            elif isinstance(node, ast.ImportFrom) and node.module and node.module.startswith(package + "."):
+                found += [(name, node.lineno, node.module)] if node.module != allowed else []
+            elif isinstance(node, ast.Import):
+                found += [(name, node.lineno, alias.name) for alias in node.names
+                          if alias.name.startswith(package + ".") and alias.name != allowed]
+    return sorted(found)
 
 
 def test_collect_takes_the_checks_a_module_defines_and_sorts_them_by_name():
@@ -167,3 +197,32 @@ def test_stdout_is_utf8():
         utf8_stdout()
     finally:
         sys.stdout = saved
+
+
+def test_a_check_module_imports_no_other_check_module():
+    """A check module imports from checks/common.py and from production code, and from no other check module.
+
+    Two check modules that import each other make their order of import matter, a helper that two of them share belongs
+    to neither, and a module that is renamed breaks a stranger's import; the review of Task 14 found eight such imports
+    (two in common.py, three in fidelity.py, three in run.py), and they were moved to common.py. The scan reads every import in the module, at the top and inside a function, in both
+    forms (`from pipeline.benchmark.checks.run import x`, `from pipeline.benchmark.checks import run`, and `import
+    pipeline.benchmark.checks.run`). It must flag each of those on made-up modules, let the imports of common and of
+    production code pass (and the __init__, which lists the modules by design), and find none in the real folder."""
+    package = "pipeline.benchmark.checks"
+    with tempfile.TemporaryDirectory() as folder:
+        write_text(folder, "__init__.py", "from pipeline.benchmark.checks import alpha, beta\n")
+        write_text(folder, "common.py", "")
+        write_text(folder, "clean.py", "import os\nfrom pipeline.benchmark import dfl\nfrom pipeline.benchmark import checks\n"
+                                       "from pipeline.benchmark.checks import common\n"
+                                       "from pipeline.benchmark.checks.common import helper\nimport pipeline.benchmark.checks.common\n"
+                                       "from pipeline.benchmark.checks_elsewhere import run\n")
+        write_text(folder, "alpha.py", "from pipeline.benchmark.checks.beta import helper\n")
+        write_text(folder, "beta.py", "def test_one():\n    from pipeline.benchmark.checks.alpha import helper\n")
+        write_text(folder, "gamma.py", "from pipeline.benchmark.checks import common, alpha\n")
+        write_text(folder, "delta.py", "import pipeline.benchmark.checks.alpha\n")
+        found = imports_of_other_check_modules(folder, package)
+        assert found == [("alpha.py", 1, package + ".beta"), ("beta.py", 2, package + ".alpha"),
+                         ("delta.py", 1, package + ".alpha"), ("gamma.py", 1, package + ".alpha")], found
+    here = os.path.dirname(os.path.abspath(__file__))
+    assert imports_of_other_check_modules(here, package) == [], (
+        "a check module imports another one; move what they share to pipeline/benchmark/checks/common.py")

@@ -14,10 +14,13 @@
                                                     #   221 s, 111 s with the last two included: the machine's load
                                                     #   decides)
     python pipeline/benchmark/selftest.py --data    # + checks that read the real match's data (aggregates only): the
-                                                    #   calibration reproduces A01's, A02's and R001's figures, and the
-                                                    #   hazard of our ball gaps is fitted again and printed (A08)
-                                                    #   (measured: about 19 s with the ATD cache and the calibration
-                                                    #   cache present, 22 s while the calibration is built)
+                                                    #   calibration reproduces A01's, A02's and R001's figures, the
+                                                    #   hazard of our ball gaps is fitted again and printed (A08), and
+                                                    #   the tracking profile's constants are re-derived on the 7 DFL
+                                                    #   matches (measured 2026-10-23, with the ATD cache, the
+                                                    #   calibration cache and the 7 DFL caches present: the 5
+                                                    #   test_data_* checks take 61 s, 42 s of them the constants, and
+                                                    #   the whole run 93 s with the synthetic checks)
 
 The real fidelity of the gaps profile is not a check but a command (fidelity.py: gates, warnings; R003 in results.md): it
 reads all seven matches and takes minutes.

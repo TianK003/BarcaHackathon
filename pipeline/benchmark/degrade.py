@@ -148,8 +148,9 @@ for byte with the scale of the tracked spans at 1 and the shortest-piece rule of
 (test_tracking_version_2_with_no_low_count_frame_is_version_1s_players).
 
 The shortest piece and the scale of the tracked spans (version 2; MIN_PIECE_FRAMES, drop_short_pieces, TRACKED_SCALE).
-Ours has no tracklet shorter than 8 frames (A09), and the cap made 2.2% of its pieces so (906 of 40,866 pieces, R004b),
-many of them where our count steps across CAP and back, so after the cap and before the slots every piece shorter than
+Ours has no tracklet shorter than 8 frames (A09), and version 2 without this rule made 2.2% of its pieces so (906 of
+40,866 pieces, R004b; 195 of them were already short before the cap, from the walk's run ends and the episodes), many of
+them where our count steps across CAP and back, so after the cap and before the slots every piece shorter than
 MIN_PIECE_FRAMES = 8 is dropped, whatever made it (the walk's run ends, an episode, the cap): the player is absent on
 its frames, and the pieces, their slot-frames and the episode pieces among them are counted (short_pieces,
 short_slot_frames, short_episode_pieces). The walk draws its tracked spans from our FINAL tracklets, which already hold

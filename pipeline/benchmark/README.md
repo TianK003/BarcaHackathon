@@ -185,9 +185,10 @@ slot identity, R004b). The cap draws nothing, so no stream of the other parts mo
 seeds 10.1% of the frames are capped (ours 10.6%), 2,363,692 slot-frames are dropped and 4,463 pieces are cut.
 
 **No piece is shorter than 8 frames** (`degrade.MIN_PIECE_FRAMES`, `drop_short_pieces`): ours has none (A09: the
-shortest tracklet is 8 frames, 0.32 s), and the first version of the cap made 2.2% of its pieces so (906 of 40,866),
-mostly where our count flickers across the threshold (147 of the 155 crossings of 18 are a step of one slot) and the
-dropped players come back for a few frames and go again. After the cap and before the slots every piece shorter than 8
+shortest tracklet is 8 frames, 0.32 s), and version 2 without this rule made 2.2% of its pieces so (906 of 40,866;
+195 of them were already short before the cap), mostly where our count flickers across the threshold (147 of the 155
+crossings of 18 are a step of one slot) and the dropped players come back for a few frames and go again. After the cap
+and before the slots every piece shorter than 8
 frames is dropped, whatever made it (the walk's run ends, an episode, the cap), the player being absent there. Over the
 21 runs it drops 794 pieces, holding 3,177 slot-frames, 172 of them episode pieces (`short_pieces`, `short_slot_frames`,
 `short_episode_pieces` in the draws' record).

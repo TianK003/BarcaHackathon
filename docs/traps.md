@@ -168,8 +168,10 @@ matches, against 3.3 mm on ours, which is what a rule of the kind "smooth if mor
 noise. In the five 2. Bundesliga matches 98% of its squares sit in the largest 0.05% of the triples: rare jumps (in one
 half 61 steps of 1.52 million exceed 25 m/s, and the largest is 30 m). The rest is quantisation: the median second
 difference is 1.00 cm in every match and the 99th percentile 2.83 cm, against 1.4 mm and 9.6 mm on ours. A centred
-5-frame average lowers the RMS only from 9.0 to 6.5 cm (white noise would fall to 16%). The `tracking` profile smooths
-because its rule says so and leaves the jumps in. So when a method reads positions, speeds or accelerations, compare
+5-frame average lowers the RMS only a little: in version 1 from 9.0 cm (DFL's clean players) to 6.5 cm (the degraded
+players, so that the cuts changed the RMS as much as the average did), and in version 2, on the same draws with and
+without the average, from 12.0 to 8.7 cm (R004b); white noise would fall to 16%. The `tracking` profile smooths because
+its rule says so and leaves the jumps in. So when a method reads positions, speeds or accelerations, compare
 medians and percentiles and not an RMS, and know that the benchmark's players are rougher than ours
 (`test_data_tracking_constants_follow_from_the_measurements` prints them; R004).
 
@@ -192,8 +194,9 @@ spans again, with the wrong-team episodes and with the cap of our low-count fram
 out too short: pooled over the seven matches and three seeds the walk alone gives a median of 40.88 s against ours 41.28
 s, the episodes alone 29.26 s, the cap alone 24.44 s, both 19.68 s (R004b), and the first version of the cap failed the
 tracklet-median gate for it. A piece that a cut leaves under 8 frames is also no tracklet of ours (A09: the shortest is
-8 frames), and 2.2% of the cap's were, because our count crosses the threshold 18 on 155 frames, 147 of them by one slot
-(18 and 19), and the dropped players come back for a few frames and go again. `degrade.TRACKED_SCALE` (2.042, the walk's
+8 frames), and version 2 without the rule made 2.2% of its pieces so (906 of 40,866; 195 of them already short before
+the cap), because our count crosses the threshold 18 on 155 frames, 147 of them by one slot (18 and 19), and the dropped
+players come back for a few frames and go again. `degrade.TRACKED_SCALE` (2.042, the walk's
 drawn lengths multiplied once, from one label-free measurement, frozen) and `degrade.MIN_PIECE_FRAMES` (8) are the
 corrections. Any later part that cuts tracklets in the benchmark must be set against the tracklet median first, and a
 rescale of this kind is made once, logged with its measurement and never tuned.

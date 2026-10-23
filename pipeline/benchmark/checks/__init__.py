@@ -13,8 +13,9 @@ module of its topic:
     degrade.py   the degrader's shared parts: the transplant worked out exactly, the draws, what the gaps profile
                  touches and does not, that no truth reaches it, and that the order of the matches changes nothing
                  (synthetic; with --data our real masks on a downloaded DFL match)
-    cap.py       the tracking profile's cap of the low-count tail, its shortest-piece rule and the scale of its tracked
-                 spans (synthetic only)
+    cap.py       the tracking profile's cap of the low-count tail (the rule worked out one row at a time, sticky
+                 membership, the counts of a window of ours), its shortest-piece rule, the order of the cap, the episodes
+                 and the smoothing, and the scale of the tracked spans (synthetic only)
     tracking.py  the tracking profile of the degrader: tracklets and slots (walks, lowest free slot, no overlap, the
                  degenerate case equal to gaps, the lost share on long runs), the wrong-team episodes, the NaN-speed
                  runs, the smoothing, and that the profiles nest (synthetic; with --dfl that no pool of slots runs out
@@ -31,9 +32,11 @@ module of its topic:
     run.py       the benchmark runner: its reports, the reference and the direction of a comparison, the same bytes in
                  another process, what it refuses, and the oracle, which must score 1.0 on every real match (synthetic,
                  and the downloaded matches with --dfl)
-    harness.py   the harness itself: what it collects, how it reports NOT RUN, the console set-up
+    harness.py   the harness itself: what it collects, how it reports NOT RUN, the console set-up, and that no check
+                 module imports another one
     common.py    what several modules share, and no checks of its own: the synthetic DFL match, the random one
-                 (random_match), the synthetic Calibration and the other fixtures that the modules above build on,
+                 (random_match), the synthetic Calibration and the other fixtures that the modules above build on, the
+                 leak detector (leaks) that finds the match or its truth in what a component's inputs reach,
                  real_match, damaged, NotRun
 
 A new topic gets a new module here, listed in MODULES. The harness refuses a module of this folder that MODULES does
@@ -49,7 +52,8 @@ harness prints NOT RUN with the reason and counts it apart from the passes. It n
 as a pass of something that was not compared.
 
 Import with absolute imports (from pipeline.benchmark import dfl): a check module named like a production module
-cannot then shadow it.
+cannot then shadow it. A check module imports from common.py and from production code, and from no other check module;
+what two of them share goes to common.py (test_a_check_module_imports_no_other_check_module).
 """
 
 from pipeline.benchmark.checks import (
