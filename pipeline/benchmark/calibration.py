@@ -103,6 +103,7 @@ import math
 import operator
 import os
 import time
+import zipfile
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -1036,7 +1037,7 @@ def _read(folder, manifest):
             player_jitter_rms_m=manifest["player_jitter_rms_m"], public_window=dict(manifest["public_window"]),
             baseline_outputs={int(width): dict(row) for width, row in manifest["baseline_outputs"].items()},
             scalars=dict(manifest["scalars"]), **_read_hazard(folder, manifest["hazard"]), **flat, **by_half)
-    except (OSError, ValueError, EOFError, KeyError, TypeError, AttributeError):
+    except (OSError, ValueError, EOFError, KeyError, TypeError, AttributeError, zipfile.BadZipFile):
         return None
 
 
@@ -1084,8 +1085,24 @@ def _number(value):
 
 
 def _read_array(folder, name, dtype):
-    """One cached array as a read-only 1-D array of `dtype`; ValueError if it is not."""
-    array = np.load(os.path.join(folder, name + ".npy"), allow_pickle=False)
-    if not isinstance(array, np.ndarray) or array.dtype != dtype or array.ndim != 1:
-        raise ValueError("{}.npy is not a 1-D {} array".format(name, np.dtype(dtype)))
-    return _frozen(array)
+    """One cached array as a read-only 1-D array of `dtype`; ValueError if it is not, or cannot be read as one.
+
+    The file is opened here and np.load is given the handle, as dfl._read_array does (docs/traps.md T34): given a path,
+    np.load hands a file that starts like a zip to an NpzFile, which fails on one cut short after np.load has given the
+    file up, so that nothing closes it, and on Windows the rebuild that follows (it rewrites the file) is refused. A zip
+    cut short under an .npy name is zipfile.BadZipFile, which is not a ValueError: it becomes one here, so that the
+    cache that holds it is rebuilt like any other that cannot be read."""
+    path = os.path.join(folder, name + ".npy")
+    with open(path, "rb") as handle:
+        try:
+            array = np.load(handle, allow_pickle=False)
+        except zipfile.BadZipFile as error:
+            raise ValueError("{}.npy is not a readable numpy file ({})".format(name, error)) from error
+        if not isinstance(array, np.ndarray):
+            close = getattr(array, "close", None)
+            if close is not None:
+                close()   # an NpzFile of a file object leaves the file to its owner; this is its own bookkeeping
+            raise ValueError("{}.npy is not a plain numpy array".format(name))
+        if array.dtype != dtype or array.ndim != 1:
+            raise ValueError("{}.npy is not a 1-D {} array".format(name, np.dtype(dtype)))
+        return _frozen(array)

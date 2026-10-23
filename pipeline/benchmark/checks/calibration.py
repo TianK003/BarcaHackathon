@@ -14,6 +14,7 @@ prints aggregates (counts, shares, quantiles) and never a frame or a row of the 
 import dataclasses
 import hashlib
 import importlib.util
+import io
 import json
 import math
 import os
@@ -1159,11 +1160,20 @@ def test_calibration_cache_is_keyed_and_unreadable_means_absent():
             with open(manifest_path, "w", encoding="utf-8", newline="\n") as handle:
                 json.dump(content, handle)
 
-        for damage in ("truncate", "delete", "garbage", "field", "empty", "not parallel", "no hazard", "short model",
-                       "bad auc", "go not a bool", "zero scale", "NaN coef", "no cell", "empty cell", "cell not 1-D"):
+        for damage in ("truncate", "zip cut short", "delete", "garbage", "field", "empty", "not parallel", "no hazard",
+                       "short model", "bad auc", "go not a bool", "zero scale", "NaN coef", "no cell", "empty cell",
+                       "cell not 1-D"):
             if damage == "truncate":
                 with open(os.path.join(mine, "gap_durations_s.npy"), "wb") as handle:
                     handle.write(b"\x93NUMPY")
+            elif damage == "zip cut short":
+                # An .npz cut in half under an .npy name: np.load hands the file to an NpzFile, which fails with
+                # zipfile.BadZipFile (not a ValueError) and, given a path, leaves the file open (T34), so on Windows
+                # the rebuild that follows could not rewrite it either. Rebuilt, not raised.
+                whole = io.BytesIO()
+                np.savez(whole, durations=np.arange(1000.0))
+                with open(os.path.join(mine, "gap_durations_s.npy"), "wb") as handle:
+                    handle.write(whole.getvalue()[:len(whole.getvalue()) // 2])
             elif damage == "delete":
                 os.remove(os.path.join(mine, "ball_masks_1.npy"))
             elif damage == "garbage":
