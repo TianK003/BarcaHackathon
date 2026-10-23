@@ -1347,8 +1347,8 @@ limitations), and it has no tail yet. **Superseded by R004b** (`tracking` v2: th
 piece and the scale of the tracked spans; the ranking is the same).
 
 ### R004b — The four yardsticks on `tracking` version 2 (2026-10-23, Tian)
-Proposal: P01 · Commit: `95583d9` (the code every report below was made at, on a clean tree, `dirty: false`; the
-entry and the README are the commit that follows it) · Commands:
+Proposal: P01 · Commit: `95583d9` (the code every report below was made at, on a clean tree, `dirty: false`;
+the cap alone, before the rule and the scale, is `b640752`; the entry, the README and T37 are `16b7e50`) · Commands:
 `python pipeline/benchmark/fidelity.py --profile tracking --seeds 3` first, whose gates all passed, and then
 `python pipeline/benchmark/run.py pipeline/benchmark/configs/nearest_w50.toml pipeline/benchmark/configs/nearest_w0.toml pipeline/benchmark/configs/nearest_w25.toml pipeline/benchmark/configs/nearest_w125.toml --profile tracking --seeds 3`
 (the first config is the reference; run once more with `--truth coarse`, and `w25` first with `w125` second for the
