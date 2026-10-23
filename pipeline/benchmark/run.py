@@ -106,7 +106,7 @@ import possession_metrics as pm  # noqa: E402  isort:skip
 # Params
 CLEAN = degrade.CLEAN
 PROFILES = degrade.PROFILES        # name -> version of how its tracking is made (in the report): degrade.py's recipes
-DEFAULT_PROFILE = "gaps"           # the first one that looks like our match; clean is the floor it is measured against
+DEFAULT_PROFILE = "tracking"       # the one most like our match (R004b); clean is the floor it is measured against
 DEFAULT_SEEDS = 3                  # degradation seeds per match; the clean profile has nothing random and runs seed 0
 # The order of the four yardsticks in the full-match scores that the organisers published (R000: smooth50 0.2433 >
 # smooth125 0.2242 > smooth25 0.1996 > raw 0.0486), best first: what a profile's order is read against (rank_agreement).

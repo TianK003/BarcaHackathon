@@ -72,6 +72,42 @@ def test_transplant_exact():
     expect_error(ValueError, lambda: degrade.transplant(source, 2.5, 0), "n")
 
 
+def test_transplant_counts_read_the_same_window_as_the_mask():
+    """Our slot counts are read through the Transplant exactly as the missing-ball mask is: the same frames of the
+    source.
+
+    transplant_counts takes the window of a source of whole numbers that transplant takes of a bool one, so that the
+    cap of the tracking profile and the ball's gaps come from the same frames of ours: from the offset, and past the
+    source's end round and round its last TAIL_FRAMES frames. Worked out one frame at a time here, with the source's own
+    index as its value (so that every value says which frame it is), on a source shorter than the tail and on one
+    longer; the result keeps the source's dtype, is a new read-only array and is refused for what transplant refuses."""
+    for length in (10, 8000):
+        source = np.arange(length, dtype=np.int16)
+        tail = min(degrade.TAIL_FRAMES, length)
+        for n, offset in ((6, 3), (0, 4), (length, 0), (25, 8), (2 * length + 7, length - 3), (5, length + 2)):
+            expected = []
+            for j in range(n):
+                index = offset + j
+                if index >= length:
+                    index = length - tail + (index - length) % tail
+                expected.append(index)
+            got = degrade.transplant_counts(source, n, offset)
+            assert got.tolist() == expected, (length, n, offset)
+            assert got.dtype == np.int16 and not got.flags.writeable
+            # And the mask, from the same arguments, reads the very frames the counts do.
+            mask = degrade.transplant(np.arange(length) % 3 == 0, n, offset)
+            assert mask.tolist() == [index % 3 == 0 for index in expected], (length, n, offset)
+    source = np.arange(10, dtype=np.int16)
+    out = degrade.transplant_counts(source, 4, 2)
+    assert source.tolist() == list(range(10)) and out.base is None, "a new array, not a view of the source"
+    expect_error(ValueError, lambda: degrade.transplant_counts(source.astype(float), 3, 0), "source", "whole numbers")
+    expect_error(ValueError, lambda: degrade.transplant_counts(source.astype(bool), 3, 0), "source", "whole numbers")
+    expect_error(ValueError, lambda: degrade.transplant_counts(source[:0], 3, 0), "source", "non-empty")
+    expect_error(ValueError, lambda: degrade.transplant_counts(source.reshape(2, 5), 3, 0), "source", "1-D")
+    expect_error(ValueError, lambda: degrade.transplant_counts(source, -1, 0), "n", "at least 0")
+    expect_error(ValueError, lambda: degrade.transplant_counts(source, 3, -2), "offset", "at least 0")
+
+
 def test_transplant_choice_is_drawn_from_the_match_and_the_half():
     """A source half 1 or 2 about equally often, an offset anywhere in 0..max(0, M - n), the same for the same key."""
     match = tracked_match()
@@ -123,8 +159,9 @@ def test_transplant_offset_reaches_the_top_of_its_range():
 
 def test_rng_for_is_the_documented_key_and_streams_are_apart():
     """np.random.default_rng([seed, match_index, COMPONENTS[component], half]), with no profile in it."""
-    assert degrade.PROFILES == {"clean": 1, "gaps": 1, "tracking": 1}
-    assert degrade.COMPONENTS == {"transplant": 0, "tracklets": 1, "wrong_team": 2, "speed_nan": 3, "hazard": 4}
+    assert degrade.PROFILES == {"clean": 1, "gaps": 1, "tracking": 2}
+    assert degrade.COMPONENTS == {"transplant": 0, "tracklets": 1, "wrong_team": 2, "speed_nan": 3, "hazard": 4}, (
+        "the cap draws nothing, so version 2 has no stream of its own")
     for component, number in degrade.COMPONENTS.items():
         ours = degrade.rng_for(3, 5, component, 2).integers(1 << 62, size=4)
         theirs = np.random.default_rng([3, 5, number, 2]).integers(1 << 62, size=4)

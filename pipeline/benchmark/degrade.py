@@ -14,9 +14,9 @@ as bad as ours, and fidelity.py measures with the Calibration's own statistics f
               The players are untouched.
     tracking  the gaps' ball, exactly, and the players broken up the way ours are: tracked spans and lost spans, and
               46 anonymous slots that tracklets take and leave; a wrong-team slot now and then, NaN speeds in runs and
-              positions smoothed (below). Not our frames with few players tracked, which are the next version's (2):
-              version 1 is frozen as it is, with three of its fidelity gates, the ones about how many slots are
-              present, pending (fidelity.PENDING_GATES, R004).
+              positions smoothed; and, since version 2, our frames with few players tracked, by a cap (below).
+              Version 1, which R004 measured, had everything but the cap, and its three fidelity gates about how many
+              slots are present were pending (they are gates now: fidelity.PENDING_GATES is empty).
 
 The version of a profile (PROFILES) is part of what a report says about its tracking: change what a profile does and
 bump it, so that two reports of different tracking never carry one version.
@@ -65,13 +65,13 @@ ends when the tracker loses the player and is taken over by whoever it finds nex
 The degrader breaks each player's time on the pitch into tracked spans and lost spans and gives each tracked span (a
 tracklet) a slot, so that the slots appear, vanish and are reused. A slot's index is still not as empty of the player as
 in ours: under the lowest-free rule (below) a player who comes back after a lost span lands in the slot he had 69.0% of
-the time (860 of 1,247 returns, J03WMX, seed 0, with the wrong-team episodes on, as in version 1), and a slot idles
-between two tracklets for a median of 2.3 s (59.7% of its gaps last at most 3 s and 3.8% over 60 s), where ours idles
-for 7.4 s (17.7% at most 3 s, 15.0% over 60 s: A09, R004). Before the episodes were added it was 76.0%, 2.0 s, 67.1% and
-none over 60 s (A09): the same code with the scale at 0 gives those again. No evidence source reads a slot's identity
-today, beyond nearest_player's argmin on exact ties, which goes to the lower slot; but a method that follows a slot
-across a loss would be validated optimistically here. The tail's part of the profile (the frames with few players
-tracked) re-measures this.
+the time (860 of 1,247 returns, J03WMX, seed 0, with the wrong-team episodes on, as in version 1: R004), and a slot
+idles between two tracklets for a median of 2.3 s (59.7% of its gaps last at most 3 s and 3.8% over 60 s), where ours
+idles for 7.4 s (17.7% at most 3 s, 15.0% over 60 s: A09, R004). Before the episodes were added it was 76.0%, 2.0 s,
+67.1% and none over 60 s (A09): the same code with the scale at 0 gives those again. No evidence source reads a slot's
+identity today, beyond nearest_player's argmin on exact ties, which goes to the lower slot; but a method that follows a
+slot across a loss would be validated optimistically here. The cap of version 2 (below) drops players and so breaks slot
+identity further: test_data_tracking_profile_on_a_real_match_with_our_real_calibration prints the figures with it.
 
 * What it draws from is ours, measured on our kick-off spans (Calibration): a tracked span's length is one of our
   tracklet lengths (tracklet_lengths_s, in frames at the match's rate, at least 1), drawn uniformly, so that their
@@ -106,8 +106,8 @@ The wrong-team episodes (T32). On 10.5% of our frames a team shows more than 11 
 slot of one team carries a player of the other, because the tracker's identity followed the wrong player out of a duel.
 Identity swaps happen where players come close, so the degrader cuts the walk's tracked spans with episodes of that
 kind (episode_pieces), between the walk and the slot assignment: the walk's "tracklets" draws are not touched, and
-the order of operations of a half is the tracklets, the episodes, the slot of every piece, the positions (smoothed),
-the speeds, the NaN runs.
+the order of operations of a half is the tracklets, the episodes, the cap (version 2, below), the slot of every piece,
+the positions (smoothed), the speeds, the NaN runs.
 
 * Onsets are a Bernoulli process over the rows of the half's graded block (the discrete-time Poisson process) at
   r = s * target / mean episode frames per row, target = Calibration.wrong_team_share, the episodes ours
@@ -124,6 +124,26 @@ the speeds, the NaN runs.
 * s is not 1: it was rescaled once, label-free, so that the share of frames that calibration.player_stats sees as
   having a wrong-team slot is ours (see WRONG_TEAM_SCALE). That share is lower than the share of frames in an episode.
 
+The cap (version 2; cap_limits, cap_pieces). Our tracker has 18 or fewer slots present on 10.6% of its frames (5.2% have
+14 or fewer): the camera is on a part of the pitch and the rest of the players are not tracked. The walk's loss d is
+taken over the frames with more than CAP = 18 present and leaves these out, so the benchmark has none of them without
+the cap. Between the episodes and the slots, on each frame of a half where OUR count k is at most CAP, only the k pieces
+nearest the ball are kept and the rest are dropped on that frame; a piece that loses frames is cut into the pieces
+between them, which are new tracklets and take the lowest free slot each (so a player who comes back after a drop may
+not get his own slot back, as in ours, and the drops are counted). Where the counts come from: cap_limits reads
+Calibration.present_counts[source half] through the SAME Transplant as the ball's mask of that half (same source half,
+same offset, the same cyclic tail: transplant_counts and transplant read one window, _window), over the half's span from
+its kick-off, so the cap and the ball's gaps come from the same frames of ours, which keeps what ties them (both follow
+our camera); the counts are the frames of the masks, which a Calibration guarantees and cap_limits checks. The cap draws
+nothing: no stream of its own, no draw of the other parts changes. Where the ball is: the clean DFL ball (view.ball_xy),
+standing in for where our camera points, which follows the real ball even when our tracker loses it; on a frame where
+DFL has none, its last place in the half, and before the first the centre spot (_ball_track). Membership is sticky (our
+tracker makes no tracklet shorter than 8 frames, A09): within a run of frames at or below CAP the pieces kept stay kept
+and membership changes only when the count requires it (it falls: the farthest go; it rises, or a kept piece ends: the
+nearest present piece that is not kept comes in), never because two distances swap; at the run's end everybody is back.
+With no frame at or below CAP the players are version 1's, byte for byte
+(test_tracking_version_2_with_no_low_count_frame_is_version_1s_players).
+
 The NaN-speed runs (place_speed_nan): ours come in runs (7.8% of the present slot-frames, median 21 frames, p99 2,300).
 After the speeds, runs are placed from the half's "speed_nan" stream: a present slot-frame chosen uniformly, a length
 from our own runs, the next L frames of that slot NaN, stopping at its tracklet's end, until the half's NaN speeds
@@ -137,7 +157,8 @@ varying bias against the true position (README, limitations).
 
 The record of what was drawn (info["players"]) holds counts and shares: the parameters (d, the mean tracked and lost
 span, the scale, the targets, the smoothing window), per half the tracklets, the slots used, the frames on the pitch and
-the lost ones, the episodes' counts and the NaN runs', and their totals. No frame.
+the lost ones, the episodes' counts, the NaN runs' and the cap's (capped_frames, cap_slot_frames, cap_pieces_cut), and
+their totals. No frame.
 """
 
 import hashlib
@@ -156,7 +177,7 @@ from pipeline.inputs.atd_cache import Atd
 CLEAN = "clean"
 GAPS = "gaps"
 TRACKING = "tracking"
-PROFILES = {CLEAN: 1, GAPS: 1, TRACKING: 1}     # name -> version of how its tracking is made (the report says it)
+PROFILES = {CLEAN: 1, GAPS: 1, TRACKING: 2}     # name -> version of how its tracking is made (the report says it)
 # The streams of random numbers, by the part of the degradation that draws them. The number is the stream's place in the
 # key of rng_for, so it never changes for a component and a new component takes the next one. The transplant, the
 # tracklets, the wrong-team episodes and the NaN-speed runs are drawn so far; the hazard's is the context profile's.
@@ -164,6 +185,7 @@ COMPONENTS = {"transplant": 0, "tracklets": 1, "wrong_team": 2, "speed_nan": 3, 
 TAIL_FRAMES = 7500                  # a mask that runs out goes round the last 300 s of the source (25 Hz)
 INDEX_BYTES = 4                     # an id outside the registry has the first 4 bytes of its sha256 as match_index
 CAP = 18                            # d is taken over the frames with MORE than this many slots present (not the tail)
+CENTRE_SPOT = 0.5                   # the cap's ball until DFL's has been seen in a half: the middle, in x and in y
 FULL = calibration_module.FULL_COUNT    # 22: players on the pitch, so slots present on a frame where nobody is lost
 HOME_SLOTS, AWAY_SLOTS = 24, 22     # our tracker's slots (the ATD metadata): the home team's first, then the away's
 N_SLOTS = HOME_SLOTS + AWAY_SLOTS   # 46
@@ -301,13 +323,38 @@ def transplant(source, n, offset):
     if mask.dtype != np.bool_ or mask.ndim != 1 or mask.size == 0:
         raise ValueError("source must be a non-empty 1-D bool mask (True where the ball is missing), it is {} with "
                          "shape {}".format(mask.dtype, mask.shape))
+    return mask[_window(mask.size, n, offset)]
+
+
+def transplant_counts(source, n, offset):
+    """(n,) read-only array: `source`, a list of whole numbers, read exactly as transplant reads a mask.
+
+    The same frames (the same window, _window): from `offset`, and past the source's end round and round its last
+    TAIL_FRAMES frames. It is how our slot counts, which the cap of the tracking profile reads, come from the frames
+    that the ball's mask comes from. The result has the source's dtype and is a fresh array. ValueError for a source
+    that is not a non-empty 1-D array of whole numbers, and for an n or an offset below 0.
+    """
+    counts = np.asarray(source)
+    if counts.dtype.kind not in "iu" or counts.ndim != 1 or counts.size == 0:
+        raise ValueError("source must be a non-empty 1-D array of whole numbers (the slots present on each frame), it "
+                         "is {} with shape {}".format(counts.dtype, counts.shape))
+    out = counts[_window(counts.size, n, offset)]
+    out.setflags(write=False)
+    return out
+
+
+def _window(length, n, offset):
+    """(n,) int64: the frames of a source of `length` frames that a window of n frames from `offset` reads.
+
+    out[j] = offset + j while that is inside the source; from its end (index `length`), the window goes on from the
+    start of the source's tail: length - t + (offset + j - length) % t with t = min(TAIL_FRAMES, length). ValueError for
+    an n or an offset below 0 (not whole numbers)."""
     n, offset = _whole("n", n), _whole("offset", offset)
-    length = mask.size
     tail = min(TAIL_FRAMES, length)
     index = offset + np.arange(n, dtype=np.int64)
     beyond = index >= length
     index[beyond] = length - tail + (index[beyond] - length) % tail
-    return mask[index]
+    return index
 
 
 def _span(view, half):
@@ -624,6 +671,129 @@ def episode_pieces(view, half, spans, parameters, seed):
     return pieces, counts
 
 
+def cap_limits(view, calibration, seed):
+    """{half: (n,) int16 read-only}: how many slots of ours were present on each frame of the window that a half reads.
+
+    Each half takes the Transplant of its ball's mask (choose_transplant: the same source half and offset, for it is the
+    same call of a fresh generator of the same key) and reads Calibration.present_counts[source half] through it
+    (transplant_counts), over the half's span from its kick-off, n = stop - kick-off frames. So the cap that these
+    counts give and the gaps of the ball come from the same frames of ours, which keeps what ties them: both follow our
+    camera. ValueError for a Calibration whose counts of a half are missing or are not as long as its ball mask (a
+    Calibration's counts are the frames of its masks: calibration.load checks it), naming the half and both lengths.
+    """
+    limits = {}
+    for half, _, _ in view.graded:
+        kickoff, stop = _span(view, half)
+        choice = choose_transplant(view, half, calibration, seed)
+        source = choice.source_half
+        if source not in calibration.present_counts:
+            raise ValueError("half {}: the Calibration's present_counts has no half {} (it has {}), which the "
+                             "ball's mask of this half was transplanted from; pass calibration.load()".format(
+                                 half, source, ", ".join(str(number) for number in sorted(calibration.present_counts))
+                                 or "none"))
+        counts, mask = np.asarray(calibration.present_counts[source]), np.asarray(calibration.ball_masks[source])
+        if counts.shape != mask.shape:
+            raise ValueError("half {}: the Calibration's present_counts of half {} has {} frames and its "
+                             "ball_masks {}: a Calibration's counts are the frames of its masks, and the cap and the "
+                             "ball read one window of both; pass calibration.load()".format(
+                                 half, source, counts.size, mask.size))
+        limits[half] = transplant_counts(counts, stop - kickoff, choice.offset)
+    return limits
+
+
+def _ball_track(view, half):
+    """(n, 2) float64: where the cap takes the ball to be on each row of a half's graded block, normalised.
+
+    The clean DFL ball (view.ball_xy), standing in for where our camera points, which follows the real ball even when
+    our tracker loses it; on a row where DFL has none, its last place in the half; before the first, the centre spot."""
+    start, stop = _block(view, half)
+    ball = np.asarray(view.ball_xy, dtype=np.float64)[start:stop]
+    seen = np.isfinite(ball).all(axis=1)
+    last = np.maximum.accumulate(np.where(seen, np.arange(stop - start), -1))
+    return np.where((last >= 0)[:, None], ball[np.maximum(last, 0)], CENTRE_SPOT)
+
+
+def cap_pieces(view, half, pieces, limit):
+    """([(first, player, last, pool)], counts): a half's pieces without the players that our counts say were not
+    tracked.
+
+    `limit` is the half's cap_limits (n counts, from its kick-off to the end of its graded block), or None for no cap.
+    On a row where the count k is at most CAP, only k of the pieces present are kept and the rest are dropped on that
+    row; a piece that loses rows is cut into the pieces between them (each a new tracklet, which assign_slots gives the
+    lowest free slot: a drop breaks a slot's identity, as ours does). Rows before the kick-off, and rows with a count
+    above CAP, are not touched; nothing is drawn.
+
+    Membership is sticky. A run is a maximal stretch of rows with a count of at most CAP. At the run's first row the k
+    pieces nearest the ball are kept; at every later row the kept pieces that are still present stay, and if they are
+    more than k the farthest of them are dropped, if fewer the nearest present pieces that are not kept come in; so
+    membership changes only when the count requires it, never because two distances swap. At the run's end every piece
+    present is kept again, and the next run starts from nothing. Nearest is by the distance in metres to the ball
+    (_ball_track), ties to the lower player column; the piece's position on a row is its player's.
+
+    The counts are {"capped_frames": rows with a count of at most CAP, "cap_slot_frames": slot-frames dropped,
+    "cap_pieces_cut": pieces that lost a row}. ValueError, naming the half, for a limit that is not a count of each row
+    of the half or not made of whole numbers.
+    """
+    counts = {"capped_frames": 0, "cap_slot_frames": 0, "cap_pieces_cut": 0}
+    if limit is None:
+        return pieces, counts
+    kickoff, stop = _span(view, half)
+    limit = np.asarray(limit)
+    if limit.shape != (stop - kickoff,):
+        raise ValueError("half {}: the cap's counts must be one for each of the {} rows from the kick-off to the end "
+                         "of the block, and there are {}".format(half, stop - kickoff, limit.size))
+    if limit.dtype.kind not in "iu":
+        raise ValueError("half {}: the cap's counts must be whole numbers (the slots present on each row), they are {}"
+                         .format(half, limit.dtype))
+    capped = limit <= CAP
+    counts["capped_frames"] = int(capped.sum())
+    if not capped.any() or not pieces:
+        return pieces, counts
+    start, _ = _block(view, half)
+    firsts = np.array([piece[0] for piece in pieces], dtype=np.int64)
+    lasts = np.array([piece[2] for piece in pieces], dtype=np.int64)
+    players = np.array([piece[1] for piece in pieces], dtype=np.int64)
+    source = np.asarray(view.players_xy, dtype=np.float64)
+    pitch = np.asarray(view.pitch, dtype=np.float64)
+    ball = _ball_track(view, half)
+    dropped = {}
+    for run_first, run_stop in zip(*(found.tolist() for found in _runs(capped))):
+        a, b = kickoff + run_first, kickoff + run_stop
+        near = np.flatnonzero((firsts < b) & (lasts > a))
+        if not near.size:
+            continue
+        rows = np.arange(a, b)
+        here = (firsts[near][None, :] <= rows[:, None]) & (rows[:, None] < lasts[near][None, :])
+        away = (source[a:b][:, players[near]] - ball[a - start:b - start][:, None, :]) * pitch
+        distance = np.where(here, np.hypot(away[:, :, 0], away[:, :, 1]), np.inf)
+        kept = np.zeros(near.size, dtype=bool)
+        for step in range(b - a):
+            k = int(limit[a - kickoff + step])
+            present = here[step]
+            kept &= present
+            order = np.lexsort((players[near], distance[step]))     # nearest first, ties to the lower player column
+            order = order[present[order]]
+            have = kept[order]
+            if have.sum() > k:
+                kept[order[have][k:]] = False
+            elif have.sum() < k:
+                kept[order[~have][:k - int(have.sum())]] = True
+            for index in near[present & ~kept]:
+                dropped.setdefault(int(index), []).append(a + step)
+    out = []
+    for index, (first, player, last, pool) in enumerate(pieces):
+        gone = dropped.get(index)
+        if not gone:
+            out.append((first, player, last, pool))
+            continue
+        counts["cap_pieces_cut"] += 1
+        counts["cap_slot_frames"] += len(gone)
+        alive = np.ones(last - first, dtype=bool)
+        alive[np.array(gone, dtype=np.int64) - first] = False
+        out += [(first + low, player, first + high, pool) for low, high in zip(*(f.tolist() for f in _runs(alive)))]
+    return sorted(out), counts
+
+
 def assign_slots(view, half, pieces):
     """[Tracklet] of the pieces (first, player, last, pool), in order of (start, player), each in the lowest free slot.
 
@@ -655,20 +825,24 @@ class HalfPlayers:
     counts: dict
 
 
-def choose_half(view, half, parameters, seed):
-    """HalfPlayers of one half: the walk's spans (walk_spans), cut by the wrong-team episodes (episode_pieces), slotted.
+def choose_half(view, half, parameters, seed, limit=None):
+    """HalfPlayers of one half: the walk's spans (walk_spans), cut by the wrong-team episodes (episode_pieces), capped
+    by our counts (cap_pieces, with `limit`, the half's cap_limits: none is no cap), slotted.
 
-    The order is the one the degradation documents: the per-player tracklets, the episodes that split them, then the
-    slot of every piece (assign_slots). ValueError as walk_spans and assign_slots.
+    The order is the one the degradation documents: the per-player tracklets, the episodes that split them, the cap that
+    drops players, then the slot of every piece (assign_slots), so that a player who comes back after a drop takes the
+    lowest free slot. ValueError as walk_spans, cap_pieces and assign_slots.
     """
     pieces, counts = episode_pieces(view, half, walk_spans(view, half, parameters, seed), parameters, seed)
-    return HalfPlayers(tracklets=assign_slots(view, half, pieces), counts=counts)
+    pieces, capped = cap_pieces(view, half, pieces, limit)
+    return HalfPlayers(tracklets=assign_slots(view, half, pieces), counts={**counts, **capped})
 
 
 def choose_tracklets(view, half, parameters, seed):
     """[Tracklet] of one half of a match, in order of (start, player), each with the lowest free slot of its pool.
 
-    The tracklets of choose_half: with no wrong-team episodes (the parameters' defaults) these are Task 12's.
+    The tracklets of choose_half, with no cap: with no wrong-team episodes (the parameters' defaults) they are the
+    ones of Task 12.
     """
     return choose_half(view, half, parameters, seed).tracklets
 
@@ -734,9 +908,12 @@ def place_speed_nan(view, half, xy, speed, tracklets, parameters, seed):
     return {"speed_nan_runs": runs, "speed_nan_frames": int(marked.sum())}
 
 
-def degraded_players(view, parameters, seed):
+def degraded_players(view, parameters, seed, limits=None):
     """(players_xy, players_speed, tracklets, counts): the match's players as slots, the tracklets {half: [Tracklet]}
     and the counts {half: {...}} of what was drawn for each half (_players_record).
+
+    `limits` is {half: cap_limits of the half}, the counts of ours that cap the players present; None is no cap, which
+    is version 1's players.
 
     players_xy is (n, N_SLOTS, 2) and players_speed (n, N_SLOTS), NaN where no tracklet has the slot; a tracklet's slot
     holds the player's position on its rows, smoothed by parameters.smooth if it is not 0 (smoothed: inside the piece),
@@ -749,7 +926,7 @@ def degraded_players(view, parameters, seed):
     speed = np.full((view.n_frames, N_SLOTS), np.nan)
     records, counts = {}, {}
     for half, _, _ in view.graded:
-        chosen = choose_half(view, half, parameters, seed)
+        chosen = choose_half(view, half, parameters, seed, None if limits is None else _limit_of(limits, half))
         records[half] = chosen.tracklets
         for t in chosen.tracklets:
             run = source[t.start:t.stop, t.player]
@@ -763,6 +940,14 @@ def degraded_players(view, parameters, seed):
     for array in (xy, speed):
         array.setflags(write=False)
     return xy, speed, records, counts
+
+
+def _limit_of(limits, half):
+    """The cap's counts of a half, or a ValueError that names the half and the halves there are."""
+    if half not in limits:
+        raise ValueError("no cap's counts for half {}; limits has {}".format(
+            half, ", ".join(str(number) for number in sorted(limits)) or "none"))
+    return limits[half]
 
 
 def slot_team():
@@ -784,7 +969,7 @@ def _players_record(view, parameters, records, counts):
     """The JSON-ready account of the players of every half: the parameters and, per half, counts. No frame in it."""
     halves, on_pitch, lost, count = {}, 0, 0, 0
     sums = dict.fromkeys(("onsets", "episodes", "skipped_far", "skipped_overlap", "episode_frames", "speed_nan_runs",
-                          "speed_nan_frames"), 0)
+                          "speed_nan_frames", "capped_frames", "cap_slot_frames", "cap_pieces_cut"), 0)
     for half, start, stop in view.graded:
         frames = int((~np.isnan(np.asarray(view.players_xy)[start:stop, :, 0])).sum())
         tracked = sum(t.stop - t.start for t in records[half])
@@ -839,7 +1024,7 @@ def degrade(view, profile, calibration, seed):
         players = (atd.players_xy, atd.players_speed, atd.slot_team)
     else:
         parameters = calibrated_parameters(calibration, view.fps, profile)
-        xy, speed, records, counts = degraded_players(view, parameters, seed)
+        xy, speed, records, counts = degraded_players(view, parameters, seed, cap_limits(view, calibration, seed))
         info["players"] = _players_record(view, parameters, records, counts)
         players = (xy, speed, slot_team())
     degraded = Atd(players_xy=players[0], players_speed=players[1], ball_xy=ball_xy, ball_speed=ball_speed,

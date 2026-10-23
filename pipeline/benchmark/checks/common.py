@@ -124,11 +124,17 @@ def utf8_stdout():
 ROWS = (240, 200)                       # the synthetic halves, in rows
 MASK_ROWS = (330, 310)                  # our made-up masks: longer than the halves, so that an offset has a range
 # What the made-up Calibration says of our tracking: tracklets of 10, 25, 50, 80 and 100 frames at 25 Hz (mean 53), and
-# slots present per frame as {slots: frames} per half. The frames with more than 18 present (CAP) are 50 with 22, 30
-# with 20 and 20 with 19: their mean is (1100 + 600 + 380) / 100 = 20.8, so d = 1 - 20.8 / 22 = 3 / 55, and a lost span
-# has the mean mu = 53 * d / (1 - d) = 53 * 3 / 52 frames. The frames with 18 or fewer are there to be left out.
+# slots present per frame as {slots: frames} per half, each half as long as its made-up mask (MASK_ROWS), since a
+# Calibration's counts are the frames of its masks. The frames with more than 18 present (CAP) are 290 with 22, 174
+# with 20 and 116 with 19 over the two halves: their mean is (6380 + 3480 + 2204) / 580 = 20.8, so d = 1 - 20.8 / 22 =
+# 3 / 55, and a lost span has the mean mu = 53 * d / (1 - d) = 53 * 3 / 52 frames. The 60 frames with 18 or fewer
+# (counts 18, 10 and 7) are there to be left out of d, and they are the tail that the cap reads. The lowest count is 7,
+# more than the 6 players of the steady matches, so that the cap changes nothing in them and the checks of the walk, the
+# slots and the episodes see the same players as without a tail; the cap's own checks use their own counts, and the
+# full squads of the fidelity checks (22 players) are capped by these. They come in runs (counts_runs), as ours do.
 LENGTHS_S = (0.4, 1.0, 2.0, 3.2, 4.0)
-PRESENT_COUNTS = {1: {22: 30, 20: 20, 19: 10, 18: 4, 10: 2, 0: 1}, 2: {22: 20, 20: 10, 19: 10, 18: 3, 10: 1, 0: 1}}
+PRESENT_COUNTS = {1: {22: 145, 20: 87, 19: 58, 18: 20, 10: 12, 7: 8}, 2: {22: 145, 20: 87, 19: 58, 18: 10, 10: 6, 7: 4}}
+RUN_FRAMES = 15                         # the made-up counts come in runs of at most this many frames
 MADE_UP_D, MADE_UP_MEAN, MADE_UP_MU = 3 / 55, 53.0, 53 * 3 / 52
 # And of the wrong-team episodes and the NaN-speed runs: episodes of 0.4, 1.2, 2 and 4 s (10, 30, 50 and 100 frames at
 # 25 Hz, mean 47.5), 10% of the frames wrong-team, and NaN-speed runs of 3, 8, 21 and 40 frames (mean 18), 8% of the
@@ -179,11 +185,27 @@ def ball_bytes(atd):
     return atd.ball_xy.tobytes() + atd.ball_speed.tobytes()
 
 
+def counts_runs(table, rng):
+    """The frames of {slots: frames} in runs of at most RUN_FRAMES, the runs in an order drawn from `rng`: int16,
+    read-only.
+
+    Our counts are low for a stretch and not frame by frame, so the tail comes as runs; the multiset of counts is the
+    table's whatever the order, which is all that d reads."""
+    runs = []
+    for slots, frames in sorted(table.items()):
+        while frames > 0:
+            runs.append(np.full(min(RUN_FRAMES, frames), slots, dtype=np.int16))
+            frames -= RUN_FRAMES
+    counts = np.concatenate([runs[index] for index in rng.permutation(len(runs))])
+    counts.setflags(write=False)
+    return counts
+
+
 def made_up_calibration(seed=0, rows=MASK_ROWS):
     """What the degrader reads of a Calibration: `ball_masks`, with long runs of missing ball as ours has, and what the
-    tracking profile reads: `tracklet_lengths_s` and `present_counts` (LENGTHS_S and PRESENT_COUNTS),
-    `wrong_team_episodes_s` and `wrong_team_share`, `speed_nan_runs` and `speed_nan_share` (EPISODES_S, NAN_RUNS and
-    the two shares above)."""
+    tracking profile reads: `tracklet_lengths_s` and `present_counts` (LENGTHS_S and PRESENT_COUNTS: as long as the
+    masks, in runs), `wrong_team_episodes_s` and `wrong_team_share`, `speed_nan_runs` and `speed_nan_share` (EPISODES_S,
+    NAN_RUNS and the two shares above). ValueError if a half of PRESENT_COUNTS is not as long as its mask (`rows`)."""
     rng = np.random.default_rng([7, seed])
     masks = {}
     for half, length in enumerate(rows, start=1):
@@ -194,10 +216,12 @@ def made_up_calibration(seed=0, rows=MASK_ROWS):
         flags.setflags(write=False)
         masks[half] = flags
     counts = {}
+    counts_rng = np.random.default_rng([7, seed, 1])
     for half, table in PRESENT_COUNTS.items():
-        counts[half] = np.array([slots for slots, frames in sorted(table.items()) for _ in range(frames)],
-                                dtype=np.int16)
-        counts[half].setflags(write=False)
+        if sum(table.values()) != rows[half - 1]:
+            raise ValueError("PRESENT_COUNTS of half {} has {} frames and its mask {}: a Calibration's counts are the "
+                             "frames of its masks".format(half, sum(table.values()), rows[half - 1]))
+        counts[half] = counts_runs(table, counts_rng)
     lengths, episodes, runs = np.array(LENGTHS_S), np.array(EPISODES_S), np.array(NAN_RUNS, dtype=np.int64)
     for array in (lengths, episodes, runs):
         array.setflags(write=False)
@@ -363,6 +387,21 @@ def synthetic_calibration():
     with tempfile.TemporaryDirectory() as root:
         inputs, gt = synthetic_calibration_inputs(root)
         return calibration.measure(inputs, gt)
+
+
+def tracking_calibration():
+    """A Calibration with what the tracking profile reads: synthetic_calibration with the made-up masks, counts,
+    tracklets, episodes and NaN-speed runs of this module (its other fields are the synthetic bundle's).
+
+    The masks come with the counts, since the counts are the frames of the masks and the cap reads both through one
+    Transplant; the figures that the bundle measured are not the made-up ones, which is what the checks that use it
+    work out for themselves."""
+    made = made_up_calibration()
+    return dataclasses.replace(
+        synthetic_calibration(), ball_masks=made.ball_masks, present_counts=made.present_counts,
+        tracklet_lengths_s=made.tracklet_lengths_s, wrong_team_episodes_s=made.wrong_team_episodes_s,
+        wrong_team_share=made.wrong_team_share, speed_nan_runs=made.speed_nan_runs,
+        speed_nan_share=made.speed_nan_share)
 
 
 # -- the downloaded DFL files (--dfl) ---------------------------------------------------------------------------------

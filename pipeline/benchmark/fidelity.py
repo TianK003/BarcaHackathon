@@ -21,7 +21,8 @@ tolerance of the centre: the tracklet median's). For gaps: the missing share of 
 s. For tracking, those two and: the share of frames with exactly 22 slots present +-0.06, the mean number present +-0.5,
 the share with 14 or fewer present +-0.02 (these three on full-strength frames, below), the wrong-team share +-0.03, the
 tracklet median +-50% and the NaN-speed share +-0.01. A gate is printed as measured, centre, tolerance, and pass or
-FAIL; a FAIL makes the command exit 1, and the profile is not frozen until it passes.
+FAIL; a FAIL makes the command exit 1, and the profile is not frozen until it passes. Every gate of `tracking` counts
+since version 2, which has the low-count tail (the cap, degrade.cap_pieces).
 
 Full strength (COUNT_GATES). The three gates about how many slots are present (exactly 22, the mean, 14 or fewer) are
 measured on the full-strength frames only: the frames, inside the same spans, where the clean DFL match has exactly 22
@@ -36,14 +37,12 @@ the full-strength frames as information, how many frames are at full strength an
 
 Pending gates (PENDING_GATES). A gate that cannot be met yet, because the part of the profile it depends on is not
 built, is printed as measured, centre and tolerance with the status `pending`, is not counted by `passed` nor by the
-exit code, and the report says why (NOTES). Today these are the three gates about how many slots are present: the
-share with exactly 22, the mean number present and the share with 14 or fewer. They depend on the low-count tail (our
-frames with 18 or fewer slots present, 10.6%), which the tracking profile does not have yet: without it the profile
-keeps too many frames at 22 slots (0.5631 of the full-strength frames against ours 0.5019, +-0.06, in R004). If the
-cap of the tail is placed by our counts, independently of the benchmark's own, each upper bucket loses about 10.6% of
-its frames and the share becomes about 0.5631 x (1 - 0.106) = 0.503 (an estimate, not a measurement). The tail is a new
-version of the profile (2): version 1 is frozen as it is, with these three pending, and the task that builds version 2
-empties the list for it, and then they are gates like the rest.
+exit code, and the report says why (PENDING_NOTE). The list is empty: it held the three gates about how many slots are
+present for version 1 of the tracking profile, which had no low-count tail (our frames with 18 or fewer slots present,
+10.6%): the share with exactly 22 was 0.5631 of the full-strength frames against ours 0.5019, the mean 21.43 against
+20.52 and the share with 14 or fewer 0.0000 against 0.0525 (R004). Version 2 has the tail and counts all of them
+(R004b). Version 1 is frozen as it was, and its reports say what they said; the machinery stays for the next part of a
+profile that a gate waits for.
 
 Checks (the warnings). Pre-registered bands on things the degradation does not fit but a benchmark that resembles our
 match should show anyway: the nearest player's agreement with the truth on alive, ball-visible frames (compared with
@@ -125,17 +124,11 @@ GATES = {
          "text": "share of the present slot-frames with a NaN speed"},
     ),
 }
-# The gates that cannot be met until the low-count tail is built, each of them about how many slots are present, which
-# the tail's frames (18 or fewer present) bring down. Printed with the status "pending" and never counted. The tail is
-# version 2 of the profile: version 1 stays frozen with these pending, and the task that builds version 2 empties this
-# tuple for it. Why each is pending:
-#   present_share_22    without the tail too many frames have all 22 present: 0.5631 of the full-strength frames
-#                       against ours 0.5019 +-0.06 (R004). If the tail's cap is placed by our counts, independently of
-#                       the benchmark's own, each upper bucket loses about 10.6% of its frames, which gives about
-#                       0.5631 x (1 - 0.106) = 0.503 (an estimate, not a measurement);
-#   present_mean        21.43 against 20.52 +-0.5: the same frames at the bottom are missing;
-#   present_share_le14  none of the frames has 14 or fewer, where ours has 5.25% (+-0.02).
-PENDING_GATES = ("present_share_22", "present_mean", "present_share_le14")
+# The gates that cannot be met until a part of the profile that they wait for is built: printed with the status
+# "pending" and never counted. Empty: the three gates about how many slots are present were pending for version 1 of the
+# tracking profile, which had no low-count tail, and version 2 has it (R004b). A profile that adds a part in a later
+# version can list the gates that wait for it here, and the task that builds the part empties the tuple again.
+PENDING_GATES = ()
 # The gates that are measured on the full-strength frames only (the module's docstring says why), and the frames that
 # are full strength: those where the clean match has exactly this many players with positions.
 COUNT_GATES = ("present_share_22", "present_mean", "present_share_le14")
@@ -149,7 +142,7 @@ D_SHARE_BAND = ("absolute", 0.05)
 FILE_FOLDER = run.REPORT_FOLDER                   # <data dir>/runs/benchmark/fidelity_<profile>[.m-<ids>][.s<n>].json
 # The counts of what the players' degradation drew that a report adds up over matches, seeds and halves.
 PLAYERS_DRAWS = ("tracklets", "onsets", "episodes", "skipped_far", "skipped_overlap", "episode_frames",
-                 "speed_nan_runs", "speed_nan_frames")
+                 "speed_nan_runs", "speed_nan_frames", "capped_frames", "cap_slot_frames", "cap_pieces_cut")
 NOTES = ("The yardsticks' outputs of ours (possessions per minute, D share) are over our graded halves, as the "
          "published baselines are, and not over the kick-off spans of the rest of the Calibration: an accepted offset "
          "of at most 1% of the frames.",
@@ -160,9 +153,8 @@ FULL_STRENGTH_NOTE = ("The gates on how many slots are present ({}) are measured
                       "for part of a match cannot show 22 slots). Ours is measured on all its frames, which assumes "
                       "that it has {} players on the pitch throughout. Every other gate and every check is on all "
                       "frames.")
-PENDING_NOTE = ("Pending gates ({}) are printed and not counted: they depend on the low-count tail (our frames with 18 "
-                "or fewer slots present), which the tracking profile does not have yet, and the task that builds it "
-                "empties PENDING_GATES.")
+PENDING_NOTE = ("Pending gates ({}) are printed and not counted: they depend on a part of the profile that is not "
+                "built yet, and the task that builds it empties PENDING_GATES.")
 
 
 class FidelityError(ValueError):
@@ -186,13 +178,14 @@ def report(profile, seeds=DEFAULT_SEEDS, match_ids=None, matches=None, calibrati
     status} (ok or WARN), "passed" is whether no gate failed (a pending one is not counted) and "warnings" how many
     checks warn. "players_draws" is {} for a profile that draws nothing for its players and, for tracking, the counts of
     what was drawn, pooled over matches, seeds and halves (tracklets, onsets, episodes, skipped_far, skipped_overlap,
-    episode_frames, speed_nan_runs, speed_nan_frames). The report also holds "full_strength": {"frames", "full_frames",
-    "share", "share_at_full"}, the frames in the spans of all the matches (once each, whatever the seeds), those at full
-    strength (COUNT_GATES are measured on them only), their share, and {match: share of its frames AT full strength} for
-    each match that is not at full strength throughout (the keys say which matches fall short, the value is the share
-    of its frames that is at full strength, not the share that is not). FidelityError for a profile that has no gates
-    (clean, which degrades nothing) or that is not one, for seeds below 1, for a calibration that is not a Calibration,
-    and for count gates with no full-strength frame to measure; run.BenchmarkError for matches that are not as asked.
+    episode_frames, speed_nan_runs, speed_nan_frames and the cap's capped_frames, cap_slot_frames and cap_pieces_cut).
+    The report also holds "full_strength": {"frames", "full_frames", "share", "share_at_full"}, the frames in the spans
+    of all the matches (once each, whatever the seeds), those at full strength (COUNT_GATES are measured on them only),
+    their share, and {match: share of its frames AT full strength} for each match that is not at full strength
+    throughout (the keys say which matches fall short, the value is the share of its frames that is at full strength,
+    not the share that is not). FidelityError for a profile that has no gates (clean, which degrades nothing) or that is
+    not one, for seeds below 1, for a calibration that is not a Calibration, and for count gates with no full-strength
+    frame to measure; run.BenchmarkError for matches that are not as asked.
     """
     if profile not in degrade.PROFILES:
         raise FidelityError("profile {!r} is not one of: {}".format(profile, ", ".join(sorted(degrade.PROFILES))))

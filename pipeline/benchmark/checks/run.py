@@ -33,7 +33,8 @@ import possession_metrics as pm
 from pipeline.benchmark import calibration, degrade, dfl, score, sources, truth
 from pipeline.benchmark import inputs as match_inputs
 from pipeline.benchmark import run as benchmark_run
-from pipeline.benchmark.checks.common import real_match, synthetic_calibration, write_synthetic_dfl
+from pipeline.benchmark.checks.common import (real_match, synthetic_calibration, tracking_calibration,
+                                              write_synthetic_dfl)
 from pipeline.benchmark.checks.inputs import random_match, whole_positions
 from pipeline.benchmark.checks.score import CONFIG_FOLDER
 from pipeline.config import ConfigError, load_config
@@ -68,10 +69,17 @@ fallback = "D"
 def evaluate_clean(*arguments, **keywords):
     """benchmark_run.evaluate_configs on the clean profile unless one is named: what most of these checks are about.
 
-    The runner's default profile is gaps (it needs our Calibration), and the checks that are about the runner, not
+    The runner's default profile is tracking (it needs our Calibration), and the checks that are about the runner, not
     about a degradation, run on the clean one, which needs none.
     """
     keywords.setdefault("profile", "clean")
+    return benchmark_run.evaluate_configs(*arguments, **keywords)
+
+
+def evaluate_gaps(*arguments, **keywords):
+    """benchmark_run.evaluate_configs on the gaps profile unless one is named: the profile that the synthetic
+    Calibration of the bundle can serve (it has our masks and none of the tracking profile's figures)."""
+    keywords.setdefault("profile", "gaps")
     return benchmark_run.evaluate_configs(*arguments, **keywords)
 
 
@@ -612,21 +620,19 @@ def half_tuples(halves):
              tuple(tuple(row) for row in half["confusion"])) for half in halves]
 
 
-def test_runner_gaps_is_the_default_and_runs_on_degraded_tracking():
-    """The default profile is gaps; it serves each match's degraded tracking, per seed, and the report says whose.
+def test_runner_gaps_runs_on_degraded_tracking():
+    """The gaps profile serves each match's degraded tracking, per seed, and the report says whose.
 
     Every number is checked against the degrader, predict and score_halves called here: a seed degrades the match with
     its own draws, the report holds the Calibration's digest and version, the file name carries `.s<n>` for a number of
     seeds that is not the default, and the printout names the calibration that made the run.
     """
-    assert benchmark_run.DEFAULT_PROFILE == "gaps" and benchmark_run.PROFILES == degrade.PROFILES == {
-        "clean": 1, "gaps": 1, "tracking": 1}
+    assert benchmark_run.PROFILES == degrade.PROFILES == {"clean": 1, "gaps": 1, "tracking": 2}
     matches, cal = synthetic_matches(), synthetic_calibration()
     paths = [yardstick_path(50), yardstick_path(0)]
     with tempfile.TemporaryDirectory() as root:
         lines = []
-        result = benchmark_run.evaluate_configs(paths, seeds=2, matches=matches, calibration=cal, data_dir=root,
-                                                log=lines.append)
+        result = evaluate_gaps(paths, seeds=2, matches=matches, calibration=cal, data_dir=root, log=lines.append)
         assert result["profile"] == {"name": "gaps", "version": 1} and result["seeds"] == [0, 1]
         for entry, width in zip(result["configs"], (50, 0)):
             report = entry["report"]
@@ -649,16 +655,13 @@ def test_runner_gaps_is_the_default_and_runs_on_degraded_tracking():
         assert any("calibration" in line and calibration.digest(cal)[:12] in line for line in lines), table
 
         # The same run is the same report; a different seed count is a different run, with its own name.
-        again = benchmark_run.evaluate_configs(paths, seeds=2, matches=matches, calibration=cal, data_dir=root,
-                                               log=quiet)
+        again = evaluate_gaps(paths, seeds=2, matches=matches, calibration=cal, data_dir=root, log=quiet)
         assert [entry["report"] for entry in again["configs"]] == [entry["report"] for entry in result["configs"]]
-        three = benchmark_run.evaluate_configs(paths[:1], matches=matches, calibration=cal, data_dir=root, log=quiet)
+        three = evaluate_gaps(paths[:1], matches=matches, calibration=cal, data_dir=root, log=quiet)
         assert three["seeds"] == [0, 1, 2] == three["configs"][0]["report"]["seeds"], "none asked for: DEFAULT_SEEDS"
-        one = benchmark_run.evaluate_configs(paths[:1], seeds=1, matches=matches, calibration=cal, data_dir=root,
-                                             log=quiet)
+        one = evaluate_gaps(paths[:1], seeds=1, matches=matches, calibration=cal, data_dir=root, log=quiet)
         assert one["seeds"] == [0]
-        two = benchmark_run.evaluate_configs(paths[:1], seeds=2, matches=matches, calibration=cal, data_dir=root,
-                                             log=quiet)
+        two = evaluate_gaps(paths[:1], seeds=2, matches=matches, calibration=cal, data_dir=root, log=quiet)
         names = [os.path.basename(benchmark_run.write_reports(each)[0]) for each in (two, three, one)]
         assert names == ["nearest_w50" + SUBSET + ".s2.json", "nearest_w50" + SUBSET + ".json",
                          "nearest_w50" + SUBSET + ".s1.json"], names
@@ -670,6 +673,28 @@ def test_runner_gaps_is_the_default_and_runs_on_degraded_tracking():
         # The profile does something: the same config on the clean tracking scores differently.
         clean = evaluate_clean(paths[:1], matches=matches, data_dir=root, log=quiet)
         assert clean["configs"][0]["report"]["pooled"] != result["configs"][0]["report"]["pooled"]
+
+
+def test_runner_default_profile_is_tracking_and_runs_it():
+    """With no --profile the runner degrades with the tracking profile: its version 2, its Calibration, its report.
+
+    The default is the profile that looks most like our match (R004b); a run that does not name one is the same run as
+    one that names tracking, to the byte of its reports, and says tracking version 2 in the report and in the printout.
+    The synthetic Calibration here has the made-up tracking figures (common.tracking_calibration), whose counts and
+    masks are as long as each other."""
+    assert benchmark_run.DEFAULT_PROFILE == "tracking" and benchmark_run.PROFILES["tracking"] == 2
+    matches, cal = synthetic_matches(), tracking_calibration()
+    paths = [yardstick_path(50), yardstick_path(0)]
+    with tempfile.TemporaryDirectory() as root:
+        lines = []
+        default = benchmark_run.evaluate_configs(paths, seeds=2, matches=matches, calibration=cal, data_dir=root,
+                                                 log=lines.append)
+        named = benchmark_run.evaluate_configs(paths, profile="tracking", seeds=2, matches=matches, calibration=cal,
+                                               data_dir=root, log=quiet)
+        assert default["profile"] == {"name": "tracking", "version": 2}
+        assert [entry["report"] for entry in default["configs"]] == [entry["report"] for entry in named["configs"]]
+        assert all(entry["report"]["profile"] == {"name": "tracking", "version": 2} for entry in default["configs"])
+        assert "profile   tracking (version 2)" in "\n".join(lines), lines
 
 
 def test_runner_refuses_a_calibration_it_cannot_use():
@@ -699,8 +724,7 @@ def test_runner_names_the_order_of_the_published_baselines_and_how_far_a_run_agr
     paths = [yardstick_path(width) for width in (50, 125, 25, 0)]
     with tempfile.TemporaryDirectory() as root:
         lines = []
-        result = benchmark_run.evaluate_configs(paths, seeds=1, matches=matches, calibration=cal, data_dir=root,
-                                                log=lines.append)
+        result = evaluate_gaps(paths, seeds=1, matches=matches, calibration=cal, data_dir=root, log=lines.append)
         rank = result["rank"]
         assert rank["published"] == ["nearest_w50", "nearest_w125", "nearest_w25", "nearest_w0"]
         pooled = {entry["stem"]: score.pooled(entry["scores"])["spell_f1_mean"] for entry in result["configs"]}
@@ -709,8 +733,7 @@ def test_runner_names_the_order_of_the_published_baselines_and_how_far_a_run_agr
         assert rank["kendall_tau"] == again["tau"] and rank["pairs"] == 6
         assert any("Kendall" in line and "{:+.4f}".format(again["tau"]) in line for line in lines), lines
         # Fewer than two of the published four: nothing to say about their order.
-        solo = benchmark_run.evaluate_configs(paths[:1], seeds=1, matches=matches, calibration=cal, data_dir=root,
-                                              log=quiet)
+        solo = evaluate_gaps(paths[:1], seeds=1, matches=matches, calibration=cal, data_dir=root, log=quiet)
         assert solo["rank"] is None
 
 

@@ -22,7 +22,7 @@ from pipeline.benchmark import calibration, degrade, dfl, fidelity, run, sources
 from pipeline.benchmark import inputs as match_inputs
 from pipeline.benchmark import truth as truths
 from pipeline.benchmark.checks.calibration import brute_force_agreement
-from pipeline.benchmark.checks.common import made_up_calibration, steady_match, synthetic_calibration
+from pipeline.benchmark.checks.common import steady_match, synthetic_calibration, tracking_calibration
 from pipeline.benchmark.checks.inputs import random_match
 from pipeline.benchmark.checks.run import loading, read, strict_json, synthetic_matches, yardstick_path
 from pipeline.contracts import D
@@ -236,8 +236,7 @@ def test_fidelity_gates_are_the_calibrations_values_with_the_plans_tolerances():
     assert fidelity.GATES["gaps"][1]["name"] == "median_gap_s" and fidelity.GATES["gaps"][1]["tolerance"] == 1.5
     assert len(fidelity.GATES["gaps"]) == 2 and "clean" not in fidelity.GATES
     # The tracking profile's gates are gaps' two and six more, with the plan's tolerances; the tracklet median's is
-    # relative (50% of the centre) and the rest are absolute. Three of them are pending until the low-count tail is
-    # built: the three that are about how many slots are present.
+    # relative (50% of the centre) and the rest are absolute. None is pending: the low-count tail is built (version 2).
     tracking = {gate["name"]: gate for gate in fidelity.GATES["tracking"]}
     assert list(tracking) == TRACKING_GATES and fidelity.GATES["tracking"][:2] == fidelity.GATES["gaps"]
     assert {name: (gate["tolerance"], gate["kind"]) for name, gate in tracking.items()} == {
@@ -245,8 +244,9 @@ def test_fidelity_gates_are_the_calibrations_values_with_the_plans_tolerances():
         "present_mean": (0.5, "absolute"), "present_share_le14": (0.02, "absolute"),
         "wrong_team_share": (0.03, "absolute"), "tracklet_median_s": (0.5, "relative"),
         "speed_nan_share": (0.01, "absolute")}
-    assert fidelity.PENDING_GATES == ("present_share_22", "present_mean", "present_share_le14")
-    assert set(fidelity.PENDING_GATES) <= set(tracking)
+    assert fidelity.PENDING_GATES == (), "every tracking gate counts since the tail is built"
+    assert set(fidelity.COUNT_GATES) <= set(tracking) and fidelity.COUNT_GATES == (
+        "present_share_22", "present_mean", "present_share_le14")
     cal = synthetic_calibration()
     for name, expected in (("present_share_22", cal.scalars["present_share_22"]),
                            ("present_mean", cal.scalars["present_mean"]),
@@ -271,16 +271,6 @@ def test_fidelity_gates_are_the_calibrations_values_with_the_plans_tolerances():
     held = {node.value for node in ast.walk(tree) if isinstance(node, ast.Constant) and isinstance(node.value, float)}
     assert not held & PLAN_FIGURES, "the module holds a figure of the plan: {}".format(sorted(held & PLAN_FIGURES))
     expect_error(KeyError, lambda: fidelity.centre_of("nothing", cal), "nothing")
-
-
-def tracking_calibration():
-    """A Calibration with what the tracking profile reads: synthetic_calibration with the made-up tracklets, episodes
-    and NaN-speed runs of checks/common.py (its other fields are the synthetic bundle's)."""
-    made = made_up_calibration()
-    return dataclasses.replace(
-        synthetic_calibration(), present_counts=made.present_counts, tracklet_lengths_s=made.tracklet_lengths_s,
-        wrong_team_episodes_s=made.wrong_team_episodes_s, wrong_team_share=made.wrong_team_share,
-        speed_nan_runs=made.speed_nan_runs, speed_nan_share=made.speed_nan_share)
 
 
 TEAMS_22 = (0,) * 11 + (1,) * 11        # a full squad on the pitch: the frames of a match at full strength
@@ -362,18 +352,19 @@ def worked_out_tracking(matches, cal, seeds=SEEDS):
 
 
 def test_fidelity_tracking_report_synthetic():
-    """The tracking profile's eight gates, each worked out by other code, with the three pending ones not counted.
+    """The tracking profile's eight gates, each worked out by other code, every one of them counted.
 
-    Two steady matches of 22 players (one with a player off for part of a half), and the made-up tracklets, episodes and
-    NaN runs: every pooled number is the sums of calibration.player_stats called on each degraded (match, seed) here and
-    not by the report, the median is that of the tracklets laid end to end, the centres are the Calibration's, a
-    relative tolerance is a share of its centre, and a pending gate is pending whatever it measures. The three gates
-    about how many slots are present are measured on the full-strength frames only (the next check). The pooled counts
-    of what was drawn are the degrader's own."""
+    Two steady matches of 22 players (one with a player off for part of a half), and the made-up tracklets, episodes,
+    counts and NaN runs: every pooled number is the sums of calibration.player_stats called on each degraded (match,
+    seed) here and not by the report, the median is that of the tracklets laid end to end, the centres are the
+    Calibration's, a relative tolerance is a share of its centre, and no gate is pending (PENDING_GATES is empty since
+    version 2 has the low-count tail). The three gates about how many slots are present are measured on the
+    full-strength frames only (the next check). The pooled counts of what was drawn, the cap's included, are the
+    degrader's own."""
     matches, cal = steady_matches(), tracking_calibration()
     with tempfile.TemporaryDirectory() as root:
         result = fidelity.report("tracking", seeds=SEEDS, matches=matches, calibration=cal, data_dir=root, log=quiet)
-        assert result["profile"] == {"name": "tracking", "version": 1} and result["matches"] == ["RND001", "RND002"]
+        assert result["profile"] == {"name": "tracking", "version": 2} and result["matches"] == ["RND001", "RND002"]
         assert [gate["name"] for gate in result["gates"]] == TRACKING_GATES
         ours = worked_out_tracking(matches, cal)
         gaps = worked_out(matches, cal)
@@ -396,10 +387,9 @@ def test_fidelity_tracking_report_synthetic():
             inside = abs(gate["measured"] - gate["centre"]) <= limit
             want = "pending" if name in fidelity.PENDING_GATES else ("pass" if inside else "FAIL")
             assert gate["status"] == want, (name, gate)
-        assert {gate["name"] for gate in result["gates"] if gate["status"] == "pending"} == set(fidelity.PENDING_GATES)
+        assert not any(gate["status"] == "pending" for gate in result["gates"]), "none is pending"
         assert result["passed"] == (not any(gate["status"] == "FAIL" for gate in result["gates"]))
-        assert any("pending" in note.lower() and all(name in note for name in fidelity.PENDING_GATES)
-                   and "tail" in note for note in result["notes"]), result["notes"]
+        assert not any("pending" in note.lower() for note in result["notes"]), result["notes"]
         # The ball is the gaps profile's, whatever the players do: the same two gate values.
         by_name = {gate["name"]: gate for gate in result["gates"]}
         assert abs(by_name["missing_share"]["measured"] - gaps["missing_share"]) < 1e-9
@@ -408,6 +398,7 @@ def test_fidelity_tracking_report_synthetic():
         assert result["players_draws"] == ours["players_draws"], (result["players_draws"], ours["players_draws"])
         assert set(result["players_draws"]) == set(fidelity.PLAYERS_DRAWS)
         assert result["players_draws"]["speed_nan_runs"] > 0 and result["players_draws"]["tracklets"] > 0
+        assert all(result["players_draws"][name] > 0 for name in ("capped_frames", "cap_slot_frames", "cap_pieces_cut"))
         stats = result["statistics"]
         for name in ("present_share_22", "present_mean", "present_share_le14", "wrong_team_share", "speed_nan_share"):
             assert abs(stats[name]["benchmark"] - by_name[name]["measured"]) < 1e-9, name
@@ -419,9 +410,10 @@ def test_fidelity_tracking_report_synthetic():
         assert fidelity.report("tracking", seeds=SEEDS, matches=matches, calibration=cal, data_dir=root,
                                log=quiet) == result
         text = "\n".join(fidelity.render(result))
-        for fragment in ("tracklet_median_s", "50%", "pending", "present_mean", "players' draws", "episodes",
-                         "(3 pending, not counted)", "full strength"):
+        for fragment in ("tracklet_median_s", "50%", "present_mean", "players' draws", "episodes", "cap_slot_frames",
+                         "full strength", "gates all pass" if result["passed"] else "DO NOT ALL PASS"):
             assert fragment in text, (fragment, text)
+        assert "pending" not in text, text
 
 
 def test_fidelity_count_gates_leave_out_frames_below_full_strength():
@@ -567,17 +559,20 @@ def test_fidelity_relative_gate_is_a_share_of_its_centre():
 def test_fidelity_pending_gates_do_not_change_the_exit_code_and_a_failing_gate_does():
     """A pending gate is printed with its numbers and never counted; a required gate that misses fails the command.
 
-    The gates' tolerances are opened and closed on purpose (the profile's own are the plan's): wide open, every
-    required gate passes and the three pending ones (the share with 22 present, the mean present and the share with 14
-    or fewer) are printed as pending, exit 0, whatever they would measure; with the required NaN-speed gate closed to a
-    tolerance of 0 the command exits 1 and says so; with only the pending gates closed (they would FAIL if they were
-    counted) the exit code is 0 again, and with the share with 22 present closed alone as well. An empty PENDING_GATES
-    counts all eight."""
+    The machinery stays although no gate of the profile is pending since version 2 has its tail: a gate listed in
+    PENDING_GATES (here the three about how many slots are present, which the check lists itself) is printed as
+    pending, exit 0 whatever it would measure, and one that is not listed counts. The gates' tolerances are opened and
+    closed on purpose: wide open, every gate passes and the three pending ones are printed as pending, exit 0; with the
+    required NaN-speed gate closed to a tolerance of 0 the command exits 1 and says so; with only the pending gates
+    closed (they would FAIL if they were counted) the exit code is 0 again. With the real, empty list the same closed
+    gates are counted: exit 1 and nothing is called pending. An empty PENDING_GATES counts all eight."""
     cal = tracking_calibration()
     matches = {match_id: steady_match(match_id, seed=sources.MATCH_IDS.index(match_id), teams=TEAMS_22,
                                       substitutions=False) for match_id in IDS}
     real_load, real_load_match = calibration.load, dfl.load_match
     real_gates, real_pending = fidelity.GATES, fidelity.PENDING_GATES
+    listed = ("present_share_22", "present_mean", "present_share_le14")
+    assert real_pending == (), "the profile's own list is empty"
 
     def serve(match_id):
         return matches[match_id]
@@ -589,7 +584,7 @@ def test_fidelity_pending_gates_do_not_change_the_exit_code_and_a_failing_gate_d
 
     try:
         with tempfile.TemporaryDirectory() as root:
-            def command(gates, pending=real_pending):
+            def command(gates, pending=listed):
                 calibration.load = lambda data_dir=None, **keywords: cal
                 fidelity.GATES, fidelity.PENDING_GATES = gates, pending
                 shown = io.StringIO()
@@ -607,11 +602,13 @@ def test_fidelity_pending_gates_do_not_change_the_exit_code_and_a_failing_gate_d
             assert code == 0 and "all pass (3 pending, not counted)" in out, out
             code, out = command(with_tolerance(present_share_22=0.0))
             assert code == 0 and "all pass (3 pending, not counted)" in out, (
-                "the share with 22 present is pending: " + out)
+                "the share with 22 present is listed as pending: " + out)
             code, out = command(with_tolerance(present_share_22=0.0, present_mean=0.0, present_share_le14=0.0),
-                                pending=())
+                                pending=real_pending)
             assert code == 1 and "DO NOT ALL PASS" in out and "pending" not in out, (
-                "with the list empty the same gates are counted: " + out)
+                "with the real list, which is empty, the same gates are counted: " + out)
+            code, out = command(with_tolerance(), pending=real_pending)
+            assert code == 0 and "all pass" in out and "pending" not in out, out
     finally:
         calibration.load, dfl.load_match = real_load, real_load_match
         fidelity.GATES, fidelity.PENDING_GATES = real_gates, real_pending
