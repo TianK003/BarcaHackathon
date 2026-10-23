@@ -2194,10 +2194,10 @@ v3 had 0.0002 apart under the raw truth).
   the 0.6637 is the public window's, and the match is worse covered than the window), so this says which profile
   flatters such a method more, and not how far either flatters it beyond our match.
 - **`context` is not a better copy of our match than `tracking` v3, on the figures we can measure.** It was built to be
-  nearer in one respect: its gaps follow the play in the model's six features, as ours do, which `tracking`'s copied
-  masks cannot. The near-line gate says that the way it does so is not ours, and v3 is not nearer on that count either:
-  its near-line share is 0.3597 against our 0.2797 (+0.0800, outside the gate's +-0.05; the information row
-  `near_line_onset_share` of `fidelity.py --profile tracking --seeds 3`, and R003's 36.0% on the same ball), so
+  nearer in one respect: its gaps follow the play in the model's six features, as ours do, which `tracking`'s
+  transplanted masks cannot. The near-line gate says that the way it does so is not ours, and v3 is not nearer on that
+  count either: its near-line share is 0.3597 against our 0.2797 (+0.0800, outside the gate's +-0.05; the information
+  row `near_line_onset_share` of `fidelity.py --profile tracking --seeds 3`, and R003's 36.0% on the same ball), so
   `context`'s 0.5586 is further out, and **the default profile is outside the band too**. The gate is `context`'s alone,
   as pre-registered: only `context` claims to place the gaps by the play, the transplant is blind to it by design, and
   no gate was added to `tracking`. On the three whole-match figures that both profiles have, `context` is further from
