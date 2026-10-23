@@ -638,6 +638,30 @@ def test_a_slot_never_changes_player_between_adjacent_present_rows():
     assert shared > 50 and taken_again > 0, (shared, taken_again)
 
 
+def test_tracklet_records_hold_no_frame_in_their_repr():
+    """Under the cap a tracklet's cut points are where our slot count crossed 18, in a window of ours whose offset every
+    report states: frame-level data of BAR-ATH, which must not reach a log by an accident of printing a record.
+
+    A Tracklet shows its player and slot and not its rows, and a HalfPlayers shows neither its tracklets nor its counts'
+    detail: with distinctive rows (123,457 and 124,001) neither number is in the repr of one, of a list of them, of the
+    HalfPlayers of a real run, or of the tuple that degraded_players returns for its records. The fields are still
+    there and compare, so the checks that read them are unchanged."""
+    t = degrade.Tracklet(player=3, start=123457, stop=124001, slot=7)
+    assert "123457" not in repr(t) and "124001" not in repr(t) and "player=3" in repr(t) and "slot=7" in repr(t)
+    assert (t.start, t.stop) == (123457, 124001) and t == degrade.Tracklet(player=3, start=123457, stop=124001, slot=7)
+    assert t != degrade.Tracklet(player=3, start=123457, stop=124002, slot=7)
+    assert "12345" not in repr([t, t]) and "12400" not in repr({1: [t]})
+    match = steady_match()
+    view = degrade.tracking_view(match)
+    cal = made_up_calibration()
+    parameters = degrade.calibrated_parameters(cal, view.fps)
+    half = degrade.choose_half(view, 1, parameters, 0, degrade.cap_limits(view, cal, 0)[1])
+    assert half.tracklets and "Tracklet" not in repr(half) and "start" not in repr(half), repr(half)[:200]
+    records = degrade.degraded_players(view, parameters, 0)[2]
+    rows = {str(row) for t in records[1] for row in (t.start, t.stop) if row > 99}
+    assert rows and not any(number in repr(records) for number in rows), "players and slots have two digits, rows three"
+
+
 def test_a_handover_on_the_row_a_slot_is_freed_is_what_the_check_would_catch():
     """The check above does see a slot that changes player: on hand-built records it lists exactly the handovers.
 

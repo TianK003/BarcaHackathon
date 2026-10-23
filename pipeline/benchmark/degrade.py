@@ -511,10 +511,13 @@ class TrackingParameters:
 
 @dataclass(frozen=True)
 class Tracklet:
-    """A stretch of one player being tracked as one slot: rows start .. stop - 1 of the match (half-open)."""
+    """A stretch of one player being tracked as one slot: rows start .. stop - 1 of the match (half-open).
+
+    The rows are not in its repr: under the cap a tracklet's cut points are where our slot count crossed CAP, in a window
+    of ours, which is frame-level data of BAR-ATH and must not reach a log by an accident of printing a record."""
     player: int         # the column of the DFL match
-    start: int
-    stop: int
+    start: int = field(repr=False)
+    stop: int = field(repr=False)
     slot: int           # 0 .. N_SLOTS - 1: the home team's slots first
 
 
@@ -970,8 +973,10 @@ def assign_slots(view, half, pieces):
 
 @dataclass(frozen=True, eq=False)
 class HalfPlayers:
-    """One half's players as slots: the tracklets in order of (start, player) and the episodes' counts (counts only)."""
-    tracklets: list
+    """One half's players as slots: the tracklets in order of (start, player) and the episodes' counts (counts only).
+
+    The tracklets are not in its repr (the same reason as Tracklet's rows: the cap's cut points are frame-level data)."""
+    tracklets: list = field(repr=False)
     counts: dict
 
 
