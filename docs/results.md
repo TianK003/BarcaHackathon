@@ -1036,12 +1036,12 @@ now and then, NaN speeds in runs and smoothed positions. Not yet our frames with
 task), so two of the eight fidelity gates are pending. Reports: `data/runs/benchmark/tracking/<stem>.json` and
 `<stem>.coarse.json`, and `data/runs/benchmark/fidelity_tracking.json` (not committed; each carries the Calibration's
 digest).
-**Corrected after review**, in the commit that follows `c89fe8c` (this file, the README, `fidelity.py` and the checks;
-the degradation, the yardsticks' reports and their numbers are unchanged). The three fidelity gates on how many slots
-are present were measured on all frames and are now measured on full-strength frames (below): the first version of this
-entry said that six required gates passed, and the one on exactly 22 present misses by 0.0012. And the slot-persistence
-figures that the README and the degrader's docstring quoted for this profile were R003's, from before the wrong-team
-episodes: "The degraded match against ours" below has them with the episodes on.
+**Corrected after review**, in `47bde9f` (the code, the checks and the README) and `ee0959e` (this entry and T36), which
+follow `c89fe8c`; the degradation, the yardsticks' reports and their numbers are unchanged. The three fidelity gates on
+how many slots are present were measured on all frames and are now measured on full-strength frames (below): the first
+version of this entry said that six required gates passed, and the one on exactly 22 present misses by 0.0012. And the
+slot-persistence figures that the README and the degrader's docstring quoted for this profile were R003's, from before
+the wrong-team episodes: "The degraded match against ours" below has them with the episodes on.
 Checks: `pipeline/benchmark/selftest.py --dfl --data` passes all 237 checks (217 synthetic, 20 with `--dfl` and
 `--data`; 235 and 215 before the correction), `pipeline/selftest.py` 35 of 35 and its `--data` run 37 of 37 (the four
 baselines identical byte for byte). The new checks were written first and failed first (16 of 29 checks of the degrader
@@ -1188,7 +1188,7 @@ ball-visible-on-dead-frames figure is `gaps`' (0.5684), and so are the D shares 
 configs (0.6094, 0.5935, 0.6428, 0.5761): the ball is the same, and these depend on it alone.
 
 **The degraded match against ours, with the episodes on (information; J03WMX, seed 0, our real Calibration).** This is
-`test_data_tracking_profile_on_a_real_match_with_our_real_calibration` as it runs at the commit that corrected this
+`test_data_tracking_profile_on_a_real_match_with_our_real_calibration` as it runs at `47bde9f`, the commit that corrected this
 entry; only the layout, the determinism, the leaks and the lost share are asserted. d is 0.0250 (ours has more than 18
 slots present on 89.4% of its frames), the mean tracked span 2,797 frames (111.9 s) and the mean lost span 71.7 frames
 (2.87 s); 2.80% of the 3,211,274 on-pitch frames are lost, in 1,605 tracklets and 13 + 13 slots. The lost share over the
