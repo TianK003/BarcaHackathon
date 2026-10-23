@@ -12,8 +12,6 @@ import ast
 import collections
 import dataclasses
 import functools
-import heapq
-import itertools
 import json
 import os
 import tempfile
@@ -24,12 +22,11 @@ import numpy as np
 import games
 from pipeline.benchmark import dfl, truth
 from pipeline.benchmark import inputs as match_inputs
-from pipeline.benchmark.checks.common import real_match, write_synthetic_dfl
+from pipeline.benchmark.checks.common import HOME, AWAY, leaks, real_match, write_synthetic_dfl
 from pipeline.inputs import atd_cache
 from pipeline.selftest import expect_error, make_synthetic_bundle, synthetic_inputs, write_text
 
 # Params
-HOME, AWAY = 0, 1
 ASSET_MESSAGE = ("{0}: the benchmark matches have no {0} -- the DFL open data comes without video or tagging (P01). "
                  "Check this source on the public window instead.")
 # Rows where nearest_player and truth.nearest_team name different teams, per match: ties between the best home and the
@@ -100,130 +97,6 @@ def whole_positions(match):
     xy.setflags(write=False)
     ball.setflags(write=False)
     return dataclasses.replace(match, players_xy=xy, ball_xy=ball)
-
-
-def truth_forms(match):
-    """Every array a component could rebuild the answer from, or is the answer: the flags and the codes made of them.
-
-    Each of them whole, and each of its graded halves (a copy of a half's flags is as good a leak as all of them).
-    """
-    status, possession = np.asarray(match.ball_status), np.asarray(match.ball_possession)
-    codes, _ = truth.truth_codes(match)
-    whole = {"ball_status": status, "ball_possession": possession, "alive": status == 1, "dead": status == 0,
-             "home": possession == HOME, "away": possession == AWAY, "codes": codes}
-    forms = dict(whole)
-    for half, start, stop in match.graded:
-        forms.update({"{}[half {}]".format(name, half): array[start:stop] for name, array in whole.items()})
-    return forms
-
-
-def held_by(value):
-    """[(how it is reached, what is reached)] for what `value` holds, one level down; [] for what holds nothing.
-
-    A container's items (dict, mapping proxy, list, tuple, deque, set), a numpy array's base (a view is the array it
-    looks into) and, for an array of objects, its elements; and what a function, a bound method and a
-    functools.partial close over or are given. Then, for anything that is not a plain value, its attributes: the
-    __dict__ and the __slots__ (those of a class that declares them, and of a dataclass with slots=True; a plain
-    dataclass keeps its fields in __dict__). Classes, modules and plain values hold nothing. The members of a set are
-    all named "{member}", with no position: their order is the hash's, and an object's hash is its id, so leaks() takes
-    its routes in the order of their names and never in the order that this returns them.
-    """
-    if isinstance(value, (str, bytes, int, float, complex, range, type, types.ModuleType, np.generic, np.dtype)):
-        return []
-    held = []
-    if isinstance(value, (dict, types.MappingProxyType)):
-        held += [("[{!r}]".format(key), item) for key, item in value.items()]
-    elif isinstance(value, (set, frozenset)):
-        held += [("{member}", item) for item in value]
-    elif isinstance(value, (list, tuple, collections.deque)):
-        held += [("[{}]".format(number), item) for number, item in enumerate(value)]
-    elif isinstance(value, np.ndarray):
-        held += [(".base", value.base)] if isinstance(value.base, np.ndarray) else []
-        held += ([("[{}]".format(number), item) for number, item in enumerate(value.flat)]
-                 if value.dtype == object else [])
-    elif isinstance(value, functools.partial):
-        held += [(".func", value.func)] + [(".args[{}]".format(number), item) for number, item in enumerate(value.args)]
-        held += [(".keywords[{!r}]".format(key), item) for key, item in (value.keywords or {}).items()]
-    elif isinstance(value, types.MethodType):
-        held += [(".__self__", value.__self__), (".__func__", value.__func__)]
-    elif isinstance(value, types.FunctionType):
-        held += [(".defaults[{}]".format(number), item) for number, item in enumerate(value.__defaults__ or ())]
-        held += [(".kwdefaults[{!r}]".format(key), item) for key, item in (value.__kwdefaults__ or {}).items()]
-        for name, cell in zip(value.__code__.co_freevars, value.__closure__ or ()):
-            try:
-                held.append((".closure[{!r}]".format(name), cell.cell_contents))
-            except ValueError:                                       # a cell that was never filled
-                pass
-    held += [(".{}".format(name), item) for name, item in getattr(value, "__dict__", {}).items()]
-    for cls in type(value).__mro__:
-        slots = getattr(cls, "__slots__", ())
-        for name in ((slots,) if isinstance(slots, str) else slots):
-            if hasattr(value, name):
-                held.append((".{}".format(name), getattr(value, name)))
-    return held
-
-
-def as_numbers(items):
-    """`items` (a list or tuple) as an int array if it is made of ints and bools only (a tolist() copy), else None."""
-    if all(isinstance(item, (bool, int, np.bool_, np.integer)) for item in items):
-        return np.array(items)
-    return None
-
-
-def leaks(inputs, match):
-    """Where `inputs` holds the match or an array equal to its flags or its truth, however deep: [what, ...], sorted.
-
-    Walks everything reachable from `inputs` (held_by), once each: a visited set keeps a cycle from running for ever.
-    A DflMatch is a finding by itself; an array of another dtype than object, and a list or tuple of ints (a tolist()
-    copy) as long as one of the forms, are compared with every form of the truth (truth_forms); a view is found
-    through its base: `inputs.window.base == ball_possession`. Findings are sorted and without duplicates.
-
-    The label of a finding depends on the graph and never on the order in which a set happens to be iterated. The
-    routes are taken in the order of their names (a heap on the path string: a parent's name is a prefix of its
-    children's, so it is always taken first), and an object that two routes reach is named by the one that sorts
-    first. The members of a set share one name, "{member}", so they are all taken before anything below them, and
-    whichever of them is taken first, what they hold is named the same
-    (test_leak_labels_do_not_depend_on_the_order_of_a_set).
-
-    What it does not see, so that nobody takes it for a proof. It is for an accidental leak: a component's author who
-    kept the match, or its flags, in a field, a cache, a closure or a view. It does not see:
-      * a copy of a stretch that is not a whole array or a whole half;
-      * a copy in another representation: bytes or a memoryview, letter codes such as "H" and "A", a column of shape
-        (n, 1), a pandas Series, a list or tuple of floats (a float ndarray copy is found, and so is a list of ints
-        or bools), a set of numbers;
-      * a copy that is not equal to a form (a smoothed one, a rolling window);
-      * an attribute computed by a property or a __getattr__ at the moment it is read;
-      * a class-level attribute: type(inputs)._last = match, or an object whose class holds the match, because
-        held_by looks into an instance's __dict__ and slots, and a class holds nothing for it
-        (test_leak_detector_limits_are_as_documented);
-      * anything built at run time that the inputs do not hold;
-      * the match itself reached by an import or by name. test_components_import_nothing_from_the_benchmark closes the
-        plain import in the three component folders, with its own limits: an import reached through another pipeline
-        module is not seen, because the scan reads only those folders.
-    """
-    forms = truth_forms(match)
-    lengths = {array.shape[0] for array in forms.values()}
-    found, seen, kept = [], set(), []
-    order = itertools.count()                 # breaks a tie between equal names, which are never compared by value
-    pending = [("inputs", next(order), inputs)]
-    while pending:
-        path, _, value = heapq.heappop(pending)
-        if id(value) in seen:
-            continue
-        seen.add(id(value))
-        kept.append(value)                    # alive until the walk ends, so that no id is reused by a new object
-        if isinstance(value, dfl.DflMatch):
-            found.append(path)
-            continue
-        array = value if isinstance(value, np.ndarray) and value.dtype != object else None
-        if array is None and isinstance(value, (list, tuple)) and len(value) in lengths:
-            array = as_numbers(value)
-        if array is not None:
-            found += ["{} == {}".format(path, form) for form, other in forms.items()
-                      if array.shape == other.shape and np.array_equal(array, other)]
-        for how, item in held_by(value):
-            heapq.heappush(pending, (path + how, next(order), item))
-    return sorted(set(found))
 
 
 # -- the contract -----------------------------------------------------------------------------------------------------

@@ -20,9 +20,8 @@ import numpy as np
 
 from pipeline.benchmark import calibration, degrade, dfl
 from pipeline.benchmark import inputs as match_inputs
-from pipeline.benchmark.checks.common import (MASK_ROWS, ROWS, NotRun, ball_bytes, made_up_calibration, real_match,
-                                              tracked_match)
-from pipeline.benchmark.checks.inputs import leaks
+from pipeline.benchmark.checks.common import (MASK_ROWS, ROWS, NotRun, ball_bytes, leaks, made_up_calibration,
+                                              real_match, tracked_match)
 from pipeline.selftest import expect_error
 
 # Params
