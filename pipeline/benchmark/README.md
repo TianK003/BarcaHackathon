@@ -59,8 +59,8 @@ What to know about the files (A05; `dfl.py` has the details and refuses what it 
 |---|---|
 | `CONFIG ...` | pipeline TOML configs (`pipeline/config.py`), per half (`scope = "halves"`). **The first one is the reference**: every other config is compared with it, and a delta is `other - first`, so positive means the other is better. Put the config you want to beat first. |
 | `--profile P` | how the tracking is made. Only `clean` (DFL's tracking as it is) exists so far; the degraded ones come later. |
-| `--seeds N` | degradation seeds per match (default 3). The clean profile has nothing random to repeat, so it ignores this, with a note, and runs seed 0. |
-| `--matches ID ...` | the matches to run, in this order (default: all seven). |
+| `--seeds N` | degradation seeds per match (default 3). The clean profile has nothing random to repeat, so it always runs seed 0 only; if you pass `--seeds` with more than 1 it says that it ignored it, and says nothing when you pass none. |
+| `--matches ID ...` | the matches to run, in this order (default: all seven). Fewer than seven are filed under a name that says which (see the report, below). |
 | `--truth raw\|coarse` | the truth to score against (below). Default `raw`. |
 | `--data-dir D` | the data bundle (default `data/`, or `$MTAH_DATA_DIR`). |
 | `--no-write` | print only. |
@@ -95,8 +95,9 @@ depends on the grain of the truth, not something to fix. The two reports are fil
 The DFL ball is tracked on every frame, so `nearest_player` votes everywhere and `majority_vote`, which takes `D` only
 where nobody voted, labels almost nothing `D`, where the truth has 41% to 52% of every match dead. So on `clean`
 the alive/dead F1 is the same for every yardstick (it is the F1 of "always alive", the scorer's ALIVE being the positive
-class), the macroF1 is held down by an empty `D` class, and the ranking is only about who has the ball. That is expected, and is why the degraded profiles (which give the ball our tracking's gaps)
-exist. It is not a bug of the configs.
+class), the macroF1 is held down by an empty `D` class, and the ranking is only about who has the ball. That is
+expected, and is why the degraded profiles (which give the ball our tracking's gaps) exist. It is not a bug of the
+configs.
 
 ## Reading the printout
 
@@ -114,11 +115,11 @@ Per config:
 With two or more configs, each against the first:
 
 - **pooled delta** and **mean per-match delta**, with the 90% t interval of the match deltas. An interval is said to
-  **exclude 0** only if it clears 0 by more than 1e-12 (`score.FLIP_TOLERANCE`, the margin under which two scores are
+  **exclude 0** only if it clears 0 by more than `score.FLIP_TOLERANCE` (1e-12, the margin under which two scores are
   equal), because a delta of the order of 1e-16 can otherwise make a gap out of float noise.
 - **sign-flip p**: the exact two-sided randomisation test of the seven deltas, with all 2^7 sign patterns enumerated. The
   smallest p it can give with seven matches is 2/128 = 0.0156, and a config that wins every match gets exactly that.
-- **wins and losses**: the matches whose delta is above and below 0 by more than the tolerance.
+- **wins and losses**: the matches whose delta is above and below 0 by more than `score.FLIP_TOLERANCE`.
 - **by competition** and **per match**: the same delta for the two Bundesliga matches and the five 2. Bundesliga ones,
   and for each match. Five of the seven are Fortuna Düsseldorf home games, so seven matches are not seven independent
   draws of "a match"; a gap that holds in every match and in both competitions is worth more than one that does not.
@@ -129,9 +130,17 @@ does not clear, and the public window is no tie-breaker either (T01).
 
 ### The report
 
-`<data dir>/runs/benchmark/<profile>/<stem>.json` (and `<stem>.coarse.json`), one per config, gitignored with the rest of
-`data/`. It is written with sorted keys, indented, LF, floats rounded to 9 decimals and no timing anywhere, to a
-temporary file renamed over the old report; the same inputs, seed and versions give the same bytes in any process.
+`<data dir>/runs/benchmark/<profile>/<stem>[.<truth>][.m-<ids>].json`, one per config, gitignored with the rest of
+`data/`. The name says what the report is of, so that one never replaces another:
+
+| run | file |
+|---|---|
+| all seven matches, raw truth | `<stem>.json` |
+| all seven, coarse truth | `<stem>.coarse.json` |
+| any other set of matches | `.m-<the ids, sorted, joined by "-">` before `.json`, e.g. `<stem>.m-J03WMX.json`, `<stem>.coarse.m-J03WMX-J03WN1.json`. The order they were asked for in is not in the name; all seven in another order are still `<stem>.json` |
+
+It is written with sorted keys, indented, LF, floats rounded to 9 decimals and no timing anywhere, to a temporary file
+renamed over the old report; the same inputs, seed and versions give the same bytes in any process.
 
 | key | holds |
 |---|---|
@@ -140,7 +149,7 @@ temporary file renamed over the old report; the same inputs, seed and versions g
 | `matches` | per match, in the order run: `id`, `frames`, `graded_frames`, `fps`, `carried_frames` (frames the truth had to carry: 0), and `sources`: the size and sha256 of the two DFL files it was made from (null if the match was not read through the cache, with `sources_reason`) |
 | `git`, `environment` | the commit and whether the tree was dirty; the Python, numpy and lxml versions and the platform |
 | `pooled`, `per_match` | the scores of all halves, and of each match: `spell_f1_mean`, `spell_f1` at each IoU, `macro_f1`, `alive_dead_f1`, `n_gt`, `n_pred`, `halves` |
-| `t_interval` | the 90% t interval of the per-match `spell_f1_mean` and `macro_f1`: `n`, `mean`, `low`, `high` (null for fewer than two matches) |
+| `t_interval` | the t interval of the per-match `spell_f1_mean` and `macro_f1`: `n` (the matches), `level` (0.9), `mean`, `low`, `high`. Only `low` and `high` are null, for fewer than two matches; the `mean` of one match is its own score |
 | `possessions_per_graded_minute`, `labels` | the rates and the label shares of the printout |
 | `halves` | the counts everything above was made from, per half: `n_gt`, `n_pred`, `tp` at each IoU, the 3x4 `confusion` of the unfilled codes |
 | `versus` | null for the reference; for the others, the comparison with it for `spell_f1_mean` and `macro_f1` (`score.compare`: deltas, interval, p, wins, losses, by competition, and whether the interval excludes 0) and the reference's name and config hash. It is the one field that depends on which other configs were run |
@@ -150,16 +159,39 @@ temporary file renamed over the old report; the same inputs, seed and versions g
 
 ```
 .venv/Scripts/python pipeline/benchmark/selftest.py          # synthetic, seconds
-.venv/Scripts/python pipeline/benchmark/selftest.py --dfl    # + the seven downloaded matches (about 2 minutes with the caches warm)
+.venv/Scripts/python pipeline/benchmark/selftest.py --dfl    # + the seven downloaded matches: 99 to 221 s measured with the caches warm
 ```
+
+(The first time, while the seven caches are built, the `--dfl` run took 532 s; the machine's load decides the rest.)
 
 `checks/run.py` holds the runner's. The one that anchors the rest is `test_dfl_oracle_scores_perfectly`: an evidence
 source that is the truth itself, decoded by `majority_vote` with half-width 0, must score exactly 1.0 on spellF1,
-macroF1 and alive/dead F1 on every one of the seven matches. A frame of difference at the half time, a swapped team or a
-lost first row would not. A second oracle one row late must not score 1.0, so that the check can be seen to see an
-off-by-one. The others pin the report's shape, that every number in it is what the scoring functions say, the direction
-of a comparison, that a match is gone before the next is loaded, that the same run writes the same bytes in another
-process with another `PYTHONHASHSEED`, and what the runner refuses.
+macroF1 and alive/dead F1 on every one of the seven matches.
+
+**What the oracle checks, and what it cannot.** It checks the chain from the *loaded match* to the score: the runner,
+`MatchInputs` and the separator rows between the halves, both halves and each one's first and last row, the decoder path
+and the scoring. A row too many or too few at the half time, a lost first row, a half decoded one row late or a team
+swapped on the way would not score 1.0. It does **not** check the link from the DFL file to the truth: the oracle's
+answers and the runner's truth are the same `truth.truth_codes` of the same loaded match, and the oracle never reads
+the tracking, so a mistake in the parse or in `truth_codes` is on both sides and cancels (with H and A swapped inside
+`truth_codes` it still scores 1.0 on all seven matches). That link is covered by A05's checks of the parse against
+kloppy and by frame number (`test_dfl_parser_agrees_with_kloppy`, `test_dfl_second_half_spot_check`), and for the teams
+by `MIN_AGREEMENT` in `test_dfl_truth_conventions`: the nearest player must name the truth's team on more than 60% of the
+alive, ball-visible frames of every match and of each half (it does, at 71% to 82%; with the teams swapped it would be
+at 18% to 29%).
+
+All three scores are asserted, exactly, because each is blind to something another sees: macroF1 counts frames, so it
+sees a single wrong frame anywhere; spellF1 matches whole possessions by IoU, so it forgives a boundary a frame out
+unless the possession is very short; alive/dead F1 sees only dead against alive, so it cannot see a team. A review that
+decoded the second half one row late saw it in macroF1 alone. The oracle's controls on J03WMX show that the check can
+see: one row late (both halves, the second half only, the first half only) is below 1.0 on all three scores, a swapped
+team in the second half leaves alive/dead F1 at exactly 1.0 and takes the other two far below it, and the raw oracle
+against the coarse truth is below 1.0 (the coarse truth is applied).
+
+The others pin the report's shape, that every number in it is what the scoring functions say, the direction of a
+comparison, that a match is gone before the next is loaded, that the same run writes the same bytes in another process
+with another `PYTHONHASHSEED`, that a subset of the matches never replaces a full report, what the runner refuses, and
+that this README names only checks that exist.
 
 ## Limitations
 

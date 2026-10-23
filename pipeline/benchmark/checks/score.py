@@ -480,8 +480,9 @@ def test_t_table_is_the_two_sided_90_percent_quantile():
     assert score.T_95 == {1: 6.314, 2: 2.920, 3: 2.353, 4: 2.132, 5: 2.015, 6: 1.943, 7: 1.895, 8: 1.860, 9: 1.833,
                           10: 1.812}
     assert all(type(value) is float for value in score.T_95.values())
+    assert score.INTERVAL_LEVEL == 0.90, "the level that the runner reports and the printout names"
     for df, value in score.T_95.items():
-        exact = student_quantile(df)
+        exact = student_quantile(df, probability=(1 + score.INTERVAL_LEVEL) / 2)   # the table's level, not a copy of it
         assert abs(value - exact) <= 5.1e-4, "df {}: the table says {}, the density gives {:.5f}".format(
             df, value, exact)
 

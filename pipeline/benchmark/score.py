@@ -55,6 +55,7 @@ IOUS = pm.SPELL_IOUS
 # The two-sided 90% quantiles of Student's t (the 0.95 quantile) by degrees of freedom: a 90% interval for a mean of
 # df + 1 values. Ten degrees of freedom is the last row; the benchmark has 7 matches (6 degrees of freedom).
 T_95 = {1: 6.314, 2: 2.920, 3: 2.353, 4: 2.132, 5: 2.015, 6: 1.943, 7: 1.895, 8: 1.860, 9: 1.833, 10: 1.812}
+INTERVAL_LEVEL = 0.90          # the coverage of t_interval: T_95 holds the (1 + level) / 2 = 0.95 quantiles (checked)
 MAX_FLIP = 16                  # sign_flip_p enumerates 2^n patterns: 65,536 for n = 16, 8 MB of signs
 FLIP_TOLERANCE = 1e-12         # means this close, or a delta this close to 0, are a tie (sign_flip_p, compare)
 METRICS = ("spell_f1_mean", "macro_f1", "alive_dead_f1")     # the scalar scores of pooled() that compare() can take

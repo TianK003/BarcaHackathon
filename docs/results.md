@@ -553,7 +553,8 @@ instead of per file (`configs/nearest_w*.toml`; R000's published files are per f
 floor and not R000's numbers. Reports: `data/runs/benchmark/clean/<stem>.json` and `<stem>.coarse.json` (not
 committed).
 Checks: the oracle (the truth as the prediction) scores spellF1 = macroF1 = alive/dead F1 = 1.0000 on all seven
-matches, which checks the chain from the DFL file to the score, the half time included; see below.
+matches. That checks the chain from the loaded match to the score (runner, inputs, the half time, decoder path,
+scoring), and not the link from the DFL file to the truth, which the oracle shares with the runner; see below.
 
 **Raw truth** (3,061 true possessions, 4.58 per graded minute; `D` is 44.8% of the graded frames). Δ is the config
 minus `nearest_w50`, the first config; the interval is the 90% t interval of the seven matches' deltas, and every
@@ -587,7 +588,8 @@ What the tables say, and what they do not:
   test why.
 - **Neither truth gives the published full-match order** (R000: `smooth50` 0.2433 > `smooth125` 0.2242 > `smooth25`
   0.1996 > `raw` 0.0486). Raw puts `w25` above `w125` (Δ of `w125` against `w25`: −0.0784, [−0.0866, −0.0702], 0 wins
-  of 7), and coarse puts `w125` above `w50`: `w125` is third under the raw truth, second in the published order and
+  of 7; printed by `python pipeline/benchmark/run.py pipeline/benchmark/configs/nearest_w25.toml
+  pipeline/benchmark/configs/nearest_w125.toml --no-write`, with `w25` first, raw truth), and coarse puts `w125` above `w50`: `w125` is third under the raw truth, second in the published order and
   first under the coarse one. This is the clean profile, where the ball is tracked on every frame (on ours it is
   missing on 41% of the graded frames, A02), so the published order is not expected here. Whether the degraded
   profiles reproduce it is the fidelity check of the later tasks.
@@ -606,16 +608,29 @@ What the tables say, and what they do not:
   the organisers' scorer's on all halves as one file (`score.py`); the mean per match is the one the interval is of.
 - **The oracle.** An evidence source equal to the raw truth, decoded with `majority_vote(half_width=0)`, scores exactly
   1.0000 on spellF1, macroF1 and alive/dead F1 on each of the seven matches (3,061 possessions: 511, 500, 402, 456,
-  421, 401 and 370; both halves of each). Two controls: the same oracle one row late scores spellF1 0.9898 and macroF1
-  0.9954 on J03WMX, so an off-by-one shows; the raw oracle against the coarse truth scores spellF1 0.5843 and macroF1
-  0.9581 on J03WMX (511 predicted possessions against 255), so the coarse truth is applied.
+  421, 401 and 370; both halves of each). **What that checks** is the chain from the loaded match to the score: the
+  runner, `MatchInputs`, the separator rows and each half's ends, the decoder path and the scoring. **What it cannot
+  check** is the link from the DFL file to the truth: its answers and the runner's truth are the same
+  `truth.truth_codes` of the same loaded match, so a mistake in the parse or in `truth_codes` is on both sides and
+  cancels (a review swapped H and A inside `truth_codes`, and all seven matches still scored 1.0000). That link rests
+  on A05's checks of the parse against kloppy and by frame number (`test_dfl_parser_agrees_with_kloppy`,
+  `test_dfl_second_half_spot_check`) and, for the teams, on `MIN_AGREEMENT` in `test_dfl_truth_conventions` (the
+  nearest player names the truth's team on 71% to 82% of the alive ball-visible frames of every match and half, and
+  would on 18% to 29% with the teams swapped). All three scores are asserted because they are blind to different
+  things: macroF1 counts frames and sees a single wrong frame; spellF1 matches possessions by IoU and forgives a
+  boundary a frame out; alive/dead F1 cannot see a team. A review that decoded the second half one row late saw it in
+  macroF1 alone. Controls on J03WMX (spellF1 / macroF1 / alive-dead F1): one row late in both halves 0.9898 / 0.9954 /
+  0.9988, in the second half only 0.9941 / 0.9976 / 0.9993, in the first half only 0.9957 / 0.9978 / 0.9995; the teams
+  swapped in the second half 0.4892 / 0.6992 / 1.0000; the raw oracle against the coarse truth 0.5843 / 0.9581 /
+  1.0000 (511 predicted possessions against 255), so the coarse truth is applied.
 
 Runtime: 8 to 10 s for the four configs on all seven matches with the DFL caches warm (about 1 s per config, nearly all
 the rest a cached load per match). The same command twice, and in two processes with different `PYTHONHASHSEED`, writes
 the same bytes (`test_runner_json_identical_across_processes`).
 Verdict: keep as the benchmark's floor on `clean`, not a candidate. It decides nothing about smoothing width until the
-degraded profiles exist and both truths agree. It does show that the runner, the truth and the scoring line up (the
-oracle), and that the choice of truth can reorder the yardsticks.
+degraded profiles exist and both truths agree. It does show that the runner and the scoring line up with the loaded
+match's truth (the oracle; the file-to-truth link is A05's and A06's), and that the choice of truth can reorder the
+yardsticks.
 
 ## Submission log
 

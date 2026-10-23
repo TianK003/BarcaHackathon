@@ -9,7 +9,8 @@ out: what you saw, why it happens, what to do instead. Give it the next free ID 
 0.06 spellF1. It is also the best-covered 5 minutes of the match: the ball is missing on 12% of its frames, against
 40.7% overall and up to 80% per 5-minute block ([A02](results.md#a02--ball-coverage-across-the-match-2026-10-21)).
 And it ranks `smooth125` above `smooth50`, the reverse of the full match. Use it to check correctness, and decide on
-P01 validation with `--bootstrap 1000`.
+P01 validation: per-match t-intervals and the exact sign-flip test of
+[`pipeline/benchmark/run.py`](../pipeline/benchmark/README.md), never a bootstrap.
 
 **T02 — `X` means "repeat my last label" — and at the start of a half, "copy my first label".** Before computing
 spellF1, the scorer forward-fills `X` with the last non-`X` label in the half, and back-fills the head of the half.

@@ -44,6 +44,9 @@ evaluate_configs() is what the team chooses between methods with, so it is built
   printed), floats are rounded to 9 decimals (BLAS summation order differs between machines), keys are sorted and the
   file is LF with an atomic rename. The same inputs, seed and versions give the same bytes, in any process
   (test_runner_json_identical_across_processes).
+* A subset never replaces a full report. The file is <stem>.json for all seven matches, <stem>.coarse.json under the
+  coarse truth, and for any other set of matches (one match, two, a different seven) `.m-<ids sorted, joined by "-">`
+  is added before `.json` (report_path), so `--matches J03WMX` writes <stem>.m-J03WMX.json next to the full report.
 
 What the clean profile is. The tracking exactly as DFL gives it: the ball is present on every frame, so nearest_player
 votes everywhere and majority_vote, which takes D only where nobody voted, labels almost nothing D, where the truth has
@@ -95,7 +98,7 @@ DEFAULT_SEEDS = 3                  # degradation seeds per match; the clean prof
 TRUTHS = ("raw", "coarse")
 REPORT_FOLDER = ("runs", "benchmark")        # <data dir>/runs/benchmark/<profile>/<stem>[.<truth>].json
 DECIMALS = 9                       # floats in a report are rounded to this: BLAS summation order varies by machine
-LEVEL = 0.9                        # score.T_95 holds the two-sided 90% t quantiles
+LEVEL = score.INTERVAL_LEVEL       # the coverage of the t intervals (the printout names it, checks tie T_95 to it)
 METRICS = (("spell_f1_mean", "spellF1"), ("macro_f1", "macroF1"))   # what a comparison reports, ranking metric first
 
 
@@ -152,13 +155,14 @@ def _check_profile(profile):
 
 # -- every config on every match --------------------------------------------------------------------------------------
 
-def evaluate_configs(config_paths, profile=DEFAULT_PROFILE, seeds=DEFAULT_SEEDS, match_ids=None, matches=None,
+def evaluate_configs(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_ids=None, matches=None,
                      calibration=None, truth="raw", data_dir=None, log=print):
     """Run each config on each match and score it; the result holds a JSON-ready report per config.
 
     `config_paths` are TOML files for pipeline.config.load_config; the first is the reference of the comparisons.
     `profile` names how the tracking is made (PROFILES) and `seeds` is how many degradation seeds to run, 0 up to
-    seeds - 1 (the clean profile has none to repeat: its one seed is 0, and a note says so). `match_ids` are the
+    seeds - 1 (None, the default, is DEFAULT_SEEDS). The clean profile has none to repeat: its one seed is 0, and a
+    note says so when a number of seeds was asked for (and is not 1) and not otherwise. `match_ids` are the
     matches, in the order to run them (default: all seven, sources.MATCH_IDS' order); they are read through
     dfl.load_match from `data_dir` (default games.DATA_DIR). `matches` is {id: DflMatch} to use instead of loading (the
     checks pass synthetic ones), `calibration` the Calibration the profile needs (none of the profiles of this task
@@ -180,6 +184,8 @@ def evaluate_configs(config_paths, profile=DEFAULT_PROFILE, seeds=DEFAULT_SEEDS,
     _check_profile(profile)
     if truth not in TRUTHS:
         raise BenchmarkError("truth {!r} is not one of: {}".format(truth, ", ".join(TRUTHS)))
+    asked_for_seeds = seeds is not None
+    seeds = DEFAULT_SEEDS if seeds is None else seeds
     if isinstance(seeds, bool) or not isinstance(seeds, int) or seeds < 1:
         raise BenchmarkError("seeds must be a whole number of at least 1, got {!r}".format(seeds))
     if calibration is not None:
@@ -188,7 +194,7 @@ def evaluate_configs(config_paths, profile=DEFAULT_PROFILE, seeds=DEFAULT_SEEDS,
     ids = _match_ids(match_ids, matches)
     data_dir_used = data_dir or games.DATA_DIR
     seed_list = [0] if profile == CLEAN else list(range(seeds))
-    if profile == CLEAN and seeds != 1:
+    if profile == CLEAN and asked_for_seeds and seeds != 1:
         log("note      profile {} has nothing random to repeat: seeds ignored, seed 0 only".format(CLEAN))
 
     scores = {config.stem: [] for config in configs}
@@ -338,7 +344,7 @@ def _report(config, halves, records, seed_list, profile, truth, git, environment
 
 
 def _versus(first, config, scores):
-    """`config` against `first`, the reference: score.compare (b - a) for each of METRICS, with the interval's verdict."""
+    """`config` against `first`, the reference: score.compare (b - a) for each of METRICS, with the interval's say."""
     digest = hashlib.sha256(first.text.encode("utf-8")).hexdigest()
     versus = {"reference": {"stem": first.stem, "config_sha256": digest}}
     for metric, _ in METRICS:
@@ -406,23 +412,35 @@ def _shown(path):
     return path.replace(os.sep, "/")
 
 
-def report_path(data_dir, profile, stem, truth):
-    """<data dir>/runs/benchmark/<profile>/<stem>.json, or <stem>.<truth>.json for a truth that is not the raw one."""
-    name = stem + ("" if truth == "raw" else "." + truth) + ".json"
-    return os.path.join(data_dir, *REPORT_FOLDER, profile, name)
+def report_path(data_dir, profile, stem, truth, match_ids=None):
+    """<data dir>/runs/benchmark/<profile>/<stem>[.<truth>][.m-<ids>].json: where a report goes, and never over another.
+
+    `.<truth>` is left out for the raw truth. `.m-<the ids, sorted, joined by "-">` is added when `match_ids` are not
+    exactly the registry's seven (a subset, whatever its order), so that a run on one match or two never replaces the
+    report of all seven that the same config wrote before: a full report is the one with neither suffix of its own.
+    """
+    parts = [stem]
+    if truth != "raw":
+        parts.append(truth)
+    if match_ids is not None and set(match_ids) != set(sources.MATCH_IDS):
+        parts.append("m-" + "-".join(sorted(match_ids)))
+    return os.path.join(data_dir, *REPORT_FOLDER, profile, ".".join(parts) + ".json")
 
 
 def write_reports(result, data_dir=None):
     """Write each config's report under `data_dir` (default: the one the run read from); the paths, in order.
 
-    sort_keys, indent 2, ASCII, LF and a final newline; written to a temporary file in the same folder and renamed over
-    the old report (os.replace), so that a run that is interrupted, or a disk that fills, never leaves half a report and
-    never damages the one that was there. A failed write removes its temporary file and raises.
+    The file name carries the truth when it is not the raw one and the matches when they are not all seven
+    (report_path). The text is sort_keys, indent 2, ASCII, LF and a final newline; it is written to a temporary file in
+    the same folder and renamed over the old report (os.replace), so that a run that is interrupted, or a disk that
+    fills, never leaves half a report and never damages the one that was there. A failed write removes its temporary
+    file and raises.
     """
     data_dir = data_dir or result["data_dir"]
+    ids = [record["id"] for record in result["matches"]]
     paths = []
     for entry in result["configs"]:
-        path = report_path(data_dir, result["profile"]["name"], entry["stem"], result["truth"]["name"])
+        path = report_path(data_dir, result["profile"]["name"], entry["stem"], result["truth"]["name"], ids)
         text = json.dumps(entry["report"], sort_keys=True, indent=2, allow_nan=False) + "\n"
         os.makedirs(os.path.dirname(path), exist_ok=True)
         handle, temporary = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".tmp")
@@ -465,13 +483,14 @@ def render(result):
                       labels["predicted"]["D"], labels["true"]["D"]),
                   "          spellF1 by match   " + "  ".join(
                       "{} {}".format(match_id, _number(report["per_match"][match_id]["spell_f1_mean"]))
-                      for match_id in ids),
+                      for match_id in sorted(ids)),
                   "          seconds         {:.1f}".format(seconds)]
-    lines += ["", "{:<22}{:>10}{:>10}{:>15}   {}".format("config", "spellF1", "macroF1", "alive/dead F1",
-                                                         "mean per-match spellF1 [90% t-interval]")]
+    lines += ["", "{:<22}{:>15}{:>15}{:>20}   {}".format(
+        "config", "pooled spellF1", "pooled macroF1", "pooled alive/dead F1",
+        "mean per-match spellF1 [{} t-interval]".format(_level()))]
     for stem, report, _ in reports:
         pooled, interval = report["pooled"], report["t_interval"]["spell_f1_mean"]
-        lines.append("{:<22}{:>10}{:>10}{:>15}   {} {}".format(
+        lines.append("{:<22}{:>15}{:>15}{:>20}   {} {}".format(
             stem, _number(pooled["spell_f1_mean"]), _number(pooled["macro_f1"]), _number(pooled["alive_dead_f1"]),
             _number(interval["mean"]), _bounds(interval)))
 
@@ -484,8 +503,8 @@ def render(result):
             for metric, label in METRICS:
                 fields = report["versus"][metric]
                 lines += _comparison(label, fields, label == METRICS[0][1])
-        lines += ["", "wins and losses are matches whose delta is beyond 1e-12 either way, and an interval excludes 0 "
-                      "only if it clears 0 by more than that.",
+        lines += ["", "wins and losses are matches whose delta is beyond {:g} either way (score.FLIP_TOLERANCE), "
+                      "and an interval excludes 0 only if it clears 0 by more than that.".format(score.FLIP_TOLERANCE),
                   "with {} matches the smallest sign-flip p there can be is {:.4f}; neither it nor the interval "
                   "makes a gap real.".format(len(ids), 2.0 / 2 ** len(ids))]
     return lines
@@ -513,6 +532,11 @@ def _number(value, signed=False):
     return ("{:+.4f}" if signed else "{:.4f}").format(value)
 
 
+def _level():
+    """The coverage of the intervals as the printout names it: "90%"."""
+    return "{:.0%}".format(LEVEL)
+
+
 def _bounds(interval, signed=False):
     """"[low, high]", or "no interval" where there are fewer than two matches to make one of."""
     if interval["low"] is None or interval["high"] is None:
@@ -521,11 +545,11 @@ def _bounds(interval, signed=False):
 
 
 def _interval(interval, excludes=None, signed=False):
-    """"90% t-interval [low, high]" and, for a delta, whether it excludes 0 (by more than the tie tolerance)."""
+    """"<level> t-interval [low, high]" and, for a delta, whether it excludes 0 (by more than the tie tolerance)."""
     bounds = _bounds(interval, signed)
     if interval["low"] is None or interval["high"] is None:
         return bounds
-    text = "90% t-interval " + bounds
+    text = "{} t-interval ".format(_level()) + bounds
     if excludes is None:
         return text
     return text + (" excludes 0" if excludes else " includes 0")
@@ -543,9 +567,9 @@ def main(argv=None):
     parser.add_argument("--profile", default=DEFAULT_PROFILE,
                         help="how the tracking is made: {} (default {})".format(", ".join(sorted(PROFILES)),
                                                                                 DEFAULT_PROFILE))
-    parser.add_argument("--seeds", type=int, default=DEFAULT_SEEDS,
-                        help="degradation seeds per match (default {}; the clean profile has just one)".format(
-                            DEFAULT_SEEDS))
+    parser.add_argument("--seeds", type=int,
+                        help="degradation seeds per match (default {}; the clean profile has just one, and says so "
+                             "if you ask for more)".format(DEFAULT_SEEDS))
     parser.add_argument("--matches", nargs="+", metavar="ID", help="the matches to run, in this order (default: all 7)")
     parser.add_argument("--truth", choices=TRUTHS, default="raw",
                         help="the truth to score against: raw, or coarse (short sandwiched possessions absorbed)")

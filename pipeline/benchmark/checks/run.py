@@ -4,11 +4,15 @@ The runner is what the team chooses between methods with, so what is held agains
 more than arithmetic (score.py's checks own the arithmetic): that what it prints and writes is what the scoring
 functions say, that a config's numbers do not depend on which other configs ran beside it, that the comparison's
 direction is "other minus the first", that the same run gives the same bytes in another process with another hash seed,
-that it refuses what it cannot score before it loads a match and names the source that needs a video, and that the
-oracle, a prediction that is the truth itself, scores 1.0 on every real match (the check of the whole chain, from the
-DFL file to the score, both halves included; --dfl). The matches of the synthetic checks are random_match's (checks/
-inputs.py): two halves of random flags and random tracking, whose score means nothing and whose every number can be
-recomputed here with the scoring functions, which is what the checks do.
+that it refuses what it cannot score before it loads a match and names the source that needs a video, that a subset of
+the matches never replaces a full report, and that the oracle, a prediction that is the truth itself, scores 1.0 on
+every real match (--dfl). The oracle checks the chain from the loaded match to the score (the runner, the inputs and
+their separator rows, both halves, the decoder path and the scoring) and not the link from the DFL file to the truth:
+its answers and the runner's truth are the same truth.truth_codes of the same loaded match, so a mistake in the parse
+or in truth_codes is on both sides and cancels. checks/dfl.py and checks/truth.py cover that link
+(test_dfl_oracle_scores_perfectly says which). The matches of the synthetic checks are random_match's
+(checks/inputs.py): two halves of random flags and random tracking, whose score means nothing and whose every number
+can be recomputed here with the scoring functions, which is what the checks do.
 """
 
 import contextlib
@@ -42,12 +46,15 @@ REPORT_KEYS = {"calibration", "config", "environment", "git", "halves", "labels"
 HALF_KEYS = {"match_id", "half", "seed", "n_gt", "n_pred", "tp", "confusion"}
 ROUNDING = 1e-9                         # reports round their floats to 9 decimals
 HASH_SEEDS = ("1", "2")                 # PYTHONHASHSEED of the two subprocesses of the determinism check
+SUBSET = ".m-RND001-RND002"             # what the file name of a report says of the synthetic matches: not all seven
 ORACLE = """
 scope = "halves"
 
 [[evidence]]
 kind = "oracle"
 lag = {lag}
+half = {half}
+swap = {swap}
 
 [decoder]
 kind = "majority_vote"
@@ -234,15 +241,19 @@ def test_runner_end_to_end_synthetic():
         # The printout: the reference is named, the sign convention is said, and so is the interval's level.
         table = "\n".join(lines)
         for fragment in ("nearest_w50", "nearest_w0", "nearest_w25", "against nearest_w50", "other - nearest_w50",
-                         "positive means", "90% t-interval", "sign-flip p", "spellF1", "macroF1", "alive/dead F1"):
+                         "positive means", "90% t-interval", "sign-flip p", "spellF1", "macroF1", "alive/dead F1",
+                         "pooled spellF1", "pooled macroF1", "pooled alive/dead F1"):
             assert fragment in table, (fragment, table)
+        assert "beyond {:g} either way".format(score.FLIP_TOLERANCE) in table, "the tolerance is the code's, not a copy"
+        assert benchmark_run.LEVEL == score.INTERVAL_LEVEL == 0.9 == reports["nearest_w50"]["t_interval"][
+            "spell_f1_mean"]["level"]
 
         # The files: where they go, and what they are.
         written = benchmark_run.write_reports(result)
         folder = os.path.join(root, "runs", "benchmark", "clean")
-        assert written == [os.path.join(folder, "nearest_w50.json"), os.path.join(folder, "nearest_w0.json"),
-                           os.path.join(folder, "nearest_w25.json")], written
-        assert sorted(os.listdir(folder)) == ["nearest_w0.json", "nearest_w25.json", "nearest_w50.json"], "no .tmp left"
+        names = ["nearest_w50" + SUBSET + ".json", "nearest_w0" + SUBSET + ".json", "nearest_w25" + SUBSET + ".json"]
+        assert written == [os.path.join(folder, name) for name in names], written
+        assert sorted(os.listdir(folder)) == sorted(names), "no .tmp left"
         first_bytes = {}
         for path, entry in zip(written, configs):
             raw = read(path, "rb")
@@ -256,8 +267,7 @@ def test_runner_end_to_end_synthetic():
         assert all(read(path, "rb") == raw for path, raw in first_bytes.items()), "a rewrite changes nothing"
         other_folder = os.path.join(root, "elsewhere")
         assert benchmark_run.write_reports(result, data_dir=other_folder) == [
-            os.path.join(other_folder, "runs", "benchmark", "clean", name) for name in
-            ("nearest_w50.json", "nearest_w0.json", "nearest_w25.json")]
+            os.path.join(other_folder, "runs", "benchmark", "clean", name) for name in names]
 
 
 def test_runner_report_is_written_atomically():
@@ -266,6 +276,7 @@ def test_runner_report_is_written_atomically():
     with tempfile.TemporaryDirectory() as root:
         result = benchmark_run.evaluate_configs([yardstick_path(50)], matches=matches, data_dir=root, log=quiet)
         path = benchmark_run.write_reports(result)[0]
+        assert os.path.basename(path) == "nearest_w50" + SUBSET + ".json", path
         good = read(path, "rb")
         folder = os.path.dirname(path)
         real_replace = os.replace
@@ -279,7 +290,7 @@ def test_runner_report_is_written_atomically():
         finally:
             os.replace = real_replace
         assert read(path, "rb") == good, "a failed write left a damaged report"
-        assert os.listdir(folder) == ["nearest_w50.json"], os.listdir(folder)
+        assert os.listdir(folder) == [os.path.basename(path)], os.listdir(folder)
 
 
 def test_runner_scores_against_the_coarse_truth_when_asked():
@@ -302,7 +313,7 @@ def test_runner_scores_against_the_coarse_truth_when_asked():
             "the coarse truth absorbs short possessions, so it has fewer; this match must reach that branch")
         assert report["pooled"]["n_pred"] == raw["configs"][0]["report"]["pooled"]["n_pred"], "same predictions"
         names = [os.path.basename(p) for p in benchmark_run.write_reports(raw) + benchmark_run.write_reports(coarse)]
-        assert names == ["nearest_w25.json", "nearest_w25.coarse.json"], names
+        assert names == ["nearest_w25" + SUBSET + ".json", "nearest_w25.coarse" + SUBSET + ".json"], names
         assert sorted(os.listdir(os.path.join(root, "runs", "benchmark", "clean"))) == sorted(names), (
             "the two reports must sit side by side, neither replacing the other")
 
@@ -318,9 +329,16 @@ def test_runner_clean_runs_one_seed_and_says_so():
         assert report["seeds"] == [0] and {half["seed"] for half in report["halves"]} == {0}
         assert len(report["halves"]) == 4
         assert any("seed" in line and "clean" in line and "ignored" in line for line in lines), lines
+        quiet_lines = []
+        default = benchmark_run.evaluate_configs([yardstick_path(0)], matches=matches, data_dir=root,
+                                                 log=quiet_lines.append)
+        assert not any("ignored" in line or "seed 0 only" in line for line in quiet_lines), (
+            "no number of seeds was asked for, so there is nothing to say about ignoring one: " + str(quiet_lines))
+        assert default["configs"][0]["report"] == report, "the default is the same run"
         one = benchmark_run.evaluate_configs([yardstick_path(0)], seeds=1, matches=matches, data_dir=root,
-                                             log=lines.append)
+                                             log=quiet_lines.append)
         assert one["configs"][0]["report"] == report
+        assert not any("ignored" in line for line in quiet_lines), "seeds=1 is what clean runs: nothing is ignored"
 
 
 def test_runner_one_match_has_no_interval_and_says_so():
@@ -462,6 +480,61 @@ def test_runner_names_unavailable_source():
         matches["RND001"], match_inputs.clean_atd(matches["RND001"])).homography, "homography", "P01")
 
 
+def test_runner_a_subset_never_replaces_a_full_report():
+    """A run on some of the matches is filed under its own name, so the full report of the config survives it.
+
+    A report of all seven matches is `<stem>.json` (or `<stem>.coarse.json`). Any other set of matches adds
+    `.m-<ids sorted, joined by "->` before `.json`, whatever order they were asked for in; all seven in another order
+    are still all seven. Run on one match, `--matches J03WMX` used to replace R002's seven-match report.
+    """
+    def serve(match_id):
+        return random_match(match_id, seed=sources.MATCH_IDS.index(match_id))
+
+    path = yardstick_path(25)
+    with tempfile.TemporaryDirectory() as root, loading(serve):
+        def written(truth_name="raw", **keywords):
+            result = benchmark_run.evaluate_configs([path], truth=truth_name, data_dir=root, log=quiet, **keywords)
+            [report_file] = benchmark_run.write_reports(result)
+            return os.path.basename(report_file)
+
+        assert written() == "nearest_w25.json"
+        full = os.path.join(root, "runs", "benchmark", "clean", "nearest_w25.json")
+        before = read(full, "rb")
+        assert written(match_ids=["J03WMX"]) == "nearest_w25.m-J03WMX.json"
+        assert written(match_ids=["J03WN1", "J03WMX"]) == "nearest_w25.m-J03WMX-J03WN1.json"
+        assert written(match_ids=["J03WMX", "J03WN1"]) == "nearest_w25.m-J03WMX-J03WN1.json", "order is not in the name"
+        assert written("coarse", match_ids=["J03WMX"]) == "nearest_w25.coarse.m-J03WMX.json"
+        six = [match_id for match_id in sources.MATCH_IDS if match_id != "J03WR9"]
+        assert written(match_ids=six) == "nearest_w25.m-" + "-".join(sorted(six)) + ".json", "six is not seven"
+        assert read(full, "rb") == before, "a subset replaced the full report"
+        assert written(match_ids=list(reversed(sources.MATCH_IDS))) == "nearest_w25.json", "all seven, in any order"
+        assert written("coarse") == "nearest_w25.coarse.json"
+        assert len(os.listdir(os.path.dirname(full))) == 6, sorted(os.listdir(os.path.dirname(full)))
+    # The name by itself: no ids given is no claim about the matches, and the registry's own ids are all seven.
+    assert os.path.basename(benchmark_run.report_path("d", "clean", "s", "raw")) == "s.json"
+    assert os.path.basename(
+        benchmark_run.report_path("d", "clean", "s", "coarse", ["J03WMX"])) == "s.coarse.m-J03WMX.json"
+    assert os.path.basename(benchmark_run.report_path("d", "gaps", "s", "raw", sources.MATCH_IDS)) == "s.json"
+
+
+def test_runner_readme_names_checks_and_numbers_that_exist():
+    """What the benchmark README quotes of the code is what the code has: the checks it names, the tolerance, the level.
+
+    A stale name is how a document claims a check that no longer exists, or never did. Every test_* name in the README
+    must be a check the harness collects; the tolerance and the interval level are the ones in score.py; the file naming
+    for a subset and the MIN_AGREEMENT that it points to are there.
+    """
+    from pipeline.benchmark import selftest
+    from pipeline.benchmark.checks import truth as truth_checks
+    readme = read(os.path.join(ROOT, "pipeline", "benchmark", "README.md"))
+    known = {name for name, _ in selftest.collect()}
+    named = set(re.findall(r"\btest_[a-z0-9_]+\b", readme))
+    assert "test_dfl_oracle_scores_perfectly" in named and named <= known, sorted(named - known)
+    assert "{:g}".format(score.FLIP_TOLERANCE) in readme and "score.FLIP_TOLERANCE" in readme
+    assert "{:.0%}".format(score.INTERVAL_LEVEL) in readme
+    assert ".m-" in readme and "MIN_AGREEMENT" in readme and truth_checks.MIN_AGREEMENT == 0.6 and "60%" in readme
+
+
 # -- one match at a time, and in what order ---------------------------------------------------------------------------
 
 def test_runner_holds_one_match_at_a_time_and_in_the_order_given():
@@ -484,9 +557,16 @@ def test_runner_holds_one_match_at_a_time_and_in_the_order_given():
         return match
 
     ids = ["J03WOH", "J03WMX", "J03WR9"]
+    lines = []
     with tempfile.TemporaryDirectory() as root, loading(serve):
         result = benchmark_run.evaluate_configs([yardstick_path(50), yardstick_path(0)], match_ids=ids, data_dir=root,
-                                                log=quiet)
+                                                log=lines.append)
+    by_match = [line for line in lines if "spellF1 by match" in line]
+    deltas = [line for line in lines if line.strip().startswith("per match") and "spellF1 mean" not in line]
+    assert len(by_match) == 2 and len(deltas) == 1, lines
+    for line in by_match + deltas:
+        shown = re.findall(r"J03W[A-Z0-9]{2}", line)
+        assert shown == sorted(ids), "scores by match and deltas by match are both in id order: " + line
     assert [name for name, _ in made] == ids, "each match is loaded once, in the order given"
     for entry in result["configs"]:
         assert [record["id"] for record in entry["report"]["matches"]] == ids
@@ -519,15 +599,18 @@ def test_runner_main_runs_prints_and_writes():
         code, out = run_main(first, second, "--data-dir", root, "--matches", "J03WMX", "J03WN1", "J03WOH")
         assert code == 0, out
         folder = os.path.join(root, "runs", "benchmark", "clean")
-        assert sorted(os.listdir(folder)) == ["nearest_w25.json", "nearest_w50.json"], out
-        assert "nearest_w50.json" in out and "against nearest_w50" in out and "3 matches" in out, out
-        report = strict_json(read(os.path.join(folder, "nearest_w25.json")))
+        subset = ".m-J03WMX-J03WN1-J03WOH"
+        assert sorted(os.listdir(folder)) == ["nearest_w25" + subset + ".json", "nearest_w50" + subset + ".json"], out
+        assert "nearest_w50" + subset + ".json" in out and "against nearest_w50" in out and "3 matches" in out, out
+        assert "ignored" not in out, "no --seeds was given: nothing to say about seeds"
+        report = strict_json(read(os.path.join(folder, "nearest_w25" + subset + ".json")))
         assert [record["id"] for record in report["matches"]] == ["J03WMX", "J03WN1", "J03WOH"]
         assert report["versus"]["reference"]["stem"] == "nearest_w50" and report["seeds"] == [0]
 
         code, out = run_main(first, "--data-dir", root, "--matches", "J03WMX", "--truth", "coarse", "--seeds", "5")
         assert code == 0 and "ignored" in out, out
-        assert sorted(os.listdir(folder)) == ["nearest_w25.json", "nearest_w50.coarse.json", "nearest_w50.json"]
+        assert sorted(os.listdir(folder)) == sorted([
+            "nearest_w25" + subset + ".json", "nearest_w50" + subset + ".json", "nearest_w50.coarse.m-J03WMX.json"])
 
         other = os.path.join(root, "nowhere")
         code, out = run_main(first, "--data-dir", other, "--matches", "J03WMX", "--no-write")
@@ -584,7 +667,8 @@ def test_runner_json_identical_across_processes():
         folders["here"] = os.path.join(here, "runs", "benchmark", "clean")
 
         names = sorted(os.listdir(folders["here"]))
-        assert names == ["nearest_w0.json", "nearest_w125.json", "nearest_w50.json"], names
+        suffix = ".m-RND001-RND002-SYN001.json"
+        assert names == ["nearest_w0" + suffix, "nearest_w125" + suffix, "nearest_w50" + suffix], names
         for label, folder in folders.items():
             assert sorted(os.listdir(folder)) == names, (label, os.listdir(folder))
         for name in names:
@@ -599,33 +683,65 @@ def test_runner_json_identical_across_processes():
 # -- the oracle -------------------------------------------------------------------------------------------------------
 
 def test_dfl_oracle_scores_perfectly():
-    """A prediction that is the truth itself scores 1.0 on every real match: the whole chain, both halves included.
+    """The truth itself as the prediction scores 1.0 on every real match: the chain from the loaded match to the score.
 
     An evidence source `oracle` (registered here and removed afterwards) says home on the frames the truth calls H,
     away on the ones it calls A, and nothing on the rest; majority_vote with half_width = 0 and fallback D turns that
     into the truth again. The truth reaches it by closure, from truth.truth_codes, never through the inputs (a
-    MatchInputs holds none). Run through evaluate_configs on the clean profile, so through load_match, MatchInputs,
-    predict, score_halves and pooled, spellF1, macroF1 and alive/dead F1 must each be exactly 1.0 on each of the seven
-    matches and pooled: a row too many or too few at the half time, a team swapped, a first row dropped or a frame
-    taken for its neighbour is not 1.0. Two controls show that this is so: the same oracle one row late scores
-    macroF1 below 1.0, and the raw oracle against the coarse truth scores below 1.0 too (the coarse truth is applied).
+    MatchInputs holds none). Run through evaluate_configs on the clean profile, spellF1, macroF1 and alive/dead F1 must
+    each be exactly 1.0 on each of the seven matches and pooled.
+
+    What it covers is everything between the loaded DflMatch and the score: the runner, MatchInputs, the separator rows
+    between the halves and each half's own first and last row, the decoder path (predict, the blocks, majority_vote),
+    score_halves and pooled. A row too many or too few at half time, a first row dropped, a half decoded one row late
+    or a team swapped on the way there is not 1.0.
+
+    What it cannot cover is the link from the DFL file to the truth. The oracle's answers and the runner's truth are the
+    same truth.truth_codes of the same loaded match, and the oracle never reads the tracking, so a mistake in the parse
+    or in truth_codes is on both sides and cancels (with H and A swapped inside truth_codes it still scores 1.0 on all
+    seven matches). That link is checked elsewhere: the parse against kloppy and by frame number
+    (test_dfl_parser_agrees_with_kloppy and test_dfl_second_half_spot_check, A05), and the teams by MIN_AGREEMENT in
+    test_dfl_truth_conventions (the nearest player must name the truth's team on more than 60% of the alive
+    ball-visible frames of every match and of each half: it does, at 71% to 82%, and with the teams swapped it would
+    sit at 18% to 29%).
+
+    Why all three scores are asserted, and exactly. Each is blind to something that another sees. macroF1 counts frames,
+    so it sees a single wrong frame wherever it is; spellF1 matches whole possessions by IoU (down to 0.7), so a
+    boundary a frame out is forgiven unless the possession is very short; alive/dead F1 sees only dead against alive,
+    so it cannot see a team at all. A review of this check decoded the second half one row late, and only macroF1 fell
+    for that mutant, so a check of one score alone would have passed it. The controls below, on J03WMX, are mutants of
+    the oracle itself: in the one-row slips measured here all three scores fall (by 0.0005 to 0.0102), and a swapped
+    team leaves alive/dead F1 at exactly 1.0 while the other two fall far, so no one of them can stand for the rest.
     """
     from pipeline import evidence as evidence_stage
     from pipeline.contracts import Evidence, no_opinion
     answers = {match_id: truth.truth_codes(real_match(match_id))[0] for match_id in sources.MATCH_IDS}
 
-    def oracle(run, lag=0):
-        codes = answers[run.inputs.game]
-        if lag:
-            codes = np.concatenate([np.full(lag, pm.X, dtype=np.int8), codes[:-lag]])
+    def oracle(run, lag=0, half=0, swap=False):
+        """The truth of run.inputs.game; in half `half` (0: both) `lag` rows late, and/or with the teams swapped."""
+        codes = answers[run.inputs.game].copy()
+        for number, start, stop in run.inputs.graded:
+            if half in (0, number):
+                piece = codes[start:stop]
+                if lag:
+                    piece = np.concatenate([np.full(lag, pm.X, dtype=np.int8), piece[:-lag]])
+                if swap:
+                    piece = np.where(piece == pm.H, pm.A, np.where(piece == pm.A, pm.H, piece)).astype(np.int8)
+                codes[start:stop] = piece
         home = no_opinion(run.inputs.n_frames)
         home[codes == pm.H] = 1.0
         home[codes == pm.A] = 0.0
         return Evidence(alive=no_opinion(run.inputs.n_frames), home=home)
 
     with registered(evidence_stage.REGISTRY, oracle=oracle), tempfile.TemporaryDirectory() as root:
-        exact = write_text(root, "oracle_exact.toml", ORACLE.format(lag=0))
-        late = write_text(root, "oracle_late.toml", ORACLE.format(lag=1))
+        def config(name, lag=0, half=0, swap=False):
+            return write_text(root, name + ".toml", ORACLE.format(lag=lag, half=half, swap=str(swap).lower()))
+
+        def on_j03wmx(path, truth_name="raw"):
+            result = benchmark_run.evaluate_configs([path], match_ids=["J03WMX"], truth=truth_name, log=quiet)
+            return result["configs"][0]["report"]["per_match"]["J03WMX"]
+
+        exact = config("oracle_exact")
         result = benchmark_run.evaluate_configs([exact], log=quiet)
         report = result["configs"][0]["report"]
         assert [record["id"] for record in report["matches"]] == list(sources.MATCH_IDS)
@@ -644,17 +760,25 @@ def test_dfl_oracle_scores_perfectly():
             "the oracle must predict the truth's stoppages: " + str(report["labels"]))
         assert report["labels"]["predicted"] == report["labels"]["true"] | {"X": 0.0}
 
-        # Control 1: one row late is an off-by-one, and must not score 1.0.
-        slipped = benchmark_run.evaluate_configs([late], match_ids=["J03WMX"], log=quiet)["configs"][0]["report"]
-        row = slipped["per_match"]["J03WMX"]
-        print("      one row late, J03WMX:   spellF1 {:.4f}   macroF1 {:.6f}".format(
-            row["spell_f1_mean"], row["macro_f1"]))
-        assert row["macro_f1"] < 1.0, "an oracle one frame late must not score 1.0: the check cannot see an off-by-one"
+        # Controls: a slip of one row, or a swapped team, is not 1.0, and which score sees it is what it is.
+        print("      controls on J03WMX         spellF1   macroF1 alive/dead")
+        for name, kind in (("both halves one row late", dict(lag=1)), ("second half one row late", dict(lag=1, half=2)),
+                           ("first half one row late", dict(lag=1, half=1))):
+            row = on_j03wmx(config("oracle_late", **kind))
+            print("      {:<26} {:>8.4f} {:>9.4f} {:>10.4f}".format(
+                name, row["spell_f1_mean"], row["macro_f1"], row["alive_dead_f1"]))
+            assert row["spell_f1_mean"] < 1.0 and row["macro_f1"] < 1.0 and row["alive_dead_f1"] < 1.0, (
+                "{}: an oracle one frame late must not score 1.0 on any of the three: the check could not see an "
+                "off-by-one ({})".format(name, row))
+        row = on_j03wmx(config("oracle_swapped", half=2, swap=True))
+        print("      {:<26} {:>8.4f} {:>9.4f} {:>10.4f}".format(
+            "teams swapped, second half", row["spell_f1_mean"], row["macro_f1"], row["alive_dead_f1"]))
+        assert row["alive_dead_f1"] == 1.0, "alive/dead F1 cannot see a team"
+        assert row["spell_f1_mean"] < 0.9 and row["macro_f1"] < 0.9, "a swapped half must be seen by the other two"
 
-        # Control 2: against the coarse truth, the raw oracle is no longer perfect (its short possessions are absorbed).
-        coarse = benchmark_run.evaluate_configs([exact], match_ids=["J03WMX"], truth="coarse", log=quiet)
-        row = coarse["configs"][0]["report"]["per_match"]["J03WMX"]
-        print("      raw oracle, coarse truth, J03WMX:   spellF1 {:.4f}   macroF1 {:.4f}   "
-              "possessions {} against {}".format(row["spell_f1_mean"], row["macro_f1"], row["n_pred"], row["n_gt"]))
+        # Against the coarse truth the raw oracle is no longer perfect (its short possessions are absorbed there).
+        row = on_j03wmx(exact, "coarse")
+        print("      raw oracle, coarse truth   {:>8.4f} {:>9.4f} {:>10.4f}   possessions {} against {}".format(
+            row["spell_f1_mean"], row["macro_f1"], row["alive_dead_f1"], row["n_pred"], row["n_gt"]))
         assert row["macro_f1"] < 1.0 and row["n_gt"] < row["n_pred"], "the coarse truth was not applied"
     assert "oracle" not in evidence_stage.REGISTRY, "the temporary oracle must be gone"
