@@ -24,9 +24,8 @@ import numpy as np
 from pipeline.benchmark import calibration, degrade, dfl
 from pipeline.benchmark import inputs as match_inputs
 from pipeline.benchmark.checks.common import (MADE_UP_D, MADE_UP_MEAN, MADE_UP_MU, MADE_UP_SPEED_NAN,
-                                              MADE_UP_WRONG_TEAM, NAN_RUNS, NotRun, ball_bytes, made_up_calibration,
-                                              real_match, steady_match)
-from pipeline.benchmark.checks.inputs import leaks
+                                              MADE_UP_WRONG_TEAM, NAN_RUNS, NotRun, ball_bytes, leaks,
+                                              made_up_calibration, real_match, steady_match)
 from pipeline.selftest import expect_error
 
 # Params
@@ -213,10 +212,11 @@ def test_slot_use_counts_what_it_says():
 def test_tracking_parameters_are_worked_out_from_the_calibration():
     """d from the frames with more than 18 present, the lengths in frames at the match's rate, mu from both.
 
-    The made-up Calibration has, over both halves, 50 frames with 22 present, 30 with 20, 20 with 19 and 12 with 18 or
-    fewer: the last are left out (CAP is a strict bound, 18 itself is in the tail), so d = 1 - 20.8 / 22 = 3 / 55. Its
-    tracklets are 0.4, 1, 2, 3.2 and 4 s: 10, 25, 50, 80 and 100 frames at 25 Hz, mean 53, and 20, 50, 100, 160 and 200
-    at 50 Hz. A lost span has the mean mu = 53 * d / (1 - d) = 159 / 52 frames."""
+    The made-up Calibration has, over both halves (PRESENT_COUNTS), 290 frames with 22 present, 174 with 20, 116 with 19
+    and 60 with 18 or fewer (30 with 18, 18 with 10 and 12 with 7): the last are left out (CAP is a strict bound, 18
+    itself is in the tail), so d = 1 - 20.8 / 22 = 3 / 55. Its tracklets are 0.4, 1, 2, 3.2 and 4 s: 10, 25, 50, 80 and
+    100 frames at 25 Hz, mean 53, and 20, 50, 100, 160 and 200 at 50 Hz. A lost span has the mean mu = 53 * d / (1 - d)
+    = 159 / 52 frames."""
     calibration = made_up_calibration()
     assert degrade.CAP == 18
     assert abs(degrade.lost_share(calibration.present_counts) - 3 / 55) < 1e-12
@@ -1798,6 +1798,108 @@ def test_smoothing_is_a_centred_moving_average_inside_each_piece():
     expect_error(ValueError, lambda: degrade.smoothed(run, 0), "window", "odd")
 
 
+# -- the order of the parts under the cap -----------------------------------------------------------------------------
+
+def moving_cap_match(ball, rows=(60, 40)):
+    """cap_match's 22 players on their line, each wobbling in y by an irregular amount of at most 0.27 m, so that the
+    smoothing and the speeds have something to say; the ball is `ball` (cap_match's). The wobble of a player on a row is
+    0.004 * (((7 * row + 3 * player) % 11) - 5) / 5 of the pitch's width."""
+    base = cap_match(ball, rows=rows)
+    xy = np.array(base.players_xy)
+    for _, start, stop in base.graded:
+        for player in range(xy.shape[1]):
+            for row in range(stop - start):
+                xy[start + row, player, 1] = 0.5 + 0.004 * (((7 * row + 3 * player) % 11) - 5) / 5
+    xy.setflags(write=False)
+    return dataclasses.replace(base, players_xy=xy)
+
+
+def test_cap_cuts_the_smoothing_and_the_speeds_at_the_drops():
+    """A piece that the cap cuts is smoothed, and has its speed taken, on its own rows: nothing crosses a drop.
+
+    22 players on a line, each wobbling in y (moving_cap_match), the ball on column 9, and a walk with nobody lost (d =
+    0: a player is one span for the whole half, so every cut is the cap's). Our counts are 16 on rows 10-19, 17 on rows
+    30-35, 14 on rows 45-49 and 10 on rows 50-54 of half 1, and 15 on rows 5-11 of half 2: the farthest players are
+    dropped on those rows and come back as new pieces. Every tracklet of the profile is a piece of the cap as the
+    reference (reference_cap, one row at a time) has it; on its rows the positions of its slot are the 5-frame centred
+    moving average of the piece's own rows, the window shrinking to them at the drop (smoothed_plain), and its speed is
+    NaN on its first row, which for a piece that follows a drop is the row after it, and the step from the row before,
+    in m/s, on the others. The scene is not blind to a crossing: for every piece that follows a drop, the average of the
+    whole uncapped half differs from the piece's on the first rows after the drop, and a speed taken across the drop
+    would be finite where this one is NaN. (A smoothing and a speed taken over the uncapped piece and cut to the rows
+    the cap leaves fail it; so does anything that moves them to before the cap.)"""
+    match = moving_cap_match(lambda half, row: (10 / 32, 0.5))
+    view = degrade.tracking_view(match)
+    parameters = degrade.tracking_parameters([10 ** 9], 0.0, smooth=5)
+    runs = {1: [(10, 20, 16), (30, 36, 17), (45, 50, 14), (50, 55, 10)], 2: [(5, 12, 15)]}
+    limits = {half: limit_for(view, half, runs[half]) for half in (1, 2)}
+    xy, speed, records, counts = degrade.degraded_players(view, parameters, 0, limits)
+    length, width = view.pitch
+    cuts = 0
+    for half, start, stop in view.graded:
+        expected = reference_cap(view, half, whole_halves(view, half), limits[half])[0]
+        assert sorted((t.start, t.player, t.stop) for t in records[half]) == [(f, p, l) for f, p, l, _ in expected]
+        assert counts[half]["capped_frames"] == sum(last - first for first, last, _ in runs[half])
+        for t in records[half]:
+            rows = view.players_xy[t.start:t.stop, t.player].tolist()
+            piece = smoothed_plain(rows, 5)
+            assert np.allclose(xy[t.start:t.stop, t.slot], piece, rtol=1e-12, atol=1e-12), (half, t)
+            assert math.isnan(speed[t.start, t.slot]), "the first row of a piece has no step: {}".format((half, t))
+            for row in range(t.start + 1, t.stop):
+                dx = (xy[row, t.slot, 0] - xy[row - 1, t.slot, 0]) * length
+                dy = (xy[row, t.slot, 1] - xy[row - 1, t.slot, 1]) * width
+                assert abs(speed[row, t.slot] - math.hypot(dx, dy) * view.fps) < 1e-9, (half, t, row)
+            if t.start > start:
+                cuts += 1
+                whole = smoothed_plain(view.players_xy[start:stop, t.player].tolist(), 5)
+                assert not np.allclose(whole[t.start - start:t.start - start + 2], piece[:2], atol=1e-6), (
+                    "a crossing of the drop would show in this piece's first rows", half, t)
+    assert cuts >= 20, cuts
+
+
+def test_cap_is_applied_to_the_pieces_after_the_episodes_and_leaves_their_counts_alone():
+    """The episodes are drawn and counted on the players as the walk has them, and the cap drops pieces from what they
+    leave: an onset on a capped row is still an onset, and its episode still an episode.
+
+    Six players (pairs_match): home 1 and away 4 are 1 m apart through rows 100-899 of half 1, so every onset in them
+    finds that pair, and the ball is at the far corner, by away 5. Our count is 3 on those rows, so the three nearest
+    players stay (away 5, away 3 and home 2) and the pair is dropped, both of them, from row 100 to row 899. With the
+    cap after the episodes, the onsets, episodes, skips and episode frames are those of the same half with no cap, and
+    those of the reference (reference_episodes, one onset at a time, over the pairs that the walk's spans hold); and
+    the tracklets are the reference cap's (reference_cap) over the reference's pieces, each in the pool that carries it:
+    an episode that starts on a capped row is counted and never shows, and what shows of one that runs past row 899 is
+    the piece from row 900. A cap taken first would not leave the pair there to be found, and count fewer episodes. The
+    scene has onsets to see this: over four seeds, more than 20 episodes and 40 onsets that fall on capped rows."""
+    base = pairs_match([(1, 100, 900, [(1, 4, 1 / 128)])])
+    ball = np.empty(base.ball_xy.shape)
+    ball[:] = (0.875, 0.75)
+    ball.setflags(write=False)
+    match = dataclasses.replace(base, ball_xy=ball)
+    view = degrade.tracking_view(match)
+    parameters = episode_parameters()
+    start, stop = match.graded[0][1:]
+    limit = limit_for(view, 1, [(100, 900, 3)])
+    keys = ("onsets", "episodes", "skipped_far", "skipped_overlap", "episode_frames")
+    episodes = capped_onsets = 0
+    for seed in range(4):
+        free_pieces, free_counts = reference_episodes(view, 1, degrade.walk_spans(view, 1, parameters, seed),
+                                                      parameters, seed)
+        plain = degrade.choose_half(view, 1, parameters, seed)
+        got = degrade.choose_half(view, 1, parameters, seed, limit)
+        assert {key: plain.counts[key] for key in keys} == free_counts, (seed, plain.counts)
+        assert {key: got.counts[key] for key in keys} == free_counts, (seed, got.counts, free_counts)
+        shown, cap_counts = reference_cap(view, 1, free_pieces, limit)
+        assert sorted((t.start, t.player, t.stop, int(t.slot >= degrade.HOME_SLOTS)) for t in got.tracklets) == shown
+        assert {key: got.counts[key] for key in cap_counts} == cap_counts, (seed, got.counts, cap_counts)
+        assert {t.start for t in got.tracklets if is_carried(t, view)} <= {900}, "an episode shows only past the cap"
+        assert any(is_carried(t, view) for t in plain.tracklets) or not free_counts["episodes"]
+        uniform = np.random.default_rng([seed, view.match_index, 2, 1]).random(stop - start)
+        rate = parameters.onset_rate
+        capped_onsets += sum(1 for row in range(100, 900) if uniform[row] < rate)
+        episodes += free_counts["episodes"]
+    assert episodes > 20 and capped_onsets > 40, (episodes, capped_onsets)
+
+
 def test_tracking_parameters_hold_the_new_parts():
     """Episodes in frames from seconds at the rate, their mean, the NaN runs, the targets, the scale and the window.
 
@@ -2070,10 +2172,63 @@ def test_second_difference_shape_counts_what_it_says():
 # of the 7 DFL matches at s = 1.0, and the share in ours (Calibration.wrong_team_share).
 RECORDED_OBSERVED = (39756, 1002644)
 RECORDED_TARGET = 0.105391764
-# The one measurement that TRACKED_SCALE was worked out from (docs/results.md R004b, 2026-10-23): the pooled tracklet
+# The two measurements that TRACKED_SCALE was worked out from (docs/results.md R004b, 2026-10-23): the pooled tracklet
 # median, in seconds, of tracking v2 at lambda = 1 with the shortest-piece rule in, seed 0, over the 7 DFL matches laid
-# end to end.
+# end to end, and ours' tracklet median (the Calibration's, A09).
 RECORDED_MEDIAN_S = 20.22
+RECORDED_OURS_MEDIAN_S = 41.28
+
+
+def tracked_scale_from_the_record():
+    """lambda as it was worked out once: ours' tracklet median over the profile's at lambda = 1, to 3 decimals."""
+    return round(RECORDED_OURS_MEDIAN_S / RECORDED_MEDIAN_S, 3)
+
+
+def test_tracked_scale_is_the_frozen_one_and_follows_from_the_recorded_measurements():
+    """TRACKED_SCALE is 2.042, and 2.042 is what the two recorded measurements give: 41.28 / 20.22 = 2.0415..., to 3
+    decimals. Only recorded constants are compared, none measured, so the default run pins the frozen constant: it
+    moves with a change of the code that nobody meant to be one, or with a retune towards a gate, a WARN or a score
+    (R004b says never), and a moved constant fails here and says which one. The profile reads it and the shortest piece
+    when it is called (calibrated_parameters), and degrade.MIN_PIECE_FRAMES is A09's 8 frames."""
+    assert abs(RECORDED_OURS_MEDIAN_S / RECORDED_MEDIAN_S - 2.0415) < 5e-5
+    assert tracked_scale_from_the_record() == 2.042
+    assert degrade.TRACKED_SCALE == tracked_scale_from_the_record() == 2.042, (
+        "TRACKED_SCALE is frozen: it was worked out once, from 41.28 s and 20.22 s, and is never touched again",
+        degrade.TRACKED_SCALE)
+    assert degrade.MIN_PIECE_FRAMES == 8
+    profile = degrade.calibrated_parameters(made_up_calibration(), 25)
+    assert profile.tracked_scale == 2.042 and profile.min_piece == 8
+
+
+def test_calibrated_parameters_read_the_scale_and_the_shortest_piece_when_called():
+    """lambda and the shortest piece are read from degrade.TRACKED_SCALE and MIN_PIECE_FRAMES at the call, as the scale
+    of the episodes and the smoothing window are from WRONG_TEAM_SCALE and SMOOTH_WINDOW: a default argument is bound
+    when the module loads, and a constant patched afterwards would silently keep its old value.
+
+    With the four constants patched, calibrated_parameters and the tracking profile (degrade, whose record says what
+    its parameters were) take the patched ones; an argument still wins; and with the constants put back the profile's
+    are the frozen ones again."""
+    cal = made_up_calibration()
+    view = degrade.tracking_view(steady_match())
+    names = ("TRACKED_SCALE", "MIN_PIECE_FRAMES", "WRONG_TEAM_SCALE", "SMOOTH_WINDOW")
+    saved = {name: getattr(degrade, name) for name in names}
+    try:
+        for name, value in zip(names, (1.5, 3, 1.0, 3)):
+            setattr(degrade, name, value)
+        patched = degrade.calibrated_parameters(cal, 25)
+        assert (patched.tracked_scale, patched.min_piece, patched.scale, patched.smooth) == (1.5, 3, 1.0, 3)
+        assert patched.lengths.tolist() == [15, 38, 75, 120, 150], "the patched lambda is applied to the lengths"
+        explicit = degrade.calibrated_parameters(cal, 25, tracked_scale=1.0, min_piece=0)
+        assert (explicit.tracked_scale, explicit.min_piece) == (1.0, 0), "an argument wins over the constant"
+        _, info = degrade.degrade(view, "tracking", cal, 0)
+        assert (info["players"]["tracked_scale"], info["players"]["min_piece_frames"]) == (1.5, 3)
+        assert (info["players"]["scale"], info["players"]["smooth_window"]) == (1.0, 3)
+    finally:
+        for name, value in saved.items():
+            setattr(degrade, name, value)
+    again = degrade.calibrated_parameters(cal, 25)
+    assert (again.tracked_scale, again.min_piece) == (saved["TRACKED_SCALE"], saved["MIN_PIECE_FRAMES"])
+    assert (again.scale, again.smooth) == (saved["WRONG_TEAM_SCALE"], saved["SMOOTH_WINDOW"])
 
 
 def test_data_tracking_constants_follow_from_the_measurements():
@@ -2084,23 +2239,27 @@ def test_data_tracking_constants_follow_from_the_measurements():
     they are not there. Three rules were set before anything was measured, and this applies them to the code as it is:
     (1) smoothing: the players' second-difference RMS of the 7 clean matches (calibration.player_stats' own statistic,
     from each kick-off to the end of the graded block, pooled by sums of squares) against
-    Calibration.player_jitter_rms_m:
-    SMOOTH_WINDOW is not 0 if and only if DFL's is more than twice ours; (2) the scale: the observable wrong-team share
-    (player_stats on the degraded match, seed 0, the 7 matches pooled by sums) at s = 1.0 was not within 0.03 of ours,
-    so WRONG_TEAM_SCALE is s = 1.0 rescaled once by target / observed (to 3 decimals): the constant is compared with
-    that one recorded measurement (RECORDED_OBSERVED, RECORDED_TARGET), and not with a scale worked out again from this
-    run's, which it would follow wherever the code went. At the frozen scale the share must be within 0.03 of ours,
-    the gate's own band, measured now. It prints both, per match and pooled, the degraded players' jitter after the
-    smoothing beside DFL's and ours, what the jitter is made of (its median, 99th percentile and the share of its
-    squares in rare jumps) and the wrong-team episodes that player_stats sees in the degraded matches beside ours
-    (information). (3) the scale of the tracked spans: the walk draws its spans from our final tracklets, which already
-    hold the cuts that the cap and the episodes add, so TRACKED_SCALE is lambda = ours' tracklet median (the
-    Calibration's) over the pooled median of this profile at lambda = 1 with the shortest-piece rule in (seed 0, the 7
-    matches laid end to end, as fidelity pools them), to 3 decimals, once: the constant is compared with the recorded
-    measurement (RECORDED_MEDIAN_S), the measurement is made again here and must reproduce it (the code is the code that
-    it was made with), and the median, the share of the frames lost and the pieces dropped at the frozen lambda are
-    printed (information). The first scale is measured on version 1's players (no cap, no rule, lambda 1) and the
-    frozen one, with the tracklet median, on the profile's.
+    Calibration.player_jitter_rms_m: SMOOTH_WINDOW is not 0 if and only if DFL's is more than twice ours, and the
+    smoothing lowers the pooled RMS of the profile's own draws (smooth=0 against the profile's, the same pieces and the
+    same triples; not against the clean players, whose RMS the cuts change as much as the smoothing does: T35); (2) the
+    scale: the observable wrong-team share (player_stats on the degraded match, seed 0, the 7 matches pooled by sums) at
+    s = 1.0 was not within 0.03 of ours, so WRONG_TEAM_SCALE is s = 1.0 rescaled once by target / observed (to 3
+    decimals): the constant is compared with that one recorded measurement (RECORDED_OBSERVED, RECORDED_TARGET), and not
+    with a scale worked out again from this run's, which it would follow wherever the code went. At the frozen scale the
+    share must be within 0.03 of ours, the gate's own band, measured now. It prints both, per match and pooled, the
+    degraded players' jitter after the smoothing beside DFL's and ours, what the jitter is made of (its median, 99th
+    percentile and the share of its squares in rare jumps) and the wrong-team episodes that player_stats sees in the
+    degraded matches beside ours (information). (3) the scale of the tracked spans: the walk draws its spans from our
+    final tracklets, which already hold the cuts that the cap and the episodes add, so TRACKED_SCALE is lambda = ours'
+    tracklet median (the Calibration's) over the pooled median of this profile at lambda = 1 with the shortest-piece
+    rule in (seed 0, the 7 matches laid end to end, as fidelity pools them), to 3 decimals, once: the constant is
+    compared with the recorded measurement (RECORDED_MEDIAN_S), the measurement is made again here and must reproduce it
+    (the code is the code that it was made with), and the median, the share of the frames lost and the pieces dropped at
+    the frozen lambda are printed (information). The first scale is measured on version 1's players (no cap, no rule,
+    lambda 1) and the frozen one, with the tracklet median, on the profile's. The frozen scale of the tracked spans is
+    asserted first, against the recorded constants alone (the synthetic
+    test_tracked_scale_is_the_frozen_one_and_follows_from_the_recorded_measurements asserts it too), so that a moved
+    constant is reported as that.
     """
     from pipeline.benchmark import sources
     for match_id in sources.MATCH_IDS:
@@ -2108,9 +2267,13 @@ def test_data_tracking_constants_follow_from_the_measurements():
             if not os.path.isfile(sources.local_path(match_id, kind)):
                 raise NotRun("{} is not downloaded ({}); {} to fetch the DFL matches".format(
                     match_id, kind, dfl.FETCH_ADVICE))
+    # The frozen scale of the tracked spans first: it is compared with recorded constants only, so that a constant that
+    # has moved is reported as that, and not as whatever else a different scale makes of the measurements below.
+    assert degrade.TRACKED_SCALE == tracked_scale_from_the_record() == 2.042, (
+        "TRACKED_SCALE is frozen at the value worked out once from the recorded measurements", degrade.TRACKED_SCALE)
     cal = calibration.load()
     target = cal.wrong_team_share
-    jitter, seen_episodes = {"clean": [0.0, 0], "degraded": [0.0, 0]}, []
+    jitter, seen_episodes = {"clean": [0.0, 0], "unsmoothed": [0.0, 0], "degraded": [0.0, 0]}, []
     wrong = {"first": [0, 0], "frozen": [0, 0]}
     medians = {"one": [], "frozen": []}
     spells = {"frozen": [0, 0, 0]}                      # frames on the pitch, frames lost, pieces dropped by the rule
@@ -2147,6 +2310,15 @@ def test_data_tracking_constants_follow_from_the_measurements():
             if name == "frozen":
                 jitter["degraded"][0] += stats[name]["jitter_rms_m"] ** 2 * stats[name]["jitter_triples"]
                 jitter["degraded"][1] += stats[name]["jitter_triples"]
+                # The same draws with no smoothing: the same pieces, so the same slots present and the same triples.
+                rough_xy, rough_speed, _, _ = degrade.degraded_players(
+                    view, dataclasses.replace(base, smooth=0), 0, limits)
+                assert np.array_equal(np.isfinite(rough_xy[:, :, 0]), np.isfinite(xy[:, :, 0])), match_id
+                rough = calibration.player_stats(np.isfinite(rough_xy[:, :, 0]), degrade.slot_team(), rough_xy * pitch,
+                                                 rough_speed, spans, view.fps)
+                assert rough["jitter_triples"] == stats[name]["jitter_triples"], match_id
+                jitter["unsmoothed"][0] += rough["jitter_rms_m"] ** 2 * rough["jitter_triples"]
+                jitter["unsmoothed"][1] += rough["jitter_triples"]
                 clean_present = np.isfinite(np.asarray(view.players_xy)[:, :, 0])
                 for half, start, stop in view.graded:
                     spells["frozen"][0] += int(clean_present[start:stop].sum())
@@ -2166,8 +2338,9 @@ def test_data_tracking_constants_follow_from_the_measurements():
     rms = {name: math.sqrt(squares / triples) for name, (squares, triples) in jitter.items()}
     first, frozen = (wrong[name][0] / wrong[name][1] for name in ("first", "frozen"))
     print("      jitter, RMS of the second difference: DFL clean {:.4f} m ({:.1f} x ours), degraded with the {}-frame "
-          "average {:.4f} m, ours {:.4f} m".format(rms["clean"], rms["clean"] / cal.player_jitter_rms_m,
-                                                   degrade.SMOOTH_WINDOW, rms["degraded"], cal.player_jitter_rms_m))
+          "average {:.4f} m ({:.1f} x ours) and, the same draws without it, {:.4f} m; ours {:.4f} m".format(
+              rms["clean"], rms["clean"] / cal.player_jitter_rms_m, degrade.SMOOTH_WINDOW, rms["degraded"],
+              rms["degraded"] / cal.player_jitter_rms_m, rms["unsmoothed"], cal.player_jitter_rms_m))
     print("      wrong-team share, seed 0, pooled by sums: s = 1.0 gives {:.5f} ({:,} of {:,} frames), s = {} gives "
           "{:.5f} ({:,}); ours {:.5f}, gate +-0.03".format(first, *wrong["first"], degrade.WRONG_TEAM_SCALE, frozen,
                                                           wrong["frozen"][0], target))
@@ -2183,7 +2356,11 @@ def test_data_tracking_constants_follow_from_the_measurements():
               float(np.quantile(cal.wrong_team_episodes_s, 0.9))))
     assert (degrade.SMOOTH_WINDOW > 0) == (rms["clean"] > 2 * cal.player_jitter_rms_m), (degrade.SMOOTH_WINDOW, rms)
     assert abs(shapes["ours"][1] - cal.player_jitter_rms_m) < 1e-6, "the same statistic, here and in the Calibration"
-    assert rms["degraded"] < rms["clean"], "smoothing lowers the jitter"
+    # The smoothing is tested on the same draws with and without it (smooth=0: the same pieces, the same slots present,
+    # the same triples), and not against DFL's clean players: the degraded ones are cut by the walk, the episodes, the
+    # cap and the shortest-piece rule first, 98% of the RMS is a few rare jumps (T35), and which of them the cuts leave
+    # decides the sign of a comparison with the clean players, whatever the smoothing does.
+    assert rms["degraded"] < rms["unsmoothed"], ("smoothing lowers the jitter of the same draws", rms)
     # The frozen scale is the value that was worked out once, from the measurement recorded in R004 (39,756 of 1,002,644
     # frames, 0.03965, at s = 1.0, against ours 0.105391764), and not one worked out again from what this run measures:
     # a scale that followed every change of the code could never be seen to move. What this run measures is printed
@@ -2202,7 +2379,7 @@ def test_data_tracking_constants_follow_from_the_measurements():
           "rule".format(
               unit_median, RECORDED_MEDIAN_S, frozen_median, degrade.TRACKED_SCALE, ours_median,
               spells["frozen"][1] / spells["frozen"][0], spells["frozen"][2]))
-    assert abs(ours_median - 41.28) < 1e-9, "the Calibration is the one the scale was worked out against"
+    assert abs(ours_median - RECORDED_OURS_MEDIAN_S) < 1e-9, "the Calibration is the one lambda was worked out against"
     assert abs(unit_median - RECORDED_MEDIAN_S) < 1e-9, "the recorded measurement reproduces with this code"
     assert degrade.TRACKED_SCALE == round(ours_median / RECORDED_MEDIAN_S, 3) == 2.042, degrade.TRACKED_SCALE
     assert degrade.MIN_PIECE_FRAMES == int(round(float(cal.tracklet_lengths_s.min()) * ours.fps)) == 8, (

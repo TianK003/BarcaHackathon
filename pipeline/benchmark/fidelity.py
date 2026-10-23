@@ -179,7 +179,8 @@ def report(profile, seeds=DEFAULT_SEEDS, match_ids=None, matches=None, calibrati
     status} (ok or WARN), "passed" is whether no gate failed (a pending one is not counted) and "warnings" how many
     checks warn. "players_draws" is {} for a profile that draws nothing for its players and, for tracking, the counts of
     what was drawn, pooled over matches, seeds and halves (tracklets, onsets, episodes, skipped_far, skipped_overlap,
-    episode_frames, speed_nan_runs, speed_nan_frames and the cap's capped_frames, cap_slot_frames and cap_pieces_cut).
+    episode_frames, speed_nan_runs, speed_nan_frames, the cap's capped_frames, cap_slot_frames and cap_pieces_cut, and
+    the shortest-piece rule's short_pieces, short_slot_frames and short_episode_pieces).
     The report also holds "full_strength": {"frames", "full_frames", "share", "share_at_full"}, the frames in the spans
     of all the matches (once each, whatever the seeds), those at full strength (COUNT_GATES are measured on them only),
     their share, and {match: share of its frames AT full strength} for each match that is not at full strength
