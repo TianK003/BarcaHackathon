@@ -141,9 +141,9 @@ keeps that convention: its scripts swap their own folder on `sys.path` for the r
   measured once, cached in `data/cache/benchmark/calibration/`), `degrade` (profiles `clean`, `gaps`, `tracking` v3,
   the default as of R004c, and `context`, a sensitivity check only, R005), `fidelity` (a profile's gates and WARNs
   against our match), `score` + `run` (pooled spellF1, 90% t-intervals, sign-flip test, reports in
-  `data/runs/benchmark/`) and `checks/` (what `selftest.py` runs). Degradations are fitted once on label-free
-  statistics of our tracking, then frozen, never tuned towards a score (T26, T37). The Calibration and every degraded
-  `Atd` hold BAR-ATH's masks and counts: print none of it, and write no CSV of BAR-ATH labels.
+  `data/runs/benchmark/`) and `checks/` (what `selftest.py` runs). Degradations are fitted once per version on
+  label-free statistics of our tracking, then frozen, never tuned towards a score (T26, T37). The Calibration and every
+  degraded `Atd` hold BAR-ATH's masks and counts: print none of it, and write no CSV of BAR-ATH labels.
 
 ### Frame alignment — an off-by-one shifts every transition
 

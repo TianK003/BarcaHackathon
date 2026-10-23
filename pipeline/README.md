@@ -207,10 +207,10 @@ needs the video's homography or the Smart Tagging stops the run and names the as
 - **Fidelity.** `python pipeline/benchmark/fidelity.py --profile tracking --seeds 3` measures how far the degraded copy
   looks like our match: eight gates, all of which must pass (it exits 1 otherwise), and ten WARN checks that are printed
   and discussed in `docs/results.md` and never tuned towards. Run it after any change to a profile. Degradations are
-  fitted once on label-free statistics of our tracking, then frozen ([T37](../docs/traps.md)).
+  fitted once per version on label-free statistics of our tracking, then frozen ([T37](../docs/traps.md)).
 
 **The default profile, as of R004c, is `tracking` version 3.** The ball is missing as ours was (our own masks,
-transplanted with their pattern and not their clock, so the gaps are not placed by the play). The players have our
+transplanted with their pattern and not their clock, and not placed by the play). The players have our
 tracklets in 46 slots, wrong-team slots (10.5% of our frames from each kick-off, 10.8% of the graded ones, T32), NaN
 speeds in runs, smoothing, and our low-count frames (only the players nearest the ball tracked). The 5-frame smoothing
 leaves a jitter per slot of 1.80 cm against our 3.3 mm. Since v3 a slot is freed for a new tracklet only from the row

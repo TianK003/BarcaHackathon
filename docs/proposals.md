@@ -136,8 +136,9 @@ to look like our ATD and run through our own pipeline.
      (the ball-missing share, the median gap, the slots present, the wrong-team share, the tracklet median and the
      NaN-speed share; eight for `tracking`) and WARN checks on A01's numbers (the nearest player agreeing with the
      truth on about 78% of in-play ball-visible frames, the ball visible on about 66% of dead-ball frames) and on what
-     the four yardsticks output on our match (A07: possessions per minute and D shares). A degradation is fitted once,
-     on label-free statistics of our tracking, and never tuned towards a WARN or a score ([T37](traps.md)).
+     the four yardsticks output on our match (A07: possessions per minute and D shares). A degradation is fitted once
+     per version, on label-free statistics of our tracking, then frozen, and never tuned towards a WARN or a score
+     ([T37](traps.md)).
 4. **Score with the official metric** (`possession_metrics.evaluate`), per match and half, never stitched across
    halves. Uncertainty is a 90% t-interval over the matches' paired deltas against a reference config, the exact
    sign-flip test and wins out of seven, never a bootstrap: seven matches are not a sample to resample, and five of them
