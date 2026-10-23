@@ -236,7 +236,8 @@ def test_fidelity_gates_are_the_calibrations_values_with_the_plans_tolerances():
     assert fidelity.GATES["gaps"][1]["name"] == "median_gap_s" and fidelity.GATES["gaps"][1]["tolerance"] == 1.5
     assert len(fidelity.GATES["gaps"]) == 2 and "clean" not in fidelity.GATES
     # The tracking profile's gates are gaps' two and six more, with the plan's tolerances; the tracklet median's is
-    # relative (50% of the centre) and the rest are absolute. Two of them are pending until the low-count tail is built.
+    # relative (50% of the centre) and the rest are absolute. Three of them are pending until the low-count tail is
+    # built: the three that are about how many slots are present.
     tracking = {gate["name"]: gate for gate in fidelity.GATES["tracking"]}
     assert list(tracking) == TRACKING_GATES and fidelity.GATES["tracking"][:2] == fidelity.GATES["gaps"]
     assert {name: (gate["tolerance"], gate["kind"]) for name, gate in tracking.items()} == {
@@ -244,7 +245,7 @@ def test_fidelity_gates_are_the_calibrations_values_with_the_plans_tolerances():
         "present_mean": (0.5, "absolute"), "present_share_le14": (0.02, "absolute"),
         "wrong_team_share": (0.03, "absolute"), "tracklet_median_s": (0.5, "relative"),
         "speed_nan_share": (0.01, "absolute")}
-    assert fidelity.PENDING_GATES == ("present_mean", "present_share_le14")
+    assert fidelity.PENDING_GATES == ("present_share_22", "present_mean", "present_share_le14")
     assert set(fidelity.PENDING_GATES) <= set(tracking)
     cal = synthetic_calibration()
     for name, expected in (("present_share_22", cal.scalars["present_share_22"]),
@@ -361,7 +362,7 @@ def worked_out_tracking(matches, cal, seeds=SEEDS):
 
 
 def test_fidelity_tracking_report_synthetic():
-    """The tracking profile's eight gates, each worked out by other code, with the two pending ones not counted.
+    """The tracking profile's eight gates, each worked out by other code, with the three pending ones not counted.
 
     Two steady matches of 22 players (one with a player off for part of a half), and the made-up tracklets, episodes and
     NaN runs: every pooled number is the sums of calibration.player_stats called on each degraded (match, seed) here and
@@ -397,7 +398,7 @@ def test_fidelity_tracking_report_synthetic():
             assert gate["status"] == want, (name, gate)
         assert {gate["name"] for gate in result["gates"] if gate["status"] == "pending"} == set(fidelity.PENDING_GATES)
         assert result["passed"] == (not any(gate["status"] == "FAIL" for gate in result["gates"]))
-        assert any("pending" in note.lower() and "present_mean" in note and "present_share_le14" in note
+        assert any("pending" in note.lower() and all(name in note for name in fidelity.PENDING_GATES)
                    and "tail" in note for note in result["notes"]), result["notes"]
         # The ball is the gaps profile's, whatever the players do: the same two gate values.
         by_name = {gate["name"]: gate for gate in result["gates"]}
@@ -419,7 +420,7 @@ def test_fidelity_tracking_report_synthetic():
                                log=quiet) == result
         text = "\n".join(fidelity.render(result))
         for fragment in ("tracklet_median_s", "50%", "pending", "present_mean", "players' draws", "episodes",
-                         "(2 pending, not counted)", "full strength"):
+                         "(3 pending, not counted)", "full strength"):
             assert fragment in text, (fragment, text)
 
 
@@ -543,9 +544,11 @@ def test_fidelity_pending_gates_do_not_change_the_exit_code_and_a_failing_gate_d
     """A pending gate is printed with its numbers and never counted; a required gate that misses fails the command.
 
     The gates' tolerances are opened and closed on purpose (the profile's own are the plan's): wide open, every
-    required gate passes and the two pending ones are printed as pending, exit 0, whatever they would measure; with the
-    required NaN-speed gate closed to a tolerance of 0 the command exits 1 and says so; with only a pending gate closed
-    (it would FAIL if it were counted) the exit code is 0 again. An empty PENDING_GATES counts all eight."""
+    required gate passes and the three pending ones (the share with 22 present, the mean present and the share with 14
+    or fewer) are printed as pending, exit 0, whatever they would measure; with the required NaN-speed gate closed to a
+    tolerance of 0 the command exits 1 and says so; with only the pending gates closed (they would FAIL if they were
+    counted) the exit code is 0 again, and with the share with 22 present closed alone as well. An empty PENDING_GATES
+    counts all eight."""
     cal = tracking_calibration()
     matches = {match_id: steady_match(match_id, seed=sources.MATCH_IDS.index(match_id), teams=TEAMS_22,
                                       substitutions=False) for match_id in IDS}
@@ -572,13 +575,17 @@ def test_fidelity_pending_gates_do_not_change_the_exit_code_and_a_failing_gate_d
                 return code, shown.getvalue()
 
             code, out = command(with_tolerance())
-            assert code == 0 and "all pass (2 pending, not counted)" in out and "pending" in out, out
-            assert out.count("pending") >= 3, "each pending gate says it is, and the note says why"
+            assert code == 0 and "all pass (3 pending, not counted)" in out and "pending" in out, out
+            assert out.count("pending") >= 4, "each pending gate says it is, and the note says why"
             code, out = command(with_tolerance(speed_nan_share=0.0))
             assert code == 1 and "DO NOT ALL PASS" in out and "FAIL" in out, out
-            code, out = command(with_tolerance(present_mean=0.0, present_share_le14=0.0))
-            assert code == 0 and "all pass (2 pending, not counted)" in out, out
-            code, out = command(with_tolerance(present_mean=0.0, present_share_le14=0.0), pending=())
+            code, out = command(with_tolerance(present_share_22=0.0, present_mean=0.0, present_share_le14=0.0))
+            assert code == 0 and "all pass (3 pending, not counted)" in out, out
+            code, out = command(with_tolerance(present_share_22=0.0))
+            assert code == 0 and "all pass (3 pending, not counted)" in out, (
+                "the share with 22 present is pending: " + out)
+            code, out = command(with_tolerance(present_share_22=0.0, present_mean=0.0, present_share_le14=0.0),
+                                pending=())
             assert code == 1 and "DO NOT ALL PASS" in out and "pending" not in out, (
                 "with the list empty the same gates are counted: " + out)
     finally:

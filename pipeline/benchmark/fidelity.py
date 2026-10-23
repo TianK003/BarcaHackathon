@@ -36,9 +36,12 @@ the full-strength frames as information, how many frames are at full strength an
 
 Pending gates (PENDING_GATES). A gate that cannot be met yet, because the part of the profile it depends on is not
 built, is printed as measured, centre and tolerance with the status `pending`, is not counted by `passed` nor by the
-exit code, and the report says why (NOTES). Today these are the mean number present and the share with 14 or fewer
-present: they depend on the low-count tail (our frames with 18 or fewer slots present, 10.6%), which the tracking
-profile does not have yet. The task that builds the tail empties the list, and then they are gates like the rest.
+exit code, and the report says why (NOTES). Today these are the three gates about how many slots are present: the
+share with exactly 22, the mean number present and the share with 14 or fewer. They depend on the low-count tail (our
+frames with 18 or fewer slots present, 10.6%), which the tracking profile does not have yet: without it the profile
+keeps too many frames at 22 slots (0.5631 of the full-strength frames against ours 0.5019, +-0.06, in R004), and the
+cap of the tail is what moves about 10.6% of the frames out of the upper buckets (about 0.503, an estimate). The task
+that builds the tail empties the list, and then they are gates like the rest.
 
 Checks (the warnings). Pre-registered bands on things the degradation does not fit but a benchmark that resembles our
 match should show anyway: the nearest player's agreement with the truth on alive, ball-visible frames (compared with
@@ -120,10 +123,15 @@ GATES = {
          "text": "share of the present slot-frames with a NaN speed"},
     ),
 }
-# The gates that cannot be met until the low-count tail is built: both are about how many slots are present, which
+# The gates that cannot be met until the low-count tail is built, each of them about how many slots are present, which
 # the tail's frames (18 or fewer present) bring down. Printed with the status "pending" and never counted; the tail's
-# task empties this tuple.
-PENDING_GATES = ("present_mean", "present_share_le14")
+# task empties this tuple. Why each is pending:
+#   present_share_22    without the tail too many frames have all 22 present: 0.5631 of the full-strength frames
+#                       against ours 0.5019 +-0.06 (R004). The tail's cap moves about 10.6% of the frames out of the
+#                       upper buckets, which gives about 0.5631 x (1 - 0.106) = 0.503 (an estimate, not a measurement);
+#   present_mean        21.43 against 20.52 +-0.5: the same frames at the bottom are missing;
+#   present_share_le14  none of the frames has 14 or fewer, where ours has 5.25% (+-0.02).
+PENDING_GATES = ("present_share_22", "present_mean", "present_share_le14")
 # The gates that are measured on the full-strength frames only (the module's docstring says why), and the frames that
 # are full strength: those where the clean match has exactly this many players with positions.
 COUNT_GATES = ("present_share_22", "present_mean", "present_share_le14")

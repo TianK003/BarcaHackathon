@@ -15,8 +15,8 @@ as bad as ours, and fidelity.py measures with the Calibration's own statistics f
     tracking  the gaps' ball, exactly, and the players broken up the way ours are: tracked spans and lost spans, and
               46 anonymous slots that tracklets take and leave; a wrong-team slot now and then, NaN speeds in runs and
               positions smoothed (below). Not yet our frames with few players tracked, which is the profile's last
-              part: two of its fidelity gates are pending until then (fidelity.PENDING_GATES), and the share with
-              exactly 22 present is over its band by 0.0012 before it (R004).
+              part: three of its fidelity gates, the ones about how many slots are present, are pending until then
+              (fidelity.PENDING_GATES, R004).
 
 The version of a profile (PROFILES) is part of what a report says about its tracking: change what a profile does and
 bump it, so that two reports of different tracking never carry one version.
