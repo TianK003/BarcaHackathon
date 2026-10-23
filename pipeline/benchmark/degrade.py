@@ -15,7 +15,8 @@ as bad as ours, and fidelity.py measures with the Calibration's own statistics f
     tracking  the gaps' ball, exactly, and the players broken up the way ours are: tracked spans and lost spans, and
               46 anonymous slots that tracklets take and leave; a wrong-team slot now and then, NaN speeds in runs and
               positions smoothed (below). Not yet our frames with few players tracked, which is the profile's last
-              part: two of its fidelity gates are pending until then (fidelity.PENDING_GATES).
+              part: two of its fidelity gates are pending until then (fidelity.PENDING_GATES), and the share with
+              exactly 22 present is over its band by 0.0012 before it (R004).
 
 The version of a profile (PROFILES) is part of what a report says about its tracking: change what a profile does and
 bump it, so that two reports of different tracking never carry one version.
@@ -63,12 +64,14 @@ The tracklets (tracking). In ours a slot is not a player: it is a tracklet, a st
 ends when the tracker loses the player and is taken over by whoever it finds next (T15). DFL has one column per player.
 The degrader breaks each player's time on the pitch into tracked spans and lost spans and gives each tracked span (a
 tracklet) a slot, so that the slots appear, vanish and are reused. A slot's index is still not as empty of the player as
-in ours: under the lowest-free rule (below) a player who comes back after a lost span lands in the slot he had 76.0% of
-the time (948 of 1,247 returns, J03WMX, seed 0), and a slot idles between two tracklets for a median of 2.0 s (67.1% of
-its gaps last at most 3 s and none over 60 s), where ours idles for 7.4 s (17.7% at most 3 s, 15.0% over 60 s: A09). No
-evidence source reads a slot's identity today, beyond nearest_player's argmin on exact ties, which goes to the lower
-slot; but a method that follows a slot across a loss would be validated optimistically here. The tail's part of the
-profile (the frames with few players tracked) re-measures this.
+in ours: under the lowest-free rule (below) a player who comes back after a lost span lands in the slot he had 69.0% of
+the time (860 of 1,247 returns, J03WMX, seed 0, with the wrong-team episodes on, as in version 1), and a slot idles
+between two tracklets for a median of 2.3 s (59.7% of its gaps last at most 3 s and 3.8% over 60 s), where ours idles
+for 7.4 s (17.7% at most 3 s, 15.0% over 60 s: A09, R004). Before the episodes were added it was 76.0%, 2.0 s, 67.1% and
+none over 60 s (R003): the same code with the scale at 0 gives those again. No evidence source reads a slot's identity
+today, beyond nearest_player's argmin on exact ties, which goes to the lower slot; but a method that follows a slot
+across a loss would be validated optimistically here. The tail's part of the profile (the frames with few players
+tracked) re-measures this.
 
 * What it draws from is ours, measured on our kick-off spans (Calibration): a tracked span's length is one of our
   tracklet lengths (tracklet_lengths_s, in frames at the match's rate, at least 1), drawn uniformly, so that their
@@ -815,10 +818,10 @@ def degrade(view, profile, calibration, seed):
     for gaps and tracking, "transplants" ({half: {"source_half", "offset", "frames"}}) and "mask_share": the share of
     the frames that the transplant covers where the transplanted mask says the ball is missing. It is the mask's
     share, not the ball's after it: a ball that DFL itself has no frame for is missing as well. For tracking also
-    "players": the parameters and the counts of the tracklets, episodes and NaN runs (_players_record). ValueError for a profile that is not in
-    PROFILES, for a seed that is not a whole number of at least 0, for a profile that needs the Calibration without
-    one (or, for tracking, without the fields it reads: calibrated_parameters), and for a pool of slots with no free
-    slot (choose_tracklets).
+    "players": the parameters and the counts of the tracklets, episodes and NaN runs (_players_record). ValueError for
+    a profile that is not in PROFILES, for a seed that is not a whole number of at least 0, for a profile that needs
+    the Calibration without one (or, for tracking, without the fields it reads: calibrated_parameters), and for a pool
+    of slots with no free slot (choose_tracklets).
     """
     if profile not in PROFILES:
         raise ValueError("profile {!r} is not one of: {}".format(profile, ", ".join(sorted(PROFILES))))

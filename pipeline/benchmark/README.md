@@ -167,8 +167,11 @@ average lowers by a factor of about 6 on white noise. Nothing was tuned to close
 **What this profile does not have yet.** Our frames with few players tracked (the tail: 10.6% of ours have 18 or fewer
 present, 5.2% have 14 or fewer), which the next task adds. Until then two of its gates, the mean number of slots present
 and the share with 14 or fewer, are **pending**: printed with their numbers, not counted by the exit code, and listed in
-one constant (`fidelity.PENDING_GATES`), which that task empties. The checks that pin the rest:
-`test_wrong_team_starts_at_close_pairs`, `test_wrong_team_moves_one_player_to_other_pool`,
+one constant (`fidelity.PENDING_GATES`), which that task empties. The third count gate, the share with exactly 22
+present, is not pending, and measured on full-strength frames (as it has to be) it is 0.5631 against ours 0.5019 +-0.06:
+0.0012 over the ceiling, so `fidelity.py --profile tracking` exits 1 today (R004). The tail is what lowers it: about
+0.56 x (1 - 0.106) = 0.50 if its frames come out of the ones with 22 present (an estimate, not a measurement). The
+checks that pin the rest: `test_wrong_team_starts_at_close_pairs`, `test_wrong_team_moves_one_player_to_other_pool`,
 `test_wrong_team_draws_come_from_the_wrong_team_stream_in_a_fixed_order`, `test_speed_nan_share`,
 `test_speed_nan_runs_follow_the_documented_draws`, `test_smoothing_is_a_centred_moving_average_inside_each_piece`,
 `test_profiles_nest`, `test_tracking_without_the_new_parts_is_task_12s_players` (with the new parts off the players are
@@ -206,16 +209,23 @@ anything was measured and never tuned towards:
   plus or minus the plan's tolerance. For `gaps`: the share of frames without a ball, +-0.02, and the median gap, +-1.5
   s. For `tracking`, those two and: the share of frames with exactly 22 slots present +-0.06, the mean number present
   +-0.5, the share with 14 or fewer present +-0.02, the wrong-team share +-0.03, the tracklet median **+-50% of the
-  centre** (a relative tolerance; the rest are absolute) and the NaN-speed share +-0.01. The plan's own figures (0.407,
-  10.7 s, 0.108, 35.5 s, ...) were measured on other spans and are not used. **Pending gates**
-  (`fidelity.PENDING_GATES`) are printed and not counted: today the mean number present and the share with 14 or fewer,
-  which depend on the low-count tail that `tracking` does not have yet.
+  centre** (a relative tolerance; the rest are absolute) and the NaN-speed share +-0.01. **The three gates on how many
+  slots are present are measured on full-strength frames only**: those where the clean DFL match has exactly 22 players
+  with positions, because a team that is down to 10 cannot show 22 slots whatever the degradation does (two of the seven
+  matches have one, from minute 7 of the first half of J03WN1 and minute 13 of the second half of J03WQQ, and 18.3% of
+  the pooled frames have 21 players: 81.7% are at full strength), and ours is measured on all its frames, which assumes
+  that it has 22 players on the pitch throughout. Every other gate and every warning stays on all frames; the report
+  holds the count statistics on both sets of frames, how many frames are at full strength and which matches are not all
+  of them (`full_strength`). The plan's own figures (0.407, 10.7 s, 0.108, 35.5 s, ...) were measured on other spans and
+  are not used. **Pending gates** (`fidelity.PENDING_GATES`) are printed and not counted: today the mean number present
+  and the share with 14 or fewer, which depend on the low-count tail that `tracking` does not have yet.
 - **Warnings**: the nearest player's agreement with the truth on alive, ball-visible frames (our public window's, +-0.05),
   the share of dead frames with the ball visible (+-0.10), and for each yardstick its possessions per graded minute
   (+-25%) and its D share (+-0.05), against what the yardsticks output on ours (over our graded halves, as the published
   baselines are: an accepted offset of at most 1% of the frames). A WARN is printed and discussed in `results.md`; the
   degradation is not adjusted towards it, because some misses are the truth's conventions and not the degradation's (A06).
- The report also lists the benchmark's other statistics next to ours (tracklets, wrong-team frames, NaN speeds,
+
+The report also lists the benchmark's other statistics next to ours (tracklets, wrong-team frames, NaN speeds,
 jitter...), which `gaps` does not model, so that what a later profile has to fix is on the page, the degrader's draws
 (two integers a half) and, for `tracking`, the pooled counts of the players' draws (onsets, episodes, skips, NaN-speed
 runs). It holds no frame of our match, and it carries the Calibration's digest. It is named
@@ -299,12 +309,14 @@ renamed over the old report; the same inputs, seed and versions give the same by
 ```
 
 (The first time, while the seven caches are built, the `--dfl` run took 532 s; the machine's load decides the rest.)
- `checks/run.py` holds the runner's, `checks/degrade.py` the degrader's (the transplant, the tracklets, the episodes,
+
+`checks/run.py` holds the runner's, `checks/degrade.py` the degrader's (the transplant, the tracklets, the episodes,
 the NaN-speed runs and the smoothing worked out exactly, determinism, what is touched and what is not, no truth, the
 order of the matches) and `checks/fidelity.py` the fidelity report's (every gate and check worked out by other code,
-pooling by sums, the exit code, the pending gates). The one that anchors the rest is `test_dfl_oracle_scores_perfectly`:
-an evidence source that is the truth itself, decoded by `majority_vote` with half-width 0, must score exactly 1.0 on
-spellF1, macroF1 and alive/dead F1 on every one of the seven matches.
+pooling by sums, the exit code, the pending gates, the full-strength frames of the count gates and the gate kinds). The
+one that anchors the rest is `test_dfl_oracle_scores_perfectly`: an evidence source that is the truth itself, decoded by
+`majority_vote` with half-width 0, must score exactly 1.0 on spellF1, macroF1 and alive/dead F1 on every one of the
+seven matches.
 
 **What the oracle checks, and what it cannot.** It checks the chain from the *loaded match* to the score: the runner,
 `MatchInputs` and the separator rows between the halves, both halves and each one's first and last row, the decoder path
@@ -351,9 +363,11 @@ that this README names only checks that exist.
   frames with few players tracked** (the tail, which the next task adds; two of its gates are pending until then). Its
   slots are the lowest free ones, so a team uses 11 of its slots over a whole match where ours has 21 of 24 and 20 of 22
   present on at least a tenth of the frames, and a slot's index is not as empty of the player as in ours: a player who
-  comes back after a lost span lands in the slot he had 76.0% of the time (948 of 1,247 returns, J03WMX, seed 0), and a
-  slot idles between two tracklets for a median of 2.0 s (67.1% of its gaps at most 3 s, none over 60 s), where ours
-  idles for 7.4 s (17.7% and 15.0%; A09). No evidence source reads a slot's identity today, beyond `nearest_player`'s
+  comes back after a lost span lands in the slot he had 69.0% of the time (860 of 1,247 returns, J03WMX, seed 0, with
+  the episodes on, as in version 1 of the profile), and a slot idles between two tracklets for a median of 2.3 s (59.7%
+  of its gaps at most 3 s, 3.8% over 60 s), where ours idles for 7.4 s (17.7% and 15.0%; A09, R004). Before the
+  wrong-team episodes were added the figures were 76.0%, 2.0 s, 67.1% and none over 60 s (R003; the same code with the
+  scale set to 0 gives them again). No evidence source reads a slot's identity today, beyond `nearest_player`'s
   argmin on exact ties, which goes to the lower slot; but **a method that follows a slot across a loss would be
   validated optimistically here**, and the tail's part of the profile re-measures this. The episodes are cut at pairs
   within 2 m only, in both directions at one rate, and what is matched is the observable share, not the episodes: on

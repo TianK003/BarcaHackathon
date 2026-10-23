@@ -16,12 +16,23 @@ Two kinds of criteria, as the plan fixes them. Neither is ever tuned towards.
 
 Gates (GATES, per profile). The profile does not count as built until they hold: they say that the code reproduces what
 it was calibrated on. Each is the Calibration's own value (measured on the kick-off spans, never a number copied from
-the plan, which was measured on other spans) plus or minus a tolerance, which is absolute (+- tolerance) or relative
-(+- tolerance of the centre: the tracklet median's). For gaps: the missing share of the ball +-0.02 and the median gap
-+-1.5 s. For tracking, those two and: the share of frames with exactly 22 slots present +-0.06, the mean number present
-+-0.5, the share with 14 or fewer present +-0.02, the wrong-team share +-0.03, the tracklet median +-50% and the
-NaN-speed share +-0.01. A gate is printed as measured, centre, tolerance, and pass or FAIL; a FAIL makes the command
-exit 1, and the profile is not frozen until it passes.
+the plan, which was measured on other spans) plus or minus a tolerance, which is absolute (+- tolerance) or relative (+-
+tolerance of the centre: the tracklet median's). For gaps: the missing share of the ball +-0.02 and the median gap +-1.5
+s. For tracking, those two and: the share of frames with exactly 22 slots present +-0.06, the mean number present +-0.5,
+the share with 14 or fewer present +-0.02 (these three on full-strength frames, below), the wrong-team share +-0.03, the
+tracklet median +-50% and the NaN-speed share +-0.01. A gate is printed as measured, centre, tolerance, and pass or
+FAIL; a FAIL makes the command exit 1, and the profile is not frozen until it passes.
+
+Full strength (COUNT_GATES). The three gates about how many slots are present (exactly 22, the mean, 14 or fewer) are
+measured on the full-strength frames only: the frames, inside the same spans, where the clean DFL match has exactly 22
+players with positions. A team that is down to 10 for part of a match (J03WN1's away team from minute 7 of the first
+half, J03WQQ's from minute 13 of the second: R004) cannot show 22 slots on those frames whatever the degradation does,
+and 18.3% of the pooled frames have 21 players: measured on all frames, they pull the share with 22 present and the
+mean down, and a profile could pass or fail the gate for a reason that has nothing to do with it. Ours is measured
+on all its frames, which assumes that it has 22 players on the pitch throughout. Every other gate and every
+check stays on all frames, and the report holds the count statistics on both sets of frames, the wrong-team share on
+the full-strength frames as information, how many frames are at full strength and which matches are not all of them
+("full_strength").
 
 Pending gates (PENDING_GATES). A gate that cannot be met yet, because the part of the profile it depends on is not
 built, is printed as measured, centre and tolerance with the status `pending`, is not counted by `passed` nor by the
@@ -96,10 +107,11 @@ GATES = {
     "gaps": BALL_GATES,
     "tracking": BALL_GATES + (
         {"name": "present_share_22", "tolerance": 0.06, "kind": "absolute",
-         "text": "share of the frames with exactly 22 slots present"},
-        {"name": "present_mean", "tolerance": 0.5, "kind": "absolute", "text": "mean number of slots present"},
+         "text": "share of the full-strength frames with exactly 22 slots present"},
+        {"name": "present_mean", "tolerance": 0.5, "kind": "absolute",
+         "text": "mean number of slots present, on the full-strength frames"},
         {"name": "present_share_le14", "tolerance": 0.02, "kind": "absolute",
-         "text": "share of the frames with 14 or fewer slots present"},
+         "text": "share of the full-strength frames with 14 or fewer slots present"},
         {"name": "wrong_team_share", "tolerance": 0.03, "kind": "absolute",
          "text": "share of the frames with a team in surplus (a wrong-team slot)"},
         {"name": "tracklet_median_s", "tolerance": 0.5, "kind": "relative",
@@ -112,6 +124,11 @@ GATES = {
 # the tail's frames (18 or fewer present) bring down. Printed with the status "pending" and never counted; the tail's
 # task empties this tuple.
 PENDING_GATES = ("present_mean", "present_share_le14")
+# The gates that are measured on the full-strength frames only (the module's docstring says why), and the frames that
+# are full strength: those where the clean match has exactly this many players with positions.
+COUNT_GATES = ("present_share_22", "present_mean", "present_share_le14")
+FULL_STRENGTH = calibration_module.FULL_COUNT
+KINDS = ("absolute", "relative")        # a tolerance is +- tolerance, or that share of the centre
 # The warning checks: the band, and whether it is absolute (+- band) or relative (+- band of the centre).
 NEAREST_BAND = ("absolute", 0.05)
 DEAD_VISIBLE_BAND = ("absolute", 0.10)
@@ -126,6 +143,11 @@ NOTES = ("The yardsticks' outputs of ours (possessions per minute, D share) are 
          "of at most 1% of the frames.",
          "The centre of a gate is the Calibration's own value, measured on the kick-off spans; the plan's figures were "
          "measured on other spans, and are not used.")
+FULL_STRENGTH_NOTE = ("The gates on how many slots are present ({}) are measured on the frames at full strength only: "
+                      "those where the clean DFL match has exactly {} players with positions (a team down to 10 "
+                      "for part of a match cannot show 22 slots). Ours is measured on all its frames, which assumes "
+                      "that it has {} players on the pitch throughout. Every other gate and every check is on all "
+                      "frames.")
 PENDING_NOTE = ("Pending gates ({}) are printed and not counted: they depend on the low-count tail (our frames with 18 "
                 "or fewer slots present), which the tracking profile does not have yet, and the task that builds it "
                 "empties PENDING_GATES.")
@@ -151,10 +173,13 @@ def report(profile, seeds=DEFAULT_SEEDS, match_ids=None, matches=None, calibrati
     (status pass, FAIL or pending: PENDING_GATES), "checks" a list of {name, measured, centre, band, kind, status} (ok
     or WARN), "passed" is whether no gate failed (a pending one is not counted) and "warnings" how many checks warn.
     "players_draws" is {} for a profile that draws nothing for its players and, for tracking, the counts of what was
-    drawn, pooled over matches, seeds and halves (onsets, episodes, skipped_far, skipped_overlap, episode_frames,
-    speed_nan_runs, tracklets). FidelityError for a profile that has no gates (clean, which degrades nothing) or that
-    is not one, for seeds below 1 and for a calibration that is not a Calibration, and run.BenchmarkError for matches
-    that are not as asked.
+    drawn, pooled over matches, seeds and halves (tracklets, onsets, episodes, skipped_far, skipped_overlap,
+    episode_frames, speed_nan_runs, speed_nan_frames). The report also holds "full_strength": {"frames", "full_frames",
+    "share", "below_full"}, the frames in the spans of all the matches (once each, whatever the seeds), those at full
+    strength (COUNT_GATES are measured on them only), their share, and {match: share} for each match with fewer than
+    all of them. FidelityError for a profile that has no gates (clean, which degrades nothing) or that is not one, for
+    seeds below 1, for a calibration that is not a Calibration, and for count gates with no full-strength frame
+    to measure; run.BenchmarkError for matches that are not as asked.
     """
     if profile not in degrade.PROFILES:
         raise FidelityError("profile {!r} is not one of: {}".format(profile, ", ".join(sorted(degrade.PROFILES))))
@@ -180,7 +205,12 @@ def report(profile, seeds=DEFAULT_SEEDS, match_ids=None, matches=None, calibrati
                                      "id".format(match_id, match.match_id))
         codes_true, _ = truths.truth_codes(match)
         view = degrade.tracking_view(match)
-        measured_players = None                       # (the players' arrays, their statistics) of the last seed
+        # The frames at full strength: where the clean match has exactly FULL_STRENGTH players with positions.
+        match_spans = [(half, match.kickoffs[half], stop) for half, _, stop in match.graded]
+        blocks = full_strength_blocks(np.isfinite(np.asarray(match.players_xy)[:, :, 0]).sum(axis=1), match_spans)
+        pool.add_full_strength(match_id, sum(stop - start for _, start, stop in blocks),
+                               sum(stop - start for _, start, stop in match_spans))
+        measured_players = None          # (the players' arrays, their statistics, those on the full-strength frames)
         for seed in range(seeds):
             atd, info = degrade.degrade(view, profile, calibration, seed)
             inputs = match_inputs.MatchInputs(match, atd, profile=profile, seed=seed, data_dir=data_dir)
@@ -190,10 +220,12 @@ def report(profile, seeds=DEFAULT_SEEDS, match_ids=None, matches=None, calibrati
             if measured_players is None or measured_players[0] is not atd.players_xy:
                 # The same arrays give the same statistics: a profile that leaves the players alone (gaps) measures
                 # them once for a match, however many seeds there are.
+                xy_m = inputs.metres(atd.players_xy)
                 measured_players = (atd.players_xy, calibration_module.player_stats(
-                    atd.players_present, atd.slot_team, inputs.metres(atd.players_xy), atd.players_speed, spans,
-                    inputs.fps))
-            pool.add_players(measured_players[1])
+                    atd.players_present, atd.slot_team, xy_m, atd.players_speed, spans, inputs.fps),
+                    calibration_module.player_stats(atd.players_present, atd.slot_team, xy_m, atd.players_speed, blocks,
+                                                    inputs.fps) if blocks else no_full_strength())
+            pool.add_players(measured_players[1], measured_players[2])
             pool.add_draws(match_id, seed, info)
             pool.add_players_draws(info)
             dead = codes_true == D
@@ -225,11 +257,52 @@ def report(profile, seeds=DEFAULT_SEEDS, match_ids=None, matches=None, calibrati
         "statistics": statistics(pool, calibration),
         "draws": pool.draws,
         "players_draws": dict(pool.players_draws),
-        "notes": list(NOTES) + ([PENDING_NOTE.format(", ".join(pending))] if pending else []),
+        "full_strength": pool.full_strength_report(),
+        "notes": list(NOTES) + (
+            [FULL_STRENGTH_NOTE.format(", ".join(name for name in COUNT_GATES if any(
+                gate["name"] == name for gate in gates)), FULL_STRENGTH, FULL_STRENGTH)]
+            if any(gate["name"] in COUNT_GATES for gate in gates) else []) + (
+            [PENDING_NOTE.format(", ".join(pending))] if pending else []),
     }
     result["passed"] = not any(gate["status"] == FAIL for gate in gates)
     result["warnings"] = sum(1 for check in result["checks"] if check["status"] == WARN)
     return run.plain(result)
+
+
+def full_strength_blocks(clean_counts, spans):
+    """[(number, start, stop)]: the runs of rows with exactly FULL_STRENGTH players, inside each of the spans.
+
+    `clean_counts` is the number of players with a position on each row of the clean match and `spans` the (half, start,
+    stop) rows that are measured. A run does not cross the end of its span, and each block has a number of its own
+    (calibration.player_stats takes one block per half number, and it only reads the rows). Rows only, no frame
+    of the match."""
+    counts = np.asarray(clean_counts)
+    blocks = []
+    for _, start, stop in spans:
+        full = np.zeros(stop - start + 2, dtype=np.int8)
+        full[1:-1] = counts[start:stop] == FULL_STRENGTH
+        edges = np.diff(full)
+        for first, last in zip(np.flatnonzero(edges == 1).tolist(), np.flatnonzero(edges == -1).tolist()):
+            blocks.append((len(blocks) + 1, start + first, start + last))
+    return blocks
+
+
+def no_full_strength():
+    """The statistics of no frame at all: what a match without a single full-strength frame adds to a pool."""
+    return {"frames": 0, "present_slot_frames": 0, "wrong_team_frames": 0, "present_hist": np.zeros(1, dtype=np.int64)}
+
+
+def _frames_with(hist, fewest, most):
+    """How many frames of a histogram of the number present have between `fewest` and `most` slots present."""
+    return int(hist[fewest:most + 1].sum())
+
+
+def _added(total, hist):
+    """Two histograms of different lengths added by count."""
+    out = np.zeros(max(total.size, hist.size), dtype=np.int64)
+    out[:total.size] += total
+    out[:hist.size] += hist
+    return out
 
 
 class Pool:
@@ -240,7 +313,11 @@ class Pool:
                      "gap_durations_s": []}
         self.players = {"frames": 0, "present_slot_frames": 0, "present_hist": np.zeros(0, dtype=np.int64),
                         "tracklets": [], "wrong_team_frames": 0, "speed_nan_frames": 0, "jitter_squares": 0.0,
-                        "jitter_triples": 0}
+                        "jitter_triples": 0,
+                        # the same counts over the full-strength frames only (COUNT_GATES, and the wrong-team share)
+                        "full_frames": 0, "full_slot_frames": 0, "full_hist": np.zeros(0, dtype=np.int64),
+                        "full_wrong_team_frames": 0}
+        self.full_strength = {}                       # match id -> [frames at full strength, frames in its spans]
         self.players_draws = {}
         self.agreed = self.judged = 0
         self.dead_frames = self.dead_visible = 0
@@ -256,19 +333,36 @@ class Pool:
         self.last_missing_share = stats["missing_share"]
         self.missing_shares.append(stats["missing_share"])
 
-    def add_players(self, stats):
+    def add_players(self, stats, full=None):
+        """Add the statistics of one (match, seed): `stats` over all its frames and `full` over its full-strength
+        frames (player_stats on those blocks, or no_full_strength()). None for `full` means that every frame is at
+        full strength: a match in which nobody was off the pitch."""
         players = self.players
+        full = stats if full is None else full
         for name in ("frames", "present_slot_frames", "wrong_team_frames", "speed_nan_frames"):
             players[name] += stats[name]
         # A squad has 39 or 40 people in the DFL matches, so the histograms are of different lengths: add by count.
-        total = np.zeros(max(players["present_hist"].size, stats["present_hist"].size), dtype=np.int64)
-        total[:players["present_hist"].size] += players["present_hist"]
-        total[:stats["present_hist"].size] += stats["present_hist"]
-        players["present_hist"] = total
+        players["present_hist"] = _added(players["present_hist"], stats["present_hist"])
+        players["full_hist"] = _added(players["full_hist"], full["present_hist"])
+        players["full_frames"] += full["frames"]
+        players["full_slot_frames"] += full["present_slot_frames"]
+        players["full_wrong_team_frames"] += full["wrong_team_frames"]
         players["tracklets"].append(stats["tracklet_lengths_s"])
         if stats["jitter_triples"]:
             players["jitter_squares"] += stats["jitter_rms_m"] ** 2 * stats["jitter_triples"]
             players["jitter_triples"] += stats["jitter_triples"]
+
+    def add_full_strength(self, match_id, full_frames, frames):
+        """Record, once for a match whatever the seeds, how many of the frames of its spans are at full strength."""
+        self.full_strength[match_id] = [int(full_frames), int(frames)]
+
+    def full_strength_report(self):
+        """{"frames", "full_frames", "share", "below_full"}: counts over the matches, and {match: share} below 1."""
+        full = sum(counts[0] for counts in self.full_strength.values())
+        frames = sum(counts[1] for counts in self.full_strength.values())
+        return {"frames": frames, "full_frames": full, "share": _round(full / frames) if frames else None,
+                "below_full": {match_id: _round(counts[0] / counts[1]) for match_id, counts
+                               in sorted(self.full_strength.items()) if counts[0] < counts[1]}}
 
     def add_agreement(self, judged, agreement):
         if judged:
@@ -327,18 +421,25 @@ def centre_of(name, calibration):
 def measured(name, pool):
     """The benchmark's value of the quantity a gate is about, from the pool's sums (Pool): never a mean of means."""
     players = pool.players
-    frames, slot_frames, hist = players["frames"], players["present_slot_frames"], players["present_hist"]
+    frames, slot_frames = players["frames"], players["present_slot_frames"]
+    if name in COUNT_GATES:
+        # On the full-strength frames only (the module's docstring).
+        full, full_slots, hist = players["full_frames"], players["full_slot_frames"], players["full_hist"]
+        if not full:
+            raise FidelityError("no frame has exactly {} players with positions in the clean matches (full strength), "
+                                "so the gate {!r} cannot be measured, and neither can any of the gates measured on "
+                                "full-strength frames only ({}); give it matches with a full squad on the pitch".format(
+                                    FULL_STRENGTH, name, ", ".join(COUNT_GATES)))
+        if name == "present_share_22":
+            return _frames_with(hist, FULL_STRENGTH, FULL_STRENGTH) / full
+        if name == "present_mean":
+            return full_slots / full
+        return _frames_with(hist, 0, calibration_module.LOW_COUNT) / full
     if name == "missing_share":
         return pool.ball["missing_frames"] / pool.ball["frames"]
     if name == "median_gap_s":
         gaps = pool.gap_durations()
         return float(np.median(gaps)) if gaps.size else float("nan")
-    if name == "present_share_22":
-        return int(hist[calibration_module.FULL_COUNT:calibration_module.FULL_COUNT + 1].sum()) / frames
-    if name == "present_mean":
-        return slot_frames / frames
-    if name == "present_share_le14":
-        return int(hist[:calibration_module.LOW_COUNT + 1].sum()) / frames
     if name == "wrong_team_share":
         return players["wrong_team_frames"] / frames
     if name == "tracklet_median_s":
@@ -355,8 +456,12 @@ def _gate(spec, pool, calibration):
     The tolerance is +- spec["tolerance"], or that share of the centre's size when the spec's kind is "relative". A gate
     in PENDING_GATES is "pending" whatever it measures: it is printed and never counted.
     """
+    kind = spec.get("kind")
+    if kind not in KINDS:
+        raise FidelityError("gate {!r} has the kind {!r}; the tolerance of a gate is of one of the kinds: {}".format(
+            spec.get("name"), kind, ", ".join(KINDS)))
     got, centre = _round(measured(spec["name"], pool)), _round(centre_of(spec["name"], calibration))
-    limit = spec["tolerance"] if spec["kind"] == "absolute" else spec["tolerance"] * abs(centre)
+    limit = spec["tolerance"] if kind == "absolute" else spec["tolerance"] * abs(centre)
     if spec["name"] in PENDING_GATES:
         status = PENDING
     else:
@@ -401,6 +506,11 @@ def statistics(pool, calibration):
     scalars, ball, players = calibration.scalars, pool.ball, pool.players
     gaps, tracklets = pool.gap_durations(), pool.tracklet_lengths()
     ours_gaps, ours_tracklets = calibration.gap_durations_s, calibration.tracklet_lengths_s
+    frames = players["frames"]
+    at_full = players["full_frames"] > 0         # a pool with no full-strength frame has none of these figures
+
+    def on_full(name):
+        return measured(name, pool) if at_full else None
 
     def quantile(values, level):
         return float(np.quantile(values, level)) if values.size else float("nan")
@@ -413,11 +523,22 @@ def statistics(pool, calibration):
         "gap_s_p90": (quantile(gaps, 0.90), quantile(ours_gaps, 0.90)),
         "near_line_onset_share": (ball["near_line_onsets"] / ball["interior_gaps"] if ball["interior_gaps"]
                                   else float("nan"), scalars["near_line_share"]),
-        "present_mean": (measured("present_mean", pool), centre_of("present_mean", calibration)),
-        "present_share_22": (measured("present_share_22", pool), centre_of("present_share_22", calibration)),
-        "present_share_le14": (measured("present_share_le14", pool), centre_of("present_share_le14", calibration)),
+        # How many slots are present: on the full-strength frames (the gates' figures), and then on all frames, where a
+        # team that is down to 10 for part of a match cannot show 22. Ours is on all its frames in both.
+        "present_mean": (on_full("present_mean"), centre_of("present_mean", calibration)),
+        "present_share_22": (on_full("present_share_22"), centre_of("present_share_22", calibration)),
+        "present_share_le14": (on_full("present_share_le14"), centre_of("present_share_le14", calibration)),
+        "present_mean_all_frames": (players["present_slot_frames"] / frames, centre_of("present_mean", calibration)),
+        "present_share_22_all_frames": (
+            _frames_with(players["present_hist"], FULL_STRENGTH, FULL_STRENGTH) / frames,
+            centre_of("present_share_22", calibration)),
+        "present_share_le14_all_frames": (
+            _frames_with(players["present_hist"], 0, calibration_module.LOW_COUNT) / frames,
+            centre_of("present_share_le14", calibration)),
         "tracklet_s_median": (quantile(tracklets, 0.50), quantile(ours_tracklets, 0.50)),
         "wrong_team_share": (measured("wrong_team_share", pool), centre_of("wrong_team_share", calibration)),
+        "wrong_team_share_full_strength": (players["full_wrong_team_frames"] / players["full_frames"] if at_full
+                                           else None, centre_of("wrong_team_share", calibration)),
         "speed_nan_share": (measured("speed_nan_share", pool), centre_of("speed_nan_share", calibration)),
         "jitter_rms_m": (float(np.sqrt(players["jitter_squares"] / players["jitter_triples"]))
                          if players["jitter_triples"] else float("nan"), calibration.player_jitter_rms_m),
@@ -425,8 +546,8 @@ def statistics(pool, calibration):
     spread = (min(pool.missing_shares), max(pool.missing_shares))
     rows["missing_share_min_over_match_seeds"] = (spread[0], None)
     rows["missing_share_max_over_match_seeds"] = (spread[1], None)
-    return {name: {"benchmark": _round(benchmark), "bar_ath": None if ours is None else _round(ours)}
-            for name, (benchmark, ours) in rows.items()}
+    return {name: {"benchmark": None if benchmark is None else _round(benchmark),
+                   "bar_ath": None if ours is None else _round(ours)} for name, (benchmark, ours) in rows.items()}
 
 
 def _round(value):
@@ -447,6 +568,14 @@ def render(result):
         tolerance = "{:g}%".format(100 * gate["tolerance"]) if gate["kind"] == "relative" else _cell(gate["tolerance"])
         lines.append("  {:<18}{:>12}{:>12}{:>12}   {}   ({})".format(
             gate["name"], _cell(gate["measured"]), _cell(gate["centre"]), tolerance, gate["status"], gate["text"]))
+    seen = result.get("full_strength")
+    if seen and seen["frames"] and any(gate["name"] in COUNT_GATES for gate in result["gates"]):
+        lines.append("  the gates on how many slots are present are measured on full strength frames only: {:,} of "
+                     "{:,} frames ({:.1%}){}".format(
+                         seen["full_frames"], seen["frames"], seen["share"],
+                         "; below full strength: " + ", ".join(
+                             "{} {:.1%}".format(match_id, share) for match_id, share in seen["below_full"].items())
+                         if seen["below_full"] else ""))
     lines += ["", "checks (pre-registered warning bands; the degradation is never adjusted towards them)",
               "  {:<32}{:>10}{:>10}{:>10}   {}".format("check", "measured", "ours", "band", "status")]
     for check in result["checks"]:

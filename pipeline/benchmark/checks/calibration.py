@@ -1510,7 +1510,7 @@ def test_calibration_manifest_move_waits_for_a_real_handle_on_windows():
 
         # Released from inside the retry loop's own wait: the real handle makes the first os.replace raise the OS's
         # PermissionError, the first sleep (patched here to close the handle, and to return at once) lets go of it, and
-        # the second os.replace goes through. No clock decides which comes first, so this cannot flake on a slow machine.
+        # the second os.replace goes through. No clock decides which comes first, so it cannot flake on a slow machine.
         reader = open(manifest_path, "rb")
         real_sleep, sleeps, refusals = calibration.time.sleep, [], []
 

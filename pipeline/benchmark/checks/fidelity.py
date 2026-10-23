@@ -22,8 +22,7 @@ from pipeline.benchmark import calibration, degrade, dfl, fidelity, run, sources
 from pipeline.benchmark import inputs as match_inputs
 from pipeline.benchmark import truth as truths
 from pipeline.benchmark.checks.calibration import brute_force_agreement
-from pipeline.benchmark.checks.common import synthetic_calibration
-from pipeline.benchmark.checks.degrade import made_up_calibration, steady_match
+from pipeline.benchmark.checks.common import made_up_calibration, steady_match, synthetic_calibration
 from pipeline.benchmark.checks.inputs import random_match
 from pipeline.benchmark.checks.run import loading, read, strict_json, synthetic_matches, yardstick_path
 from pipeline.contracts import D
@@ -78,7 +77,8 @@ def test_fidelity_report_synthetic():
         lines = []
         result = fidelity.report("gaps", seeds=SEEDS, matches=matches, calibration=cal, data_dir=root, log=lines.append)
         assert sorted(result) == sorted(["profile", "seeds", "matches", "calibration", "gates", "checks", "statistics",
-                                         "draws", "players_draws", "passed", "warnings", "notes"])
+                                         "draws", "players_draws", "full_strength", "passed", "warnings",
+                                         "notes"])
         assert result["players_draws"] == {}, "gaps degrades no player"
         assert result["profile"] == {"name": "gaps", "version": 1} and result["seeds"] == [0, 1]
         assert result["matches"] == ["RND001", "RND002"]
@@ -282,22 +282,53 @@ def tracking_calibration():
         speed_nan_runs=made.speed_nan_runs, speed_nan_share=made.speed_nan_share)
 
 
+TEAMS_22 = (0,) * 11 + (1,) * 11        # a full squad on the pitch: the frames of a match at full strength
+
+
+def player_off(match, player, first, stop):
+    """`match` with the player in column `player` off the pitch (no position) on rows first .. stop - 1 of its first
+    half, counted from the half's start: a sending-off, or an injury, for part of a half."""
+    start = match.graded[0][1]
+    xy = np.array(match.players_xy)
+    xy[start + first:start + stop, player] = np.nan
+    xy.setflags(write=False)
+    return dataclasses.replace(match, players_xy=xy)
+
+
 def steady_matches():
-    """Two matches whose players stand on the pitch for whole stretches (checks/degrade.py's steady_match)."""
-    return {"RND001": steady_match("RND001", 0), "RND002": steady_match("RND002", 1, rows=(260, 190))}
+    """Two matches of 22 players who stand on the pitch for whole stretches (checks/common.py's steady_match): the first
+    has all of them throughout, and in the second an away player (column 15) is off for rows 100-179 of the first half,
+    so that 80 of its 450 frames have 21 players and are below full strength."""
+    return {"RND001": steady_match("RND001", 0, teams=TEAMS_22, substitutions=False),
+            "RND002": player_off(steady_match("RND002", 1, rows=(260, 190), teams=TEAMS_22, substitutions=False),
+                                 15, 100, 180)}
 
 
 def worked_out_tracking(matches, cal, seeds=SEEDS):
     """The pooled figures of the tracking gates by other routes than the report's: each match and seed degraded and
-    measured by calibration.player_stats on its own, the histograms and counts added, the tracklets laid end to end."""
+    measured by calibration.player_stats on its own, the histograms and counts added, the tracklets laid end to end.
+
+    The figures that the report measures on the full-strength frames only (the share with 22 present, the mean present,
+    the share with 14 or fewer) and the wrong-team share there are counted again here one frame at a time, in plain
+    loops, over the frames where the clean match has 22 players; they are under "full", with the number of those frames
+    and, for each match with fewer than all of them, their share, under "below_full". The flat figures are over all
+    frames."""
     frames = slot_frames = wrong = nan = 0
     hist = np.zeros(degrade.N_SLOTS + 2, dtype=np.int64)
-    tracklets, drawn = [], {}
-    for match in matches.values():
+    tracklets, drawn, below = [], {}, {}
+    full = {"hist": np.zeros(degrade.N_SLOTS + 2, dtype=np.int64), "frames": 0, "slot_frames": 0, "wrong": 0}
+    full_frames = total_frames = 0
+    for match_id, match in matches.items():
+        clean = [int(np.isfinite(match.players_xy[row, :, 0]).sum()) for row in range(match.n_frames)]
+        spans = [(half, match.kickoffs[half], stop) for half, _, stop in match.graded]
+        kept = sum(1 for _, start, stop in spans for row in range(start, stop) if clean[row] == 22)
+        seen = sum(stop - start for _, start, stop in spans)
+        full_frames, total_frames = full_frames + kept, total_frames + seen
+        if kept < seen:
+            below[match_id] = kept / seen
         for seed in range(seeds):
             atd, info = degrade.degrade(degrade.tracking_view(match), "tracking", cal, seed)
             inputs = match_inputs.MatchInputs(match, atd, profile="tracking", seed=seed)
-            spans = [(half, inputs.kickoffs[half], stop) for half, _, stop in inputs.graded]
             stats = calibration.player_stats(atd.players_present, atd.slot_team, inputs.metres(atd.players_xy),
                                              atd.players_speed, spans, inputs.fps)
             frames, slot_frames = frames + stats["frames"], slot_frames + stats["present_slot_frames"]
@@ -306,19 +337,38 @@ def worked_out_tracking(matches, cal, seeds=SEEDS):
             tracklets.append(stats["tracklet_lengths_s"])
             for name in fidelity.PLAYERS_DRAWS:
                 drawn[name] = drawn.get(name, 0) + info["players"][name]
+            for _, start, stop in spans:
+                for row in range(start, stop):
+                    if clean[row] != 22:
+                        continue
+                    present = [slot for slot in range(atd.n_slots) if atd.players_present[row, slot]]
+                    home = sum(1 for slot in present if atd.slot_team[slot] == 0)
+                    away = len(present) - home
+                    full["hist"][len(present)] += 1
+                    full["frames"] += 1
+                    full["slot_frames"] += len(present)
+                    full["wrong"] += (home > 11 and away < 11) or (away > 11 and home < 11)
     return {"present_share_22": hist[22] / frames, "present_mean": slot_frames / frames,
             "present_share_le14": hist[:15].sum() / frames, "wrong_team_share": wrong / frames,
             "tracklet_median_s": float(np.median(np.concatenate(tracklets))), "speed_nan_share": nan / slot_frames,
-            "players_draws": drawn}
+            "players_draws": drawn,
+            "full": {"present_share_22": full["hist"][22] / full["frames"],
+                     "present_mean": full["slot_frames"] / full["frames"],
+                     "present_share_le14": full["hist"][:15].sum() / full["frames"],
+                     "wrong_team_share": full["wrong"] / full["frames"], "frames": full["frames"]},
+            "full_strength": {"frames": total_frames, "full_frames": full_frames, "share": full_frames / total_frames},
+            "below_full": below}
 
 
 def test_fidelity_tracking_report_synthetic():
     """The tracking profile's eight gates, each worked out by other code, with the two pending ones not counted.
 
-    Two steady matches and the made-up tracklets, episodes and NaN runs: every pooled number is the sums of
-    calibration.player_stats called on each degraded (match, seed) here and not by the report, the median is that of
-    the tracklets laid end to end, the centres are the Calibration's, a relative tolerance is a share of its centre,
-    and a pending gate is pending whatever it measures. The pooled counts of what was drawn are the degrader's own."""
+    Two steady matches of 22 players (one with a player off for part of a half), and the made-up tracklets, episodes and
+    NaN runs: every pooled number is the sums of calibration.player_stats called on each degraded (match, seed) here and
+    not by the report, the median is that of the tracklets laid end to end, the centres are the Calibration's, a
+    relative tolerance is a share of its centre, and a pending gate is pending whatever it measures. The three gates
+    about how many slots are present are measured on the full-strength frames only (the next check). The pooled counts
+    of what was drawn are the degrader's own."""
     matches, cal = steady_matches(), tracking_calibration()
     with tempfile.TemporaryDirectory() as root:
         result = fidelity.report("tracking", seeds=SEEDS, matches=matches, calibration=cal, data_dir=root, log=quiet)
@@ -335,7 +385,8 @@ def test_fidelity_tracking_report_synthetic():
             name = gate["name"]
             assert set(gate) == {"name", "text", "measured", "centre", "tolerance", "kind", "status"}
             assert abs(gate["centre"] - centres[name]) < 1e-9, (name, gate)
-            expected = ours[name] if name in ours else gaps[name]    # the ball's two are those of the gaps profile
+            expected = (ours["full"][name] if name in fidelity.COUNT_GATES
+                        else ours[name] if name in ours else gaps[name])
             if name in ("missing_share", "median_gap_s"):
                 assert gate["status"] in ("pass", "FAIL")
             else:
@@ -368,8 +419,94 @@ def test_fidelity_tracking_report_synthetic():
                                log=quiet) == result
         text = "\n".join(fidelity.render(result))
         for fragment in ("tracklet_median_s", "50%", "pending", "present_mean", "players' draws", "episodes",
-                         "(2 pending, not counted)"):
+                         "(2 pending, not counted)", "full strength"):
             assert fragment in text, (fragment, text)
+
+
+def test_fidelity_count_gates_leave_out_frames_below_full_strength():
+    """The gates on how many slots are present are measured on the frames where the clean match has 22 players, and
+    nothing else is.
+
+    In the second match an away player is off for 80 frames of the first half (a sending-off, or an injury): its 80
+    frames have 21 players on the pitch and can never show 22 slots. The share with 22 present, the mean present and the
+    share with 14 or fewer must be those of the other 370 frames of that match and all 450 of the first (counted here
+    one frame at a time), and not those of all frames, which are lower (the check asserts that they differ). The
+    wrong-team share, the tracklet median, the NaN-speed share and the ball's gates stay on all frames, and the
+    statistics hold both: the count figures on all frames beside the full-strength ones, and the wrong-team share on the
+    full-strength frames as information. The report says how many frames are at full strength, and which matches
+    are not all of them."""
+    matches, cal = steady_matches(), tracking_calibration()
+    with tempfile.TemporaryDirectory() as root:
+        result = fidelity.report("tracking", seeds=SEEDS, matches=matches, calibration=cal, data_dir=root, log=quiet)
+    ours = worked_out_tracking(matches, cal)
+    by_name = {gate["name"]: gate for gate in result["gates"]}
+    assert ours["below_full"] == {"RND002": 370 / 450} and set(ours["below_full"]) == {"RND002"}
+    for name in fidelity.COUNT_GATES:
+        assert abs(by_name[name]["measured"] - ours["full"][name]) < 1e-9, (name, by_name[name], ours["full"][name])
+    assert abs(ours["full"]["present_mean"] - ours["present_mean"]) > 0.02, "all frames give another mean present"
+    assert abs(ours["full"]["present_share_22"] - ours["present_share_22"]) > 0.005
+    for name in ("wrong_team_share", "tracklet_median_s", "speed_nan_share"):
+        assert abs(by_name[name]["measured"] - ours[name]) < 1e-9, (name, "stays on all frames")
+    stats = result["statistics"]
+    for name in fidelity.COUNT_GATES:
+        assert abs(stats[name + "_all_frames"]["benchmark"] - ours[name]) < 1e-9, name
+        assert abs(stats[name]["benchmark"] - ours["full"][name]) < 1e-9, name
+        assert stats[name + "_all_frames"]["bar_ath"] == stats[name]["bar_ath"], "ours is on all its frames, in both"
+    assert abs(stats["wrong_team_share_full_strength"]["benchmark"] - ours["full"]["wrong_team_share"]) < 1e-9
+    assert abs(stats["wrong_team_share"]["benchmark"] - ours["wrong_team_share"]) < 1e-9
+    assert stats["wrong_team_share_full_strength"]["bar_ath"] == stats["wrong_team_share"]["bar_ath"]
+    seen = result["full_strength"]
+    assert seen["frames"] == ours["full_strength"]["frames"] and seen["full_frames"] == \
+        ours["full_strength"]["full_frames"], seen
+    assert abs(seen["share"] - ours["full_strength"]["share"]) < 1e-9 and set(seen["below_full"]) == {"RND002"}
+    assert abs(seen["below_full"]["RND002"] - 370 / 450) < 1e-9
+    assert any("full strength" in note and "22" in note and "all its frames" in note for note in result["notes"]), \
+        result["notes"]
+
+    # Matches that never have 22 players (these have 6) have no full-strength frame: no count gate can be measured, and
+    # the report says so instead of dividing by zero; a gaps report on them has no such gate and says nothing of it.
+    short = synthetic_matches()
+    with tempfile.TemporaryDirectory() as root:
+        expect_error(fidelity.FidelityError, lambda: fidelity.report(
+            "tracking", seeds=1, matches=short, calibration=cal, data_dir=root, log=quiet), "22", "full strength",
+            "present_mean")
+        gaps = fidelity.report("gaps", seeds=1, matches=short, calibration=cal, data_dir=root, log=quiet)
+    assert gaps["statistics"]["present_mean"]["benchmark"] is None and gaps["statistics"]["present_mean"]["bar_ath"]
+    assert gaps["statistics"]["present_mean_all_frames"]["benchmark"] is not None
+    assert gaps["full_strength"]["full_frames"] == 0 and gaps["full_strength"]["share"] == 0.0
+
+
+def test_fidelity_full_strength_blocks_are_the_runs_of_22_inside_each_span():
+    """full_strength_blocks: the runs of rows with exactly 22 players, inside each span, with distinct block numbers.
+
+    Worked out by hand on 12 rows: counts 22 on rows 0-3, 21 on 4-5, 22 on 6-8, 20 on 9, 22 on 10-11; the first half is
+    rows 0-7 (from its kick-off at row 1) and the second rows 8-11. So the runs are rows 1-3 and 6-7 of the first half
+    and rows 8 and 10-11 of the second: a run does not cross the end of a span, and a block number is used once (the
+    statistics call refuses two blocks of one half)."""
+    counts = np.array([22, 22, 22, 22, 21, 21, 22, 22, 22, 20, 22, 22])
+    blocks = fidelity.full_strength_blocks(counts, [(1, 1, 8), (2, 8, 12)])
+    assert [(start, stop) for _, start, stop in blocks] == [(1, 4), (6, 8), (8, 9), (10, 12)], blocks
+    assert len({number for number, _, _ in blocks}) == 4
+    assert fidelity.full_strength_blocks(np.full(6, 21), [(1, 0, 6)]) == []
+    assert [(s, e) for _, s, e in fidelity.full_strength_blocks(np.full(6, 22), [(1, 0, 6)])] == [(0, 6)]
+    assert [(s, e) for _, s, e in fidelity.full_strength_blocks(np.array([23, 22, 22, 23]), [(1, 0, 4)])] == [(1, 3)], \
+        "exactly 22: more than 22 is not full strength either"
+
+
+def test_fidelity_gate_kind_is_validated():
+    """A gate spec's kind is absolute or relative, and anything else is a FidelityError naming the gate and the kinds.
+
+    A kind that was not recognised used to count as relative, which would widen or narrow a band without a word."""
+    cal = synthetic_calibration()
+    pool = fidelity.Pool()
+    pool.players["tracklets"].append(np.array([20.0]))
+    spec = {"name": "tracklet_median_s", "tolerance": 0.5, "kind": "proportional", "text": "t"}
+    expect_error(fidelity.FidelityError, lambda: fidelity._gate(spec, pool, cal), "tracklet_median_s", "proportional",
+                 "absolute", "relative")
+    missing = {"name": "tracklet_median_s", "tolerance": 0.5, "text": "t"}
+    expect_error(fidelity.FidelityError, lambda: fidelity._gate(missing, pool, cal), "tracklet_median_s", "kind")
+    assert fidelity.KINDS == ("absolute", "relative")
+    assert all(spec["kind"] in fidelity.KINDS for gates in fidelity.GATES.values() for spec in gates)
 
 
 def test_fidelity_relative_gate_is_a_share_of_its_centre():
@@ -410,7 +547,8 @@ def test_fidelity_pending_gates_do_not_change_the_exit_code_and_a_failing_gate_d
     required NaN-speed gate closed to a tolerance of 0 the command exits 1 and says so; with only a pending gate closed
     (it would FAIL if it were counted) the exit code is 0 again. An empty PENDING_GATES counts all eight."""
     cal = tracking_calibration()
-    matches = {match_id: steady_match(match_id, seed=sources.MATCH_IDS.index(match_id)) for match_id in IDS}
+    matches = {match_id: steady_match(match_id, seed=sources.MATCH_IDS.index(match_id), teams=TEAMS_22,
+                                      substitutions=False) for match_id in IDS}
     real_load, real_load_match = calibration.load, dfl.load_match
     real_gates, real_pending = fidelity.GATES, fidelity.PENDING_GATES
 
@@ -456,9 +594,8 @@ def test_fidelity_report_refuses_what_it_cannot_measure():
             keywords.setdefault("calibration", cal)
             return fidelity.report(keywords.pop("profile", "gaps"), data_dir=root, log=quiet, **keywords)
 
-        expect_error(fidelity.FidelityError, lambda: measure(profile="clean"), "clean", "no gates", "gaps")
-        expect_error(fidelity.FidelityError, lambda: measure(profile="clean"), "clean", "degrades nothing", "gaps",
-                     "tracking")
+        expect_error(fidelity.FidelityError, lambda: measure(profile="clean"), "clean", "no gates", "degrades nothing",
+                     "gaps", "tracking")
         expect_error(fidelity.FidelityError, lambda: measure(profile="context"), "context", "not one of", "clean",
                      "gaps", "tracking")
         expect_error(fidelity.FidelityError, lambda: measure(seeds=0), "seeds", "at least 1")

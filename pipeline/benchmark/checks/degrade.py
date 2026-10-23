@@ -4,14 +4,14 @@ the degrader may not see.
 They run on a DflMatch of random positions (checks/inputs.py's random_match) with the ball put back on every frame of
 both halves, so that the share of the ball that a degradation removes is the share of the mask it was given, and on
 masks built here, so that every figure is worked out from how they are made. The tracking profile's checks run on a
-steady match (steady_match), whose players are on the pitch for whole stretches, as in a real match, and on a made-up
-Calibration whose tracklet lengths and slot counts give figures worked out by hand (d = 3/55, a mean tracked span of 53
-frames). The checks that need real data print aggregates only:
-test_dfl_tracking_never_exhausts_a_pool_on_the_real_matches (--dfl: the 7 downloaded DFL matches, a made-up Calibration)
-and the two that need our own match as well (--data, NOT RUN where the DFL files are not there),
-test_data_gaps_profile_serves_a_real_match_with_our_real_masks and
-test_data_tracking_profile_on_a_real_match_with_our_real_calibration. Every other check here reads nothing from the
-data directory.
+steady match (steady_match, in checks/common.py with the other fixtures it shares with the fidelity checks), whose
+players are on the pitch for whole stretches, as in a real match, and on a made-up Calibration whose tracklet lengths
+and slot counts give figures worked out by hand (d = 3/55, a mean tracked span of 53 frames). The checks that need
+real data print aggregates only: test_dfl_tracking_never_exhausts_a_pool_on_the_real_matches (--dfl: the 7 downloaded
+DFL matches, a made-up Calibration) and the three that need our own match as well (--data, NOT RUN where the DFL files
+are not there), test_data_gaps_profile_serves_a_real_match_with_our_real_masks,
+test_data_tracking_profile_on_a_real_match_with_our_real_calibration and
+test_data_tracking_constants_follow_from_the_measurements. Every other check here reads nothing from the data directory.
 """
 
 import ast
@@ -26,27 +26,14 @@ import numpy as np
 
 from pipeline.benchmark import calibration, degrade, dfl
 from pipeline.benchmark import inputs as match_inputs
-from pipeline.benchmark.checks.common import NotRun, real_match
-from pipeline.benchmark.checks.inputs import leaks, random_match
+from pipeline.benchmark.checks.common import (MADE_UP_D, MADE_UP_MEAN, MADE_UP_MU, MADE_UP_SPEED_NAN,
+                                              MADE_UP_WRONG_TEAM, MASK_ROWS, NAN_RUNS, ROWS, NotRun,
+                                              made_up_calibration, real_match, steady_match, tracked_match)
+from pipeline.benchmark.checks.inputs import leaks
 from pipeline.selftest import expect_error
 
 # Params
-ROWS = (240, 200)                       # the synthetic halves, in rows
-MASK_ROWS = (330, 310)                  # our made-up masks: longer than the halves, so that an offset has a range
 PRODUCTION = degrade.__file__
-# What the made-up Calibration says of our tracking: tracklets of 10, 25, 50, 80 and 100 frames at 25 Hz (mean 53), and
-# slots present per frame as {slots: frames} per half. The frames with more than 18 present (CAP) are 50 with 22, 30
-# with 20 and 20 with 19: their mean is (1100 + 600 + 380) / 100 = 20.8, so d = 1 - 20.8 / 22 = 3 / 55, and a lost span
-# has the mean mu = 53 * d / (1 - d) = 53 * 3 / 52 frames. The frames with 18 or fewer are there to be left out.
-LENGTHS_S = (0.4, 1.0, 2.0, 3.2, 4.0)
-PRESENT_COUNTS = {1: {22: 30, 20: 20, 19: 10, 18: 4, 10: 2, 0: 1}, 2: {22: 20, 20: 10, 19: 10, 18: 3, 10: 1, 0: 1}}
-MADE_UP_D, MADE_UP_MEAN, MADE_UP_MU = 3 / 55, 53.0, 53 * 3 / 52
-# And of the wrong-team episodes and the NaN-speed runs: episodes of 0.4, 1.2, 2 and 4 s (10, 30, 50 and 100 frames at
-# 25 Hz, mean 47.5), 10% of the frames wrong-team, and NaN-speed runs of 3, 8, 21 and 40 frames (mean 18), 8% of the
-# present slot-frames.
-EPISODES_S = (0.4, 1.2, 2.0, 4.0)
-NAN_RUNS = (3, 8, 21, 40)
-MADE_UP_WRONG_TEAM, MADE_UP_SPEED_NAN = 0.1, 0.08
 # The record of what was drawn (info["players"]): the parameters and counts, per half and in all. No frame.
 HALF_KEYS = ("tracklets", "slots_used", "on_pitch_frames", "lost_frames", "onsets", "episodes", "skipped_far",
              "skipped_overlap", "episode_frames", "speed_nan_runs", "speed_nan_frames")
@@ -57,67 +44,6 @@ PLAYERS_KEYS = ("d", "mean_tracked_frames", "mean_lost_frames", "tracklets", "on
 
 
 # -- helpers ----------------------------------------------------------------------------------------------------------
-
-def tracked_match(match_id="RND001", seed=0, rows=ROWS):
-    """random_match with the ball on every frame of both halves (and none on the separator), x and y together."""
-    match = random_match(match_id, seed=seed, rows=rows)
-    ball = np.array(match.ball_xy)
-    for _, start, stop in match.graded:
-        ball[start:stop] = np.random.default_rng([4, seed]).uniform(0.05, 0.95, size=(stop - start, 2))
-    ball.setflags(write=False)
-    return dataclasses.replace(match, ball_xy=ball)
-
-
-def steady_match(match_id="RND001", seed=0, rows=ROWS, teams=(0, 0, 0, 1, 1, 1), substitutions=True):
-    """tracked_match whose players are on the pitch for whole stretches, as in a real match, and not at random.
-
-    Everybody is on for the whole of both halves, except (with `substitutions`, in the first half, rows counted from
-    its start): player 2 (home) comes on at 60, player 4 (away) is off from 150, and player 5 (away) is off from 100 up
-    to 130 and back after it, so that he has two stretches. On the default teams and ROWS that makes 7 stretches in the
-    first half (rows 0-239) and 6 in the second (rows 265-464). Positions are uniform over the pitch, all different, and
-    NaN in both coordinates where a player is not on and on the rows between the halves.
-    """
-    match = tracked_match(match_id, seed, rows)
-    xy = np.random.default_rng([5, seed]).uniform(0.02, 0.98, size=(match.n_frames, len(teams), 2))
-    outside = np.ones(match.n_frames, dtype=bool)
-    for _, start, stop in match.graded:
-        outside[start:stop] = False
-    xy[outside] = np.nan
-    if substitutions:
-        start, stop = match.graded[0][1:]
-        xy[start:start + 60, 2] = np.nan
-        xy[start + 150:stop, 4] = np.nan
-        xy[start + 100:start + 130, 5] = np.nan
-    xy.setflags(write=False)
-    return dataclasses.replace(match, players_xy=xy, player_team=np.array(teams, dtype=np.int8))
-
-
-def made_up_calibration(seed=0, rows=MASK_ROWS):
-    """What the degrader reads of a Calibration: `ball_masks`, with long runs of missing ball as ours has, and what the
-    tracking profile reads: `tracklet_lengths_s` and `present_counts` (LENGTHS_S and PRESENT_COUNTS),
-    `wrong_team_episodes_s` and `wrong_team_share`, `speed_nan_runs` and `speed_nan_share` (EPISODES_S, NAN_RUNS and
-    the two shares above)."""
-    rng = np.random.default_rng([7, seed])
-    masks = {}
-    for half, length in enumerate(rows, start=1):
-        runs, first = [], bool(rng.integers(2))
-        while sum(runs) < length:
-            runs.append(int(rng.integers(5, 40)))
-        flags = np.concatenate([np.full(count, first ^ (k % 2 == 1)) for k, count in enumerate(runs)])[:length]
-        flags.setflags(write=False)
-        masks[half] = flags
-    counts = {}
-    for half, table in PRESENT_COUNTS.items():
-        counts[half] = np.array([slots for slots, frames in sorted(table.items()) for _ in range(frames)],
-                                dtype=np.int16)
-        counts[half].setflags(write=False)
-    lengths, episodes, runs = np.array(LENGTHS_S), np.array(EPISODES_S), np.array(NAN_RUNS, dtype=np.int64)
-    for array in (lengths, episodes, runs):
-        array.setflags(write=False)
-    return types.SimpleNamespace(ball_masks=masks, present_counts=counts, tracklet_lengths_s=lengths,
-                                 wrong_team_episodes_s=episodes, wrong_team_share=MADE_UP_WRONG_TEAM,
-                                 speed_nan_runs=runs, speed_nan_share=MADE_UP_SPEED_NAN)
-
 
 def without_new_parts(calibration, **more):
     """The Calibration with no wrong-team share and no NaN-speed share: its players are tracklets and slots alone."""
@@ -943,24 +869,6 @@ def test_tracking_speeds_are_finite_differences_within_a_tracklet():
     assert np.isnan(speed).all()
 
 
-def test_tracking_ball_is_exactly_gaps():
-    """The ball of the tracking profile is the ball of the gaps profile: the same transplant draws, to the byte.
-
-    The profiles nest: what tracking adds is the players, and the difference between two results is then one
-    component. The record of the draws is gaps' as well, with the players' figures beside it."""
-    match, calibration = steady_match(), made_up_calibration()
-    view = degrade.tracking_view(match)
-    for seed in (0, 1, 2):
-        tracking, tracking_info = degrade.degrade(view, "tracking", calibration, seed)
-        gaps, gaps_info = degrade.degrade(view, "gaps", calibration, seed)
-        assert ball_bytes(tracking) == ball_bytes(gaps) and np.isnan(tracking.ball_speed).all()
-        assert tracking_info["transplants"] == gaps_info["transplants"]
-        assert tracking_info["mask_share"] == gaps_info["mask_share"]
-        assert sorted(tracking_info) == sorted(list(gaps_info) + ["players"]), sorted(tracking_info)
-        assert (tracking_info["profile"], tracking_info["version"]) == ("tracking", 1)
-        assert tracking.players_xy.shape[1] == 46 and gaps.players_xy.shape[1] == 6, "the players are what differs"
-
-
 def test_tracking_is_deterministic_and_independent_of_the_other_matches():
     """The same seed gives the same bytes and the same record; another seed, match_index or match gives another.
 
@@ -1112,7 +1020,7 @@ def test_wrong_team_starts_at_close_pairs():
     """An episode starts only where an opposing pair is within 2 m, inclusive, and the player is one of the pair.
 
     Six players stand far apart except in windows (pairs_match): in half 1, rows 100-400, home 1 and away 4 are exactly
-    2.0 m apart (inside: 2 m is within) and in rows 600-900 they are 2.0000001 m apart (beyond); in half 2, rows
+    2.0 m apart (inside: 2 m is within) and in rows 600-900 they are 2.000122 m apart (beyond); in half 2, rows
     200-500, two pairs are exactly 1.0 m apart (a tie), (home 0, away 3) and (home 1, away 4), and the tie goes to the
     lowest columns. The onsets are read back from the documented generator, and each is classed by where it falls: an
     onset in a window where a pair is within 2 m is an episode or an overlap, every other one is skipped as far, and
@@ -1315,10 +1223,12 @@ def test_tracking_without_the_new_parts_is_task_12s_players():
 
 
 def test_profiles_nest():
-    """For the same seed the tracking profile's ball is the gaps profile's, mask and arrays, with the new parts on.
+    """For the same seed the tracking profile's ball is the gaps profile's, to the byte, with the new parts on.
 
     The ball is drawn from the "transplant" stream and the players from others, so what tracking adds is the players
-    alone: the same missing-ball mask, the same positions, the same NaN speed (T31), the same record of the draws."""
+    alone, and the difference between two results is one component: the same missing-ball mask, the same positions, the
+    same NaN speed (T31), the same record of the transplants, and the record of the draws is gaps' with the players'
+    figures beside it. The players are what differs: 46 slots where gaps has one per DFL player."""
     match, calibration = steady_match(), made_up_calibration()
     view = degrade.tracking_view(match)
     for seed in (0, 1, 2):
@@ -1328,6 +1238,9 @@ def test_profiles_nest():
         assert ball_bytes(tracking) == ball_bytes(gaps) and np.isnan(tracking.ball_speed).all()
         assert tracking_info["transplants"] == gaps_info["transplants"]
         assert tracking_info["mask_share"] == gaps_info["mask_share"]
+        assert sorted(tracking_info) == sorted(list(gaps_info) + ["players"]), sorted(tracking_info)
+        assert (tracking_info["profile"], tracking_info["version"]) == ("tracking", 1)
+        assert tracking.players_xy.shape[1] == 46 and gaps.players_xy.shape[1] == 6, "the players are what differs"
         players = tracking_info["players"]
         assert players["scale"] == degrade.WRONG_TEAM_SCALE > 0 and players["speed_nan_target"] == MADE_UP_SPEED_NAN
         assert players["speed_nan_runs"] > 0, "the new parts are on, so this is not vacuous"
@@ -1701,6 +1614,12 @@ def test_second_difference_shape_counts_what_it_says():
     assert second_difference_shape(line, np.ones((7, 1), dtype=bool), [(1, 0, 4), (2, 4, 7)])[0] == 2 + 1
 
 
+# The one measurement that WRONG_TEAM_SCALE was worked out from (docs/results.md R004): the observable wrong-team frames
+# of the 7 DFL matches at s = 1.0, and the share in ours (Calibration.wrong_team_share).
+RECORDED_OBSERVED = (39756, 1002644)
+RECORDED_TARGET = 0.105391764
+
+
 def test_data_tracking_constants_follow_from_the_measurements():
     """The frozen scale and the smoothing window, re-derived from the 7 DFL matches and our Calibration (aggregates).
 
@@ -1710,12 +1629,14 @@ def test_data_tracking_constants_follow_from_the_measurements():
     from each kick-off to the end of the graded block, pooled by sums of squares) against
     Calibration.player_jitter_rms_m:
     SMOOTH_WINDOW is not 0 if and only if DFL's is more than twice ours; (2) the scale: the observable wrong-team share
-    (player_stats on the degraded match, seed 0, the 7 matches pooled by sums) at s = 1.0 either is within 0.03 of ours,
-    and then WRONG_TEAM_SCALE is 1.0, or it is not, and then WRONG_TEAM_SCALE is s = 1.0 rescaled once by target /
-    observed (to 3 decimals). At the frozen scale the share must be within 0.03 of ours: the gate's own band. It prints
-    both, per match and pooled, the degraded players' jitter after the smoothing beside DFL's and ours, what the
-    jitter is made of (its median, 99th percentile and the share of its squares in rare jumps) and the wrong-team
-    episodes that player_stats sees in the degraded matches beside ours (information).
+    (player_stats on the degraded match, seed 0, the 7 matches pooled by sums) at s = 1.0 was not within 0.03 of ours,
+    so WRONG_TEAM_SCALE is s = 1.0 rescaled once by target / observed (to 3 decimals): the constant is compared with
+    that one recorded measurement (RECORDED_OBSERVED, RECORDED_TARGET), and not with a scale worked out again from this
+    run's, which it would follow wherever the code went. At the frozen scale the share must be within 0.03 of ours,
+    the gate's own band, measured now. It prints both, per match and pooled, the degraded players' jitter after the
+    smoothing beside DFL's and ours, what the jitter is made of (its median, 99th percentile and the share of its
+    squares in rare jumps) and the wrong-team episodes that player_stats sees in the degraded matches beside ours
+    (information).
     """
     from pipeline.benchmark import sources
     for match_id in sources.MATCH_IDS:
@@ -1782,10 +1703,11 @@ def test_data_tracking_constants_follow_from_the_measurements():
     assert (degrade.SMOOTH_WINDOW > 0) == (rms["clean"] > 2 * cal.player_jitter_rms_m), (degrade.SMOOTH_WINDOW, rms)
     assert abs(shapes["ours"][1] - cal.player_jitter_rms_m) < 1e-6, "the same statistic, here and in the Calibration"
     assert rms["degraded"] < rms["clean"], "smoothing lowers the jitter"
-    if abs(first - target) > 0.03:
-        assert abs(degrade.WRONG_TEAM_SCALE - round(target / first, 3)) < 1e-9, (
-            "s is not the one-time rescale of the measurement at 1.0: {} against {:.3f}".format(
-                degrade.WRONG_TEAM_SCALE, target / first))
-    else:
-        assert degrade.WRONG_TEAM_SCALE == 1.0, "the share at s = 1.0 is within the band: s stays 1.0"
+    # The frozen scale is the value that was worked out once, from the measurement recorded in R004 (39,756 of 1,002,644
+    # frames, 0.03965, at s = 1.0, against ours 0.105391764), and not one worked out again from what this run measures:
+    # a scale that followed every change of the code could never be seen to move. What this run measures is printed
+    # above; the frozen scale stays what it was, and must still land inside the gate's band.
+    worked_out = round(RECORDED_TARGET / (RECORDED_OBSERVED[0] / RECORDED_OBSERVED[1]), 3)
+    assert degrade.WRONG_TEAM_SCALE == worked_out == 2.658, (degrade.WRONG_TEAM_SCALE, worked_out)
+    assert abs(target - RECORDED_TARGET) < 1e-9, "the Calibration is the one the scale was worked out against"
     assert abs(frozen - target) <= 0.03, (frozen, target)

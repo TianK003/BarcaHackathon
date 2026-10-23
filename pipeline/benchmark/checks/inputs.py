@@ -686,7 +686,7 @@ def test_atd_repr_shows_no_array():
     and the Homography of pipeline/inputs/ the same way, for whoever changes that package.
     """
     from pipeline.benchmark import degrade
-    from pipeline.benchmark.checks.degrade import made_up_calibration, tracked_match
+    from pipeline.benchmark.checks.common import made_up_calibration, tracked_match
     assert all(field.repr is False for field in dataclasses.fields(atd_cache.Atd)), [
         field.name for field in dataclasses.fields(atd_cache.Atd) if field.repr]
     match = tracked_match()

@@ -9,11 +9,15 @@ own answer, built or reused, calls dfl.load_match itself. Import from here with 
 otherwise shadow it.
 """
 
+import dataclasses
 import functools
 import os
 import sys
 import time
+import types
 from xml.sax.saxutils import quoteattr
+
+import numpy as np
 
 from pipeline.selftest import write_text
 
@@ -112,6 +116,89 @@ def utf8_stdout():
     reconfigure = getattr(sys.stdout, "reconfigure", None)  # a replaced stdout may not have it
     if reconfigure is not None:
         reconfigure(encoding="utf-8")
+
+
+# -- a synthetic tracking: the degrader's and the fidelity report's fixtures -----------------------------------------
+
+# Params
+ROWS = (240, 200)                       # the synthetic halves, in rows
+MASK_ROWS = (330, 310)                  # our made-up masks: longer than the halves, so that an offset has a range
+# What the made-up Calibration says of our tracking: tracklets of 10, 25, 50, 80 and 100 frames at 25 Hz (mean 53), and
+# slots present per frame as {slots: frames} per half. The frames with more than 18 present (CAP) are 50 with 22, 30
+# with 20 and 20 with 19: their mean is (1100 + 600 + 380) / 100 = 20.8, so d = 1 - 20.8 / 22 = 3 / 55, and a lost span
+# has the mean mu = 53 * d / (1 - d) = 53 * 3 / 52 frames. The frames with 18 or fewer are there to be left out.
+LENGTHS_S = (0.4, 1.0, 2.0, 3.2, 4.0)
+PRESENT_COUNTS = {1: {22: 30, 20: 20, 19: 10, 18: 4, 10: 2, 0: 1}, 2: {22: 20, 20: 10, 19: 10, 18: 3, 10: 1, 0: 1}}
+MADE_UP_D, MADE_UP_MEAN, MADE_UP_MU = 3 / 55, 53.0, 53 * 3 / 52
+# And of the wrong-team episodes and the NaN-speed runs: episodes of 0.4, 1.2, 2 and 4 s (10, 30, 50 and 100 frames at
+# 25 Hz, mean 47.5), 10% of the frames wrong-team, and NaN-speed runs of 3, 8, 21 and 40 frames (mean 18), 8% of the
+# present slot-frames.
+EPISODES_S = (0.4, 1.2, 2.0, 4.0)
+NAN_RUNS = (3, 8, 21, 40)
+MADE_UP_WRONG_TEAM, MADE_UP_SPEED_NAN = 0.1, 0.08
+
+
+def tracked_match(match_id="RND001", seed=0, rows=ROWS):
+    """random_match with the ball on every frame of both halves (and none on the separator), x and y together."""
+    # Here and not at the top: checks/inputs.py imports this module.
+    from pipeline.benchmark.checks.inputs import random_match
+    match = random_match(match_id, seed=seed, rows=rows)
+    ball = np.array(match.ball_xy)
+    for _, start, stop in match.graded:
+        ball[start:stop] = np.random.default_rng([4, seed]).uniform(0.05, 0.95, size=(stop - start, 2))
+    ball.setflags(write=False)
+    return dataclasses.replace(match, ball_xy=ball)
+
+
+def steady_match(match_id="RND001", seed=0, rows=ROWS, teams=(0, 0, 0, 1, 1, 1), substitutions=True):
+    """tracked_match whose players are on the pitch for whole stretches, as in a real match, and not at random.
+
+    Everybody is on for the whole of both halves, except (with `substitutions`, in the first half, rows counted from
+    its start): player 2 (home) comes on at 60, player 4 (away) is off from 150, and player 5 (away) is off from 100 up
+    to 130 and back after it, so that he has two stretches. On the default teams and ROWS that makes 7 stretches in the
+    first half (rows 0-239) and 6 in the second (rows 265-464). Positions are uniform over the pitch, all different, and
+    NaN in both coordinates where a player is not on and on the rows between the halves.
+    """
+    match = tracked_match(match_id, seed, rows)
+    xy = np.random.default_rng([5, seed]).uniform(0.02, 0.98, size=(match.n_frames, len(teams), 2))
+    outside = np.ones(match.n_frames, dtype=bool)
+    for _, start, stop in match.graded:
+        outside[start:stop] = False
+    xy[outside] = np.nan
+    if substitutions:
+        start, stop = match.graded[0][1:]
+        xy[start:start + 60, 2] = np.nan
+        xy[start + 150:stop, 4] = np.nan
+        xy[start + 100:start + 130, 5] = np.nan
+    xy.setflags(write=False)
+    return dataclasses.replace(match, players_xy=xy, player_team=np.array(teams, dtype=np.int8))
+
+
+def made_up_calibration(seed=0, rows=MASK_ROWS):
+    """What the degrader reads of a Calibration: `ball_masks`, with long runs of missing ball as ours has, and what the
+    tracking profile reads: `tracklet_lengths_s` and `present_counts` (LENGTHS_S and PRESENT_COUNTS),
+    `wrong_team_episodes_s` and `wrong_team_share`, `speed_nan_runs` and `speed_nan_share` (EPISODES_S, NAN_RUNS and
+    the two shares above)."""
+    rng = np.random.default_rng([7, seed])
+    masks = {}
+    for half, length in enumerate(rows, start=1):
+        runs, first = [], bool(rng.integers(2))
+        while sum(runs) < length:
+            runs.append(int(rng.integers(5, 40)))
+        flags = np.concatenate([np.full(count, first ^ (k % 2 == 1)) for k, count in enumerate(runs)])[:length]
+        flags.setflags(write=False)
+        masks[half] = flags
+    counts = {}
+    for half, table in PRESENT_COUNTS.items():
+        counts[half] = np.array([slots for slots, frames in sorted(table.items()) for _ in range(frames)],
+                                dtype=np.int16)
+        counts[half].setflags(write=False)
+    lengths, episodes, runs = np.array(LENGTHS_S), np.array(EPISODES_S), np.array(NAN_RUNS, dtype=np.int64)
+    for array in (lengths, episodes, runs):
+        array.setflags(write=False)
+    return types.SimpleNamespace(ball_masks=masks, present_counts=counts, tracklet_lengths_s=lengths,
+                                 wrong_team_episodes_s=episodes, wrong_team_share=MADE_UP_WRONG_TEAM,
+                                 speed_nan_runs=runs, speed_nan_share=MADE_UP_SPEED_NAN)
 
 
 # -- the synthetic DFL match ------------------------------------------------------------------------------------------
