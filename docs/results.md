@@ -1016,7 +1016,7 @@ gates). It does not make the truth's grain a non-issue: choose between `w125` an
 coarse truth agree.
 
 ### R004 — The four yardsticks on the benchmark's `tracking` profile (2026-10-23, Tian)
-Proposal: P01 · Commit: `TBD` (the commit that adds this entry; the reports were first made on the working tree it
+Proposal: P01 · Commit: `39d86cf` (the commit that adds this entry; the reports were first made on the working tree it
 was committed from, and the fidelity report and the run reports re-made on its clean tree, `dirty: false`, are the same
 to the last digit apart from the commit they name) · Commands:
 `python pipeline/benchmark/fidelity.py --profile tracking --seeds 3` first, whose required gates passed, and then
