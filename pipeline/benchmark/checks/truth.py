@@ -1,12 +1,14 @@
 """Checks of the benchmark's truth (pipeline/benchmark/truth.py): codes, summary, line timing, nearest team.
 
 The synthetic checks run on matches made here out of a few rows, in the real DflMatch layout, with every answer worked
-out by hand from the rules rather than from what the code printed. The one that reads the downloaded matches
-(test_dfl_truth_conventions, --dfl) prints the aggregates that A06 in docs/results.md quotes; the DFL files are public
+out by hand from the rules rather than from what the code printed. The ones that read the downloaded matches
+(test_dfl_truth_conventions, test_dfl_window_confound and test_dfl_coarse_truth, --dfl) print the aggregates that A06 in
+docs/results.md quotes, and share one pass over the 7 matches; the DFL files are public
 (CC BY 4.0), so printing their aggregates is fine. The public ground truth of BAR-ATH (evaluation/gt/, MIT) is the only
 thing of our match that is read here, and only as the 7,500 labels the organisers published.
 """
 
+import functools
 import math
 
 import numpy as np
@@ -21,8 +23,8 @@ HOME, AWAY = 0, 1                     # ball_possession and player_team, as DflM
 TOY_PITCH = (100.0, 50.0)             # metres, length then width: not square, so that normalised distances mislead
 # EVALUATION.md's table of "perfect but k frames late" (spellF1 of the truth against itself shifted k frames later).
 EVALUATION_LAG_TABLE = {1: 1.0000, 3: 0.9818, 8: 0.8933, 25: 0.6539}
-# What the same shift gives on the 5-minute public GT (17 possessions, the shortest 0.76 s). It is not the table's: the
-# table does not come from the public GT (A06), and its source is not stated in EVALUATION.md.
+# What the same shift gives on the 5-minute public GT (17 possessions, the shortest 0.76 s). It is not the table's
+# (A06): the table does not reproduce on the public GT, and EVALUATION.md does not say what it was computed on.
 PUBLIC_LAG = {1: 1.0000, 3: 1.0000, 8: 0.9529, 25: 0.7765}
 LAGS = (3, 8, 25)                     # what A06 reports for DFL, next to the table's
 MIN_AGREEMENT = 0.6                   # the nearest player must name the truth's team on more than this (home mapping)
@@ -39,9 +41,13 @@ EXPECTED_COUNTS = {"J03WMX": (511, 103, 103, 84, 82, 85369), "J03WN1": (500, 107
                    "J03WOH": (402, 102, 101, 71, 69, 71945), "J03WOY": (456, 113, 112, 89, 81, 76286),
                    "J03WPY": (421, 97, 97, 75, 73, 81460), "J03WQQ": (401, 99, 99, 47, 41, 84352),
                    "J03WR9": (370, 92, 92, 69, 66, 85316)}
-# Pooled over the 7 matches: possessions, stoppages, possessions of at most 2 and at most 12 frames, and the whole
-# 5-minute windows.
-EXPECTED_POOLED = (3061, 713, 15, 156, 129)
+# Pooled over the 7 matches: possessions, stoppages, and possessions of at most 2 and at most 12 frames.
+EXPECTED_POOLED = (3061, 713, 15, 156)
+# The 5-minute windows of A06: how many there are, and per selection (n windows, how many with a rate at or below the
+# public window's). Filled in from the first run.
+EXPECTED_WINDOWS = {"all": 129, "counts": {"all": (129, 7), "alive >= 70%": (32, 7), "alive >= 75%": (19, 5)}}
+# Pooled possessions of the coarse truth for each candidate shortest possession (s). Filled in from the first run.
+EXPECTED_COARSE = {1: 2707, 2: 2271, 3: 1979, 4: 1799, 5: 1659}
 
 
 # -- helpers ----------------------------------------------------------------------------------------------------------
@@ -348,6 +354,112 @@ def test_truth_nearest_agreement_counts_alive_ball_visible_frames():
     assert truth.nearest_agreement(codes, nearest, [(2, 3)]) == (0, 0)
 
 
+# -- the coarse truth -------------------------------------------------------------------------------------------------
+
+def coarse_reference(codes, spans, min_frames):
+    """coarse_codes by the plainest route: re-segment the whole array with the scorer's pm.segments after every step.
+
+    Each step takes, of the spells shorter than min_frames that sit between two spells of the other team, the shortest
+    (the earliest of equals), and gives its frames that team's label; it stops when there is none.
+    """
+    codes = codes.copy()
+    while True:
+        best = None
+        pieces = pm.segments(codes, spans)
+        for index in range(1, len(pieces) - 1):
+            before, here, after = pieces[index - 1], pieces[index], pieces[index + 1]
+            sandwiched = (here[2] in (pm.H, pm.A) and before[2] == after[2] and before[2] in (pm.H, pm.A)
+                          and before[2] != here[2] and before[1] == here[0] and here[1] == after[0])
+            length = here[1] - here[0]
+            if sandwiched and length < min_frames and (best is None or length < best[0]):
+                best = (length, here[0], here[1], before[2])
+        if best is None:
+            return codes
+        codes[best[1]:best[2]] = best[3]
+
+
+def random_halves(seed, frames=2000):
+    """Two graded halves of random runs of H, A and D (short and long), X between and after: (codes, graded)."""
+    rng = np.random.default_rng([6, seed])
+    pieces = []
+    for half in range(2):
+        length = 0
+        while length < frames:
+            run = int(rng.integers(1, 40)) if rng.uniform() < 0.7 else int(rng.integers(40, 200))
+            pieces.append(runs((int(rng.choice([pm.H, pm.A, pm.H, pm.A, pm.D])), run)))
+            length += run
+        pieces.append(runs((pm.X, 30)))
+    codes = np.concatenate(pieces)
+    return codes, tuple((1 + half, start, stop) for half, (start, stop) in enumerate(pm.valid_runs(codes)))
+
+
+def test_truth_coarse_absorbs_sandwiched_short_spells():
+    fps, min_s = 10, 0.8                                       # a spell shorter than 8 frames
+
+    def coarse(codes, spans=None):
+        return truth.coarse_codes(codes, ((1, 0, len(codes)),) if spans is None else spans, fps, min_s)
+
+    # A sandwiched short spell takes its neighbours' team, and the three merge into one possession.
+    codes = runs((pm.H, 20), (pm.A, 5), (pm.H, 20))
+    assert coarse(codes).tolist() == runs((pm.H, 45)).tolist()
+    assert codes.tolist() == runs((pm.H, 20), (pm.A, 5), (pm.H, 20)).tolist(), "the input is not changed"
+    # A spell of exactly min_s (8 frames) is not short; one frame fewer is.
+    kept = runs((pm.H, 20), (pm.A, 8), (pm.H, 20))
+    assert coarse(kept).tolist() == kept.tolist()
+    assert coarse(runs((pm.H, 20), (pm.A, 7), (pm.H, 20))).tolist() == runs((pm.H, 47)).tolist()
+    # A short spell next to D is not sandwiched by two spells, so it stays; D is never touched.
+    for same in (runs((pm.H, 20), (pm.A, 5), (pm.D, 5), (pm.H, 20)), runs((pm.D, 5), (pm.A, 5), (pm.H, 20)),
+                 runs((pm.H, 20), (pm.A, 5), (pm.D, 5)), runs((pm.H, 20), (pm.D, 5), (pm.A, 5), (pm.D, 5), (pm.H, 20))):
+        assert coarse(same).tolist() == same.tolist()
+    # Neighbours of the other team on both sides are needed: H A D A is not A A A.
+    assert coarse(runs((pm.A, 20), (pm.H, 3), (pm.D, 3), (pm.A, 20))).tolist() == \
+        runs((pm.A, 20), (pm.H, 3), (pm.D, 3), (pm.A, 20)).tolist()
+    # The first and the last spell of a half have only one neighbour.
+    ends = runs((pm.A, 3), (pm.H, 20), (pm.A, 3))
+    assert coarse(ends).tolist() == ends.tolist()
+
+    # A chain of short spells is absorbed shortest first, one at a time: H10 A6 H3 A5 H10 takes the H3 into the A's
+    # (A14), and then nothing is sandwiched. Relabelling every candidate at once would give H16 A3 H15.
+    chain = runs((pm.H, 10), (pm.A, 6), (pm.H, 3), (pm.A, 5), (pm.H, 10))
+    assert coarse(chain).tolist() == runs((pm.H, 10), (pm.A, 14), (pm.H, 10)).tolist()
+    # Equals go to the earliest: A10 B4 A4 B10 absorbs the first short spell (A18 B10), not the second (A10 B18).
+    tie = runs((pm.A, 10), (pm.H, 4), (pm.A, 4), (pm.H, 10))
+    assert coarse(tie).tolist() == runs((pm.A, 18), (pm.H, 10)).tolist()
+    # Merging can make a spell long enough to stay, or leave one short enough to go in the next round.
+    cascade = runs((pm.H, 10), (pm.A, 5), (pm.H, 2), (pm.A, 5), (pm.H, 10))
+    assert coarse(cascade).tolist() == runs((pm.H, 10), (pm.A, 12), (pm.H, 10)).tolist()
+    ladder = runs((pm.H, 3), (pm.A, 3), (pm.H, 3), (pm.A, 3), (pm.H, 3))
+    assert coarse(ladder).tolist() == runs((pm.H, 15)).tolist(), "A3 goes, and then the second A3 is sandwiched in turn"
+
+    # Halves are separate: a short spell at the head of the second half is not sandwiched by the first half's last one.
+    halves = np.concatenate([runs((pm.A, 20)), runs((pm.X, 5)), runs((pm.A, 3), (pm.H, 20), (pm.A, 20))])
+    spans = ((1, 0, 20), (2, 25, 68))
+    assert coarse(halves, spans).tolist() == halves.tolist()
+    # ... and nothing outside the halves changes.
+    around = np.concatenate([runs((pm.X, 4)), runs((pm.H, 20), (pm.A, 5), (pm.H, 20)), runs((pm.X, 4))])
+    result = coarse(around, ((1, 4, 49),))
+    assert result.tolist() == np.concatenate([runs((pm.X, 4)), runs((pm.H, 45)), runs((pm.X, 4))]).tolist()
+    assert pm.valid_runs(result) == pm.valid_runs(around)
+    expect_error(ValueError, lambda: truth.coarse_codes(codes, ((1, 0, len(codes)),), fps, -1), "min_s", "-1")
+
+
+def test_truth_coarse_is_idempotent_and_equals_the_plain_reference():
+    fps, absorbed = 10, 0
+    for seed in range(12):
+        codes, graded = random_halves(seed)
+        spans = [(start, stop) for _, start, stop in graded]
+        for min_s in (0.5, 1.0, 2.5, 6.0):
+            once = truth.coarse_codes(codes, graded, fps, min_s)
+            assert once.dtype == np.int8 and once.shape == codes.shape
+            assert once.tolist() == coarse_reference(codes, spans, min_s * fps).tolist(), (seed, min_s)
+            assert truth.coarse_codes(once, graded, fps, min_s).tolist() == once.tolist(), "coarsening twice is once"
+            assert pm.valid_runs(once) == pm.valid_runs(codes)
+            assert ((codes == pm.D) == (once == pm.D)).all(), "no D is made or lost"
+            assert ((codes == pm.X) == (once == pm.X)).all(), "no X is made or lost"
+            absorbed += len(pm.possession_spells(codes, spans)) - len(pm.possession_spells(once, spans))
+    assert absorbed > 250, "the random halves must contain spells to absorb, or the comparison above proves little"
+
+
 # -- the lag ----------------------------------------------------------------------------------------------------------
 
 def test_truth_lagged_shifts_each_half_and_scores_by_hand():
@@ -376,11 +488,10 @@ def public_gt():
 def test_truth_lag_method_on_the_public_gt():
     """The shift of the lag table, applied to the public GT, gives the public GT's own figures, not EVALUATION.md's.
 
-    The table's k = 1 (1.0000) is reproduced; k = 3, 8 and 25 are not (0.9818, 0.8933, 0.6539 there). The 17 possessions
-    of the public window are long (the shortest is 0.76 s), so a shift costs less than the table says; the table
-    presumably comes from the full match, whose possessions include shorter ones. The shift direction and whether the head is
-    left X or kept make no difference on the public GT (checked when this was written), so the method is not what
-    differs. The figures are pinned here so that a change to the scorer or to lagged() shows.
+    The table's k = 1 (1.0000) is reproduced; k = 3, 8 and 25 are not (0.9818, 0.8933, 0.6539 there). EVALUATION.md does
+    not say what the table was computed on, and nothing is inferred from it. The shift direction and whether the head is
+    left X or kept make no difference on the public GT (asserted below), so the method is not what differs. The
+    figures are pinned here so that a change to the scorer or to lagged() shows.
     """
     gt = public_gt()
     assert len(gt) == 199319 and pm.valid_runs(gt) == [(11185, 18685)], pm.valid_runs(gt)
@@ -444,7 +555,40 @@ def measure(match_id):
                     for begin in range(start, stop - WINDOW_FRAMES + 1, WINDOW_FRAMES)],
         "timing": truth.line_timing(match, codes), "alive_timing": truth.line_timing(match, codes, alive_only=True),
         "alive_frames": int(((codes == pm.H) | (codes == pm.A)).sum()),
+        "alive_by_half": {half: int(((codes[start:stop] == pm.H) | (codes[start:stop] == pm.A)).sum())
+                          for half, start, stop in match.graded},
         "agree": agree, "lag": {k: truth.lag_spell_f1(codes, k) for k in LAGS}, "playing": playing_time(match_id)}
+
+
+@functools.lru_cache(maxsize=1)
+def measurements():
+    """measure() of all 7 matches, once: the --dfl checks of this module share it, and the first of them pays (8 s)."""
+    from pipeline.benchmark import sources
+    return {match_id: measure(match_id) for match_id in sources.MATCH_IDS}
+
+
+def common_fps(found):
+    """The one sampling rate of the matches (the checks divide by it), or an assertion that says they differ."""
+    rates = {data["fps"] for data in found.values()}
+    assert len(rates) == 1, "the matches are not all sampled at one rate: {}".format(sorted(rates))
+    return rates.pop()
+
+
+def print_summary_rows(rows):
+    """Print the table of summaries [(name, summary)] that A06 quotes."""
+    print("      {:<14} {:>7} {:>6} {:>6} {:>7} {:>7} {:>6} {:>6} {:>5} {:>6} {:>6} {:>7}".format(
+        "", "minutes", "alive", "poss", "per_min", "med_s", "mean_s", "<5 s", "<=2f", "<=12f", "stops", "stop_s"))
+    for name, summary in rows:
+        print(("      {:<14} {:>7.1f} {:>5.1%} {:>6} {:>7.2f} {:>7.2f} {:>6.2f} {:>5.1%} {:>5} {:>6} {:>6} "
+               "{:>7.1f}").format(
+            name, summary["minutes"], summary["alive_share"], summary["possessions"], summary["per_alive_minute"],
+            summary["median_s"], summary["mean_s"], summary["share_under_5s"], summary["runs_le_2_frames"],
+            summary["runs_le_12_frames"], summary["stoppages"], summary["stoppage_median_s"]))
+
+
+def public_summary():
+    gt = public_gt()
+    return truth.summary(gt, tuple((1, start, stop) for start, stop in pm.valid_runs(gt)), pm.FPS)
 
 
 def test_dfl_truth_conventions():
@@ -459,23 +603,17 @@ def test_dfl_truth_conventions():
     """
     from pipeline.benchmark import sources
     ids = sources.MATCH_IDS
-    found = {match_id: measure(match_id) for match_id in ids}
+    found = measurements()
+    fps = common_fps(found)
 
     pooled_codes, pooled_graded = truth.concatenate([(found[m]["codes"], found[m]["graded"]) for m in ids])
-    pooled = truth.summary(pooled_codes, pooled_graded, 25)
+    pooled = truth.summary(pooled_codes, pooled_graded, fps)
     gt = public_gt()
-    public = truth.summary(gt, tuple((1, start, stop) for start, stop in pm.valid_runs(gt)), 25)
-    first = truth.summary(*truth.concatenate([found[m]["first_window"] for m in ids]), 25)
+    public = public_summary()
+    first = truth.summary(*truth.concatenate([found[m]["first_window"] for m in ids]), fps)
 
-    print("      {:<8} {:>7} {:>6} {:>6} {:>7} {:>7} {:>6} {:>6} {:>5} {:>6} {:>6} {:>7}".format(
-        "match", "minutes", "alive", "poss", "per_min", "med_s", "mean_s", "<5 s", "<=2f", "<=12f", "stops", "stop_s"))
-    for name, summary in [(m, found[m]["summary"]) for m in ids] + [("pooled", pooled), ("public", public),
-                                                                      ("first 5'", first)]:
-        print(("      {:<8} {:>7.1f} {:>5.1%} {:>6} {:>7.2f} {:>7.2f} {:>6.2f} {:>5.1%} {:>5} {:>6} {:>6} "
-               "{:>7.1f}").format(
-            name, summary["minutes"], summary["alive_share"], summary["possessions"], summary["per_alive_minute"],
-            summary["median_s"], summary["mean_s"], summary["share_under_5s"], summary["runs_le_2_frames"],
-            summary["runs_le_12_frames"], summary["stoppages"], summary["stoppage_median_s"]))
+    print_summary_rows([(m, found[m]["summary"]) for m in ids] + [("pooled", pooled), ("public", public),
+                                                                   ("first 5'", first)])
     print("      pooled: one summary of the 7 matches laid end to end; public: the 5-minute public GT; first 5': "
           "the first 5 minutes of each match's first half, pooled")
     print("      the pooled home share is {:.1%}, the public window's {:.1%}; the carried flags were: {}".format(
@@ -483,32 +621,19 @@ def test_dfl_truth_conventions():
             "{} {}/{}".format(m, found[m]["report"]["carried_possession_frames"],
                               found[m]["report"]["carried_status_frames"]) for m in ids)))
 
-    # Where does the public window's rate sit among the 5-minute windows of the DFL matches?
-    windows = [window for m in ids for window in found[m]["windows"]]
-    print("\n      the {} whole 5-minute windows of the 7 matches, against the public window ({} possessions, "
-          "{:.2f} per alive minute, {:.1%} alive):".format(
-              len(windows), public["possessions"], public["per_alive_minute"], public["alive_share"]))
-    print("      {:<18} {:>6} {:>6} {:>6} {:>6} {:>6} {:>6}   {}".format(
-        "", "min", "p10", "median", "p90", "max", "mean", "share of windows at or below the public window"))
-    for name, key in (("possessions", "possessions"), ("per alive minute", "per_alive_minute"),
-                      ("alive share", "alive_share")):
-        values = np.array([window[key] for window in windows])
-        print("      {:<18} {:>6.2f} {:>6.2f} {:>6.2f} {:>6.2f} {:>6.2f} {:>6.2f}   {:.1%}".format(
-            name, values.min(), *np.percentile(values, (10, 50, 90)), values.max(), values.mean(),
-            float((values <= public[key]).mean())))
-
     # DFL's own count of the time the ball is in play, against the frames the truth calls alive.
-    print("\n      {:<8} {:>13} {:>13} {:>13} {:>13} {:>10}".format(
-        "match", "playing/total", "of half 1", "of half 2", "alive frames", "minus PT"))
+    print("\n      {:<8} {:>13} {:>10} {:>10} {:>13} {:>9} {:>9} {:>9}".format(
+        "match", "playing/total", "of half 1", "of half 2", "alive frames", "minus PT", "half 1", "half 2"))
     for m in ids:
-        times, fps = found[m]["playing"], found[m]["fps"]
-        played = sum(times[half][1] for half in times) * fps / 1000          # PlayingTime in frames
-        print("      {:<8} {:>13.1%} {:>13.1%} {:>13.1%} {:>13,} {:>+10.0f}".format(
+        times = found[m]["playing"]
+        played = {half: times[half][1] * fps / 1000 for half in times}        # PlayingTime in frames, per half
+        print("      {:<8} {:>13.1%} {:>10.1%} {:>10.1%} {:>13,} {:>+9.0f} {:>+9.0f} {:>+9.0f}".format(
             m, sum(times[half][1] for half in times) / sum(times[half][0] for half in times),
             times[1][1] / times[1][0], times[2][1] / times[2][0], found[m]["alive_frames"],
-            found[m]["alive_frames"] - played))
+            found[m]["alive_frames"] - sum(played.values()),
+            *(found[m]["alive_by_half"][half] - played[half] for half in (1, 2))))
     print("      (PlayingTime and TotalTime are OtherGameInformation attributes of the information file; 'minus PT' "
-          "is the alive frames less PlayingTime converted to frames)")
+          "is the alive frames less PlayingTime converted to frames, in all and in each half)")
 
     for title, key in (("in the 10 s before the flip, whatever the truth calls those frames", "timing"),
                        ("looking only at the frames of that window that the truth calls alive", "alive_timing")):
@@ -572,6 +697,119 @@ def test_dfl_truth_conventions():
         "{} of {} possessions last 2 frames or less: the flicker is material, so truth_codes needs the min_run variant "
         "that the plan describes (a run shorter than min_run, with the same other team on both sides, takes that "
         "team)".format(pooled["runs_le_2_frames"], pooled["possessions"]))
-    assert (pooled["possessions"], pooled["stoppages"], pooled["runs_le_2_frames"], pooled["runs_le_12_frames"],
-            len(windows)) == EXPECTED_POOLED, (pooled["possessions"], pooled["stoppages"], pooled["runs_le_2_frames"],
-                                               pooled["runs_le_12_frames"], len(windows))
+    assert (pooled["possessions"], pooled["stoppages"], pooled["runs_le_2_frames"],
+            pooled["runs_le_12_frames"]) == EXPECTED_POOLED, (
+        pooled["possessions"], pooled["stoppages"], pooled["runs_le_2_frames"], pooled["runs_le_12_frames"])
+
+
+def test_dfl_window_confound():
+    """How lively a 5-minute window is decides its possession rate, so the public window's rate cannot size a grain.
+
+    The public window is alive on 80.4% of its frames, livelier than 96% of DFL's windows, and in DFL the possession
+    rate per alive minute falls as the alive share rises (a possession is split by every stoppage and a lively stretch
+    has fewer of them). So the public window is set against the DFL windows that are as lively, and a line fitted to
+    all of DFL's windows says what rate that liveliness predicts. Prints the table that A06 quotes.
+    """
+    from pipeline.benchmark import sources
+    found = measurements()
+    ids = sources.MATCH_IDS
+    public = public_summary()
+    rows = [(m, window) for m in ids for window in found[m]["windows"]]
+    alive, rate, median, under = (np.array([window[key] for _, window in rows]) for key in
+                                  ("alive_share", "per_alive_minute", "median_s", "share_under_5s"))
+    assert len(rows) == EXPECTED_WINDOWS["all"] and np.isfinite(rate).all() and np.isfinite(median).all()
+    print("      the public window: {} possessions, {:.1%} alive, {:.2f} per alive minute, median {:.2f} s, {:.1%} "
+          "under 5 s".format(public["possessions"], public["alive_share"], public["per_alive_minute"],
+                             public["median_s"], public["share_under_5s"]))
+    print("      {:<14} {:>4} {:>8} {:>12} {:>14} {:>14} {:>14} {:>14}".format(
+        "DFL windows", "n", "matches", "median rate", "rate <= pub", "median of med", "median >= pub", "<5 s <= pub"))
+    selections = {"all": alive >= 0, "alive >= 70%": alive >= 0.70, "alive >= 75%": alive >= 0.75}
+    counts = {}
+    for name, chosen in selections.items():
+        n = int(chosen.sum())
+        slow = int((rate[chosen] <= public["per_alive_minute"]).sum())
+        long_median = int((median[chosen] >= public["median_s"]).sum())
+        few_short = int((under[chosen] <= public["share_under_5s"] + 1e-9).sum())
+        counts[name] = (n, slow)
+        print("      {:<14} {:>4} {:>8} {:>12.2f} {:>14} {:>14.2f} {:>14} {:>14}".format(
+            name, n, len({m for (m, _), keep in zip(rows, chosen) if keep}), np.median(rate[chosen]),
+            "{} ({:.1%})".format(slow, slow / n), np.median(median[chosen]),
+            "{} ({:.1%})".format(long_median, long_median / n), "{} ({:.1%})".format(few_short, few_short / n)))
+    possessions = np.array([window["possessions"] for _, window in rows])
+    print("      windows at or below the public window's {} possessions: {} ({:.1%}); at or below its {:.1%} alive: "
+          "{} ({:.1%})".format(public["possessions"], int((possessions <= public["possessions"]).sum()),
+                               (possessions <= public["possessions"]).mean(), public["alive_share"],
+                               int((alive <= public["alive_share"]).sum()), (alive <= public["alive_share"]).mean()))
+    comparable = selections["alive >= 75%"]
+    print("      rate of the comparable windows, over the public window's: {:.2f}".format(
+        np.median(rate[comparable]) / public["per_alive_minute"]))
+    correlation = float(np.corrcoef(alive, rate)[0, 1])
+    slope, intercept = np.polyfit(alive, rate, 1)
+    residual_sd = float(np.std(rate - (intercept + slope * alive), ddof=2))
+    predicted = intercept + slope * public["alive_share"]
+    print("      over all {} windows: r = {:.2f} between alive share and rate; fit rate = {:.2f} {:+.2f} x alive "
+          "share; at {:.1%} alive it gives {:.2f} per alive minute, the public window's {:.2f} is {:.2f} residual sd "
+          "(sd {:.2f}) from it".format(
+              len(rows), correlation, intercept, slope, public["alive_share"], predicted, public["per_alive_minute"],
+              (public["per_alive_minute"] - predicted) / residual_sd, residual_sd))
+    assert correlation < -0.5, "the rate no longer falls with the alive share ({:.2f})".format(correlation)
+    assert public["alive_share"] > 0.75, "the comparable windows (alive >= 75%) no longer include the public window's"
+    assert counts == EXPECTED_WINDOWS["counts"], counts
+
+
+def test_dfl_coarse_truth():
+    """The coarse truth's pre-registered choice: the smallest candidate that brings DFL to the literature's rate.
+
+    For each candidate shortest possession (1 to 5 s) the 7 matches are coarsened and pooled, and the table shows the
+    possessions per match and per alive minute, the median length and the share of the raw spells absorbed. The
+    literature's 175-220 possessions per match, divided by DFL's own mean alive minutes per match, gives a rate per
+    alive minute; COARSE_MIN_S is the smallest candidate at or below its upper bound, or the largest candidate if none
+    is. The public window's rate is printed for reference only: it rests on 17 possessions and is not used.
+    """
+    from pipeline.benchmark import sources
+    found = measurements()
+    ids = sources.MATCH_IDS
+    fps = common_fps(found)
+    raw_codes, graded = truth.concatenate([(found[m]["codes"], found[m]["graded"]) for m in ids])
+    spans = [(start, stop) for _, start, stop in graded]
+    raw = truth.summary(raw_codes, graded, fps)
+    raw_spells = pm.possession_spells(raw_codes, spans)
+    alive_minutes = raw["alive_share"] * raw["minutes"] / len(ids)               # a match's alive minutes, on average
+    low, high = (count / alive_minutes for count in truth.LITERATURE_POSSESSIONS)
+    print("      DFL has {:.1f} alive minutes a match; the literature's {}-{} possessions are {:.2f}-{:.2f} per alive "
+          "minute".format(alive_minutes, *truth.LITERATURE_POSSESSIONS, low, high))
+    print("      {:<8} {:>12} {:>10} {:>9} {:>8} {:>9} {:>10} {:>9}".format(
+        "min_s", "poss/match", "per alive", "median s", "mean s", "absorbed", "frames", "stops"))
+    coarse, table = {}, {}
+    for min_s in (0,) + truth.COARSE_CANDIDATES_S:
+        coarse[min_s] = raw_codes if min_s == 0 else truth.coarse_codes(raw_codes, graded, fps, min_s)
+        summary = truth.summary(coarse[min_s], graded, fps)
+        absorbed = sum(1 for start, stop, _ in raw_spells if coarse[min_s][start] != raw_codes[start])
+        changed = sum(int((coarse[min_s][a:b] != raw_codes[a:b]).sum()) for a, b in spans)
+        table[min_s] = (summary["possessions"], summary["per_alive_minute"])
+        print("      {:<8} {:>12.1f} {:>10.2f} {:>9.2f} {:>8.2f} {:>9.1%} {:>10.2%} {:>9}".format(
+            "raw" if min_s == 0 else min_s, summary["possessions"] / len(ids), summary["per_alive_minute"],
+            summary["median_s"], summary["mean_s"], absorbed / len(raw_spells),
+            changed / sum(b - a for a, b in spans), summary["stoppages"]))
+        assert pm.valid_runs(coarse[min_s]) == pm.valid_runs(raw_codes) and \
+            ((coarse[min_s] == pm.D) == (raw_codes == pm.D)).all(), "the coarse truth changed a D or the halves"
+    chosen = next((s for s in truth.COARSE_CANDIDATES_S if table[s][1] <= high), truth.COARSE_CANDIDATES_S[-1])
+    reached = table[chosen][1] <= high
+    print("      {} {:.2f} per alive minute: {} s{} (the public window's {:.2f}, 17 possessions, is for reference "
+          "only)".format("the smallest candidate at or below" if reached else "no candidate reaches", high, chosen,
+                         "" if reached else ", the largest, is taken and flagged",
+                         public_summary()["per_alive_minute"]))
+    assert truth.COARSE_MIN_S == chosen, "COARSE_MIN_S is {}, and the pre-registered rule gives {}".format(
+        truth.COARSE_MIN_S, chosen)
+    assert table[chosen][1] <= high or chosen == truth.COARSE_CANDIDATES_S[-1], table
+
+    print()
+    per_match = []
+    for m in ids:
+        per_match.append((m, truth.summary(truth.coarse_codes(found[m]["codes"], found[m]["graded"], fps),
+                                           found[m]["graded"], fps)))
+    print_summary_rows([("raw pooled", raw)] + [(m + " coarse", summary) for m, summary in per_match] +
+                       [("coarse pooled", truth.summary(coarse[chosen], graded, fps))])
+    print("\n      spellF1 of the coarse truth against itself lagged k frames, pooled:   " + "   ".join(
+        "k={}: {:.4f}".format(k, truth.lag_spell_f1(coarse[chosen], k)) for k in LAGS))
+    assert {s: table[s][0] for s in truth.COARSE_CANDIDATES_S} == EXPECTED_COARSE, table

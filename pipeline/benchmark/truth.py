@@ -6,6 +6,7 @@
     line_timing(match, codes)    how long before DFL's alive -> dead flip the ball was first seen beyond a line
     nearest_team(match)          the team of the player nearest the ball, brute force, in metres
     nearest_agreement(...)       how often that team is the truth's
+    coarse_codes(codes, ...)     the truth with its short sandwiched possessions absorbed: a side-by-side sensitivity
     lagged, lag_spell_f1         the truth moved k frames later, and its spellF1 against itself: the cost of being late
 
 Why the truth is built this way
@@ -50,6 +51,14 @@ SHORT_RUN_FRAMES = (2, 12)              # summary counts the possessions of at m
 UNDER_S = 5                             # share_under_5s: possessions shorter than this many seconds
 LINE_WINDOW_S = 10                      # line_timing looks this far back from a flip to dead
 CHUNK = 20_000                          # rows per block of nearest_team (about 13 MB per array for 40 players)
+# The coarse truth (coarse_codes). COARSE_MIN_S was fixed by a rule written before the numbers were looked at, and
+# blind to our match: the smallest candidate (seconds) whose pooled possessions per alive minute on the 7 DFL matches
+# are at or below the upper bound of the literature's team possessions per match under Metrica-like rules, divided by
+# DFL's own mean alive minutes per match (test_dfl_coarse_truth recomputes it and asserts it); the largest candidate if
+# none is. None is (A06: 4.50 per alive minute at 5 s against 4.18), so it is the largest, and A06 flags that.
+COARSE_CANDIDATES_S = (1, 2, 3, 4, 5)
+LITERATURE_POSSESSIONS = (175, 220)
+COARSE_MIN_S = 5
 
 
 # -- the codes --------------------------------------------------------------------------------------------------------
@@ -286,3 +295,47 @@ def lagged(codes, k):
 def lag_spell_f1(codes, k):
     """spellF1 (the scorer's spell_f1_mean) of the truth against itself lagged k frames: what k frames of lag cost."""
     return pm.evaluate(codes, lagged(codes, k))["spell_f1_mean"]
+
+
+# -- the coarse truth -------------------------------------------------------------------------------------------------
+
+def coarse_codes(codes, graded, fps, min_s=COARSE_MIN_S):
+    """The truth with its short possessions absorbed into the team that has the ball on both sides of them.
+
+    Why it exists. DFL's flag is fine-grained (A06: 437 possessions a match, at the every-touch end of the literature,
+    whose control-based rules give 175-220), and how fine our own ground truth is cannot be told from the public window
+    (it is livelier than 96% of DFL's windows). A truth much finer than ours could rank a smoothing level, or a switch
+    penalty, differently from one like ours. This is the side-by-side check of that: score under the raw truth and under
+    this one, and treat a disagreement between the two as a warning. It does not correct a measured difference between
+    our GT and DFL's (A06 measures none), and the raw truth stays the default.
+
+    The rule, inside each graded half: a possession spell shorter than min_s seconds (strictly: a spell of exactly
+    min_s stays) whose neighbours on both sides, with no D in between, are spells of the other team takes that team's
+    label (A B A becomes A A A, and the three are one spell). It is applied one spell at a time, the shortest first
+    (the earliest of equals), re-reading the spells after each, until no spell qualifies: in a chain H A H A H of short
+    spells, relabelling every candidate at once would flip them all, and absorbing one at a time takes the shortest
+    into the others. D and X frames are never changed and a spell next to D, or at the end of its half, is never
+    absorbed, so the stoppages, the halves and pm.valid_runs are those of the raw truth, and coarsening twice is
+    coarsening once. Returns a new int8 array; `codes` is not changed.
+    """
+    if min_s < 0:
+        raise ValueError("coarse_codes: min_s is {} s, and it must not be negative".format(min_s))
+    coarse = np.array(codes, dtype=np.int8)
+    limit = min_s * fps
+    teams = (pm.H, pm.A)
+    for _, start, stop in graded:
+        pieces = [list(piece) for piece in pm.segments(coarse, [(start, stop)])]
+        while True:
+            shortest = None                                   # (length, index): strict <, so the earliest of equals
+            for index in range(1, len(pieces) - 1):
+                (_, _, before), (first, last, here), (_, _, after) = pieces[index - 1:index + 2]
+                if (here in teams and before in teams and before == after and before != here
+                        and last - first < limit and (shortest is None or last - first < shortest[0])):
+                    shortest = (last - first, index)
+            if shortest is None:
+                break
+            index = shortest[1]
+            pieces[index - 1:index + 2] = [[pieces[index - 1][0], pieces[index + 1][1], pieces[index - 1][2]]]
+        for first, last, code in pieces:
+            coarse[first:last] = code
+    return coarse
