@@ -33,9 +33,10 @@ import possession_metrics as pm
 from pipeline.benchmark import calibration, degrade, dfl, score, sources, truth
 from pipeline.benchmark import inputs as match_inputs
 from pipeline.benchmark import run as benchmark_run
-from pipeline.benchmark.checks.common import (MIN_AGREEMENT, loading, random_match, read, real_match, strict_json,
-                                              synthetic_calibration, synthetic_matches, tracking_calibration,
-                                              whole_positions, write_synthetic_dfl, yardstick_path)
+from pipeline.benchmark.checks.common import (MIN_AGREEMENT, context_calibration, loading, random_match, read,
+                                              real_match, strict_json, synthetic_calibration, synthetic_matches,
+                                              tracking_calibration, whole_positions, write_synthetic_dfl,
+                                              yardstick_path)
 from pipeline.config import ConfigError, load_config
 from pipeline.selftest import expect_error, quiet, write_text
 
@@ -45,7 +46,7 @@ REPORT_KEYS = {"calibration", "config", "environment", "git", "halves", "labels"
                "possessions_per_graded_minute", "profile", "seeds", "t_interval", "truth", "versus"}
 HALF_KEYS = {"match_id", "half", "seed", "n_gt", "n_pred", "tp", "confusion"}
 ROUNDING = 1e-9                         # reports round their floats to 9 decimals
-HASH_SEEDS = ("1", "2")                 # PYTHONHASHSEED of the two subprocesses of the determinism check
+HASH_SEEDS = ("1", "2", "3")            # PYTHONHASHSEED of the three subprocesses of the determinism checks
 SUBSET = ".m-RND001-RND002"             # what the file name of a report says of the synthetic matches: not all seven
 ORACLE = """
 scope = "halves"
@@ -589,7 +590,7 @@ def test_runner_gaps_runs_on_degraded_tracking():
     its own draws, the report holds the Calibration's digest and version, the file name carries `.s<n>` for a number of
     seeds that is not the default, and the printout names the calibration that made the run.
     """
-    assert benchmark_run.PROFILES == degrade.PROFILES == {"clean": 1, "gaps": 1, "tracking": 2}
+    assert benchmark_run.PROFILES == degrade.PROFILES == {"clean": 1, "gaps": 1, "tracking": 2, "context": 1}
     matches, cal = synthetic_matches(), synthetic_calibration()
     paths = [yardstick_path(50), yardstick_path(0)]
     with tempfile.TemporaryDirectory() as root:
@@ -796,27 +797,35 @@ def cross_process_matches(root, paths):
     return {"SYN001": synthetic, **synthetic_matches()}
 
 
-def cross_process_run(root, out, paths, profile="clean"):
-    """What each process of the determinism checks does: evaluate on `profile`, and write to its own folder.
+# The Calibration that each degraded profile's determinism check runs with. A process cannot be handed one, so each
+# builds its own with the function of this table, which is a check of that function's determinism as well, since the
+# report holds the Calibration's digest: the bundle's (gaps, which reads only the masks), with the made-up tracklets,
+# counts, episodes and NaN-speed runs (tracking), and with a hazard of its own making besides (context).
+CROSS_PROCESS_CALIBRATIONS = {"gaps": synthetic_calibration, "tracking": tracking_calibration,
+                              "context": context_calibration}
 
-    The gaps profile needs a Calibration, and a process cannot be handed one: each measures the synthetic one itself
-    (common.synthetic_calibration), which is a check of its own determinism, since the report holds its digest.
-    """
+
+def cross_process_run(root, out, paths, profile="clean", calibration=None):
+    """What each process of the determinism checks does: evaluate on `profile` with `calibration`, and write to its own
+    folder. The clean profile takes none; a degraded one is refused without one."""
     configs = [yardstick_path(width) for width in (50, 0, 125)]
     if profile == "clean":
         result = evaluate_clean(configs, matches=cross_process_matches(root, paths), data_dir=root, log=quiet)
     else:
-        result = benchmark_run.evaluate_configs(configs, profile=profile, seeds=2, calibration=synthetic_calibration(),
+        if calibration is None:
+            raise ValueError("profile {!r} needs a Calibration; pass CROSS_PROCESS_CALIBRATIONS[{!r}]()".format(
+                profile, profile))
+        result = benchmark_run.evaluate_configs(configs, profile=profile, seeds=2, calibration=calibration,
                                                 matches=cross_process_matches(root, paths), data_dir=root, log=quiet)
     return benchmark_run.write_reports(result, data_dir=out)
 
 
 def test_runner_json_identical_across_processes():
-    """The same run in two processes with different PYTHONHASHSEED, and in this one, writes the same bytes.
+    """The same run in three processes with different PYTHONHASHSEED (1, 2 and 3), and in this one, writes the same bytes.
 
     A set iterated anywhere between the scores and the report, or a dict built in hash order, would show here as
     another order of keys or of matches. The synthetic DFL match is served through the cache, which is built here
-    first, so that the two processes only read it and never build the same files at once.
+    first, so that the processes only read it and never build the same files at once.
     """
     report = identical_across_processes("clean", ".m-RND001-RND002-SYN001.json")
     assert [record["id"] for record in report["matches"]] == ["SYN001", "RND001", "RND002"]
@@ -837,8 +846,37 @@ def test_runner_gaps_json_identical_across_processes():
     assert report["calibration"]["sha256"] == calibration.digest(synthetic_calibration())
 
 
+def test_runner_tracking_json_identical_across_processes():
+    """The tracking profile too: the same bytes from three processes with PYTHONHASHSEED 1, 2 and 3, and from this one.
+
+    The players' degradation (the walk, the episodes, the cap, the shortest-piece rule, the slots, the NaN runs and the
+    smoothing) draws from generators keyed by (seed, match, component, half) and walks dicts and sets of players and
+    pieces: an order that came from a hash would show here as another slot, another score or another digest. The
+    Calibration is the made-up one of tracking_calibration, which each process builds for itself (its digest is in the
+    reports, so a measurement that depended on the process would show too), on the same three matches and two seeds."""
+    report = identical_across_processes("tracking", ".m-RND001-RND002-SYN001.s2.json")
+    assert [record["id"] for record in report["matches"]] == ["SYN001", "RND001", "RND002"]
+    assert report["seeds"] == [0, 1] and len(report["halves"]) == 3 * 2 * 2
+    assert report["profile"] == {"name": "tracking", "version": 2}
+    assert report["calibration"]["sha256"] == calibration.digest(tracking_calibration())
+
+
+def test_runner_context_json_identical_across_processes():
+    """The context profile too: three processes with PYTHONHASHSEED 1, 2 and 3 and this one write the same bytes.
+
+    On top of the tracking profile's players, the ball's gaps come from the hazard: the features, the chance, the class
+    and the third of every frame, the durations and the draws of the sampler, which no hash may order. The Calibration is
+    context_calibration's, a made-up hazard on the made-up tracking figures, built by each process for itself."""
+    report = identical_across_processes("context", ".m-RND001-RND002-SYN001.s2.json")
+    assert [record["id"] for record in report["matches"]] == ["SYN001", "RND001", "RND002"]
+    assert report["seeds"] == [0, 1] and len(report["halves"]) == 3 * 2 * 2
+    assert report["profile"] == {"name": "context", "version": 1}
+    assert report["calibration"]["sha256"] == calibration.digest(context_calibration())
+
+
 def identical_across_processes(profile, suffix):
-    """Run cross_process_run on `profile` in two processes with another PYTHONHASHSEED each and here: the one report.
+    """Run cross_process_run on `profile` in the processes of HASH_SEEDS, each with its own PYTHONHASHSEED, and here: the
+    one report.
 
     Asserts that every file is the same bytes in the three places, and returns the parsed report of the last file by
     name.
@@ -850,8 +888,10 @@ def identical_across_processes(profile, suffix):
         folders = {}
         for hash_seed in HASH_SEEDS:
             out = os.path.join(root, "out_" + hash_seed)
-            code = ("import sys, json; from pipeline.benchmark.checks.run import cross_process_run as go; "
-                    "go(sys.argv[1], sys.argv[2], json.loads(sys.argv[3]), sys.argv[4])")
+            code = ("import sys, json; from pipeline.benchmark.checks.run import CROSS_PROCESS_CALIBRATIONS as made, "
+                    "cross_process_run as go; "
+                    "go(sys.argv[1], sys.argv[2], json.loads(sys.argv[3]), sys.argv[4], "
+                    "made[sys.argv[4]]() if sys.argv[4] in made else None)")
             done = subprocess.run([sys.executable, "-c", code, root, out, json.dumps(paths), profile], cwd=ROOT,
                                   env=dict(os.environ, PYTHONHASHSEED=hash_seed), capture_output=True, text=True,
                                   timeout=600)
@@ -859,7 +899,8 @@ def identical_across_processes(profile, suffix):
                 hash_seed, done.stderr[-2000:])
             folders[hash_seed] = os.path.join(out, "runs", "benchmark", profile)
         here = os.path.join(root, "out_here")
-        cross_process_run(root, here, paths, profile)
+        cross_process_run(root, here, paths, profile,
+                          CROSS_PROCESS_CALIBRATIONS[profile]() if profile in CROSS_PROCESS_CALIBRATIONS else None)
         folders["here"] = os.path.join(here, "runs", "benchmark", profile)
 
         names = sorted(os.listdir(folders["here"]))

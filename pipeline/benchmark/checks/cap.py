@@ -560,8 +560,8 @@ def test_tracking_version_2_with_no_low_count_frame_is_version_1s_players():
     says that nothing was capped. With the scale of the tracked spans at 1 and the shortest-piece rule off, set through
     the parameters (what version 1 was), the same holds for the players that those parameters make: a cap that finds no
     frame to act on is the walk, the episodes, the slots, the speeds and the smoothing of version 1, and nothing else.
-    The profile's version is 2 and the gaps and clean ones' are 1."""
-    assert degrade.PROFILES == {"clean": 1, "gaps": 1, "tracking": 2}
+    The profile's version is 2 and the gaps, clean and context ones' are 1."""
+    assert degrade.PROFILES == {"clean": 1, "gaps": 1, "tracking": 2, "context": 1}
     for match in (steady_match(rows=(240, 200), teams=FULL_SQUAD, substitutions=True), steady_match()):
         view = degrade.tracking_view(match)
         for level in (22, 19):

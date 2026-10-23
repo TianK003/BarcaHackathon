@@ -33,7 +33,7 @@ from xml.sax.saxutils import quoteattr
 import numpy as np
 
 import possession_metrics as pm
-from pipeline.benchmark import degrade, dfl, truth
+from pipeline.benchmark import degrade, dfl, hazard, truth
 from pipeline.selftest import make_synthetic_bundle, synthetic_inputs, write_text
 
 # Params
@@ -511,6 +511,50 @@ def tracking_calibration():
         tracklet_lengths_s=made.tracklet_lengths_s, wrong_team_episodes_s=made.wrong_team_episodes_s,
         wrong_team_share=made.wrong_team_share, speed_nan_runs=made.speed_nan_runs,
         speed_nan_share=made.speed_nan_share)
+
+
+# -- a Calibration with a hazard of our own making ---------------------------------------------------------------------
+
+# What the made-up hazard says: a chance of P_ONSET that the next frame starts a gap, the same on every frame (a model
+# with an intercept and coefficients of 0), and gaps of the durations below, in seconds, by onset class (0: far from a
+# line, 1: near one) and third of the half. At 25 Hz a class-0 gap lasts 10, 20 or 30 frames and a class-1 gap 5 or 15.
+P_ONSET = 0.02
+HAZARD_SECONDS = {0: {third: (0.4, 0.8, 1.2) for third in range(3)}, 1: {third: (0.2, 0.6) for third in range(3)}}
+
+
+def made_up_hazard(p=P_ONSET, c=1.0, seconds=None, coef=None):
+    """The three fields of a Calibration that the context profile reads, made up: {hazard_model, hazard_c,
+    hazard_durations_s}.
+
+    The model gives every frame the probability `p` (intercept logit(p), coefficients 0 unless `coef` gives them, six
+    numbers on the standardised features; mean 0 and scale 1, so a feature is itself), `c` is hazard_c and `seconds` is
+    {class: {third: lengths in seconds}} (HAZARD_SECONDS). Every array is read-only, as a Calibration's are."""
+    coefficients = np.zeros(len(hazard.FEATURES)) if coef is None else np.array(coef, dtype=np.float64)
+    arrays = [coefficients, np.zeros(len(hazard.FEATURES)), np.ones(len(hazard.FEATURES))]
+    for array in arrays:
+        array.setflags(write=False)
+    table = {}
+    for onset_class, thirds in (HAZARD_SECONDS if seconds is None else seconds).items():
+        table[onset_class] = {}
+        for third, lengths in thirds.items():
+            table[onset_class][third] = np.array(lengths, dtype=np.float64)
+            table[onset_class][third].setflags(write=False)
+    model = hazard.LogisticModel(coef=arrays[0], intercept=float(np.log(p / (1.0 - p))), mean=arrays[1],
+                                 scale=arrays[2])
+    return {"hazard_model": model, "hazard_c": c, "hazard_durations_s": table}
+
+
+def context_namespace(**more):
+    """made_up_calibration with a made-up hazard (made_up_hazard(**more)): what degrade.degrade reads for context."""
+    return types.SimpleNamespace(**{**vars(made_up_calibration()), **made_up_hazard(**more)})
+
+
+def context_calibration(**more):
+    """A real Calibration with a made-up hazard: tracking_calibration, its hazard fields replaced by made_up_hazard's.
+
+    The runner and the fidelity report need a real one (a digest, a public window, baseline outputs): the bundle's own
+    hazard is fitted on a few hundred frames and means nothing, so the context profile's checks put theirs in."""
+    return dataclasses.replace(tracking_calibration(), **made_up_hazard(**more))
 
 
 # -- what the tracking profile's checks share with the cap's ----------------------------------------------------------

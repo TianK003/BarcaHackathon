@@ -2,6 +2,7 @@
 
     python pipeline/benchmark/fidelity.py --profile gaps --seeds 3     # -> <data dir>/runs/benchmark/fidelity_gaps.json
     python pipeline/benchmark/fidelity.py --profile tracking --seeds 3     # -> .../fidelity_tracking.json
+    python pipeline/benchmark/fidelity.py --profile context --seeds 3      # -> .../fidelity_context.json
     report = fidelity.report("gaps", seeds=3)                          # the same, as a dict (aggregates only)
 
 What it is for. P01 validates pipeline choices on matches that are not ours, after degrading them until their tracking
@@ -20,9 +21,11 @@ the plan, which was measured on other spans) plus or minus a tolerance, which is
 tolerance of the centre: the tracklet median's). For gaps: the missing share of the ball +-0.02 and the median gap +-1.5
 s. For tracking, those two and: the share of frames with exactly 22 slots present +-0.06, the mean number present +-0.5,
 the share with 14 or fewer present +-0.02 (these three on full-strength frames, below), the wrong-team share +-0.03, the
-tracklet median +-50% and the NaN-speed share +-0.01. A gate is printed as measured, centre, tolerance, and pass or
-FAIL; a FAIL makes the command exit 1, and the profile is not frozen until it passes. Every gate of `tracking` counts
-since version 2, which has the low-count tail (the cap, degrade.cap_pieces).
+tracklet median +-50% and the NaN-speed share +-0.01. For context, those eight and the share of the gaps that start
+within 2 m of a line +-0.05, pooled as near-line onsets over interior gaps (the centre is the Calibration's
+near_line_share, on the kick-off spans). A gate is printed as measured, centre, tolerance, and pass or FAIL; a FAIL makes
+the command exit 1, and the profile is not frozen until it passes. Every gate of `tracking` counts since version 2,
+which has the low-count tail (the cap, degrade.cap_pieces).
 
 Full strength (COUNT_GATES). The three gates about how many slots are present (exactly 22, the mean, 14 or fewer) are
 measured on the full-strength frames only: the frames, inside the same spans, where the clean DFL match has exactly 22
@@ -124,6 +127,11 @@ GATES = {
          "text": "share of the present slot-frames with a NaN speed"},
     ),
 }
+# The context profile has the tracking profile's gates and where its gaps start: the share of them within 2 m of a line.
+GATES["context"] = GATES["tracking"] + (
+    {"name": "near_line_share", "tolerance": 0.05, "kind": "absolute",
+     "text": "share of the gaps that start within 2 m of a line"},
+)
 # The gates that cannot be met until a part of the profile that they wait for is built: printed with the status
 # "pending" and never counted. Empty: the three gates about how many slots are present were pending for version 1 of the
 # tracking profile, which had no low-count tail, and version 2 has it (R004b). A profile that adds a part in a later
@@ -144,6 +152,9 @@ FILE_FOLDER = run.REPORT_FOLDER                   # <data dir>/runs/benchmark/fi
 PLAYERS_DRAWS = ("tracklets", "onsets", "episodes", "skipped_far", "skipped_overlap", "episode_frames",
                  "speed_nan_runs", "speed_nan_frames", "capped_frames", "cap_slot_frames", "cap_pieces_cut",
                  "short_pieces", "short_slot_frames", "short_episode_pieces")
+# The counts of what the context profile's ball drew (info["ball"]) that a report adds up over matches, seeds and halves.
+BALL_DRAWS = ("rows", "ball_missing_rows", "nan_feature_rows", "capped_rows", "onsets", "missing_frames", "at_risk_rows",
+              "post_gap_rows")
 NOTES = ("The yardsticks' outputs of ours (possessions per minute, D share) are over our graded halves, as the "
          "published baselines are, and not over the kick-off spans of the rest of the Calibration: an accepted offset "
          "of at most 1% of the frames.",
@@ -177,10 +188,13 @@ def report(profile, seeds=DEFAULT_SEEDS, match_ids=None, matches=None, calibrati
     "full_strength", "passed", "warnings", "notes"}. "gates" is a list of {name, text, measured, centre, tolerance,
     kind, status} (status pass, FAIL or pending: PENDING_GATES), "checks" a list of {name, measured, centre, band, kind,
     status} (ok or WARN), "passed" is whether no gate failed (a pending one is not counted) and "warnings" how many
-    checks warn. "players_draws" is {} for a profile that draws nothing for its players and, for tracking, the counts of
-    what was drawn, pooled over matches, seeds and halves (tracklets, onsets, episodes, skipped_far, skipped_overlap,
+    checks warn. "players_draws" is {} for a profile that draws nothing for its players and, for tracking and context, the counts
+    of what was drawn, pooled over matches, seeds and halves (tracklets, onsets, episodes, skipped_far, skipped_overlap,
     episode_frames, speed_nan_runs, speed_nan_frames, the cap's capped_frames, cap_slot_frames and cap_pieces_cut, and
-    the shortest-piece rule's short_pieces, short_slot_frames and short_episode_pieces).
+    the shortest-piece rule's short_pieces, short_slot_frames and short_episode_pieces). "ball_draws" is {} for a
+    profile whose ball is a transplant and, for context, the sums of the hazard's draws (BALL_DRAWS) with the scale and
+    two shares worked out from the sums: post_gap_share (the at-risk rows within SPEED_STEPS frames after a gap, over the
+    at-risk rows) and nan_feature_share (the rows with a ball and a NaN feature, over the rows).
     The report also holds "full_strength": {"frames", "full_frames", "share", "share_at_full"}, the frames in the spans
     of all the matches (once each, whatever the seeds), those at full strength (COUNT_GATES are measured on them only),
     their share, and {match: share of its frames AT full strength} for each match that is not at full strength
@@ -236,6 +250,7 @@ def report(profile, seeds=DEFAULT_SEEDS, match_ids=None, matches=None, calibrati
             pool.add_players(measured_players[1], measured_players[2])
             pool.add_draws(match_id, seed, info)
             pool.add_players_draws(info)
+            pool.add_ball_draws(info)
             dead = codes_true == D
             pool.add_dead(int(dead.sum()), int(atd.ball_present[dead].sum()))
             for position, config in enumerate(configs):
@@ -265,6 +280,7 @@ def report(profile, seeds=DEFAULT_SEEDS, match_ids=None, matches=None, calibrati
         "statistics": statistics(pool, calibration),
         "draws": pool.draws,
         "players_draws": dict(pool.players_draws),
+        "ball_draws": pool.ball_draws_report(),
         "full_strength": pool.full_strength_report(),
         "notes": list(NOTES) + (
             [FULL_STRENGTH_NOTE.format(", ".join(name for name in COUNT_GATES if any(
@@ -327,6 +343,8 @@ class Pool:
                         "full_wrong_team_frames": 0}
         self.full_strength = {}                       # match id -> [frames at full strength, frames in its spans]
         self.players_draws = {}
+        self.ball_draws = {}
+        self.ball_scales = set()
         self.agreed = self.judged = 0
         self.dead_frames = self.dead_visible = 0
         self.yardsticks = {}
@@ -399,6 +417,31 @@ class Pool:
             if name in info.get("players", {}):
                 self.players_draws[name] = self.players_draws.get(name, 0) + info["players"][name]
 
+    def add_ball_draws(self, info):
+        """Add up the counts of the context profile's ball (info["ball"]); none for a profile without one."""
+        ball = info.get("ball")
+        if ball is not None:
+            for name in BALL_DRAWS:
+                self.ball_draws[name] = self.ball_draws.get(name, 0) + ball[name]
+            self.ball_scales.add(ball["scale"])
+
+    def ball_draws_report(self):
+        """{} if no ball was drawn, else the sums (BALL_DRAWS), the scale and the two shares of the sums.
+
+        post_gap_share is the at-risk rows within SPEED_STEPS frames after a gap over the at-risk rows, and
+        nan_feature_share the rows with a ball and a NaN feature over the rows: the figures that the stop conditions of
+        R005 read, and the limitations that the README states. The scale is the one every run used; two scales in one
+        pool are a FidelityError, since the sums would be of two profiles."""
+        if not self.ball_draws:
+            return {}
+        if len(self.ball_scales) != 1:
+            raise FidelityError("the ball's draws were made with {} scales ({}); one report is one profile".format(
+                len(self.ball_scales), ", ".join(str(scale) for scale in sorted(self.ball_scales))))
+        sums = self.ball_draws
+        return {**sums, "scale": _round(next(iter(self.ball_scales))),
+                "post_gap_share": _round(sums["post_gap_rows"] / sums["at_risk_rows"]) if sums["at_risk_rows"] else None,
+                "nan_feature_share": _round(sums["nan_feature_rows"] / sums["rows"]) if sums["rows"] else None}
+
     # What the statistics are, from the sums.
     def gap_durations(self):
         return np.concatenate(self.ball["gap_durations_s"]) if self.ball["gap_durations_s"] else np.zeros(0)
@@ -424,6 +467,8 @@ def centre_of(name, calibration):
         return float(np.median(calibration.tracklet_lengths_s))
     if name == "speed_nan_share":
         return calibration.speed_nan_share
+    if name == "near_line_share":
+        return scalars["near_line_share"]
     raise KeyError(name)
 
 
@@ -456,6 +501,8 @@ def measured(name, pool):
         return float(np.median(lengths)) if lengths.size else float("nan")
     if name == "speed_nan_share":
         return players["speed_nan_frames"] / slot_frames if slot_frames else float("nan")
+    if name == "near_line_share":
+        return pool.ball["near_line_onsets"] / pool.ball["interior_gaps"] if pool.ball["interior_gaps"] else float("nan")
     raise KeyError(name)
 
 
@@ -609,6 +656,12 @@ def render(result):
     if result["players_draws"]:
         lines += ["", "players' draws, pooled over matches, seeds and halves: " + ", ".join(
             "{} {:,}".format(name, count) for name, count in result["players_draws"].items())]
+    if result["ball_draws"]:
+        draws = result["ball_draws"]
+        lines += ["", "ball draws, pooled over matches, seeds and halves (scale {:g}): ".format(draws["scale"]) + ", ".join(
+            "{} {:,}".format(name, draws[name]) for name in BALL_DRAWS),
+            "  post_gap_share {} of the at-risk rows, nan_feature_share {} of the rows".format(
+                _share(draws["post_gap_share"]), _share(draws["nan_feature_share"]))]
     lines += ["", "draws: {} half-draws, {} from our first half and {} from our second".format(
         len(halves), halves.count(1), halves.count(2))]
     if pending:
@@ -618,6 +671,11 @@ def render(result):
         " ({} pending, not counted)".format(len(pending)) if pending else "", result["warnings"],
         len(result["checks"])))
     return lines
+
+
+def _share(value):
+    """A share as the draws line prints it; "-" for a share of nothing."""
+    return "-" if value is None else "{:.2%}".format(value)
 
 
 def _cell(value):

@@ -16,6 +16,11 @@ module of its topic:
     cap.py       the tracking profile's cap of the low-count tail (the rule worked out one row at a time, sticky
                  membership, the counts of a window of ours), its shortest-piece rule, the order of the cap, the episodes
                  and the smoothing, and the scale of the tracked spans (synthetic only)
+    context.py   the context profile of the degrader: the tracking profile's players unchanged (no truth, the same
+                 draws), and a ball whose gaps come from the hazard fitted on our match: what the hazard is given, the
+                 chance (c, the scale, the cap, 0 where a feature is undefined), the class, third and durations read at
+                 the at-risk frame, the counts of the record on hand-built halves, and the odds rescale of the scale
+                 (synthetic; with --data our real Calibration on a downloaded DFL match)
     tracking.py  the tracking profile of the degrader: tracklets and slots (walks, lowest free slot, no overlap, the
                  degenerate case equal to gaps, the lost share on long runs), the wrong-team episodes, the NaN-speed
                  runs, the smoothing, and that the profiles nest (synthetic; with --dfl that no pool of slots runs out
@@ -57,7 +62,8 @@ what two of them share goes to common.py (test_a_check_module_imports_no_other_c
 """
 
 from pipeline.benchmark.checks import (
-    calibration, cap, degrade, dfl, fidelity, harness, hazard, inputs, run, score, sources, tracking,
+    calibration, cap, context, degrade, dfl, fidelity, harness, hazard, inputs, run, score, sources, tracking,
     truth)
 
-MODULES = (sources, dfl, truth, inputs, score, run, hazard, calibration, degrade, cap, tracking, fidelity, harness)
+MODULES = (sources, dfl, truth, inputs, score, run, hazard, calibration, degrade, cap, tracking, context, fidelity,
+           harness)

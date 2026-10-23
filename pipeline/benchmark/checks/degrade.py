@@ -158,7 +158,7 @@ def test_transplant_offset_reaches_the_top_of_its_range():
 
 def test_rng_for_is_the_documented_key_and_streams_are_apart():
     """np.random.default_rng([seed, match_index, COMPONENTS[component], half]), with no profile in it."""
-    assert degrade.PROFILES == {"clean": 1, "gaps": 1, "tracking": 2}
+    assert degrade.PROFILES == {"clean": 1, "gaps": 1, "tracking": 2, "context": 1}
     assert degrade.COMPONENTS == {"transplant": 0, "tracklets": 1, "wrong_team": 2, "speed_nan": 3, "hazard": 4}, (
         "the cap draws nothing, so version 2 has no stream of its own")
     for component, number in degrade.COMPONENTS.items():
@@ -390,8 +390,8 @@ def test_data_gaps_profile_serves_a_real_match_with_our_real_masks():
 def test_degrade_refuses_what_it_cannot_make():
     match, calibration = tracked_match(), made_up_calibration()
     view = degrade.tracking_view(match)
-    expect_error(ValueError, lambda: degrade.degrade(view, "context", calibration, 0), "context", "clean", "gaps",
-                 "tracking")
+    expect_error(ValueError, lambda: degrade.degrade(view, "nonsense", calibration, 0), "nonsense", "clean", "gaps",
+                 "tracking", "context")
     expect_error(ValueError, lambda: degrade.degrade(view, "gaps", None, 0), "gaps", "Calibration",
                  "calibration.load()")
     expect_error(ValueError, lambda: degrade.degrade(view, "tracking", None, 0), "tracking", "Calibration",

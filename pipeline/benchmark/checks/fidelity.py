@@ -21,9 +21,9 @@ import numpy as np
 from pipeline.benchmark import calibration, degrade, dfl, fidelity, run, sources
 from pipeline.benchmark import inputs as match_inputs
 from pipeline.benchmark import truth as truths
-from pipeline.benchmark.checks.common import (brute_force_agreement, loading, random_match, read, steady_match,
-                                              strict_json, synthetic_calibration, synthetic_matches,
-                                              tracking_calibration, yardstick_path)
+from pipeline.benchmark.checks.common import (brute_force_agreement, context_calibration, loading, random_match,
+                                              read, steady_match, strict_json, synthetic_calibration,
+                                              synthetic_matches, tracking_calibration, yardstick_path)
 from pipeline.contracts import D
 from pipeline.selftest import expect_error, quiet
 
@@ -36,12 +36,15 @@ IDS = ("J03WMX", "J03WN1")
 # visibility, and the tracking profile's 14-or-fewer share, wrong-team share, 22-present share, mean present, tracklet
 # median and NaN-speed share. They were measured on other spans than the kick-off ones, so a centre comes from the
 # Calibration.
-PLAN_FIGURES = {0.407, 0.4069, 10.7, 0.778, 0.66, 0.066, 0.108, 0.495, 20.5, 35.5, 0.0796, 0.080}
+PLAN_FIGURES = {0.407, 0.4069, 10.7, 0.778, 0.66, 0.066, 0.108, 0.495, 20.5, 35.5, 0.0796, 0.080, 0.286}
 # What the players' degradation draws that a report pools (written out here, not read from fidelity.PLAYERS_DRAWS, so that a
 # count the report forgets to pool is seen): the walk and the episodes, the NaN runs, the cap and the shortest-piece rule.
 DRAW_NAMES = ("tracklets", "onsets", "episodes", "skipped_far", "skipped_overlap", "episode_frames", "speed_nan_runs",
               "speed_nan_frames", "capped_frames", "cap_slot_frames", "cap_pieces_cut", "short_pieces",
               "short_slot_frames", "short_episode_pieces")
+# What the context profile's ball draws that a report pools (written out here, not read from fidelity.BALL_DRAWS).
+DRAW_BALL = ("rows", "ball_missing_rows", "nan_feature_rows", "capped_rows", "onsets", "missing_frames",
+             "at_risk_rows", "post_gap_rows")
 TRACKING_GATES = ["missing_share", "median_gap_s", "present_share_22", "present_mean", "present_share_le14",
                   "wrong_team_share", "tracklet_median_s", "speed_nan_share"]
 
@@ -81,9 +84,10 @@ def test_fidelity_report_synthetic():
         lines = []
         result = fidelity.report("gaps", seeds=SEEDS, matches=matches, calibration=cal, data_dir=root, log=lines.append)
         assert sorted(result) == sorted(["profile", "seeds", "matches", "calibration", "gates", "checks", "statistics",
-                                         "draws", "players_draws", "full_strength", "passed", "warnings",
+                                         "draws", "players_draws", "ball_draws", "full_strength", "passed", "warnings",
                                          "notes"])
         assert result["players_draws"] == {}, "gaps degrades no player"
+        assert result["ball_draws"] == {}, "gaps places its gaps by a transplant, which draws no count of its own"
         assert result["profile"] == {"name": "gaps", "version": 1} and result["seeds"] == [0, 1]
         assert result["matches"] == ["RND001", "RND002"]
         assert result["calibration"] == {"sha256": calibration.digest(cal), "version": calibration.CALIBRATION_VERSION}
@@ -182,6 +186,148 @@ def leaves(value):
         for item in value:
             found += leaves(item)
     return found
+
+
+# -- the context profile's gates --------------------------------------------------------------------------------------
+
+def near_line_matches():
+    """steady_matches() whose ball is 1.0 m from the touch line on alternating stretches of 20 rows (the second, the
+    fourth, ...) and in the middle of the pitch in the others, so that about half of the gaps that start do so near a
+    line, which the checks of the near-line gate need: the random ball of the other fixtures is never within 2 m."""
+    out = {}
+    for match_id, match in steady_matches().items():
+        ball = np.array(match.ball_xy)
+        for _, start, stop in match.graded:
+            near = (np.arange(stop - start) // 20) % 2 == 1
+            ball[start:stop, 0] = 0.5
+            ball[start:stop, 1] = np.where(near, 1.0 / 68.0, 0.5)
+        ball.setflags(write=False)
+        out[match_id] = dataclasses.replace(match, ball_xy=ball)
+    return out
+
+
+def worked_out_near_line(matches, cal, seeds=SEEDS):
+    """(near-line onsets, interior gaps) of the context profile on `matches`, counted one frame at a time here.
+
+    A gap is a maximal run of rows without a ball inside a half from its kick-off, interior if a row with a ball comes
+    before it and one after; its onset is the row before, and it is near a line if the ball there is within 2 m of one
+    (strictly: min(x, L - x, y, W - y) < 2 on the match's pitch)."""
+    near = interior = 0
+    for match in matches.values():
+        length, width = match.pitch
+        for seed in range(seeds):
+            atd, _ = degrade.degrade(degrade.tracking_view(match), "context", cal, seed)
+            for half, _, stop in match.graded:
+                first = match.kickoffs[half]
+                row = first
+                while row < stop:
+                    if np.isnan(atd.ball_xy[row, 0]):
+                        gap = row
+                        while row < stop and np.isnan(atd.ball_xy[row, 0]):
+                            row += 1
+                        if gap > first and row < stop:
+                            x, y = atd.ball_xy[gap - 1, 0] * length, atd.ball_xy[gap - 1, 1] * width
+                            interior += 1
+                            near += min(x, length - x, y, width - y) < 2.0
+                    else:
+                        row += 1
+    return near, interior
+
+
+def test_fidelity_context_gates_are_trackings_and_the_near_line_share():
+    """The context profile's gates are the tracking profile's eight and the share of the gaps that start near a line.
+
+    The centre is the Calibration's own near_line_share (measured on the kick-off spans: never the plan's 0.286, which
+    the module must not hold), the tolerance +-0.05 and absolute, and the figure is pooled by sums, near-line onsets over
+    interior gaps, and not a mean of the parts' shares: 1 of 4 and 9 of 12 are 10 of 16 = 0.625, where the mean of
+    0.25 and 0.75 would be 0.5. A share of gaps that do not exist is NaN and fails, as an empty median does. The near-line
+    gate is required, like every other: none is pending."""
+    gates = {gate["name"]: gate for gate in fidelity.GATES["context"]}
+    assert list(gates) == TRACKING_GATES + ["near_line_share"]
+    assert fidelity.GATES["context"][:-1] == fidelity.GATES["tracking"]
+    assert (gates["near_line_share"]["tolerance"], gates["near_line_share"]["kind"]) == (0.05, "absolute")
+    assert "near_line_share" not in fidelity.PENDING_GATES and fidelity.PENDING_GATES == ()
+    cal = synthetic_calibration()
+    assert fidelity.centre_of("near_line_share", cal) == cal.scalars["near_line_share"]
+    moved = dataclasses.replace(cal, scalars={**cal.scalars, "near_line_share": 0.58})
+    assert fidelity.centre_of("near_line_share", moved) == 0.58, "another Calibration, another centre"
+    pool = fidelity.Pool()
+    for interior, near in ((4, 1), (12, 9)):
+        pool.add_ball({"frames": 100, "missing_frames": 30, "gaps": interior, "interior_gaps": interior,
+                       "near_line_onsets": near, "gap_durations_s": np.array([1.0]), "missing_share": 0.3})
+    assert fidelity.measured("near_line_share", pool) == 10 / 16 == 0.625
+    spec = gates["near_line_share"]
+    assert fidelity._gate(spec, pool, moved)["status"] == "pass", "0.625 is 0.045 from 0.58"
+    far = dataclasses.replace(cal, scalars={**cal.scalars, "near_line_share": 0.55})
+    assert fidelity._gate(spec, pool, far)["status"] == "FAIL", "0.625 is 0.075 from 0.55"
+    empty = fidelity.Pool()
+    empty.add_ball({"frames": 100, "missing_frames": 0, "gaps": 0, "interior_gaps": 0, "near_line_onsets": 0,
+                    "gap_durations_s": np.zeros(0), "missing_share": 0.0})
+    assert np.isnan(fidelity.measured("near_line_share", empty))
+    assert fidelity._gate(spec, empty, moved)["status"] == "FAIL", "no gap, no share, no pass"
+    with open(fidelity.__file__, encoding="utf-8") as handle:
+        held = {node.value for node in ast.walk(ast.parse(handle.read()))
+                if isinstance(node, ast.Constant) and isinstance(node.value, float)}
+    assert not held & PLAN_FIGURES, sorted(held & PLAN_FIGURES)
+
+
+def test_fidelity_context_report_synthetic():
+    """The context profile's nine gates, the near-line one counted frame by frame here, the players' figures tracking's,
+    and the ball's draws pooled.
+
+    Two steady matches of 22 players whose ball is near a line on alternating stretches, the made-up tracking figures
+    and a made-up hazard of 0.03 a frame (common.context_calibration). The near-line gate is the pooled near-line onsets
+    over interior gaps of worked_out_near_line, with the Calibration's centre and the tolerance of 0.05. Every other
+    gate's centre is the Calibration's. The players are tracking's whatever the ball does, so the players' pooled draws
+    and the six gates about them equal those of a tracking report on the same matches, seeds and Calibration, which a
+    context report must not move; the two ball gates are not tracking's. "ball_draws" are the sums of the degrader's own
+    records of the ball over the matches and seeds, with the shares that R005 quotes (the rows after a gap over the rows
+    at risk, the rows with a NaN feature over the rows), and the scale. The report is JSON-ready, small and the same
+    twice, and the printout names the draws and the near-line gate."""
+    matches, cal = near_line_matches(), context_calibration(p=0.03)
+    with tempfile.TemporaryDirectory() as root:
+        result = fidelity.report("context", seeds=SEEDS, matches=matches, calibration=cal, data_dir=root, log=quiet)
+        tracking = fidelity.report("tracking", seeds=SEEDS, matches=matches, calibration=cal, data_dir=root, log=quiet)
+        again = fidelity.report("context", seeds=SEEDS, matches=matches, calibration=cal, data_dir=root, log=quiet)
+    assert again == result and json.loads(json.dumps(result, allow_nan=False)) == result
+    assert result["profile"] == {"name": "context", "version": 1} and result["matches"] == ["RND001", "RND002"]
+    assert [gate["name"] for gate in result["gates"]] == TRACKING_GATES + ["near_line_share"]
+    assert not any(gate["status"] == "pending" for gate in result["gates"])
+    by_name = {gate["name"]: gate for gate in result["gates"]}
+    near, interior = worked_out_near_line(matches, cal)
+    assert interior > 10 and 0 < near < interior, (near, interior)
+    gate = by_name["near_line_share"]
+    assert set(gate) == {"name", "text", "measured", "centre", "tolerance", "kind", "status"}
+    assert abs(gate["measured"] - near / interior) < 1e-9 and gate["centre"] == round(cal.scalars["near_line_share"], 9)
+    assert (gate["tolerance"], gate["kind"]) == (0.05, "absolute")
+    assert gate["status"] == ("pass" if abs(gate["measured"] - gate["centre"]) <= 0.05 else "FAIL")
+    assert abs(result["statistics"]["near_line_onset_share"]["benchmark"] - near / interior) < 1e-9
+    assert result["passed"] == (not any(gate["status"] == "FAIL" for gate in result["gates"]))
+    # The players are tracking's: their gates and their pooled draws.
+    tracking_gates = {gate["name"]: gate for gate in tracking["gates"]}
+    for name in TRACKING_GATES[2:]:
+        assert by_name[name] == tracking_gates[name], name
+    assert result["players_draws"] == tracking["players_draws"] and result["draws"] == tracking["draws"]
+    assert by_name["missing_share"]["measured"] != tracking_gates["missing_share"]["measured"], "another ball"
+    # The ball's draws: the degrader's own records, added up, and the shares worked out from the sums.
+    sums = {name: 0 for name in DRAW_BALL}
+    for match in matches.values():
+        for seed in range(SEEDS):
+            ball = degrade.degrade(degrade.tracking_view(match), "context", cal, seed)[1]["ball"]
+            for name in DRAW_BALL:
+                sums[name] += ball[name]
+    draws = result["ball_draws"]
+    assert {name: draws[name] for name in DRAW_BALL} == sums and sums["onsets"] > 0 and sums["post_gap_rows"] > 0
+    assert set(draws) == set(DRAW_BALL) | {"scale", "post_gap_share", "nan_feature_share"}
+    assert draws["scale"] == degrade.HAZARD_SCALE
+    assert abs(draws["post_gap_share"] - sums["post_gap_rows"] / sums["at_risk_rows"]) < 1e-9
+    assert abs(draws["nan_feature_share"] - sums["nan_feature_rows"] / sums["rows"]) < 1e-9
+    assert tracking["ball_draws"] == {} and set(fidelity.BALL_DRAWS) == set(DRAW_BALL)
+    assert all(len(value) <= 64 for value in leaves(result) if isinstance(value, list)), "no frame-sized list"
+    text = "\n".join(fidelity.render(result))
+    for fragment in ("near_line_share", "ball draws", "post_gap_rows", "capped_rows", "gates all pass"
+                     if result["passed"] else "DO NOT ALL PASS"):
+        assert fragment in text, (fragment, text)
 
 
 def test_fidelity_pools_by_sums_and_lays_the_gaps_end_to_end():
@@ -628,9 +774,9 @@ def test_fidelity_report_refuses_what_it_cannot_measure():
             return fidelity.report(keywords.pop("profile", "gaps"), data_dir=root, log=quiet, **keywords)
 
         expect_error(fidelity.FidelityError, lambda: measure(profile="clean"), "clean", "no gates", "degrades nothing",
-                     "gaps", "tracking")
-        expect_error(fidelity.FidelityError, lambda: measure(profile="context"), "context", "not one of", "clean",
-                     "gaps", "tracking")
+                     "context", "gaps", "tracking")
+        expect_error(fidelity.FidelityError, lambda: measure(profile="nonsense"), "nonsense", "not one of", "clean",
+                     "context", "gaps", "tracking")
         expect_error(fidelity.FidelityError, lambda: measure(seeds=0), "seeds", "at least 1")
         expect_error(fidelity.FidelityError, lambda: measure(seeds=True), "seeds")
         expect_error(fidelity.FidelityError, lambda: measure(calibration=object()), "calibration", "Calibration",

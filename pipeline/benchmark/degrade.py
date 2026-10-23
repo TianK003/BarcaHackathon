@@ -12,6 +12,8 @@ as bad as ours, and fidelity.py measures with the Calibration's own statistics f
     gaps      the ball is missing where OUR ball was missing: our own missing-ball masks, transplanted (below).
               The ball's speed is NaN everywhere (our speed channel is NaN on 92% of the frames that have a ball: T31).
               The players are untouched.
+    context   the tracking profile's players, exactly (the cap's draws included), and a ball whose gaps are placed where
+              OURS were lost, by a hazard fitted on our own match, instead of copied in time from it (below).
     tracking  the gaps' ball, exactly, and the players broken up the way ours are: tracked spans and lost spans, and
               46 anonymous slots that tracklets take and leave; a wrong-team slot now and then, NaN speeds in runs and
               positions smoothed; and, since version 2, our frames with few players tracked, by a cap, no piece shorter
@@ -55,11 +57,39 @@ window ours is about three times as likely as a frame of the window in general, 
 of all of them, A01), and where on the pitch a gap starts is the DFL ball's own place at a random frame, not ours (the
 share of onsets within 2 m of a line differs from ours, 36.0% against 28.0% in R003; the direction is not the one the
 plan guessed, and there is no base rate of ours to say what ours is relative to). That is the difference between this
-profile and the `context` one, if it is built, and it is why fidelity.py checks the share of dead frames with the ball
+profile and the `context` one (below), and it is why fidelity.py checks the share of dead frames with the ball
 visible and the nearest player's agreement as warnings, and prints the statistic.
 
 The ball is missing where the mask says so, and where DFL has no ball itself (a row with none stays NaN). Position x
 and y are removed together, as an Atd requires (atd_cache._check_presence). Every array of a degraded Atd is read-only.
+
+The context profile (version 1; context_probabilities, _context_ball, HAZARD_SCALE). The transplant copies our gaps in
+time and ignores the play; this profile places them where our tracker loses the ball: at the lines and on slow balls,
+with few players near it (A07, A08). The players are the tracking profile's, exactly (the same draws, the cap's
+included), and the ball's gaps are drawn from the hazard that the Calibration fitted on our own match (hazard.py): the
+chance, on each frame, that the next frame starts a gap.
+
+* The features (hazard.features) are those of the CLEAN DFL ball, visible on every row it has, and of the DEGRADED
+  players (the slots of the Atd, NaN where nobody is), in metres from a pitch corner on the match's own pitch, for each
+  half from its kick-off to the end of its graded block (the Calibration's spans), the minute counted from the kick-off.
+  The ball is not masked yet when they are computed, so the speed on the first SPEED_STEPS frames after a gap is the
+  true one, where in BAR-ATH's features it carries the speed from before the gap: an approximation, counted (the record's
+  post_gap_rows over its at_risk_rows) and reported.
+* The chance of a frame is hazard_c * HAZARD_SCALE * the model's probability, at most MAX_HAZARD_PROB (the capped rows
+  are counted), and 0 on a frame with a NaN feature: no player present, no step yet to give a ball speed, or a ball that
+  DFL does not have. Such rows were never at risk in the fit either (hazard_nan_rows). hazard_c is 1 on our own rows; the
+  rate that carries to another match is HAZARD_SCALE, below.
+* hazard.sample_mask draws the half's gaps from rng_for(seed, match_index, "hazard", half), the class of an onset being
+  a line distance below NEAR_LINE_M at the at-risk frame (the frame before the gap, as calibration.ball_stats reads it),
+  its third of the half the one of that frame's minute, and its length one of our own for that class and third,
+  max(1, round(seconds * fps)) frames at the match's rate (context_durations). The mask is taken out of the ball by the
+  gaps profile's own function (_remove_ball): x and y together, the speed NaN everywhere.
+* What it keeps and what it loses, against `tracking`. It keeps where ours loses the ball (lines, slow balls, a ball
+  with few players near it), and it ties the gaps to the DFL play, so a dead ball is as likely to be missing as the
+  hazard makes it. It loses the coupling between the cap and the gaps: `tracking` reads the counts and the mask from one
+  window of ours, so both follow our camera, and here the cap reads a window of ours and the gaps are drawn from the
+  play. The hazard is a logistic model of six features fitted on 143 onsets of one match, and DFL tracks the ball out
+  of play, so frames that ours has no ball for are at risk here at the rate that the model gives their features.
 
 The tracklets (tracking). In ours a slot is not a player: it is a tracklet, a stretch of one slot being present, which
 ends when the tracker loses the player and is taken over by whoever it finds next (T15). DFL has one column per player.
@@ -172,6 +202,11 @@ tracklet piece is smoothed with a centred moving average of that many frames, th
 piece to the rows inside it (smoothed); nothing crosses a piece. What is not matched, and cannot be on ours: a slowly
 varying bias against the true position (README, limitations).
 
+The record of the context profile's ball (info["ball"]) holds the scale and c and, per half and in all, counts: the rows
+of the span, the rows where DFL has no ball, the NaN-feature rows (a ball and a feature that is undefined), the capped
+rows, the gaps drawn (onsets) and the frames they take (missing_frames), the at-risk rows (a ball after the mask, every
+feature defined, not the half's last row) and the at-risk rows within SPEED_STEPS frames after a gap. No frame.
+
 The record of what was drawn (info["players"]) holds counts and shares: the parameters (d, the mean tracked and lost
 span, the scale, the targets, the smoothing window, the scale of the tracked spans as tracked_scale and the shortest
 piece as min_piece_frames), per half the tracklets, the slots used, the frames on the pitch and the lost ones, the
@@ -187,6 +222,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from pipeline.benchmark import calibration as calibration_module
+from pipeline.benchmark import hazard
 from pipeline.benchmark import inputs as match_inputs
 from pipeline.benchmark import sources
 from pipeline.inputs.atd_cache import Atd
@@ -195,7 +231,8 @@ from pipeline.inputs.atd_cache import Atd
 CLEAN = "clean"
 GAPS = "gaps"
 TRACKING = "tracking"
-PROFILES = {CLEAN: 1, GAPS: 1, TRACKING: 2}     # name -> version of how its tracking is made (the report says it)
+CONTEXT = "context"
+PROFILES = {CLEAN: 1, GAPS: 1, TRACKING: 2, CONTEXT: 1}   # name -> version of how its tracking is made (reports say it)
 # The streams of random numbers, by the part of the degradation that draws them. The number is the stream's place in the
 # key of rng_for, so it never changes for a component and a new component takes the next one. The transplant, the
 # tracklets, the wrong-team episodes and the NaN-speed runs are drawn so far; the hazard's is the context profile's.
@@ -225,6 +262,15 @@ DECIMALS = 9                        # the floats of a record are rounded to this
 TRACKING_FIELDS = ("present_counts", "tracklet_lengths_s", "wrong_team_episodes_s", "wrong_team_share",
                    "speed_nan_runs", "speed_nan_share")         # what the tracking profile reads of the Calibration
 NEAR_PAIR_M = 2.0                   # an episode starts only where an opposing tracked pair is this close (inclusive)
+CONTEXT_FIELDS = ("hazard_model", "hazard_c", "hazard_durations_s")   # what the context profile reads of the Calibration
+MAX_HAZARD_PROB = 1.0 - 1e-9        # a chance of 1 is an infinite hazard, which hazard.sample_mask refuses: the cap
+LINE_COLUMN = hazard.FEATURES.index("line_distance_m")    # the feature whose value below NEAR_LINE_M is the near class
+CONTEXT_COUNTS = ("rows", "ball_missing_rows", "nan_feature_rows", "capped_rows", "onsets", "missing_frames",
+                  "at_risk_rows", "post_gap_rows")      # the counts of info["ball"], per half and in all
+# The factor on the hazard's chance (context_probabilities), on top of the Calibration's hazard_c, which is 1 on our own
+# rows. It stays 1.0 until the profile's missing share has been measured once (R005); then it is rescaled ONCE, label-free,
+# on the odds if that misses the Calibration's, and frozen: never touch it again because of a gate, a WARN or a score.
+HAZARD_SCALE = 1.0
 # s, the scale of the wrong-team onsets (episode_pieces). It calibrates a label-free statistic: the observable share of
 # frames with a team in surplus (calibration.player_stats). That is less than the share of frames in an episode: a
 # team shows more than 11 slots only while the other team's 11 are all tracked, and an episode of the other team at the
@@ -1093,17 +1139,19 @@ def _players_record(view, parameters, records, counts):
 def degrade(view, profile, calibration, seed):
     """(Atd, info): the tracking of `view` as `profile` makes it under `seed`, and what was drawn to make it.
 
-    `calibration` is the Calibration of BAR-ATH (calibration.load()): the gaps and tracking profiles need it, the clean
-    one does not use it. The Atd has the BAR-ATH cache's own layout (inputs.clean_atd), every array read-only, and the
+    `calibration` is the Calibration of BAR-ATH (calibration.load()): the gaps, tracking and context profiles need it, the
+    clean one does not use it. The Atd has the BAR-ATH cache's own layout (inputs.clean_atd), every array read-only, and the
     length of the match; the tracking profile's has 46 slots (slot_team) where the others have one per DFL player.
     `info` is JSON-ready and holds no frame of anybody: {"profile", "version", "seed", "match_id", "match_index"} and,
     for gaps and tracking, "transplants" ({half: {"source_half", "offset", "frames"}}) and "mask_share": the share of
     the frames that the transplant covers where the transplanted mask says the ball is missing. It is the mask's
     share, not the ball's after it: a ball that DFL itself has no frame for is missing as well. For tracking also
-    "players": the parameters and the counts of the tracklets, episodes and NaN runs (_players_record). ValueError for
+    "players": the parameters and the counts of the tracklets, episodes and NaN runs (_players_record). For context,
+    the same "players" (the tracking profile's, byte for byte), "transplants" (the draws that its cap reads: no mask is
+    transplanted) and "ball": the scale, c and the counts of the hazard's draws (_context_ball). ValueError for
     a profile that is not in PROFILES, for a seed that is not a whole number of at least 0, for a profile that needs
-    the Calibration without one (or, for tracking, without the fields it reads: calibrated_parameters), and for a pool
-    of slots with no free slot (choose_tracklets).
+    the Calibration without one (or, for tracking, without the fields it reads: calibrated_parameters; for context,
+    without CONTEXT_FIELDS), and for a pool of slots with no free slot (choose_tracklets).
     """
     if profile not in PROFILES:
         raise ValueError("profile {!r} is not one of: {}".format(profile, ", ".join(sorted(PROFILES))))
@@ -1115,8 +1163,15 @@ def degrade(view, profile, calibration, seed):
         return atd, info
     if calibration is None:
         raise ValueError("profile {!r} takes its ball gaps{} from our own match, so it needs the Calibration; pass "
-                         "calibration.load()".format(profile, " and its tracklets" if profile == TRACKING else ""))
-    ball_xy, ball_speed, info["transplants"], info["mask_share"] = _gap_ball(view, atd, calibration, seed)
+                         "calibration.load()".format(profile, " and its tracklets" if profile in (TRACKING, CONTEXT)
+                                                      else ""))
+    if profile == CONTEXT:
+        absent = [name for name in CONTEXT_FIELDS if not hasattr(calibration, name)]
+        if absent:
+            raise ValueError("profile {!r} needs the Calibration's {}, and this one has no {}; pass calibration.load()"
+                             .format(profile, ", ".join(CONTEXT_FIELDS), " and no ".join(absent)))
+    else:
+        ball_xy, ball_speed, info["transplants"], info["mask_share"] = _gap_ball(view, atd, calibration, seed)
     if profile == GAPS:
         players = (atd.players_xy, atd.players_speed, atd.slot_team)
     else:
@@ -1124,9 +1179,29 @@ def degrade(view, profile, calibration, seed):
         xy, speed, records, counts = degraded_players(view, parameters, seed, cap_limits(view, calibration, seed))
         info["players"] = _players_record(view, parameters, records, counts)
         players = (xy, speed, slot_team())
+        if profile == CONTEXT:
+            info["transplants"] = _transplant_records(view, calibration, seed)
+            ball_xy, ball_speed, info["ball"], info["mask_share"] = _context_ball(view, atd, xy, calibration, seed)
     degraded = Atd(players_xy=players[0], players_speed=players[1], ball_xy=ball_xy, ball_speed=ball_speed,
                    slot_team=players[2])
     return degraded, info
+
+
+def _remove_ball(view, atd, masks):
+    """(ball_xy, ball_speed): the clean ball with each half's mask taken out of it, and the ball's speed NaN everywhere.
+
+    `masks` is {half: (n,) bool}, True where the ball is missing, from the half's kick-off to the end of its graded
+    block (_span). x and y go together, as an Atd requires; the rows outside the spans are untouched; our speed channel
+    is NaN on 92% of the frames that have a ball (T31), so there is no ball speed to give. Shared by every profile that
+    has a ball mask, so that their balls are made the same way. The arrays are read-only."""
+    ball_xy = np.array(atd.ball_xy)
+    for half, mask in masks.items():
+        kickoff, stop = _span(view, half)
+        ball_xy[kickoff:stop][mask] = np.nan
+    ball_speed = np.full(view.n_frames, np.nan)
+    for array in (ball_xy, ball_speed):
+        array.setflags(write=False)
+    return ball_xy, ball_speed
 
 
 def _gap_ball(view, atd, calibration, seed):
@@ -1134,18 +1209,127 @@ def _gap_ball(view, atd, calibration, seed):
 
     Shared by the gaps profile and every profile that adds to it, so that their balls are the same bytes: the transplant
     draws are the "transplant" component's, whatever else a profile draws. The arrays are read-only."""
-    ball_xy = np.array(atd.ball_xy)
-    transplants, covered, missing = {}, 0, 0
+    masks, transplants, covered, missing = {}, {}, 0, 0
     for half, _, _ in view.graded:
         kickoff, stop = _span(view, half)
         choice = choose_transplant(view, half, calibration, seed)
-        gone = transplant(calibration.ball_masks[choice.source_half], stop - kickoff, choice.offset)
-        ball_xy[kickoff:stop][gone] = np.nan            # x and y together, as an Atd requires
+        masks[half] = transplant(calibration.ball_masks[choice.source_half], stop - kickoff, choice.offset)
         transplants[half] = {"source_half": choice.source_half, "offset": choice.offset, "frames": stop - kickoff}
         covered += stop - kickoff
-        missing += int(gone.sum())
-    ball_speed = np.full(view.n_frames, np.nan)
-    for array in (ball_xy, ball_speed):
-        array.setflags(write=False)
+        missing += int(masks[half].sum())
+    ball_xy, ball_speed = _remove_ball(view, atd, masks)
     return (ball_xy, ball_speed, {half: transplants[half] for half in sorted(transplants)},
             missing / covered if covered else None)
+
+
+def _transplant_records(view, calibration, seed):
+    """{half: {"source_half", "offset", "frames"}}: the Transplant of every half, as the cap reads it (cap_limits).
+
+    The context profile transplants no mask, but its cap reads the counts of ours through the same draws as the
+    tracking profile's, and the record says from which half of ours and which frame."""
+    records = {}
+    for half, _, _ in view.graded:
+        kickoff, stop = _span(view, half)
+        choice = choose_transplant(view, half, calibration, seed)
+        records[half] = {"source_half": choice.source_half, "offset": choice.offset, "frames": stop - kickoff}
+    return {half: records[half] for half in sorted(records)}
+
+
+# -- the context profile's ball ---------------------------------------------------------------------------------------
+
+def context_durations(calibration, fps):
+    """[[int64 array] x 3] x 2: the Calibration's gap durations by onset class and third of the half, in frames at `fps`.
+
+    A length is max(1, round(seconds * fps)), as the wrong-team episodes' are (calibrated_parameters); rounding is half
+    to even. Each array is read-only, in the order the Calibration has them. ValueError, naming the cell, for a
+    hazard_durations_s that lacks one of the six, or whose cell is not a list of lengths in seconds."""
+    fps = _whole("fps", fps)
+    table = []
+    for onset_class in (0, 1):
+        row = []
+        for third in (0, 1, 2):
+            try:
+                seconds = np.asarray(calibration.hazard_durations_s[onset_class][third], dtype=np.float64)
+            except (KeyError, IndexError, TypeError, ValueError):
+                raise ValueError("the Calibration's hazard_durations_s has no usable cell [{}][{}] (gap lengths in "
+                                 "seconds for an onset class and a third of the half); pass calibration.load()"
+                                 .format(onset_class, third)) from None
+            if seconds.ndim != 1 or seconds.size == 0 or not np.isfinite(seconds).all():
+                raise ValueError("the Calibration's hazard_durations_s[{}][{}] must be a non-empty list of finite "
+                                 "lengths in seconds; it has shape {}".format(onset_class, third, seconds.shape))
+            frames = np.maximum(1, np.rint(seconds * fps)).astype(np.int64)
+            frames.setflags(write=False)
+            row.append(frames)
+        table.append(row)
+    return table
+
+
+def context_probabilities(view, half, players_xy, calibration):
+    """(prob, onset_class, third, defined, counts) of one half, each of the n rows from its kick-off to the end of its
+    graded block; the arguments of hazard.sample_mask, and which rows have all their features.
+
+    `players_xy` is the degraded players' (n_frames, N_SLOTS, 2), normalised. The features are hazard.features of the
+    clean DFL ball and these players, in metres from a pitch corner on the view's pitch, with the half's kick-off as
+    both block start and kick-off (the Calibration's spans). A row is `defined` where all six are: not where the ball is
+    missing (DFL has none), nobody is present, or the ball's speed has no step to read yet. prob is
+    hazard_c * HAZARD_SCALE * the model's probability there, at most MAX_HAZARD_PROB, and 0 elsewhere; onset_class is 1
+    where the line distance is below calibration.NEAR_LINE_M; third is hazard.third_of_minute of the row's minute from
+    the kick-off. counts: rows, ball_missing_rows (DFL has no ball), nan_feature_rows (a ball and a NaN feature) and
+    capped_rows (a chance above the cap before it)."""
+    kickoff, stop = _span(view, half)
+    n = stop - kickoff
+    pitch = np.asarray(view.pitch, dtype=np.float64)
+    ball = np.asarray(view.ball_xy, dtype=np.float64)[kickoff:stop] * pitch
+    players = np.asarray(players_xy, dtype=np.float64)[kickoff:stop] * pitch
+    table = hazard.features(ball, players, view.pitch, view.fps, kickoff, kickoff)
+    seen = ~np.isnan(ball).any(axis=1)
+    defined = ~np.isnan(table).any(axis=1)
+    raw = np.zeros(n)
+    raw[defined] = calibration.hazard_c * HAZARD_SCALE * hazard.predict(calibration.hazard_model, table[defined])
+    prob = np.minimum(raw, MAX_HAZARD_PROB)
+    onset_class = np.zeros(n, dtype=np.int64)
+    onset_class[defined] = table[defined, LINE_COLUMN] < calibration_module.NEAR_LINE_M
+    third = hazard.third_of_minute(np.arange(n) / view.fps / 60.0)
+    counts = {"rows": n, "ball_missing_rows": int((~seen).sum()), "nan_feature_rows": int((seen & ~defined).sum()),
+              "capped_rows": int((raw > MAX_HAZARD_PROB).sum())}
+    return prob, onset_class, third, defined, counts
+
+
+def _mask_counts(mask, defined):
+    """{"onsets", "missing_frames", "at_risk_rows", "post_gap_rows"} of one half's mask (True: missing).
+
+    A gap is a maximal run of True and each is one onset (a gap cut by the half's end too). The at-risk rows are the rows
+    that have a ball after the mask and all their features, except the half's last row, which no gap can follow. The
+    post-gap rows are the at-risk rows within hazard.SPEED_STEPS frames of where a gap ends (its first row with a ball
+    after it, and the rows after it): where a ball speed read from the degraded ball would still hold steps from before
+    the gap, which the features of the clean ball do not."""
+    first, stop = _runs(mask)
+    at_risk = ~mask & defined
+    at_risk[-1] = False
+    after = np.zeros(mask.size, dtype=bool)
+    for end in stop[stop < mask.size].tolist():
+        after[end:end + hazard.SPEED_STEPS] = True
+    return {"onsets": int(first.size), "missing_frames": int(mask.sum()), "at_risk_rows": int(at_risk.sum()),
+            "post_gap_rows": int((at_risk & after).sum())}
+
+
+def _context_ball(view, atd, players_xy, calibration, seed):
+    """(ball_xy, ball_speed, record, mask_share): the clean ball with the hazard's gaps taken out of it.
+
+    Each half's gaps are hazard.sample_mask on context_probabilities, from rng_for(seed, match_index, "hazard", half),
+    with the durations of context_durations; the ball is made by _remove_ball, as the gaps profile's is. `record` is
+    info["ball"]: the scale and c, and per half and in all the counts of the docstring of the module (no frame).
+    `mask_share` is the share of the rows of the spans that the masks take: not the ball's missing share after them, which
+    also holds the rows that DFL has no ball for."""
+    durations = context_durations(calibration, view.fps)
+    masks, halves = {}, {}
+    for half, _, _ in view.graded:
+        prob, onset_class, third, defined, counts = context_probabilities(view, half, players_xy, calibration)
+        masks[half] = hazard.sample_mask(prob, onset_class, third, durations,
+                                         rng_for(seed, view.match_index, "hazard", half))
+        halves[half] = {**counts, **_mask_counts(masks[half], defined)}
+    ball_xy, ball_speed = _remove_ball(view, atd, masks)
+    totals = {name: sum(halves[half][name] for half in halves) for name in CONTEXT_COUNTS}
+    record = {"scale": float(HAZARD_SCALE), "c": round(float(calibration.hazard_c), DECIMALS), **totals,
+              "halves": {half: halves[half] for half in sorted(halves)}}
+    return ball_xy, ball_speed, record, totals["missing_frames"] / totals["rows"]
