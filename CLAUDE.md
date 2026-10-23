@@ -50,7 +50,7 @@ aggregates only, never raw data rows.
   deadline. Update the status when you start or finish one.
 - `docs/results.md` — every experiment (`R…`) and analysis (`A…`): commit, command, public-window and validation
   scores, verdict. Log failures too, and every upload in its submission log. A01–A03 hold measurements that should
-  shape any design; A05–A09 and R002–R004b are the benchmark's (P01).
+  shape any design; A05–A09 and R002–R005 are the benchmark's (P01, done; the default is R004c's).
 - `docs/traps.md` — pitfalls `T01…`. Add one whenever something costs real time.
 - `docs/technical_document.md` — the draft of deliverable 3. Update it when a pipeline decision lands.
 
@@ -95,10 +95,11 @@ The scorer writes `evaluation/scoreboard.csv` and `evaluation/reports/<name>.jso
 (gitignored) and exits 1 if any submission was skipped as invalid. `--gt` takes `public` (default), `private`
 (organisers only) or a CSV path.
 
-The benchmark's `run.py` takes `--profile clean|gaps|tracking` (default `tracking`, version 2 as of R004b) and
-`--truth raw|coarse`; `fidelity.py` takes `--profile gaps|tracking` (a profile that degrades nothing has no gates).
-Both take `--seeds N` (default 3), `--matches ID ...`, `--data-dir D` and `--no-write`. Reports go to
-`data/runs/benchmark/`, caches to `data/cache/`, and `fidelity.py` exits 1 if a gate fails.
+The benchmark's `run.py` takes `--profile clean|gaps|tracking|context` (default `tracking`, version 3 as of R004c;
+`context` is a sensitivity check only, it fails its near-line gate, R005) and `--truth raw|coarse`; `fidelity.py` takes
+`--profile gaps|tracking|context` (a profile that degrades nothing has no gates). Both take `--seeds N` (default 3),
+`--matches ID ...`, `--data-dir D` and `--no-write`. Reports go to `data/runs/benchmark/`, caches to `data/cache/`, and
+`fidelity.py` exits 1 if a gate fails.
 
 Run everything with the venv's interpreter — `.venv/Scripts/python` on Windows, `.venv/bin/python` on macOS/Linux —
 because activation doesn't persist between tool calls. The team standard is Python 3.11.9 (numpy 2.4.6, pandas 3.0.6,
@@ -137,12 +138,12 @@ keeps that convention: its scripts swap their own folder on `sys.path` for the r
   `pipeline/benchmark/README.md` is its overview. Modules: `sources` (pinned download, size + md5, into
   `data/external/dfl/`), `dfl` (our own parser, cached in `data/cache/dfl/`; not kloppy's loader or download, T30),
   `truth`, `inputs` (a match served as `Inputs`, no truth reachable), `calibration` + `hazard` (our own tracking
-  measured once, cached in `data/cache/benchmark/calibration/`), `degrade` (profiles `clean`, `gaps` and `tracking`,
-  the default as of R004b), `fidelity` (a profile's gates and WARNs against our match), `score` + `run` (pooled
-  spellF1, 90% t-intervals, sign-flip test, reports in `data/runs/benchmark/`) and `checks/` (what `selftest.py` runs).
-  Degradations are fitted once on label-free statistics of our tracking, then frozen, never tuned towards a score
-  (T26, T37). The Calibration and every degraded `Atd` hold BAR-ATH's masks and counts: print none of it, and write no
-  CSV of BAR-ATH labels.
+  measured once, cached in `data/cache/benchmark/calibration/`), `degrade` (profiles `clean`, `gaps`, `tracking` v3,
+  the default as of R004c, and `context`, a sensitivity check only, R005), `fidelity` (a profile's gates and WARNs
+  against our match), `score` + `run` (pooled spellF1, 90% t-intervals, sign-flip test, reports in
+  `data/runs/benchmark/`) and `checks/` (what `selftest.py` runs). Degradations are fitted once on label-free
+  statistics of our tracking, then frozen, never tuned towards a score (T26, T37). The Calibration and every degraded
+  `Atd` hold BAR-ATH's masks and counts: print none of it, and write no CSV of BAR-ATH labels.
 
 ### Frame alignment — an off-by-one shifts every transition
 
@@ -207,7 +208,10 @@ frames are all `D`. The public GT labels only 11,185–18,684 (5 minutes, 17 pos
   that depends on possession length under the raw and the coarse truth (`--truth coarse`), and treat a disagreement
   as a warning (T33, A06).
 - Two benchmark matches have a team down to 10, so a gate on how many slots are present is measured on full-strength
-  frames only (T36). DFL's jitter is a few jumps on a 1 cm grid, so compare medians, not an RMS (T35).
+  frames only (T36).
+- DFL's own jitter is rare jumps on a 1 cm grid (RMS of the second difference 9.0 cm against our 3.3 mm): compare
+  medians, not an RMS. The profile's 5-frame average leaves 1.80 cm per slot, 5.5 times ours, and no jump filter is
+  needed; the 6.5 to 8.5 cm that R004 and R004b showed came from the profile's own slot handovers, fixed in v3 (T35).
 
 ## Data setup
 

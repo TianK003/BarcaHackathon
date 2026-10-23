@@ -30,7 +30,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 
 | ID | proposal | attacks | effort | impact | status |
 |---|---|---|---|---|---|
-| [P01](#p01--a-validation-set-we-can-trust) | Validation set we can trust: other matches, degraded to look like ours | deciding anything at all | M | enabling | doing (Tian) |
+| [P01](#p01--a-validation-set-we-can-trust) | Validation set we can trust: other matches, degraded to look like ours | deciding anything at all | M | enabling | done → R002–R005 |
 | [P02](#p02--learn-the-ground-truths-conventions-from-the-public-window) | Learn the GT's conventions from the public window | boundary timing | S | high | idea |
 | [P16](#p16--metricas-sample-games-in-our-ground-truth-providers-conventions) | Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing | boundary timing, grain | M | medium | idea |
 | [P03](#p03--one-command-deterministic-cached) | One-command, deterministic, cached pipeline | reproducibility | S–M | enabling | done → R001 |
@@ -68,6 +68,11 @@ Week 4: feature freeze **Fri 13 Nov**; regenerate the file from a clean clone on
 
 ### P01 — A validation set we can trust
 
+**Status: done → [R002](results.md) to [R005](results.md).** The benchmark's default profile is `tracking` version 3
+([R004c](results.md)). `context` fails its near-line gate and is a sensitivity profile only ([R005](results.md)).
+The overview is the [benchmark README](../pipeline/benchmark/README.md), and the technical document's section 5 has
+the design and the fidelity table.
+
 **Rules changed on 22 Oct 2026.** The organisers' clarification (upstream `c073f29`, RULES.md and OVERVIEW.md) allows
 hand-labelled data from **other matches**, in any amount, and forbids hand labels on the competition match itself —
 for validation and calibration too ([T27](traps.md)). The first plan for P01 (label about 15 minutes of BAR-ATH from
@@ -100,23 +105,29 @@ to look like our ATD and run through our own pipeline.
    size and fps. Every evidence source, decoder and refiner then runs on it unchanged. `run.py` runs one config over
    every match and reports scores per match and pooled.
 3. **Degrade it to look like our ATD**, with the degradation seeded ([T22](traps.md)), in profiles that add one part
-   of our tracking at a time (`degrade.py`; `clean`, `gaps`, `tracking`, and `context` with R005):
+   of our tracking at a time (`degrade.py`: `clean`, `gaps` and `tracking`, the default, in its version 3 since R004c;
+   `context`, with R005, is a sensitivity profile only):
    - **Drop the ball where ours was** (`gaps`, R003): our own missing-ball masks are transplanted onto each half, which
      keeps the gap lengths (A01: median 10.7 s; 75% of the missing frames in gaps of 15 s or more) and the climb
      through each half (A02). Our gaps are not random, and the plan's "crowded and aerial" became **lines and slow
      balls** once measured: 28.6% of their onsets are within 2 m of a line against 8.5% of the visible frames, and the
      median ball speed at an onset is 2.2 m/s against 5.1 m/s (A07, A08). The ATD has no ball height, so aerial play
      cannot be measured on ours, and a crowd around the ball raises the hazard too, less than the lines and slow balls
-     do (A08). A transplanted mask is placed without looking at the play, so the `context` profile (R005) places the
-     gaps with a hazard fitted on our own tracker (A08); random gaps would flatter ball-free methods (P07), so both are
-     reported.
+     do (A08). A transplanted mask is placed without looking at the play. The `context` profile (R005) places the gaps
+     with a hazard fitted on our own tracker (A08) and **fails its near-line gate**, 0.5586 against our 0.2797 +-0.05:
+     DFL tracks the ball out of play, so a quarter of its at-risk rows are near a line against 9% of ours. It stays a
+     sensitivity check, the default stays `tracking`, and the four yardsticks keep their order on `context` under both
+     truths (R005). Random gaps would flatter ball-free methods (P07).
    - **Break identities** into anonymous, team-labelled tracklets that appear, vanish and swap ([T15](traps.md); the
-     `tracking` profile, R004 and R004b): our own tracklet lengths in 46 slots, wrong-team slots ([T32](traps.md)), NaN
+     `tracking` profile, R004 to R004c): our own tracklet lengths in 46 slots, wrong-team slots ([T32](traps.md)), NaN
      speeds in runs, and our low-count frames.
-   - **Match the positional jitter, by smoothing and not by adding noise**: DFL's players' second difference has an RMS
-     of 9.0 cm against 3.3 mm in ours, so each tracklet piece is smoothed with a 5-frame average by a rule set before
-     measuring, and DFL's rare jumps stay in ([T35](traps.md)). No positional bias is added: it cannot be measured on
-     ours.
+   - **Smooth the positions as the rule says, add no noise**: DFL's players' second difference has an RMS of 9.0 cm
+     against 3.3 mm in ours ([T35](traps.md)), so each tracklet piece is smoothed with a 5-frame average by a rule set
+     before measuring. Per slot the jitter is then 1.80 cm, 5.5 times ours, and equal to the jitter inside tracklets:
+     the average takes DFL's clean 9.0 cm down to a fifth, and no jump filter is needed (R004c). The 6.5 to 8.5 cm
+     that versions 1 and 2 showed (8.5 cm, R004b) came from slot handovers: their rule let a slot change player
+     between two adjacent rows, and version 3 frees a slot only from the row after its tracklet. No positional bias
+     is added: it cannot be measured on ours.
    - **Before trusting the copy**, `fidelity.py` checks it against our match: gates fixed before anything was measured
      (the ball-missing share, the median gap, the slots present, the wrong-team share, the tracklet median and the
      NaN-speed share; eight for `tracking`) and WARN checks on A01's numbers (the nearest player agreeing with the
@@ -129,7 +140,7 @@ to look like our ATD and run through our own pipeline.
    are one club's home games. Seven full matches replace 17 possessions.
 5. **Check the yardstick.** The benchmark should rank the four baselines in their published full-match order
    (`smooth50` > `smooth125` > `smooth25` > `raw`, EVALUATION.md), the order the public window gets wrong. That is a
-   check, not a target. Never tune the degradation towards the published numbers ([T26](traps.md)). R002 to R004b: the
+   check, not a target. Never tune the degradation towards the published numbers ([T26](traps.md)). R002 to R004c: the
    check holds in its robust part (`nearest_w0`, the raw baseline, is last under both truths), the rest of the order
    follows the truth, and neither truth gives the published order.
 
@@ -199,8 +210,8 @@ in the technical document (P13's rule). Use nothing about this fixture ([T26](tr
 
 ### P03 — One command, deterministic, cached
 
-**Status: done → [R001](results.md).** The pipeline lives in [`pipeline/`](../pipeline/README.md); every item below is in
-place, and `python pipeline/selftest.py --data` proves the four baselines come out of it byte for byte.
+**Status: done → [R001](results.md).** The pipeline lives in [`pipeline/`](../pipeline/README.md); every item below
+is in place, and `python pipeline/selftest.py --data` proves the four baselines come out of it byte for byte.
 
 **Why.** The deliverable is *the same file* from one command, and an experiment we cannot re-run cannot be compared.
 
@@ -286,8 +297,9 @@ This is the backbone that everything else plugs into.
   matches with the ball masked (P13), and on the public GT, predicted out of fold ([T27](traps.md)).
 - Measure on P01's **simulated ball gaps**, where the truth is known, and check against the public window's
   ball-missing frames (few: 6.5% of its in-play frames). Real gaps are harder than the `gaps` profile's, which are
-  placed without looking at the play: ours start near the lines and on slow balls, with more players around the ball,
-  and late in the half (A08). The `context` profile (R005) places them that way.
+  transplanted in time and not placed by the play: ours start near the lines and on slow balls, with more players
+  around the ball (A08). The `context` profile (R005) places them that way, fails its near-line gate and is a
+  sensitivity check only, so the benchmark's default still has gaps that are blind to the play.
 - Feed the probabilities into P06.
 
 ### P08 — Smart Tagging as soft evidence
@@ -375,9 +387,9 @@ training on them.
 **What.** Three sources (kloppy 3.18.0 has loaders for the last two; the first has our own, below):
 - **DFL/IDSSE open data** (Bassek et al., *Sci Data* 12, 195, 2025): 7 matches, two Bundesliga and five 2. Bundesliga.
   Their 25 Hz positional data carries per-frame `BallStatus` (alive/dead) and `BallPossession` — the same two things
-  our GT encodes. P01 already downloads and parses them with our own code (`pipeline/benchmark/sources.py` and
-  `dfl.load_match`, [A05](results.md)), because kloppy's loader and its download do not work for them
-  ([T30](traps.md)). P01 builds the adapter and the degradation for it.
+  our GT encodes. kloppy's download fails and its loaders drop the dead ball by default ([T30](traps.md)), so P01
+  downloads and parses them itself (`pipeline/benchmark/sources.py` and `dfl.load_match`), and kloppy's
+  `load_tracking` only cross-checks the parser ([A05](results.md)). P01 builds the adapter and the degradation for it.
 - **Metrica sample games 1–3** (`kloppy.metrica.load_open_data`; game 3 is in our FIFA/EPTS format), with event data
   to derive possession from.
 - **SkillCorner open data** (`kloppy.skillcorner.load_open_data`): 10 fps broadcast tracking. kloppy derives its
