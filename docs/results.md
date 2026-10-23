@@ -1949,10 +1949,10 @@ Checks (run on `a75b7ad`, the tree these docs sit on; the reports are at `a34e5f
 two comments, the pin check and the `selftest.py` timing line named above): `pipeline/benchmark/selftest.py --dfl
 --data` passes all 287 checks (264 synthetic, 16 with `--dfl`, 7 with `--data`) in 265 s, the default run 264 passed
 (46 s), `pipeline/selftest.py` 35 of 35 (5 s) and its `--data` run 37 of 37 in 9 s, the four baselines identical byte
-for byte. `checks/context.py` holds 16 of them (14 synthetic, 2 with `--data`), among them the pin on the default,
-the frozen `HAZARD_SCALE` with its two recorded measurements, `test_context_players_equal_tracking` and
-`test_runner_context_json_identical_across_processes` (the report's JSON is the same under `PYTHONHASHSEED` 1, 2
-and 3, as `tracking`'s is).
+for byte. `checks/context.py` holds 16 of them (14 synthetic, 2 with `--data`), among them the pin on the default, the
+frozen `HAZARD_SCALE` with its two recorded measurements and `test_context_players_equal_tracking`; the report's JSON is
+the same under `PYTHONHASHSEED` 1, 2 and 3, as `tracking`'s is (`test_runner_context_json_identical_across_processes`,
+in `checks/run.py`).
 
 **The one constant, rescaled once** (`degrade.HAZARD_SCALE`, frozen at 0.699 on 2026-10-23 in `a34e5f6`, the commit
 the runs are on; both measurements are in the comment of the constant and pinned by
@@ -2002,13 +2002,18 @@ The draws' record pooled over the 21 runs and both halves: 2,880 onsets, 1,297,1
 rows.
 
 **The warning, next to `tracking` v3's.** One of the ten warning checks warns: **the ball visible on dead frames is
-0.4622** (0.4754, 0.4634 and 0.4478 by seed) against 0.6637 on our public window (band +-0.10: -0.2015 from ours, 0.1015
-outside the band, a WARN), where `tracking` v3's was 0.5684 (R004c: -0.0953, inside the band). **The new ball hides the
-ball on dead frames more than v3's, and v3's already hid it more than ours does.** The other nine checks are ok:
-nearest player agrees with the truth 0.7627 against 0.7784 (v3: 0.7609); predicted possessions per graded minute
-`w0` / `w25` / `w50` / `w125` 14.66 / 5.49 / 4.37 / 3.07 against ours 18.40 / 7.04 / 5.61 / 3.76 (-20.3%, -22.1%,
--22.1%, -18.4%, inside +-25%; v3: -24.3%, -23.9%, -23.3%, -18.7%); D shares 0.4313 / 0.3863 / 0.3416 / 0.2308 against
-0.4069 / 0.3649 / 0.3234 / 0.2233 (+0.0244, +0.0214, +0.0182, +0.0075, inside +-0.05).
+0.4622** (0.4754, 0.4634 and 0.4478 by seed) against 0.6637 on our public window (band +-0.10: -0.2015 from the window's
+figure, 0.1015 outside the band, a WARN), where `tracking` v3's was 0.5684 (R004c: -0.0953, inside the band). **The new
+ball hides the ball on dead frames more than v3's does** (0.4622 against 0.5684). **What the row does not say is how
+either compares with our match over the match.** Its centre is the public window's: the ball is missing on 11.8% of that
+window's frames (A01) against about 41% of the graded frames of the match, the window is the best-covered block of our
+match, and the dead frames of the rest of it have no labels (and, by the rules, cannot have), so our own visible-on-dead
+share over the match is unmeasured. It is expected to be lower than the window's, by an amount that cannot be measured,
+so the row shows the benchmark's share against the window's, and some of its -0.2015 is the window's (the README says
+the same). The other nine checks are ok: nearest player agrees with the truth 0.7627 against 0.7784 (v3: 0.7609);
+predicted possessions per graded minute `w0` / `w25` / `w50` / `w125` 14.66 / 5.49 / 4.37 / 3.07 against ours 18.40 /
+7.04 / 5.61 / 3.76 (-20.4%, -22.1%, -22.1%, -18.4%, inside +-25%; v3: -24.3%, -23.9%, -23.3%, -18.7%); D shares 0.4313 /
+0.3863 / 0.3416 / 0.2308 against 0.4069 / 0.3649 / 0.3234 / 0.2233 (+0.0243, +0.0214, +0.0182, +0.0075, inside +-0.05).
 
 **Diagnosis: the model is fine, the rows it is applied to are not (`nearline_diag`, a throwaway script run on seed 0;
 not committed).** The model's probability is higher near a line on both matches, by a similar factor, and the rows are
@@ -2129,20 +2134,23 @@ v3 had 0.0002 apart under the raw truth).
   truths; alive/dead F1 by +0.028 to +0.069. R004c's seeds moved a pooled spellF1 by up to about 0.013 (v3 only: no
   per-seed score exists for `context`): the deltas of `w0` are under that, and the other six, +0.011 to +0.022, are of
   its size or up to 1.7 times it, where R004c's v3-against-v2 differences (0.6 points at most) were inside it.
-  **The mechanism was not measured.** What the numbers do say is that `context` hides the ball on dead frames more
-  (0.4622 visible, against v3's 0.5684 and our window's 0.6637) and that the yardsticks fall back to `D` where the
-  window of a frame holds no ball (`fallback = "D"` in the configs), so a profile that loses the ball more on dead
-  frames may be one on which this rule does better. That is a reading and not a result: the predicted D share rose for
-  `w0`, `w25` and `w50`, by +0.0124, +0.0099 and +0.0075, and fell by 0.0021 for `w125`, whose alive/dead F1 rose all the
-  same. If it is the cause, **a method that reads the ball's absence as a sign of a dead ball would be validated
-  optimistically on `context`**, and more so than on `tracking` v3, whose ball is visible on 0.5684 of the dead frames
-  against our window's 0.6637, so that v3 already hides it there more than ours does.
-- **`context` is not a better copy of our match than `tracking` v3.** It was built to be nearer in one respect: its
-  gaps follow the play in the model's six features, as ours do, which `tracking`'s copied masks cannot. The near-line
-  gate says that the way it does so is not ours (v3 has no such gate, and its near-line share was not measured). On the
-  figures that both profiles have, it is further from ours than v3: the share missing (0.4313 against 0.4110, where
-  v3's 0.4189 passes), the median gap (11.88 s against our 10.74 s, v3's 10.76 s) and the ball visible on dead frames
-  (0.4622, v3's 0.5684, ours 0.6637). No profile of the benchmark is ours, and this one is not nearer.
+  **The mechanism was not measured.** What the numbers do say is that `context` hides the ball on dead frames more than
+  v3 does (0.4622 visible against v3's 0.5684) and that the yardsticks fall back to `D` where the window of a frame
+  holds no ball (`fallback = "D"` in the configs), so a profile that loses the ball more on dead frames may be one on
+  which this rule does better. That is a reading and not a result: the predicted D share rose for `w0`, `w25` and `w50`,
+  by +0.0124, +0.0100 and +0.0075, and fell by 0.0021 for `w125`, whose alive/dead F1 rose all the same. If it is the
+  cause, **a method that reads the ball's absence as a sign of a dead ball would be validated more optimistically on
+  `context` than on `tracking` v3**. Which of the two is nearer our match on this count is not known (the warning above:
+  the 0.6637 is the public window's, and the match is worse covered than the window), so this says which profile
+  flatters such a method more, and not how far either flatters it beyond our match.
+- **`context` is not a better copy of our match than `tracking` v3, on the figures we can measure.** It was built to be
+  nearer in one respect: its gaps follow the play in the model's six features, as ours do, which `tracking`'s copied
+  masks cannot. The near-line gate says that the way it does so is not ours (v3 has no such gate, and its near-line
+  share was not measured). On the two whole-match figures that both profiles have, it is further from ours than v3: the
+  share missing (0.4313 against 0.4110, where v3's 0.4189 passes) and the median gap (11.88 s against our 10.74 s, v3's
+  10.76 s). On the ball visible on dead frames it is further from the public window's figure (0.4622, against v3's
+  0.5684 and the window's 0.6637), and that is a distance from the window, not from the match (see the warning above).
+  No profile of the benchmark is ours, and on the share missing and the median gap this one is not nearer.
 - Per-seed yardstick scores were not computed for `context`, and the draws are not the same as v3's (the ball's mask is
   from another generator), so the pairing is over the matches and says nothing of the seeds.
 
@@ -2152,13 +2160,14 @@ and 9 s (above; the timings are load-dependent).
 Verdict: **`context` v1 is kept in the code as a sensitivity profile and is not the benchmark's profile**: it fails the
 near-line gate on every seed (0.5586 against 0.2797 +-0.05, because DFL tracks the ball out of play and the hazard that
 fits ours is applied to those rows), fails the share missing pooled and on seed 2 (0.4313 against 0.4110 +-0.02, by
-0.0003 pooled), and warns on the ball visible on dead frames (0.4622 against 0.6637 +-0.10). No fix, no second rescale
-of `HAZARD_SCALE`, no gate moved; `DEFAULT_PROFILE` stays `tracking` (version 3), so the validation of any method is
-R004c's `tracking` v3, and a number from `context` is not compared with one from it. What the check says: the order of
-the four yardsticks is the same under the two ways of placing the gaps (tau +1.000 between the profiles' orders on each
-truth, +0.667 against the published order under each), and `w0` is last by far on both; every score is higher on
-`context` (0.3 to 2.2 points of pooled spellF1), possibly because it hides the ball more on dead frames, which the
-yardsticks read as dead (not measured). Do not choose between `w125` and the others where the raw and the coarse
+0.0003 pooled), and warns on the ball visible on dead frames (0.4622 against the public window's 0.6637 +-0.10; the
+window is better covered than the match, so the row is a distance from the window and not from the match). No fix, no
+second rescale of `HAZARD_SCALE`, no gate moved; `DEFAULT_PROFILE` stays `tracking` (version 3), so the validation of
+any method is R004c's `tracking` v3, and a number from `context` is not compared with one from it. What the check says:
+the order of the four yardsticks is the same under the two ways of placing the gaps (tau +1.000 between the profiles'
+orders on each truth, +0.667 against the published order under each), and `w0` is last by far on both; every score is
+higher on `context` (0.3 to 2.2 points of pooled spellF1), possibly because it hides the ball more on dead frames, which
+the yardsticks read as dead (not measured). Do not choose between `w125` and the others where the raw and the coarse
 truth disagree, on either profile.
 
 ## Submission log
