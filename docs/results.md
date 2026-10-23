@@ -190,8 +190,10 @@ quote the ranges, never one figure.
 
 The seven DFL matches (public data, CC BY 4.0) and our public GT; no BAR-ATH tracking is read. Command:
 `python pipeline/benchmark/selftest.py --dfl`, checks `test_dfl_truth_conventions`, `test_dfl_window_confound` and
-`test_dfl_coarse_truth` (they print every number below, assert the integer counts and the 60% agreement, and take 8 s
-together with the caches warm); the rules are checked on hand-built matches by `test_truth_*`
+`test_dfl_coarse_truth` (they print every number below and take 8 s together with the caches warm). They assert every
+integer count quoted here (possessions, short runs, stoppages, window counts, changes, the coarse truth's possessions),
+the 60% agreement and DFL's playing time to within 2 frames; the rates, shares, medians, lags and line timings are
+printed, not asserted. The rules are checked on hand-built matches by `test_truth_*`
 (`pipeline/benchmark/checks/truth.py`). The truth is `pipeline/benchmark/truth.py`'s, built as our GT is: `D` where
 `BallStatus` is 0, otherwise the team `BallPossession` names (set on dead frames too, and ignored there), `X` outside
 the two halves. All seven matches have both flags on every frame, so the truth carried 0 frames and guessed none. The
@@ -305,9 +307,10 @@ measurement looks only at the frames the truth calls alive.
 - DFL's flag turns dead 4 frames (0.16 s) after the ball is first seen beyond a line while the flag still says alive,
   and within 0.28 s in three cases out of four. The other 31% of the changes have no alive frame with the ball beyond a
   line in the 10 s before (fouls, offsides and the like).
-- J03WQQ has the lowest share (41.4% of its changes) because its ball is tracked beyond a line on 30% of its dead
-  frames, against 59–74% in the others (not investigated further). The tracked ball is never more than about 4 m outside
-  a line (x from −0.022 to 1.029 and y from −0.059 to 1.046 of the pitch over the seven matches; J03WQQ goes furthest).
+- J03WQQ has the lowest share (41.4% of its changes), and its ball is tracked beyond a line on 30% of its dead
+  frames, against 59–74% in the others. The two are seen together and not explained (not investigated further). The
+  tracked ball is never more than about 4 m outside a line (x from −0.022 to 1.029 and y from −0.059 to 1.046 of the
+  pitch over the seven matches; J03WQQ goes furthest).
 - Our match has no counterpart yet: it needs BAR-ATH's ball against the public GT's `D` onsets, which is P02.
 
 **The nearest player against the truth** (A01: 77.8% of 5,640 alive ball-visible frames on the public window). Brute
@@ -363,11 +366,16 @@ rate is at or below the literature's upper bound, 220 possessions a match, which
 
 **So:**
 - **The only like-for-like comparison with our match is the nearest player's team:** 77.5% of DFL's alive ball-visible
-  frames against 77.8% of the public window's (A01). Evidence about teams behaves alike in the two, and the benchmark
-  can rank evidence sources, decoders and degradation handling. Every other comparison here is with our public
-  window, which cannot carry a verdict, or with the literature.
+  frames against 77.8% of the public window's (A01). That is one aggregate, from different tracking, and ours comes
+  from a single 5-minute stretch of 5,640 frames, so even this one is a public-window figure. It shows that one simple
+  source names the team about as often in the two; it says nothing yet about any other evidence. Every other
+  comparison here is with the public window, which cannot carry a verdict, or with the literature. Evidence sources
+  and degradation handling are ranked on the benchmark on its own terms; a decoder choice that does not depend on
+  how long a possession is can be taken from it too, and one that does (smoothing, a switch penalty, duration priors)
+  needs both truths (the **Use** bullet below).
 - **DFL's flag is fine-grained, and that is measured:** 370–511 possessions a match (437 on average), far above the
-  literature's 175–220 for control-based rules and past its 420 for every touch; a median of 3.7 s; `D` is DFL's own
+  literature's 175–220 for control-based rules; the mean is past the roughly 420 that counting every touch gives, and
+  three matches (370, 401 and 402) are below it; a median of 3.7 s; `D` is DFL's own
   ball-in-play clock to within 2 frames, with a stoppage count (102 a match) in the literature's range and the flag
   flipping a median 0.16 s after the ball is seen beyond a line.
 - **How far our GT differs in grain is not known.** The public window is livelier than 96% of DFL's, and the rate falls

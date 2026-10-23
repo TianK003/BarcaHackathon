@@ -4,8 +4,10 @@ The synthetic checks run on matches made here out of a few rows, in the real Dfl
 out by hand from the rules rather than from what the code printed. The ones that read the downloaded matches
 (test_dfl_truth_conventions, test_dfl_window_confound and test_dfl_coarse_truth, --dfl) print the aggregates that A06 in
 docs/results.md quotes, and share one pass over the 7 matches; the DFL files are public
-(CC BY 4.0), so printing their aggregates is fine. The public ground truth of BAR-ATH (evaluation/gt/, MIT) is the only
-thing of our match that is read here, and only as the 7,500 labels the organisers published.
+(CC BY 4.0), so printing their aggregates is fine. Every integer count that A06 quotes is asserted against a constant
+below (the EXPECTED_* ones); the rates, medians, shares, lags and timings are printed, not asserted. The public ground
+truth of BAR-ATH (evaluation/gt/, MIT) is the only thing of our match that is read here, and only as the 7,500 labels
+the organisers published.
 """
 
 import functools
@@ -43,11 +45,26 @@ EXPECTED_COUNTS = {"J03WMX": (511, 103, 103, 84, 82, 85369), "J03WN1": (500, 107
                    "J03WR9": (370, 92, 92, 69, 66, 85316)}
 # Pooled over the 7 matches: possessions, stoppages, and possessions of at most 2 and at most 12 frames.
 EXPECTED_POOLED = (3061, 713, 15, 156)
-# The 5-minute windows of A06: how many there are, and per selection (n windows, how many with a rate at or below the
-# public window's). Filled in from the first run.
-EXPECTED_WINDOWS = {"all": 129, "counts": {"all": (129, 7), "alive >= 70%": (32, 7), "alive >= 75%": (19, 5)}}
+# Per match, the possessions of at most 2 and of at most 12 frames (the table's two short-run columns), the public
+# window's (possessions, <= 2, <= 12, stoppages) and the first 5 minutes of each first half, pooled, in the same order.
+EXPECTED_SHORT_RUNS = {"J03WMX": (3, 29), "J03WN1": (2, 32), "J03WOH": (2, 14), "J03WOY": (1, 17),
+                       "J03WPY": (3, 27), "J03WQQ": (3, 14), "J03WR9": (1, 23)}
+EXPECTED_PUBLIC = (17, 0, 0, 4)
+EXPECTED_FIRST_5 = (211, 3, 11, 44)
+# DFL's own PlayingTime against the alive frames, the most that they differ in frames: in a match, and in a half.
+MAX_PLAYING_DIFF = (2, 1)
+# The 5-minute windows of A06: how many there are, how many are at or below the public window's alive share, and per
+# selection (n windows, how many with a rate at or below the public window's, how many with a median possession at least
+# as long, how many with a share of possessions under 5 s at most as large). Filled in from the first run.
+EXPECTED_WINDOWS = {"all": 129, "alive_at_or_below": 124,
+                    "counts": {"all": (129, 7, 7, 9), "alive >= 70%": (32, 7, 5, 7), "alive >= 75%": (19, 5, 4, 5)}}
 # Pooled possessions of the coarse truth for each candidate shortest possession (s). Filled in from the first run.
 EXPECTED_COARSE = {1: 2707, 2: 2271, 3: 1979, 4: 1799, 5: 1659}
+# The coarse truth at COARSE_MIN_S: its pooled possessions of at most 2 and at most 12 frames, and its possessions per
+# match (A06: 220-255).
+EXPECTED_COARSE_SHORT = (3, 41)
+EXPECTED_COARSE_PER_MATCH = {"J03WMX": 255, "J03WN1": 254, "J03WOH": 220, "J03WOY": 248, "J03WPY": 237, "J03WQQ": 223,
+                             "J03WR9": 222}
 
 
 # -- helpers ----------------------------------------------------------------------------------------------------------
@@ -407,6 +424,15 @@ def test_truth_coarse_absorbs_sandwiched_short_spells():
     kept = runs((pm.H, 20), (pm.A, 8), (pm.H, 20))
     assert coarse(kept).tolist() == kept.tolist()
     assert coarse(runs((pm.H, 20), (pm.A, 7), (pm.H, 20))).tolist() == runs((pm.H, 47)).tolist()
+    # ... for every float, not only for 0.8 x 10 (which happens to be exact): at 25 fps, 0.28 x 25 is 7.000000000000001
+    # and 2.2 x 25 is 55.00000000000001, and a plain `length < min_s * fps` would absorb a spell of exactly 7 or 55.
+    for rate, seconds, frames in ((25, 0.28, 7), (25, 2.2, 55), (25, 0.8, 20), (10, 0.8, 8), (25, 5, 125)):
+        edge = runs((pm.H, 200), (pm.A, frames), (pm.H, 200))
+        assert truth.coarse_codes(edge, ((1, 0, len(edge)),), rate, seconds).tolist() == edge.tolist(), (
+            "a spell of exactly {} s ({} frames at {} fps) must stay".format(seconds, frames, rate))
+        short = runs((pm.H, 200), (pm.A, frames - 1), (pm.H, 200))
+        assert truth.coarse_codes(short, ((1, 0, len(short)),), rate, seconds).tolist() == \
+            runs((pm.H, 399 + frames)).tolist(), "one frame fewer than {} s at {} fps must go".format(seconds, rate)
     # A short spell next to D is not sandwiched by two spells, so it stays; D is never touched.
     for same in (runs((pm.H, 20), (pm.A, 5), (pm.D, 5), (pm.H, 20)), runs((pm.D, 5), (pm.A, 5), (pm.H, 20)),
                  runs((pm.H, 20), (pm.A, 5), (pm.D, 5)), runs((pm.H, 20), (pm.D, 5), (pm.A, 5), (pm.D, 5), (pm.H, 20))):
@@ -522,9 +548,11 @@ def playing_time(match_id):
 
 
 def measure(match_id):
-    """Everything test_dfl_truth_conventions reports about one match, as arrays of codes and small numbers.
+    """Everything the --dfl checks of this module report about one match, as arrays of codes and small numbers.
 
-    The match itself (about 150 MB) is dropped on return, so that one match is held at a time.
+    test_dfl_truth_conventions, test_dfl_window_confound and test_dfl_coarse_truth all read this (through
+    measurements()), so the 7 matches are loaded and measured once. The match itself (about 150 MB) is dropped on
+    return, so that one match is held at a time.
     """
     match = dfl.load_match(match_id)
     codes, report = truth.truth_codes(match)
@@ -595,11 +623,12 @@ def test_dfl_truth_conventions():
     """DFL's truth, per match and pooled, next to the public window: what A06 in docs/results.md quotes.
 
     Prints, for each of the 7 matches, the summary of the truth (and its pooled summary, the public GT's, and that of
-    the first 5 minutes), where the public window's rate sits among DFL's 5-minute windows, DFL's own PlayingTime
-    against the alive frames, the line timing, the nearest team's agreement and the cost of a lag. Asserts that the
-    nearest player's team is the truth's on more than 60% of alive ball-visible frames in every match and every half
-    (which proves the home mapping), that every truth is a perfect score against itself, and the integer counts that A06
-    quotes.
+    the first 5 minutes), DFL's own PlayingTime against the alive frames, the line timing, the nearest team's agreement
+    and the cost of a lag. (The public window's place among DFL's 5-minute windows is test_dfl_window_confound's, and
+    the coarse truth is test_dfl_coarse_truth's.) Asserts that the nearest player's team is the truth's on more than
+    60% of alive ball-visible frames in every match and every half (which proves the home mapping), that every truth is
+    a perfect score against itself, that the alive frames are DFL's PlayingTime to within MAX_PLAYING_DIFF, and the
+    integer counts that A06 quotes for the 7 matches, the public window and the first 5 minutes.
     """
     from pipeline.benchmark import sources
     ids = sources.MATCH_IDS
@@ -634,6 +663,13 @@ def test_dfl_truth_conventions():
             *(found[m]["alive_by_half"][half] - played[half] for half in (1, 2))))
     print("      (PlayingTime and TotalTime are OtherGameInformation attributes of the information file; 'minus PT' "
           "is the alive frames less PlayingTime converted to frames, in all and in each half)")
+    for m in ids:
+        times = found[m]["playing"]
+        played = {half: times[half][1] * fps / 1000 for half in times}
+        assert abs(found[m]["alive_frames"] - sum(played.values())) <= MAX_PLAYING_DIFF[0] and all(
+            abs(found[m]["alive_by_half"][half] - played[half]) <= MAX_PLAYING_DIFF[1] for half in played), (
+            "{}: the alive frames are no longer DFL's PlayingTime to within {} frames in all and {} in each "
+            "half".format(m, *MAX_PLAYING_DIFF))
 
     for title, key in (("in the 10 s before the flip, whatever the truth calls those frames", "timing"),
                        ("looking only at the frames of that window that the truth calls alive", "alive_timing")):
@@ -700,6 +736,13 @@ def test_dfl_truth_conventions():
     assert (pooled["possessions"], pooled["stoppages"], pooled["runs_le_2_frames"],
             pooled["runs_le_12_frames"]) == EXPECTED_POOLED, (
         pooled["possessions"], pooled["stoppages"], pooled["runs_le_2_frames"], pooled["runs_le_12_frames"])
+    short = {m: (found[m]["summary"]["runs_le_2_frames"], found[m]["summary"]["runs_le_12_frames"]) for m in ids}
+    assert short == EXPECTED_SHORT_RUNS, "the short-run counts A06 quotes changed: {} vs {}".format(
+        short, EXPECTED_SHORT_RUNS)
+    for name, summary, expected in (("public window", public, EXPECTED_PUBLIC), ("first 5'", first, EXPECTED_FIRST_5)):
+        got = (summary["possessions"], summary["runs_le_2_frames"], summary["runs_le_12_frames"],
+               summary["stoppages"])
+        assert got == expected, "the {} counts A06 quotes changed: {} vs {}".format(name, got, expected)
 
 
 def test_dfl_window_confound():
@@ -730,7 +773,7 @@ def test_dfl_window_confound():
         slow = int((rate[chosen] <= public["per_alive_minute"]).sum())
         long_median = int((median[chosen] >= public["median_s"]).sum())
         few_short = int((under[chosen] <= public["share_under_5s"] + 1e-9).sum())
-        counts[name] = (n, slow)
+        counts[name] = (n, slow, long_median, few_short)
         print("      {:<14} {:>4} {:>8} {:>12.2f} {:>14} {:>14.2f} {:>14} {:>14}".format(
             name, n, len({m for (m, _), keep in zip(rows, chosen) if keep}), np.median(rate[chosen]),
             "{} ({:.1%})".format(slow, slow / n), np.median(median[chosen]),
@@ -754,6 +797,8 @@ def test_dfl_window_confound():
               (public["per_alive_minute"] - predicted) / residual_sd, residual_sd))
     assert correlation < -0.5, "the rate no longer falls with the alive share ({:.2f})".format(correlation)
     assert public["alive_share"] > 0.75, "the comparable windows (alive >= 75%) no longer include the public window's"
+    assert int((alive <= public["alive_share"]).sum()) == EXPECTED_WINDOWS["alive_at_or_below"], (
+        "windows at or below the public window's alive share: {}".format(int((alive <= public["alive_share"]).sum())))
     assert counts == EXPECTED_WINDOWS["counts"], counts
 
 
@@ -808,8 +853,12 @@ def test_dfl_coarse_truth():
     for m in ids:
         per_match.append((m, truth.summary(truth.coarse_codes(found[m]["codes"], found[m]["graded"], fps),
                                            found[m]["graded"], fps)))
+    coarse_pooled = truth.summary(coarse[chosen], graded, fps)
     print_summary_rows([("raw pooled", raw)] + [(m + " coarse", summary) for m, summary in per_match] +
-                       [("coarse pooled", truth.summary(coarse[chosen], graded, fps))])
+                       [("coarse pooled", coarse_pooled)])
+    assert (coarse_pooled["runs_le_2_frames"], coarse_pooled["runs_le_12_frames"]) == EXPECTED_COARSE_SHORT, (
+        coarse_pooled["runs_le_2_frames"], coarse_pooled["runs_le_12_frames"])
+    assert {m: summary["possessions"] for m, summary in per_match} == EXPECTED_COARSE_PER_MATCH, per_match
     print("\n      spellF1 of the coarse truth against itself lagged k frames, pooled:   " + "   ".join(
         "k={}: {:.4f}".format(k, truth.lag_spell_f1(coarse[chosen], k)) for k in LAGS))
     assert {s: table[s][0] for s in truth.COARSE_CANDIDATES_S} == EXPECTED_COARSE, table

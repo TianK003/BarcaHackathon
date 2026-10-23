@@ -6,8 +6,8 @@ module of its topic:
     sources.py   the DFL registry and the download
     dfl.py       the DFL parsers and the cache of parsed matches (synthetic, and the downloaded ones with --dfl)
     hazard.py    the gap-onset hazard: features, logistic fit, AUC and the mask sampler (synthetic arrays only)
-    truth.py     the benchmark's truth from the DFL flags: codes, summary, line timing, nearest team (synthetic, and the
-                 downloaded matches with --dfl)
+    truth.py     the benchmark's truth from the DFL flags: codes, summary, line timing, nearest team, the coarse
+                 truth and the cost of a lag (synthetic, and the downloaded matches with --dfl)
     harness.py   the harness itself: what it collects, how it reports NOT RUN, the console set-up
     common.py    what several modules share: the synthetic DFL match, real_match, damaged, NotRun (no checks of its own)
 

@@ -310,7 +310,8 @@ def coarse_codes(codes, graded, fps, min_s=COARSE_MIN_S):
     our GT and DFL's (A06 measures none), and the raw truth stays the default.
 
     The rule, inside each graded half: a possession spell shorter than min_s seconds (strictly: a spell of exactly
-    min_s stays) whose neighbours on both sides, with no D in between, are spells of the other team takes that team's
+    min_s stays, for every float: min_s x fps is rounded to 9 decimals first, since 0.28 x 25 is 7.000000000000001)
+    whose neighbours on both sides, with no D in between, are spells of the other team takes that team's
     label (A B A becomes A A A, and the three are one spell). It is applied one spell at a time, the shortest first
     (the earliest of equals), re-reading the spells after each, until no spell qualifies: in a chain H A H A H of short
     spells, relabelling every candidate at once would flip them all, and absorbing one at a time takes the shortest
@@ -321,7 +322,7 @@ def coarse_codes(codes, graded, fps, min_s=COARSE_MIN_S):
     if min_s < 0:
         raise ValueError("coarse_codes: min_s is {} s, and it must not be negative".format(min_s))
     coarse = np.array(codes, dtype=np.int8)
-    limit = min_s * fps
+    limit = round(min_s * fps, 9)                             # 0.28 s x 25 fps is 7.000000000000001 frames, not 7
     teams = (pm.H, pm.A)
     for _, start, stop in graded:
         pieces = [list(piece) for piece in pm.segments(coarse, [(start, stop)])]
