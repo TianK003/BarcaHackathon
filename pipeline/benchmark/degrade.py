@@ -126,9 +126,10 @@ identity further: test_data_tracking_profile_on_a_real_match_with_our_real_calib
   team's pool; a slot is free for a tracklet that starts at t only when its previous tracklet stopped before t: its
   half-open stop is at most t - 1, so that there is at least one empty row between two tracklets in a slot, and a slot
   never changes player between two adjacent rows (version 3; versions 1 and 2 let a tracklet take a slot on the very
-  row it was freed, which put about 22 jumps of 12 to 17 m into every match and seed, where ours has none: R004c). A
-  pool with no free slot is a ValueError (a team has 11 players on the pitch and 22 or 24 slots, so it means that DFL
-  gave positions to players who are not playing).
+  row it was freed: R004c measured 372 such handovers in version 2 over 21 runs, 17.7 a match and seed, 9 to 30 a
+  run, each a jump of 13.8 m at the median, where ours has none). A pool with no free slot is a ValueError (a team
+  has 11 players on the pitch and 22 or 24 slots, so it means that DFL gave positions to players who are not
+  playing).
 * The players cover each graded block, from its first row: not from the kick-off as the ball's mask does, because the
   mask's clock is a property of the gaps (coverage worsens through a half) and a player is tracked or lost whatever the
   clock. A DFL half starts at its kick-off, so the two are the same rows for the 7 matches. The rows between the halves
@@ -956,8 +957,9 @@ def assign_slots(view, half, pieces):
     least one row before: a slot is free for a piece that starts at t only when its last tracklet stopped before t (its
     half-open stop is at most t - 1), so that two tracklets of a slot are never on adjacent rows and a slot never
     changes player between two frames. A tracklet that took the slot on the row it was freed would put the position of
-    another player into the slot's trajectory (versions 1 and 2 did, about 22 times a match and seed). ValueError,
-    naming the match, the half and the row, for a pool with no free slot.
+    another player into the slot's trajectory (versions 1 and 2 did: R004c counted 372 over 21 runs in version 2,
+    17.7 a match and seed, with a median jump of 13.8 m). ValueError, naming the match, the half and the row, for a
+    pool with no free slot.
     """
     free_from = [-1] * N_SLOTS
     tracklets = []
