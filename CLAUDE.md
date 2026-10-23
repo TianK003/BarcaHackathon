@@ -98,8 +98,8 @@ The scorer writes `evaluation/scoreboard.csv` and `evaluation/reports/<name>.jso
 The benchmark's `run.py` takes `--profile clean|gaps|tracking|context` (default `tracking`, version 3 as of R004c;
 `context` is a sensitivity check only, it fails two of its gates, R005) and `--truth raw|coarse`; `fidelity.py`
 takes `--profile gaps|tracking|context` (a profile that degrades nothing has no gates). Both take `--seeds N` (default
-3), `--matches ID ...`, `--data-dir D` and `--no-write`; `sources.py` takes `--data-dir D` too. Reports go to `data/runs/benchmark/`, caches to
-`data/cache/`, and `fidelity.py` exits 1 if a gate fails.
+3), `--matches ID ...`, `--data-dir D` and `--no-write`; `sources.py` takes `--data-dir D` too. Reports go to
+`data/runs/benchmark/`, caches to `data/cache/`, and `fidelity.py` exits 1 if a gate fails.
 
 Run everything with the venv's interpreter — `.venv/Scripts/python` on Windows, `.venv/bin/python` on macOS/Linux —
 because activation doesn't persist between tool calls. The team standard is Python 3.11.9 (numpy 2.4.6, pandas 3.0.6,

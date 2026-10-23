@@ -241,6 +241,12 @@ quote the ranges, never one figure.
   match, 956 MB for the seven.
 - What the reused `--dfl` run still spends: kloppy's own loads (about 100 s), the fresh parse of the cache check (about
   50 s), the spot check's own pass over the file (about 34 s) and the 2.6 GB md5 check (about 10 s).
+- **Suite times at the end of P01** (2026-10-23, `fdc5eae`, the same machine; its load decides, so ranges): the
+  synthetic run is 272 checks and took 49 to 115 s over six runs (R005 measured 46 s for 264, on a quiet machine);
+  `--dfl --data` is 295 checks (272 synthetic, 16 with `--dfl`, 7 with `--data`) and took 949 s (15 min 49 s, the sum of
+  the checks' own times 945 s) with the seven DFL caches and the Calibration rebuilt after the edits to `dfl.py` and
+  `calibration.py` (the caches are keyed on their hashes); `pipeline/selftest.py --data` passed 37 of 37, the four
+  baselines byte for byte, in 9 s.
 
 ### A06 — DFL's conventions against the public window and the literature (2026-10-23)
 
