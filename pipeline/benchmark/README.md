@@ -59,7 +59,7 @@ What to know about the files (A05; `dfl.py` has the details and refuses what it 
 | option | meaning |
 |---|---|
 | `CONFIG ...` | pipeline TOML configs (`pipeline/config.py`), per half (`scope = "halves"`). **The first one is the reference**: every other config is compared with it, and a delta is `other - first`, so positive means the other is better. Put the config you want to beat first. |
-| `--profile P` | how the tracking is made (below): `tracking` (the default), `gaps` or `clean`. |
+| `--profile P` | how the tracking is made (below): `tracking` (the default), `context` (a sensitivity check: it fails a gate, R005), `gaps` or `clean`. |
 | `--seeds N` | degradation seeds per match (default 3: seeds 0, 1 and 2). The clean profile has nothing random to repeat, so it always runs seed 0 only; if you pass `--seeds` with more than 1 it says that it ignored it, and says nothing when you pass none. |
 | `--matches ID ...` | the matches to run, in this order (default: all seven). Fewer than seven are filed under a name that says which (see the report, below). |
 | `--truth raw\|coarse` | the truth to score against (below). Default `raw`. |
@@ -102,6 +102,7 @@ which goes into every report: change what a profile does and bump it.
 | `clean` | 1 | DFL's, as it is: on every frame | DFL's, one slot per player |
 | `gaps` | 1 | missing where **ours** was: our own missing-ball masks, transplanted onto each half; its speed is NaN everywhere (T31) | untouched |
 | `tracking` | 2 | `gaps`'s, byte for byte | broken into tracklets of ours and given 46 slots, 24 home and 22 away, as ours are; a wrong-team slot now and then (10.5% of frames), NaN speeds in runs (7.8% of the slot-frames), 5-frame smoothing; **since version 2** only the players nearest the ball are tracked where ours has few (the cap), no piece is shorter than 8 frames, and the walk's spans are rescaled once (below). Version 1 (R004) had none of the three |
+| `context` | 1 | missing where our tracker loses it: a hazard fitted on our own match (A08) places the gaps by the ball's distance to a line, its speed, the players near it and the minute of the half, with our gap lengths (`HAZARD_SCALE` 0.699, rescaled once). **It fails its near-line gate** (the gaps start within 2 m of a line 56% of the time, against 28% of ours: R005), so it is **not the default**, and is kept for the agreement check between generators | `tracking`'s, draw for draw (`test_context_players_equal_tracking`) |
 
 **The transplant.** `Calibration.ball_masks[half]` is our match's missing-ball mask of each half from its kick-off to the
 end of its graded block (`calibration.py`; the Calibration is measured once and cached). A benchmark half of n frames
@@ -234,6 +235,35 @@ smoothing window and the scale of the tracked spans, applied again). The earlier
 `test_slot_team_matches_pool`, `test_tracking_degenerate_equals_gaps` (one endless tracklet per stretch of a player is
 `gaps`'s players), `test_lost_share_on_long_synthetic`.
 
+**The `context` profile** (version 1; `degrade.context_probabilities`, `_context_ball`, `HAZARD_SCALE`). The `gaps` profile
+copies our masks in time and ignores the play. `context` keeps `tracking`'s players, draw for draw, and places each
+half's gaps with the hazard that the Calibration fitted on our own gaps (A08): a logistic model of six features on the
+91,840 at-risk frames of our kick-off spans and their 143 onsets, with cross-half AUCs of 0.71 and 0.65. Per half, from
+its kick-off to the end of its graded block, `hazard.features` is computed in metres on the clean DFL ball and the
+degraded players: the distance to the nearest line, whether the ball is beyond it, its speed over the last five steps,
+the nearest player, the players within 3 m, and the minute of the half. The chance that the next frame starts a gap is
+`hazard_c` x `HAZARD_SCALE` x the model's probability, at most 1 - 1e-9, and 0 where a feature is undefined (14 rows
+of 1,002,644 on seed 0). `hazard.sample_mask` draws the gaps from `rng_for(seed, match_index, "hazard", half)`: the class
+of an onset is "within 2 m of a line at the frame before it", its third of the half is that frame's, and its length is
+one of ours for that class and third at the match's rate. The ball is then made by the function that makes `gaps`'s (x
+and y together, the speed NaN). **`HAZARD_SCALE` is 0.699, rescaled once.** At 1.0 the share missing was 0.4997 against
+our 0.4110, and the rescale is on the odds, 0.6986 (gaps start only from visible frames, so the odds are about linear in
+the hazard and a plain ratio would undershoot); it is frozen, with both measurements, in the comment of the constant
+(`test_hazard_scale_is_the_frozen_one_and_follows_from_the_recorded_measurements`).
+
+**`context` fails two gates, and is not the default (R005).** Over the three seeds the share of the gaps that start
+within 2 m of a line is 0.5586 against our 0.2797 +-0.05 (0.5647, 0.5644 and 0.5465 on the seeds: a fail on each), and
+the share missing is 0.4313 against 0.4110 +-0.02 (0.4236, 0.4275 and 0.4427: a fail pooled, by 0.0003, and on seed 2;
+the scale was set on seed 0 alone). The cause is not the model, whose hazard is 2.9 times higher near a line on ours and
+3.9 times on DFL's rows (the same ratios at any scale), but the rows that it is applied to: **DFL tracks the ball out of play**, so 25.2% of the benchmark's at-risk rows are within 2 m of a line
+against 9.0% of ours, and 17.7% are beyond one against 4.1%. Two remedies were measured and not applied: a chance of 0
+beyond a line gives a near-line share of 0.163, and a model that sees the distance clipped at 0 gives 0.489. Thinning
+the chance beyond a line to our share of such rows (a factor of 0.23) was rejected: it would pass the gate by leaving
+even more of the out-of-play ball visible, which moves the visible rows further from ours, and so would be tuning
+towards a gate; a mask for the ball out of the pitch would be a new mechanism with a parameter that cannot be measured on
+ours (where the ball is during our gaps is unobservable). There was no second rescale of the scale either: the rule is
+once. The profile is kept for the check that the ranking of the configs does not depend on the generator (R005).
+
 **No truth reaches the degrader.** It is handed a `TrackingView`, which has the tracking and the match's scalars and no
 `ball_status` or `ball_possession` (`test_degrade_never_sees_truth`, which also reads the degrader's source, and the deep
 walk of the inputs, `test_degrade_serves_inputs_without_the_truth`). Its random draws are
@@ -261,7 +291,9 @@ anything was measured and never tuned towards:
   plus or minus the plan's tolerance. For `gaps`: the share of frames without a ball, +-0.02, and the median gap, +-1.5
   s. For `tracking`, those two and: the share of frames with exactly 22 slots present +-0.06, the mean number present
   +-0.5, the share with 14 or fewer present +-0.02, the wrong-team share +-0.03, the tracklet median **+-50% of the
-  centre** (a relative tolerance; the rest are absolute) and the NaN-speed share +-0.01. **The three gates on how many
+  centre** (a relative tolerance; the rest are absolute) and the NaN-speed share +-0.01. For `context`, those eight and
+  the share of the gaps that start within 2 m of a line, +-0.05 of the Calibration's own value (near-line onsets over
+  interior gaps, pooled by sums). **The three gates on how many
   slots are present are measured on full-strength frames only**: those where the clean DFL match has exactly 22 players
   with positions, because a team that is down to 10 cannot show 22 slots whatever the degradation does (two of the seven
   matches have one, from minute 7 of the first half of J03WN1 and minute 13 of the second half of J03WQQ, and 18.3% of
@@ -367,7 +399,9 @@ renamed over the old report; the same inputs, seed and versions give the same by
 `checks/run.py` holds the runner's, `checks/degrade.py` the degrader's shared parts (the transplant worked out exactly,
 determinism, what the `gaps` profile touches and what it does not, no truth, the order of the matches),
 `checks/tracking.py` the `tracking` profile's (the tracklets, the episodes, the NaN-speed runs and the smoothing worked
-out exactly, and how it nests in `gaps`), `checks/cap.py` the tracking profile's cap of the low-count tail, its
+out exactly, and how it nests in `gaps`), `checks/context.py` the `context` profile's (what the hazard is given, the chance, the class, third and durations read at
+the at-risk frame, the counts of its record on hand-built halves, the odds rescale and the frozen scale),
+`checks/cap.py` the tracking profile's cap of the low-count tail, its
 shortest-piece rule and the scale of its tracked spans, and `checks/fidelity.py` the fidelity report's (every gate and check worked out
 by other code, pooling by sums, the exit code, the pending gates, the full-strength frames of the count gates and the
 gate kinds). The
@@ -444,6 +478,19 @@ that this README names only checks that exist.
   than the benchmark says (the plan's range of 0.5 to 2 m is not stated by either source, which are the nearest
   published figures; it is not our measurement). DFL's own positions are not noise-free either: their second difference
   is dominated by rare jumps (R004), which the smoothing leaves in.
+- The `context` profile ties the gaps to the play (lines, slow balls, few players near the ball, as ours are), which
+  `gaps` and `tracking` do not, and it loses what they keep: `tracking` reads the cap's counts and the ball's mask from
+  one window of ours, so both follow our camera, and here the cap reads a window of ours and the gaps are drawn from the
+  play. Its ball features come from the clean ball, so on the five frames after a gap the speed is the true one, where
+  ours carries the speed from before the gap: 0.83% of the at-risk rows are in that window (0.84%, 0.81% and 0.84% by
+  seed), and the approximation is counted in the record (`post_gap_rows`). The hazard is a model of six features fitted
+  on 143 onsets of one match. And **DFL tracks the ball out of play**: 25.2% of its at-risk rows are within 2 m of a line
+  and 17.7% beyond one, against 9.0% and 4.1% of ours, so at the rate that the model gives those features **56% of the
+  gaps start near a line against our 28%, and the profile fails that gate (R005)**. It also leaves the ball visible on
+  46.2% of the dead frames, against 56.8% for `tracking` (version 3) and the public window's 66.4%, a WARN: the hazard
+  puts gaps on slow balls, a dead ball is slow, and the window is far better covered than the match (12% missing
+  against 41%), so some of that miss is the window's. It is not the default for that reason, and nothing here removes
+  the out-of-play ball (R005).
 - A transplanted mask is cut at the edge of the window it is read from, so up to two gaps of a benchmark half (the ones
   at its ends) are fragments of ours, and where the mask runs out and goes round there is one more at the seam (3 of the
   42 halves of R003: a DFL second half of 77,080 or 78,456 frames, against the 76,456 of ours); the gates are on the

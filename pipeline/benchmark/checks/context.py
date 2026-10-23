@@ -25,7 +25,7 @@ import types
 
 import numpy as np
 
-from pipeline.benchmark import calibration, degrade, dfl, hazard
+from pipeline.benchmark import calibration, degrade, dfl, fidelity, hazard
 from pipeline.benchmark import inputs as match_inputs
 from pipeline.benchmark import run as benchmark_run
 from pipeline.benchmark.checks.common import (HAZARD_SECONDS, NotRun, context_namespace, leaks, made_up_calibration,
@@ -542,6 +542,36 @@ def test_data_hazard_scale_follows_from_the_measurement():
                   scale, row["missing"] / row["frames"], row["missing"], row["frames"], row["onsets"],
                   row["near"] / row["interior"], cal.scalars["near_line_share"], row["nan"], row["nan"] / row["rows"],
                   row["capped"], row["at_risk"], row["post_gap"], row["post_gap"] / row["at_risk"], hazard.SPEED_STEPS))
+
+
+# The measurement that keeps context from being the default (docs/results.md R005, 2026-10-23): the share of the gaps that
+# start within 2 m of a line, pooled over the 7 matches and 3 seeds (0.5647, 0.5644 and 0.5465 on the seeds), against the
+# Calibration's own value on its kick-off spans (the gate's centre).
+RECORDED_NEAR_LINE = (0.5586, 0.2797)
+
+
+def test_default_profile_is_tracking_because_context_fails_a_gate():
+    """The runner's and the fidelity report's default profile is `tracking`, not `context`, because `context` fails its
+    near-line gate (R005).
+
+    The rule (task 17, section B8): the default becomes `context` only if every one of its gates passes on all three
+    seeds. It does not: the share of the gaps that start within 2 m of a line is 0.5586 against our 0.2797 +-0.05, and
+    each seed misses (0.5647, 0.5644, 0.5465); the share missing is 0.4313 against 0.4110 +-0.02, pooled by 0.0003 and
+    on seed 2. The cause is the data and not the model: DFL tracks the ball out of play, so 25.2% of the at-risk rows
+    are within 2 m of a line against 9.0% of ours, and the remedies (thinning the chance beyond a line, a mask for the
+    ball out of the pitch) would be tuning towards the gate or a mechanism we cannot measure on ours (R005, the ruling).
+    The check holds the recorded miss against the gate's own tolerance, so that a gate that were widened, or a share
+    that moved, is a reason to read R005 again and not a silent change of the default; the near-line gate stays one of
+    the profile's gates, required, and the profile is kept for the check that the ranking of the configs does not depend
+    on the generator."""
+    gates = {gate["name"]: gate for gate in fidelity.GATES["context"]}
+    spec = gates["near_line_share"]
+    measured, centre = RECORDED_NEAR_LINE
+    assert (spec["tolerance"], spec["kind"]) == (0.05, "absolute") and "near_line_share" not in fidelity.PENDING_GATES
+    assert abs(measured - centre) > spec["tolerance"], "the recorded share misses the gate: context is not the default"
+    assert benchmark_run.DEFAULT_PROFILE == "tracking" != degrade.CONTEXT, (
+        "context fails its near-line gate (R005), so the default stays tracking")
+    assert benchmark_run.DEFAULT_PROFILE in degrade.PROFILES and degrade.PROFILES["context"] == 1
 
 
 def test_context_ball_keeps_dfls_holes_and_the_rows_before_the_kickoff():

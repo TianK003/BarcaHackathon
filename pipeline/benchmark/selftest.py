@@ -15,12 +15,15 @@
                                                     #   decides)
     python pipeline/benchmark/selftest.py --data    # + checks that read the real match's data (aggregates only): the
                                                     #   calibration reproduces A01's, A02's and R001's figures, the
-                                                    #   hazard of our ball gaps is fitted again and printed (A08), and
+                                                    #   hazard of our ball gaps is fitted again and printed (A08),
                                                     #   the tracking profile's constants are re-derived on the 7 DFL
-                                                    #   matches (measured 2026-10-23, with the ATD cache, the
-                                                    #   calibration cache and the 7 DFL caches present: the 5
-                                                    #   test_data_* checks take 61 s, 42 s of them the constants, and
-                                                    #   the whole run 93 s with the synthetic checks)
+                                                    #   matches, and the context profile's scale is measured again
+                                                    #   (measured 2026-10-23, with the ATD cache, the calibration
+                                                    #   cache and the 7 DFL caches present, while another run shared
+                                                    #   the machine: the 7 test_data_* checks take 175 s, 93 s of them
+                                                    #   the tracking constants and 37 s the context scale, and the
+                                                    #   whole run 261 s with the synthetic checks; on a quiet machine
+                                                    #   the 5 checks before the context ones took 61 s and the run 93 s)
 
 The real fidelity of the gaps profile is not a check but a command (fidelity.py: gates, warnings; R003 in results.md): it
 reads all seven matches and takes minutes.

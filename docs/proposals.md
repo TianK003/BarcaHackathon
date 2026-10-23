@@ -13,7 +13,9 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 
 1. **The ball goes missing in long gaps.** 40.7% of graded frames have no ball, in only 150 gaps with a median of
    10.7 s (p90 34 s, max 3.7 min). Gaps under 2 s hold 0.1% of the missing frames, so interpolation cannot help —
-   possession changes *inside* the gaps.
+   possession changes *inside* the gaps. Our gaps start at the lines and on slow balls, not at random (A07, A08: 28% of
+   their onsets are within 2 m of a line, against 9% of the frames at risk); on DFL's open data, which tracks the ball
+   out of play, the same hazard alone puts twice as many gap starts near a line (56% against 28%, R005).
 2. **The public window flatters ball-based methods.** Its ball is missing on 12% of frames; later 5-minute blocks
    reach 80%. It is the best-covered block of the whole match.
 3. **The nearest player is not the possessor.** With the ball visible and in play, the nearest player's team is wrong
