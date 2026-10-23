@@ -50,7 +50,7 @@ aggregates only, never raw data rows.
   deadline. Update the status when you start or finish one.
 - `docs/results.md` — every experiment (`R…`) and analysis (`A…`): commit, command, public-window and validation
   scores, verdict. Log failures too, and every upload in its submission log. A01–A03 hold measurements that should
-  shape any design.
+  shape any design; A05–A09 and R002–R004b are the benchmark's (P01).
 - `docs/traps.md` — pitfalls `T01…`. Add one whenever something costs real time.
 - `docs/technical_document.md` — the draft of deliverable 3. Update it when a pipeline decision lands.
 
@@ -63,12 +63,19 @@ the loaders.
 py -3.11 -m venv .venv                                            # macOS/Linux: python3.11 -m venv .venv
 .venv/Scripts/python -m pip install -r requirements-starter.txt   # numpy, pandas + kloppy==3.18.0, matplotlib, notebook
 .venv/Scripts/python -m pip install -r requirements-pipeline.txt  # exact pins of what pipeline/ imports
+.venv/Scripts/python -m pip install -r requirements-benchmark.txt # the same + lxml, for pipeline/benchmark/ (P01)
 
 python pipeline/run.py pipeline/configs/main.toml       # data/ -> evaluation/results/main.csv, validated + manifest
 python pipeline/run.py CONFIG --score [GT]              # + scores vs public GT (or a labels CSV), per-source agreement
 python pipeline/run.py CONFIG --out ../team_name.csv    # CSVs only to evaluation/results/, data/, or outside the repo
 python pipeline/selftest.py                             # contract + equivalence checks on synthetic data (seconds)
 python pipeline/selftest.py --data                      # + the 4 committed baselines rebuilt byte for byte
+
+python pipeline/benchmark/sources.py [--verify]         # P01: fetch (or only check) the 7 DFL matches, 2.6 GB, md5
+python pipeline/benchmark/run.py CONFIG [CONFIG ...]    # configs on the benchmark; the first is the reference
+python pipeline/benchmark/run.py CONFIG ... --truth coarse   # the same under the coarse truth; read both together
+python pipeline/benchmark/fidelity.py --profile tracking --seeds 3   # gates + WARNs: the copy against our match
+python pipeline/benchmark/selftest.py [--dfl] [--data]  # benchmark checks (seconds); --dfl: the 7 matches, --data: ours
 
 python evaluation/validate_submission.py path/to.csv            # official scorer's checks; run on the exact upload
 python evaluation/run_evaluation.py                             # score every *.csv in evaluation/results/ vs public GT
@@ -87,6 +94,10 @@ python starter/load_atd.py                          # full kloppy load (minutes,
 The scorer writes `evaluation/scoreboard.csv` and `evaluation/reports/<name>.json` + `<name>_transitions.csv`
 (gitignored) and exits 1 if any submission was skipped as invalid. `--gt` takes `public` (default), `private`
 (organisers only) or a CSV path.
+
+The benchmark's `run.py` and `fidelity.py` take `--profile clean|gaps|tracking` (default `tracking`, version 2 as of
+R004b), `--seeds N` (default 3), `--matches ID ...`, `--data-dir D` and `--no-write`; `run.py` also takes `--truth
+raw|coarse`. Reports go to `data/runs/benchmark/`, caches to `data/cache/`, and `fidelity.py` exits 1 if a gate fails.
 
 Run everything with the venv's interpreter — `.venv/Scripts/python` on Windows, `.venv/bin/python` on macOS/Linux —
 because activation doesn't persist between tool calls. The team standard is Python 3.11.9 (numpy 2.4.6, pandas 3.0.6,
@@ -119,6 +130,18 @@ keeps that convention: its scripts swap their own folder on `sys.path` for the r
   their signatures before any data loads. `configs/smooth50_repro.toml` must rebuild `baseline_smooth50.csv` byte for
   byte — run `selftest.py --data` after any change upstream of the decoder. Contracts live in
   `pipeline/contracts.py`; change them only with the team.
+- **`pipeline/benchmark/`** — P01's validation: the seven open DFL/IDSSE matches (Bassek et al. 2025, CC BY 4.0), the
+  truth built as ours is (`D` where `BallStatus` is dead, else the team in `BallPossession`) and the tracking degraded
+  to look like ours, run through the pipeline's own components and scored by the official scorer per half.
+  `pipeline/benchmark/README.md` is its overview. Modules: `sources` (pinned download, size + md5, into
+  `data/external/dfl/`), `dfl` (our own parser, cached in `data/cache/dfl/`; not kloppy's loader or download, T30),
+  `truth`, `inputs` (a match served as `Inputs`, no truth reachable), `calibration` + `hazard` (our own tracking
+  measured once, cached in `data/cache/benchmark/calibration/`), `degrade` (profiles `clean`, `gaps` and `tracking`,
+  the default as of R004b), `fidelity` (a profile's gates and WARNs against our match), `score` + `run` (pooled
+  spellF1, 90% t-intervals, sign-flip test, reports in `data/runs/benchmark/`) and `checks/` (what `selftest.py` runs).
+  Degradations are fitted once on label-free statistics of our tracking, then frozen, never tuned towards a score
+  (T26, T37). The Calibration and every degraded `Atd` hold BAR-ATH's masks and counts: print none of it, and write no
+  CSV of BAR-ATH labels.
 
 ### Frame alignment — an off-by-one shifts every transition
 
@@ -165,6 +188,12 @@ frames are all `D`. The public GT labels only 11,185–18,684 (5 minutes, 17 pos
   `<Team>` is home/Barcelona (`baseline.team_of_each_track`).
 - Raw ATD line: `<frame_id>:<x,y,speed>;<x,y,speed>;…:<ball x,y,speed>`. Coordinates are normalised 0–1 — scale by
   the pitch before computing distances (it is not square).
+- The ball-speed channel is NaN on 92% of the graded frames where the ball has a position, and where it is given it
+  behaves like a player's speed (median 1.3 m/s against 4.8 m/s from the ball's own positions): derive the speed from
+  successive positions, never read `atd.ball_speed` (T31, A07).
+- A slot's team is the slot's, not the player's: after an identity switch a team shows more than 11 slots while the
+  other shows fewer, on 10.8% of graded frames (a lower bound), so a feature that trusts one slot's team is wrong there
+  (T32, A07).
 - Smart Tagging: 638 *automatic* phase intervals, not ground truth, and phases are not possessions. Codes are upper
   case (`SET PIECES`), tag values title case (`Kick Off (Start)`), kloppy tag columns title case (`Team`) — match
   case-insensitively. `Team` is `Barcelona`, `Atletic Club` (sic) or `N/A` (36 instances, including every
@@ -173,6 +202,11 @@ frames are all `D`. The public GT labels only 11,185–18,684 (5 minutes, 17 pos
   (tactical 100%, broadcast 65.8%); `reprojection_error` is lower-is-better.
 - The ground truth is derived mechanically from corrected tracking: `D` where it marks the ball dead, otherwise the
   team it names. Dead-ball ownership is never asked for.
+- DFL's flag is fine-grained (437 possessions a match, median 3.7 s) and how fine ours is is not known: rank anything
+  that depends on possession length under the raw and the coarse truth (`--truth coarse`), and treat a disagreement
+  as a warning (T33, A06).
+- Two benchmark matches have a team down to 10, so a gate on how many slots are present is measured on full-strength
+  frames only (T36). DFL's jitter is a few jumps on a 1 cm grid, so compare medians, not an RMS (T35).
 
 ## Data setup
 
