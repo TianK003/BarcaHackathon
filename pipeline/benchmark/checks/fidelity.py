@@ -330,6 +330,29 @@ def test_fidelity_context_report_synthetic():
         assert fragment in text, (fragment, text)
 
 
+def test_a_pool_keeps_the_ball_scales_sorted_and_refuses_two():
+    """The scales that the ball's draws were made with are a sorted tuple, not a set that is read by iterating it.
+
+    One scale is the report's, whatever order the runs came in and however often it comes; two are a FidelityError
+    that lists them in order (the sums would be of two profiles); a pool with no ball draws holds none and reports
+    none."""
+    def draws(scale):
+        return {"ball": {**{name: 1 for name in fidelity.BALL_DRAWS}, "scale": scale}}
+
+    pool = fidelity.Pool()
+    for scale in (0.7, 0.5, 0.7, 0.5):
+        pool.add_ball_draws(draws(scale))
+    assert pool.ball_scales == (0.5, 0.7), pool.ball_scales
+    expect_error(fidelity.FidelityError, pool.ball_draws_report, "2 scales", "0.5, 0.7")
+    same = fidelity.Pool()
+    for _ in range(3):
+        same.add_ball_draws(draws(0.699))
+    assert same.ball_scales == (0.699,) and same.ball_draws_report()["scale"] == 0.699
+    empty = fidelity.Pool()
+    empty.add_ball_draws({})
+    assert empty.ball_scales == () and empty.ball_draws_report() == {}
+
+
 def test_fidelity_pools_by_sums_and_lays_the_gaps_end_to_end():
     """Over matches and seeds, counts add and the statistic comes from the sums; the median is of every gap there was.
 

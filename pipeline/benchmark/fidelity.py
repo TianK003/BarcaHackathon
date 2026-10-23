@@ -344,7 +344,7 @@ class Pool:
         self.full_strength = {}                       # match id -> [frames at full strength, frames in its spans]
         self.players_draws = {}
         self.ball_draws = {}
-        self.ball_scales = set()
+        self.ball_scales = ()                         # the scales of the ball's draws, sorted and each once
         self.agreed = self.judged = 0
         self.dead_frames = self.dead_visible = 0
         self.yardsticks = {}
@@ -423,7 +423,8 @@ class Pool:
         if ball is not None:
             for name in BALL_DRAWS:
                 self.ball_draws[name] = self.ball_draws.get(name, 0) + ball[name]
-            self.ball_scales.add(ball["scale"])
+            if ball["scale"] not in self.ball_scales:
+                self.ball_scales = tuple(sorted(self.ball_scales + (ball["scale"],)))
 
     def ball_draws_report(self):
         """{} if no ball was drawn, else the sums (BALL_DRAWS), the scale and the two shares of the sums.
@@ -438,7 +439,7 @@ class Pool:
             raise FidelityError("the ball's draws were made with {} scales ({}); one report is one profile".format(
                 len(self.ball_scales), ", ".join(str(scale) for scale in sorted(self.ball_scales))))
         sums = self.ball_draws
-        return {**sums, "scale": _round(next(iter(self.ball_scales))),
+        return {**sums, "scale": _round(self.ball_scales[0]),
                 "post_gap_share": _round(sums["post_gap_rows"] / sums["at_risk_rows"]) if sums["at_risk_rows"] else None,
                 "nan_feature_share": _round(sums["nan_feature_rows"] / sums["rows"]) if sums["rows"] else None}
 
