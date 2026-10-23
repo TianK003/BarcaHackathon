@@ -10,6 +10,9 @@
 - **Scores we can state:** public window macroF1 … / spellF1 …; our validation …. The full-match score is the
   organisers'.
 
+Entry IDs: A.. and R.. are analyses and experiments in `docs/results.md`, T.. pitfalls in `docs/traps.md`, P..
+proposals in `docs/proposals.md`.
+
 ## 1. Approach
 
 <!-- What we built, and why this rather than the alternatives. Link the proposals we tried (docs/proposals.md). -->
@@ -37,19 +40,19 @@ runs through the same pipeline and is rebuilt byte for byte as a regression chec
 | Other external datasets or pretrained models | | |
 
 **The DFL/IDSSE data: sources, citation, licence.** Seven full matches, two Bundesliga and five 2. Bundesliga, 25 Hz,
-from Bassek et al., *Scientific Data* 12, 195 (2025), published under CC BY 4.0, and cited here as that licence asks.
-We change the data (we degrade the tracking), and say so. They are public and outside the competition bundle, so their
-own licence governs them and not the bundle's rules. `pipeline/benchmark/sources.py` downloads the 21 files (2.6 GB) into `data/external/dfl/` (not committed) and
-accepts a file only if its size and md5 equal the pinned values; a Hugging Face mirror of the same data, pinned to one
-commit and checked the same way, is the fallback. Five of the seven matches are one club's home games.
+from Bassek et al., *Scientific Data* 12, 195 (2025), published under CC BY 4.0. We change the data (we degrade the
+tracking) and say so. The full reference (title, authors, DOI) and the licence link are still to be added. The data are
+public and outside the competition bundle, so their own licence governs them and not the bundle's rules.
+`pipeline/benchmark/sources.py` downloads the 21 files (2.6 GB) into `data/external/dfl/` (not committed) and accepts a
+file only if its size and md5 equal the pinned values; a Hugging Face mirror of the same data, pinned to one commit and
+checked the same way, is the fallback. Five of the seven matches are one club's home games.
 
 No frame of this match was hand-labelled, for training, validation or the submission (RULES.md, as clarified on
 22 Oct 2026).
 
 ## 3. Missing and noisy tracking
 
-<!-- What we did about each: fill as the evidence sources land (P04, P05, P07). This section holds what we measured.
-Entries A.. and R.. are in docs/results.md, T.. in docs/traps.md, P.. in docs/proposals.md. -->
+<!-- What we did about each: fill as the evidence sources land (P04, P05, P07). This section holds what we measured. -->
 
 Measured on our match's ATD and the public GT. Aggregates only; each figure cites its entry.
 
@@ -151,7 +154,8 @@ then.
 
 **Fidelity, as of R004b** (`tracking` v2: 7 matches x 3 seeds, `fidelity.py --profile tracking`). Gates are our own
 values, measured the same way on each half from its kick-off, plus or minus a tolerance fixed before anything was
-measured. The profile is frozen only when all of them pass, and all eight do:
+measured. The profile is frozen only when every counted gate passes (a gate can be pending and not counted, as three
+were for v1), and all eight are counted and pass:
 
 | gate | benchmark | our match | tolerance | |
 |---|---|---|---|---|
@@ -179,16 +183,18 @@ towards (none warns in R004b):
 gaps, the tracklets, the slots, the wrong-team and NaN-speed shares, the jitter. Its constants come from rules written
 before any score was seen, are rescaled at most once, are frozen with their measurement in the code, and are never
 tuned towards a published score, a yardstick or a WARN (T26, T37). When a gate missed, we stopped and said so: the first
-version of the low-count cap missed the tracklet median by 0.96 s, and the fix was one rescale (2.042) of the tracked
-spans, applied whether or not the gate would then pass (R004b). The degrader never reads `ball_status` or
-`ball_possession`. A change to a profile bumps its version.
+version of the low-count cap missed the tracklet median by 0.96 s, and the fix was two corrections that its first
+measurement forced: no piece shorter than 8 frames, the length of our shortest tracklet, and one rescale (2.042) of the
+tracked spans, measured with the first in place and applied whether or not the gate would then pass (R004b, T37).
+The degrader never reads `ball_status` or `ball_possession`. A change to a profile bumps its version.
 
 **Statistics on seven clusters.** The pooled spellF1 is the official scorer's number on all halves of all matches as
 one file. An interval is the 90% Student t interval of the seven matches' paired deltas against a reference config. We
 add the exact sign-flip test over all 2^7 sign patterns (its smallest p is 2/128 = 0.0156) and the number of matches
-won out of seven, and report them by competition too. It is never a bootstrap: seven matches are not a sample to
-resample, and five of them are one club's home games. A degradation seed moves a pooled spellF1 by up to about 0.015,
-and the intervals say nothing of that spread, so three seeds are the default and a gap of that size is read with care.
+won out of seven. The printout also gives the mean delta per competition and per match. It is never a bootstrap:
+seven matches are not a sample to resample, and five of them are one club's home games. A degradation seed moves a
+pooled spellF1 by up to about 0.015 (R003 to R004b), and the intervals say nothing of that spread, so three seeds are
+the default and a gap of that size is read with care.
 
 **Does it rank the four baselines as the full match does?** We run the organisers' four baselines decoded per half
 (`nearest_w{0,25,50,125}`; frame for frame the published files on the graded frames, A07), and ask it as a check, not a
@@ -220,8 +226,8 @@ not our leaderboard's under either.
   a slot across a loss would be validated optimistically.
 - Players far from the ball: the cap keeps those nearest the true ball, so a nearest-player method barely notices it
   (it moves the four baselines by 0.4 points of spellF1 at most, R004b).
-- Positional error: the jitter after smoothing is 8.5 cm against our 3.3 mm (T35), and no positional bias is added,
-  since none can be measured on ours.
+- Positional error: the jitter after smoothing is 8.5 cm against our 3.3 mm (R004b; T35 says why an average removes
+  little), and no positional bias is added, since none can be measured on ours.
 - The halves: a benchmark half starts at its kick-off, while our graded second half starts 117 s before it, all `D`
   (A06, T02).
 

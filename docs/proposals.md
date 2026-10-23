@@ -104,21 +104,23 @@ to look like our ATD and run through our own pipeline.
      through each half (A02). Our gaps are not random, and the plan's "crowded and aerial" became **lines and slow
      balls** once measured: 28.6% of their onsets are within 2 m of a line against 8.5% of the visible frames, and the
      median ball speed at an onset is 2.2 m/s against 5.1 m/s (A07, A08). The ATD has no ball height, so aerial play
-     cannot be measured on ours, and a crowd around the ball adds little to the hazard. A transplanted mask is placed
-     without looking at the play, so the `context` profile (R005) places the gaps with a hazard fitted on our own
-     tracker (A08); random gaps would flatter ball-free methods (P07), so both are reported.
+     cannot be measured on ours, and a crowd around the ball raises the hazard too, less than the lines and slow balls
+     do (A08). A transplanted mask is placed without looking at the play, so the `context` profile (R005) places the
+     gaps with a hazard fitted on our own tracker (A08); random gaps would flatter ball-free methods (P07), so both are
+     reported.
    - **Break identities** into anonymous, team-labelled tracklets that appear, vanish and swap ([T15](traps.md); the
      `tracking` profile, R004 and R004b): our own tracklet lengths in 46 slots, wrong-team slots ([T32](traps.md)), NaN
      speeds in runs, and our low-count frames.
-   - **Add positional noise, matched on jitter**: DFL's players' second difference has an RMS of 9.0 cm against 3.3 mm
-     in ours, so each tracklet piece is smoothed with a 5-frame average by a rule set before measuring, and DFL's rare
-     jumps stay in ([T35](traps.md)). No positional bias is added: it cannot be measured on ours.
+   - **Match the positional jitter, by smoothing and not by adding noise**: DFL's players' second difference has an RMS
+     of 9.0 cm against 3.3 mm in ours, so each tracklet piece is smoothed with a 5-frame average by a rule set before
+     measuring, and DFL's rare jumps stay in ([T35](traps.md)). No positional bias is added: it cannot be measured on
+     ours.
    - **Before trusting the copy**, `fidelity.py` checks it against our match: gates fixed before anything was measured
      (the ball-missing share, the median gap, the slots present, the wrong-team share, the tracklet median and the
      NaN-speed share; eight for `tracking`) and WARN checks on A01's numbers (the nearest player agreeing with the
-     truth on about 78% of in-play ball-visible frames, the ball visible on about 66% of dead-ball frames, and the
-     yardsticks' possessions per minute and D shares). A degradation is fitted once, on label-free statistics of our
-     tracking, and never tuned towards a WARN or a score ([T37](traps.md)).
+     truth on about 78% of in-play ball-visible frames, the ball visible on about 66% of dead-ball frames) and on what
+     the four yardsticks output on our match (A07: possessions per minute and D shares). A degradation is fitted once,
+     on label-free statistics of our tracking, and never tuned towards a WARN or a score ([T37](traps.md)).
 4. **Score with the official metric** (`possession_metrics.evaluate`), per match and half, never stitched across
    halves. Uncertainty is a 90% t-interval over the matches' paired deltas against a reference config, the exact
    sign-flip test and wins out of seven, never a bootstrap: seven matches are not a sample to resample, and five of them
@@ -172,11 +174,14 @@ fine. Writing labels for frames of this match is not ([T27](traps.md)).
 **Why.** P01's truth follows DFL's conventions, and P02 learns Metrica's from 20 transitions in one 5-minute window,
 which is livelier than 96% of DFL's windows (A06). When the flags flip and how fine our GT's possessions are remain the
 two things the benchmark cannot settle ([T33](traps.md)). Metrica's three public sample games come from the provider
-of our GT, and ship with event data to derive possession from (P13 lists them). That is far more transitions in the
-right conventions than the public window will ever give.
+of our GT, and ship with event data to derive possession from (P13 lists them). Whether possession derived from events
+follows the conventions of our GT is what P16 tests: our GT comes from corrected tracking flags, and labels derived
+from events may not follow them. If they do, they give far more transitions than the public window's 20.
 
 **What.** Do it alongside P02.
 
+- Test first whether events reproduce our GT's conventions: compare the derived grain and `D` timing with what the
+  public window shows (P02), before trusting them for anything else.
 - Derive `H`, `A` and `D` per frame from each game's events and tracking, the way our GT is built: `D` where the ball
   is dead, otherwise the team that has it. The events tell where a possession starts and where play stops.
 - Study the switch timing as P02 does around the public transitions, but on many more of them: the lag between the
@@ -278,8 +283,9 @@ This is the backbone that everything else plugs into.
 - Train H-vs-A on ball-visible frames where P04 is confident (pseudo-labels, tens of thousands of frames), on P01's
   matches with the ball masked (P13), and on the public GT, predicted out of fold ([T27](traps.md)).
 - Measure on P01's **simulated ball gaps**, where the truth is known, and check against the public window's
-  ball-missing frames (few: 6.5% of its in-play frames). Real gaps are harder than simulated ones: crowded, aerial,
-  and late in halves.
+  ball-missing frames (few: 6.5% of its in-play frames). Real gaps are harder than the `gaps` profile's, which are
+  placed without looking at the play: ours start near the lines and on slow balls, with more players around the ball,
+  and late in the half (A08). The `context` profile (R005) places them that way.
 - Feed the probabilities into P06.
 
 ### P08 — Smart Tagging as soft evidence
@@ -364,11 +370,12 @@ hand labels of our own on it ([T27](traps.md)). Public datasets of other matches
 amount. The benchmark half of this idea moved to [P01](#p01--a-validation-set-we-can-trust); what stays here is
 training on them.
 
-**What.** Three sources, all with kloppy loaders in our pinned 3.18.0:
-- **DFL/IDSSE open data** (Bassek et al., *Sci Data* 12, 195, 2025): 7 Bundesliga matches. Their 25 Hz positional
-  data carries per-frame `BallStatus` (alive/dead) and `BallPossession` — the same two things our GT encodes. Loader:
-  `kloppy.sportec.load_open_tracking_data(match_id=..., only_alive=False)` ([T30](traps.md)). P01 builds the
-  adapter and the degradation for it.
+**What.** Three sources (kloppy 3.18.0 has loaders for the last two; the first has our own, below):
+- **DFL/IDSSE open data** (Bassek et al., *Sci Data* 12, 195, 2025): 7 matches, two Bundesliga and five 2. Bundesliga.
+  Their 25 Hz positional data carries per-frame `BallStatus` (alive/dead) and `BallPossession` — the same two things
+  our GT encodes. P01 already downloads and parses them with our own code (`pipeline/benchmark/sources.py` and
+  `dfl.load_match`, [A05](results.md)), because kloppy's loader and its download do not work for them
+  ([T30](traps.md)). P01 builds the adapter and the degradation for it.
 - **Metrica sample games 1–3** (`kloppy.metrica.load_open_data`; game 3 is in our FIFA/EPTS format), with event data
   to derive possession from.
 - **SkillCorner open data** (`kloppy.skillcorner.load_open_data`): 10 fps broadcast tracking. kloppy derives its

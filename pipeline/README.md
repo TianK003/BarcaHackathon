@@ -172,7 +172,7 @@ python pipeline/benchmark/run.py pipeline/benchmark/configs/nearest_w50.toml pip
 ```
 
 The first config is the reference, and every other one is compared with it (delta = other minus first, so positive
-means the other is better). The first run parses the seven matches (3 to 6 minutes, [A05](../docs/results.md)); later
+means the other is better). The first run parses the seven matches (174 to 326 s, [A05](../docs/results.md)); later
 runs read them from `data/cache/` and take about 6 s a config on the default profile
 ([R004b](../docs/results.md)). A config must run per graded half and use only what a benchmark match has: a source that
 needs the video's homography or the Smart Tagging stops the run and names the asset.
@@ -183,11 +183,13 @@ needs the video's homography or the Smart Tagging stops the run and names the as
 |---|---|
 | pooled spellF1, macroF1, alive/dead F1 | the official scorer's numbers for all halves of all matches as one file |
 | per match, mean [90% t] | each match counts once; the 90% Student t interval of the seven is the only one used |
-| delta vs the reference, per match [90% t] | paired over the matches; it excludes 0 only by more than 1e-12 |
+| delta vs the reference, per match [90% t] | paired over the matches; excludes 0 only if it clears 0 by more than 1e-12 |
 | sign-flip p | exact two-sided test of the seven deltas, all 2^7 sign patterns; the smallest p is 2/128 = 0.0156 |
-| wins / losses | matches with delta above / below 0, of seven; per competition too (Bundesliga 2, 2. Bundesliga 5) |
+| wins / losses | matches with delta above / below 0 by more than 1e-12, of seven |
 | possessions per graded minute, D share | predicted against true: flicker shows here before it shows in a score |
 
+- **By competition and by match.** For spellF1 the printout also gives the mean delta per competition, named by its DFL
+  code (`DFL-COM-000001`: 2 matches, `DFL-COM-000002`: 5), and the delta of each match.
 - **Never a bootstrap.** Seven matches are not a sample to resample, and five of them are one club's home games, so they
   are not seven independent draws either. A gap that holds in every match and in both competitions is worth more than
   one that does not. A degradation seed moves a pooled spellF1 by up to about 0.015 (R003 to R004b) and the intervals
@@ -208,12 +210,12 @@ needs the video's homography or the Smart Tagging stops the run and names the as
   fitted once on label-free statistics of our tracking, then frozen ([T37](../docs/traps.md)).
 
 **The default profile, as of R004b, is `tracking` version 2.** The ball is missing where ours was (our own masks,
-transplanted). The players have our tracklets in 46 slots, wrong-team slots (as on 10.5% of our frames), NaN speeds
-in runs, smoothing, and our low-count frames (only the players nearest the ball tracked). All eight gates pass and
-none of the ten checks warns ([R004b](../docs/results.md)). R005 adds a `context` profile that places the ball's
-gaps where our tracker loses the ball ([A08](../docs/results.md)) and may change the default: `run.DEFAULT_PROFILE`
-and the benchmark README say which is current, `--profile clean|gaps|tracking` picks another, and every report names
-its profile and version.
+transplanted). The players have our tracklets in 46 slots, wrong-team slots (10.5% of our frames from each kick-off,
+10.8% of the graded ones, T32), NaN speeds in runs, smoothing, and our low-count frames (only the players nearest the
+ball tracked). All eight gates pass and none of the ten checks warns ([R004b](../docs/results.md)). R005 adds a
+`context` profile that places the ball's gaps where our tracker loses the ball ([A08](../docs/results.md)) and may
+change the default: `run.DEFAULT_PROFILE` and the benchmark README say which is current,
+`run.py --profile clean|gaps|tracking` picks another, and every report names its profile and version.
 
 What it cannot test: whatever uses the homography, the Smart Tagging, the camera or the audio (DFL has no video), and
 the conventions of our ground truth beyond what the public window shows. Check those on the public window. The details

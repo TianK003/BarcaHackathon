@@ -56,8 +56,8 @@ aggregates only, never raw data rows.
 
 ## Commands
 
-No CI or linter. The checks are `pipeline/selftest.py`, the validator, the scorer, and the alignment self-checks in
-the loaders.
+No CI or linter. The checks are `pipeline/selftest.py`, `pipeline/benchmark/selftest.py` and `fidelity.py`, the
+validator, the scorer, and the alignment self-checks in the loaders.
 
 ```bash
 py -3.11 -m venv .venv                                            # macOS/Linux: python3.11 -m venv .venv
@@ -95,9 +95,10 @@ The scorer writes `evaluation/scoreboard.csv` and `evaluation/reports/<name>.jso
 (gitignored) and exits 1 if any submission was skipped as invalid. `--gt` takes `public` (default), `private`
 (organisers only) or a CSV path.
 
-The benchmark's `run.py` and `fidelity.py` take `--profile clean|gaps|tracking` (default `tracking`, version 2 as of
-R004b), `--seeds N` (default 3), `--matches ID ...`, `--data-dir D` and `--no-write`; `run.py` also takes `--truth
-raw|coarse`. Reports go to `data/runs/benchmark/`, caches to `data/cache/`, and `fidelity.py` exits 1 if a gate fails.
+The benchmark's `run.py` takes `--profile clean|gaps|tracking` (default `tracking`, version 2 as of R004b) and
+`--truth raw|coarse`; `fidelity.py` takes `--profile gaps|tracking` (a profile that degrades nothing has no gates).
+Both take `--seeds N` (default 3), `--matches ID ...`, `--data-dir D` and `--no-write`. Reports go to
+`data/runs/benchmark/`, caches to `data/cache/`, and `fidelity.py` exits 1 if a gate fails.
 
 Run everything with the venv's interpreter — `.venv/Scripts/python` on Windows, `.venv/bin/python` on macOS/Linux —
 because activation doesn't persist between tool calls. The team standard is Python 3.11.9 (numpy 2.4.6, pandas 3.0.6,
