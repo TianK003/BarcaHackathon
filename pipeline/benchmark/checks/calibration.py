@@ -530,13 +530,14 @@ def test_calibration_v2_synthetic():
     rows, counts = calibration.hazard_rows(present, xy, players_present, players_xy, blocks, pitch, fps)
 
     # Block 1 (frames 10-709, r = 0-699 inside it) has 555 visible frames: 700 less g1 (20), g2 (5), g3 (20), g4 (100).
-    # r = 599 is the visible frame before g4, which runs to the end of the block: neither an event nor a non-event, so it
-    # is left out and counted (edge). The last frame of the block is in g4, so no frame is the last visible one. r = 0
-    # has no step yet: its speed is NaN, so it is left out and counted. That leaves 553 rows, with 3 events: r = 99, 149
-    # and 329, the visible frames before the interior gaps g1, g2 and g3.
+    # r = 599 is the visible frame before g4, which runs to the end of the block: neither an event nor a non-event, so
+    # it is left out and counted (edge). The last frame of the block is in g4, so no frame is the last visible one. r =
+    # 0 has no step yet: its speed is NaN, so it is left out and counted. That leaves 553 rows, with 3 events: r = 99,
+    # 149 and 329, the visible frames before the interior gaps g1, g2 and g3.
     # Block 2 (710-1009, r = 0-299) has 280 visible frames: 300 less g5 (10), g6 (5) and g7 (5). g5 touches the start of
-    # the block, so no visible frame precedes it. r = 299 is visible and the last frame: nothing follows it (last_frame).
-    # r = 10 is the first visible frame, with no step before it: NaN speed. 278 rows, with 2 events: r = 199 and 249.
+    # the block, so no visible frame precedes it. r = 299 is visible and the last frame: nothing follows it
+    # (last_frame). r = 10 is the first visible frame, with no step before it: NaN speed. 278 rows, with 2 events: r =
+    # 199 and 249.
     assert counts == {"visible": 835, "edge": 1, "last_frame": 1, "nan_rows": 2, "nan_events": 0, "rows": 831,
                       "events": 5, "rows_1": 553, "events_1": 3, "rows_2": 278, "events_2": 2}, counts
     assert counts["visible"] == counts["edge"] + counts["last_frame"] + counts["nan_rows"] + counts["rows"]
@@ -588,8 +589,8 @@ def check_duration_cells():
     """duration_cells on hand-built arrays: classes by the near-line flag, thirds by the minute (cuts at 15 and 30), and
     a cell with fewer than 5 durations takes its class's durations over all thirds."""
     # (duration in s, onset minute, near a line), in the order the Calibration holds them: half 1 and then half 2, so
-    # the minutes are not sorted. Class 0: 6, 4 and 5 durations in the thirds 0, 1 and 2 (minutes 15.0 and 30.0 begin the
-    # second and the last third); class 1: none, 5 and 7.
+    # the minutes are not sorted. Class 0: 6, 4 and 5 durations in the thirds 0, 1 and 2 (minutes 15.0 and 30.0 begin
+    # the second and the last third); class 1: none, 5 and 7.
     entries = [
         (1.0, 0.5, False), (2.0, 3.0, False), (3.0, 7.0, False), (4.0, 10.0, False), (5.0, 14.9, False),
         (6.0, 14.99, False),                                                                 # class 0, third 0: 6
@@ -694,8 +695,8 @@ def test_calibration_hazard_finds_a_signal_and_not_a_flat_hazard():
     counts = result["counts"]
     assert counts["visible"] == counts["edge"] + counts["last_frame"] + counts["nan_rows"] + counts["rows"], counts
     assert counts["events"] + counts["nan_events"] == ball["interior_gaps"], (counts, ball["interior_gaps"])
-    assert counts["events_1"] + counts["events_2"] == counts["events"] and counts["rows_1"] + counts["rows_2"] == counts[
-        "rows"]
+    assert (counts["events_1"] + counts["events_2"] == counts["events"]
+            and counts["rows_1"] + counts["rows_2"] == counts["rows"])
     assert counts["events"] > 400 and counts["nan_rows"] >= 2, counts   # r = 0 of each half has no step yet
     # The durations: seconds, 5 to 39 frames at 25 a second, in six cells with no fallback (every cell is full).
     cells = result["durations"]
@@ -727,7 +728,8 @@ def test_calibration_rate_scale_is_the_rate_over_the_mean_probability():
 
 
 def test_calibration_digest_covers_the_hazard():
-    """Two Calibrations that differ in any hazard field, even in the ninth decimal of a coefficient, are not the same."""
+    """Two Calibrations that differ in any hazard field, even in the ninth decimal of a coefficient, are not the
+    same."""
     with tempfile.TemporaryDirectory() as root:
         inputs, gt = synthetic_calibration_inputs(root)
         cal = calibration.measure(inputs, gt)
@@ -823,8 +825,8 @@ def test_calibration_hazard_fits_one_half_and_scores_the_other():
 
 
 def test_calibration_hazard_refits_with_a_larger_penalty_and_never_swallows():
-    """A fit that does not converge is refitted with the penalty times 10, at most 3 times, and the l2 used is kept; when
-    every penalty fails the error says so; any other error is raised at once."""
+    """A fit that does not converge is refitted with the penalty times 10, at most 3 times, and the l2 used is kept;
+    when every penalty fails the error says so; any other error is raised at once."""
     match = hazard_match(3, near_rate=0.04, far_rate=0.002, frames=20_000)
     real = hazard.fit_logistic
     calls = []
@@ -1369,7 +1371,8 @@ def test_calibration_manifest_move_is_retried_briefly_and_then_fails():
         real_replace, real_sleep = os.replace, calibration.time.sleep
 
         def written(refusals, refusal=lambda: PermissionError(13, "the manifest is in use")):
-            """_write with os.replace refusing its first `refusals` calls: (the calls made, the waits made, the error)."""
+            """_write with os.replace refusing its first `refusals` calls: (the calls made, the waits made, the
+            error)."""
             calls, waits = [], []
 
             def refusing(source, target, *args, **kwargs):
@@ -1395,13 +1398,14 @@ def test_calibration_manifest_move_is_retried_briefly_and_then_fails():
 
         for refusals in (0, 1, 3, retries):    # the last one succeeds on the last retry
             calls, waits, failure = written(refusals)
-            assert failure is None and len(calls) == refusals + 1 and waits == [calibration.REPLACE_WAIT_S] * refusals, (
-                refusals, len(calls), waits, failure)
+            assert (failure is None and len(calls) == refusals + 1
+                    and waits == [calibration.REPLACE_WAIT_S] * refusals), (refusals, len(calls), waits, failure)
             assert "manifest.json" in tidy() and calibration._read_manifest(folder) is not None
         reference = calibration.digest(calibration.load(data_dir=root, inputs=inputs, public_gt_codes=gt))
         assert reference == calibration.digest(cal)
 
-        # A hold that outlasts the retries: the error is the OS's own, after exactly retries + 1 tries and retries waits.
+        # A hold that outlasts the retries: the error is the OS's own, after exactly retries + 1 tries and retries
+        # waits.
         calls, waits, failure = written(retries + 1)
         assert isinstance(failure, PermissionError) and "in use" in str(failure), failure
         assert len(calls) == retries + 1 and waits == [calibration.REPLACE_WAIT_S] * retries, (len(calls), waits)
@@ -1509,7 +1513,8 @@ def test_calibration_manifest_move_waits_for_a_real_handle_on_windows():
         # Held through every retry: an error, no temp file, and a rerun recovers once the handle is released.
         outcomes, failure = written(release_on=calibration.REPLACE_RETRIES + 2)
         assert isinstance(failure, PermissionError), failure
-        assert len(outcomes) == calibration.REPLACE_RETRIES + 1 and all(isinstance(o, PermissionError) for o in outcomes)
+        assert (len(outcomes) == calibration.REPLACE_RETRIES + 1
+                and all(isinstance(o, PermissionError) for o in outcomes))
         assert not [name for name in os.listdir(folder) if name.endswith(".tmp")]
         again = calibration.load(data_dir=root, inputs=inputs, public_gt_codes=gt)
         assert calibration.digest(again) == calibration.digest(cal)
@@ -1768,7 +1773,8 @@ def test_data_hazard_fit():
     # c is 1 on the rows it was fitted on (the intercept is not penalised), to the precision of the fit.
     assert 0.0 < result["c"] and abs(result["c"] - 1.0) < 1e-6, result["c"]
 
-    # The spans' counts add up and agree with A07's gaps: every interior gap is an event or lost to an undefined feature.
+    # The spans' counts add up and agree with A07's gaps: every interior gap is an event or lost to an undefined
+    # feature.
     assert counts["visible"] == counts["edge"] + counts["last_frame"] + counts["nan_rows"] + counts["rows"], counts
     assert counts["events"] + counts["nan_events"] == ball["interior_gaps"] == cal.scalars["interior_gaps"] == 143
     assert counts["visible"] == cal.scalars["frames"] - cal.scalars["missing_frames"] == 91844, counts
@@ -1784,7 +1790,8 @@ def test_data_hazard_fit():
         assert used.size == (n if n >= calibration.MIN_CELL_DURATIONS else sum(
             m for (c, _), m in own.items() if c == cls))
 
-    print("      spans from the kick-offs: {} frames, {} with the ball".format(cal.scalars["frames"], counts["visible"]))
+    print("      spans from the kick-offs: {} frames, {} with the ball".format(
+        cal.scalars["frames"], counts["visible"]))
     print("      at-risk rows {} ({} in half 1, {} in half 2), onsets {} ({} / {})".format(
         counts["rows"], counts["rows_1"], counts["rows_2"], counts["events"], counts["events_1"], counts["events_2"]))
     print("      left out: {} before an edge gap, {} last frames, {} with an undefined feature ({} of them onsets)"

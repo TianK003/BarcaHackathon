@@ -51,22 +51,22 @@ graded halves, as the published baselines are, so that they can be compared with
 themselves (A01, A02, R001, the plan) are graded-block figures, which test_data_calibration_replicates_a01 computes by
 calling these same two functions on the graded blocks and asserts, without storing them.
 
-The hazard (A08, version 2). The benchmark places its ball gaps where our tracker loses the ball, so the Calibration also
-holds a hazard fitted on BAR-ATH's own rows. fit_hazard takes the ball-visible frames of the spans as the frames at risk
-(hazard_rows), the event "the next frame starts an interior gap", and the six features of hazard.py computed on our own
-ball and players. The model is fitted on both halves pooled (hazard_model, with l2 = 1 and, if a fit does not converge,
-ten times that, at most three times: hazard_l2 is the penalty that was used); on one half and scored on the other, both
-ways, for the cross-half AUCs of the full model and of a model of the minute alone (hazard_auc); and the decision for
-the `context` profile is that both full AUCs are at least 0.60 (hazard_go; the plan's rule, taken as it comes). c
-(hazard_c) is the onsets per at-risk frame over the model's mean probability on the same rows, which is 1 on BAR-ATH's
-own rows by construction: the intercept is not penalised, so the model's mean probability is the rate. It is stored for
-completeness and carries nothing to another match; the rate transfer to the benchmark is the `context` profile's own
-one-time, label-free rescale (the plan's Task 17). The interior gaps' durations are kept in seconds by onset class (near
-a line or not) and third of the half (hazard_durations_s); a cell with fewer than 5 uses its class's durations over all
-thirds, and hazard_fallback_cells lists those that did. Visible frames that are not at risk are counted, never dropped
-silently: the frame before a gap that runs to the span's end (neither onset nor non-onset), the last frame of a span,
-and a frame with a feature the tracking cannot give (the scalars hazard_edge, hazard_last_frame, hazard_nan_rows and
-hazard_nan_events, beside hazard_rows, hazard_events, ...).
+The hazard (A08, version 2). The benchmark places its ball gaps where our tracker loses the ball, so the Calibration
+also holds a hazard fitted on BAR-ATH's own rows. fit_hazard takes the ball-visible frames of the spans as the frames at
+risk (hazard_rows), the event "the next frame starts an interior gap", and the six features of hazard.py computed on our
+own ball and players. The model is fitted on both halves pooled (hazard_model, with l2 = 1 and, if a fit does not
+converge, ten times that, at most three times: hazard_l2 is the penalty that was used); on one half and scored on the
+other, both ways, for the cross-half AUCs of the full model and of a model of the minute alone (hazard_auc); and the
+decision for the `context` profile is that both full AUCs are at least 0.60 (hazard_go; the plan's rule, taken as it
+comes). c (hazard_c) is the onsets per at-risk frame over the model's mean probability on the same rows, which is 1 on
+BAR-ATH's own rows by construction: the intercept is not penalised, so the model's mean probability is the rate. It is
+stored for completeness and carries nothing to another match; the rate transfer to the benchmark is the `context`
+profile's own one-time, label-free rescale (the plan's Task 17). The interior gaps' durations are kept in seconds by
+onset class (near a line or not) and third of the half (hazard_durations_s); a cell with fewer than 5 uses its class's
+durations over all thirds, and hazard_fallback_cells lists those that did. Visible frames that are not at risk are
+counted, never dropped silently: the frame before a gap that runs to the span's end (neither onset nor non-onset), the
+last frame of a span, and a frame with a feature the tracking cannot give (the scalars hazard_edge, hazard_last_frame,
+hazard_nan_rows and hazard_nan_events, beside hazard_rows, hazard_events, ...).
 
 What a Calibration holds is frame-level data of BAR-ATH (the ball's mask and the slot counts of every frame), which must
 never reach a log, a report, a CSV or git. Every array field has repr=False, describe() returns scalars and short
@@ -122,7 +122,8 @@ from pipeline.contracts import D
 CALIBRATION_VERSION = 2
 CACHE_FOLDER = ("cache", "benchmark", "calibration")   # <data dir>/cache/benchmark/calibration/<digest of the key>/
 KEY_DIGITS = 16                                        # hex digits of the key's sha256 that name its folder
-REPLACE_RETRIES = 5     # a manifest move that the OS refuses (PermissionError: a reader has the target open, on Windows)
+REPLACE_RETRIES = 5     # a manifest move that the OS refuses (PermissionError: a reader has the target open, on
+                        # Windows)
 REPLACE_WAIT_S = 0.05   # is tried again this many times, this long apart: 250 ms in all, a reader holds a file for less
 MANIFEST = "manifest.json"
 CONFIG_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "configs")
@@ -495,9 +496,9 @@ def duration_cells(interior_durations_s, gap_onset_minute, gap_onset_near_line):
     near-line onset and 0 otherwise (the class sample_mask reads at the at-risk frame); the third is
     hazard.third_of_minute of the onset minute: 0 before minute 15, 1 before 30, 2 after.
 
-    table[class][third] is a read-only float64 array of the cell's durations, in the order given (not rounded). The rule,
-    fixed in advance: a cell with fewer than MIN_CELL_DURATIONS (5) durations uses its class's durations pooled over
-    all three thirds; fallback lists those cells, as ((class, third), ...) sorted, and own[(class, third)] is the
+    table[class][third] is a read-only float64 array of the cell's durations, in the order given (not rounded). The
+    rule, fixed in advance: a cell with fewer than MIN_CELL_DURATIONS (5) durations uses its class's durations pooled
+    over all three thirds; fallback lists those cells, as ((class, third), ...) sorted, and own[(class, third)] is the
     number of durations a cell had of its own. ValueError for arrays that are not parallel, a NaN minute, or a class
     that has no duration at all (then there is nothing to draw its gaps' lengths from).
     """
@@ -601,8 +602,9 @@ def rate_scale(onsets, prob):
 
 
 def _fit(X, y):
-    """(model, l2 used): hazard.fit_logistic at HAZARD_L2, refitted with the penalty times 10 (at most 3 times) each time
-    it does not converge. Only that failure is answered so; every other error is raised at once, and so is the last."""
+    """(model, l2 used): hazard.fit_logistic at HAZARD_L2, refitted with the penalty times 10 (at most 3 times) each
+    time it does not converge. Only that failure is answered so; every other error is raised at once, and so is the
+    last."""
     l2, tried = HAZARD_L2, []
     while True:
         tried.append(l2)
@@ -793,8 +795,9 @@ def describe(cal):
                                for half, shares in sorted(cal.missing_share_5min.items())},
         "public_window": dict(cal.public_window),
         "baseline_outputs": {width: dict(row) for width, row in sorted(cal.baseline_outputs.items())},
-        # A08: the model on the standardised features, the four cross-half AUCs and the decision; per (class, third) cell
-        # the durations the cell had of its own, the number used and their median, and whether it used its class's pool.
+        # A08: the model on the standardised features, the four cross-half AUCs and the decision; per (class, third)
+        # cell the durations the cell had of its own, the number used and their median, and whether it used its class's
+        # pool.
         "hazard": {
             "features": list(hazard.FEATURES), "coef": [_round(value) for value in model.coef],
             "intercept": _round(model.intercept), "mean": [_round(value) for value in model.mean],
@@ -994,7 +997,8 @@ def _write(cal, folder, key):
 
 
 def _move_into_place(temp_path, manifest_path):
-    """os.replace, tried again while the OS refuses it with PermissionError: REPLACE_RETRIES times, REPLACE_WAIT_S apart.
+    """os.replace, tried again while the OS refuses it with PermissionError: REPLACE_RETRIES times, REPLACE_WAIT_S
+    apart.
 
     On Windows the move fails while another process has the target open, and a reader of the other checkout that
     shares this folder has it open for milliseconds. After the last retry the PermissionError is the caller's; any other

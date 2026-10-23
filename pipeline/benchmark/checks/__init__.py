@@ -14,8 +14,8 @@ module of its topic:
                  touches and does not, that no truth reaches it, and that the order of the matches changes nothing
                  (synthetic; with --data our real masks on a downloaded DFL match)
     cap.py       the tracking profile's cap of the low-count tail (the rule worked out one row at a time, sticky
-                 membership, the counts of a window of ours), its shortest-piece rule, the order of the cap, the episodes
-                 and the smoothing, and the scale of the tracked spans (synthetic only)
+                 membership, the counts of a window of ours), its shortest-piece rule, the order of the cap, the
+                 episodes and the smoothing, and the scale of the tracked spans (synthetic only)
     context.py   the context profile of the degrader: the tracking profile's players unchanged (no truth, the same
                  draws), and a ball whose gaps come from the hazard fitted on our match: what the hazard is given, the
                  chance (c, the scale, the cap, 0 where a feature is undefined), the class, third and durations read at

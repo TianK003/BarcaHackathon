@@ -1042,11 +1042,12 @@ def test_match_cache_names_what_is_wrong():
 def test_load_match_refuses_a_registry_file_of_the_wrong_size_and_only_a_registry_one():
     """A registry id's files must be the size that sources.FILES pins, each of the two read kinds, before any parse.
 
-    The cheap guard of load_match against a hand-copied file, a file of another version or one cut short: the size, which
-    costs nothing, and not the md5 (sources.py --verify reads that) and not the ball-frame count (test_dfl_all_matches_load
-    checks it on the real files). The error names the file and says to run sources.py --verify. Junk of the pinned size
-    passes the guard and then fails in the parser, which shows that the guard is what stops the others; a match outside
-    the registry (the synthetic ones) is not compared with anything, and leaves a cache as ever."""
+    The cheap guard of load_match against a hand-copied file, a file of another version or one cut short: the size,
+    which costs nothing, and not the md5 (sources.py --verify reads that) and not the ball-frame count
+    (test_dfl_all_matches_load checks it on the real files). The error names the file and says to run sources.py
+    --verify. Junk of the pinned size passes the guard and then fails in the parser, which shows that the guard is what
+    stops the others; a match outside the registry (the synthetic ones) is not compared with anything, and leaves a
+    cache as ever."""
     from pipeline.benchmark import dfl, sources
     remote = sources.FILES["J03WMX"]
     with tempfile.TemporaryDirectory() as root:

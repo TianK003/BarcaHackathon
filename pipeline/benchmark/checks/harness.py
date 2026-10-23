@@ -48,9 +48,9 @@ def imports_of_other_check_modules(folder, package):
     """[(file, line, module)] of every import in the modules of `folder` that reaches a module of `package` other than
     common, sorted by file and line. The package's own __init__ is not scanned: it imports all the modules to list them.
 
-    `package` is the dotted name of the folder (pipeline.benchmark.checks). An import is found wherever it stands, at the
-    top or inside a function, whether it names the module (from package.run import x, import package.run) or takes it
-    from the package (from package import run), and whether it is absolute or relative (from .run import x, from .
+    `package` is the dotted name of the folder (pipeline.benchmark.checks). An import is found wherever it stands, at
+    the top or inside a function, whether it names the module (from package.run import x, import package.run) or takes
+    it from the package (from package import run), and whether it is absolute or relative (from .run import x, from .
     import run). A module of another package whose name only starts like it (pipeline.benchmark.checks_elsewhere)
     is not one.
     """
@@ -219,20 +219,22 @@ def test_a_check_module_imports_no_other_check_module():
 
     Two check modules that import each other make their order of import matter, a helper that two of them share belongs
     to neither, and a module that is renamed breaks a stranger's import; the review of Task 14 found eight such imports
-    (two in common.py, three in fidelity.py, three in run.py), and they were moved to common.py. The scan reads every import in the module, at the top and inside a function, in both
-    forms (`from pipeline.benchmark.checks.run import x`, `from pipeline.benchmark.checks import run`, and `import
-    pipeline.benchmark.checks.run`) and the relative ones (`from .run import x`, `from . import run`; the review of
-    Task 17 found that the first scan let them pass). It must flag each of those on made-up modules, let the
-    imports of common and of production code pass (and the __init__, which lists the modules by design), and find
-    none in the real folder."""
+    (two in common.py, three in fidelity.py, three in run.py), and they were moved to common.py. The scan reads every
+    import in the module, at the top and inside a function, in both forms (`from pipeline.benchmark.checks.run import
+    x`, `from pipeline.benchmark.checks import run`, and `import pipeline.benchmark.checks.run`) and the relative ones
+    (`from .run import x`, `from . import run`; the review of Task 17 found that the first scan let them pass). It must
+    flag each of those on made-up modules, let the imports of common and of production code pass (and the __init__,
+    which lists the modules by design), and find none in the real folder."""
     package = "pipeline.benchmark.checks"
     with tempfile.TemporaryDirectory() as folder:
         write_text(folder, "__init__.py", "from pipeline.benchmark.checks import alpha, beta\n")
         write_text(folder, "common.py", "")
-        write_text(folder, "clean.py", "import os\nfrom pipeline.benchmark import dfl\nfrom pipeline.benchmark import checks\n"
-                                       "from pipeline.benchmark.checks import common\n"
-                                       "from pipeline.benchmark.checks.common import helper\nimport pipeline.benchmark.checks.common\n"
-                                       "from pipeline.benchmark.checks_elsewhere import run\n")
+        write_text(folder, "clean.py",
+                   "import os\nfrom pipeline.benchmark import dfl\nfrom pipeline.benchmark import checks\n"
+                   "from pipeline.benchmark.checks import common\n"
+                   "from pipeline.benchmark.checks.common import helper\n"
+                   "import pipeline.benchmark.checks.common\n"
+                   "from pipeline.benchmark.checks_elsewhere import run\n")
         write_text(folder, "alpha.py", "from pipeline.benchmark.checks.beta import helper\n")
         write_text(folder, "beta.py", "def test_one():\n    from pipeline.benchmark.checks.alpha import helper\n")
         write_text(folder, "gamma.py", "from pipeline.benchmark.checks import common, alpha\n")
@@ -241,7 +243,8 @@ def test_a_check_module_imports_no_other_check_module():
         write_text(folder, "epsilon.py", "from .alpha import helper\n")
         write_text(folder, "zeta.py", "def test_one():\n    from . import alpha, common\n")
         write_text(folder, "eta.py", "from . import common\nfrom .common import helper\nfrom .. import dfl\n"
-                                      "from ..dfl import parse\nfrom .. import checks\nfrom ... import checks_elsewhere\n")
+                                     "from ..dfl import parse\nfrom .. import checks\n"
+                                     "from ... import checks_elsewhere\n")
         found = imports_of_other_check_modules(folder, package)
         assert found == [("alpha.py", 1, package + ".beta"), ("beta.py", 2, package + ".alpha"),
                          ("delta.py", 1, package + ".alpha"), ("epsilon.py", 1, package + ".alpha"),

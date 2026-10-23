@@ -3,7 +3,7 @@
     python pipeline/benchmark/sources.py                       # fetch what is missing or damaged, then it is all ok
     python pipeline/benchmark/sources.py --verify              # check size and md5 of what is on disk, download nothing
     python pipeline/benchmark/sources.py --matches J03WMX ...  # only these matches
-    python pipeline/benchmark/sources.py --data-dir DIR        # into DIR/external/dfl (default: data/, or $MTAH_DATA_DIR)
+    python pipeline/benchmark/sources.py --data-dir DIR # into DIR/external/dfl (default: data/, or $MTAH_DATA_DIR)
 
 Why these files
 ---------------

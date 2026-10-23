@@ -1,11 +1,11 @@
 """Checks of the tracking profile's cap of the low-count tail, its shortest-piece rule and the scale of its tracked
-spans (degrade.cap_limits, cap_pieces, drop_short_pieces and TRACKED_SCALE, "lambda"): what Task 14 (R004b) added so that
-the profile's players show our match's stretches with few players present, and our tracklets' lengths.
+spans (degrade.cap_limits, cap_pieces, drop_short_pieces and TRACKED_SCALE, "lambda"): what Task 14 (R004b) added so
+that the profile's players show our match's stretches with few players present, and our tracklets' lengths.
 
 They moved out of checks/tracking.py, which had reached 2,200 lines, with nothing changed. What they share with it (the
 steady match, the pairs that make wrong-team episodes, the record of the measurement that lambda was worked out from)
-lives in checks/common.py. They run on cap_match, a match whose 22 players stand still on a line, so that a distance is a
-short dyadic number and a cut can be worked out by hand, and on reference_cap, which writes the rule out one row at a
+lives in checks/common.py. They run on cap_match, a match whose 22 players stand still on a line, so that a distance is
+a short dyadic number and a cut can be worked out by hand, and on reference_cap, which writes the rule out one row at a
 time with plain loops. Every check here is synthetic: none reads the data directory.
 """
 
@@ -295,10 +295,11 @@ def test_cap_membership_changes_only_when_the_count_requires_it():
     assert all(start + at in kept[0] for at in range(8)) and start + 8 not in kept[0], "his piece is over"
     assert (got, counts) == reference_cap(view, 1, sorted(pieces), limit)
 
-    # Room that nobody is in is not kept for a piece that has not started: three pieces (columns 0, 1, 2) whole, a fourth
-    # (column 3, on the ball's own place, so the nearest of all) that starts on row 5, the count 5 on rows 0-4 (more than
-    # the three pieces there are: two places spare) and 3 from row 5 to row 9. On row 5 the three kept are as many as
-    # the count, so column 3 is dropped on rows 5-9, whichever is nearest; it is back on row 10, when the cap ends.
+    # Room that nobody is in is not kept for a piece that has not started: three pieces (columns 0, 1, 2) whole, a
+    # fourth (column 3, on the ball's own place, so the nearest of all) that starts on row 5, the count 5 on rows 0-4
+    # (more than the three pieces there are: two places spare) and 3 from row 5 to row 9. On row 5 the three kept are as
+    # many as the count, so column 3 is dropped on rows 5-9, whichever is nearest; it is back on row 10, when the cap
+    # ends.
     match = cap_match(lambda half, row: (4 / 32, 0.5))
     view = degrade.tracking_view(match)
     start, stop = match.graded[0][1:]

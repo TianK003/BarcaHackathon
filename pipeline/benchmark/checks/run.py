@@ -661,7 +661,8 @@ def test_runner_default_profile_is_tracking_and_runs_it():
         assert "profile   tracking (version 3)" in "\n".join(lines), lines
 
 
-# -- what the profile says of itself ------------------------------------------------------------------------------------
+# -- what the profile says of itself
+# ------------------------------------------------------------------------------------
 
 def run_on(profile, cal, paths, root, lines, seeds=1):
     """evaluate_configs on `profile` with the synthetic matches and `cal`, its printout collected in `lines`."""
@@ -672,17 +673,18 @@ def run_on(profile, cal, paths, root, lines, seeds=1):
 def test_runner_labels_context_as_sensitivity_only_and_says_where_each_profiles_gaps_come_from():
     """A profile that fails its gates is not offered as the yardstick: the help, the printout and the report say so.
 
-    `context` is in SENSITIVITY_ONLY with the reason (R005: two of its gates fail), and the --profile help, a `note` line
-    of the printout and a "sensitivity_only" key of the report carry it; `tracking`, the default, carries none of them,
-    and its report has no such key. The line that names the Calibration says where the ball's gaps came from, which
-    differs by profile: the transplant of ours for gaps and tracking (and tracking's tracklets, slots and counts besides),
-    the hazard fitted on our match for context, whose gaps are drawn and not transplanted; the old line, that the gaps
-    are 'as measured by calibration.py', was false for context. The report of a context run says which version of
-    tracking its players are built from."""
+    `context` is in SENSITIVITY_ONLY with the reason (R005: two of its gates fail), and the --profile help, a `note`
+    line of the printout and a "sensitivity_only" key of the report carry it; `tracking`, the default, carries none of
+    them, and its report has no such key. The line that names the Calibration says where the ball's gaps came from,
+    which differs by profile: the transplant of ours for gaps and tracking (and tracking's tracklets, slots and counts
+    besides), the hazard fitted on our match for context, whose gaps are drawn and not transplanted; the old line, that
+    the gaps are 'as measured by calibration.py', was false for context. The report of a context run says which version
+    of tracking its players are built from."""
     assert benchmark_run.SENSITIVITY_ONLY.keys() == {"context"} and benchmark_run.DEFAULT_PROFILE == "tracking"
     reason = benchmark_run.SENSITIVITY_ONLY["context"]
     assert "R005" in reason and "two of its gates" in reason and "sensitivity check" in reason, reason
-    assert benchmark_run.PROVENANCE.keys() == set(degrade.PROFILES) - {degrade.CLEAN}, "a line for every degraded profile"
+    assert benchmark_run.PROVENANCE.keys() == set(degrade.PROFILES) - {degrade.CLEAN}, (
+        "a line for every degraded profile")
     path = [yardstick_path(50)]
     calibrations = {"gaps": synthetic_calibration(), "tracking": tracking_calibration(),
                     "context": context_calibration()}
@@ -693,7 +695,8 @@ def test_runner_labels_context_as_sensitivity_only_and_says_where_each_profiles_
             result = run_on(profile, cal, path, root, lines[profile])
             reports[profile] = result["configs"][0]["report"]
             calibration_lines[profile] = [line for line in lines[profile] if line.startswith("calibration")]
-            assert len(calibration_lines[profile]) == 1 and calibration.digest(cal)[:12] in calibration_lines[profile][0]
+            assert (len(calibration_lines[profile]) == 1
+                    and calibration.digest(cal)[:12] in calibration_lines[profile][0])
         # The note: for context, with the reason; for the others, nothing.
         notes = [line for line in lines["context"] if line.startswith("note")]
         assert notes == ["note      profile context {}".format(reason)], notes
@@ -913,7 +916,8 @@ def cross_process_run(root, out, paths, profile="clean", calibration=None):
 
 
 def test_runner_json_identical_across_processes():
-    """The same run in three processes with different PYTHONHASHSEED (1, 2 and 3), and in this one, writes the same bytes.
+    """The same run in three processes with different PYTHONHASHSEED (1, 2 and 3), and in this one, writes the same
+    bytes.
 
     A set iterated anywhere between the scores and the report, or a dict built in hash order, would show here as
     another order of keys or of matches. The synthetic DFL match is served through the cache, which is built here
@@ -957,8 +961,8 @@ def test_runner_context_json_identical_across_processes():
     """The context profile too: three processes with PYTHONHASHSEED 1, 2 and 3 and this one write the same bytes.
 
     On top of the tracking profile's players, the ball's gaps come from the hazard: the features, the chance, the class
-    and the third of every frame, the durations and the draws of the sampler, which no hash may order. The Calibration is
-    context_calibration's, a made-up hazard on the made-up tracking figures, built by each process for itself."""
+    and the third of every frame, the durations and the draws of the sampler, which no hash may order. The Calibration
+    is context_calibration's, a made-up hazard on the made-up tracking figures, built by each process for itself."""
     report = identical_across_processes("context", ".m-RND001-RND002-SYN001.s2.json")
     assert [record["id"] for record in report["matches"]] == ["RND001", "RND002", "SYN001"]
     assert report["seeds"] == [0, 1] and len(report["halves"]) == 3 * 2 * 2
@@ -968,8 +972,8 @@ def test_runner_context_json_identical_across_processes():
 
 
 def identical_across_processes(profile, suffix):
-    """Run cross_process_run on `profile` in the processes of HASH_SEEDS, each with its own PYTHONHASHSEED, and here: the
-    one report.
+    """Run cross_process_run on `profile` in the processes of HASH_SEEDS, each with its own PYTHONHASHSEED, and here:
+    the one report.
 
     Asserts that every file is the same bytes in the three places, and returns the parsed report of the last file by
     name.

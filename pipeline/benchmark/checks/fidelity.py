@@ -38,8 +38,9 @@ IDS = ("J03WMX", "J03WN1")
 # median and NaN-speed share. They were measured on other spans than the kick-off ones, so a centre comes from the
 # Calibration.
 PLAN_FIGURES = {0.407, 0.4069, 10.7, 0.778, 0.66, 0.066, 0.108, 0.495, 20.5, 35.5, 0.0796, 0.080, 0.286}
-# What the players' degradation draws that a report pools (written out here, not read from fidelity.PLAYERS_DRAWS, so that a
-# count the report forgets to pool is seen): the walk and the episodes, the NaN runs, the cap and the shortest-piece rule.
+# What the players' degradation draws that a report pools (written out here, not read from fidelity.PLAYERS_DRAWS, so
+# that a count the report forgets to pool is seen): the walk and the episodes, the NaN runs, the cap and the
+# shortest-piece rule.
 DRAW_NAMES = ("tracklets", "onsets", "episodes", "skipped_far", "skipped_overlap", "episode_frames", "speed_nan_runs",
               "speed_nan_frames", "capped_frames", "cap_slot_frames", "cap_pieces_cut", "short_pieces",
               "short_slot_frames", "short_episode_pieces")
@@ -241,10 +242,10 @@ def test_fidelity_context_gates_are_trackings_and_the_near_line_share():
     """The context profile's gates are the tracking profile's eight and the share of the gaps that start near a line.
 
     The centre is the Calibration's own near_line_share (measured on the kick-off spans: never the plan's 0.286, which
-    the module must not hold), the tolerance +-0.05 and absolute, and the figure is pooled by sums, near-line onsets over
-    interior gaps, and not a mean of the parts' shares: 1 of 4 and 9 of 12 are 10 of 16 = 0.625, where the mean of
-    0.25 and 0.75 would be 0.5. A share of gaps that do not exist is NaN and fails, as an empty median does. The near-line
-    gate is required, like every other: none is pending."""
+    the module must not hold), the tolerance +-0.05 and absolute, and the figure is pooled by sums, near-line onsets
+    over interior gaps, and not a mean of the parts' shares: 1 of 4 and 9 of 12 are 10 of 16 = 0.625, where the mean of
+    0.25 and 0.75 would be 0.5. A share of gaps that do not exist is NaN and fails, as an empty median does. The
+    near-line gate is required, like every other: none is pending."""
     gates = {gate["name"]: gate for gate in fidelity.GATES["context"]}
     assert list(gates) == TRACKING_GATES + ["near_line_share"]
     assert fidelity.GATES["context"][:-1] == fidelity.GATES["tracking"]

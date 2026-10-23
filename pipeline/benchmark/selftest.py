@@ -28,8 +28,8 @@
                                                     #   whole run 261 s with the synthetic checks; on a quiet machine
                                                     #   the 5 checks before the context ones took 61 s and the run 93 s)
 
-The real fidelity of the gaps profile is not a check but a command (fidelity.py: gates, warnings; R003 in results.md): it
-reads all seven matches and takes minutes.
+The real fidelity of the gaps profile is not a check but a command (fidelity.py: gates, warnings; R003 in results.md):
+it reads all seven matches and takes minutes.
 
 This file is the harness and the one command: it collects the checks, filters them by flag, runs them and reports.
 The checks themselves live in pipeline/benchmark/checks/, one module per topic (sources.py, dfl.py, ...), listed in

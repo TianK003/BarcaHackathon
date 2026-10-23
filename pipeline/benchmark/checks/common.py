@@ -659,10 +659,10 @@ def smoothed_plain(run, window):
 
 
 # The measurements that TRACKED_SCALE was worked out from (docs/results.md): ours' tracklet median (the Calibration's,
-# A09) and the pooled tracklet median, in seconds, of the tracking profile at lambda = 1 with the shortest-piece rule in,
-# seed 0, over the 7 DFL matches laid end to end. With version 2's slot rule (a tracklet could take a slot on the row it
-# was freed) it was 20.22 s, so lambda was 2.042 (R004b, 2026-10-23); with version 3's (a slot is free from the row after
-# its tracklet stopped) it is 19.92 s, so lambda is 2.072 (R004c, 2026-10-23), which is the constant in force.
+# A09) and the pooled tracklet median, in seconds, of the tracking profile at lambda = 1 with the shortest-piece rule
+# in, seed 0, over the 7 DFL matches laid end to end. With version 2's slot rule (a tracklet could take a slot on the
+# row it was freed) it was 20.22 s, so lambda was 2.042 (R004b, 2026-10-23); with version 3's (a slot is free from the
+# row after its tracklet stopped) it is 19.92 s, so lambda is 2.072 (R004c, 2026-10-23), which is the constant in force.
 RECORDED_OURS_MEDIAN_S = 41.28
 RECORDED_MEDIAN_V2_S = 20.22
 RECORDED_MEDIAN_S = 19.92

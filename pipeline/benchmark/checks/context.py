@@ -1,5 +1,5 @@
-"""Checks of the `context` profile of the degrader (pipeline/benchmark/degrade.py): the tracking profile's players, and a
-ball whose gaps are placed by the hazard that was fitted on our own match (A08) instead of copied from it.
+"""Checks of the `context` profile of the degrader (pipeline/benchmark/degrade.py): the tracking profile's players, and
+a ball whose gaps are placed by the hazard that was fitted on our own match (A08) instead of copied from it.
 
 The profile is the part of P01 that ties the gaps to the play, so what is held against it here is each convention of how
 the hazard is carried to another match, one by one: what it is given (the clean DFL ball and the degraded players, in
@@ -47,8 +47,9 @@ NEAR_M = 2.0                     # a ball closer than this to a line is near it 
 # weight shows only on a match whose ball does.
 WEIGHTS = [-0.02, 0.5, 0.05, -0.05, 0.3, 0.02]
 CAPPED_P = 1.0 - 1e-12           # a chance so close to 1 that c * scale * p is above the cap (1 - 1e-9) on every row
-# What the halves of capped_match say of the hazard: gaps of exactly 3 frames whatever the class and the third (0.12 s at
-# 25 Hz), and a chance above the cap (CAPPED_P, and c = 1000) of an onset on every frame where all the features are defined.
+# What the halves of capped_match say of the hazard: gaps of exactly 3 frames whatever the class and the third (0.12 s
+# at 25 Hz), and a chance above the cap (CAPPED_P, and c = 1000) of an onset on every frame where all the features are
+# defined.
 CAPPED_SECONDS = {onset_class: {third: (0.12,) for third in range(3)} for onset_class in (0, 1)}
 
 
@@ -75,9 +76,9 @@ def capped_match():
     hazard's running sum a frame, and the draw E of the exponential is under that unless it is 1 in 10^9), so the mask
     is a pattern. The ball's speed is the only feature that can be undefined here (the players never leave, so the
     nearest one is always there): it is NaN on a half's first row, whose step is not defined, so row 0 is not at risk,
-    the first gap starts after row 1 (rows 2-4), the next after row 5 (rows 6-8), and so on every 4 rows: the frames seen
-    are row 0 and the rows 1, 5, 9, ... and every other row is missing, up to the end of the half, which cuts the last
-    gap."""
+    the first gap starts after row 1 (rows 2-4), the next after row 5 (rows 6-8), and so on every 4 rows: the frames
+    seen are row 0 and the rows 1, 5, 9, ... and every other row is missing, up to the end of the half, which cuts the
+    last gap."""
     match = steady_match(substitutions=False)
     # c = 1000 puts c * HAZARD_SCALE * p above the cap whatever the frozen scale is (it is 0.699 now).
     calibration = nobody_lost(context_namespace(p=CAPPED_P, c=1000.0, seconds=CAPPED_SECONDS))
@@ -109,8 +110,8 @@ def reference_mask(view, half, players_xy, calibration, seed, scale=None):
     kickoff, stop = view.kickoffs[half], next(last for number, _, last in view.graded if number == half)
     n = stop - kickoff
     pitch = np.array(view.pitch)
-    table = hazard.features(np.asarray(view.ball_xy)[kickoff:stop] * pitch, np.asarray(players_xy)[kickoff:stop] * pitch,
-                            view.pitch, view.fps, kickoff, kickoff)
+    table = hazard.features(np.asarray(view.ball_xy)[kickoff:stop] * pitch,
+                            np.asarray(players_xy)[kickoff:stop] * pitch, view.pitch, view.fps, kickoff, kickoff)
     prob, onset_class, third = np.zeros(n), np.zeros(n, dtype=np.int64), np.zeros(n, dtype=np.int64)
     for row in range(n):
         if not np.isnan(table[row]).any():
@@ -131,12 +132,12 @@ def test_context_never_sees_truth():
     """Two matches that differ only in ball_status and ball_possession give byte-identical context Atds and records.
 
     A behavioural check: the flags of the second match are another random set (the first's are DFL's synthetic ones, as
-    steady_match has them), so a degradation that read either, in the hazard's features, in the class, in the third or in
-    the mask, would come out different. It is run through the degrader and through the runner's own path (make_atd takes
-    the match and builds the view itself), for two seeds. The inputs that a context match is served with hold nothing of
-    the truth either, to any depth (the deep walk of Task 8), and no field of the view is the truth. The hazard is the
-    weighted one (WEIGHTS), so that the value of every feature that the match varies moves the mask: with a flat
-    hazard only whether a feature is defined, and the class of the row, could."""
+    steady_match has them), so a degradation that read either, in the hazard's features, in the class, in the third or
+    in the mask, would come out different. It is run through the degrader and through the runner's own path (make_atd
+    takes the match and builds the view itself), for two seeds. The inputs that a context match is served with hold
+    nothing of the truth either, to any depth (the deep walk of Task 8), and no field of the view is the truth. The
+    hazard is the weighted one (WEIGHTS), so that the value of every feature that the match varies moves the mask: with
+    a flat hazard only whether a feature is defined, and the class of the row, could."""
     match = steady_match()
     rng = np.random.default_rng([12])
     status = rng.integers(0, 2, size=match.n_frames).astype(np.int8)
@@ -169,9 +170,9 @@ def test_context_players_equal_tracking():
     """Every player array of a context Atd and the players' record are tracking's, byte for byte, for the same seed.
 
     The slots' positions and speeds and the slot teams, the record of the players' draws (info["players"]) and the draws
-    that the cap reads, the Transplant of each half (info["transplants"]): the profile changes the ball and nothing else,
-    so that a difference between two reports is the ball's. On the steady match with the made-up Calibration, for three
-    seeds, and on a match with another kick-off for the second half; the same on a real DFL match is
+    that the cap reads, the Transplant of each half (info["transplants"]): the profile changes the ball and nothing
+    else, so that a difference between two reports is the ball's. On the steady match with the made-up Calibration, for
+    three seeds, and on a match with another kick-off for the second half; the same on a real DFL match is
     test_data_context_profile_on_a_real_match_with_our_real_calibration. The ball is not tracking's: the masks differ
     (the other's is a transplant of ours), and it has no x without a y and no speed."""
     cal = context_namespace()
@@ -268,23 +269,24 @@ def test_context_counts_and_mask_on_hand_built_halves():
             assert mask.tolist() == expected.tolist(), (seed, half)
         assert abs(info["mask_share"] - 328 / 440) < 1e-12
     # Rows without a DFL ball are counted apart, stay missing and are never at risk: 10 rows of half 1 with no ball
-    # (rows 1-10). The ball's speed has no step until it is seen on two rows in a row, which is rows 11 and 12, so row 11,
-    # where the ball is back, is a NaN-feature row as well as row 0: two in the half.
+    # (rows 1-10). The ball's speed has no step until it is seen on two rows in a row, which is rows 11 and 12, so row
+    # 11, where the ball is back, is a NaN-feature row as well as row 0: two in the half.
     holed = np.array(match.ball_xy)
     holed[1:11] = np.nan
     holed.setflags(write=False)
     atd, info = degrade.degrade(degrade.tracking_view(dataclasses.replace(match, ball_xy=holed)), "context", cal, 0)
     assert info["ball"]["halves"][1]["ball_missing_rows"] == 10 and info["ball"]["halves"][1]["nan_feature_rows"] == 2
     assert np.isnan(atd.ball_xy[1:11]).all(), "a ball that DFL does not have stays missing"
-    assert info["ball"]["halves"][2] == degrade.degrade(view, "context", cal, 0)[1]["ball"]["halves"][2], "the other half"
+    assert info["ball"]["halves"][2] == degrade.degrade(view, "context", cal, 0)[1]["ball"]["halves"][2], (
+        "the other half")
 
 
 def test_context_mask_follows_prob_and_rows_without_features_are_never_at_risk():
     """Where the features are undefined the chance is 0, so every gap starts inside the stretch where they are defined.
 
     The six players are on the pitch only on rows 80-159 of the first half and rows 60-139 of the second (counted from
-    each half's start), so that no player is there to be nearest to the ball anywhere else: the feature is NaN, and a row
-    like that was never at risk in the fit. With a chance of 0.08 a frame inside, every gap's at-risk frame (the one
+    each half's start), so that no player is there to be nearest to the ball anywhere else: the feature is NaN, and a
+    row like that was never at risk in the fit. With a chance of 0.08 a frame inside, every gap's at-risk frame (the one
     before its first missing frame) is inside the stretch; the gap itself may run past its end. The rows outside are
     counted as NaN-feature rows, and only they: the half's rows less the stretch (row 0, which has no ball speed, is
     outside it, and every row inside has a step before it and a player)."""
@@ -365,17 +367,17 @@ def long_match(rows, near=500):
 
 
 def test_context_durations_follow_the_class_the_third_and_the_rate_of_the_at_risk_frame():
-    """A gap lasts what the table says for the class (a ball within 2 m of a line) and the third of the half (minute 0-15,
-    15-30, later) of the frame before it, at the match's rate.
+    """A gap lasts what the table says for the class (a ball within 2 m of a line) and the third of the half (minute
+    0-15, 15-30, later) of the frame before it, at the match's rate.
 
     A first half of 46,000 rows (30.7 min at 25 Hz) whose ball is 1 m from the line in alternating stretches of 500
     rows and in the middle of the pitch in the others, a chance of 0.02, and a table where each of the six cells has a
     length of its own: 30, 31 and 32 frames for the far ones and 7, 8 and 9 for the near ones at 25 Hz (1.2, 1.24, 1.28
-    and 0.28, 0.32, 0.36 s). Every gap that ends inside the half has the length of the cell of its at-risk frame (the one
-    before it: class from the line distance there, third from the minute there), and every cell is used. At 50 Hz the
-    same table is twice as long in frames and the thirds are twice as late, so the stretches are the same rows and the
-    third ones are those of 45,000 rows or more: the conversion reads the match's rate, in both the durations and the
-    minute."""
+    and 0.28, 0.32, 0.36 s). Every gap that ends inside the half has the length of the cell of its at-risk frame (the
+    one before it: class from the line distance there, third from the minute there), and every cell is used. At 50 Hz
+    the same table is twice as long in frames and the thirds are twice as late, so the stretches are the same rows and
+    the third ones are those of 45,000 rows or more: the conversion reads the match's rate, in both the durations and
+    the minute."""
     seconds = {0: {0: (1.2,), 1: (1.24,), 2: (1.28,)}, 1: {0: (0.28,), 1: (0.32,), 2: (0.36,)}}
     cal = nobody_lost(context_namespace(p=0.02, seconds=seconds))
     base = long_match((46000, 300))
@@ -413,11 +415,11 @@ def test_context_probability_is_c_times_the_scale_times_the_model_and_is_capped(
     """The chance of an onset is hazard_c * HAZARD_SCALE * the model's probability, at most 1 - 1e-9, and the rows where
     it reaches the cap are counted.
 
-    The model gives 0.01 on every frame, and capped_match's halves have 438 rows with defined features. At c = 10 and the
-    scale 1 the chance is 0.1 (no capped row); at c = 10 and a scale of 100 it is 10, so every one of the 438 is capped;
-    at c = 100 and the scale 1 the same; and at c = 1 and the scale 1000 the same. The record says which scale and which
-    c were used. The constant is read when the profile is made, not when the module loads: patched, the profile takes
-    the patched one, and put back, the frozen one."""
+    The model gives 0.01 on every frame, and capped_match's halves have 438 rows with defined features. At c = 10 and
+    the scale 1 the chance is 0.1 (no capped row); at c = 10 and a scale of 100 it is 10, so every one of the 438 is
+    capped; at c = 100 and the scale 1 the same; and at c = 1 and the scale 1000 the same. The record says which scale
+    and which c were used. The constant is read when the profile is made, not when the module loads: patched, the
+    profile takes the patched one, and put back, the frozen one."""
     match, _ = capped_match()
     view = degrade.tracking_view(match)
 
@@ -450,9 +452,9 @@ def test_hazard_scale_odds_rescale_arithmetic():
     """The rescale is on the odds, worked out by hand.
 
     A share of 0.5 is odds of 1 and one of 0.25 is odds of 1/3, so going from 0.25 to 0.5 takes a factor of 3 (a plain
-    ratio of the shares would say 2); 0.4 from 0.2 is odds 2/3 against 1/4: 8/3 (not 2); equal shares give 1 and keep the
-    scale; the factor carries the current scale; and the odds of the result are the target's, which is what the rescale
-    is for. The odds are not symmetric: measuring above the target gives a factor below 1."""
+    ratio of the shares would say 2); 0.4 from 0.2 is odds 2/3 against 1/4: 8/3 (not 2); equal shares give 1 and keep
+    the scale; the factor carries the current scale; and the odds of the result are the target's, which is what the
+    rescale is for. The odds are not symmetric: measuring above the target gives a factor below 1."""
     assert abs(odds_rescale(1.0, 0.5, 0.25) - 3.0) < 1e-12
     assert abs(odds_rescale(1.0, 0.4, 0.2) - 8.0 / 3.0) < 1e-12
     assert odds_rescale(1.0, 0.3, 0.3) == 1.0 and odds_rescale(2.5, 0.3, 0.3) == 2.5
@@ -465,9 +467,10 @@ def test_hazard_scale_odds_rescale_arithmetic():
     assert odds_rescale(1.0, 0.4, 0.2) > 0.4 / 0.2, "not the plain ratio of the shares, which undershoots"
 
 
-# The two measurements that HAZARD_SCALE was worked out from (docs/results.md R005, 2026-10-23): the frames without a ball
-# and the frames of the 7 DFL matches' kick-off spans under the context profile at scale 1.0, seed 0, pooled by sums, and
-# the Calibration's own missing share on its kick-off spans (Calibration.scalars["missing_share"], the centre of the gate).
+# The two measurements that HAZARD_SCALE was worked out from (docs/results.md R005, 2026-10-23): the frames without a
+# ball and the frames of the 7 DFL matches' kick-off spans under the context profile at scale 1.0, seed 0, pooled by
+# sums, and the Calibration's own missing share on its kick-off spans (Calibration.scalars["missing_share"], the centre
+# of the gate).
 RECORDED_MISSING = (501013, 1002644)
 RECORDED_MISSING_TARGET = 0.410965669
 
@@ -505,9 +508,9 @@ def test_data_hazard_scale_follows_from_the_measurement():
     Needs our match (the Calibration) and the seven downloaded matches: runs with --data, NOT RUN where they are not
     there. The missing share of the degraded ball is calibration.ball_stats' (frames without a ball over frames, on each
     half from its kick-off, pooled by sums, as fidelity.py pools it), and it must reproduce the recorded counts exactly
-    (the code is the code that the scale was worked out with: the draws, the features and the players are the same), with
-    the Calibration's missing share the recorded target. Then the same at the frozen scale, printed: the share, the gaps,
-    the near-line share of the onsets and the figures that R005's stop conditions read, pooled over the 7 matches
+    (the code is the code that the scale was worked out with: the draws, the features and the players are the same),
+    with the Calibration's missing share the recorded target. Then the same at the frozen scale, printed: the share, the
+    gaps, the near-line share of the onsets and the figures that R005's stop conditions read, pooled over the 7 matches
     (information; the gates are fidelity.py's)."""
     from pipeline.benchmark import sources
     for match_id in sources.MATCH_IDS:
@@ -516,7 +519,8 @@ def test_data_hazard_scale_follows_from_the_measurement():
                 raise NotRun("{} is not downloaded ({}); {} to fetch the DFL matches".format(
                     match_id, kind, dfl.FETCH_ADVICE))
     cal = calibration.load()
-    assert abs(cal.scalars["missing_share"] - RECORDED_MISSING_TARGET) < 1e-9, "the Calibration the scale was set against"
+    assert abs(cal.scalars["missing_share"] - RECORDED_MISSING_TARGET) < 1e-9, (
+        "the Calibration the scale was set against")
     saved = degrade.HAZARD_SCALE
     totals = {scale: {"missing": 0, "frames": 0, "interior": 0, "near": 0, "onsets": 0, "rows": 0, "at_risk": 0,
                       "post_gap": 0, "nan": 0, "capped": 0} for scale in (1.0, saved)}
@@ -552,9 +556,9 @@ def test_data_hazard_scale_follows_from_the_measurement():
                   row["capped"], row["at_risk"], row["post_gap"], row["post_gap"] / row["at_risk"], hazard.SPEED_STEPS))
 
 
-# The measurement that keeps context from being the default (docs/results.md R005, 2026-10-23): the share of the gaps that
-# start within 2 m of a line, pooled over the 7 matches and 3 seeds (0.5647, 0.5644 and 0.5465 on the seeds), against the
-# Calibration's own value on its kick-off spans (the gate's centre).
+# The measurement that keeps context from being the default (docs/results.md R005, 2026-10-23): the share of the gaps
+# that start within 2 m of a line, pooled over the 7 matches and 3 seeds (0.5647, 0.5644 and 0.5465 on the seeds),
+# against the Calibration's own value on its kick-off spans (the gate's centre).
 RECORDED_NEAR_LINE = (0.5586, 0.2797)
 
 
@@ -583,8 +587,9 @@ def test_default_profile_is_tracking_because_context_fails_a_gate():
 
 
 def test_context_ball_keeps_dfls_holes_and_the_rows_before_the_kickoff():
-    """The ball is the clean DFL ball with the mask taken out: x and y together, its speed NaN everywhere, a row that DFL
-    has no ball for stays missing, and the rows outside the span (before the kick-off, between the halves) are DFL's.
+    """The ball is the clean DFL ball with the mask taken out: x and y together, its speed NaN everywhere, a row that
+    DFL has no ball for stays missing, and the rows outside the span (before the kick-off, between the halves) are
+    DFL's.
 
     Where the hazard's chance is 0 (a flat model with a tiny p) nothing is taken out, and the ball is the clean one with
     a NaN speed: the same bytes as the gaps profile with masks that say nothing is missing."""
@@ -675,7 +680,8 @@ def test_context_reuses_trackings_players_and_says_which_version_of_them():
 
 def test_context_profile_is_registered_with_its_own_stream():
     """The profile is version 1, the hazard has the stream after the speed_nan one, and what the profile read of the
-    Calibration is named: the profiles nest (context's players are tracking's, and the draws of the earlier parts stay)."""
+    Calibration is named: the profiles nest (context's players are tracking's, and the draws of the earlier parts
+    stay)."""
     assert degrade.PROFILES == {"clean": 1, "gaps": 1, "tracking": 3, "context": 1}
     assert degrade.CONTEXT == "context" and degrade.COMPONENTS["hazard"] == 4
     assert degrade.COMPONENTS == {"transplant": 0, "tracklets": 1, "wrong_team": 2, "speed_nan": 3, "hazard": 4}
@@ -688,12 +694,12 @@ def test_data_context_profile_on_a_real_match_with_our_real_calibration():
     """Our own Calibration (the hazard fitted on our match, A08) on a downloaded DFL match: what the context profile
     makes, for information, and the real-match half of test_context_players_equal_tracking.
 
-    Needs both our match and a downloaded DFL match: runs with --data and says NOT RUN where the DFL files are not there.
-    Asserted: the players (the slots' positions and speeds, the slot teams) and their record, and the draws that the cap
-    reads, are tracking's byte for byte; the draws are the same twice; x and y are missing together and the speed is NaN;
-    nothing of the truth is reachable; the record's totals are the sums of its halves'. Printed (aggregates only, and what
-    the stop conditions of R005 are read from): the share of the frames missing, the gaps, the NaN-feature, capped,
-    at-risk and after-a-gap rows and their shares of the rows and of the at-risk rows."""
+    Needs both our match and a downloaded DFL match: runs with --data and says NOT RUN where the DFL files are not
+    there. Asserted: the players (the slots' positions and speeds, the slot teams) and their record, and the draws that
+    the cap reads, are tracking's byte for byte; the draws are the same twice; x and y are missing together and the
+    speed is NaN; nothing of the truth is reachable; the record's totals are the sums of its halves'. Printed
+    (aggregates only, and what the stop conditions of R005 are read from): the share of the frames missing, the gaps,
+    the NaN-feature, capped, at-risk and after-a-gap rows and their shares of the rows and of the at-risk rows."""
     from pipeline.benchmark import sources
     match_id = sources.MATCH_IDS[0]
     for kind in dfl.SOURCE_KINDS:
@@ -719,8 +725,8 @@ def test_data_context_profile_on_a_real_match_with_our_real_calibration():
     for name in BALL_COUNTS:
         assert ball[name] == sum(record[name] for record in ball["halves"].values()), name
     rows, at_risk = ball["rows"], ball["at_risk_rows"]
-    print("      context on {} seed 0: {:,} rows, {:.1%} missing, {} gaps; NaN features {:,} ({:.3%}), no DFL ball {:,}, "
-          "capped {:,}; at risk {:,}, {:,} within {} frames after a gap ({:.2%})".format(
+    print("      context on {} seed 0: {:,} rows, {:.1%} missing, {} gaps; NaN features {:,} ({:.3%}), no DFL ball "
+          "{:,}, capped {:,}; at risk {:,}, {:,} within {} frames after a gap ({:.2%})".format(
               match_id, rows, ball["missing_frames"] / rows, ball["onsets"], ball["nan_feature_rows"],
               ball["nan_feature_rows"] / rows, ball["ball_missing_rows"], ball["capped_rows"], at_risk,
               ball["post_gap_rows"], hazard.SPEED_STEPS, ball["post_gap_rows"] / at_risk))

@@ -97,7 +97,8 @@ ROLE_TEAM = {"home": 0, "guest": 1}      # Team@Role -> Player.team; DFL's "gues
 TOTAL_TIME_ATTRIBUTE = {1: "TotalTimeFirstHalf", 2: "TotalTimeSecondHalf"}  # half -> OtherGameInformation attribute
 FETCH_COMMAND = "python pipeline/benchmark/sources.py"
 # --data-dir DIR (or MTAH_DATA_DIR) is where the files go and are read from: without it, under data/.
-FETCH_ADVICE = "run {} (add --data-dir DIR, or set MTAH_DATA_DIR, if the data are not under data/)".format(FETCH_COMMAND)
+FETCH_ADVICE = "run {} (add --data-dir DIR, or set MTAH_DATA_DIR, if the data are not under data/)".format(
+    FETCH_COMMAND)
 VERIFY_ADVICE = "the download is probably damaged, so run {} --verify to check it".format(FETCH_COMMAND)
 GAP_ROWS = 25                            # separator rows between the halves of a timeline (one second at 25 Hz)
 SECTIONS = {"firstHalf": 1, "secondHalf": 2}  # FrameSet@GameSection -> half, in time order

@@ -61,8 +61,8 @@ scores are no longer those of a ball that is always there. "tracking", the defau
 up as ours are (tracked spans and lost spans, 46 anonymous slots, a wrong-team slot now and then, NaN speeds in runs and
 our frames with few players tracked): it is the profile whose gates all pass (R004c). "context" has tracking's players
 and a ball whose gaps a hazard fitted on our match draws; it fails two of its gates (R005), so it is a sensitivity check
-and not the yardstick, and the help, the printout and the report say so (SENSITIVITY_ONLY). Every profile but clean needs
-the Calibration of BAR-ATH (calibration.load, measured once and cached), which evaluate_configs loads unless it is
+and not the yardstick, and the help, the printout and the report say so (SENSITIVITY_ONLY). Every profile but clean
+needs the Calibration of BAR-ATH (calibration.load, measured once and cached), which evaluate_configs loads unless it is
 given one, and whose digest goes into every report.
 
 What the clean profile is. The tracking exactly as DFL gives it: the ball is present on every frame, so nearest_player
@@ -124,15 +124,15 @@ LEVEL = score.INTERVAL_LEVEL       # the coverage of the t intervals (the printo
 METRICS = (("spell_f1_mean", "spellF1"), ("macro_f1", "macroF1"))   # what a comparison reports, ranking metric first
 # A profile that is kept for a sensitivity check and not offered as the yardstick: name -> why. The --profile help, the
 # printout and the report of a run on it say so (R005: context fails two of its gates).
-SENSITIVITY_ONLY = {"context": "fails two of its gates (R005), the near-line share badly and the missing share narrowly: "
-                               "a sensitivity check, not the yardstick"}
+SENSITIVITY_ONLY = {"context": "fails two of its gates (R005), the near-line share badly and the missing share "
+                               "narrowly: a sensitivity check, not the yardstick"}
 # Where a degraded profile's tracking comes from in our Calibration, as the printout names it beside the digest.
 PROVENANCE = {
     "gaps": "the ball's gaps are our match's, transplanted (calibration.py)",
     "tracking": "the ball's gaps are our match's, transplanted, and the players' tracklets, slots and counts are ours "
                 "(calibration.py)",
-    "context": "the ball's gaps are drawn by the hazard fitted on our match (A08), the players are tracking's, from our "
-               "tracklets, slots and counts",
+    "context": "the ball's gaps are drawn by the hazard fitted on our match (A08), the players are tracking's, from "
+               "our tracklets, slots and counts",
 }
 
 
@@ -682,7 +682,8 @@ def _interval(interval, excludes=None, signed=False):
 # -- the command line -------------------------------------------------------------------------------------------------
 
 def profile_help():
-    """The --profile help: the profiles, the default, and which of them are a sensitivity check and not the yardstick."""
+    """The --profile help: the profiles, the default, and which of them are a sensitivity check and not the
+    yardstick."""
     return "how the tracking is made: {} (default {}){}".format(
         ", ".join(sorted(PROFILES)), DEFAULT_PROFILE,
         "".join("; {} {}".format(name, reason) for name, reason in sorted(SENSITIVITY_ONLY.items())))

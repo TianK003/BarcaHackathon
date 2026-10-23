@@ -24,9 +24,9 @@ a match to the pipeline as an Inputs (MatchInputs, clean_atd), with no truth in 
 the pipeline's own functions (predict) and is the benchmark's command (evaluate_configs: every config on every match,
 scored, compared with the first, with one JSON report each); score.py scores the result half by half and pools the
 counts into the official scorer's number (HalfScore, score_halves, pooled, per_match) and holds the match-level
-statistics (t_interval, sign_flip_p, compare, kendall_tau); configs/ holds the yardsticks, the organisers' four baselines
-as per-half configs; degrade.py makes the tracking of a match look like ours from a view of it that has no truth in it
-(TrackingView, rng_for, four profiles: `clean`, DFL's tracking as it is; `gaps`, our own missing-ball masks,
+statistics (t_interval, sign_flip_p, compare, kendall_tau); configs/ holds the yardsticks, the organisers' four
+baselines as per-half configs; degrade.py makes the tracking of a match look like ours from a view of it that has no
+truth in it (TrackingView, rng_for, four profiles: `clean`, DFL's tracking as it is; `gaps`, our own missing-ball masks,
 transplanted; `tracking`, the default, which adds our tracklets, slots and counts to the players; and `context`, whose
 ball gaps a hazard fitted on our match draws, a sensitivity check only because it fails two of its gates, R005) and
 fidelity.py measures how far it got, with calibration.py's own statistics functions (gates that must pass, warnings
