@@ -366,7 +366,8 @@ renamed over the old report; the same inputs, seed and versions give the same by
 `checks/run.py` holds the runner's, `checks/degrade.py` the degrader's shared parts (the transplant worked out exactly,
 determinism, what the `gaps` profile touches and what it does not, no truth, the order of the matches),
 `checks/tracking.py` the `tracking` profile's (the tracklets, the episodes, the NaN-speed runs and the smoothing worked
-out exactly, and how it nests in `gaps`) and `checks/fidelity.py` the fidelity report's (every gate and check worked out
+out exactly, and how it nests in `gaps`), `checks/cap.py` the tracking profile's cap of the low-count tail, its
+shortest-piece rule and the scale of its tracked spans, and `checks/fidelity.py` the fidelity report's (every gate and check worked out
 by other code, pooling by sums, the exit code, the pending gates, the full-strength frames of the count gates and the
 gate kinds). The
 one that anchors the rest is `test_dfl_oracle_scores_perfectly`: an evidence source that is the truth itself, decoded by

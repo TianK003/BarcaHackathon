@@ -21,10 +21,9 @@ import numpy as np
 from pipeline.benchmark import calibration, degrade, dfl, fidelity, run, sources
 from pipeline.benchmark import inputs as match_inputs
 from pipeline.benchmark import truth as truths
-from pipeline.benchmark.checks.calibration import brute_force_agreement
-from pipeline.benchmark.checks.common import steady_match, synthetic_calibration, tracking_calibration
-from pipeline.benchmark.checks.inputs import random_match
-from pipeline.benchmark.checks.run import loading, read, strict_json, synthetic_matches, yardstick_path
+from pipeline.benchmark.checks.common import (brute_force_agreement, loading, random_match, read, steady_match,
+                                              strict_json, synthetic_calibration, synthetic_matches,
+                                              tracking_calibration, yardstick_path)
 from pipeline.contracts import D
 from pipeline.selftest import expect_error, quiet
 

@@ -1,7 +1,7 @@
 """Checks of the degrader (pipeline/benchmark/degrade.py) that every profile shares: the transplant, the random draws,
 what the `gaps` profile touches and does not, and that no truth reaches the degrader.
 
-They run on a DflMatch of random positions (checks/inputs.py's random_match) with the ball put back on every frame of
+They run on a DflMatch of random positions (checks/common.py's random_match) with the ball put back on every frame of
 both halves, so that the share of the ball that a degradation removes is the share of the mask it was given, and on
 masks built here, so that every figure is worked out from how they are made. The `tracking` profile's checks (the
 tracklets, the slots, the wrong-team episodes, the NaN-speed runs, the smoothing and how it nests in `gaps`) are

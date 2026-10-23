@@ -25,8 +25,8 @@ import numpy as np
 
 import possession_metrics as pm
 from pipeline.benchmark import calibration, hazard
-from pipeline.benchmark.checks.common import NotRun
-from pipeline.selftest import expect_error, make_synthetic_bundle, quiet, synthetic_inputs
+from pipeline.benchmark.checks.common import NotRun, brute_force_agreement, synthetic_calibration_inputs
+from pipeline.selftest import expect_error, quiet
 
 # Params
 H, A, D, X = pm.H, pm.A, pm.D, pm.X
@@ -349,45 +349,6 @@ def test_calibration_stats_refuse_what_they_cannot_measure():
 
 
 # -- a whole Calibration, on the synthetic bundle ---------------------------------------------------------------------
-
-def synthetic_calibration_inputs(root):
-    """(inputs, gt): the synthetic bundle with two graded blocks, kick-offs inside them and a made-up public truth."""
-    make_synthetic_bundle(root)
-    inputs = synthetic_inputs(root, graded=[(1, 50, 280), (2, 320, 560)])
-    inputs.kickoffs = {1: 60, 2: 340}
-    gt = np.full(inputs.n_frames, X, dtype=np.int8)
-    gt[60:100], gt[100:120], gt[120:130], gt[130:150] = H, A, D, H
-    gt[340:360], gt[360:370] = A, D
-    return inputs, gt
-
-
-def brute_force_agreement(inputs, gt):
-    """(share, frames) of in-play frames, ball visible and somebody tracked, where the nearest slot's team is the GT's.
-
-    One frame at a time, one slot at a time, in plain Python and in the baseline's own order of operations: the
-    reference for pipeline.evidence.describe's number, with no vectorised code in common with it. A tie goes to the
-    lowest slot, as starter/baseline.py's strict '<' keeps it.
-    """
-    atd = inputs.atd
-    length, width = inputs.pitch
-    agree = judged = 0
-    for frame in range(inputs.n_frames):
-        if gt[frame] not in (H, A) or not atd.ball_present[frame]:
-            continue
-        best, best_distance = None, None
-        for slot in range(atd.n_slots):
-            if not atd.players_present[frame, slot]:
-                continue
-            dx = atd.players_xy[frame, slot, 0] * length - atd.ball_xy[frame, 0] * length
-            dy = atd.players_xy[frame, slot, 1] * width - atd.ball_xy[frame, 1] * width
-            distance = dx * dx + dy * dy
-            if best is None or distance < best_distance:
-                best, best_distance = slot, distance
-        if best is None:
-            continue
-        judged += 1
-        agree += (atd.slot_team[best] == 0) == (gt[frame] == H)
-    return agree / judged, judged
 
 
 def test_calibration_measure_synthetic():

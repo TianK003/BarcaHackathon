@@ -22,13 +22,13 @@ import numpy as np
 
 import possession_metrics as pm
 from pipeline.benchmark import score, truth
+from pipeline.benchmark.checks.common import CONFIG_FOLDER
 from pipeline.selftest import (TRIAL_CONFIG, expect_error, make_synthetic_bundle, quiet, synthetic_inputs,
                                write_text)
 
 # Params
 H, A, D, X = pm.H, pm.A, pm.D, pm.X
 TOLERANCE = 1e-12                      # pooled() against pm.evaluate: the same integer counts, the same arithmetic
-CONFIG_FOLDER = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "configs")
 YARDSTICKS = {0: "baseline_raw", 25: "baseline_smooth25", 50: "baseline_smooth50", 125: "baseline_smooth125"}
 ZERO_CONFUSION = ((0, 0, 0, 0),) * 3
 

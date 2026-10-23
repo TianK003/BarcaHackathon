@@ -8,15 +8,22 @@ checks that share a downloaded match get it (dfl.load_match behind a one-match m
 own answer, built or reused, calls dfl.load_match itself. leaks (with truth_forms, held_by and as_numbers) is the walk
 that finds the match, or an array equal to its flags or its truth, anywhere that a component's inputs reach: the checks
 of the inputs, of the degrader and of the tracking profile all use it, so it lives here, where the last two reach it
-without importing another check module. Import from here with absolute imports (from pipeline.benchmark.checks.common
-import ...): a module of this package named like a production module would otherwise shadow it.
+without importing another check module. So do the other fixtures that more than one module builds on: random_match (the
+DflMatch of random numbers), the synthetic Calibration and the bundle it is measured from, what the tracking and the cap
+checks both use (the pairs that make wrong-team episodes, reference_episodes, the record that lambda was worked out
+from), and what the runner's and the fidelity report's checks both use (loading, read, strict_json, yardstick_path). A
+check module imports from here and from production code, and never from another check module. Import from here with
+absolute imports (from pipeline.benchmark.checks.common import ...): a module of this package named like a production
+module would otherwise shadow it.
 """
 
 import collections
+import contextlib
 import dataclasses
 import functools
 import heapq
 import itertools
+import json
 import os
 import sys
 import time
@@ -25,11 +32,16 @@ from xml.sax.saxutils import quoteattr
 
 import numpy as np
 
-from pipeline.benchmark import dfl, truth
-from pipeline.selftest import write_text
+import possession_metrics as pm
+from pipeline.benchmark import degrade, dfl, truth
+from pipeline.selftest import make_synthetic_bundle, synthetic_inputs, write_text
 
 # Params
 HOME, AWAY = 0, 1       # the codes of the teams in DflMatch.ball_possession and player_team
+H, A, D, X = pm.H, pm.A, pm.D, pm.X     # the codes of a label array, as possession_metrics has them
+# The configs of the yardsticks (nearest_w0 ... nearest_w125), which score.py's, run.py's and fidelity.py's checks load.
+CONFIG_FOLDER = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "configs")
+MIN_AGREEMENT = 0.6                     # the nearest player must name the truth's team on more than this (home mapping)
 # The home and guest team of each DFL match, as Bassek, Rein, Weber & Memmert (2025), Sci Data 12:195, Table 1 lists
 # them. Typed from the paper and never taken from the files' General@HomeTeamName / GuestTeamName: the parser reads
 # the files, so a table "fixed" from them would make this check compare the files with themselves.
@@ -126,6 +138,58 @@ def utf8_stdout():
         reconfigure(encoding="utf-8")
 
 
+# -- a random DflMatch ------------------------------------------------------------------------------------------------
+
+def random_match(match_id="RND001", seed=0, rows=(240, 200), gap=25, teams=(0, 0, 0, 1, 1, 1), pitch=(105.0, 68.0),
+                 fps=25, writeable=False):
+    """A DflMatch of random positions and flags: the halves are rows[0] and rows[1] long, `gap` rows apart.
+
+    Positions wander a little outside the pitch and about a quarter of the players, and a fifth of the balls, are
+    missing, as they are in the real data; nothing is a tie. The gap rows are what DFL's separator is: no ball, no
+    players, codes -1. The arrays are read-only, as dfl.load_match gives them, unless `writeable`.
+    """
+    rng = np.random.default_rng([9, seed])
+    n, players = sum(rows) + gap, len(teams)
+    graded = ((1, 0, rows[0]), (2, rows[0] + gap, n))
+    inside = np.zeros(n, dtype=bool)
+    for _, start, stop in graded:
+        inside[start:stop] = True
+
+    xy = rng.uniform(-0.02, 1.02, size=(n, players, 2))
+    xy[rng.uniform(size=(n, players)) < 0.25] = np.nan
+    ball = rng.uniform(-0.02, 1.02, size=(n, 2))
+    ball[rng.uniform(size=n) < 0.2] = np.nan
+    arrays = {
+        "frame_number": np.where(inside, np.arange(n), -1).astype(np.int64),
+        "players_xy": xy, "players_speed": rng.uniform(0, 9, size=(n, players)),
+        "player_team": np.array(teams, dtype=np.int8), "ball_xy": ball, "ball_z": rng.uniform(0, 3, size=n),
+        "ball_speed": rng.uniform(0, 30, size=n),
+        "ball_status": rng.integers(0, 2, size=n).astype(np.int8),
+        "ball_possession": rng.integers(0, 2, size=n).astype(np.int8)}
+    for name in ("players_xy", "players_speed", "ball_xy", "ball_z", "ball_speed"):
+        arrays[name][~inside] = np.nan
+    for name in ("ball_status", "ball_possession"):
+        arrays[name][~inside] = -1
+    for array in arrays.values():
+        array.setflags(write=writeable)
+    return dfl.DflMatch(match_id=match_id, pitch=pitch, fps=fps, graded=graded,
+                        kickoffs={half: start for half, start, _ in graded}, report={}, **arrays)
+
+
+def whole_positions(match):
+    """`match` with a position missing in both coordinates wherever it was missing in one.
+
+    The synthetic DFL match keeps a lone X or a lone Y on a few frames, to test the parser; an Atd may not (clean_atd
+    refuses it), so a check that serves that match through MatchInputs serves this one.
+    """
+    xy, ball = np.array(match.players_xy), np.array(match.ball_xy)
+    xy[np.isnan(xy).any(axis=-1)] = np.nan
+    ball[np.isnan(ball).any(axis=-1)] = np.nan
+    xy.setflags(write=False)
+    ball.setflags(write=False)
+    return dataclasses.replace(match, players_xy=xy, ball_xy=ball)
+
+
 # -- a synthetic tracking: the degrader's and the fidelity report's fixtures -----------------------------------------
 
 # Params
@@ -154,8 +218,6 @@ MADE_UP_WRONG_TEAM, MADE_UP_SPEED_NAN = 0.1, 0.08
 
 def tracked_match(match_id="RND001", seed=0, rows=ROWS):
     """random_match with the ball on every frame of both halves (and none on the separator), x and y together."""
-    # Here and not at the top: checks/inputs.py imports this module.
-    from pipeline.benchmark.checks.inputs import random_match
     match = random_match(match_id, seed=seed, rows=rows)
     ball = np.array(match.ball_xy)
     for _, start, stop in match.graded:
@@ -380,6 +442,46 @@ def damaged(path, damage):
 
 # -- a Calibration without our data ------------------------------------------------------------------------------------
 
+def synthetic_calibration_inputs(root):
+    """(inputs, gt): the synthetic bundle with two graded blocks, kick-offs inside them and a made-up public truth."""
+    make_synthetic_bundle(root)
+    inputs = synthetic_inputs(root, graded=[(1, 50, 280), (2, 320, 560)])
+    inputs.kickoffs = {1: 60, 2: 340}
+    gt = np.full(inputs.n_frames, X, dtype=np.int8)
+    gt[60:100], gt[100:120], gt[120:130], gt[130:150] = H, A, D, H
+    gt[340:360], gt[360:370] = A, D
+    return inputs, gt
+
+
+def brute_force_agreement(inputs, gt):
+    """(share, frames) of in-play frames, ball visible and somebody tracked, where the nearest slot's team is the GT's.
+
+    One frame at a time, one slot at a time, in plain Python and in the baseline's own order of operations: the
+    reference for pipeline.evidence.describe's number, with no vectorised code in common with it. A tie goes to the
+    lowest slot, as starter/baseline.py's strict '<' keeps it.
+    """
+    atd = inputs.atd
+    length, width = inputs.pitch
+    agree = judged = 0
+    for frame in range(inputs.n_frames):
+        if gt[frame] not in (H, A) or not atd.ball_present[frame]:
+            continue
+        best, best_distance = None, None
+        for slot in range(atd.n_slots):
+            if not atd.players_present[frame, slot]:
+                continue
+            dx = atd.players_xy[frame, slot, 0] * length - atd.ball_xy[frame, 0] * length
+            dy = atd.players_xy[frame, slot, 1] * width - atd.ball_xy[frame, 1] * width
+            distance = dx * dx + dy * dy
+            if best is None or distance < best_distance:
+                best, best_distance = slot, distance
+        if best is None:
+            continue
+        judged += 1
+        agree += (atd.slot_team[best] == 0) == (gt[frame] == H)
+    return agree / judged, judged
+
+
 @functools.lru_cache(maxsize=1)
 def synthetic_calibration():
     """A real Calibration: calibration.measure on the synthetic bundle of pipeline/selftest.py, measured once.
@@ -391,7 +493,6 @@ def synthetic_calibration():
     """
     import tempfile
     from pipeline.benchmark import calibration
-    from pipeline.benchmark.checks.calibration import synthetic_calibration_inputs
     with tempfile.TemporaryDirectory() as root:
         inputs, gt = synthetic_calibration_inputs(root)
         return calibration.measure(inputs, gt)
@@ -410,6 +511,156 @@ def tracking_calibration():
         tracklet_lengths_s=made.tracklet_lengths_s, wrong_team_episodes_s=made.wrong_team_episodes_s,
         wrong_team_share=made.wrong_team_share, speed_nan_runs=made.speed_nan_runs,
         speed_nan_share=made.speed_nan_share)
+
+
+# -- what the tracking profile's checks share with the cap's ----------------------------------------------------------
+
+def without_new_parts(calibration, **more):
+    """The Calibration with no wrong-team share and no NaN-speed share: its players are tracklets and slots alone."""
+    return types.SimpleNamespace(**{**vars(calibration), "wrong_team_share": 0.0, "speed_nan_share": 0.0, **more})
+
+
+def pairs_match(windows, rows=(1000, 1000), pitch=(128.0, 64.0)):
+    """Six players (home 0-2, away 3-5) who stand far apart all through both halves, and come close in windows.
+
+    Home k stands at x = 0.125 (k + 1), y = 0.25 and away k at x = 0.5 + 0.125 k, y = 0.75, so every opposing pair is at
+    least 32 m apart. The pitch is 128 x 64 m, so that a distance in metres is a short dyadic number and comes out
+    exactly: 1/64 of the pitch's length is 2.0 m, to the bit. `windows` is [(half, first row, stop row, pairs)] with
+    the rows counted from the half's start; in a window, away player `away` of each (home, away, offset) pair stands at
+    home player `home`'s place plus the normalised x `offset`, so the pair is offset * 128 m apart and no other opposing
+    pair is within 16 m. Everybody is on the pitch all through both halves, so with nobody lost a player is one
+    tracklet."""
+    base = steady_match(rows=rows, substitutions=False)
+    xy = np.array(base.players_xy)
+    starts = {half: start for half, start, _ in base.graded}
+    for _, start, stop in base.graded:
+        xy[start:stop, 0:3, 0], xy[start:stop, 0:3, 1] = [0.125, 0.25, 0.375], 0.25
+        xy[start:stop, 3:6, 0], xy[start:stop, 3:6, 1] = [0.5, 0.625, 0.75], 0.75
+    for half, first, last, pairs in windows:
+        lo, hi = starts[half] + first, starts[half] + last
+        for home, away, offset in pairs:
+            xy[lo:hi, away, 0], xy[lo:hi, away, 1] = xy[lo:hi, home, 0] + offset, xy[lo:hi, home, 1]
+    xy.setflags(write=False)
+    return dataclasses.replace(base, players_xy=xy, pitch=pitch)
+
+
+def episode_parameters(share=0.45, scale=1.0, episodes=(10, 20), lengths=(10 ** 9,), d=0.0, **more):
+    """Parameters with episodes of 10 and 20 frames (mean 15) at the rate scale * share / 15 = 0.03 per row, and nobody
+    lost unless `lengths` and `d` say so."""
+    return degrade.tracking_parameters(list(lengths), d, episodes=list(episodes), wrong_team_share=share, scale=scale,
+                                       **more)
+
+
+def is_carried(t, view):
+    """A tracklet is an episode piece if its slot is in the pool of the team that its player is not in."""
+    return (t.slot >= degrade.HOME_SLOTS) != (int(view.player_team[t.player]) == 1)
+
+
+def reference_episodes(view, half, spans, parameters, seed):
+    """(pieces, counts) of the wrong-team episodes as degrade.py documents them, written out one onset at a time.
+
+    The draws are read from a generator made from the documented key, in the documented order (the onset rows as one
+    uniform per row of the half's block, then one pick per onset, then one duration per onset), and every onset is
+    judged by loops over players and pieces. pieces is [(first, player, last, pool)] sorted, pool being the team whose
+    slots carry the piece."""
+    start, stop = next((first, last) for number, first, last in view.graded if number == half)
+    team, xy = list(view.player_team), view.players_xy
+    length, width = view.pitch
+    rate = parameters.scale * parameters.wrong_team_share / parameters.mean_episode
+    rng = np.random.default_rng([seed, view.match_index, 2, half])
+    uniform = rng.random(stop - start)
+    onsets = [start + index for index in range(stop - start) if uniform[index] < rate]
+    picks = rng.integers(2, size=len(onsets))
+    durations = rng.integers(len(parameters.episodes), size=len(onsets))
+    own = {}
+    for first, player, last in spans:
+        own.setdefault(player, []).append([first, last, False])
+    counts = {"onsets": len(onsets), "episodes": 0, "skipped_far": 0, "skipped_overlap": 0, "episode_frames": 0}
+    for k, t in enumerate(onsets):
+        tracked = [player for player in range(len(team)) if any(f <= t < l for f, p, l in spans if p == player)]
+        best = None
+        for home in (p for p in tracked if team[p] == 0):
+            for away in (p for p in tracked if team[p] == 1):
+                distance = np.hypot((xy[t, home, 0] - xy[t, away, 0]) * length,
+                                    (xy[t, home, 1] - xy[t, away, 1]) * width)
+                if best is None or distance < best[0]:
+                    best = (distance, home, away)
+        if best is None or best[0] > 2.0:
+            counts["skipped_far"] += 1
+            continue
+        player = (best[1], best[2])[int(picks[k])]
+        index = next(i for i, (a, b, _) in enumerate(own[player]) if a <= t < b)
+        a, b, inside = own[player][index]
+        if inside:
+            counts["skipped_overlap"] += 1
+            continue
+        end = min(t + int(parameters.episodes[int(durations[k])]), b)
+        own[player][index:index + 1] = ([[a, t, False]] if t > a else []) + [[t, end, True]] + (
+            [[end, b, False]] if end < b else [])
+        counts["episodes"] += 1
+        counts["episode_frames"] += end - t
+    pieces = sorted((a, player, b, 1 - team[player] if inside else team[player])
+                    for player, parts in own.items() for a, b, inside in parts)
+    return pieces, counts
+
+
+def smoothed_plain(run, window):
+    """The centred moving average of `window` rows of a list of (x, y), the window shrinking to the rows inside."""
+    half, out = window // 2, []
+    for index in range(len(run)):
+        rows = run[max(0, index - half):index + half + 1]
+        out.append((sum(x for x, _ in rows) / len(rows), sum(y for _, y in rows) / len(rows)))
+    return np.array(out)
+
+
+# The two measurements that TRACKED_SCALE was worked out from (docs/results.md R004b, 2026-10-23): the pooled tracklet
+# median, in seconds, of tracking v2 at lambda = 1 with the shortest-piece rule in, seed 0, over the 7 DFL matches laid
+# end to end, and ours' tracklet median (the Calibration's, A09).
+RECORDED_MEDIAN_S = 20.22
+RECORDED_OURS_MEDIAN_S = 41.28
+
+
+def tracked_scale_from_the_record():
+    """lambda as it was worked out once: ours' tracklet median over the profile's at lambda = 1, to 3 decimals."""
+    return round(RECORDED_OURS_MEDIAN_S / RECORDED_MEDIAN_S, 3)
+
+
+# -- what the runner's and the fidelity report's checks share ---------------------------------------------------------
+
+def yardstick_path(width):
+    return os.path.join(CONFIG_FOLDER, "nearest_w{}.toml".format(width))
+
+
+def synthetic_matches():
+    """Two matches of random flags and tracking, of different lengths: the ids are not DFL's, so there is no cache."""
+    return {"RND001": random_match("RND001"), "RND002": random_match("RND002", seed=1, rows=(300, 260))}
+
+
+@contextlib.contextmanager
+def loading(serve):
+    """dfl.load_match answered by serve(match_id), for the runner's own path to a match; restored afterwards."""
+    real = dfl.load_match
+
+    def served(match_id, data_dir=None, rebuild=False, paths=None):
+        return serve(match_id)
+    dfl.load_match = served
+    try:
+        yield
+    finally:
+        dfl.load_match = real
+
+
+def read(path, mode="r"):
+    """The contents of a file, closed again: text as UTF-8 by default, bytes with mode "rb"."""
+    with open(path, mode, **({} if "b" in mode else {"encoding": "utf-8"})) as handle:
+        return handle.read()
+
+
+def strict_json(text):
+    """The JSON of `text`, refusing NaN and infinity, which JSON has no way to write."""
+    def refuse(name):
+        raise AssertionError("the report holds {}, which is not JSON".format(name))
+    return json.loads(text, parse_constant=refuse)
 
 
 # -- the leak detector: what the inputs of a component may not hold ----------------------------------------------------

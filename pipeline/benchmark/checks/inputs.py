@@ -22,7 +22,8 @@ import numpy as np
 import games
 from pipeline.benchmark import dfl, truth
 from pipeline.benchmark import inputs as match_inputs
-from pipeline.benchmark.checks.common import HOME, AWAY, leaks, real_match, write_synthetic_dfl
+from pipeline.benchmark.checks.common import (HOME, AWAY, leaks, random_match, real_match, whole_positions,
+                                              write_synthetic_dfl)
 from pipeline.inputs import atd_cache
 from pipeline.selftest import expect_error, make_synthetic_bundle, synthetic_inputs, write_text
 
@@ -45,58 +46,6 @@ BENCHMARK_PACKAGE = "pipeline.benchmark"
 # What an Atd is made of, as the BAR-ATH cache builds it: (dtype, dimensions) of each array.
 ATD_LAYOUT = {"players_xy": (np.float64, 3), "players_speed": (np.float64, 2), "ball_xy": (np.float64, 2),
               "ball_speed": (np.float64, 1), "slot_team": (np.int8, 1)}
-
-
-# -- helpers ----------------------------------------------------------------------------------------------------------
-
-def random_match(match_id="RND001", seed=0, rows=(240, 200), gap=25, teams=(0, 0, 0, 1, 1, 1), pitch=(105.0, 68.0),
-                 fps=25, writeable=False):
-    """A DflMatch of random positions and flags: the halves are rows[0] and rows[1] long, `gap` rows apart.
-
-    Positions wander a little outside the pitch and about a quarter of the players, and a fifth of the balls, are
-    missing, as they are in the real data; nothing is a tie. The gap rows are what DFL's separator is: no ball, no
-    players, codes -1. The arrays are read-only, as dfl.load_match gives them, unless `writeable`.
-    """
-    rng = np.random.default_rng([9, seed])
-    n, players = sum(rows) + gap, len(teams)
-    graded = ((1, 0, rows[0]), (2, rows[0] + gap, n))
-    inside = np.zeros(n, dtype=bool)
-    for _, start, stop in graded:
-        inside[start:stop] = True
-
-    xy = rng.uniform(-0.02, 1.02, size=(n, players, 2))
-    xy[rng.uniform(size=(n, players)) < 0.25] = np.nan
-    ball = rng.uniform(-0.02, 1.02, size=(n, 2))
-    ball[rng.uniform(size=n) < 0.2] = np.nan
-    arrays = {
-        "frame_number": np.where(inside, np.arange(n), -1).astype(np.int64),
-        "players_xy": xy, "players_speed": rng.uniform(0, 9, size=(n, players)),
-        "player_team": np.array(teams, dtype=np.int8), "ball_xy": ball, "ball_z": rng.uniform(0, 3, size=n),
-        "ball_speed": rng.uniform(0, 30, size=n),
-        "ball_status": rng.integers(0, 2, size=n).astype(np.int8),
-        "ball_possession": rng.integers(0, 2, size=n).astype(np.int8)}
-    for name in ("players_xy", "players_speed", "ball_xy", "ball_z", "ball_speed"):
-        arrays[name][~inside] = np.nan
-    for name in ("ball_status", "ball_possession"):
-        arrays[name][~inside] = -1
-    for array in arrays.values():
-        array.setflags(write=writeable)
-    return dfl.DflMatch(match_id=match_id, pitch=pitch, fps=fps, graded=graded,
-                        kickoffs={half: start for half, start, _ in graded}, report={}, **arrays)
-
-
-def whole_positions(match):
-    """`match` with a position missing in both coordinates wherever it was missing in one.
-
-    The synthetic DFL match keeps a lone X or a lone Y on a few frames, to test the parser; an Atd may not (clean_atd
-    refuses it), so a check that serves that match through MatchInputs serves this one.
-    """
-    xy, ball = np.array(match.players_xy), np.array(match.ball_xy)
-    xy[np.isnan(xy).any(axis=-1)] = np.nan
-    ball[np.isnan(ball).any(axis=-1)] = np.nan
-    xy.setflags(write=False)
-    ball.setflags(write=False)
-    return dataclasses.replace(match, players_xy=xy, ball_xy=ball)
 
 
 # -- the contract -----------------------------------------------------------------------------------------------------

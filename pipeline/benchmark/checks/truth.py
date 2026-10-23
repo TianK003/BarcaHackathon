@@ -17,6 +17,7 @@ import numpy as np
 
 import possession_metrics as pm
 from pipeline.benchmark import dfl, truth
+from pipeline.benchmark.checks.common import MIN_AGREEMENT
 from pipeline.selftest import expect_error
 
 # Params
@@ -29,7 +30,6 @@ EVALUATION_LAG_TABLE = {1: 1.0000, 3: 0.9818, 8: 0.8933, 25: 0.6539}
 # (A06): the table does not reproduce on the public GT, and EVALUATION.md does not say what it was computed on.
 PUBLIC_LAG = {1: 1.0000, 3: 1.0000, 8: 0.9529, 25: 0.7765}
 LAGS = (3, 8, 25)                     # what A06 reports for DFL, next to the table's
-MIN_AGREEMENT = 0.6                   # the nearest player must name the truth's team on more than this (home mapping)
 PLAYING_TIME_ATTRIBUTES = {1: ("TotalTimeFirstHalf", "PlayingTimeFirstHalf"),
                            2: ("TotalTimeSecondHalf", "PlayingTimeSecondHalf")}
 WINDOW_FRAMES = 7500                  # the public window: 5 minutes at 25 fps

@@ -11,7 +11,7 @@ their separator rows, both halves, the decoder path and the scoring) and not the
 its answers and the runner's truth are the same truth.truth_codes of the same loaded match, so a mistake in the parse
 or in truth_codes is on both sides and cancels. checks/dfl.py and checks/truth.py cover that link
 (test_dfl_oracle_scores_perfectly says which). The matches of the synthetic checks are random_match's
-(checks/inputs.py): two halves of random flags and random tracking, whose score means nothing and whose every number
+(checks/common.py): two halves of random flags and random tracking, whose score means nothing and whose every number
 can be recomputed here with the scoring functions, which is what the checks do.
 """
 
@@ -33,10 +33,9 @@ import possession_metrics as pm
 from pipeline.benchmark import calibration, degrade, dfl, score, sources, truth
 from pipeline.benchmark import inputs as match_inputs
 from pipeline.benchmark import run as benchmark_run
-from pipeline.benchmark.checks.common import (real_match, synthetic_calibration, tracking_calibration,
-                                              write_synthetic_dfl)
-from pipeline.benchmark.checks.inputs import random_match, whole_positions
-from pipeline.benchmark.checks.score import CONFIG_FOLDER
+from pipeline.benchmark.checks.common import (MIN_AGREEMENT, loading, random_match, read, real_match, strict_json,
+                                              synthetic_calibration, synthetic_matches, tracking_calibration,
+                                              whole_positions, write_synthetic_dfl, yardstick_path)
 from pipeline.config import ConfigError, load_config
 from pipeline.selftest import expect_error, quiet, write_text
 
@@ -83,29 +82,6 @@ def evaluate_gaps(*arguments, **keywords):
     return benchmark_run.evaluate_configs(*arguments, **keywords)
 
 
-def yardstick_path(width):
-    return os.path.join(CONFIG_FOLDER, "nearest_w{}.toml".format(width))
-
-
-def synthetic_matches():
-    """Two matches of random flags and tracking, of different lengths: the ids are not DFL's, so there is no cache."""
-    return {"RND001": random_match("RND001"), "RND002": random_match("RND002", seed=1, rows=(300, 260))}
-
-
-@contextlib.contextmanager
-def loading(serve):
-    """dfl.load_match answered by serve(match_id), for the runner's own path to a match; restored afterwards."""
-    real = dfl.load_match
-
-    def served(match_id, data_dir=None, rebuild=False, paths=None):
-        return serve(match_id)
-    dfl.load_match = served
-    try:
-        yield
-    finally:
-        dfl.load_match = real
-
-
 @contextlib.contextmanager
 def registered(registry, **components):
     """The components in `registry` (a stage's REGISTRY) while the block runs, and the registry as it was after it."""
@@ -138,19 +114,6 @@ def keys_of(value, found=None):
         for item in value:
             keys_of(item, found)
     return found
-
-
-def read(path, mode="r"):
-    """The contents of a file, closed again: text as UTF-8 by default, bytes with mode "rb"."""
-    with open(path, mode, **({} if "b" in mode else {"encoding": "utf-8"})) as handle:
-        return handle.read()
-
-
-def strict_json(text):
-    """The JSON of `text`, refusing NaN and infinity, which JSON has no way to write."""
-    def refuse(name):
-        raise AssertionError("the report holds {}, which is not JSON".format(name))
-    return json.loads(text, parse_constant=refuse)
 
 
 # -- the report -------------------------------------------------------------------------------------------------------
@@ -593,14 +556,13 @@ def test_runner_readme_names_checks_and_numbers_that_exist():
     for a subset and the MIN_AGREEMENT that it points to are there.
     """
     from pipeline.benchmark import selftest
-    from pipeline.benchmark.checks import truth as truth_checks
     readme = read(os.path.join(ROOT, "pipeline", "benchmark", "README.md"))
     known = {name for name, _ in selftest.collect()}
     named = set(re.findall(r"\btest_[a-z0-9_]+\b", readme))
     assert "test_dfl_oracle_scores_perfectly" in named and named <= known, sorted(named - known)
     assert "{:g}".format(score.FLIP_TOLERANCE) in readme and "score.FLIP_TOLERANCE" in readme
     assert "{:.0%}".format(score.INTERVAL_LEVEL) in readme
-    assert ".m-" in readme and "MIN_AGREEMENT" in readme and truth_checks.MIN_AGREEMENT == 0.6 and "60%" in readme
+    assert ".m-" in readme and "MIN_AGREEMENT" in readme and MIN_AGREEMENT == 0.6 and "60%" in readme
 
 
 # -- the degraded profile ---------------------------------------------------------------------------------------------
