@@ -62,7 +62,13 @@ and y are removed together, as an Atd requires (atd_cache._check_presence). Ever
 The tracklets (tracking). In ours a slot is not a player: it is a tracklet, a stretch of one slot being present, which
 ends when the tracker loses the player and is taken over by whoever it finds next (T15). DFL has one column per player.
 The degrader breaks each player's time on the pitch into tracked spans and lost spans and gives each tracked span (a
-tracklet) a slot, so that the slots appear, vanish and are reused, and a slot index means nothing about the player.
+tracklet) a slot, so that the slots appear, vanish and are reused. A slot's index is still not as empty of the player as
+in ours: under the lowest-free rule (below) a player who comes back after a lost span lands in the slot he had 76.0% of
+the time (948 of 1,247 returns, J03WMX, seed 0), and a slot idles between two tracklets for a median of 2.0 s (67.1% of
+its gaps last at most 3 s and none over 60 s), where ours idles for 7.4 s (17.7% at most 3 s, 15.0% over 60 s: A09). No
+evidence source reads a slot's identity today, beyond nearest_player's argmin on exact ties, which goes to the lower
+slot; but a method that follows a slot across a loss would be validated optimistically here. The tail's part of the
+profile (the frames with few players tracked) re-measures this.
 
 * What it draws from is ours, measured on our kick-off spans (Calibration): a tracked span's length is one of our
   tracklet lengths (tracklet_lengths_s, in frames at the match's rate, at least 1), drawn uniformly, so that their

@@ -609,31 +609,18 @@ has 11.**
   as `hazard_*` scalars. The model is applied to the features of the *degraded* benchmark players and ball, at the
   at-risk frame, and `sample_mask` takes its probability unshifted.
 
-## Experiments
-
-Copy this template for each run, and add a scoreboard row for anything worth comparing.
-
-```
-### R0xx — <short name> (YYYY-MM-DD, <who>)
-Proposal: P0x · Commit: `abc1234` · Command: `…`
-Public: macroF1 … · spellF1 … (bootstrap … – …) · poss … · dur … · lat_f …
-Validation (P01 benchmark): spellF1 … (… matches, profile …, truth …; 90% t-interval … – …, sign-flip p …)
-Changed vs the previous best: …
-Verdict: keep / drop / inconclusive — because …
-```
-
-### A09 — The tracking profile's first part: the parameters from our match, and how far its players are from ours (2026-10-23)
+### A09 — The tracking profile's first part: the parameters from our match, and its distance from ours (2026-10-23)
 
 Proposal: P01 · Commit: `66cae73` (the commit that adds this entry) · Command: `python
 pipeline/benchmark/selftest.py --dfl --data`, checks
 `test_data_tracking_profile_on_a_real_match_with_our_real_calibration` (prints d, the mean spans, the second table and
-the lost share, and asserts that the lost share pooled over the matches is d to within 0.01) and
-`test_dfl_tracking_never_exhausts_a_pool_on_the_real_matches`; it takes 6 s and 8 s once the caches are warm. The
-Calibration is version 2 (A07, A08), read from its cache; the profile is `tracking` version 1 (`degrade.py`), **work in
-progress: no gates, no yardstick**. Aggregates only; nothing here is a row of BAR-ATH. Worked out apart from the checks
-and not printed by them, by throwaway scripts that read the Calibration, the ATD cache and the seven matches and print
-aggregates: the frame counts and the lengths of the first table, the spread of the tracklet median over matches and
-seeds, and the slot usage of ours.
+the lost share and the slot persistence below, and asserts that the lost share pooled over the matches is d to
+within 0.003) and `test_dfl_tracking_never_exhausts_a_pool_on_the_real_matches`; they take 16 s and 8 s once the
+caches are warm. The Calibration is version 2 (A07, A08), read from its cache; the profile is `tracking` version 1
+(`degrade.py`), **work in progress: no gates, no yardstick**. Aggregates only; nothing here is a row of BAR-ATH. Worked
+out apart from the checks and not printed by them, by throwaway scripts that read the Calibration, the ATD cache and
+the seven matches and print aggregates: the frame counts and the lengths of the first table, the spread of the tracklet
+median over matches and seeds, and the slot usage of ours.
 
 **What it draws from, measured on our kick-off spans** (both halves, 155,923 frames):
 
@@ -646,12 +633,18 @@ seeds, and the slot usage of ours.
 | **d**, the share of an on-pitch player's frames that are lost | **0.0250** (0.025000) | 1 - 21.4500 / 22 |
 | **mu**, the mean lost span | **71.7 frames (2.87 s)** | 2,797.1 * d / (1 - d) |
 
+d counts the frames of ours with 23 or more slots present (more slots than players: 3,460 frames, 2.2% of the 155,923,
+2.5% of the 139,360 above) at their full count, so it is a little smaller than the share lost would be if the counts
+were capped at 22: **d is 0.0250 as computed and 0.0262 with the counts capped**. That is immaterial next to the draw's
+own spread (the lost share is 2.27% to 2.80% by match and seed, below), and d is kept as it is.
+
 **What it makes** (J03WMX, seed 0; `calibration.player_stats` on the degraded match, from each kick-off to the end of
 its graded block, beside the Calibration's; not gated):
 
 | | degraded | ours |
 |---|---|---|
 | slots present, mean | 21.38 | 20.52 |
+| 23 or more present | 0.0% | 2.2% |
 | all 22 present | 54.0% | 50.2% |
 | 19 to 21 present | 45.5% | 37.0% |
 | 15 to 18 present | 0.5% | 5.4% |
@@ -665,8 +658,10 @@ its graded block, beside the Calibration's; not gated):
   more than 18 present the mean is 21.45; the degraded match has 21.38 over all its frames, 0.07 below that, because
   this seed lost 2.80% of the on-pitch frames and not 2.50% (below). What is missing is the tail: 10.6% of our frames
   have 18 or fewer present, 5.2% have 14 or fewer, and the degraded match has 0.5% and 0.0%. That is the next part's,
-  not a flaw of this one, and it is why the two upper buckets are fuller than ours (they hold the 10.6% that ours has
-  below).
+  not a flaw of this one. It is most of why the two upper buckets (22, and 19 to 21) are fuller than ours, 99.5% of
+  the frames against 87.2%, a gap of 12.3 points: the 10.6% that ours has below them (5.4% and 5.2%, against 0.5% and
+  0.0% here) explains 10.1 of them, and the other 2.2 points are the 2.2% of our frames with 23 or more present, which
+  the degraded match does not have (0.0%: each player is tracked once at a time).
 - **The lost share is d, a little over, and the draw moves it.** The share lost of the on-pitch frames, pooled over the
   7 matches and seeds 0 to 4, is **2.59%** against d = 2.50%; by match 2.47% to 2.66%, and by match and seed 2.27% to
   2.80% (J03WMX's seed 0 is the top of that). A DFL half is 68,000 to 78,000 frames and a tracked span of ours has a
@@ -680,11 +675,29 @@ its graded block, beside the Calibration's; not gated):
   spread.
 - **NaN speeds** are on the first frame of each tracklet and nowhere else (0.04% of the slot-frames); ours come in runs
   (A07), 7.83%. **Wrong-team frames** are none. Both are the next part's.
-- **Slots.** The lowest free slot keeps a team in its first 11 slots all match (11 + 11 slots used on J03WMX), where
-  ours has 21 of its 24 home slots and 20 of its 22 away slots present on at least 10% of the frames (22 and 21 on at
-  least 1%; the median slot is present on 43.5% of the frames, home, and 46.1%, away): ours rotates through nearly all
-  of them as the tracker hands slots on. No component reads a slot's index today, but `nearest_player` breaks an exact
-  tie towards the lower slot.
+- **Slots, and what a slot's index still says.** The lowest free slot keeps a team in its first 11 slots all match (11
+  + 11 slots used on J03WMX), where ours has 21 of its 24 home slots and 20 of its 22 away slots present on at least 10%
+  of the frames (22 and 21 on at least 1%; the median slot is present on 43.5% of the frames, home, and 46.1%, away):
+  ours rotates through nearly all of them as the tracker hands slots on. A slot's index is not as empty of the player
+  as in ours, which the first version of this entry said it was. Measured on J03WMX, seed 0, by the same two
+  functions on both sides (an *idle gap* is a maximal run of absent frames of one slot with a present frame of that
+  slot on both sides, inside a half from its kick-off to the end of its graded block):
+
+  | | degraded | ours |
+  |---|---|---|
+  | slot idle gaps, count | 1,245 | 1,065 |
+  | median | 1.96 s | 7.40 s |
+  | at most 3 s | 67.1% | 17.7% |
+  | over 60 s | 0.0% | 15.0% |
+
+  A *return* is a player's tracklet that starts after a lost span of his (not on the frame his last one stopped, which
+  is a handover). Of the degraded match's 1,247 returns, **948, 76.0%, land back in the slot he had**; ours has no
+  identities, so there is no such figure on its side. So no evidence source reads a slot's identity today, beyond
+  `nearest_player`'s `argmin` on exact ties, which goes to the lower slot; but **a method that follows a slot across a
+  loss would be validated optimistically on this profile**: here a player comes back mostly to his own slot, and a
+  slot is idle for a median of 2.0 s where ours idles for 7.4 s, nearly four times as long, and 15.0% of ours run over
+  a minute (what is measured is the player's side, 76.0%, and the gaps' lengths; how often the next tracklet in an
+  idle slot is the same player is not). The tail's part of the profile re-measures this.
 
 **No pool runs out.** On each of the 7 matches at most 11 players of a team have a position on any frame of the graded
 halves, and under parameters that make a slot change hands as often as it can (tracked spans of 1, 2, 5, 25 or 250
@@ -696,6 +709,19 @@ a pass; the gates come with the last part, centred on the Calibration's own valu
 `tracking` are not run. The shape of the tail (frames with few players tracked), the wrong-team episodes and the
 NaN-speed runs are what the next two parts bring. Its figures here are a baseline for them: they say what the profile
 looks like before those parts are added, and by how much each is short of ours.
+
+## Experiments
+
+Copy this template for each run, and add a scoreboard row for anything worth comparing.
+
+```
+### R0xx — <short name> (YYYY-MM-DD, <who>)
+Proposal: P0x · Commit: `abc1234` · Command: `…`
+Public: macroF1 … · spellF1 … (bootstrap … – …) · poss … · dur … · lat_f …
+Validation (P01 benchmark): spellF1 … (… matches, profile …, truth …; 90% t-interval … – …, sign-flip p …)
+Changed vs the previous best: …
+Verdict: keep / drop / inconclusive — because …
+```
 
 ### R001 — Pipeline skeleton (2026-10-22, Tian)
 Proposal: P03 · Commit: `787c6e4` · Command: `python pipeline/run.py pipeline/configs/main.toml --score`
@@ -904,13 +930,13 @@ of 5 minutes (T01).
 
 The statistics `gaps` does not model, on the page so that the later profiles know what they have to fix (information, no
 band; the benchmark first, ours second): tracklet median 2,765 s against 41.3 s (one slot per player, against 46 slots
-for 22 players), wrong-team frames 0.0% against 10.5%, NaN player speeds 0.0% against 7.8%, 22 players tracked on 81.7% of
-the frames against 50.2% (mean 21.8 against 20.5, at most 14 tracked on 0.0% against 5.2%), the players' jitter 9.0 cm
-against 3.3 mm. Of the gaps: 9.41 gaps per 10,000 frames against 9.36, the 90th percentile 39.0 s against 35.3 s, the
+for 22 players), wrong-team frames 0.0% against 10.5%, NaN player speeds 0.0% against 7.8%, 22 players tracked on 81.7%
+of the frames against 50.2% (mean 21.8 against 20.5, at most 14 tracked on 0.0% against 5.2%), the players' jitter 9.0
+cm against 3.3 mm. Of the gaps: 9.41 gaps per 10,000 frames against 9.36, the 90th percentile 39.0 s against 35.3 s, the
 10th 4.9 s against 2.7 s (a pooled figure of 42 transplanted windows, no gate), and **36.0% of the gaps start within 2 m
 of a line against 28.0% of ours**: a gap placed without regard to the play starts near a line more often in a DFL match
-than ours do. What a placement by the play would change (the `context` profile, if it is built) cannot be told from this,
-and there is no base rate of ours here to say more.
+than ours do. What a placement by the play would change (the `context` profile, if it is built) cannot be told from
+this, and there is no base rate of ours here to say more.
 
 **Raw truth** (9,183 true possessions, 4.58 per graded minute; `D` is 44.8% of the graded frames). Δ is the config minus
 `nearest_w50`, the first config; the interval is the 90% t interval of the seven matches' deltas.
@@ -922,8 +948,8 @@ and there is no base rate of ours here to say more.
 | `nearest_w125` | 0.1712 | 0.4461 | 0.6428 | 0.1724 [0.1550, 0.1898] | 5,957 (2.97) | -0.0384 [-0.0483, -0.0285] | 0.0156 | 0 / 7 |
 | `nearest_w0` | 0.0784 | 0.4456 | 0.5761 | 0.0784 [0.0719, 0.0849] | 28,352 (14.14) | -0.1324 [-0.1475, -0.1173] | 0.0156 | 0 / 7 |
 
-**Coarse truth** (`COARSE_MIN_S` = 5 s: 4,977 true possessions, 2.48 per graded minute; the same `D`). Δ is again the config
-minus `nearest_w50`:
+**Coarse truth** (`COARSE_MIN_S` = 5 s: 4,977 true possessions, 2.48 per graded minute; the same `D`). Δ is again the
+config minus `nearest_w50`:
 
 | config | pooled spellF1 | macroF1 | alive/dead F1 | mean per-match spellF1 [90% t] | possessions predicted (per min) | Δ spellF1, mean per match [90% t] | sign-flip p | wins / losses |
 |---|---|---|---|---|---|---|---|---|
@@ -938,9 +964,9 @@ What the tables say, and what they do not:
   0.0928 raw and 0.1199 coarse), and in each of the three seeds. Nothing had to be fixed or changed to get it; the check
   is a check, not a goal.
 - **The rest of the order follows the truth, as it did on `clean`, and neither truth gives the published order.** Raw:
-  `w50 > w25 > w125 > w0`; coarse: `w125 > w50 > w25 > w0`; published (R000, full match): `w50 > w125 > w25 > w0`. Kendall
-  tau against the published order is **+0.667 under each truth** (5 of the 6 pairs concordant, 1 discordant: `w125` below
-  `w25` under raw, above `w50` under coarse). Each truth keeps the same order in each of the three seeds.
+  `w50 > w25 > w125 > w0`; coarse: `w125 > w50 > w25 > w0`; published (R000, full match): `w50 > w125 > w25 > w0`.
+  Kendall tau against the published order is **+0.667 under each truth** (5 of the 6 pairs concordant, 1 discordant:
+  `w125` below `w25` under raw, above `w50` under coarse). Each truth keeps the same order in each of the three seeds.
 - **The published gaps are inside the noise (about 0.04), and two of the three lie between the raw and the coarse
   ones.** Pooled spellF1 gaps, published against raw against coarse: `w50` - `w25` +0.044 / +0.008 / +0.042; `w125` -
   `w25` +0.025 / -0.031 / +0.076; `w50` - `w125` +0.019 / +0.039 / -0.034. Paired over the matches, `w125` against `w25`
@@ -952,36 +978,37 @@ What the tables say, and what they do not:
   reading (DFL's grain is finer than ours, and the coarse truth stands in for how much); it is two numbers, not a
   measurement of ours, and it is not used to choose anything (T26).
 - **The choice of truth decides `w125` against `w50` and `w25`, not the profile.** The sign of every paired delta
-  against `w50` is the same on both competitions: raw `w125` -0.0478 on the two Bundesliga matches and -0.0346 on the five 2.
-  Bundesliga ones, coarse +0.0342 and +0.0339; `w25` -0.0059 and -0.0094 raw, -0.0370 and -0.0445 coarse. Mean spellF1
-  per competition (BL1, BL2): raw `w50` 0.2064, 0.2125; `w25` 0.2005, 0.2031; `w125` 0.1586, 0.1779; `w0` 0.0866, 0.0751;
-  coarse `w50` 0.1970, 0.1963; `w25` 0.1600, 0.1519; `w125` 0.2313, 0.2302; `w0` 0.0326, 0.0351. Five of the seven matches
-  are one club's home games and the Bundesliga mean is of two matches.
-- **`w25` against `w50` is the one raw gap that is not decided.** -0.0084 [-0.0150, -0.0019], p 0.0469, 1 win in 7 (macroF1:
-  -0.0025 with an interval whose upper end is -0.000005, 3 wins in 7, p 0.125): a difference of a hundredth of a point
-  that the interval only just excludes; it is not a result, and the published `w50` - `w25` of 0.044 is not reproduced
-  under the raw truth but nearly is under the coarse (+0.042).
+  against `w50` is the same on both competitions: raw `w125` -0.0478 on the two Bundesliga matches and -0.0346 on the
+  five 2. Bundesliga ones, coarse +0.0342 and +0.0339; `w25` -0.0059 and -0.0094 raw, -0.0370 and -0.0445 coarse. Mean
+  spellF1 per competition (BL1, BL2): raw `w50` 0.2064, 0.2125; `w25` 0.2005, 0.2031; `w125` 0.1586, 0.1779; `w0`
+  0.0866, 0.0751; coarse `w50` 0.1970, 0.1963; `w25` 0.1600, 0.1519; `w125` 0.2313, 0.2302; `w0` 0.0326, 0.0351. Five of
+  the seven matches are one club's home games and the Bundesliga mean is of two matches.
+- **`w25` against `w50` is the one raw gap that is not decided.** -0.0084 [-0.0150, -0.0019], p 0.0469, 1 win in 7
+  (macroF1: -0.0025 with an interval whose upper end is -0.000005, 3 wins in 7, p 0.125): a difference of a hundredth of
+  a point that the interval only just excludes; it is not a result, and the published `w50` - `w25` of 0.044 is not
+  reproduced under the raw truth but nearly is under the coarse (+0.042).
 - **The seeds move a pooled score by up to about 0.015.** Pooled spellF1 by seed (0 / 1 / 2): raw `w50` 0.2063 / 0.2082
   / 0.2162, `w25` 0.1953 / 0.2003 / 0.2106, `w125` 0.1697 / 0.1711 / 0.1729, `w0` 0.0764 / 0.0774 / 0.0815; coarse `w50`
   0.1903 / 0.1957 / 0.2019, `w25` 0.1499 / 0.1521 / 0.1604, `w125` 0.2239 / 0.2347 / 0.2320, `w0` 0.0347 / 0.0316 /
   0.0363. The intervals are over the matches, with the seeds pooled inside each match, so they say nothing of the
   seed-to-seed spread; three seeds are what the default runs.
-- **Each yardstick predicts a share of `D` that is nearer to the truth's 44.8% than on `clean` (0.0%)** and still under it
-  (`w0` 41.9%, `w25` 37.6%, `w50` 33.4%, `w125` 23.3%), because `majority_vote` takes `D` only where nobody voted inside
-  its window: the wider the window, the longer a gap has to be to get a `D` (251 frames, 10 s, for `w125`). That follows from
-  the configs, not from the profile.
+- **Each yardstick predicts a share of `D` that is nearer to the truth's 44.8% than on `clean` (0.0%)** and still under
+  it (`w0` 41.9%, `w25` 37.6%, `w50` 33.4%, `w125` 23.3%), because `majority_vote` takes `D` only where nobody voted
+  inside its window: the wider the window, the longer a gap has to be to get a `D` (251 frames, 10 s, for `w125`). That
+  follows from the configs, not from the profile.
 - **What the benchmark is for after this.** `gaps` v1 is frozen: it resembles our match in the ball's missing share and
-  gap lengths (the gates), in the nearest player's agreement and in the `D` shares of the four yardsticks (the checks), and
-  in nothing else of the tracking (the statistics above). A conclusion about a change that rests on the flicker of the
-  nearest player or on slots that swap needs the `tracking` profile, and one that rests on the dead-ball association
+  gap lengths (the gates), in the nearest player's agreement and in the `D` shares of the four yardsticks (the checks),
+  and in nothing else of the tracking (the statistics above). A conclusion about a change that rests on the flicker of
+  the nearest player or on slots that swap needs the `tracking` profile, and one that rests on the dead-ball association
   (a ball that goes missing when it is dead) needs the `context` profile, if that is built; what rests on how a decoder
   smooths over a ball that is gone for ten seconds is what this profile can answer.
 
-Runtime: 20 s for `fidelity.py` on all seven matches and three seeds, and 18 s for each run of the four configs (7 matches x
-3 seeds x 4 configs), with the DFL caches and the Calibration cached; the same command twice writes the same bytes.
+Runtime: 20 s for `fidelity.py` on all seven matches and three seeds, and 18 s for each run of the four configs (7
+matches x 3 seeds x 4 configs), with the DFL caches and the Calibration cached; the same command twice writes the same
+bytes.
 Verdict: keep `gaps` v1 as the benchmark's profile, and the four yardsticks as its floor, not as candidates. The
-yardstick check passes in its robust part under both truths, and the profile reproduces what it was calibrated on
-(both gates). It does not make the truth's grain a non-issue: choose between `w125` and the others only where the raw and the
+yardstick check passes in its robust part under both truths, and the profile reproduces what it was calibrated on (both
+gates). It does not make the truth's grain a non-issue: choose between `w125` and the others only where the raw and the
 coarse truth agree.
 
 ## Submission log

@@ -20,7 +20,6 @@ import os
 import shutil
 import sys
 import tempfile
-import threading
 
 import numpy as np
 
@@ -1509,15 +1508,32 @@ def test_calibration_manifest_move_waits_for_a_real_handle_on_windows():
             assert handle.read() == first, "the same key, the same bytes"
         assert not [name for name in os.listdir(folder) if name.endswith(".tmp")]
 
-        # Released by another thread while the retries wait: the build goes through whenever it lets go in time.
+        # Released from inside the retry loop's own wait: the real handle makes the first os.replace raise the OS's
+        # PermissionError, the first sleep (patched here to close the handle, and to return at once) lets go of it, and
+        # the second os.replace goes through. No clock decides which comes first, so this cannot flake on a slow machine.
         reader = open(manifest_path, "rb")
-        timer = threading.Timer(calibration.REPLACE_WAIT_S * 2, reader.close)
-        timer.start()
+        real_sleep, sleeps, refusals = calibration.time.sleep, [], []
+
+        def letting_go(seconds):
+            sleeps.append(seconds)
+            reader.close()
+
+        def refused_once(source, target, *args, **kwargs):
+            try:
+                return real_replace(source, target, *args, **kwargs)
+            except PermissionError as refused:
+                refusals.append(refused)
+                raise
+
+        os.replace, calibration.time.sleep = refused_once, letting_go
         try:
             calibration._write(cal, folder, key)
         finally:
-            timer.join()
+            os.replace, calibration.time.sleep = real_replace, real_sleep
             reader.close()
+        assert len(refusals) == 1 and sleeps == [calibration.REPLACE_WAIT_S], (len(refusals), sleeps)
+        with open(manifest_path, "rb") as handle:
+            assert handle.read() == first, "the same key, the same bytes"
 
         # Held through every retry: an error, no temp file, and a rerun recovers once the handle is released.
         outcomes, failure = written(release_on=calibration.REPLACE_RETRIES + 2)

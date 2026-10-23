@@ -305,8 +305,12 @@ that this README names only checks that exist.
 - The `tracking` profile is work in progress: its players have our tracklets and slots and none of our wrong-team
   slots, NaN-speed runs or frames with few players tracked, and it has no gates yet. Its slots are the lowest free ones,
   so a team uses 11 of its slots over a whole match where ours has 21 of 24 and 20 of 22 present on at least a tenth
-  of the frames (A09); no component reads a slot's index today, but `nearest_player` breaks an exact tie towards the
-  lower slot.
+  of the frames, and a slot's index is not as empty of the player as in ours: a player who comes back after a lost span
+  lands in the slot he had 76.0% of the time (948 of 1,247 returns, J03WMX, seed 0), and a slot idles between two
+  tracklets for a median of 2.0 s (67.1% of its gaps at most 3 s, none over 60 s), where ours idles for 7.4 s (17.7%
+  and 15.0%; A09). No evidence source reads a slot's identity today, beyond `nearest_player`'s argmin on exact ties,
+  which goes to the lower slot; but **a method that follows a slot across a loss would be validated optimistically
+  here**, and the tail's part of the profile re-measures this.
 - A transplanted mask is cut at the edge of the window it is read from, so up to two gaps of a benchmark half (the ones
   at its ends) are fragments of ours, and where the mask runs out and goes round there is one more at the seam (3 of the
   42 halves of R003: a DFL second half of 77,080 or 78,456 frames, against the 76,456 of ours); the gates are on the

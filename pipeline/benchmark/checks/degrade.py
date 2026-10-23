@@ -465,6 +465,99 @@ def present_runs(column):
     return runs
 
 
+def slot_idle_gaps_s(present, spans, fps):
+    """Seconds of every idle gap of a slot: a maximal run of absent frames with a present frame of the same slot on
+    both sides, inside one span of (half, start, stop) rows (nothing crosses the end of a span).
+
+    What the slot persistence statistics of A09 are made of, taken from a presence array alone so that the same
+    function measures ours (the ATD cache) and the degraded match: a slot that is freed on one frame and taken again on
+    the very next has no gap, and the absence before a slot's first frame and after its last in a span is no gap
+    either (it is not idle between two uses). A float64 array, in order of span, slot and time."""
+    present = np.asarray(present)
+    gaps = []
+    for _, start, stop in spans:
+        for slot in range(present.shape[1]):
+            seen = np.flatnonzero(present[start:stop, slot])
+            steps = np.diff(seen) - 1
+            gaps.append(steps[steps > 0])
+    return (np.concatenate(gaps) if gaps else np.zeros(0)) / fps
+
+
+def same_slot_returns(tracklets):
+    """(returns, same): how many tracklets start after a lost span of their player's, and how many of them land back in
+    the slot the player had before.
+
+    `tracklets` is {half: [Tracklet]} as degrade.degraded_players gives it. A player's tracklets of a half are taken in
+    time order; one is a *return* if it starts after the previous one has stopped (start > previous stop), so that a
+    handover with no frame between them, which is an identity switch and not a loss, is not one. It is *same-slot* if
+    its slot is the previous one's. Only the degraded side has identities: ours has none (a slot is not a player)."""
+    returns = same = 0
+    for records in tracklets.values():
+        by_player = {}
+        for t in records:
+            by_player.setdefault(t.player, []).append(t)
+        for player_records in by_player.values():
+            player_records.sort(key=lambda t: t.start)
+            for before, after in zip(player_records, player_records[1:]):
+                if after.start > before.stop:
+                    returns += 1
+                    same += after.slot == before.slot
+    return returns, same
+
+
+def gap_figures(gaps):
+    """(count, median in s, share of at most 3 s, share of over 60 s) of idle gaps in seconds; NaN shares of none."""
+    if not gaps.size:
+        return 0, math.nan, math.nan, math.nan
+    return int(gaps.size), float(np.median(gaps)), float((gaps <= 3).mean()), float((gaps > 60).mean())
+
+
+def test_slot_persistence_helpers_count_what_they_say():
+    """Idle gaps and same-slot returns, on hand-built arrays and records, worked out one frame at a time.
+
+    Two slots over 12 frames: slot 0 is present on 0-1, 4-6 and 8, slot 1 on 2, 6-9 and 11. Over the whole span the gaps
+    are slot 0's 2 frames (2-3) and 1 frame (7), and slot 1's 3 frames (3-5) and 1 frame (10): the absence before a
+    slot's first frame (slot 1 on 0-1) and after its last (slot 0 on 9-11) is not a gap. A span that starts on row 2
+    cuts off what lies before it, and two spans do not join: split at row 6 the gaps are slot 0's 2 and 1 frames and
+    slot 1's 1 frame (10), and the slot 1 absence of 3-5 ends the first span, so it is no gap."""
+    columns = ([1, 1, 0, 0, 1, 1, 1, 0, 1, 0, 0, 0], [0, 0, 1, 0, 0, 0, 1, 1, 1, 1, 0, 1])
+    present = np.array(columns, dtype=bool).T
+
+    def plain(spans):
+        """The same gaps with one loop over the frames of each slot, no numpy."""
+        found = []
+        for _, start, stop in spans:
+            for slot in range(len(columns)):
+                last = None
+                for row in range(start, stop):
+                    if columns[slot][row]:
+                        if last is not None and row - last > 1:
+                            found.append(row - last - 1)
+                        last = row
+        return found
+
+    for spans, expected in (([(1, 0, 12)], [2, 1, 3, 1]), ([(1, 2, 12)], [1, 3, 1]),
+                            ([(1, 0, 6), (2, 6, 12)], [2, 1, 1])):
+        got = slot_idle_gaps_s(present, spans, 25)
+        assert sorted(got * 25) == sorted(plain(spans)) == sorted(expected), (spans, got * 25, plain(spans))
+        assert got.dtype == np.float64
+    assert slot_idle_gaps_s(present, [(1, 4, 7)], 25).size == 0, "present all through the span: no gap"
+    assert slot_idle_gaps_s(np.zeros((5, 3), dtype=bool), [(1, 0, 5)], 25).size == 0, "never present: no gap"
+    assert np.allclose(slot_idle_gaps_s(present, [(1, 0, 12)], 50), [0.04, 0.02, 0.06, 0.02]), "seconds, at the rate"
+    figures = gap_figures(np.array([1.0, 2.0, 3.0, 4.0, 70.0]))
+    assert figures == (5, 3.0, 3 / 5, 1 / 5), figures
+    assert gap_figures(np.zeros(0))[0] == 0 and math.isnan(gap_figures(np.zeros(0))[1])
+
+    T = degrade.Tracklet
+    records = {1: [T(0, 0, 10, 3), T(0, 15, 20, 3), T(0, 25, 30, 5), T(1, 0, 10, 1), T(1, 10, 20, 2),
+                   T(2, 5, 8, 7), T(2, 9, 12, 8), T(2, 20, 21, 7)],
+               2: [T(0, 100, 110, 4), T(0, 112, 120, 4), T(1, 100, 105, 6)]}
+    # Player 0 of half 1: 3 -> 3 (return, same), 3 -> 5 (return, other); player 1 hands over on the frame (not a return);
+    # player 2: 7 -> 8 (return, other) and 8 -> 7 (return, other). Half 2, player 0: 4 -> 4 (return, same).
+    assert same_slot_returns(records) == (5, 2)
+    assert same_slot_returns({1: [T(0, 0, 5, 1)]}) == (0, 0) and same_slot_returns({}) == (0, 0)
+
+
 def test_tracking_parameters_are_worked_out_from_the_calibration():
     """d from the frames with more than 18 present, the lengths in frames at the match's rate, mu from both.
 
@@ -555,7 +648,8 @@ def test_lost_share_on_long_synthetic():
     The mean tracked span is 100 frames (50 to 150, every length once) and d is 0.05 and 0.3, whose mu are 100 * d /
     (1 - d) = 5.26 and 42.86 frames: a mu that forgot the (1 - d) would give a lost share of 0.0476 and 0.2308, which
     the second d tells from d by 0.07. Ten runs of 300,000 frames each: the share's own spread is about 0.001, and the
-    brief's tolerance of 0.01 is ten times it."""
+    brief's tolerance of 0.01 is ten times it. The whole tracked spans have a mean of 100 to within 5 standard errors
+    (below)."""
     lengths = np.arange(50, 151)
     for d in (0.05, 0.3):
         parameters = degrade.tracking_parameters(lengths, d)
@@ -570,7 +664,11 @@ def test_lost_share_on_long_synthetic():
             lost += [spans[k + 1][0] - spans[k][1] for k in range(len(spans) - 1)]
         share = 1 - tracked / total
         assert abs(share - d) < 0.01, (d, share)
-        assert abs(np.mean(whole) - 100) < 3, (d, np.mean(whole))
+        # The mean of the n whole tracked spans, each drawn uniformly from 50..150 (SD 29.15), has a standard error of
+        # 29.15 / sqrt(n): about 0.17 frames for the 28,500 spans of d = 0.05 and 0.20 for the 21,000 of d = 0.3. The
+        # bound is 5 of them, so that a mean that is off by a fraction of a frame is caught.
+        error = np.std(lengths) / math.sqrt(len(whole))
+        assert abs(np.mean(whole) - 100) < 5 * error and error < 0.25, (d, np.mean(whole), error)
         assert abs(np.mean(lost) / parameters.mu - 1) < 0.05, (d, np.mean(lost), parameters.mu)
         assert min(lost) >= 1 and max(lost) > 3 * parameters.mu, "a geometric tail, not a constant"
 
@@ -927,8 +1025,12 @@ def test_data_tracking_profile_on_a_real_match_with_our_real_calibration():
     table is asserted: this part of the profile has no wrong-team episodes, no NaN speeds and no low-count tail, and
     the table is there to say by how much; its gates come with the last part. What is asserted is the layout, that the
     ball is gaps', that the draws are the same twice, that nothing of the truth is reachable and that no pool runs out;
-    and that the lost share, pooled over the 7 matches and 5 seeds, is d to within 0.01 (the tolerance for long runs; a
-    DFL half is 68,000 to 78,000 frames, where a cut at the end of a run is not negligible). Aggregates only.
+    and that the lost share, pooled over the 7 matches and 5 seeds, is d to within 0.003 (the observed 2.59% is 0.09
+    points over d = 2.50%: a DFL half is 68,000 to 78,000 frames, where a cut at the end of a run is not negligible).
+    A mu without the (1 - d) would give about 2.53%, which no tolerance here can separate from 2.59%: the synthetic
+    test_lost_share_on_long_synthetic, whose d = 0.3 makes it 23.1% against 30%, is what catches that. It also prints
+    the slot persistence of the degraded match and of ours: the idle gaps of a slot and the returns to the same slot.
+    Aggregates only.
     """
     from pipeline.benchmark import sources
     match_id = sources.MATCH_IDS[0]
@@ -961,6 +1063,7 @@ def test_data_tracking_profile_on_a_real_match_with_our_real_calibration():
 
     ours = cal.present_hist
     rows = (("slots present, mean", mine["present_mean"], cal.scalars["present_mean"], "{:.2f}"),
+            ("23 or more present", share(mine["present_hist"], 23, 46), share(ours, 23, 46), "{:.1%}"),
             ("all 22 present", share(mine["present_hist"], 22, 22), share(ours, 22, 22), "{:.1%}"),
             ("19 to 21 present", share(mine["present_hist"], 19, 21), share(ours, 19, 21), "{:.1%}"),
             ("15 to 18 present", share(mine["present_hist"], 15, 18), share(ours, 15, 18), "{:.1%}"),
@@ -983,6 +1086,25 @@ def test_data_tracking_profile_on_a_real_match_with_our_real_calibration():
     for name, degraded, measured, template in rows:
         print("      {:<26} {:>10} {:>10}".format(name, template.format(degraded), template.format(measured)))
 
+    # Slot persistence (A09): how long a slot sits idle between two tracklets, and whether a player who comes back after
+    # a lost span lands in the slot he had. The same function measures both sides, on each half from its kick-off to
+    # the end of its graded block; ours has no identities, so it has no returns.
+    from pipeline.inputs import Inputs
+    ours_inputs = Inputs()
+    ours_spans = [(half, ours_inputs.kickoffs[half], stop) for half, _, stop in ours_inputs.graded]
+    gaps_degraded = gap_figures(slot_idle_gaps_s(atd.players_present, spans, inputs.fps))
+    gaps_ours = gap_figures(slot_idle_gaps_s(ours_inputs.atd.players_present, ours_spans, ours_inputs.fps))
+    returns, same = same_slot_returns({half: degrade.choose_tracklets(view, half, parameters, 0)
+                                       for half, _, _ in view.graded})
+    print("      {:<26} {:>10} {:>10}".format("slot idle gaps", "degraded", "ours"))
+    for name, index, template in (("count", 0, "{:,}"), ("median, s", 1, "{:.2f}"), ("at most 3 s", 2, "{:.1%}"),
+                                  ("over 60 s", 3, "{:.1%}")):
+        print("      {:<26} {:>10} {:>10}".format(name, template.format(gaps_degraded[index]),
+                                                  template.format(gaps_ours[index])))
+    print("      returns after a lost span: {:,}, {:,} of them to the same slot ({:.1%}); ours has no identities".format(
+        returns, same, same / returns if returns else math.nan))
+    assert gaps_degraded[0] > 0 and gaps_ours[0] > 0 and returns > 0
+
     # The lost share over the 7 matches and 5 seeds: the walk and the slots only, no arrays.
     on_pitch = lost = 0
     by_match = []
@@ -999,4 +1121,4 @@ def test_data_tracking_profile_on_a_real_match_with_our_real_calibration():
         on_pitch, lost = on_pitch + on, lost + gone
     print("      lost share, seeds 0-4: {}; pooled {:.2%} against d {:.2%}".format(
         ", ".join(by_match), lost / on_pitch, parameters.d))
-    assert abs(lost / on_pitch - parameters.d) < 0.01, (lost / on_pitch, parameters.d)
+    assert abs(lost / on_pitch - parameters.d) < 0.003, (lost / on_pitch, parameters.d)
