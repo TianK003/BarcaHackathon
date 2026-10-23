@@ -23,6 +23,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R004 | 2026-10-23 | the same four yardsticks on the benchmark's `tracking` profile: our players' tracklets and slots, wrong-team slots, NaN-speed runs and smoothing on top of `gaps`' ball | — | — | — | 0.2000 raw (`w50`), 0.2195 coarse (`w125`); `w0` last under both | `tracking` v1 frozen as it is: the five counted gates pass and `fidelity.py` exits 0; its three count gates stay pending because they depend on the low-count tail, which v2 adds (exactly 22 present: 0.5631 of the full-strength frames against 0.5019 +-0.06; about 0.503 after the tail, an estimate that assumes its cap is placed by our counts), no WARN; the yardstick check holds, no order changes from `gaps` |
 | R004b | 2026-10-23 | the same four yardsticks on `tracking` version 2: R004's players plus our low-count frames (a cap that keeps the players nearest the ball), no piece shorter than 8 frames and the walk's tracked spans rescaled once | — | — | — | 0.1989 raw (`w50`), 0.2173 coarse (`w125`); `w0` last under both | `tracking` v2 frozen, `fidelity.py` exits 0: all eight gates pass (the three on how many slots are present are gates now: exactly 22 present 0.4938 against 0.5019 +-0.06, mean 20.60 against 20.52 +-0.5, 14 or fewer 0.0469 against 0.0525 +-0.02), no WARN; the yardstick check holds and the ranking does not move from R004 (the four configs move by 0.4 points of spellF1 at most) |
 | R004c | 2026-10-23 | the same four yardsticks on `tracking` version 3: R004b's players, but a slot is taken by a new tracklet only from the row after its last one stopped (versions 1 and 2 let it take the slot on the row it was freed), and the walk's tracked spans rescaled again, 2.042 to 2.072 | — | — | — | 0.2018 raw (`w50`), 0.2226 coarse (`w125`); `w0` last under both | `tracking` v3 frozen, `fidelity.py` exits 0: all eight gates pass (exactly 22 present 0.4925 against 0.5019 +-0.06, mean 20.60 against 20.52 +-0.5, 14 or fewer 0.0469 against 0.0525 +-0.02, tracklet median 26.52 s against 41.28 s, -36%), no WARN; the yardstick check holds and the ranking does not move from R004b (no config moves by more than 0.6 points of spellF1); the jitter per slot after smoothing is 1.80 cm and not R004b's 8.5 cm: that was the slot handovers and not DFL's jumps (T35) |
+| R005 | 2026-10-23 | the same four yardsticks on the `context` profile: `tracking` v3's players, and the ball's holes placed by a hazard fitted on our own match (A08: the line, the ball's speed, the players near it, the minute) instead of copied from our masks in time | — | — | — | 0.2193 raw (`w50`), 0.2443 coarse (`w125`); `w0` last under both | **`context` v1 fails two gates**, so `DEFAULT_PROFILE` stays `tracking`: the gaps that start within 2 m of a line 0.5586 against our 0.2797 +-0.05 (on each seed: DFL tracks the ball out of play, so a quarter of its at-risk rows are near a line against 9% of ours) and the share missing 0.4313 against 0.4110 +-0.02 (pooled, by 0.0003, and on seed 2), and one WARN (the ball visible on dead frames 0.4622 against 0.6637; `tracking` v3 0.5684); no fix, no second rescale; the order of the four configs is `tracking` v3's under both truths (Kendall tau +1.000 between the two profiles' orders on pooled spellF1, +0.667 against the published order under each), and every config scores 0.3 to 2.2 points higher; sensitivity only; fails the near-line gate |
 
 ## Reference: the organisers' baselines (R000)
 
@@ -1915,6 +1916,250 @@ this entry: its slots are not ours (47% of the returns to the same slot, ours ha
 slot across a loss would be validated optimistically), its tracklet median is 36% below ours, it has no positional bias,
 and it takes our counts from the frames of the ball's gaps and not from the same play. Do not choose between `w125` and
 the others where the raw and the coarse truth disagree.
+
+### R005 — The `context` profile fails two gates; its four yardsticks, as a sensitivity check only (2026-10-23, Tian)
+Proposal: P01 · Commit: `a34e5f6` (the code every report below was made at, on a clean tree: the eight yardstick reports
+say `dirty: false`, and `fidelity.py`, whose report has no `git` field, was run on the same commit with `git status`
+empty; the later commits are `02c5cb8` (the README, proposals fact 1 and a pin check on the default), the merge
+`28239f0` of tracking version 3's docs and `a75b7ad` (two comments in `degrade.py`), and none changes what the profile
+runs: `git diff a34e5f6 HEAD` on `degrade.py` is those two comments, and `fidelity.py`, `hazard.py` and `calibration.py`
+are untouched) · Commands: `python pipeline/benchmark/fidelity.py --profile context --seeds 3` first, which exits 1, and
+then `python pipeline/benchmark/run.py pipeline/benchmark/configs/nearest_w50.toml pipeline/benchmark/configs/nearest_w0.toml pipeline/benchmark/configs/nearest_w25.toml pipeline/benchmark/configs/nearest_w125.toml --profile context --seeds 3`
+(the first config is the reference; run once more with `--truth coarse`, and `w25` first with `w125` second and
+`--no-write` for the paired comparison, under each truth)
+Public: not applicable. The scores read no BAR-ATH data; the profile does: the hazard that places the gaps is fitted on
+our own match's gaps (A08), the players' tracklets, episodes, NaN-speed runs and slot counts are our measurements as in
+R004c, and the fidelity checks are compared with its public window's figures (77.8%, 66.4%). Calibration digest
+`65b0c1915194…` (version 2), as R004c.
+Validation (P01 benchmark): 7 DFL matches x 3 degradation seeds (0, 1, 2), profile `context` version 1, 2,005.3 graded
+minutes (668.4 per seed), as R004c. Raw truth: pooled spellF1 0.2193 (`nearest_w50`), 0.2097 (`w25`), 0.1774 (`w125`),
+0.0812 (`w0`). Coarse truth: 0.2443 (`w125`), 0.2057 (`w50`), 0.1608 (`w25`), 0.0369 (`w0`).
+Changed vs the previous best: a benchmark entry against R004c, and **only the ball changed**. R004c's `tracking` v3 gives
+the DFL matches our players and puts the holes in the ball where our own match's masks are, copied in time; `context`
+gives them the same players, draw for draw (`test_context_players_equal_tracking`), and puts the holes where a hazard
+fitted on our match says our tracker loses the ball (the distance to the nearest line, whether the ball is beyond it,
+its speed, the nearest player, the players within 3 m and the minute of the half; A08). The seeds, the matches, the
+configs, the truths and the scorer are R004c's. **`context` fails two of its nine gates and one warning check, and is
+not the benchmark's default: these tables are a sensitivity check, and `DEFAULT_PROFILE` stays `tracking` (version
+3).** The failure comes first, the scores after it.
+Reports: `data/runs/benchmark/context/<stem>.json` and `<stem>.coarse.json`, and
+`data/runs/benchmark/fidelity_context.json` (not committed; each carries the Calibration's digest). R004c's `tracking`
+v3 reports (`data/runs/benchmark/tracking/`, at `7fb0a52`) are what the comparison at the end reads.
+Checks (run on `a75b7ad`, the tree these docs sit on; the reports are at `a34e5f6`, and the code between them is the
+two comments, the pin check and the `selftest.py` timing line named above): `pipeline/benchmark/selftest.py --dfl
+--data` passes all 287 checks (264 synthetic, 16 with `--dfl`, 7 with `--data`) in 265 s, the default run 264 passed
+(46 s), `pipeline/selftest.py` 35 of 35 (5 s) and its `--data` run 37 of 37 in 9 s, the four baselines identical byte
+for byte. `checks/context.py` holds 16 of them (14 synthetic, 2 with `--data`), among them the pin on the default,
+the frozen `HAZARD_SCALE` with its two recorded measurements, `test_context_players_equal_tracking` and
+`test_runner_context_json_identical_across_processes` (the report's JSON is the same under `PYTHONHASHSEED` 1, 2
+and 3, as `tracking`'s is).
+
+**The one constant, rescaled once** (`degrade.HAZARD_SCALE`, frozen at 0.699 on 2026-10-23 in `a34e5f6`, the commit
+the runs are on; both measurements are in the comment of the constant and pinned by
+`test_hazard_scale_is_the_frozen_one_and_follows_from_the_recorded_measurements`, and
+`test_data_hazard_scale_follows_from_the_measurement` measures them again). The chance that the next frame starts a gap
+is `hazard_c` x `HAZARD_SCALE` x the model's probability. At the scale of 1.0, seed 0, the 7 matches laid end to end as
+`fidelity.py` pools them, 501,013 of 1,002,644 frames lack the ball (0.4997) against our 0.4110 (the Calibration's
+`missing_share`). The rescale is on the odds, scale x [0.4110 / (1 - 0.4110)] / [0.4997 / (1 - 0.4997)] = 0.6986,
+rounded to 0.699 (gaps start only from visible frames, so the odds are about linear in the hazard, and a plain ratio,
+0.822, would have undershot). At 0.699 the share on seed 0 is 0.4236. It was set on seed 0 alone, once, and not moved
+after seeds 1 and 2 had been seen.
+
+**The failure: two gates, on every seed or pooled.** `fidelity.py --profile context --seeds 3`, 7 matches x 3 seeds,
+exits 1 ("9 gates DO NOT ALL PASS; 1 of 10 checks warn"). The centres are the Calibration's own values on our kick-off
+spans and the tolerances the plan's; nothing was changed after looking at it. Pooled, and by seed (0, 1 and 2):
+
+| gate | pooled | seed 0 | seed 1 | seed 2 | our match (centre) | tolerance | |
+|---|---|---|---|---|---|---|---|
+| ball missing, share of frames | 0.4313 | 0.4236 | 0.4275 | 0.4427 | 0.4110 | +-0.02 | **FAIL** pooled (+0.0203, by 0.0003) and on seed 2 (+0.0317); seeds 0 (+0.0126) and 1 (+0.0165) pass |
+| median gap in the ball | 11.88 s | 11.78 s | 11.68 s | 12.04 s | 10.74 s | +-1.5 s | pass |
+| exactly 22 slots present, full-strength frames | 0.4925 | 0.5090 | 0.4960 | 0.4724 | 0.5019 | +-0.06 | pass |
+| mean slots present, full-strength frames | 20.596 | 20.553 | 20.662 | 20.572 | 20.522 | +-0.5 | pass |
+| 14 or fewer slots present, full-strength frames | 0.0469 | 0.0514 | 0.0430 | 0.0462 | 0.0525 | +-0.02 | pass |
+| wrong-team share of frames | 0.0918 | 0.0932 | 0.0978 | 0.0845 | 0.1054 | +-0.03 | pass |
+| tracklet median | 26.52 s | 26.08 s | 28.08 s | 26.08 s | 41.28 s | +-50% | pass |
+| NaN-speed share of the present slot-frames | 0.0788 | 0.0787 | 0.0791 | 0.0787 | 0.0783 | +-0.01 | pass |
+| **gaps that start within 2 m of a line** (`near_line_share`) | **0.5586** | 0.5647 | 0.5644 | 0.5465 | 0.2797 | +-0.05 | **FAIL** pooled (+0.2789) and on each seed (+0.2850, +0.2847, +0.2668) |
+
+The six gates on the players pass and equal R004c's `tracking` v3 figures to the last digit (the players are v3's, draw
+for draw); of the two on the gaps, the median gap passes (11.88 s; v3's 10.76 s) and the share missing fails (v3's
+0.4189 passed). `near_line_share` is the ninth gate, the one that `context` adds: the share of the gaps that begin
+within 2 m of a line at the frame before them, counted the way A08 counts our own gaps (40 of our 143 onsets). The
+count gates are measured on full-strength frames (T36: 818,710 of 1,002,644 frames,
+81.7%). The statistics beside the gates, benchmark against ours (information): gaps per 10,000 frames 9.57 against 9.36,
+gap length p10 / median / p90 5.40 / 11.88 / 31.52 s against 2.68 / 10.74 / 35.30 s.
+
+**The stop conditions did not trip** (the limits are the plan's: the profile is not to be run if a stop condition
+holds):
+
+| stop condition | limit | measured |
+|---|---|---|
+| share of the at-risk rows within five frames after a gap (the ball's speed there is the true one, where ours carries the speed from before the gap) | 2% | 0.83% pooled (0.84%, 0.81%, 0.84% by seed): 14,227 of 1,710,689 rows |
+| rows where a feature is undefined, so that the chance is 0 | 1% | 42 of 3,007,932 rows (0.0014%) |
+| rows whose chance reached the cap (1 - 1e-9) | a count; 0 means the cap never bit | 0 |
+
+The draws' record pooled over the 21 runs and both halves: 2,880 onsets, 1,297,180 missing frames, 1,710,689 at-risk
+rows.
+
+**The warning, next to `tracking` v3's.** One of the ten warning checks warns: **the ball visible on dead frames is
+0.4622** (0.4754, 0.4634 and 0.4478 by seed) against 0.6637 on our public window (band +-0.10: -0.2015 from ours, 0.1015
+outside the band, a WARN), where `tracking` v3's was 0.5684 (R004c: -0.0953, inside the band). **The new ball hides the
+ball on dead frames more than v3's, and v3's already hid it more than ours does.** The other nine checks are ok:
+nearest player agrees with the truth 0.7627 against 0.7784 (v3: 0.7609); predicted possessions per graded minute
+`w0` / `w25` / `w50` / `w125` 14.66 / 5.49 / 4.37 / 3.07 against ours 18.40 / 7.04 / 5.61 / 3.76 (-20.3%, -22.1%,
+-22.1%, -18.4%, inside +-25%; v3: -24.3%, -23.9%, -23.3%, -18.7%); D shares 0.4313 / 0.3863 / 0.3416 / 0.2308 against
+0.4069 / 0.3649 / 0.3234 / 0.2233 (+0.0244, +0.0214, +0.0182, +0.0075, inside +-0.05).
+
+**Diagnosis: the model is fine, the rows it is applied to are not (`nearline_diag`, a throwaway script run on seed 0;
+not committed).** The model's probability is higher near a line on both matches, by a similar factor, and the rows are
+what differ: DFL tracks the ball out of play, ours does not.
+
+| | at-risk rows within 2 m of a line | at-risk rows beyond a line | mean model probability p, near a line / elsewhere (ratio) | onsets within 2 m of a line |
+|---|---|---|---|---|
+| ours (the model's own fit: 91,840 at-risk rows, 143 onsets) | 9.01% | 4.07% | 0.00389 / 0.00133 (2.9) | 40 of 143 (0.2797) |
+| DFL, 7 matches, seed 0, at 0.699 (577,949 at-risk rows, 986 onsets) | 25.23% | 17.68% | 0.00379 / 0.00098 (3.9) | 557 of 986 (0.565) |
+
+With a similar p near a line, a match that has 25% of its at-risk rows there and 18% beyond a line puts 56% of its
+gaps there, against our 28%: **the share of gaps near a line fails by the rows and not by the fit**, and no scale of
+the hazard moves it (the ratios, 2.9 and 3.9, are the same at any scale).
+
+**Two remedies were measured and not applied** (seed 0, 7 matches, at 0.699, with the change that the first column
+names; to see what would move the gate, not to pass it):
+
+| variant | ball missing | interior gaps | near-line share |
+|---|---|---|---|
+| as run (`context` v1) | 0.4236 | 981 | 0.5647 |
+| chance 0 where the clean ball is beyond a line | 0.2408 | 578 | 0.1626 |
+| the line distance clipped at 0 and `beyond_line` = 0 in the model's input | 0.3803 | 850 | 0.4894 |
+
+Neither passes. The first overshoots the near-line gate the other way (0.1626 against 0.2797, -0.117, outside +-0.05)
+and drops the share missing to 0.2408 (-0.170), outside its band: it takes the gaps away from the part of the ball
+that is out of play altogether, and what a rescale that brought the missing share back would then do to the near-line
+share was not measured. The second (0.4894, +0.210; missing 0.3803, -0.031) is still outside both bands. Two more were
+considered and rejected before any run: thinning the chance beyond a line to our share of such rows (a factor of
+0.23), which would pass the gate by leaving more of the out-of-play ball visible, so the visible rows would move
+further from ours: tuning towards a gate; and a mask for the ball off the pitch, a new mechanism with a parameter that
+cannot be measured on ours, since where our ball is during our gaps is unobservable. No second rescale of
+`HAZARD_SCALE` either: the rule is once.
+
+**The ruling, taken on seeing this (2026-10-23).** No fix: the profile stays as it is (version 1), `HAZARD_SCALE` stays
+0.699, no gate is loosened or moved and no remedy is applied. `DEFAULT_PROFILE` stays `tracking`
+(`test_default_profile_is_tracking_because_context_fails_a_gate` pins it, and that `near_line_share` stays a required
+`context` gate, with the measured pair 0.5586 and 0.2797). The yardsticks were run on `context` for one purpose: to see
+whether the ranking of the configs depends on how the gaps are placed. **They are a sensitivity check, not a validation
+score: no number from `context` replaces one from `tracking` v3 or is compared with a number from another profile
+without saying so.**
+
+**Raw truth** (9,183 true possessions, 4.58 per graded minute; `D` is 44.8% of the graded frames). Δ is the config minus
+`nearest_w50`, the first config; the interval is the 90% t interval of the seven matches' deltas.
+
+| config | pooled spellF1 | macroF1 | alive/dead F1 | mean per-match spellF1 [90% t] | possessions predicted (per min) | Δ spellF1, mean per match [90% t] | sign-flip p | wins / losses |
+|---|---|---|---|---|---|---|---|---|
+| `nearest_w50` (reference) | **0.2193** | 0.5144 | 0.6575 | 0.2197 [0.2074, 0.2320] | 8,762 (4.37) | | | |
+| `nearest_w25` | 0.2097 | 0.5198 | 0.6516 | 0.2099 [0.2002, 0.2195] | 11,010 (5.49) | -0.0098 [-0.0139, -0.0058] | 0.0156 | 0 / 7 |
+| `nearest_w125` | 0.1774 | 0.4770 | 0.6711 | 0.1786 [0.1626, 0.1946] | 6,151 (3.07) | -0.0411 [-0.0515, -0.0307] | 0.0156 | 0 / 7 |
+| `nearest_w0` | 0.0812 | 0.5103 | 0.6453 | 0.0812 [0.0753, 0.0871] | 29,393 (14.66) | -0.1385 [-0.1563, -0.1208] | 0.0156 | 0 / 7 |
+
+**Coarse truth** (`COARSE_MIN_S` = 5 s: 4,977 true possessions, 2.48 per graded minute; the same `D`). Δ is again the
+config minus `nearest_w50`:
+
+| config | pooled spellF1 | macroF1 | alive/dead F1 | mean per-match spellF1 [90% t] | possessions predicted (per min) | Δ spellF1, mean per match [90% t] | sign-flip p | wins / losses |
+|---|---|---|---|---|---|---|---|---|
+| `nearest_w125` | **0.2443** | 0.4877 | 0.6711 | 0.2447 [0.2286, 0.2608] | 6,151 (3.07) | +0.0388 [+0.0256, +0.0520] | 0.0156 | 7 / 0 |
+| `nearest_w50` (reference) | 0.2057 | 0.5160 | 0.6575 | 0.2059 [0.1974, 0.2144] | 8,762 (4.37) | | | |
+| `nearest_w25` | 0.1608 | 0.5191 | 0.6516 | 0.1608 [0.1542, 0.1675] | 11,010 (5.49) | -0.0451 [-0.0500, -0.0401] | 0.0156 | 0 / 7 |
+| `nearest_w0` | 0.0369 | 0.5088 | 0.6453 | 0.0371 [0.0330, 0.0411] | 29,393 (14.66) | -0.1688 [-0.1793, -0.1583] | 0.0156 | 0 / 7 |
+
+What the tables say, and what they do not:
+- **The yardstick check holds in its robust part: `nearest_w0` is last under both truths**, by far more than the noise (7
+  losses of 7 against `w50` under each, Δ -0.1385 raw and -0.1688 coarse, and the gap from `w0` to the next config is
+  0.0962 raw and 0.1239 coarse). Per-seed yardstick scores were not computed for `context`, so, unlike R004c, nothing is
+  claimed about the order within each seed; the intervals above are over the matches and say nothing of the seeds'
+  spread.
+- **The rest of the order follows the truth, as on every profile before it, and neither truth gives the published
+  order.** Raw: `w50 > w25 > w125 > w0`; coarse: `w125 > w50 > w25 > w0`; published (R000, full match): `w50 > w125 >
+  w25 > w0`. **Kendall tau against the published order is +0.667 under each truth** (5 of the 6 pairs concordant, 1
+  discordant), as in R004b and R004c.
+- **The choice of truth decides `w125` against `w50` and `w25`, here as there.** Paired, `w125` against `w25` is -0.0313
+  [-0.0432, -0.0193], 0 wins of 7, under the raw truth (macroF1 -0.0428 [-0.0473, -0.0383], 0 wins), and +0.0839
+  [+0.0674, +0.1003], 7 wins of 7, under the coarse one (macroF1 -0.0312 [-0.0364, -0.0260], 0 wins) (`...
+  nearest_w25.toml ... nearest_w125.toml --profile context --seeds 3 --no-write`, with `--truth coarse` for the
+  second). The sign of every paired delta against `w50` is the same on both competitions (BL1: the two Bundesliga
+  matches, BL2: the five 2. Bundesliga ones): raw `w125` -0.0489 on BL1 and -0.0380 on BL2, coarse +0.0341 and
+  +0.0407; `w25` -0.0053 and -0.0117 raw, -0.0399 and -0.0471 coarse; `w0` -0.1221 and -0.1451 raw, -0.1702 and
+  -0.1682 coarse.
+- **`w25` against `w50` under the raw truth is 0 wins of 7 here** (-0.0098 [-0.0139, -0.0058], p 0.0156) against v3's
+  1 win of 7 (-0.0120 [-0.0176, -0.0063], p 0.0312): about a hundredth of a point and the same sign, which, as in
+  R004c, is not a result. macroF1 goes the other way for `w25` against `w50` (+0.0053 [+0.0025, +0.0080], 6 wins of 7,
+  raw; +0.0029 [+0.0003, +0.0055], 6 wins, p 0.0781, coarse): the ranking metric and the tiebreaker disagree there.
+- The published gaps are inside the noise (about 0.04 on the full match), and nothing here is used to choose a config
+  (T26).
+
+**How R005 differs from R004c, and the agreement between `context` and `tracking` v3** (only the ball's holes changed:
+`context` minus v3 from the two sets of reports, over the 7 matches, the same matches and seeds and, by
+`test_context_players_equal_tracking`, the same players; the pairing removes the match and the players but not the
+ball's draw, which is the thing that changed). The two ranks of the four configs on pooled spellF1 agree completely
+under each truth: **Kendall tau between the two profiles' orders is +1.000 under the raw truth and +1.000 under the
+coarse one** (6 of the 6 pairs concordant; `w50 > w25 > w125 > w0` raw and `w125 > w50 > w25 > w0` coarse, on both
+profiles), and +1.000 on alive/dead F1 (`w125 > w50 > w25 > w0`, both profiles). On macroF1, which is only the
+tiebreaker, it is +0.333 under each truth (4 concordant, 2 discordant: `w25` passes `w50`, and `w0` passes `w125`, which
+v3 had 0.0002 apart under the raw truth).
+
+| config | raw: pooled spellF1 v3 to `context` | Δ mean per match [90% t] | sign-flip p | wins / losses | coarse: pooled spellF1 | Δ mean per match [90% t] | sign-flip p | wins / losses |
+|---|---|---|---|---|---|---|---|---|
+| `nearest_w50` | 0.2018 to 0.2193 | +0.0174 [+0.0091, +0.0258] | 0.0156 | 7 / 0 | 0.1842 to 0.2057 | +0.0213 [+0.0127, +0.0299] | 0.0156 | 7 / 0 |
+| `nearest_w25` | 0.1900 to 0.2097 | +0.0195 [+0.0143, +0.0248] | 0.0156 | 7 / 0 | 0.1432 to 0.1608 | +0.0175 [+0.0106, +0.0243] | 0.0156 | 7 / 0 |
+| `nearest_w125` | 0.1665 to 0.1774 | +0.0110 [+0.0075, +0.0146] | 0.0156 | 7 / 0 | 0.2226 to 0.2443 | +0.0219 [+0.0155, +0.0282] | 0.0156 | 7 / 0 |
+| `nearest_w0` | 0.0777 to 0.0812 | +0.0035 [+0.0010, +0.0061] | 0.0469 | 6 / 1 | 0.0342 to 0.0369 | +0.0026 [+0.0009, +0.0044] | 0.0312 | 6 / 1 |
+
+| config | macroF1 v3 to `context` (raw truth) | Δ mean per match [90% t], wins / losses (7 / 0 each) | macroF1 (coarse truth) | Δ mean per match [90% t] | alive/dead F1 | predicted D share | predicted possessions per min |
+|---|---|---|---|---|---|---|---|
+| `nearest_w50` | 0.4592 to 0.5144 | +0.0545 [+0.0452, +0.0637] | 0.4602 to 0.5160 | +0.0551 [+0.0458, +0.0644] | 0.6094 to 0.6575 | 0.3341 to 0.3416 | 4.30 to 4.37 |
+| `nearest_w25` | 0.4567 to 0.5198 | +0.0622 [+0.0524, +0.0720] | 0.4555 to 0.5191 | +0.0626 [+0.0529, +0.0722] | 0.5935 to 0.6516 | 0.3764 to 0.3863 | 5.36 to 5.49 |
+| `nearest_w125` | 0.4407 to 0.4770 | +0.0359 [+0.0285, +0.0434] | 0.4509 to 0.4877 | +0.0365 [+0.0292, +0.0438] | 0.6428 to 0.6711 | 0.2329 to 0.2308 | 3.05 to 3.07 |
+| `nearest_w0` | 0.4405 to 0.5103 | +0.0688 [+0.0584, +0.0792] | 0.4390 to 0.5088 | +0.0688 [+0.0584, +0.0792] | 0.5761 to 0.6453 | 0.4189 to 0.4313 | 13.92 to 14.66 |
+
+- **The order does not depend on how the gaps are placed, under the two ways we have of placing them.** Copying our
+  masks in time (R004c) and drawing them from a hazard fitted on our match give the same order of the four yardsticks
+  under each truth, with the same Kendall tau against the published order (+0.667), and the same `w0` last by a margin
+  that is far outside the noise. That is what `context` was kept for, and it is all that it is evidence for.
+- **The sizes are not the same, and they all move the same way.** Every config scores higher on `context`: spellF1 by
+  +0.0027 (`w0`, coarse) to +0.0217 (`w125`, coarse) pooled, with `w50`, `w25` and `w125` winning in 7 matches of 7 under
+  both truths and `w0` in 6 of 7; macroF1 by +0.036 to +0.070 pooled, in 7 of 7 matches for every config under both
+  truths; alive/dead F1 by +0.028 to +0.069. R004c's seeds moved a pooled spellF1 by up to about 0.013 (v3 only: no
+  per-seed score exists for `context`): the deltas of `w0` are under that, and the other six, +0.011 to +0.022, are of
+  its size or up to 1.7 times it, where R004c's v3-against-v2 differences (0.6 points at most) were inside it.
+  **The mechanism was not measured.** What the numbers do say is that `context` hides the ball on dead frames more
+  (0.4622 visible, against v3's 0.5684 and our window's 0.6637) and that the yardsticks fall back to `D` where the
+  window of a frame holds no ball (`fallback = "D"` in the configs), so a profile that loses the ball more on dead
+  frames may be one on which this rule does better. That is a reading and not a result: the predicted D share rose for
+  `w0`, `w25` and `w50`, by +0.0124, +0.0099 and +0.0075, and fell by 0.0021 for `w125`, whose alive/dead F1 rose all the
+  same. If it is the cause, **a method that reads the ball's absence as a sign of a dead ball would be validated
+  optimistically on `context`**, and more so than on `tracking` v3, whose ball is visible on 0.5684 of the dead frames
+  against our window's 0.6637, so that v3 already hides it there more than ours does.
+- **`context` is not a better copy of our match than `tracking` v3.** It was built to be nearer in one respect: its
+  gaps follow the play in the model's six features, as ours do, which `tracking`'s copied masks cannot. The near-line
+  gate says that the way it does so is not ours (v3 has no such gate, and its near-line share was not measured). On the
+  figures that both profiles have, it is further from ours than v3: the share missing (0.4313 against 0.4110, where
+  v3's 0.4189 passes), the median gap (11.88 s against our 10.74 s, v3's 10.76 s) and the ball visible on dead frames
+  (0.4622, v3's 0.5684, ours 0.6637). No profile of the benchmark is ours, and this one is not nearer.
+- Per-seed yardstick scores were not computed for `context`, and the draws are not the same as v3's (the ball's mask is
+  from another generator), so the pairing is over the matches and says nothing of the seeds.
+
+Runtime: the runner's own line says 5.5 to 6.2 s per config for the raw truth and 5.2 to 5.7 s for the coarse one, 5.1
+to 5.6 s for the paired two-config runs, with the DFL caches and the Calibration cached; the suites 265 s, 46 s, 5 s
+and 9 s (above; the timings are load-dependent).
+Verdict: **`context` v1 is kept in the code as a sensitivity profile and is not the benchmark's profile**: it fails the
+near-line gate on every seed (0.5586 against 0.2797 +-0.05, because DFL tracks the ball out of play and the hazard that
+fits ours is applied to those rows), fails the share missing pooled and on seed 2 (0.4313 against 0.4110 +-0.02, by
+0.0003 pooled), and warns on the ball visible on dead frames (0.4622 against 0.6637 +-0.10). No fix, no second rescale
+of `HAZARD_SCALE`, no gate moved; `DEFAULT_PROFILE` stays `tracking` (version 3), so the validation of any method is
+R004c's `tracking` v3, and a number from `context` is not compared with one from it. What the check says: the order of
+the four yardsticks is the same under the two ways of placing the gaps (tau +1.000 between the profiles' orders on each
+truth, +0.667 against the published order under each), and `w0` is last by far on both; every score is higher on
+`context` (0.3 to 2.2 points of pooled spellF1), possibly because it hides the ball more on dead frames, which the
+yardsticks read as dead (not measured). Do not choose between `w125` and the others where the raw and the coarse
+truth disagree, on either profile.
 
 ## Submission log
 
