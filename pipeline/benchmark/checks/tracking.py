@@ -1397,6 +1397,27 @@ def test_data_tracking_profile_on_a_real_match_with_our_real_calibration():
     assert abs(lost / on_pitch - parameters.d) < 0.003, (lost / on_pitch, parameters.d)
 
 
+def second_difference_norms(xy_m, present, spans):
+    """The norms, in metres, of the second difference p[t+1] - 2 p[t] + p[t-1] of the slots present at all three
+    frames, inside each span, in span order: the array that shape_of_norms reduces."""
+    norms = []
+    for _, start, stop in spans:
+        inside = present[start:stop]
+        triple = inside[2:] & inside[1:-1] & inside[:-2]
+        second = xy_m[start + 2:stop] - 2.0 * xy_m[start + 1:stop - 1] + xy_m[start:stop - 2]
+        norms.append(np.sqrt((second * second).sum(axis=2))[triple])
+    return np.concatenate(norms)
+
+
+def shape_of_norms(norms):
+    """(triples, RMS, median, 99th percentile, share of the squares in the largest 0.05% of triples) of an array
+    of second-difference norms, which may be several matches' laid end to end."""
+    squares = np.sort(norms * norms)[::-1]
+    top = max(1, int(0.0005 * squares.size))
+    return (int(norms.size), float(np.sqrt(squares.mean())), float(np.median(norms)), float(np.quantile(norms, 0.99)),
+            float(squares[:top].sum() / squares.sum()))
+
+
 def second_difference_shape(xy_m, present, spans):
     """(triples, RMS, median, 99th percentile, share of the squares in the largest 0.05% of triples) of the second
     difference p[t+1] - 2 p[t] + p[t-1] of the slots present at all three frames, inside each span, in metres.
@@ -1404,17 +1425,7 @@ def second_difference_shape(xy_m, present, spans):
     The RMS is calibration.player_stats' jitter, and the rest says what it is made of: DFL's is a few rare jumps (a
     large share of its squares in a tiny share of the triples) on a 1 cm grid, and not noise. What a centred average
     does to them inside a piece is measured on the profile's own draws, with and without it (T35, R004c)."""
-    norms = []
-    for _, start, stop in spans:
-        inside = present[start:stop]
-        triple = inside[2:] & inside[1:-1] & inside[:-2]
-        second = xy_m[start + 2:stop] - 2.0 * xy_m[start + 1:stop - 1] + xy_m[start:stop - 2]
-        norms.append(np.sqrt((second * second).sum(axis=2))[triple])
-    norms = np.concatenate(norms)
-    squares = np.sort(norms * norms)[::-1]
-    top = max(1, int(0.0005 * squares.size))
-    return (int(norms.size), float(np.sqrt(squares.mean())), float(np.median(norms)), float(np.quantile(norms, 0.99)),
-            float(squares[:top].sum() / squares.sum()))
+    return shape_of_norms(second_difference_norms(xy_m, present, spans))
 
 
 def test_second_difference_shape_counts_what_it_says():
@@ -1432,6 +1443,29 @@ def test_second_difference_shape_counts_what_it_says():
     present[3, 0] = False                       # the triples 2-4, 3-5 and 4-6... all those with row 3 are gone
     assert second_difference_shape(line, present, [(1, 0, 7)])[0] == 2
     assert second_difference_shape(line, np.ones((7, 1), dtype=bool), [(1, 0, 4), (2, 4, 7)])[0] == 2 + 1
+
+
+def test_second_difference_shape_pools_matches_by_their_norms():
+    """The shape of the second differences of two matches pooled is the shape of their norms laid end to end.
+
+    The data check pools the degraded players of 7 matches into one row of its table of what the jitter is made of
+    without holding their positions: each match gives its norms (second_difference_norms), and shape_of_norms
+    reduces the pool. One call of second_difference_shape on the two matches laid end to end, each in its own
+    span, must give the same row to the last digit, and a single match must give the one that
+    second_difference_shape gives."""
+    rng = np.random.default_rng(5)
+    first, second = rng.normal(size=(40, 3, 2)), rng.normal(size=(55, 3, 2)) * 3.0
+    present_first, present_second = rng.random((40, 3)) > 0.1, rng.random((55, 3)) > 0.2
+    spans_first, spans_second = [(1, 2, 40)], [(1, 0, 30), (2, 30, 55)]
+    pooled = shape_of_norms(np.concatenate([second_difference_norms(first, present_first, spans_first),
+                                            second_difference_norms(second, present_second, spans_second)]))
+    laid = second_difference_shape(np.concatenate([first, second]), np.concatenate([present_first, present_second]),
+                                   [(1, 2, 40), (1, 40, 70), (2, 70, 95)])
+    assert pooled == laid, (pooled, laid)
+    assert pooled[0] == second_difference_shape(first, present_first, spans_first)[0] + second_difference_shape(
+        second, present_second, spans_second)[0]
+    assert shape_of_norms(second_difference_norms(first, present_first, spans_first)) == second_difference_shape(
+        first, present_first, spans_first)
 
 
 # The one measurement that WRONG_TEAM_SCALE was worked out from (docs/results.md R004): the observable wrong-team frames
@@ -1459,7 +1493,8 @@ def test_data_tracking_constants_follow_from_the_measurements():
     share must be within 0.03 of ours, the gate's own band, measured now. It prints both, per match and pooled, the
     degraded players' jitter after the smoothing beside DFL's and ours, the same measured inside tracklets (equal to it:
     asserted, since no slot changes player between two adjacent rows), what the jitter is made of (its median, 99th
-    percentile and the share of its squares in rare jumps) and the wrong-team episodes that player_stats sees in the
+    percentile and the share of its squares in rare jumps: ours, each clean match, and the degraded players pooled,
+    with the average and without it) and the wrong-team episodes that player_stats sees in the
     degraded matches beside ours (information). (3) the scale of the tracked spans: the walk draws its spans from our
     final tracklets, which already hold the cuts that the cap and the episodes add, so TRACKED_SCALE is lambda = ours'
     tracklet median (the Calibration's) over the pooled median of this profile at lambda = 1 with the shortest-piece
@@ -1486,6 +1521,7 @@ def test_data_tracking_constants_follow_from_the_measurements():
     target = cal.wrong_team_share
     jitter, seen_episodes = {"clean": [0.0, 0], "unsmoothed": [0.0, 0], "degraded": [0.0, 0]}, []
     inside = {"unsmoothed": [0.0, 0], "degraded": [0.0, 0]}     # the same two, taken inside tracklets (squares, triples)
+    pooled_norms = {"degraded": [], "unsmoothed": []}          # the same two draws' second-difference norms, per match
     wrong = {"first": [0, 0], "frozen": [0, 0]}
     medians = {"one": [], "frozen": []}
     spells = {"frozen": [0, 0, 0]}                      # frames on the pitch, frames lost, pieces dropped by the rule
@@ -1543,6 +1579,8 @@ def test_data_tracking_constants_follow_from_the_measurements():
                     assert abs(rms_inside - per_slot["jitter_rms_m"]) < 1e-9, (match_id, name_, rms_inside)
                     inside[name_][0] += rms_inside ** 2 * count
                     inside[name_][1] += count
+                    pooled_norms[name_].append(second_difference_norms(array * pitch, np.isfinite(array[:, :, 0]),
+                                                                       spans))
                 clean_present = np.isfinite(np.asarray(view.players_xy)[:, :, 0])
                 for half, start, stop in view.graded:
                     spells["frozen"][0] += int(clean_present[start:stop].sum())
@@ -1561,6 +1599,12 @@ def test_data_tracking_constants_follow_from_the_measurements():
         del match, view, clean
     rms = {name: math.sqrt(squares / triples) for name, (squares, triples) in jitter.items()}
     rms_inside = {name: math.sqrt(squares / triples) for name, (squares, triples) in inside.items()}
+    # The degraded players' rows of the table of what the jitter is made of, pooled over the 7 matches (seed 0, the
+    # frozen profile), through the same function as DFL's and ours: the draws with the average and without it.
+    for name in ("degraded", "unsmoothed"):
+        shapes[name] = shape_of_norms(np.concatenate(pooled_norms[name]))
+        assert shapes[name][0] == jitter[name][1] and abs(shapes[name][1] - rms[name]) < 1e-9, (
+            "the table's row is the figure above it", name, shapes[name][:2], rms[name])
     first, frozen = (wrong[name][0] / wrong[name][1] for name in ("first", "frozen"))
     print("      jitter, RMS of the second difference: DFL clean {:.4f} m ({:.1f} x ours), degraded with the {}-frame "
           "average {:.4f} m ({:.1f} x ours) and, the same draws without it, {:.4f} m; ours {:.4f} m".format(
@@ -1574,9 +1618,11 @@ def test_data_tracking_constants_follow_from_the_measurements():
           "{:.5f} ({:,}); ours {:.5f}, gate +-0.03".format(first, *wrong["first"], degrade.WRONG_TEAM_SCALE, frozen,
                                                           wrong["frozen"][0], target))
     print("      what the jitter is made of (second difference of a position, m): RMS, median, 99th percentile, "
-          "share of the squares in the largest 0.05% of triples")
+          "share of the squares in the largest 0.05% of triples; ours, each match's clean players, and the degraded "
+          "ones pooled over the matches (seed 0), with the {}-frame average and without it".format(
+              degrade.SMOOTH_WINDOW))
     for name, (count, rms_m, median, p99, share) in shapes.items():
-        print("      {:<8} {:>9,} triples   {:.4f} {:.4f} {:.4f}   {:.2f}".format(
+        print("      {:<10} {:>9,} triples   {:.4f} {:.4f} {:.4f}   {:.2f}".format(
             name, count, rms_m, median, p99, share))
     print("      wrong-team episodes as player_stats sees them at the frozen scale (seed 0, count, median, 90th "
           "percentile): {}; ours {} of median {:.2f} s and 90th percentile {:.2f} s".format(
