@@ -173,6 +173,18 @@ because its rule says so and leaves the jumps in. So when a method reads positio
 medians and percentiles and not an RMS, and know that the benchmark's players are rougher than ours
 (`test_data_tracking_constants_follow_from_the_measurements` prints them; R004).
 
+**T36 — Two DFL matches have a team down to 10, and a gate on how many players are present cannot see it.** J03WN1's
+away team has 10 players from minute 7.1 of the first half to the end of the match (92.5% of its graded frames) and
+J03WQQ's from minute 13.4 of the second half (37.2%): 18.3% of the seven matches' graded frames have 21 players, and
+none has more than 22. A statistic about how many slots are present (the share of frames with all 22, the mean) on all
+frames is pulled down by the missing player whatever the degradation does, while ours is one match that is assumed to have
+22 players on the pitch throughout. The first version of R004 gated on all frames and passed on two effects that cancel
+(a profile with too many frames at 22, and 18.3% of frames that cannot have 22); with the tail it would have failed for
+a reason that had nothing to do with it. Measure such counts on the frames where the clean match has 22 players
+(`fidelity.COUNT_GATES`, `fidelity.full_strength_blocks`), and look at the frames where a statistic cannot reach its
+value before trusting it. The wrong-team episodes are about half unobservable on 10 against 11, which lowers that share
+in those two matches (R004).
+
 ## Reproducibility and environment
 
 **T20 — Use the team venv.** It runs Python 3.11.9 in `.venv`, with numpy 2.4.6, pandas 3.0.6 and kloppy 3.18.0.
