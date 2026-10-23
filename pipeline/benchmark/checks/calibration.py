@@ -24,7 +24,7 @@ import tempfile
 import numpy as np
 
 import possession_metrics as pm
-from pipeline.benchmark import calibration
+from pipeline.benchmark import calibration, hazard
 from pipeline.selftest import expect_error, make_synthetic_bundle, quiet, synthetic_inputs
 
 # Params
@@ -464,6 +464,34 @@ def test_calibration_measure_synthetic():
             assert abs(got["poss_per_min"] - summary["possessions"] / minutes) < 1e-8, (width, got)
             assert abs(got["d_share"] - summary["labels_graded"]["D"] / summary["graded_frames"]) < 1e-8, (width, got)
 
+        # The hazard (A08) is what fit_hazard gives on the same arrays, spans and interior gaps, and its counts are the
+        # scalars: every onset is either a row of the fit or counted as lost to an undefined feature.
+        fitted = calibration.fit_hazard(
+            atd.ball_present, inputs.metres(atd.ball_xy), atd.players_present, inputs.metres(atd.players_xy), spans,
+            inputs.pitch, inputs.fps, direct["interior_durations_s"], direct["gap_onset_minute"],
+            direct["gap_onset_near_line"])
+        for name in ("coef", "mean", "scale"):
+            assert getattr(cal.hazard_model, name).tobytes() == getattr(fitted["model"], name).tobytes(), name
+            assert getattr(cal.hazard_model, name).shape == (len(hazard.FEATURES),)
+        assert cal.hazard_model.intercept == fitted["model"].intercept
+        assert (cal.hazard_l2, cal.hazard_c, cal.hazard_auc, cal.hazard_go) == (
+            fitted["l2"], fitted["c"], fitted["auc"], fitted["go"])
+        assert cal.hazard_fallback_cells == fitted["fallback_cells"] and cal.hazard_go in (True, False)
+        assert sorted(cal.hazard_durations_s) == [0, 1] and all(sorted(row) == [0, 1, 2] for row in
+                                                                cal.hazard_durations_s.values())
+        for cls in (0, 1):
+            for third in (0, 1, 2):
+                cell = cal.hazard_durations_s[cls][third]
+                assert cell.tolist() == fitted["durations"][cls][third].tolist() and cell.size > 0
+                assert not cell.flags.writeable
+        for name, value in fitted["counts"].items():
+            assert cal.scalars["hazard_" + name] == value, name
+        for name, value in fitted["cross_l2"].items():
+            assert cal.scalars["hazard_l2_" + name] == value, name
+        assert cal.scalars["hazard_events"] + cal.scalars["hazard_nan_events"] == cal.scalars["interior_gaps"]
+        assert cal.scalars["hazard_visible"] == cal.scalars["frames"] - cal.scalars["missing_frames"]
+        assert abs(cal.hazard_c - 1.0) < 1e-6, "the intercept is not penalised: the mean probability is the rate"
+
         # The same inputs give the same arrays and the same description, byte for byte.
         again = calibration.measure(inputs, gt)
         assert calibration.digest(again) == calibration.digest(cal)
@@ -518,6 +546,406 @@ def test_calibration_describe_survives_a_minute_before_the_kickoff():
             gap_onset_near_line=np.zeros(0, dtype=bool)))["onsets_per_10_min"] == []
 
 
+# -- the hazard fit (A08) ---------------------------------------------------------------------------------------------
+
+def hazard_fixture():
+    """(ball_present, ball_xy_m, players_present, players_xy_m, blocks, pitch, fps): ball_fixture() and two players.
+
+    The players stand still on the pitch, present on every frame (a slot of (60, 40) and one of (50, 30)), so that the
+    only feature that is ever undefined is the ball's speed, on a frame with no defined step yet.
+    """
+    present, xy, blocks, pitch, fps = ball_fixture()
+    n = len(present)
+    return (present, xy, np.ones((n, 2), dtype=bool), np.tile(np.array([(60.0, 40.0), (50.0, 30.0)]), (n, 1, 1)),
+            blocks, pitch, fps)
+
+
+def test_calibration_v2_synthetic():
+    """The hazard's rows, worked out by hand on the ball fixture, and its duration cells with their fallback."""
+    present, xy, players_present, players_xy, blocks, pitch, fps = hazard_fixture()
+    given = [array.copy() for array in (present, xy, players_present, players_xy)]
+    rows, counts = calibration.hazard_rows(present, xy, players_present, players_xy, blocks, pitch, fps)
+
+    # Block 1 (frames 10-709, r = 0-699 inside it) has 555 visible frames: 700 less g1 (20), g2 (5), g3 (20), g4 (100).
+    # r = 599 is the visible frame before g4, which runs to the end of the block: neither an event nor a non-event, so it
+    # is left out and counted (edge). The last frame of the block is in g4, so no frame is the last visible one. r = 0
+    # has no step yet: its speed is NaN, so it is left out and counted. That leaves 553 rows, with 3 events: r = 99, 149
+    # and 329, the visible frames before the interior gaps g1, g2 and g3.
+    # Block 2 (710-1009, r = 0-299) has 280 visible frames: 300 less g5 (10), g6 (5) and g7 (5). g5 touches the start of
+    # the block, so no visible frame precedes it. r = 299 is visible and the last frame: nothing follows it (last_frame).
+    # r = 10 is the first visible frame, with no step before it: NaN speed. 278 rows, with 2 events: r = 199 and 249.
+    assert counts == {"visible": 835, "edge": 1, "last_frame": 1, "nan_rows": 2, "nan_events": 0, "rows": 831,
+                      "events": 5, "rows_1": 553, "events_1": 3, "rows_2": 278, "events_2": 2}, counts
+    assert counts["visible"] == counts["edge"] + counts["last_frame"] + counts["nan_rows"] + counts["rows"]
+
+    line, minute = hazard.FEATURES.index("line_distance_m"), hazard.FEATURES.index("minute_of_half")
+    (x1, y1), (x2, y2) = rows[1], rows[2]
+    assert sorted(rows) == [1, 2] and x1.shape == (553, 6) and x2.shape == (278, 6), (x1.shape, x2.shape)
+    assert y1.shape == (553,) and y2.shape == (278,) and set(y1.tolist()) == set(y2.tolist()) == {0.0, 1.0}
+    assert not np.isnan(x1).any() and not np.isnan(x2).any(), "a row with an undefined feature is left out"
+    assert y1.sum() == 3 and y2.sum() == 2
+    # The features are those of the at-risk frame r itself (the last visible frame), not of the frame after it: the
+    # event rows carry the line distance and the minute of the onsets of the fixture (1.5 m, exactly 2 m and beyond the
+    # line in block 1; 1.0 m and 105.3 - 104.0 in block 2), at one frame a second.
+    assert np.allclose(x1[y1 == 1][:, line], [1.5, 2.0, -0.5], rtol=0, atol=1e-12), x1[y1 == 1][:, line]
+    assert np.allclose(x1[y1 == 1][:, minute], np.array([99, 149, 329]) / 60.0, rtol=0, atol=1e-12)
+    assert np.allclose(x2[y2 == 1][:, line], [1.0, 105.3 - 104.0], rtol=0, atol=1e-12), x2[y2 == 1][:, line]
+    assert np.allclose(x2[y2 == 1][:, minute], np.array([199, 249]) / 60.0, rtol=0, atol=1e-12)
+    # The rows themselves, by their minute (r / 60): r = 0 is out and r = 1 is the first; r = 598 is in and r = 599 (the
+    # edge) is out; in block 2 r = 11 is the first and r = 298 the last (r = 299 is the last frame).
+    assert np.isclose(x1[0, minute], 1 / 60) and np.isclose(x2[0, minute], 11 / 60) and np.isclose(
+        x2[-1, minute], 298 / 60), (x1[0, minute], x2[0, minute], x2[-1, minute])
+    assert np.isclose(x1[:, minute], 598 / 60).sum() == 1 and not np.isclose(x1[:, minute], 599 / 60).any()
+    # The speed of the first frame after a gap is the one from before it (carried), so it is defined and the row stays:
+    # r = 120 after g1 and r = 155 after g2.
+    assert np.isclose(x1[:, minute], 120 / 60).sum() == 1 and np.isclose(x1[:, minute], 155 / 60).sum() == 1
+
+    # The same rows come out of the same arrays, and the arrays given are not changed.
+    again, again_counts = calibration.hazard_rows(present, xy, players_present, players_xy, blocks, pitch, fps)
+    assert again_counts == counts and all(np.array_equal(again[h][0], rows[h][0]) and np.array_equal(
+        again[h][1], rows[h][1]) for h in (1, 2))
+    assert all(np.array_equal(before, after, equal_nan=True) for before, after in zip(
+        given, (present, xy, players_present, players_xy))), "hazard_rows changed what it was given"
+
+    # No gap at all: every frame but the last is a non-event; a ball that is never seen: no row at all.
+    clear, clear_counts = calibration.hazard_rows(
+        np.ones(50, dtype=bool), np.full((50, 2), 10.0), np.ones((50, 1), dtype=bool), np.full((50, 1, 2), 20.0),
+        [(1, 0, 50)], pitch, fps)
+    assert clear[1][0].shape == (48, 6) and clear[1][1].sum() == 0 and clear_counts["last_frame"] == 1
+    assert clear_counts["nan_rows"] == 1 and clear_counts["events"] == 0, clear_counts   # r = 0: no step yet
+    blind, blind_counts = calibration.hazard_rows(
+        np.zeros(50, dtype=bool), np.full((50, 2), np.nan), np.ones((50, 1), dtype=bool), np.full((50, 1, 2), 20.0),
+        [(1, 0, 50)], pitch, fps)
+    assert blind[1][0].shape == (0, 6) and blind_counts["visible"] == 0 and blind_counts["rows"] == 0, blind_counts
+
+    check_duration_cells()
+
+
+def check_duration_cells():
+    """duration_cells on hand-built arrays: classes by the near-line flag, thirds by the minute (cuts at 15 and 30), and
+    a cell with fewer than 5 durations takes its class's durations over all thirds."""
+    # (duration in s, onset minute, near a line), in the order the Calibration holds them: half 1 and then half 2, so
+    # the minutes are not sorted. Class 0: 6, 4 and 5 durations in the thirds 0, 1 and 2 (minutes 15.0 and 30.0 begin the
+    # second and the last third); class 1: none, 5 and 7.
+    entries = [
+        (1.0, 0.5, False), (2.0, 3.0, False), (3.0, 7.0, False), (4.0, 10.0, False), (5.0, 14.9, False),
+        (6.0, 14.99, False),                                                                 # class 0, third 0: 6
+        (11.0, 15.0, False), (12.0, 20.0, False), (13.0, 29.9, False), (14.0, 29.99, False),   # class 0, third 1: 4
+        (21.0, 30.0, False), (22.0, 35.0, False), (23.0, 41.0, False), (24.0, 50.0, False),
+        (25.0, 52.0, False),                                                                 # class 0, third 2: 5
+        (31.0, 16.0, True), (32.0, 17.0, True), (33.0, 18.0, True), (34.0, 25.0, True),
+        (35.0, 29.0, True),                                                                  # class 1, third 1: 5
+        (41.0, 31.0, True), (42.0, 32.0, True), (43.0, 33.0, True), (44.0, 34.0, True), (45.0, 45.0, True),
+        (46.0, 46.0, True), (47.0, 47.0, True),                                              # class 1, third 2: 7
+    ]
+    order = np.random.default_rng([16, 2]).permutation(len(entries))
+    entries = [entries[i] for i in order]
+    durations = np.array([e[0] for e in entries])
+    minutes = np.array([e[1] for e in entries])
+    near = np.array([e[2] for e in entries])
+
+    table, fallback, own = calibration.duration_cells(durations, minutes, near)
+
+    def inside(cls, third):
+        """The durations of a cell, in the order they were given."""
+        return [d for d, m, n in entries if n == bool(cls) and (0 if m < 15 else 1 if m < 30 else 2) == third]
+
+    assert own == {(0, 0): 6, (0, 1): 4, (0, 2): 5, (1, 0): 0, (1, 1): 5, (1, 2): 7}, own
+    # A cell with 5 or more uses its own; 4 and 0 fall back to their class pooled over the thirds (in the given order).
+    assert fallback == ((0, 1), (1, 0)), fallback
+    class0 = [d for d, _, n in entries if not n]
+    class1 = [d for d, _, n in entries if n]
+    assert len(class0) == 15 and len(class1) == 12
+    expected = {(0, 0): inside(0, 0), (0, 1): class0, (0, 2): inside(0, 2),
+                (1, 0): class1, (1, 1): inside(1, 1), (1, 2): inside(1, 2)}
+    assert sorted(table) == [0, 1] and all(sorted(table[cls]) == [0, 1, 2] for cls in (0, 1))
+    for (cls, third), values in expected.items():
+        cell = table[cls][third]
+        assert cell.dtype == np.float64 and cell.tolist() == values, (cls, third, cell, values)
+        assert not cell.flags.writeable, "seconds, read-only"
+    assert [len(inside(0, t)) for t in (0, 1, 2)] == [6, 4, 5] and [len(inside(1, t)) for t in (0, 1, 2)] == [0, 5, 7]
+
+    # No gap of a class at all: there is nothing to draw its durations from, and the error says which class.
+    expect_error(ValueError, lambda: calibration.duration_cells(durations[~near], minutes[~near], near[~near]),
+                 "duration_cells", "onset class 1", "near")
+    expect_error(ValueError, lambda: calibration.duration_cells(durations[near], minutes[near], near[near]),
+                 "duration_cells", "onset class 0")
+    expect_error(ValueError, lambda: calibration.duration_cells(durations[:-1], minutes, near), "duration_cells",
+                 "interior_durations_s", "gap_onset_minute", "parallel")
+    expect_error(ValueError, lambda: calibration.duration_cells(durations, np.where(near, np.nan, minutes), near),
+                 "third_of_minute", "NaN")
+
+
+def hazard_match(seed, near_rate, far_rate, frames=60_000):
+    """(ball_present, ball_xy_m, players_present, players_xy_m, spans, pitch, fps): two halves of `frames` frames, 25 a
+    second, with the ball scattered over the pitch (a metre beyond it too), whose gaps start with probability near_rate
+    on a frame less than 2 m from a line and far_rate elsewhere, and last 5 to 39 frames. The hazard depends on the
+    line distance and on nothing else, so the model has one thing to find (or nothing, when the two rates are equal)."""
+    rng = np.random.default_rng([16, 3, seed])
+    n = 2 * frames
+    xy = rng.uniform((-1.0, -1.0), (PITCH[0] + 1.0, PITCH[1] + 1.0), size=(n, 2))
+    line = np.minimum.reduce([xy[:, 0], PITCH[0] - xy[:, 0], xy[:, 1], PITCH[1] - xy[:, 1]])
+    rate = np.where(line < calibration.NEAR_LINE_M, near_rate, far_rate)
+    draw, length = rng.random(n), rng.integers(5, 40, size=n)
+    present = np.ones(n, dtype=bool)
+    for start, stop in ((0, frames), (frames, n)):
+        r = start
+        while r < stop - 1:
+            if draw[r] < rate[r]:
+                present[r + 1:min(r + 1 + length[r], stop)] = False
+                r += length[r] + 1
+            else:
+                r += 1
+    xy[~present] = np.nan
+    players = rng.uniform((0.0, 0.0), PITCH, size=(n, 3, 2))
+    return present, xy, np.ones((n, 3), dtype=bool), players, [(1, 0, frames), (2, frames, n)], PITCH, 25
+
+
+def fit_of(match):
+    """(fit_hazard's result, ball_stats') for a hazard_match; the interior-gap arrays come from the same spans."""
+    present, xy, players_present, players, spans, pitch, fps = match
+    ball = calibration.ball_stats(present, spans, xy, pitch, fps)
+    return calibration.fit_hazard(present, xy, players_present, players, spans, pitch, fps,
+                                  ball["interior_durations_s"], ball["gap_onset_minute"],
+                                  ball["gap_onset_near_line"]), ball
+
+
+def test_calibration_hazard_finds_a_signal_and_not_a_flat_hazard():
+    """Gaps that start near the lines: both cross-half AUCs high, a negative line-distance coefficient, and go. Gaps
+    at one flat rate: nothing to find, AUCs near 0.5, and no-go. Both on seeded synthetic matches."""
+    result, ball = fit_of(hazard_match(1, near_rate=0.04, far_rate=0.002))
+    auc = result["auc"]
+    assert sorted(auc) == sorted(calibration.HAZARD_AUC_KEYS) == ["full_1to2", "full_2to1", "time_1to2", "time_2to1"]
+    assert all(type(value) is float and 0.0 < value < 1.0 for value in auc.values()), auc
+    assert auc["full_1to2"] >= 0.7 and auc["full_2to1"] >= 0.7, auc
+    assert result["go"] is True
+    # Time carries nothing here, and the full model beats it by a wide margin.
+    assert abs(auc["time_1to2"] - 0.5) < 0.06 and abs(auc["time_2to1"] - 0.5) < 0.06, auc
+    model = result["model"]
+    assert model.coef.shape == model.mean.shape == model.scale.shape == (len(hazard.FEATURES),)
+    assert model.coef[hazard.FEATURES.index("line_distance_m")] < -0.3, model.coef
+    # c is 1 on the rows it was fitted on: the intercept is not penalised, so the model's mean probability is the rate.
+    assert abs(result["c"] - 1.0) < 1e-6 and result["l2"] == calibration.HAZARD_L2 == 1.0, (result["c"], result["l2"])
+    assert set(result["cross_l2"]) == set(calibration.HAZARD_AUC_KEYS) and set(result["cross_l2"].values()) == {1.0}
+    # Every at-risk frame is somewhere, and so is every gap.
+    counts = result["counts"]
+    assert counts["visible"] == counts["edge"] + counts["last_frame"] + counts["nan_rows"] + counts["rows"], counts
+    assert counts["events"] + counts["nan_events"] == ball["interior_gaps"], (counts, ball["interior_gaps"])
+    assert counts["events_1"] + counts["events_2"] == counts["events"] and counts["rows_1"] + counts["rows_2"] == counts[
+        "rows"]
+    assert counts["events"] > 400 and counts["nan_rows"] >= 2, counts   # r = 0 of each half has no step yet
+    # The durations: seconds, 5 to 39 frames at 25 a second, in six cells with no fallback (every cell is full).
+    cells = result["durations"]
+    assert all(cells[c][t].size >= calibration.MIN_CELL_DURATIONS and 0.2 <= cells[c][t].min()
+               and cells[c][t].max() <= 39 / 25 for c in (0, 1) for t in (0, 1, 2)), cells
+    assert result["fallback_cells"] == (), result["fallback_cells"]
+    assert sum(counts["cell_{}_{}".format(c, t)] for c in (0, 1) for t in (0, 1, 2)) == ball["interior_gaps"]
+
+    # The same arrays give the same fit, byte for byte.
+    again, _ = fit_of(hazard_match(1, near_rate=0.04, far_rate=0.002))
+    assert again["model"].coef.tobytes() == model.coef.tobytes() and again["model"].intercept == model.intercept
+    assert again["auc"] == auc and again["c"] == result["c"] and again["go"] == result["go"]
+
+    flat, _ = fit_of(hazard_match(2, near_rate=0.005, far_rate=0.005))
+    assert max(flat["auc"].values()) < 0.6 and flat["go"] is False, flat["auc"]
+    assert min(flat["auc"].values()) > 0.4, flat["auc"]
+
+
+def test_calibration_rate_scale_is_the_rate_over_the_mean_probability():
+    """c, worked out by hand: 1 onset in 4 frames at a mean probability of 0.1 is 2.5; and what it refuses."""
+    assert calibration.rate_scale([0, 0, 0, 1], [0.1, 0.1, 0.1, 0.1]) == 2.5
+    assert calibration.rate_scale([0, 1, 0, 1], [0.1, 0.4, 0.1, 0.4]) == 2.0     # 0.5 over a mean of 0.25
+    assert calibration.rate_scale([1, 0], [0.25, 0.75]) == 1.0                    # the rate is the mean probability
+    assert calibration.rate_scale([1, 0, 0, 0], [1 / 3] * 4) == 0.75
+    assert type(calibration.rate_scale([1, 0], [0.5, 0.5])) is float
+    expect_error(ValueError, lambda: calibration.rate_scale([1, 0], [0.5]), "rate_scale", "one length")
+    expect_error(ValueError, lambda: calibration.rate_scale([], []), "rate_scale", "not empty")
+    expect_error(ValueError, lambda: calibration.rate_scale([1, 0], [0.5, 0.0]), "rate_scale", "above 0")
+
+
+def test_calibration_digest_covers_the_hazard():
+    """Two Calibrations that differ in any hazard field, even in the ninth decimal of a coefficient, are not the same."""
+    with tempfile.TemporaryDirectory() as root:
+        inputs, gt = synthetic_calibration_inputs(root)
+        cal = calibration.measure(inputs, gt)
+        same = calibration.digest(cal)
+        model = cal.hazard_model
+        nudged = np.array(model.coef) + np.array([1e-9] + [0.0] * (len(model.coef) - 1))
+        durations = {cls: dict(thirds) for cls, thirds in cal.hazard_durations_s.items()}
+        durations[1][2] = np.append(durations[1][2], 1.0)
+        changes = {
+            "coef": dataclasses.replace(model, coef=nudged), "intercept": dataclasses.replace(
+                model, intercept=model.intercept + 1e-9),
+            "mean": dataclasses.replace(model, mean=np.array(model.mean) + 1e-9),
+            "scale": dataclasses.replace(model, scale=np.array(model.scale) + 1e-9)}
+        for name, other in changes.items():
+            assert calibration.digest(dataclasses.replace(cal, hazard_model=other)) != same, name
+        for name, value in (("hazard_l2", cal.hazard_l2 * 10), ("hazard_c", cal.hazard_c + 1e-9),
+                            ("hazard_auc", {**cal.hazard_auc, "full_1to2": cal.hazard_auc["full_1to2"] + 1e-9}),
+                            ("hazard_go", not cal.hazard_go), ("hazard_durations_s", durations),
+                            ("hazard_fallback_cells", cal.hazard_fallback_cells + ((1, 1),))):
+            assert calibration.digest(dataclasses.replace(cal, **{name: value})) != same, name
+        assert calibration.digest(dataclasses.replace(cal)) == same
+
+
+def test_calibration_hazard_go_needs_both_full_aucs_at_the_threshold():
+    """go is full_1to2 >= 0.60 and full_2to1 >= 0.60: the threshold counts, and one half is not enough."""
+    match = hazard_match(4, near_rate=0.04, far_rate=0.002, frames=20_000)
+    present, xy, players_present, players, spans, pitch, fps = match
+    ball = calibration.ball_stats(present, spans, xy, pitch, fps)
+    real = hazard.auc
+
+    def fake_auc(first, second):
+        """The two full-model AUCs are the values scripted; the time-only ones are 0.5."""
+        scripted = iter([first, second, 0.5, 0.5])
+        return lambda scores, labels: next(scripted)
+
+    def go(first, second):
+        hazard.auc = fake_auc(first, second)
+        try:
+            return calibration.fit_hazard(present, xy, players_present, players, spans, pitch, fps,
+                                          ball["interior_durations_s"], ball["gap_onset_minute"],
+                                          ball["gap_onset_near_line"])
+        finally:
+            hazard.auc = real
+
+    assert go(0.60, 0.60)["go"] is True, "0.60 is enough"
+    assert go(0.5999, 0.9)["go"] is False and go(0.9, 0.5999)["go"] is False
+    assert go(0.9, 0.9)["go"] is True and go(0.4, 0.4)["go"] is False
+    # The decision is on the stored (rounded to 1e-9) values: 0.5999999996 is stored as 0.6.
+    assert go(0.5999999996, 0.5999999996)["go"] is True
+    assert go(0.5999999994, 0.9)["go"] is False
+
+
+def test_calibration_hazard_fits_one_half_and_scores_the_other():
+    """The four AUCs are cross-half: a model fitted on half a is scored on half b, the full one on the six features and
+    the time-only one on the minute alone, in the order of HAZARD_AUC_KEYS; the final model is fitted on both pooled."""
+    match = hazard_match(6, near_rate=0.04, far_rate=0.002, frames=20_000)
+    present, xy, players_present, players, spans, pitch, fps = match
+    rows, counts = calibration.hazard_rows(present, xy, players_present, players, spans, pitch, fps)
+    one, two = len(rows[1][1]), len(rows[2][1])
+    assert one != two and counts["rows_1"] == one and counts["rows_2"] == two
+    real_fit, real_auc = hazard.fit_logistic, hazard.auc
+    fits, scored = [], []
+
+    def fit(X, y, l2=1.0, iterations=50):
+        fits.append((len(y), X.shape[1], float(y.sum())))
+        return real_fit(X, y, l2=l2, iterations=iterations)
+
+    def auc(scores, labels):
+        scored.append((len(labels), int(np.sum(labels))))
+        return real_auc(scores, labels)
+
+    hazard.fit_logistic, hazard.auc = fit, auc
+    try:
+        result, _ = fit_of(match)
+    finally:
+        hazard.fit_logistic, hazard.auc = real_fit, real_auc
+    events = {1: int(rows[1][1].sum()), 2: int(rows[2][1].sum())}
+    # Fitted on: half 1, half 2 (the full model, six columns), half 1, half 2 (the minute, one column), both pooled.
+    assert fits == [(one, 6, events[1]), (two, 6, events[2]), (one, 1, events[1]), (two, 1, events[2]),
+                    (one + two, 6, events[1] + events[2])], fits
+    # Scored on: half 2, half 1, half 2, half 1.
+    assert scored == [(two, events[2]), (one, events[1]), (two, events[2]), (one, events[1])], scored
+    # And the number stored under each key is that fit's AUC, so a swap of the two halves cannot hide: the two AUCs of a
+    # model differ on this match, and each is recomputed here from its own half.
+    assert result["auc"]["full_1to2"] != result["auc"]["full_2to1"] and result["auc"]["time_1to2"] != result["auc"][
+        "time_2to1"], result["auc"]
+    model_1 = real_fit(rows[1][0], rows[1][1])
+    expected = real_auc(hazard.predict(model_1, rows[2][0]), rows[2][1])
+    assert result["auc"]["full_1to2"] == round(expected, 9), (result["auc"]["full_1to2"], expected)
+    model_2 = real_fit(rows[2][0][:, [5]], rows[2][1])
+    expected = real_auc(hazard.predict(model_2, rows[1][0][:, [5]]), rows[1][1])
+    assert result["auc"]["time_2to1"] == round(expected, 9), (result["auc"]["time_2to1"], expected)
+
+
+def test_calibration_hazard_refits_with_a_larger_penalty_and_never_swallows():
+    """A fit that does not converge is refitted with the penalty times 10, at most 3 times, and the l2 used is kept; when
+    every penalty fails the error says so; any other error is raised at once."""
+    match = hazard_match(3, near_rate=0.04, far_rate=0.002, frames=20_000)
+    real = hazard.fit_logistic
+    calls = []
+
+    def needs(l2_needed):
+        def fake(X, y, l2=1.0, iterations=50):
+            calls.append(l2)
+            if l2 < l2_needed:
+                raise hazard.NotConverged("hazard.fit_logistic: no convergence in a stub")
+            return real(X, y, l2=l2, iterations=iterations)
+        return fake
+
+    try:
+        hazard.fit_logistic = needs(100.0)
+        result, _ = fit_of(match)
+        assert result["l2"] == 100.0 and result["cross_l2"] == {key: 100.0 for key in calibration.HAZARD_AUC_KEYS}
+        assert calls == [1.0, 10.0, 100.0] * 5, calls   # four cross-half fits and the pooled one, each refitted twice
+        # What comes out is the fit at that penalty, and not the fit at the first one.
+        pooled = real(*pooled_rows(match), l2=100.0)
+        assert result["model"].coef.tobytes() == pooled.coef.tobytes() and result["model"].intercept == pooled.intercept
+        hazard.fit_logistic = real
+        assert fit_of(match)[0]["model"].coef.tobytes() != pooled.coef.tobytes()
+
+        calls.clear()
+        hazard.fit_logistic = needs(1000.0)
+        assert fit_of(match)[0]["l2"] == 1000.0 and calls == [1.0, 10.0, 100.0, 1000.0] * 5, calls
+
+        calls.clear()
+        hazard.fit_logistic = needs(1e4)    # 1, 10, 100 and 1,000 all fail: that is the end of it
+        expect_error(ValueError, lambda: fit_of(match), "calibration", "hazard", "did not converge",
+                     "l2 = 1, 10, 100, 1000", "no convergence in a stub")
+        assert calls == [1.0, 10.0, 100.0, 1000.0], calls
+
+        calls.clear()
+
+        def broken(X, y, l2=1.0, iterations=50):
+            calls.append(l2)
+            raise ValueError("hazard.fit_logistic: X has 3 NaN")
+
+        hazard.fit_logistic = broken
+        expect_error(ValueError, lambda: fit_of(match), "X has 3 NaN")
+        assert calls == [1.0], "a bad input is not a convergence problem, and no penalty cures it: {}".format(calls)
+    finally:
+        hazard.fit_logistic = real
+
+
+def pooled_rows(match):
+    """(X, y) of both halves of a hazard_match, in the order fit_hazard pools them."""
+    present, xy, players_present, players, spans, pitch, fps = match
+    rows, _ = calibration.hazard_rows(present, xy, players_present, players, spans, pitch, fps)
+    return np.concatenate([rows[1][0], rows[2][0]]), np.concatenate([rows[1][1], rows[2][1]])
+
+
+def test_calibration_hazard_refuses_what_it_cannot_fit():
+    present, xy, players_present, players, spans, pitch, fps = hazard_match(5, 0.04, 0.002, frames=10_000)
+    ball = calibration.ball_stats(present, spans, xy, pitch, fps)
+    arrays = (ball["interior_durations_s"], ball["gap_onset_minute"], ball["gap_onset_near_line"])
+
+    def fit(present=present, xy=xy, players_present=players_present, players=players, spans=spans, arrays=arrays):
+        return lambda: calibration.fit_hazard(present, xy, players_present, players, spans, pitch, fps, *arrays)
+
+    fit()()   # the arguments are good
+    expect_error(ValueError, fit(present=present.astype(int)), "ball_present", "bool")
+    expect_error(ValueError, fit(xy=xy[:-1]), "hazard_rows", "ball_present", "ball_xy_m")
+    expect_error(ValueError, fit(players=players[:-1]), "hazard_rows", "players_xy_m")
+    expect_error(ValueError, fit(players_present=players_present[:, :2]), "hazard_rows", "players_present",
+                 "players_xy_m")
+    # The hazard is fitted on one half and scored on the other: it needs halves 1 and 2.
+    expect_error(ValueError, fit(spans=spans[:1]), "halves 1 and 2")
+    expect_error(ValueError, fit(spans=[(1, 0, 10_000), (3, 10_000, 20_000)]), "halves 1 and 2")
+    # The interior-gap arrays have to be those of the same spans: the counts of events must agree.
+    expect_error(ValueError, fit(arrays=tuple(a[:-1] for a in arrays)), "interior", "onsets", "same spans")
+    # A half without an onset (no gap in it) cannot be scored, and the error names the half.
+    gapless = present.copy()
+    gapless[10_000:] = True
+    xy_gapless = np.where(gapless[:, None], np.where(np.isnan(xy), 30.0, xy), xy)
+    ball_gapless = calibration.ball_stats(gapless, spans, xy_gapless, pitch, fps)
+    expect_error(ValueError, lambda: calibration.fit_hazard(
+        gapless, xy_gapless, players_present, players, spans, pitch, fps, ball_gapless["interior_durations_s"],
+        ball_gapless["gap_onset_minute"], ball_gapless["gap_onset_near_line"]), "half 2", "onsets", "both")
+    expect_error(ValueError, lambda: calibration.hazard_rows(present, xy, players_present, players, [], pitch, fps),
+                 "blocks")
+
+
 # -- the cache --------------------------------------------------------------------------------------------------------
 
 def snapshot(root):
@@ -548,20 +976,30 @@ def assert_no_frame_data(value, where="describe()"):
             where, type(value).__name__)
 
 
+def expected_digest(key):
+    """The folder name of a cache key, worked out here from its definition: the first 16 hex digits of the sha256 of the
+    key's canonical JSON (sorted keys, no spaces)."""
+    return hashlib.sha256(json.dumps(key, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()[:16]
+
+
 def test_calibration_cache_inside_data_dir():
-    """load() writes only under <data dir>/cache/benchmark/calibration/, and what it keeps there is reused."""
+    """load() writes only under <data dir>/cache/benchmark/calibration/<digest>/, and what it keeps there is reused."""
     with tempfile.TemporaryDirectory() as root:
         inputs, gt = synthetic_calibration_inputs(root)
         inputs.atd  # the ATD cache is the pipeline's, not this module's: build it first, so that it is not new below
         before = snapshot(root)
         cal = calibration.load(data_dir=root, inputs=inputs, public_gt_codes=gt)
         written = snapshot(root)
-        folder = "cache/benchmark/calibration/"
+        # One folder per key: its name is the first 16 hex digits of the sha256 of the key's canonical JSON.
+        digest = expected_digest(calibration._key(inputs, gt))
+        folder = "cache/benchmark/calibration/{}/".format(digest)
         new = sorted(set(written) - set(before))
         assert new and all(path.startswith(folder) for path in new), new
         assert not [path for path in new if path.endswith((".csv", ".tmp"))], "no CSV, no leftover: {}".format(new)
         assert {path: stat for path, stat in written.items() if path in before} == before, "load() touched a file"
         assert folder + "manifest.json" in new
+        assert os.path.join(root, *calibration.CACHE_FOLDER, digest) == calibration.cache_folder(
+            root, calibration._key(inputs, gt))
 
         # Reused when fresh: nothing is rewritten, and what comes back is what was built.
         loaded = calibration.load(data_dir=root, inputs=inputs, public_gt_codes=gt)
@@ -572,6 +1010,25 @@ def test_calibration_cache_inside_data_dir():
         for half in (1, 2):
             assert not loaded.ball_masks[half].flags.writeable and loaded.ball_masks[half].dtype == bool
             assert loaded.present_counts[half].dtype == np.int16
+        # The hazard (A08) comes back as it went in: the model's arrays as read-only float64, the durations of the six
+        # cells as read-only seconds, the AUCs, the decision and the cells that fell back as plain Python values.
+        for name in ("coef", "mean", "scale"):
+            got = getattr(loaded.hazard_model, name)
+            assert got.dtype == np.float64 and not got.flags.writeable, name
+            assert got.tobytes() == getattr(cal.hazard_model, name).tobytes(), name
+        assert loaded.hazard_model.intercept == cal.hazard_model.intercept and type(
+            loaded.hazard_model.intercept) is float
+        assert (loaded.hazard_l2, loaded.hazard_c, loaded.hazard_auc, loaded.hazard_go) == (
+            cal.hazard_l2, cal.hazard_c, cal.hazard_auc, cal.hazard_go)
+        assert type(loaded.hazard_go) is bool and type(loaded.hazard_l2) is float and type(loaded.hazard_c) is float
+        assert all(type(value) is float for value in loaded.hazard_auc.values())
+        assert loaded.hazard_fallback_cells == cal.hazard_fallback_cells and type(loaded.hazard_fallback_cells) is tuple
+        assert all(type(cell) is tuple for cell in loaded.hazard_fallback_cells)
+        for cls in (0, 1):
+            for third in (0, 1, 2):
+                got = loaded.hazard_durations_s[cls][third]
+                assert got.dtype == np.float64 and not got.flags.writeable and got.size > 0
+                assert got.tobytes() == cal.hazard_durations_s[cls][third].tobytes()
         # rebuild=True parses again, into the same folder.
         calibration.load(data_dir=root, inputs=inputs, public_gt_codes=gt, rebuild=True)
         assert sorted(set(snapshot(root)) - set(before)) == new
@@ -583,36 +1040,69 @@ def test_calibration_cache_inside_data_dir():
         # The repr of a Calibration shows no array, so that a print or a traceback cannot leak a frame (CLAUDE.md).
         text = repr(cal)
         assert "array(" not in text and len(text) < 4000, text
+
+        def holds_array(value):
+            """An array, a dict that holds one at any depth, or the hazard's model (whose arrays a repr would show)."""
+            if isinstance(value, dict):
+                return any(holds_array(item) for item in value.values())
+            return isinstance(value, (np.ndarray, hazard.LogisticModel))
+
         for field in dataclasses.fields(calibration.Calibration):
             value = getattr(cal, field.name)
-            holds_array = isinstance(value, np.ndarray) or (
-                isinstance(value, dict) and any(isinstance(item, np.ndarray) for item in value.values()))
-            assert field.repr is (not holds_array), "{}: repr must be {}".format(field.name, not holds_array)
+            assert field.repr is (not holds_array(value)), "{}: repr must be {}".format(
+                field.name, not holds_array(value))
         expect_error(dataclasses.FrozenInstanceError, lambda: setattr(cal, "wrong_team_share", 0.0), "wrong_team_share")
 
 
 def test_calibration_cache_is_keyed_and_unreadable_means_absent():
-    """A changed config, definition, version, truth or source rebuilds; a damaged cache is rebuilt, never an error."""
+    """A changed config, definition, version, truth or source gets a folder of its own; a damaged cache is rebuilt."""
     from pipeline.inputs import atd_cache
     with tempfile.TemporaryDirectory() as root:
         inputs, gt = synthetic_calibration_inputs(root)
-        folder = os.path.join(root, "cache", "benchmark", "calibration")
-        manifest_path = os.path.join(folder, "manifest.json")
+        parent = os.path.join(root, "cache", "benchmark", "calibration")
 
-        def manifest():
-            with open(manifest_path, encoding="utf-8") as handle:
+        def folder(codes=gt, given=None):
+            """The folder the current key (code, configs, versions, ... as they stand right now) is kept in."""
+            return calibration.cache_folder(root, calibration._key(given or inputs, codes))
+
+        def manifest(codes=gt, given=None):
+            with open(os.path.join(folder(codes, given), "manifest.json"), encoding="utf-8") as handle:
                 return json.load(handle)
 
         def load(codes=gt, given=None):
             return calibration.load(data_dir=root, inputs=given or inputs, public_gt_codes=codes)
 
+        def folders():
+            return sorted(os.listdir(parent))
+
+        def trees():
+            return {name: snapshot(os.path.join(parent, name)) for name in folders()}
+
+        def adds_a_folder(action):
+            """Run `action`; exactly one folder is new, and every old one is exactly as it was. Its name."""
+            before = trees()
+            action()
+            after = trees()
+            added = sorted(set(after) - set(before))
+            assert len(added) == 1, (sorted(before), sorted(after))
+            assert all(after[name] == files for name, files in before.items()), "an old key's folder was touched"
+            return added[0]
+
+        def adds_nothing(action):
+            before = trees()
+            action()
+            assert trees() == before, "a key that is already cached must be read, not rebuilt or rewritten"
+
         cal = load()
         key = manifest()["key"]
+        assert folders() == [expected_digest(key)], (folders(), key)
         assert key["calibration_version"] == calibration.CALIBRATION_VERSION
         assert key["code_sha256"] == calibration.CALIBRATION_SHA256
+        assert key["hazard_sha256"] == calibration.HAZARD_SHA256, "hazard.py makes version 2's fields: it is in the key"
         assert key["atd_sources"] == inputs.atd_manifest["sources"], "the ATD cache's own record of its sources"
         assert key["atd_cache_version"] == inputs.atd_manifest["cache_version"] == atd_cache.CACHE_VERSION
         assert key["numpy"] == np.__version__ and sorted(key["configs"]) == ["0", "125", "25", "50"], key
+        assert key["pitch"] == list(inputs.pitch) and key["fps"] == inputs.fps, "games.py's constants are in the key"
 
         # An edited config must not reuse the baseline outputs of the old one.
         real_folder = calibration.CONFIG_FOLDER
@@ -622,62 +1112,98 @@ def test_calibration_cache_is_keyed_and_unreadable_means_absent():
             handle.write("# edited\n")
         calibration.CONFIG_FOLDER = edited
         try:
-            load()
+            name = adds_a_folder(load)
+            assert name == expected_digest(manifest()["key"]) != expected_digest(key)
             changed = manifest()["key"]
             assert changed["configs"]["25"] != key["configs"]["25"]
             assert changed["configs"]["0"] == key["configs"]["0"] and changed["configs"]["50"] == key["configs"]["50"]
         finally:
             calibration.CONFIG_FOLDER = real_folder
-        load()
+        adds_nothing(load)   # the unedited configs are the first key again: its own folder, read as it is
         assert manifest()["key"] == key
 
-        # A new version, another definition (the hash of calibration.py), another public truth, other kick-offs.
+        # A new version, another definition (the hash of calibration.py), another public truth, other kick-offs, and
+        # another pitch or frame rate (games.py's constants, which every distance and every duration depends on).
         calibration.CALIBRATION_VERSION += 1
         try:
-            load()
+            adds_a_folder(load)
             assert manifest()["key"]["calibration_version"] == calibration.CALIBRATION_VERSION
         finally:
             calibration.CALIBRATION_VERSION -= 1
-        load()
+        adds_nothing(load)
         real_hash = calibration.CALIBRATION_SHA256
         calibration.CALIBRATION_SHA256 = "0" * 64
         try:
-            load()
+            adds_a_folder(load)
             assert manifest()["key"]["code_sha256"] == "0" * 64, "a different code hash must rebuild"
         finally:
             calibration.CALIBRATION_SHA256 = real_hash
-        load()
-        assert manifest()["key"] == key
+        adds_nothing(load)
+        # The same for hazard.py (its features, fit, AUC and thirds make the version-2 fields), with calibration.py as
+        # it is: a checkout with another hazard.py must not read this one's fit.
+        real_hazard_hash = calibration.HAZARD_SHA256
+        calibration.HAZARD_SHA256 = "0" * 64
+        try:
+            adds_a_folder(load)
+            changed = manifest()["key"]
+            assert changed["hazard_sha256"] == "0" * 64, "a different hazard hash must rebuild"
+            assert {k: v for k, v in changed.items() if k != "hazard_sha256"} == {
+                k: v for k, v in key.items() if k != "hazard_sha256"}, "only the hazard hash differs"
+        finally:
+            calibration.HAZARD_SHA256 = real_hazard_hash
+        adds_nothing(load)
         other = gt.copy()
         other[60:70] = A
-        load(other)
-        assert manifest()["key"]["public_gt_sha256"] != key["public_gt_sha256"]
-        load()
+        adds_a_folder(lambda: load(other))
+        assert manifest(other)["key"]["public_gt_sha256"] != key["public_gt_sha256"]
+        adds_nothing(load)
         inputs.kickoffs = {1: 61, 2: 340}
-        load()
+        adds_a_folder(load)
         assert manifest()["key"]["kickoffs"]["1"] == 61
         inputs.kickoffs = {1: 60, 2: 340}
-        load()
+        real_pitch, real_fps = inputs.pitch, inputs.fps
+        inputs.pitch = (105.0, 68.0)
+        adds_a_folder(load)
+        assert manifest()["key"]["pitch"] == [105.0, 68.0]
+        inputs.pitch, inputs.fps = real_pitch, 30
+        adds_a_folder(load)
+        assert manifest()["key"]["fps"] == 30
+        inputs.fps = real_fps
+        adds_nothing(load)
+        assert manifest()["key"] == key
 
         # A new ATD parse (the ATD cache's cache_version) means new arrays under the same source files: rebuilt.
         atd_cache.CACHE_VERSION += 1
         try:
             reparsed, _ = synthetic_calibration_inputs(root)   # its ATD cache is stale, so it parses again
-            load(given=reparsed)
-            assert manifest()["key"]["atd_cache_version"] == atd_cache.CACHE_VERSION == key["atd_cache_version"] + 1
+            adds_a_folder(lambda: load(given=reparsed))
+            assert manifest(given=reparsed)["key"]["atd_cache_version"] == atd_cache.CACHE_VERSION == (
+                key["atd_cache_version"] + 1)
         finally:
             atd_cache.CACHE_VERSION -= 1
         restored, _ = synthetic_calibration_inputs(root)
-        assert load(given=restored) is not None and manifest()["key"] == key
+        adds_nothing(lambda: load(given=restored))
+        assert manifest()["key"] == key and len(folders()) == 10, folders()
 
-        # Unreadable is absent: an array cut short, an array gone, a manifest that is not JSON or lacks a field.
+        # Unreadable is absent: an array cut short, an array gone, a manifest that is not JSON or lacks a field. The
+        # damaged folder is the current key's own, and it is rebuilt in place.
         good = calibration.digest(cal)
-        for damage in ("truncate", "delete", "garbage", "field", "empty", "not parallel"):
+        mine = folder()
+        manifest_path = os.path.join(mine, "manifest.json")
+
+        def edit_manifest(change):
+            content = manifest()
+            change(content)
+            with open(manifest_path, "w", encoding="utf-8", newline="\n") as handle:
+                json.dump(content, handle)
+
+        for damage in ("truncate", "delete", "garbage", "field", "empty", "not parallel", "no hazard", "short model",
+                       "bad auc", "go not a bool", "zero scale", "NaN coef", "no cell", "empty cell", "cell not 1-D"):
             if damage == "truncate":
-                with open(os.path.join(folder, "gap_durations_s.npy"), "wb") as handle:
+                with open(os.path.join(mine, "gap_durations_s.npy"), "wb") as handle:
                     handle.write(b"\x93NUMPY")
             elif damage == "delete":
-                os.remove(os.path.join(folder, "ball_masks_1.npy"))
+                os.remove(os.path.join(mine, "ball_masks_1.npy"))
             elif damage == "garbage":
                 with open(manifest_path, "wb") as handle:
                     handle.write(b"\x00 not json")
@@ -687,12 +1213,167 @@ def test_calibration_cache_is_keyed_and_unreadable_means_absent():
                 with open(manifest_path, "w", encoding="utf-8", newline="\n") as handle:
                     json.dump(content, handle)
             elif damage == "not parallel":
-                np.save(os.path.join(folder, "gap_onset_minute.npy"), np.zeros(1))   # valid array, wrong length
+                np.save(os.path.join(mine, "gap_onset_minute.npy"), np.zeros(1))   # valid array, wrong length
+            elif damage == "no hazard":
+                edit_manifest(lambda content: content.pop("hazard"))
+            elif damage == "short model":
+                edit_manifest(lambda content: content["hazard"]["model"].update(coef=[0.0]))
+            elif damage == "bad auc":
+                edit_manifest(lambda content: content["hazard"].update(auc={"full_1to2": 0.7}))
+            elif damage == "go not a bool":
+                edit_manifest(lambda content: content["hazard"].update(go="yes"))
+            elif damage == "zero scale":
+                edit_manifest(lambda content: content["hazard"]["model"].update(scale=[0.0] * len(hazard.FEATURES)))
+            elif damage == "NaN coef":
+                edit_manifest(lambda content: content["hazard"]["model"].update(coef=[math.nan] * len(hazard.FEATURES)))
+            elif damage == "no cell":
+                os.remove(os.path.join(mine, "hazard_durations_s_1_2.npy"))
+            elif damage == "empty cell":
+                np.save(os.path.join(mine, "hazard_durations_s_0_1.npy"), np.zeros(0))   # sample_mask needs a duration
+            elif damage == "cell not 1-D":
+                np.save(os.path.join(mine, "hazard_durations_s_0_0.npy"), np.zeros((2, 2)))
             else:
                 os.remove(manifest_path)
             assert calibration.digest(load()) == good, damage
-            assert os.path.getsize(os.path.join(folder, "gap_durations_s.npy")) > 10, damage
+            assert os.path.getsize(os.path.join(mine, "gap_durations_s.npy")) > 10, damage
+            assert len(folders()) == 10, damage
         assert calibration.digest(load()) == good
+
+
+def test_calibration_each_key_has_its_own_folder():
+    """Two checkouts with different code share one data dir: neither rebuilds the other's cache or touches its files."""
+    with tempfile.TemporaryDirectory() as root:
+        inputs, gt = synthetic_calibration_inputs(root)
+        inputs.atd
+        parent = os.path.join(root, *calibration.CACHE_FOLDER)
+
+        def tree(name):
+            return snapshot(os.path.join(parent, name))
+
+        first = calibration.load(data_dir=root, inputs=inputs, public_gt_codes=gt)
+        name_a = expected_digest(calibration._key(inputs, gt))
+        assert os.listdir(parent) == [name_a] and len(name_a) == 16 and set(name_a) <= set("0123456789abcdef"), name_a
+        files_a = tree(name_a)
+
+        # The second checkout: other code, which is another key. It gets a folder, and leaves the first one as it was.
+        real_hash = calibration.CALIBRATION_SHA256
+        calibration.CALIBRATION_SHA256 = "f" * 64
+        try:
+            second = calibration.load(data_dir=root, inputs=inputs, public_gt_codes=gt)
+            name_b = expected_digest(calibration._key(inputs, gt))
+            assert name_b != name_a and sorted(os.listdir(parent)) == sorted([name_a, name_b]), os.listdir(parent)
+            assert tree(name_a) == files_a, "the first key's folder was touched"
+            files_b = tree(name_b)
+            assert files_b, "the second key has files of its own"
+
+            # Both are reused: loading either again rewrites nothing, in either folder.
+            calibration.load(data_dir=root, inputs=inputs, public_gt_codes=gt)
+            assert tree(name_a) == files_a and tree(name_b) == files_b
+        finally:
+            calibration.CALIBRATION_SHA256 = real_hash
+        again = calibration.load(data_dir=root, inputs=inputs, public_gt_codes=gt)
+        assert tree(name_a) == files_a and tree(name_b) == files_b and len(os.listdir(parent)) == 2
+        assert calibration.digest(again) == calibration.digest(first) == calibration.digest(second)
+
+        # A key is the same key whatever order its entries come in: the folder name is of the canonical JSON.
+        key = calibration._key(inputs, gt)
+        shuffled = dict(reversed(list(key.items())))
+        assert list(shuffled) != list(key) and expected_digest(shuffled) == expected_digest(key) == name_a
+        assert calibration.cache_folder(root, shuffled) == calibration.cache_folder(root, key) == os.path.join(
+            parent, name_a)
+        # And a key that differs in one entry is another folder.
+        assert calibration.cache_folder(root, {**key, "n_frames": key["n_frames"] + 1}) != calibration.cache_folder(
+            root, key)
+
+
+def test_calibration_manifest_is_written_whole_and_a_manifest_held_open_does_not_stop_a_build():
+    """The manifest is moved into place complete, last, and an old one that cannot be removed is no reason to fail.
+
+    On Windows a file that another process has open cannot be removed. Two checkouts with the same code share a key and
+    so a folder; while one still had the manifest open to write it, the other's os.remove raised PermissionError out of
+    load(). Now the manifest is written to a temp file of its own in the folder and moved over the old one (os.replace),
+    after the arrays, and an old manifest that cannot be removed counts as absent. The refusal is simulated by an
+    os.remove that refuses the manifest, which is the same on every platform."""
+    with tempfile.TemporaryDirectory() as root:
+        inputs, gt = synthetic_calibration_inputs(root)
+        cal = calibration.measure(inputs, gt)
+        key = calibration._key(inputs, gt)
+        folder = calibration.cache_folder(root, key)
+        manifest_path = os.path.join(folder, "manifest.json")
+
+        def read(path):
+            with open(path, "rb") as handle:
+                return handle.read()
+
+        real_replace, real_remove, real_save = os.replace, os.remove, np.save
+        calls = []
+
+        def watching_replace(source, target, *args, **kwargs):
+            # What a reader sees before the move: no manifest (the old one is gone), the arrays all there, and the new
+            # manifest complete in a file of its own beside the target, so that the move is within one folder.
+            have = sorted(os.listdir(folder))
+            calls.append({"same_folder": os.path.dirname(os.path.abspath(source)) == os.path.dirname(
+                os.path.abspath(target)), "target": os.path.basename(target), "manifest_there": "manifest.json" in have,
+                "arrays": sum(name.endswith(".npy") for name in have), "key": json.loads(read(source))["key"]})
+            return real_replace(source, target, *args, **kwargs)
+
+        def saves_before_the_manifest(path, *args, **kwargs):
+            calls.append("save " + os.path.basename(path))
+            return real_save(path, *args, **kwargs)
+
+        def refuses_the_manifest(path, *args, **kwargs):
+            if os.path.basename(path) == "manifest.json":
+                raise PermissionError(13, "The process cannot access the file: it is being used by another process")
+            return real_remove(path, *args, **kwargs)
+
+        def tidy():
+            """Nothing but the arrays and the manifest is left in the folder: no temp file."""
+            names = sorted(os.listdir(folder))
+            assert "manifest.json" in names and not [name for name in names if name.endswith(".tmp")], names
+            return names
+
+        def written(*patches):
+            """Run _write with the given (object, name, replacement) patched in, whatever happens; the error if any."""
+            originals = [(target, name, getattr(target, name)) for target, name, _ in patches]
+            try:
+                for target, name, replacement in patches:
+                    setattr(target, name, replacement)
+                calibration._write(cal, folder, key)
+            finally:
+                for target, name, original in originals:
+                    setattr(target, name, original)
+
+        # The first write: arrays, then one move of a complete manifest from its own file into place.
+        written((os, "replace", watching_replace), (np, "save", saves_before_the_manifest))
+        moves = [call for call in calls if isinstance(call, dict)]
+        assert len(moves) == 1, "the manifest must be moved into place once (os.replace): {}".format(calls)
+        move = dict(moves[0])
+        assert move.pop("arrays") == len(calibration._arrays(cal)) == sum(
+            call.startswith("save ") for call in calls if isinstance(call, str)), "arrays first, manifest last"
+        assert move == {"same_folder": True, "target": "manifest.json", "manifest_there": False, "key": key}, move
+        assert calls.index(moves[0]) == len(calls) - 1, "the manifest is the last thing written"
+        names = tidy()
+        first = read(manifest_path)
+        loaded = calibration.load(data_dir=root, inputs=inputs, public_gt_codes=gt)
+        assert calibration.digest(loaded) == calibration.digest(cal), "and the cache reads back"
+
+        # Another process holds the old manifest: it cannot be removed. That is "absent", the build goes on, and the
+        # new manifest is moved over it, the same bytes (the key is the same).
+        written((os, "remove", refuses_the_manifest))
+        assert tidy() == names and read(manifest_path) == first
+
+        # A manifest that cannot be moved into place is an error, and leaves neither a temp file nor a manifest that
+        # claims the arrays: the folder reads as absent and load() measures again.
+        def refuses_the_move(source, target, *args, **kwargs):
+            raise PermissionError(13, "the manifest is in use")
+
+        expect_error(OSError, lambda: written((os, "replace", refuses_the_move)), "in use")
+        names = sorted(os.listdir(folder))
+        assert "manifest.json" not in names and not [name for name in names if name.endswith(".tmp")], names
+        assert calibration._read_manifest(folder) is None
+        again = calibration.load(data_dir=root, inputs=inputs, public_gt_codes=gt)
+        assert calibration.digest(again) == calibration.digest(cal)
+        assert tidy() == sorted(names + ["manifest.json"]) and read(manifest_path) == first
 
 
 def import_copy(path, name):
@@ -726,6 +1407,73 @@ def test_calibration_code_hash_is_the_files_and_ignores_line_endings():
             assert copies[names[0]].CALIBRATION_SHA256 == copies[names[1]].CALIBRATION_SHA256 == \
                 calibration.CALIBRATION_SHA256, "line endings changed the hash"
             assert copies[names[2]].CALIBRATION_SHA256 != calibration.CALIBRATION_SHA256, "an edit did not change it"
+    finally:
+        for name in names:
+            sys.modules.pop(name, None)
+
+
+def calibration_copy(folder, name, hazard_module):
+    """An unedited copy of calibration.py, imported while `hazard_module` is pipeline.benchmark.hazard, so that its
+    HAZARD_SHA256 is the hash of that module's file. Its configs are the real ones (the copy has no folder of its
+    own)."""
+    import pipeline.benchmark as package
+    path = os.path.join(folder, name + ".py")
+    shutil.copyfile(calibration.__file__, path)
+    real_module, real_attribute = sys.modules["pipeline.benchmark.hazard"], package.hazard
+    sys.modules["pipeline.benchmark.hazard"] = package.hazard = hazard_module   # what `from ... import hazard` finds
+    try:
+        copy = import_copy(path, name)
+    finally:
+        sys.modules["pipeline.benchmark.hazard"], package.hazard = real_module, real_attribute
+    copy.CONFIG_FOLDER = calibration.CONFIG_FOLDER
+    return copy
+
+
+def test_calibration_key_holds_the_hazard_code_and_ignores_its_line_endings():
+    """HAZARD_SHA256 is the hash of hazard.py with CRLF read as LF, and another hazard.py is another key and folder.
+
+    hazard.py makes the version-2 fields (the features, the fit, the AUC, the thirds), so a checkout whose hazard.py
+    differs must not read this one's fit: changing hazard.NEAR_PLAYER_M used to leave the key and the folder as they
+    were, and load() gave back the first fit while measure() gave a different one."""
+    with open(hazard.__file__, "rb") as handle:
+        raw = handle.read()
+    assert calibration.HAZARD_SHA256 == hashlib.sha256(raw.replace(b"\r\n", b"\n")).hexdigest()
+    assert calibration.HAZARD_SHA256 != calibration.CALIBRATION_SHA256
+
+    text = raw.replace(b"\r\n", b"\n").decode("utf-8")
+    assert text.count("NEAR_PLAYER_M = 3.0 ") == 1, "the constant to edit is not where this check looks for it"
+    names = ("hazard_copy_lf", "hazard_copy_crlf", "hazard_copy_edited", "calibration_copy_lf", "calibration_copy_crlf",
+             "calibration_copy_edited")
+    try:
+        with tempfile.TemporaryDirectory() as folder, tempfile.TemporaryDirectory() as root:
+            inputs, gt = synthetic_calibration_inputs(root)
+            hazards = {}
+            edited_text = text.replace("NEAR_PLAYER_M = 3.0 ", "NEAR_PLAYER_M = 2.5 ")
+            for name, ending, content in ((names[0], "\n", text), (names[1], "\r\n", text),
+                                          (names[2], "\n", edited_text)):
+                path = os.path.join(folder, name + ".py")
+                with open(path, "w", encoding="utf-8", newline="") as handle:
+                    handle.write(content.replace("\n", ending))
+                hazards[name] = import_copy(path, name)
+            copies = {name: calibration_copy(folder, name, hazards[hazard_name])
+                      for name, hazard_name in zip(names[3:], names[:3])}
+            lf, crlf, edited = (copies[name] for name in names[3:])
+            assert hazards[names[2]].NEAR_PLAYER_M == 2.5 and hazards[names[0]].NEAR_PLAYER_M == 3.0
+
+            # Line endings are not a change of the file; an edit is. calibration.py is the same text in all three.
+            assert lf.HAZARD_SHA256 == crlf.HAZARD_SHA256 == calibration.HAZARD_SHA256, "line endings changed the hash"
+            assert edited.HAZARD_SHA256 != calibration.HAZARD_SHA256, "an edit to hazard.py did not change it"
+            assert lf.CALIBRATION_SHA256 == edited.CALIBRATION_SHA256 == calibration.CALIBRATION_SHA256
+
+            # So the key is the same for the same code, and for the edited one it differs in that hash alone: another
+            # folder, which is a rebuild.
+            key = calibration._key(inputs, gt)
+            assert lf._key(inputs, gt) == crlf._key(inputs, gt) == key
+            other = edited._key(inputs, gt)
+            assert other != key and {k: v for k, v in other.items() if k != "hazard_sha256"} == {
+                k: v for k, v in key.items() if k != "hazard_sha256"}, "only the hazard hash differs"
+            assert other["hazard_sha256"] == edited.HAZARD_SHA256
+            assert calibration.cache_folder(root, other) != calibration.cache_folder(root, key)
     finally:
         for name in names:
             sys.modules.pop(name, None)
@@ -771,6 +1519,10 @@ def test_data_calibration_replicates_a01():
         print("      {:<30} graded {:>9.4f}  (expected {} +/- {})   from kick-off {:>9.4f}".format(
             name, value, expected, tolerance, spanned))
 
+    def shown(name, value, spanned):
+        """A figure that is printed and not asserted (the two that A07 says do not reproduce)."""
+        print("      {:<30} graded {:>9.4f}  (not asserted)   from kick-off {:>9.4f}".format(name, value, spanned))
+
     near("missing share", ball["missing_share"], *A01["missing_share"], stored["missing_share"])
     assert (ball["gaps"], ball["interior_gaps"], ball["near_line_onsets"]) == (
         A01["gaps"], A01["interior_gaps"], A01["near_line_onsets"]), (
@@ -799,15 +1551,14 @@ def test_data_calibration_replicates_a01():
     near("present mean", players["present_mean"], *PLAN["present_mean"], stored["present_mean"])
     near("share with 22 present", players["present_share_22"], *PLAN["present_share_22"],
          stored["present_share_22"])
-    near("share with <= 14 present", players["present_share_le14"], players["present_share_le14"], 0.0,
-         stored["present_share_le14"])
+    shown("share with <= 14 present", players["present_share_le14"], stored["present_share_le14"])
     near("tracklet median (s)", float(np.median(players["tracklet_lengths_s"])), *PLAN["tracklet_median_s"],
          float(np.median(cal.tracklet_lengths_s)))
     near("jitter RMS (mm)", 1000 * players["jitter_rms_m"], *PLAN["jitter_rms_mm"], 1000 * cal.player_jitter_rms_m)
     graded_speed = float(np.isnan(atd.ball_speed[inputs.graded_mask & atd.ball_present]).mean())
     near("ball-speed NaN share (T31)", graded_speed, *PLAN["ball_speed_nan_share"], stored["ball_speed_nan_share"])
-    near("p99 of NaN-speed runs", float(np.quantile(players["speed_nan_runs"], 0.99)),
-         float(np.quantile(players["speed_nan_runs"], 0.99)), 0.0, float(np.quantile(cal.speed_nan_runs, 0.99)))
+    shown("p99 of NaN-speed runs", float(np.quantile(players["speed_nan_runs"], 0.99)),
+          float(np.quantile(cal.speed_nan_runs, 0.99)))
 
     # The public window and the yardsticks, over the graded halves.
     near("nearest-player agreement", cal.public_window["nearest_agreement"], *A01["nearest_agreement"],
@@ -833,3 +1584,83 @@ def test_data_calibration_replicates_a01():
         print("      nearest_w{:<4} possessions {:>5}  ({} expected)  per graded minute {:.2f}  D share {:.4f}  "
               "= {} on all {} graded frames".format(width, got["possessions"], expected, got["poss_per_min"],
                                                     got["d_share"], BASELINE_FILES[width], int(graded.sum())))
+
+
+def test_data_hazard_fit():
+    """A08: where our tracker loses the ball, fitted on BAR-ATH: the coefficients, the four cross-half AUCs, c, the
+    duration cells and the go/no-go decision. Prints aggregates only (counts, coefficients, AUCs, medians), and asserts
+    that they are finite, reproducible and consistent with A07's gaps; it does not assert the AUCs' size, since a no-go
+    is a legitimate result and nothing here is tuned to a decision."""
+    from pipeline.inputs import Inputs
+    inputs = Inputs()
+    atd = inputs.atd
+    cal = calibration.load()
+    spans = [(half, inputs.kickoffs[half], stop) for half, _, stop in inputs.graded]
+    ball = calibration.ball_stats(atd.ball_present, spans, inputs.metres(atd.ball_xy), inputs.pitch, inputs.fps)
+
+    def fit():
+        return calibration.fit_hazard(atd.ball_present, inputs.metres(atd.ball_xy), atd.players_present,
+                                      inputs.metres(atd.players_xy), spans, inputs.pitch, inputs.fps,
+                                      ball["interior_durations_s"], ball["gap_onset_minute"],
+                                      ball["gap_onset_near_line"])
+
+    result, second = fit(), fit()
+    # Reproducible: fitted twice from the arrays, and the cache holds the same fit, to the byte.
+    for other in (second, {"model": cal.hazard_model, "l2": cal.hazard_l2, "c": cal.hazard_c, "auc": cal.hazard_auc,
+                           "go": cal.hazard_go, "fallback_cells": cal.hazard_fallback_cells}):
+        for name in ("coef", "mean", "scale"):
+            assert getattr(result["model"], name).tobytes() == getattr(other["model"], name).tobytes(), name
+        assert result["model"].intercept == other["model"].intercept
+        assert (result["l2"], result["c"], result["auc"], result["go"], result["fallback_cells"]) == (
+            other["l2"], other["c"], other["auc"], other["go"], other["fallback_cells"])
+    for cls in (0, 1):
+        for third in (0, 1, 2):
+            assert result["durations"][cls][third].tobytes() == cal.hazard_durations_s[cls][third].tobytes()
+
+    model, auc, counts = result["model"], result["auc"], result["counts"]
+    for name in ("coef", "mean", "scale"):
+        assert np.isfinite(getattr(model, name)).all(), name
+    assert np.isfinite([model.intercept, result["c"], result["l2"], *auc.values()]).all()
+    assert (model.scale > 0).all() and 0.0 < min(auc.values()) and max(auc.values()) < 1.0, auc
+    assert result["l2"] in (1.0, 10.0, 100.0, 1000.0), result["l2"]
+    assert result["go"] == (min(auc["full_1to2"], auc["full_2to1"]) >= calibration.HAZARD_GO_AUC)
+    # c is 1 on the rows it was fitted on (the intercept is not penalised), to the precision of the fit.
+    assert 0.0 < result["c"] and abs(result["c"] - 1.0) < 1e-6, result["c"]
+
+    # The spans' counts add up and agree with A07's gaps: every interior gap is an event or lost to an undefined feature.
+    assert counts["visible"] == counts["edge"] + counts["last_frame"] + counts["nan_rows"] + counts["rows"], counts
+    assert counts["events"] + counts["nan_events"] == ball["interior_gaps"] == cal.scalars["interior_gaps"] == 143
+    assert counts["visible"] == cal.scalars["frames"] - cal.scalars["missing_frames"] == 91844, counts
+    assert counts["rows_1"] + counts["rows_2"] == counts["rows"] and counts["events_1"] + counts["events_2"] == counts[
+        "events"]
+    assert counts["events_1"] > 0 and counts["events_2"] > 0, "each half needs onsets to be scored"
+    own = {(cls, third): counts["cell_{}_{}".format(cls, third)] for cls in (0, 1) for third in (0, 1, 2)}
+    assert sum(own.values()) == 143 and sum(n for (cls, _), n in own.items() if cls == 1) == cal.scalars[
+        "near_line_onsets"] == 40, own
+    for (cls, third), n in own.items():
+        used = result["durations"][cls][third]
+        assert used.size > 0 and ((cls, third) in result["fallback_cells"]) == (n < calibration.MIN_CELL_DURATIONS)
+        assert used.size == (n if n >= calibration.MIN_CELL_DURATIONS else sum(
+            m for (c, _), m in own.items() if c == cls))
+
+    print("      spans from the kick-offs: {} frames, {} with the ball".format(cal.scalars["frames"], counts["visible"]))
+    print("      at-risk rows {} ({} in half 1, {} in half 2), onsets {} ({} / {})".format(
+        counts["rows"], counts["rows_1"], counts["rows_2"], counts["events"], counts["events_1"], counts["events_2"]))
+    print("      left out: {} before an edge gap, {} last frames, {} with an undefined feature ({} of them onsets)"
+          .format(counts["edge"], counts["last_frame"], counts["nan_rows"], counts["nan_events"]))
+    print("      l2 used: pooled {:g}; cross-half {}".format(result["l2"], ", ".join(
+        "{} {:g}".format(key, value) for key, value in sorted(result["cross_l2"].items()))))
+    print("      intercept {:+.9f}".format(model.intercept))
+    for index, name in enumerate(hazard.FEATURES):
+        print("      {:<18} coef {:+.9f} (standardised)   mean {:>12.6f}   scale {:>12.6f}".format(
+            name, model.coef[index], model.mean[index], model.scale[index]))
+    print("      cross-half AUC   full  1to2 {:.4f}  2to1 {:.4f}    time-only  1to2 {:.4f}  2to1 {:.4f}".format(
+        auc["full_1to2"], auc["full_2to1"], auc["time_1to2"], auc["time_2to1"]))
+    print("      c = {:.9f}   go = {}  (both full AUCs >= {:.2f})".format(result["c"], result["go"],
+                                                                         calibration.HAZARD_GO_AUC))
+    for cls in (0, 1):
+        for third in (0, 1, 2):
+            used = result["durations"][cls][third]
+            print("      class {} third {}: {:>3} durations, {:>3} used, median {:>6.2f} s{}".format(
+                cls, third, own[(cls, third)], used.size, float(np.median(used)),
+                "   (pooled over the thirds)" if (cls, third) in result["fallback_cells"] else ""))

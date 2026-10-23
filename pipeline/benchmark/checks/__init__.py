@@ -8,7 +8,8 @@ module of its topic:
     hazard.py    the gap-onset hazard: features, logistic fit, AUC and the mask sampler (synthetic arrays only)
     calibration.py
                  the calibration, our own tracking measured for the benchmark: every statistic exact on hand-built
-                 objects, a synthetic bundle, the cache, and with --data the figures of A01, A02 and R001
+                 objects, a synthetic bundle, the cache, the hazard fit of our ball gaps (rows, AUCs, the go rule, the
+                 duration cells), and with --data the figures of A01, A02 and R001 and A08's fit
     degrade.py   the degrader: the transplant worked out exactly, the draws, what the gaps profile touches and does not,
                  that no truth reaches it, and that the order of the matches changes nothing (synthetic, and with
                  --data our real masks on a downloaded DFL match)

@@ -1,7 +1,8 @@
-"""Our own tracking, measured: what the benchmark's degradation has to reproduce (docs/results.md, A07).
+"""Our own tracking, measured: what the benchmark's degradation has to reproduce (docs/results.md, A07, A08).
 
     ball = ball_stats(ball_present, blocks, ball_xy_m, pitch, fps)          # gaps, where they start, per 5 minutes
     players = player_stats(present, slot_team, xy_m, speed, blocks, fps)    # slots present, tracklets, wrong team, ...
+    fit = fit_hazard(ball_present, ball_xy_m, players_present, players_xy_m, spans, pitch, fps, *ball[...])   # A08
     cal = load()                                                            # BAR-ATH, measured once and cached
     describe(cal)                                                           # scalars and quantiles, for reports
 
@@ -50,6 +51,23 @@ graded halves, as the published baselines are, so that they can be compared with
 themselves (A01, A02, R001, the plan) are graded-block figures, which test_data_calibration_replicates_a01 computes by
 calling these same two functions on the graded blocks and asserts, without storing them.
 
+The hazard (A08, version 2). The benchmark places its ball gaps where our tracker loses the ball, so the Calibration also
+holds a hazard fitted on BAR-ATH's own rows. fit_hazard takes the ball-visible frames of the spans as the frames at risk
+(hazard_rows), the event "the next frame starts an interior gap", and the six features of hazard.py computed on our own
+ball and players. The model is fitted on both halves pooled (hazard_model, with l2 = 1 and, if a fit does not converge,
+ten times that, at most three times: hazard_l2 is the penalty that was used); on one half and scored on the other, both
+ways, for the cross-half AUCs of the full model and of a model of the minute alone (hazard_auc); and the decision for
+the `context` profile is that both full AUCs are at least 0.60 (hazard_go; the plan's rule, taken as it comes). c
+(hazard_c) is the onsets per at-risk frame over the model's mean probability on the same rows, which is 1 on BAR-ATH's
+own rows by construction: the intercept is not penalised, so the model's mean probability is the rate. It is stored for
+completeness and carries nothing to another match; the rate transfer to the benchmark is the `context` profile's own
+one-time, label-free rescale (the plan's Task 17). The interior gaps' durations are kept in seconds by onset class (near
+a line or not) and third of the half (hazard_durations_s); a cell with fewer than 5 uses its class's durations over all
+thirds, and hazard_fallback_cells lists those that did. Visible frames that are not at risk are counted, never dropped
+silently: the frame before a gap that runs to the span's end (neither onset nor non-onset), the last frame of a span,
+and a frame with a feature the tracking cannot give (the scalars hazard_edge, hazard_last_frame, hazard_nan_rows and
+hazard_nan_events, beside hazard_rows, hazard_events, ...).
+
 What a Calibration holds is frame-level data of BAR-ATH (the ball's mask and the slot counts of every frame), which must
 never reach a log, a report, a CSV or git. Every array field has repr=False, describe() returns scalars and short
 quantile lists only, and the cache sits under <data dir>/cache/benchmark/calibration/, which git ignores. The baselines
@@ -58,12 +76,21 @@ quantile lists only, and the cache sits under <data dir>/cache/benchmark/calibra
 The cache. load() keeps a Calibration as .npy arrays and a manifest.json whose key holds everything the numbers depend
 on: the ATD cache's record of its source files and its cache_version (how they were parsed), CALIBRATION_VERSION, the
 sha256 of this very file (CALIBRATION_SHA256, taken once as the module is imported, with CRLF read as LF, as dfl.py does
-for its parser), the numpy version, the sha256 of the four yardstick configs, the public truth, and the graded blocks
-and kick-offs. A cache is reused only if the whole key matches, so an edited config or an edited definition cannot reuse
-old numbers. An unreadable cache (a manifest that is not JSON or lacks a field, an array missing or cut short) is
-absent, never an error: everything in it can be measured again from the sources. The arrays are written first and the
-manifest last, with the old manifest removed up front, as pipeline/inputs/atd_cache.py and dfl.load_match do, so a run
-killed half-way leaves no manifest.
+for its parser) and of hazard.py, which makes the hazard fields (HAZARD_SHA256, the same way), the numpy version, the
+sha256 of the four yardstick configs, the public truth, the pitch and the frame rate (games.py's constants, which every
+distance and duration is measured with), and the graded blocks and kick-offs. A cache is reused only if the whole key
+matches, so an edited config or an edited definition cannot reuse old numbers.
+Each key has a folder of its own, <data dir>/cache/benchmark/calibration/<digest>/ (cache_folder), where the digest is
+the first 16 hex digits of the sha256 of the key's canonical JSON: checkouts that run different code, and so have
+different keys, can share one data dir without rebuilding each other's cache in turn or interleaving their writes. A
+folder of an old key is never removed (a few MB each); the key is what says whether one is still wanted. An unreadable
+cache (a manifest that is not JSON or lacks a field, an array missing or cut short) is absent, never an error:
+everything in it can be measured again from the sources. The arrays are written first and the manifest last, with the
+old manifest removed up front, as pipeline/inputs/atd_cache.py and dfl.load_match do, so a run killed half-way leaves no
+manifest. The manifest is written to a temp file of its own in the folder and moved into place (os.replace), so that no
+reader sees half of it, and an old manifest that cannot be removed (Windows refuses to remove a file that another
+process has open) counts as absent: two checkouts with the same code share a key and so a folder, and one must not
+fail because the other is reading or writing it.
 """
 
 import dataclasses
@@ -76,16 +103,20 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from pipeline.benchmark import hazard
 from pipeline.contracts import D
 
 # Params
-# A manual switch, like dfl.CACHE_VERSION: bump it to invalidate every cache at once. Any edit to this file does that
-# already (CALIBRATION_SHA256, in the key), and so does a new ATD parse (the ATD cache's cache_version, in the key).
-# What still needs a bump is a change to the code that the yardsticks run through, which the key hashes the configs of
-# but not the code of: pipeline/inputs/ (other than the parse), pipeline/evidence/, pipeline/decode/, pipeline/refine/,
-# pipeline/output/ (summarise) and pipeline/benchmark/run.py, for these decide baseline_outputs and public_window.
-CALIBRATION_VERSION = 1
-CACHE_FOLDER = ("cache", "benchmark", "calibration")   # <data dir>/cache/benchmark/calibration/
+# A manual switch, like dfl.CACHE_VERSION: bump it to invalidate every cache at once. Any edit to this file or to
+# hazard.py does that already (CALIBRATION_SHA256 and HAZARD_SHA256, in the key), and so does a new ATD parse (the ATD
+# cache's cache_version, in the key). What still needs a bump is a change to the code that the yardsticks run through,
+# which the key hashes the configs of but not the code of: pipeline/inputs/ (other than the parse), pipeline/evidence/,
+# pipeline/decode/, pipeline/refine/, pipeline/output/ (summarise) and pipeline/benchmark/run.py, for these decide
+# baseline_outputs and public_window.
+# 1: the measurements (A07). 2: and the hazard fit, the durations by class and third, and c (A08).
+CALIBRATION_VERSION = 2
+CACHE_FOLDER = ("cache", "benchmark", "calibration")   # <data dir>/cache/benchmark/calibration/<digest of the key>/
+KEY_DIGITS = 16                                        # hex digits of the key's sha256 that name its folder
 MANIFEST = "manifest.json"
 CONFIG_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "configs")
 YARDSTICK_WIDTHS = (0, 25, 50, 125)     # half-widths of nearest_w{width}.toml: the organisers' four baselines, per half
@@ -109,6 +140,15 @@ HALF_ARRAYS = {"ball_masks": np.bool_, "present_counts": np.int16, "missing_shar
 OWN_FIELDS = ("wrong_team_share", "speed_nan_share", "jitter_rms_m")
 # The source whose agreement with the public truth is A01's 77.8% (R001's method), looked up by name in every yardstick.
 NEAREST_SOURCE = "nearest_player"
+# The hazard fit (A08).
+HAZARD_L2 = 1.0                 # the penalty of every fit; a fit that does not converge is refitted with it times 10...
+HAZARD_L2_FACTOR = 10.0
+HAZARD_REFITS = 3               # ...at most this many times, and the penalty that was used is kept
+HAZARD_GO_AUC = 0.60            # go: both full-model cross-half AUCs at least this (the plan's rule, for `context`)
+HAZARD_AUC_KEYS = ("full_1to2", "full_2to1", "time_1to2", "time_2to1")   # fitted on half a, scored on half b
+CLASSES = (0, 1)                # onset class of a gap: 1 if its onset is near a line (< NEAR_LINE_M), else 0
+THIRDS = (0, 1, 2)              # third of the half the onset falls in (hazard.third_of_minute)
+MIN_CELL_DURATIONS = 5          # fixed in advance: a (class, third) cell with fewer durations uses its class's pool
 
 
 # -- the statistics ---------------------------------------------------------------------------------------------------
@@ -372,6 +412,204 @@ def _blocks(blocks, n):
     return checked
 
 
+# -- the hazard fit (A08) ---------------------------------------------------------------------------------------------
+
+def hazard_rows(ball_present, ball_xy_m, players_present, players_xy_m, spans, pitch, fps):
+    """({half: (X, y)}, counts): the at-risk rows of the spans and whether the next frame starts an interior gap.
+
+    ball_present (n,) bool and ball_xy_m (n, 2) metres, players_present (n, S) bool and players_xy_m (n, S, 2) metres,
+    as ball_stats and player_stats take them (a ball or a slot is present only if its flag says so and both coordinates
+    are finite). spans is [(half, kickoff, stop)], half-open, each half from its KICK-OFF: hazard.features counts the
+    minute from a span's first frame. pitch and fps are as everywhere.
+
+    An at-risk frame r is a frame of a span on which the ball is seen: its row of X is hazard.features at r (the
+    features of the last visible frame, which say how likely the NEXT frame is to start a gap), and y[r] is 1 if frame
+    r + 1 starts an interior gap (ball_stats' definition: a visible frame follows it inside the span) and else 0. Three
+    kinds of visible frame are not at risk and are counted instead of used:
+        edge        the frame before a gap that runs to the span's end: whether that is an onset is not for the span
+                    to say, so it is neither an event nor a non-event;
+        last_frame  the last frame of a span, when the ball is seen on it: no frame follows it in the span;
+        nan_rows    a frame with a feature the tracking cannot give (the ball's speed before its first step, no player
+                    present), of which nan_events are onsets.
+    counts: visible (frames of the spans with the ball), edge, last_frame, nan_rows, nan_events, rows and events (the
+    rows used, and the onsets among them), and rows_<half> and events_<half>. visible = edge + last_frame + nan_rows +
+    rows, and events + nan_events is the number of interior gaps.
+    """
+    flag = _bool_array("ball_present", ball_present, 1)
+    n = len(flag)
+    ball = np.asarray(ball_xy_m, dtype=np.float64)
+    if ball.shape != (n, 2):
+        raise ValueError("calibration.hazard_rows: ball_present has {} frames but ball_xy_m has shape {}; both are one "
+                         "value per frame of the match, the position in metres".format(n, ball.shape))
+    slots = _bool_array("players_present", players_present, 2)
+    players = np.asarray(players_xy_m, dtype=np.float64)
+    if slots.shape[0] != n or players.shape != slots.shape + (2,):
+        raise ValueError("calibration.hazard_rows: players_present has shape {} and players_xy_m {}; players_present "
+                         "is (n, slots) with one row per frame of the match, and players_xy_m (n, slots, 2), the "
+                         "positions in metres".format(slots.shape, players.shape))
+    spans = _blocks(spans, n)
+    visible = _usable(flag, ball)
+    here = _usable(slots, players)
+
+    counts = dict.fromkeys(("visible", "edge", "last_frame", "nan_rows", "nan_events", "rows", "events"), 0)
+    rows = {}
+    for half, start, stop in spans:
+        length = stop - start
+        seen = visible[start:stop]
+        table = hazard.features(np.where(seen[:, None], ball[start:stop], np.nan),
+                                np.where(here[start:stop, :, None], players[start:stop], np.nan),
+                                pitch, fps, start, start)
+        first, last = _runs(~seen)
+        after = last < length                               # a visible frame follows the gap inside the span
+        event = np.zeros(length, dtype=bool)
+        event[first[(first > 0) & after] - 1] = True        # the frame before an interior gap
+        edge = np.zeros(length, dtype=bool)
+        edge[first[(first > 0) & ~after] - 1] = True        # the frame before a gap that runs to the span's end
+        final = np.zeros(length, dtype=bool)
+        final[-1] = seen[-1]
+        at_risk = seen & ~edge & ~final
+        defined = ~np.isnan(table).any(axis=1)
+        used = at_risk & defined
+        rows[half] = (table[used], event[used].astype(np.float64))
+        lost = at_risk & ~defined
+        for name, value in (("visible", seen.sum()), ("edge", edge.sum()), ("last_frame", final.sum()),
+                            ("nan_rows", lost.sum()), ("nan_events", (lost & event).sum()), ("rows", used.sum()),
+                            ("events", (used & event).sum())):
+            counts[name] += int(value)
+        counts["rows_{}".format(half)] = int(used.sum())
+        counts["events_{}".format(half)] = int((used & event).sum())
+    return rows, counts
+
+
+def duration_cells(interior_durations_s, gap_onset_minute, gap_onset_near_line):
+    """(table, fallback, own): the interior gaps' durations in seconds by onset class and third of the half.
+
+    The three arguments are the PARALLEL arrays of a Calibration (one entry per interior gap). The class is 1 for a
+    near-line onset and 0 otherwise (the class sample_mask reads at the at-risk frame); the third is
+    hazard.third_of_minute of the onset minute: 0 before minute 15, 1 before 30, 2 after.
+
+    table[class][third] is a read-only float64 array of the cell's durations, in the order given (not rounded). The rule,
+    fixed in advance: a cell with fewer than MIN_CELL_DURATIONS (5) durations uses its class's durations pooled over
+    all three thirds; fallback lists those cells, as ((class, third), ...) sorted, and own[(class, third)] is the
+    number of durations a cell had of its own. ValueError for arrays that are not parallel, a NaN minute, or a class
+    that has no duration at all (then there is nothing to draw its gaps' lengths from).
+    """
+    durations = np.asarray(interior_durations_s, dtype=np.float64)
+    minute = np.asarray(gap_onset_minute, dtype=np.float64)
+    near = np.asarray(gap_onset_near_line)
+    if durations.ndim != 1 or minute.shape != durations.shape or near.shape != durations.shape:
+        raise ValueError("calibration.duration_cells: interior_durations_s, gap_onset_minute and gap_onset_near_line "
+                         "are parallel, one entry per interior gap, but have shapes {}, {} and {}".format(
+                             durations.shape, minute.shape, near.shape))
+    if near.dtype != np.bool_:
+        raise ValueError("calibration.duration_cells: gap_onset_near_line must be a bool array, got {}".format(
+            near.dtype))
+    third = hazard.third_of_minute(minute)
+    table, fallback, own = {}, [], {}
+    for cls in CLASSES:
+        inside = near == bool(cls)
+        pooled = durations[inside]
+        if not pooled.size:
+            raise ValueError("calibration.duration_cells: no interior gap has onset class {} ({}): the hazard needs "
+                             "the lengths of the gaps of both classes to draw from".format(
+                                 cls, "near a line" if cls else "away from the lines"))
+        table[cls] = {}
+        for part in THIRDS:
+            cell = durations[inside & (third == part)]
+            own[(cls, part)] = int(cell.size)
+            if cell.size < MIN_CELL_DURATIONS:
+                fallback.append((cls, part))
+                cell = pooled
+            table[cls][part] = _frozen(cell)
+    return table, tuple(fallback), own
+
+
+def fit_hazard(ball_present, ball_xy_m, players_present, players_xy_m, spans, pitch, fps,
+               interior_durations_s, gap_onset_minute, gap_onset_near_line):
+    """The hazard of our own ball gaps (A08), as a dict; the arguments are hazard_rows' and duration_cells'.
+
+    The model is hazard.fit_logistic on the six hazard.FEATURES, with the penalty HAZARD_L2 and, for a fit that does not
+    converge (hazard.NotConverged), the penalty times 10, at most 3 times (_fit; the l2 used is kept, and a failure at
+    every penalty is an error, never a model). It is fitted on both halves pooled; and on one half and scored on the
+    other, both ways, together with a model of the minute of the half alone, for the four AUCs. spans must be halves 1
+    and 2, and each needs onsets and non-onsets. interior_durations_s, gap_onset_minute and gap_onset_near_line are
+    ball_stats' arrays of the same spans.
+
+    model, l2 (the pooled fit's), c, auc ({"full_1to2", "full_2to1", "time_1to2", "time_2to1"}, rounded to 1e-9),
+    go (both full AUCs >= HAZARD_GO_AUC, on the stored values), durations / fallback_cells (duration_cells), counts
+    (hazard_rows' and "cell_<class>_<third>", the durations a cell has of its own) and cross_l2 (the penalty used by
+    each of the four cross-half fits). c is the onsets per at-risk frame divided by the model's mean probability over
+    the same rows: 1, to the precision of the fit, by construction (the intercept is not penalised). It is stored for
+    completeness; the rate transfer to the benchmark is the `context` profile's own one-time, label-free rescale.
+    """
+    rows, counts = hazard_rows(ball_present, ball_xy_m, players_present, players_xy_m, spans, pitch, fps)
+    if sorted(rows) != [1, 2]:
+        raise ValueError("calibration.fit_hazard: the spans must be the halves 1 and 2, one each (the hazard is fitted "
+                         "on one half and scored on the other), got halves {}".format(sorted(rows)))
+    interior = np.asarray(interior_durations_s)
+    if interior.size != counts["events"] + counts["nan_events"]:
+        raise ValueError("calibration.fit_hazard: the interior-gap arrays hold {} gaps but the spans have {} onsets; "
+                         "build them from the same spans (ball_stats(...) on them)".format(
+                             interior.size, counts["events"] + counts["nan_events"]))
+    for half in (1, 2):
+        events, size = int(rows[half][1].sum()), len(rows[half][1])
+        if events == 0 or events == size:
+            raise ValueError("calibration.fit_hazard: half {} has {} onsets among {} at-risk frames; each half is "
+                             "scored in turn and needs both outcomes".format(half, events, size))
+
+    minute = [hazard.FEATURES.index("minute_of_half")]
+    auc, cross_l2 = {}, {}
+    for kind, columns in (("full", slice(None)), ("time", minute)):
+        for train, test in ((1, 2), (2, 1)):
+            key = "{}_{}to{}".format(kind, train, test)
+            model, cross_l2[key] = _fit(rows[train][0][:, columns], rows[train][1])
+            auc[key] = _round(hazard.auc(hazard.predict(model, rows[test][0][:, columns]), rows[test][1]))
+
+    X = np.concatenate([rows[1][0], rows[2][0]])
+    y = np.concatenate([rows[1][1], rows[2][1]])
+    model, l2 = _fit(X, y)
+    c = rate_scale(y, hazard.predict(model, X))
+    table, fallback, own = duration_cells(interior_durations_s, gap_onset_minute, gap_onset_near_line)
+    counts.update({"cell_{}_{}".format(cls, third): number for (cls, third), number in own.items()})
+    return {"model": model, "l2": float(l2), "c": c, "auc": auc,
+            "go": bool(min(auc["full_1to2"], auc["full_2to1"]) >= HAZARD_GO_AUC),
+            "durations": table, "fallback_cells": fallback, "counts": counts, "cross_l2": cross_l2}
+
+
+def rate_scale(onsets, prob):
+    """c: the onsets per at-risk frame divided by the model's mean probability over the same frames, rounded to 1e-9.
+
+    onsets is the 0/1 outcome of each at-risk frame and prob the model's probability for it: a hazard with c times the
+    probabilities expects the observed number of onsets on these frames. On the rows a model was fitted on it is 1 to
+    the precision of the fit, by construction (the intercept is not penalised, so the mean probability is the rate),
+    whatever the penalty, and fit_hazard takes it on those rows only; it differs from 1 only on rows with another rate.
+    """
+    onsets, prob = np.asarray(onsets, dtype=np.float64), np.asarray(prob, dtype=np.float64)
+    if onsets.ndim != 1 or onsets.shape != prob.shape or not onsets.size:
+        raise ValueError("calibration.rate_scale: onsets and prob must be 1-D, of one length and not empty, got {} "
+                         "and {}".format(onsets.shape, prob.shape))
+    if not (prob > 0).all():
+        raise ValueError("calibration.rate_scale: every probability must be above 0, so that the mean is")
+    return _round(float(onsets.mean()) / float(prob.mean()))
+
+
+def _fit(X, y):
+    """(model, l2 used): hazard.fit_logistic at HAZARD_L2, refitted with the penalty times 10 (at most 3 times) each time
+    it does not converge. Only that failure is answered so; every other error is raised at once, and so is the last."""
+    l2, tried = HAZARD_L2, []
+    while True:
+        tried.append(l2)
+        try:
+            return hazard.fit_logistic(X, y, l2=l2), l2
+        except hazard.NotConverged as error:
+            if len(tried) > HAZARD_REFITS:
+                raise ValueError("calibration: the hazard fit did not converge at l2 = {} (the penalty of {:g}, then "
+                                 "times {:g}, at most {} refits); the last error: {}".format(
+                                     ", ".join("{:g}".format(value) for value in tried), HAZARD_L2,
+                                     HAZARD_L2_FACTOR, HAZARD_REFITS, error)) from error
+            l2 *= HAZARD_L2_FACTOR
+
+
 # -- the calibration --------------------------------------------------------------------------------------------------
 
 @dataclass(frozen=True, eq=False)
@@ -382,6 +620,13 @@ class Calibration:
     describe() for a report). Compare two with digest(), not ==. Every array is read-only. Everything is measured on
     each half's span from its kick-off to the end of its graded block, except missing_share_5min (the graded blocks,
     A02's published table) and baseline_outputs (the graded halves, as the published baselines are).
+
+    The hazard_* fields (A08, version 2) are where our tracker loses the ball, fitted on those spans: the logistic
+    model of "the next frame starts an interior gap" (on the standardised hazard.FEATURES), the penalty it was fitted
+    with, the scale c (1 on BAR-ATH's own rows by construction, stored for completeness), the four cross-half AUCs,
+    the go decision for the `context` profile, the interior gaps' durations in SECONDS by onset class and third of the
+    half ({class: {third: array}}, where a cell with fewer than 5 uses its class's pooled durations) and the cells that
+    fell back. The counts behind them are scalars named hazard_*.
     """
     ball_masks: dict = field(repr=False)             # {half: bool array}, True where the ball is missing
     present_counts: dict = field(repr=False)         # {half: int16 array}, slots present, the same frames
@@ -400,15 +645,23 @@ class Calibration:
     player_jitter_rms_m: float
     public_window: dict      # nearest_agreement, judged_frames, dead_frames, dead_ball_visible_share (the public GT)
     baseline_outputs: dict   # {width: {possessions, poss_per_min, d_share}} of nearest_w{width}, over the graded halves
-    scalars: dict            # every other scalar of ball_stats and player_stats, and ball_speed_nan_share
+    scalars: dict            # every other scalar of ball_stats and player_stats, ball_speed_nan_share and hazard_*
+    hazard_model: hazard.LogisticModel = field(repr=False)   # the pooled fit: coef on the standardised FEATURES
+    hazard_l2: float                                         # the penalty it was fitted with (1, or 10 x that ...)
+    hazard_c: float                                          # onsets per row / mean probability: 1 by construction
+    hazard_auc: dict                                         # HAZARD_AUC_KEYS: full and time-only, cross-half
+    hazard_go: bool                                          # both full-model cross-half AUCs >= HAZARD_GO_AUC
+    hazard_durations_s: dict = field(repr=False)             # {class: {third: float64 array}}, seconds
+    hazard_fallback_cells: tuple                             # ((class, third), ...): cells that used the class's pool
 
 
 def measure(inputs, public_gt_codes):
     """The Calibration of a match (Inputs, with its ATD) and the public truth's codes, (n_frames,), X where unlabelled.
 
     The yardstick configs run on the inputs through run.predict and output.summarise: no file is written. ValueError
-    for a truth of another length, a kick-off that is not inside its graded block, and a yardstick without the
-    nearest_player source.
+    for a truth of another length, a kick-off that is not inside its graded block, a yardstick without the
+    nearest_player source, and a hazard that cannot be fitted (fit_hazard: a half without an onset, a fit that does not
+    converge at any penalty, a class of gap with no duration).
     """
     # Here, not at the top: from Task 11 pipeline/benchmark/run.py imports this module, and a module-level import of
     # run would make a cycle.
@@ -430,9 +683,11 @@ def measure(inputs, public_gt_codes):
         spans.append((half, inputs.kickoffs[half], stop))
 
     atd = inputs.atd
-    ball = ball_stats(atd.ball_present, spans, inputs.metres(atd.ball_xy), inputs.pitch, inputs.fps)
-    players = player_stats(atd.players_present, atd.slot_team, inputs.metres(atd.players_xy), atd.players_speed,
-                           spans, inputs.fps)
+    ball_xy_m, players_xy_m = inputs.metres(atd.ball_xy), inputs.metres(atd.players_xy)
+    ball = ball_stats(atd.ball_present, spans, ball_xy_m, inputs.pitch, inputs.fps)
+    players = player_stats(atd.players_present, atd.slot_team, players_xy_m, atd.players_speed, spans, inputs.fps)
+    fit = fit_hazard(atd.ball_present, ball_xy_m, atd.players_present, players_xy_m, spans, inputs.pitch, inputs.fps,
+                     ball["interior_durations_s"], ball["gap_onset_minute"], ball["gap_onset_near_line"])
     ball_ok = _usable(atd.ball_present, atd.ball_xy)
     counts = _usable(atd.players_present, atd.players_xy).sum(axis=1).astype(np.int16)
     in_span = np.zeros(inputs.n_frames, dtype=bool)
@@ -470,6 +725,8 @@ def measure(inputs, public_gt_codes):
             if not isinstance(value, (np.ndarray, dict)) and name not in OWN_FIELDS:
                 scalars.setdefault(name, _round(value))   # "frames" is in both: the same number, from the same spans
     scalars["ball_speed_nan_share"] = _round(np.isnan(atd.ball_speed[seen]).mean()) if seen.any() else None
+    scalars.update({"hazard_" + name: value for name, value in fit["counts"].items()})
+    scalars.update({"hazard_l2_" + name: _round(value) for name, value in fit["cross_l2"].items()})
     return Calibration(
         ball_masks={half: _frozen(~ball_ok[kickoff:stop]) for half, kickoff, stop in spans},
         present_counts={half: _frozen(counts[kickoff:stop]) for half, kickoff, stop in spans},
@@ -482,7 +739,9 @@ def measure(inputs, public_gt_codes):
         wrong_team_share=_round(players["wrong_team_share"]),
         present_hist=_frozen(players["present_hist"]), speed_nan_share=_round(players["speed_nan_share"]),
         speed_nan_runs=_frozen(players["speed_nan_runs"]), player_jitter_rms_m=_round(players["jitter_rms_m"]),
-        public_window=window, baseline_outputs=baselines, scalars=scalars)
+        public_window=window, baseline_outputs=baselines, scalars=scalars,
+        hazard_model=fit["model"], hazard_l2=fit["l2"], hazard_c=fit["c"], hazard_auc=fit["auc"], hazard_go=fit["go"],
+        hazard_durations_s=fit["durations"], hazard_fallback_cells=fit["fallback_cells"])
 
 
 def public_gt():
@@ -504,6 +763,14 @@ def describe(cal):
     # A minute before the kick-off (none in a calibration, whose spans start there) goes into the first bin, and one
     # past the last bin into the last, so that no onset can break the count or make the list longer than MAX_BINS.
     bins = np.clip(np.floor(cal.gap_onset_minute / ONSET_BIN_MINUTES).astype(np.int64), 0, MAX_BINS - 1)
+    model = cal.hazard_model
+    cells = {}
+    for cls in sorted(cal.hazard_durations_s):
+        for third in sorted(cal.hazard_durations_s[cls]):
+            used = cal.hazard_durations_s[cls][third]
+            cells["class{}_third{}".format(cls, third)] = {
+                "n": cal.scalars.get("hazard_cell_{}_{}".format(cls, third)), "n_used": int(used.size),
+                "median_s": _round(np.median(used)), "pooled": (cls, third) in cal.hazard_fallback_cells}
     return {
         "version": CALIBRATION_VERSION,
         "scalars": dict(sorted(cal.scalars.items())),
@@ -519,6 +786,15 @@ def describe(cal):
                                for half, shares in sorted(cal.missing_share_5min.items())},
         "public_window": dict(cal.public_window),
         "baseline_outputs": {width: dict(row) for width, row in sorted(cal.baseline_outputs.items())},
+        # A08: the model on the standardised features, the four cross-half AUCs and the decision; per (class, third) cell
+        # the durations the cell had of its own, the number used and their median, and whether it used its class's pool.
+        "hazard": {
+            "features": list(hazard.FEATURES), "coef": [_round(value) for value in model.coef],
+            "intercept": _round(model.intercept), "mean": [_round(value) for value in model.mean],
+            "scale": [_round(value) for value in model.scale], "l2": _round(cal.hazard_l2), "c": _round(cal.hazard_c),
+            "auc": {key: _round(value) for key, value in sorted(cal.hazard_auc.items())}, "go": cal.hazard_go,
+            "fallback_cells": [list(cell) for cell in cal.hazard_fallback_cells], "duration_cells": cells,
+        },
     }
 
 
@@ -540,6 +816,11 @@ def _feed(sha, name, value):
         for key in sorted(value, key=str):
             _feed(sha, str(key), value[key])
         sha.update(b"}")
+    elif dataclasses.is_dataclass(value) and not isinstance(value, type):   # the hazard's model: arrays, not their repr
+        sha.update(b"<")
+        for item in dataclasses.fields(value):
+            _feed(sha, item.name, getattr(value, item.name))
+        sha.update(b">")
     else:
         sha.update(repr(value).encode("utf-8"))   # repr round-trips a float exactly
     sha.update(b";")
@@ -584,15 +865,18 @@ def _text_sha256(path):
 # says which definitions made a cache. A process that imported the module before the file changed goes on running the
 # old definitions, and keeps using the cache that fits them; a process that starts later rebuilds.
 CALIBRATION_SHA256 = _text_sha256(__file__)
+# And of hazard.py, which makes the version-2 fields (the features, the fit, the AUC, the thirds): a checkout with
+# another hazard.py has another key and so another folder, and cannot read a fit that this one's would not make.
+HAZARD_SHA256 = _text_sha256(hazard.__file__)
 
 
 def load(data_dir=None, rebuild=False, inputs=None, public_gt_codes=None):
     """The Calibration of BAR-ATH, from the cache when it is fresh, otherwise measured and stored.
 
-    data_dir defaults to games.DATA_DIR (MTAH_DATA_DIR); the cache is <data dir>/cache/benchmark/calibration/ and
-    nothing else is written. The ATD comes from the pipeline's own cache and is never rebuilt here beyond what Inputs
-    does when that cache is stale. rebuild=True measures again. `inputs` and `public_gt_codes` stand in for the real
-    match and its public truth (the self-checks pass a synthetic bundle).
+    data_dir defaults to games.DATA_DIR (MTAH_DATA_DIR); the cache is <data dir>/cache/benchmark/calibration/<digest>/
+    (cache_folder: one folder per key) and nothing else is written. The ATD comes from the pipeline's own cache and is
+    never rebuilt here beyond what Inputs does when that cache is stale. rebuild=True measures again. `inputs` and
+    `public_gt_codes` stand in for the real match and its public truth (the self-checks pass a synthetic bundle).
     """
     if inputs is None:
         from pipeline.inputs import Inputs  # here, not above: it pulls in pandas and the starter loaders
@@ -600,7 +884,7 @@ def load(data_dir=None, rebuild=False, inputs=None, public_gt_codes=None):
     data_dir = data_dir or inputs.data_dir
     gt = public_gt() if public_gt_codes is None else np.asarray(public_gt_codes)
     key = _key(inputs, gt)
-    folder = os.path.join(data_dir, *CACHE_FOLDER)
+    folder = cache_folder(data_dir, key)
     manifest = None if rebuild else _read_manifest(folder)
     if manifest is not None and manifest.get("key") == key:
         cal = _read(folder, manifest)
@@ -609,6 +893,18 @@ def load(data_dir=None, rebuild=False, inputs=None, public_gt_codes=None):
     cal = measure(inputs, gt)
     _write(cal, folder, key)
     return cal
+
+
+def cache_folder(data_dir, key):
+    """The folder of one cache key: <data dir>/cache/benchmark/calibration/<digest>/.
+
+    The digest is the first 16 hex digits of the sha256 of the key's canonical JSON (sorted keys, no spaces), so a key
+    is the same folder whatever order its entries come in. Checkouts that run different code (their keys differ in
+    code_sha256 or hazard_sha256) can share one data dir and never touch each other's files. Old folders stay where
+    they are: each is a few MB, and the key is what says whether one is still wanted.
+    """
+    canonical = json.dumps(key, sort_keys=True, separators=(",", ":"))
+    return os.path.join(data_dir, *CACHE_FOLDER, hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:KEY_DIGITS])
 
 
 def _config_path(width):
@@ -621,6 +917,7 @@ def _key(inputs, gt):
     key = {
         "calibration_version": CALIBRATION_VERSION,
         "code_sha256": CALIBRATION_SHA256,
+        "hazard_sha256": HAZARD_SHA256,
         "atd_sources": inputs.atd_manifest["sources"],
         "atd_cache_version": inputs.atd_manifest["cache_version"],
         "numpy": np.__version__,
@@ -628,6 +925,8 @@ def _key(inputs, gt):
                     for width in YARDSTICK_WIDTHS},
         "public_gt_sha256": hashlib.sha256(np.ascontiguousarray(gt, dtype=np.int8).tobytes()).hexdigest(),
         "n_frames": inputs.n_frames,
+        "pitch": [float(side) for side in inputs.pitch],   # games.py's constants: every distance and duration uses them
+        "fps": inputs.fps,
         "graded": [list(block) for block in inputs.graded],
         "kickoffs": {str(half): kickoff for half, kickoff in sorted(inputs.kickoffs.items())},
     }
@@ -645,11 +944,18 @@ def _read_manifest(folder):
 
 
 def _write(cal, folder, key):
-    """Arrays first, manifest last, with the old manifest removed up front (atd_cache._save does the same)."""
+    """Arrays first, manifest last, with the old manifest removed up front (atd_cache._save does the same).
+
+    The manifest is written whole to a temp file of this process in the folder and moved over the old one (os.replace),
+    so that no reader sees half of it. An old manifest that cannot be removed counts as absent: Windows refuses to
+    remove a file that another process has open, and a checkout with the same code (the same key, so this folder) may
+    be reading it or building it as well. Whatever it holds is the same measurement, and it is replaced below."""
     os.makedirs(folder, exist_ok=True)
     manifest_path = os.path.join(folder, MANIFEST)
-    if os.path.exists(manifest_path):
+    try:
         os.remove(manifest_path)
+    except OSError:   # none (FileNotFoundError), or one that another process holds open (PermissionError on Windows)
+        pass
     for name, array in _arrays(cal).items():
         np.save(os.path.join(folder, name + ".npy"), array, allow_pickle=False)
     manifest = {
@@ -657,10 +963,25 @@ def _write(cal, folder, key):
         "wrong_team_share": cal.wrong_team_share, "speed_nan_share": cal.speed_nan_share,
         "player_jitter_rms_m": cal.player_jitter_rms_m, "public_window": cal.public_window,
         "baseline_outputs": {str(width): row for width, row in sorted(cal.baseline_outputs.items())},
+        "hazard": {
+            "model": {"coef": cal.hazard_model.coef.tolist(), "intercept": cal.hazard_model.intercept,
+                      "mean": cal.hazard_model.mean.tolist(), "scale": cal.hazard_model.scale.tolist()},
+            "l2": cal.hazard_l2, "c": cal.hazard_c, "auc": cal.hazard_auc, "go": cal.hazard_go,
+            "fallback_cells": [list(cell) for cell in cal.hazard_fallback_cells],
+        },
     }
-    with open(manifest_path, "w", encoding="utf-8", newline="\n") as handle:
-        json.dump(manifest, handle, indent=2, sort_keys=True)
-        handle.write("\n")
+    temp_path = "{}.{}.tmp".format(manifest_path, os.getpid())
+    try:
+        with open(temp_path, "w", encoding="utf-8", newline="\n") as handle:
+            json.dump(manifest, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+        os.replace(temp_path, manifest_path)
+    except BaseException:   # no temp file is left behind, and the error is the caller's
+        try:
+            os.remove(temp_path)
+        except OSError:
+            pass
+        raise
 
 
 def _arrays(cal):
@@ -668,6 +989,8 @@ def _arrays(cal):
     arrays = {name: getattr(cal, name) for name in FLAT_ARRAYS}
     for name in HALF_ARRAYS:
         arrays.update({"{}_{}".format(name, half): array for half, array in getattr(cal, name).items()})
+    for cls, thirds in cal.hazard_durations_s.items():
+        arrays.update({"hazard_durations_s_{}_{}".format(cls, third): array for third, array in thirds.items()})
     return arrays
 
 
@@ -688,9 +1011,52 @@ def _read(folder, manifest):
             wrong_team_share=manifest["wrong_team_share"], speed_nan_share=manifest["speed_nan_share"],
             player_jitter_rms_m=manifest["player_jitter_rms_m"], public_window=dict(manifest["public_window"]),
             baseline_outputs={int(width): dict(row) for width, row in manifest["baseline_outputs"].items()},
-            scalars=dict(manifest["scalars"]), **flat, **by_half)
+            scalars=dict(manifest["scalars"]), **_read_hazard(folder, manifest["hazard"]), **flat, **by_half)
     except (OSError, ValueError, EOFError, KeyError, TypeError, AttributeError):
         return None
+
+
+def _read_hazard(folder, saved):
+    """The hazard fields of a Calibration from the manifest's "hazard" entry and the six duration files, as keywords.
+
+    ValueError (or KeyError, TypeError) for anything that is not what _write put there: a model of the wrong width or
+    with a value that is not a finite number, a scale that is not positive, AUCs that are not the four of
+    HAZARD_AUC_KEYS, a decision that is not a bool, a cell that is not a (class, third), a duration file that is
+    missing, empty or not 1-D (sample_mask needs a length to draw in every cell).
+    """
+    width = len(hazard.FEATURES)
+    arrays = {}
+    for name in ("coef", "mean", "scale"):
+        values = np.array(saved["model"][name], dtype=np.float64)
+        if values.shape != (width,) or not np.isfinite(values).all():
+            raise ValueError("hazard model {} is not {} finite numbers".format(name, width))
+        arrays[name] = _frozen(values)
+    if (arrays["scale"] <= 0).any():
+        raise ValueError("hazard model scale is not positive")
+    saved_auc = saved["auc"]
+    if not isinstance(saved_auc, dict) or sorted(saved_auc) != sorted(HAZARD_AUC_KEYS):
+        raise ValueError("hazard auc does not have exactly the keys {}".format(HAZARD_AUC_KEYS))
+    if type(saved["go"]) is not bool:
+        raise ValueError("hazard go is not a bool")
+    cells = tuple(tuple(operator.index(part) for part in cell) for cell in saved["fallback_cells"])
+    if any(len(cell) != 2 or cell[0] not in CLASSES or cell[1] not in THIRDS for cell in cells):
+        raise ValueError("hazard fallback_cells are not (class, third) pairs")
+    durations = {cls: {third: _read_array(folder, "hazard_durations_s_{}_{}".format(cls, third), np.float64)
+                       for third in THIRDS} for cls in CLASSES}
+    if any(not array.size for thirds in durations.values() for array in thirds.values()):
+        raise ValueError("a hazard duration cell is empty")
+    return {"hazard_model": hazard.LogisticModel(coef=arrays["coef"], intercept=_number(saved["model"]["intercept"]),
+                                                 mean=arrays["mean"], scale=arrays["scale"]),
+            "hazard_l2": _number(saved["l2"]), "hazard_c": _number(saved["c"]),
+            "hazard_auc": {key: _number(saved_auc[key]) for key in HAZARD_AUC_KEYS}, "hazard_go": saved["go"],
+            "hazard_durations_s": durations, "hazard_fallback_cells": cells}
+
+
+def _number(value):
+    """`value` as a float if it is a finite JSON number (not a bool or a string); ValueError otherwise."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise ValueError("{!r} is not a finite number".format(value))
+    return float(value)
 
 
 def _read_array(folder, name, dtype):

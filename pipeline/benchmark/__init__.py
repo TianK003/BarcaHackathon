@@ -18,7 +18,7 @@ parsed under data/cache/dfl/ (dfl.load_match is the one way every later stage ge
 where our tracker loses the ball (per-frame features, a logistic fit, a sampler of ball gaps) and reads no data;
 calibration.py measures our own tracking (ball_stats and player_stats, the two functions that measure BAR-ATH here and a
 degraded benchmark match later, and a Calibration of BAR-ATH that load() measures once and keeps under
-data/cache/benchmark/calibration/; docs/results.md A07);
+data/cache/benchmark/calibration/<digest>/, with the hazard of our ball gaps fitted on it; docs/results.md A07, A08);
 truth.py turns a match's flags into the scorer's H/A/D/X codes and reads off them what A06 measured; inputs.py serves
 a match to the pipeline as an Inputs (MatchInputs, clean_atd), with no truth in it; run.py runs a config on it through
 the pipeline's own functions (predict) and is the benchmark's command (evaluate_configs: every config on every match,
