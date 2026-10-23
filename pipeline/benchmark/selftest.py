@@ -11,7 +11,9 @@
                                                     #   while the 7 caches are built under data/cache/dfl/, then 99 to
                                                     #   221 s, 111 s with the last two included: the machine's load
                                                     #   decides)
-    python pipeline/benchmark/selftest.py --data    # + checks that read the real match's data (aggregates only)
+    python pipeline/benchmark/selftest.py --data    # + checks that read the real match's data (aggregates only): the
+                                                    #   calibration reproduces A01's, A02's and R001's figures (measured:
+                                                    #   12 s with the ATD cache and the calibration cache present)
 
 This file is the harness and the one command: it collects the checks, filters them by flag, runs them and reports.
 The checks themselves live in pipeline/benchmark/checks/, one module per topic (sources.py, dfl.py, ...), listed in

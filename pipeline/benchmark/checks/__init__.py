@@ -6,6 +6,9 @@ module of its topic:
     sources.py   the DFL registry and the download
     dfl.py       the DFL parsers and the cache of parsed matches (synthetic, and the downloaded ones with --dfl)
     hazard.py    the gap-onset hazard: features, logistic fit, AUC and the mask sampler (synthetic arrays only)
+    calibration.py
+                 the calibration, our own tracking measured for the benchmark: every statistic exact on hand-built
+                 objects, a synthetic bundle, the cache, and with --data the figures of A01, A02 and R001
     truth.py     the benchmark's truth from the DFL flags: codes, summary, line timing, nearest team, the coarse
                  truth and the cost of a lag (synthetic, and the downloaded matches with --dfl)
     inputs.py    a DFL match served to the pipeline as MatchInputs and clean_atd: contract, no truth (synthetic, and
@@ -32,6 +35,6 @@ Import with absolute imports (from pipeline.benchmark import dfl): a check modul
 cannot then shadow it.
 """
 
-from pipeline.benchmark.checks import dfl, harness, hazard, inputs, score, sources, truth
+from pipeline.benchmark.checks import calibration, dfl, harness, hazard, inputs, score, sources, truth
 
-MODULES = (sources, dfl, truth, inputs, score, hazard, harness)
+MODULES = (sources, dfl, truth, inputs, score, hazard, calibration, harness)
