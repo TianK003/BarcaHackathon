@@ -172,7 +172,7 @@ python pipeline/benchmark/run.py pipeline/benchmark/configs/nearest_w50.toml pip
 ```
 
 The first config is the reference, and every other one is compared with it (delta = other minus first, so positive
-means the other is better). The first run parses the seven matches (3 to 5 minutes, [A05](../docs/results.md)); later
+means the other is better). The first run parses the seven matches (3 to 6 minutes, [A05](../docs/results.md)); later
 runs read them from `data/cache/` and take about 6 s a config on the default profile
 ([R004b](../docs/results.md)). A config must run per graded half and use only what a benchmark match has: a source that
 needs the video's homography or the Smart Tagging stops the run and names the asset.
