@@ -22,6 +22,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R003 | 2026-10-23 | the same four yardsticks on the benchmark's `gaps` profile: our own ball gaps transplanted onto the DFL matches | — | — | — | 0.2102 raw (`w50`), 0.2302 coarse (`w125`); `w0` last under both | `gaps` v1 frozen, the first benchmark that looks like our match; the yardstick check holds (`w0` last), the rest of the order follows the truth |
 | R004 | 2026-10-23 | the same four yardsticks on the benchmark's `tracking` profile: our players' tracklets and slots, wrong-team slots, NaN-speed runs and smoothing on top of `gaps`' ball | — | — | — | 0.2000 raw (`w50`), 0.2195 coarse (`w125`); `w0` last under both | `tracking` v1 frozen as it is: the five counted gates pass and `fidelity.py` exits 0; its three count gates stay pending because they depend on the low-count tail, which v2 adds (exactly 22 present: 0.5631 of the full-strength frames against 0.5019 +-0.06; about 0.503 after the tail, an estimate that assumes its cap is placed by our counts), no WARN; the yardstick check holds, no order changes from `gaps` |
 | R004b | 2026-10-23 | the same four yardsticks on `tracking` version 2: R004's players plus our low-count frames (a cap that keeps the players nearest the ball), no piece shorter than 8 frames and the walk's tracked spans rescaled once | — | — | — | 0.1989 raw (`w50`), 0.2173 coarse (`w125`); `w0` last under both | `tracking` v2 frozen, `fidelity.py` exits 0: all eight gates pass (the three on how many slots are present are gates now: exactly 22 present 0.4938 against 0.5019 +-0.06, mean 20.60 against 20.52 +-0.5, 14 or fewer 0.0469 against 0.0525 +-0.02), no WARN; the yardstick check holds and the ranking does not move from R004 (the four configs move by 0.4 points of spellF1 at most) |
+| R004c | 2026-10-23 | the same four yardsticks on `tracking` version 3: R004b's players, but a slot is taken by a new tracklet only from the row after its last one stopped (versions 1 and 2 let it take the slot on the row it was freed), and the walk's tracked spans rescaled again, 2.042 to 2.072 | — | — | — | 0.2018 raw (`w50`), 0.2226 coarse (`w125`); `w0` last under both | `tracking` v3 frozen, `fidelity.py` exits 0: all eight gates pass (exactly 22 present 0.4925 against 0.5019 +-0.06, mean 20.60 against 20.52 +-0.5, 14 or fewer 0.0469 against 0.0525 +-0.02, tracklet median 26.52 s against 41.28 s, -36%), no WARN; the yardstick check holds and the ranking does not move from R004b (no config moves by more than 0.6 points of spellF1); the jitter per slot after smoothing is 1.80 cm and not R004b's 8.5 cm: that was the slot handovers and not DFL's jumps (T35) |
 
 ## Reference: the organisers' baselines (R000)
 
@@ -1047,6 +1048,13 @@ degraded match against ours" below has them with the episodes on, and the number
 second round of review corrected, in the commit after `0d12a4e`, the citation of those figures (A09, not R003), the
 printout of the full-strength shares, the statement that `tracking` v1 is frozen (with its three count gates pending),
 and the assumption behind the estimate of 0.503.
+**Erratum, added with R004c** (2026-10-23): the per-slot jitter that this entry reports after smoothing (6.78 cm on seed
+0, 6.47 cm on three seeds, "still 20 x ours") and the reading of it below ("The jitter is not noise that an average
+removes", T35) came from same-frame slot handovers, not from DFL's jumps. Version 1 let a tracklet take a slot on the
+very row it was freed: 236 times in these 21 runs (11.2 a match and seed, a jump of 5.3 m at the median and 43.0 m at
+the 90th percentile), and the same draws measured inside the tracklets have 1.80 cm after the average (R004c). What this
+entry says of DFL's own data stands (8.996 cm over the clean players, 98% of the squares in rare jumps in the five 2.
+Bundesliga matches, the 1 cm grid), and its scores are version 1's as they were.
 Checks: `pipeline/benchmark/selftest.py --dfl --data` passes all 238 checks (218 synthetic, 20 with `--dfl` and
 `--data`; 235 and 215 before the correction), `pipeline/selftest.py` 35 of 35 and its `--data` run 37 of 37 (the four
 baselines identical byte for byte). The new checks were written first and failed first (16 of 29 checks of the degrader
@@ -1390,6 +1398,13 @@ checks/common.py, so that checks/tracking.py and checks/degrade.py import no oth
 now reads them when it is called, as WRONG_TEAM_SCALE and SMOOTH_WINDOW are
 (`test_calibrated_parameters_read_the_scale_and_the_shortest_piece_when_called`), and the docstrings and the README's
 jitter (it quoted version 1's 6.47 cm, 20 times ours, for the profile) were brought up to date.
+**Erratum, added with R004c** (2026-10-23): the jitter after the 5-frame smoothing that this entry reports (8.5 cm;
+0.1201 m to 0.0873 m on seed 0 in the corrected assertion) and what it says of it ("98% rare jumps in the 2. Bundesliga
+matches", "which the cuts can do", T35) came from same-frame slot handovers, not from DFL's jumps: version 2 let a
+tracklet take a slot on the very row it was freed, 372 times in these 21 runs (17.7 a match and seed, 13.8 m at the
+median), and the same draws measured inside the tracklets have 1.75 cm after the average and 8.65 cm without it (R004c).
+The scale of the tracked spans, lambda = 2.042, was derived with that rule; version 3's is 2.072 (R004c). The scores,
+the gates and the other figures of this entry stand for version 2 as it was.
 Checks: `pipeline/benchmark/selftest.py --dfl --data` passes all 261 checks (241 synthetic, 20 with `--dfl` and
 `--data`; 257 and 237 before the review, 238 and 218 in R004), `pipeline/selftest.py` 35 of 35 and its `--data` run 37
 of 37 (the four baselines identical byte for byte). The checks of each part were written first and failed first (the
@@ -1635,6 +1650,271 @@ not ours. Do not choose between `w125` and the others where the raw and the coar
 are rougher than ours (jumps, T35), have no positional bias (the README's limitations), take our counts from the frames
 of the ball's gaps and not from the same play, and keep the players nearest the true ball: a method that reads only the
 nearest player sees little of what this profile adds to `gaps`.
+
+### R004c — The four yardsticks on `tracking` version 3 (2026-10-23, Tian)
+Proposal: P01 · Commit: `7fb0a52` (the code every report below was made at, on a clean tree: the eight yardstick reports
+say `dirty: false`, and `fidelity.py`, whose report has no `git` field, was run on the same tree with `git status`
+empty; the fix itself is `188f578` and `7fb0a52`, and this entry and the docs it corrects are the commits after them) ·
+Commands: `python pipeline/benchmark/fidelity.py --profile tracking --seeds 3` first, whose gates all passed, and then
+`python pipeline/benchmark/run.py pipeline/benchmark/configs/nearest_w50.toml pipeline/benchmark/configs/nearest_w0.toml pipeline/benchmark/configs/nearest_w25.toml pipeline/benchmark/configs/nearest_w125.toml --profile tracking --seeds 3`
+(the first config is the reference; run once more with `--truth coarse`, and `w25` first with `w125` second and
+`--no-write` for the paired comparison, under each truth)
+Public: not applicable. The scores read no BAR-ATH data; the profile does: the gaps, the tracklets, the episodes, the
+NaN-speed runs, the jitter and the slot counts are our match's own measurements (the Calibration, A07 to A09, digest
+`65b0c1915194…`, version 2), and the fidelity checks are compared with its public window's figures (77.8%, 66.4%).
+Validation (P01 benchmark): 7 DFL matches x 3 degradation seeds (0, 1, 2), profile `tracking` version 3, 2,005.3 graded
+minutes (668.4 per seed). Raw truth: pooled spellF1 0.2018 (`nearest_w50`), 0.1900 (`w25`), 0.1665 (`w125`), 0.0777
+(`w0`). Coarse truth: 0.2226 (`w125`), 0.1842 (`w50`), 0.1432 (`w25`), 0.0342 (`w0`). Intervals, fidelity and sign-flip
+p below.
+Changed vs the previous best: a benchmark entry, the third with our players: version 3 of the `tracking` profile. One
+thing changed, and one constant that followed from it: **a slot is taken by a new tracklet only from the row after its
+last tracklet stopped** (versions 1 and 2 let it take the slot on the very row it was freed), and the scale of the
+tracked spans was derived again, 2.042 to 2.072. The ball is R004b's, byte for byte (`test_profiles_nest`); the
+episodes, the cap, the shortest-piece rule, the smoothing and `WRONG_TEAM_SCALE` are R004b's code and constants, and
+their draws follow the pieces, which lambda changed. **The ranking does not move**: both truths order the four configs
+as in R004 and R004b, with the same Kendall tau, and no config's pooled spellF1 moves by more than 0.6 points (the
+largest are `w125`, +0.4 raw and +0.5 coarse, and `w50`, +0.3 under each). **What does move is the jitter**: 1.80 cm per
+slot after the average, not R004b's 8.5 cm, and the docs that blamed the rest on DFL's jumps were wrong (T35, corrected
+with this entry).
+Reports: `data/runs/benchmark/tracking/<stem>.json` and `<stem>.coarse.json` (R004b's, version 2, were copied to
+`tracking_v2/` before this run, and R004's to `tracking_v1/`, for the paired comparison below), and
+`data/runs/benchmark/fidelity_tracking.json` (not committed; each carries the Calibration's digest).
+Checks (on `7fb0a52`, before the doc edits of this entry; the branch also holds the first part of the `context` profile,
+`daf0783`, which this entry does not use): `pipeline/benchmark/selftest.py --dfl --data` passes all 284 checks (262
+synthetic, 16 with `--dfl`, 6 with `--data`) in 589 s, `pipeline/selftest.py` 35 of 35 (9 s) and its `--data` run 37 of
+37 in 18 s, the four baselines identical byte for byte; the default run of the benchmark's checks was repeated after the
+comment and doc edits of this entry (262 passed, 45 s). The checks that changed with the rule:
+`test_each_tracklet_takes_the_lowest_free_slot_of_its_pool` and
+`test_tracking_speeds_are_finite_differences_within_a_tracklet`, which required same-row takeovers, now require none;
+new are `test_a_slot_never_changes_player_between_adjacent_present_rows`,
+`test_a_handover_on_the_row_a_slot_is_freed_is_what_the_check_would_catch`,
+`test_dfl_a_slot_never_changes_player_on_a_real_match` and `test_jitter_inside_tracklets_counts_what_it_says`. With
+version 2's rule patched back into the committed code (`degrade.assign_slots` replaced in a throwaway script), the check
+of adjacent rows fails on a made-up match, the real-match one fails on J03WMX seed 0, and the two inverted ones fail
+(the check of the check builds its handover by hand and passes with either rule); with the committed rule all four pass,
+and J03WMX has no slot that changes player on any of 11,526,850 adjacent present pairs of 4 seeds.
+
+**Why: a same-row handover is a position jump in a slot.** The final review of the benchmark's first half (reviewer B)
+found that `assign_slots` freed a slot at the half-open stop of its tracklet and let a piece that starts on that row
+take it: the slot holds one player up to row t - 1 and another from row t. Ours has none (3.28 mm of jitter over 3.2
+million triples, A07, leaves no room: one jump of 12 m adds 288 m2 to the 34 m2 of squares of all of ours). The finding
+is measured here, not taken from the review: version 1's and 2's rule patched back into the committed code (a throwaway
+script, not committed: `degrade.assign_slots` replaced by the old three lines, `degraded_players` called as the profile
+calls it, with version 2's scale 2.042 for version 2, so that it is R004b's players, 28,880 pieces as R004b's record
+has; and with scale 1, no cap and no shortest piece for version 1), the 7 matches x 3 seeds, and the same draws measured
+per slot (`calibration.player_stats`) and then only inside tracklets:
+
+| 21 runs: 7 matches x 3 seeds | version 1 (R004) | version 2 (R004b) | version 3 |
+|---|---|---|---|
+| pieces (tracklets) | 31,398 | 28,880 | 28,743 |
+| slot runs that `player_stats` sees (a handover joins two pieces) | 31,162 | 28,508 | 28,743 |
+| same-row slot handovers | 236 (11.2 a run, 6 to 16) | 372 (17.7 a run, 9 to 30) | 0 |
+| of them one player's own two pieces | 3 | 2 | 0 |
+| jump between the two players: median / 90th percentile / largest | 5.3 / 43.0 / 76.5 m | 13.8 / 40.1 / 76.5 m | |
+| jitter per slot, without the average | 10.90 cm | 11.99 cm | 8.90 cm |
+| jitter per slot, with the 5-frame average | 6.47 cm | 8.49 cm | 1.80 cm |
+| jitter inside tracklets, without / with | 8.95 / 1.80 cm | 8.65 / 1.75 cm | 8.90 / 1.80 cm |
+| share of the per-slot squares in the triples that straddle a handover, without / with | 33% / 92% | 48% / 96% | 0 |
+| triples that straddle a handover (2 each) | 472 of 63,862,354 | 744 of 61,412,002 | 0 |
+
+The old rule reproduces what the earlier entries reported (6.47 cm in R004; in R004b 0.1201 m without the average and
+0.0873 m with it on seed 0, 8.5 cm with it on three seeds, against 0.1199 m and 0.0849 m on three seeds here), so the
+patched code is their code. **The per-slot jitter of versions 1 and 2 was the handovers**: 744 triples of 61 million
+(0.0012%) held 96% of the squares of version 2's jitter after the average, because a jump of 13.8 m between two rows,
+spread by the average over five frames, is still metres and not centimetres. Inside the tracklets, version 2 had 1.75 cm
+after the average and version 1 1.80 cm, which is what version 3 has per slot. DFL's own jumps are real (T35: 8.90 cm
+without the average is DFL's clean 9.00 cm again) and the average takes them down to a fifth, as the arithmetic of a
+jump says (a step of J is two triples of +-J, and after a centred 5-frame average two of +-J/5); they are not what R004
+and R004b measured, and **no jump filter is needed**.
+
+**The scale of the tracked spans, derived again** (the one constant that the rule reached; `degrade.TRACKED_SCALE`,
+once, label-free, with the rule that R004b set: lambda = ours' tracklet median over the pooled median of the profile at
+lambda = 1, shortest-piece rule in, seed 0, the 7 matches laid end to end as `fidelity.py` pools them; the measurement
+made again here on the committed code, version 3's with `test_data_tracking_constants_follow_from_the_measurements` (it
+prints 19.92 s) and version 2's with the old rule patched in, in a throwaway script):
+
+| slot rule | pooled median at lambda = 1 | tracklets | lambda |
+|---|---|---|---|
+| version 2's (reproduces R004b) | 20.22 s | 13,192 | 41.28 / 20.22 = 2.0415, 2.042 |
+| version 3's | 19.92 s | 13,396 | 41.28 / 19.92 = 2.0723, **2.072** |
+
+Ours is 41.28 s over 1,144 tracklets. The old rule joined 204 pairs of pieces into one run of a slot (13,396 pieces,
+13,192 runs), longer tracklets in `player_stats`'s eyes, so the measurement moved, and lambda with it: a bug fix
+reopened the constant once, and it was applied whether or not the tracklet-median gate would pass (it does) and frozen
+on 2026-10-23, with both measurements in the comment of the constant and `RECORDED_MEDIAN_S` 19.92 s beside
+`RECORDED_MEDIAN_V2_S` 20.22 s. The median at lambda 2.072 is 26.08 s on seed 0 (the data check) and 26.52 s on the
+three seeds (the fidelity report), against R004b's 26.24 s and 27.08 s at 2.042: the ratio is a one-shot on a statistic
+that does not grow linearly with lambda, so it does not reach ours, and this one is a little further (-36% against
+-34%). `WRONG_TEAM_SCALE` (2.658), the 5-frame average and `MIN_PIECE_FRAMES` (8) stay frozen, and no check said
+otherwise. The lost share of the walk, the episodes and the rule, seeds 0 to 4, pooled: 2.72% against d = 2.50% (per
+match 2.66%, 2.79%, 2.61%, 2.77%, 2.67%, 2.76%, 2.81%; R004b 2.71%; the check allows 0.3 points).
+
+**Fidelity** (`fidelity.py --profile tracking`, 7 matches x 3 seeds, 98 s with the caches warm; the centres are the
+Calibration's own values on our kick-off spans, the tolerances the plan's; nothing was changed after looking at it).
+**`tracking` v3 is frozen: all eight gates are counted and pass, `fidelity.py` exits 0**, and **none of the ten checks
+warns**:
+
+| gate | benchmark | our match (centre) | tolerance | | R004b (v2) |
+|---|---|---|---|---|---|
+| ball missing, share of frames | 0.4189 | 0.4110 | +-0.02 | pass (+0.0079, 40% of the band) | 0.4189 |
+| median gap in the ball | 10.76 s | 10.74 s | +-1.5 s | pass (+0.02 s, 1%) | 10.76 s |
+| exactly 22 slots present, share of full-strength frames | 0.4925 | 0.5019 | +-0.06 | pass (-0.0094, 16%) | 0.4938 |
+| mean slots present, full-strength frames | 20.596 | 20.522 | +-0.5 | pass (+0.074, 15%) | 20.599 |
+| 14 or fewer slots present, share of full-strength frames | 0.0469 | 0.0525 | +-0.02 | pass (-0.0056, 28%) | 0.0469 |
+| wrong-team share of frames | 0.0918 | 0.1054 | +-0.03 | pass (-0.0136, 45%) | 0.0942 |
+| tracklet median | 26.52 s | 41.28 s | +-50% (+-20.64 s) | pass (-36%, 72% of the band) | 27.08 s |
+| NaN-speed share of the present slot-frames | 0.0788 | 0.0783 | +-0.01 | pass (+0.0005, 5%) | 0.0788 |
+
+The count gates are measured on full-strength frames (T36: 818,710 of 1,002,644 frames, 81.7%; J03WN1 is at full
+strength on 7.5% of its frames and J03WQQ on 62.8%). The wrong-team share is the one that moved most (-0.0024; lambda
+and the rule both changed the pieces, and which of them moved it was not separated) and the tracklet median is the gate
+nearest its edge, as in R004 and R004b. The 42 half-draws took 21 masks from our first half and 21 from our second, and
+the draws' record pooled over the 21 runs and both halves says: 5,330 onsets made 3,453 episodes (64.8%), 1,746 skipped
+for no opposing pair within 2 m (32.8%) and 131 for a player already in an episode (2.5%) (R004b: 3,447, 1,757, 126);
+79,703 NaN-speed runs (R004b: 79,277); the cap: 303,259 frames at or below 18 of our count and 2,363,692 slot-frames
+dropped, both as in R004b, in 4,513 pieces cut (R004b: 4,463); the shortest-piece rule: 823 pieces dropped, 3,268
+slot-frames, 169 episode pieces (R004b: 794, 3,177, 172); 28,743 tracklets, 1,369 a run (R004b: 1,375; ours 1,144 in a
+match). The jitter after the 5-frame smoothing is 1.80 cm (ours 3.3 mm; 5.5 times; T35).
+
+The ten warning checks (none tuned towards): none warns.
+
+| check | benchmark | our match | band | | R004b (v2) |
+|---|---|---|---|---|---|
+| nearest player agrees with the truth, alive and ball visible | 0.7609 | 0.7784 (public window) | +-0.05 | ok | 0.7586 |
+| ball visible on dead frames | 0.5684 | 0.6637 (public window) | +-0.10 | ok | 0.5684 |
+| `w0` possessions per graded minute | 13.92 | 18.40 | +-25% | ok (-24.3%) | 13.91 |
+| `w0` D share | 0.4189 | 0.4069 | +-0.05 | ok | 0.4189 |
+| `w25` possessions per graded minute | 5.36 | 7.04 | +-25% | ok (-23.9%) | 5.39 |
+| `w25` D share | 0.3764 | 0.3649 | +-0.05 | ok | 0.3764 |
+| `w50` possessions per graded minute | 4.30 | 5.61 | +-25% | ok (-23.3%) | 4.32 |
+| `w50` D share | 0.3341 | 0.3234 | +-0.05 | ok | 0.3341 |
+| `w125` possessions per graded minute | 3.05 | 3.76 | +-25% | ok (-18.7%) | 3.06 |
+| `w125` D share | 0.2329 | 0.2233 | +-0.05 | ok | 0.2329 |
+
+The WARN rows moved by almost nothing (the D shares and the ball-visible figure depend on the ball alone, and are
+R004b's to the last digit); `w0` is the nearest its edge (-24.3% of ours against a band of 25%), as before (-24.4%).
+
+**Slot persistence and the degraded match against ours (information; J03WMX, seed 0, our real Calibration, from the data
+check at `7fb0a52`; version 2's column is R004b's).** d is 0.0250, the mean tracked span 5,796 frames (231.8 s) after
+lambda and the mean lost span 148.6 frames (5.94 s); the cap reads 20,031 of the 145,967 frames from the kick-offs
+(13.7%) and drops 164,572 slot-frames in 234 pieces; the match loses 7.66% of its 3,211,274 on-pitch frames.
+
+| | v3 | v2 (R004b) | ours |
+|---|---|---|---|
+| slots present, mean | 20.31 | 20.29 | 20.52 |
+| all 22 present | 48.7% | 48.4% | 50.2% |
+| 14 or fewer present | 6.7% | 6.7% | 5.2% |
+| tracklets | 1,448 | 1,454 | 1,144 |
+| tracklet median | 21.8 s | 22.8 s | 41.3 s |
+| speeds NaN of the present | 7.91% | 7.85% | 7.83% |
+| wrong-team frames | 8.5% | 8.7% | 10.5% |
+| slot idle gaps, count / median | 1,397 / 4.32 s | 1,402 / 4.12 s | 1,065 / 7.40 s |
+| idle at most 3 s / over 60 s | 39.4% / 5.3% | 42.0% / 5.3% | 17.7% / 15.0% |
+| returns to the same slot | 529 of 1,117 (47.4%) | 552 of 1,147 (48.1%) | no identities |
+| the same without the cap | 380 of 562 (67.6%) | 384 of 598 (64.2%) | |
+| slots ever present, home / away of 24 / 22 | 13 / 13 | 14 / 13 | 22 / 21 |
+| present on at least a tenth of the frames | 12 / 12 | 12 / 12 | 21 / 20 |
+| present on at least a hundredth | 13 / 12 | 12 / 13 | 22 / 21 |
+
+Slot identity is no more ours than it was (the returns to the same slot, 47% against 48%), as the warning of A09, R004
+and R004b says: **a method that follows a slot across a loss would be validated optimistically on this profile**.
+
+**Wrong-team episodes as `player_stats` sees them (seed 0, at the frozen scale; the data check at `7fb0a52`, and the
+same measurement with version 2's rule patched in).** Version 3: 128, 75, 115, 135, 148, 112 and 159 episodes in J03WMX,
+J03WN1, J03WOH, J03WOY, J03WPY, J03WQQ and J03WR9: **75 to 159 a match, mean 124.6**, medians 2.0 to 2.8 s and 90th
+percentiles 8.2 to 14.5 s, against ours **104**, 2.68 s and 15.79 s. Version 2: 119, 82, 118, 133, 134, 114, 151: 82 to
+151, mean 121.6, medians 1.8 to 2.7 s, 90th percentiles 9.4 to 14.4 s: the figures that the README quoted for the
+profile until now (82 to 151, mean 122), which no entry logged and which were version 2's.
+
+**Raw truth** (9,183 true possessions, 4.58 per graded minute; `D` is 44.8% of the graded frames). Δ is the config minus
+`nearest_w50`, the first config; the interval is the 90% t interval of the seven matches' deltas.
+
+| config | pooled spellF1 | macroF1 | alive/dead F1 | mean per-match spellF1 [90% t] | possessions predicted (per min) | Δ spellF1, mean per match [90% t] | sign-flip p | wins / losses |
+|---|---|---|---|---|---|---|---|---|
+| `nearest_w50` (reference) | **0.2018** | 0.4592 | 0.6094 | 0.2023 [0.1927, 0.2118] | 8,623 (4.30) | | | |
+| `nearest_w25` | 0.1900 | 0.4567 | 0.5935 | 0.1903 [0.1839, 0.1967] | 10,755 (5.36) | -0.0120 [-0.0176, -0.0063] | 0.0312 | 1 / 6 |
+| `nearest_w125` | 0.1665 | 0.4407 | 0.6428 | 0.1676 [0.1516, 0.1835] | 6,124 (3.05) | -0.0347 [-0.0450, -0.0244] | 0.0156 | 0 / 7 |
+| `nearest_w0` | 0.0777 | 0.4405 | 0.5761 | 0.0777 [0.0722, 0.0831] | 27,921 (13.92) | -0.1246 [-0.1383, -0.1110] | 0.0156 | 0 / 7 |
+
+**Coarse truth** (`COARSE_MIN_S` = 5 s: 4,977 true possessions, 2.48 per graded minute; the same `D`). Δ is again the
+config minus `nearest_w50`:
+
+| config | pooled spellF1 | macroF1 | alive/dead F1 | mean per-match spellF1 [90% t] | possessions predicted (per min) | Δ spellF1, mean per match [90% t] | sign-flip p | wins / losses |
+|---|---|---|---|---|---|---|---|---|
+| `nearest_w125` | **0.2226** | 0.4509 | 0.6428 | 0.2228 [0.2062, 0.2395] | 6,124 (3.05) | +0.0382 [+0.0279, +0.0486] | 0.0156 | 7 / 0 |
+| `nearest_w50` (reference) | 0.1842 | 0.4602 | 0.6094 | 0.1846 [0.1747, 0.1945] | 8,623 (4.30) | | | |
+| `nearest_w25` | 0.1432 | 0.4555 | 0.5935 | 0.1434 [0.1385, 0.1482] | 10,755 (5.36) | -0.0412 [-0.0490, -0.0335] | 0.0156 | 0 / 7 |
+| `nearest_w0` | 0.0342 | 0.4390 | 0.5761 | 0.0344 [0.0307, 0.0382] | 27,921 (13.92) | -0.1502 [-0.1607, -0.1396] | 0.0156 | 0 / 7 |
+
+What the tables say, and what they do not:
+- **The yardstick check holds in its robust part: `nearest_w0` is last under both truths**, by far more than the noise
+  (7 losses of 7 against `w50` under each, Δ -0.1246 raw and -0.1502 coarse, and the gap from `w0` to the next config is
+  0.0888 raw and 0.1090 coarse), and in each of the three seeds (the gap by seed, 0 / 1 / 2: 0.0912 / 0.0887 / 0.0863
+  raw, 0.1052 / 0.1083 / 0.1136 coarse). Nothing had to be fixed or changed to get it.
+- **The rest of the order follows the truth, as on `clean`, `gaps`, R004 and R004b, and neither truth gives the
+  published order.** Raw: `w50 > w25 > w125 > w0`; coarse: `w125 > w50 > w25 > w0`; published (R000, full match): `w50 >
+  w125 > w25 > w0`. **Kendall tau against the published order is +0.667 under each truth** (5 of the 6 pairs concordant,
+  1 discordant), as in R004b. Each truth keeps the same order in each of the three seeds (pooled spellF1 by seed, 0 / 1
+  / 2: raw `w50` 0.2006 / 0.1988 / 0.2058, `w25` 0.1847 / 0.1879 / 0.1976, `w125` 0.1657 / 0.1655 / 0.1681, `w0` 0.0745
+  / 0.0769 / 0.0818; coarse `w50` 0.1788 / 0.1831 / 0.1907, `w25` 0.1394 / 0.1403 / 0.1501, `w125` 0.2148 / 0.2267 /
+  0.2263, `w0` 0.0342 / 0.0320 / 0.0365). The seeds move a pooled score by up to about 0.013, and the intervals above
+  are over the matches and say nothing of that spread.
+- **The published gaps are inside the noise (about 0.04), and the two that involve `w125` lie between the raw and the
+  coarse ones.** Pooled spellF1 gaps, published against raw against coarse: `w50` - `w25` +0.044 / +0.012 / +0.041;
+  `w125` - `w25` +0.025 / -0.024 / +0.079; `w50` - `w125` +0.019 / +0.035 / -0.038. Paired over the matches, `w125`
+  against `w25` is -0.0228 [-0.0346, -0.0109], 0 wins of 7 (7 losses), under the raw truth (macroF1 -0.0165 [-0.0240,
+  -0.0090], 1 win), and +0.0795 [+0.0636, +0.0954], 7 wins of 7, under the coarse one (macroF1 -0.0052 [-0.0135,
+  +0.0032], 2 wins, p 0.2656) (`... nearest_w25.toml ... nearest_w125.toml --profile tracking --seeds 3 --no-write`,
+  with `--truth coarse` for the second). That the published gaps that involve `w125` lie between the raw and the coarse
+  one fits A06's reading (DFL's grain is finer than ours, and the coarse truth stands in for how much); it is two
+  numbers, not a measurement of ours, and it is not used to choose anything (T26).
+- **The choice of truth decides `w125` against `w50` and `w25`, not the profile.** The sign of every paired delta
+  against `w50` is the same on both competitions (BL1: the two Bundesliga matches, BL2: the five 2. Bundesliga ones):
+  raw `w125` -0.0440 on BL1 and -0.0310 on BL2, coarse +0.0389 and +0.0380; `w25` -0.0092 and -0.0131 raw, -0.0367 and
+  -0.0431 coarse; `w0` -0.1113 and -0.1300 raw, -0.1505 and -0.1500 coarse. Mean spellF1 per competition (BL1, BL2): raw
+  `w50` 0.1963, 0.2046; `w25` 0.1872, 0.1916; `w125` 0.1524, 0.1736; `w0` 0.0850, 0.0747; coarse `w50` 0.1833, 0.1851;
+  `w25` 0.1467, 0.1420; `w125` 0.2222, 0.2231; `w0` 0.0329, 0.0351.
+- **`w25` against `w50` is the one raw gap that is not decided**: -0.0120 [-0.0176, -0.0063], p 0.0312, 1 win in 7
+  (macroF1: -0.0025 [-0.0047, -0.0003], 3 wins in 7, p 0.1250): about a hundredth of a point, which the interval
+  excludes by a little; it is not a result.
+
+**How R004c differs from R004b** (only the slot rule and lambda changed: the ball, the seeds, the matches, the configs
+and the scorer are the same, so the two are paired by match; `tracking` v3 minus v2, from the two sets of reports, over
+the matches; the seeds are the same but the draws are not, since lambda moved, so the pairing removes the match and not
+the draw):
+
+| config | raw: pooled spellF1 v2 to v3 | Δ mean per match [90% t] | wins / losses | coarse: pooled spellF1 | Δ mean per match [90% t] | wins / losses |
+|---|---|---|---|---|---|---|
+| `nearest_w50` | 0.1989 to 0.2018 | +0.0030 [-0.0005, +0.0065] | 5 / 2 | 0.1811 to 0.1842 | +0.0031 [+0.0010, +0.0051] | 6 / 1 |
+| `nearest_w25` | 0.1897 to 0.1900 | +0.0005 [-0.0026, +0.0036] | 4 / 3 | 0.1422 to 0.1432 | +0.0011 [-0.0001, +0.0022] | 6 / 1 |
+| `nearest_w125` | 0.1624 to 0.1665 | +0.0041 [+0.0011, +0.0071] | 6 / 1 | 0.2173 to 0.2226 | +0.0053 [+0.0024, +0.0082] | 6 / 1 |
+| `nearest_w0` | 0.0779 to 0.0777 | -0.0001 [-0.0013, +0.0010] | 4 / 3 | 0.0341 to 0.0342 | +0.0002 [-0.0005, +0.0008] | 4 / 3 |
+
+- **The rule changes the four yardsticks by 0.6 points of spellF1 at most and about 0.1 to 0.2 points of macroF1**
+  (macroF1 by config +0.0009 to +0.0014 raw and +0.0012 to +0.0018 coarse, up for every config; the 90% interval
+  excludes 0 for `w50`, `w25` and `w0` under the raw truth and for all but `w125` under the coarse one), and **changes
+  no order**: both truths rank the four configs as in R004b, with the same Kendall tau. One spellF1 delta has an
+  interval that excludes 0 under the raw truth (`w125`, +0.0041, 6 wins of 7) and two under the coarse one (`w50`
+  +0.0031 and `w125` +0.0053; `w25`'s interval ends at -0.0001). The direction is what one expects of a profile with
+  fewer position jumps and tracklets that are a little longer (28,743 pieces against 28,880), and the size is inside the
+  seeds' spread (about 0.013): it is not a result about any config.
+- The `tracking` v2 figures of this table are R004b's reports (`tracking_v2/`, the copy made before this run, byte for
+  byte R004b's: pooled 0.1989, 0.1897, 0.1624 and 0.0779 raw, 0.1811, 0.1422, 0.2173 and 0.0341 coarse, as R004b says);
+  the v3 ones are at `7fb0a52`.
+
+Runtime: 98 s for `fidelity.py` on all seven matches and three seeds (R004b: 93 to 110 s); the runner's own line says
+5.1 to 6.1 s per config, 62 s and 66 s for the four configs under the raw and the coarse truth and 55 s and 54 s for the
+paired two-config runs, with the DFL caches and the Calibration cached; the suites 589 s, 9 s and 18 s (above).
+Verdict: keep `tracking` v3 as the benchmark's profile (`DEFAULT_PROFILE` is still `tracking`, which now means version
+3; whether `context` takes it over is R005's) and the four yardsticks as its floor, not as candidates. All eight gates
+and all ten checks hold, and the yardstick check passes in its robust part under both truths. What version 3 corrects is
+the account of the players, not the ranking: **the jitter per slot is 1.80 cm and not 8.5 cm, five and a half times ours
+and not twenty-six, and every figure of R004 and R004b that blamed the rest on DFL's own jumps was a figure of slot
+handovers** (errata added to both, T35 rewritten, the README corrected). Still true of the profile, and unchanged by
+this entry: its slots are not ours (47% of the returns to the same slot, ours has no identities; a method that follows a
+slot across a loss would be validated optimistically), its tracklet median is 36% below ours, it has no positional bias,
+and it takes our counts from the frames of the ball's gaps and not from the same play. Do not choose between `w125` and
+the others where the raw and the coarse truth disagree.
 
 ## Submission log
 

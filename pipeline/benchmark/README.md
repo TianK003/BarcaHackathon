@@ -7,7 +7,7 @@ matches**: the seven open DFL/IDSSE Bundesliga matches (CC BY 4.0), which carry 
 team in possession on every frame. A config runs on them through the pipeline's own functions, is scored the way the
 organisers' scorer scores, and is compared with another config with the uncertainty that seven matches allow.
 The plan is [P01](../../docs/proposals.md); what was measured is in [results.md](../../docs/results.md) (A05 to A09,
-R002 to R004b).
+R002 to R004c).
 
 ```
 python pipeline/benchmark/sources.py          # data -> data/external/dfl/   (21 files, 2.6 GB, size and md5 checked)
@@ -101,7 +101,7 @@ which goes into every report: change what a profile does and bump it.
 |---|---|---|---|
 | `clean` | 1 | DFL's, as it is: on every frame | DFL's, one slot per player |
 | `gaps` | 1 | missing where **ours** was: our own missing-ball masks, transplanted onto each half; its speed is NaN everywhere (T31) | untouched |
-| `tracking` | 2 | `gaps`'s, byte for byte | broken into tracklets of ours and given 46 slots, 24 home and 22 away, as ours are; a wrong-team slot now and then (10.5% of frames), NaN speeds in runs (7.8% of the slot-frames), 5-frame smoothing; **since version 2** only the players nearest the ball are tracked where ours has few (the cap), no piece is shorter than 8 frames, and the walk's spans are rescaled once (below). Version 1 (R004) had none of the three |
+| `tracking` | 3 | `gaps`'s, byte for byte | broken into tracklets of ours and given 46 slots, 24 home and 22 away, as ours are; a wrong-team slot now and then (10.5% of frames), NaN speeds in runs (7.8% of the slot-frames), 5-frame smoothing; **since version 2** only the players nearest the ball are tracked where ours has few (the cap), no piece is shorter than 8 frames, and the walk's spans are rescaled once (below). **since version 3** a slot is taken by a new tracklet only from the row after its last one stopped, and the scale is derived again (below); this is the default profile. Version 1 (R004) had none of the three of version 2, and versions 1 and 2 had the slot handovers that version 3 removes (R004c) |
 | `context` | 1 | missing where our tracker loses it: a hazard fitted on our own match (A08) places the gaps by the ball's distance to a line, its speed, the players near it and the minute of the half, with our gap lengths (`HAZARD_SCALE` 0.699, rescaled once). **It fails its near-line gate** (the gaps start within 2 m of a line 56% of the time, against 28% of ours: R005), so it is **not the default**, and is kept for the agreement check between generators | `tracking`'s, draw for draw (`test_context_players_equal_tracking`) |
 
 **The transplant.** `Calibration.ball_masks[half]` is our match's missing-ball mask of each half from its kick-off to the
@@ -158,17 +158,22 @@ players' jitter, the RMS of the second difference of a position (the statistic `
 ours), is 8.996 cm in the seven matches, pooled by sums of squares, against 3.280 mm in ours: 27 times. The rule, set
 before measuring, was to smooth every tracklet piece with a centred 5-frame moving average (the window shrinks at a
 piece's ends to the rows inside it, and nothing crosses a piece) if DFL's is more than twice ours, so the profile is
-smoothed (`degrade.SMOOTH_WINDOW`). On the profile's own draws (version 2, seed 0, the seven matches pooled; the same
-pieces with and without the average, `test_data_tracking_constants_follow_from_the_measurements`) it lowers the jitter
-from 12.0 to 8.7 cm, and the fidelity report's three seeds say 8.5 cm: about 26 times ours, and that is not the
-average's failure. (The 12.0 is more than DFL's own 9.0, which the cuts can do: in five matches the RMS is 98% rare
-jumps, and the pieces and slots change which triples are counted. So the check compares the same draws with and without
-the average, and not the profile with the clean players. Version 1, R004, had 6.47 cm over three seeds.) Five of the
-seven matches (all the 2. Bundesliga ones) have 98% of the squares of their second differences in the largest 0.05% of
-triples: rare jumps (in J03WOY's first half, 61 steps of 1,520,419 exceed 25 m/s) that an average spreads out and does
-not remove. And the bulk is a 1 cm grid: the median second difference of every match is 1.00 cm and its 99th percentile
-2.83 cm, against 1.4 mm and 9.6 mm in ours, which a 5-frame average lowers by a factor of about 6 on white noise.
-Nothing was tuned to close that gap (R004).
+smoothed (`degrade.SMOOTH_WINDOW`). On the profile's own draws (version 3, seed 0, the seven matches pooled; the same
+pieces with and without the average, `test_data_tracking_constants_follow_from_the_measurements`) the average takes the
+jitter from 8.75 to 1.77 cm, to a fifth of it (5.4 times ours, 3.28 mm), and the fidelity report's three seeds say 1.80
+cm (5.5 times). Without the average the draws have 8.90 cm (three seeds), DFL's own 9.00 cm again; inside a piece the
+average does what the arithmetic of a jump says, a step of J between two frames being two triples of +-J and, after the
+average, two of +-J/5 (white noise falls to 16%). **The 6.47 and 8.5 cm that versions 1 and 2 reported were not DFL's
+jumps: they were slot handovers** (below), a slot taken by another player on the very row it was freed, 13.8 m apart at
+the median, 372 times in version 2's 21 runs. Measured inside the tracklets the same draws had 1.75 cm (version 2) and
+1.80 cm (version 1), and the triples that straddle a handover were 96% and 92% of the squares per slot after the average
+(R004c). Since version 3 no slot changes player between two adjacent rows, the jitter per slot is the jitter inside
+tracklets (asserted), and no jump filter is needed. Five of the seven matches (all the 2. Bundesliga ones) have 98% of
+the squares of their second differences in the largest 0.05% of triples: rare jumps (in J03WOY's first half, 61 steps of
+1,520,419 exceed 25 m/s) that the average lowers to a fifth and does not remove. And the bulk is a 1 cm grid: the median
+second difference of every match is 1.00 cm and its 99th percentile 2.83 cm, against 1.4 mm and 9.6 mm in ours, which a
+5-frame average lowers by a factor of about 6 on white noise. Nothing was tuned to close the gap that is left (R004,
+R004c).
 
 **The cap, the shortest piece and the scale of the tracked spans (version 2).** Our tracker has 18 or fewer slots
 present on 10.6% of its frames (5.2% have 14 or fewer): the camera is on a part of the pitch and the rest of the players
@@ -194,18 +199,36 @@ frames is dropped, whatever made it (the walk's run ends, an episode, the cap), 
 21 runs it drops 794 pieces, holding 3,177 slot-frames, 172 of them episode pieces (`short_pieces`, `short_slot_frames`,
 `short_episode_pieces` in the draws' record).
 
-**The scale of the tracked spans** (`degrade.TRACKED_SCALE` = 2.042, frozen). The walk draws its tracked spans from our
-*final* tracklets, which already hold the cuts that the cap and the episodes add, so the profile counted our cuts twice:
-pooled over the seven matches, the walk alone gave a tracklet median of 40.88 s against ours 41.28 s, and each part that
-cuts took it further down (the episodes alone 29.26 s, the cap alone 24.44 s, both 19.68 s, three seeds, R004b). The
-drawn lengths are therefore multiplied by lambda once (the lost spans follow through mu, so the lost share stays d):
-lambda = ours' median over the profile's pooled median at lambda = 1 with the shortest-piece rule in (seed 0, the seven
-matches laid end to end as fidelity pools them, 20.22 s), 41.28 / 20.22 = 2.0415, **2.042**, set on 2026-10-23 and
-applied whether or not the tracklet-median gate would pass; it is never touched again because of a gate, a WARN or a
-score (`test_data_tracking_constants_follow_from_the_measurements` re-derives it from the recorded measurement and
-measures that again). The pooled median of version 2 is then 27.08 s (three seeds), 34% below ours and inside the gate's
-50%; the lost share of the walk, the episodes and the rule is 2.71% against d = 2.50% (the check allows 0.3 points:
-2.59% before the scale and the rule, since a longer span makes the cut at the end of a run weigh more).
+**The slots (version 3).** The pieces of a half, after the cap and the shortest-piece rule, are taken in order of (start
+frame, player column) and each takes the lowest free slot of its team's pool. A slot is free for a piece that starts at
+row t only when its last tracklet stopped before t: its half-open stop is at most t - 1, so there is at least one empty
+row between two tracklets of a slot and a slot never changes player between two adjacent rows. Versions 1 and 2 freed a
+slot at its tracklet's stop and let a piece that starts there take it, which put the position of another player into the
+slot's trajectory: 372 times in version 2's 21 runs (7 matches x 3 seeds; 17.7 a run, 9 to 30), the two players 13.8 m
+apart at the median and 40.1 m at the 90th percentile (version 1: 236 times, 5.3 and 43.0 m), where ours has none (3.28
+mm of jitter over 3.2 million triples, A07). A review of R004b found it and R004c measures it. A pool with no free slot
+is a ValueError (a team has 11 players on the pitch and 22 or 24 slots, so it means that DFL gave positions to players
+who are not playing). `test_a_slot_never_changes_player_between_adjacent_present_rows` pins the rule on made-up matches
+and `test_dfl_a_slot_never_changes_player_on_a_real_match` on a real one (J03WMX: no slot changed player on any of
+11,526,850 adjacent present pairs of 4 seeds).
+
+**The scale of the tracked spans** (`degrade.TRACKED_SCALE` = 2.072, frozen; 2.042 in version 2). The walk draws its
+tracked spans from our *final* tracklets, which already hold the cuts that the cap and the episodes add, so the profile
+counted our cuts twice: pooled over the seven matches, the walk alone gave a tracklet median of 40.88 s against ours
+41.28 s, and each part that cuts took it further down (the episodes alone 29.26 s, the cap alone 24.44 s, both 19.68 s,
+three seeds, R004b, with version 2's slot rule). The drawn lengths are therefore multiplied by lambda once (the lost
+spans follow through mu, so the lost share stays d): lambda = ours' median over the profile's pooled median at lambda =
+1 with the shortest-piece rule in (seed 0, the seven matches laid end to end as fidelity pools them). With version 2's
+slot rule that median was 20.22 s over 13,192 tracklets, 41.28 / 20.22 = 2.0415, 2.042 (R004b); with version 3's it is
+19.92 s over 13,396, because the old rule joined 204 pairs of tracklets into one run of a slot (a run of present rows is
+one tracklet to `player_stats`), and 41.28 / 19.92 = 2.0723, **2.072**, set on 2026-10-23 (R004c). The bug that the slot
+rule fixed had moved the measurement, so the constant was reopened once for that, and not for a gate, a WARN or a score;
+it is applied whether or not the tracklet-median gate would pass, and it is never touched again for any of them
+(`test_data_tracking_constants_follow_from_the_measurements` re-derives it from the recorded measurements and measures
+that again). The pooled median of version 3 is then 26.52 s (three seeds), 36% below ours and inside the gate's 50%
+(version 2: 27.08 s, 34%); the lost share of the walk, the episodes and the rule is 2.72% against d = 2.50% (seeds 0 to
+4; version 2: 2.71%; the check allows 0.3 points: 2.59% before the scale and the rule, since a longer span makes the cut
+at the end of a run weigh more).
 
 The checks that pin the parts: `test_cap_keeps_nearest`, `test_cap_inactive_above_threshold`,
 `test_cap_is_deterministic_and_draws_nothing`, `test_cap_membership_changes_only_when_the_count_requires_it`,
@@ -216,15 +239,15 @@ The checks that pin the parts: `test_cap_keeps_nearest`, `test_cap_inactive_abov
 `test_transplant_counts_read_the_same_window_as_the_mask`, `test_min_piece_rule_drops_every_piece_shorter_than_it`,
 `test_min_piece_rule_runs_after_the_cap_and_before_the_slots`, `test_min_piece_rule_counts_the_episode_pieces`,
 `test_tracked_scale_multiplies_the_drawn_lengths_and_the_lost_share_stays_d`,
-`test_tracked_scale_is_the_frozen_one_and_follows_from_the_recorded_measurements` (2.042 from 41.28 s and 20.22 s, in
-the default run), `test_calibrated_parameters_read_the_scale_and_the_shortest_piece_when_called` (the constants are read
-when the function is called) and `test_tracking_version_2_with_no_low_count_frame_is_version_1s_players` (with no frame
-at or below 18, and lambda 1 and no shortest-piece rule through the parameters, the players are version 1's byte for
-byte). The order of the parts is pinned by two scenes:
-`test_cap_is_applied_to_the_pieces_after_the_episodes_and_leaves_their_counts_alone` (an onset on a capped row is still
-counted, as the cap comes after the episodes) and `test_cap_cuts_the_smoothing_and_the_speeds_at_the_drops` (nothing is
-smoothed or differenced across a drop). The rest: `test_wrong_team_starts_at_close_pairs`,
-`test_wrong_team_moves_one_player_to_other_pool`,
+`test_tracked_scale_is_the_frozen_one_and_follows_from_the_recorded_measurements` (2.072 from 41.28 s and 19.92 s, and
+version 2's 2.042 from 20.22 s, in the default run),
+`test_calibrated_parameters_read_the_scale_and_the_shortest_piece_when_called` (the constants are read when the function
+is called) and `test_tracking_version_2_with_no_low_count_frame_is_version_1s_players` (with no frame at or below 18,
+and lambda 1 and no shortest-piece rule through the parameters, the players are version 1's byte for byte). The order of
+the parts is pinned by two scenes: `test_cap_is_applied_to_the_pieces_after_the_episodes_and_leaves_their_counts_alone`
+(an onset on a capped row is still counted, as the cap comes after the episodes) and
+`test_cap_cuts_the_smoothing_and_the_speeds_at_the_drops` (nothing is smoothed or differenced across a drop). The rest:
+`test_wrong_team_starts_at_close_pairs`, `test_wrong_team_moves_one_player_to_other_pool`,
 `test_wrong_team_draws_come_from_the_wrong_team_stream_in_a_fixed_order`, `test_speed_nan_share`,
 `test_speed_nan_runs_follow_the_documented_draws`, `test_smoothing_is_a_centred_moving_average_inside_each_piece`,
 `test_profiles_nest`, `test_tracking_without_the_new_parts_is_task_12s_players` (with the new parts off the players are
@@ -233,7 +256,14 @@ and `test_data_tracking_constants_follow_from_the_measurements` (the rules that 
 smoothing window and the scale of the tracked spans, applied again). The earlier ones stay:
 `test_tracklets_never_overlap_in_a_slot`, `test_each_tracklet_takes_the_lowest_free_slot_of_its_pool`,
 `test_slot_team_matches_pool`, `test_tracking_degenerate_equals_gaps` (one endless tracklet per stretch of a player is
-`gaps`'s players), `test_lost_share_on_long_synthetic`.
+`gaps`'s players), `test_lost_share_on_long_synthetic`. Version 3's slot rule is pinned by
+`test_a_slot_never_changes_player_between_adjacent_present_rows`,
+`test_a_handover_on_the_row_a_slot_is_freed_is_what_the_check_would_catch` (the check of the check) and, on a real
+match, `test_dfl_a_slot_never_changes_player_on_a_real_match`;
+`test_each_tracklet_takes_the_lowest_free_slot_of_its_pool` and
+`test_tracking_speeds_are_finite_differences_within_a_tracklet` now require that no slot is taken over on the row it was
+freed, and `test_jitter_inside_tracklets_counts_what_it_says` pins the figure that the data check prints beside the
+per-slot jitter.
 
 **The `context` profile** (version 1; `degrade.context_probabilities`, `_context_ball`, `HAZARD_SCALE`). The `gaps` profile
 copies our masks in time and ignores the play. `context` keeps `tracking`'s players, draw for draw, and places each
@@ -452,32 +482,35 @@ that this README names only checks that exist.
   much.
 - The `tracking` profile has our tracklets, slots, wrong-team episodes, NaN-speed runs, smoothing and low-count frames
   (the cap), and its slots are still not ours. They are the lowest free ones, so a team uses fewer of its slots than
-  ours does over a whole match (J03WMX, seed 0, version 2: of the pools of 24 and 22, 14 and 13 slots are ever present,
-  12 and 12 on at least a tenth of the frames and 12 and 13 on at least a hundredth, where ours has 22 and 21, 21 and
+  ours does over a whole match (J03WMX, seed 0, version 3: of the pools of 24 and 22, 13 and 13 slots are ever present,
+  12 and 12 on at least a tenth of the frames and 13 and 12 on at least a hundredth, where ours has 22 and 21, 21 and
   20, 22 and 21; printed by `test_data_tracking_profile_on_a_real_match_with_our_real_calibration`), and a slot's index
-  is not as empty of the player as in ours: a player who comes back after a lost span lands in the slot he had 48.1% of
-  the time (552 of 1,147 returns; 69.0% in version 1, R004, and 64.2% of 598 returns with the walk, the episodes, the
-  scale and the shortest piece but no cap), and a slot idles between two tracklets for a median of 4.1 s (42.0% of its
-  gaps at most 3 s, 5.3% over 60 s), where ours idles for 7.4 s (17.7% and 15.0%; A09, R004b; version 1: 2.3 s, 59.7%,
-  3.8%). No evidence source reads a slot's identity today, beyond `nearest_player`'s argmin on exact ties, which goes to
-  the lower slot; but **a method that follows a slot across a loss would be validated optimistically here**, a little
-  less than before the cap. The episodes are cut at pairs within 2 m only, in both directions at one rate, and what is
-  matched is the observable share, not the episodes: on seed 0 the benchmark shows 82 to 151 observed episodes a match
-  (mean 122), medians of 1.8 to 2.7 s and 90th percentiles of 9.4 to 14.4 s, against ours 104, 2.7 s and 15.8 s (a swap
-  inside 11 against 11 is invisible on ours, so the true number of ours is unknown). **The cap keeps the players nearest
-  the true ball**, so a method that decodes from the nearest player to the ball is hurt little by it (R004b: the four
-  yardsticks move by 0.4 points of spellF1 at most) and one that needs the players far from the ball sees fewer of them
-  than the real match gave it, as it does on ours; and the cap takes our counts from the frames that the ball's gaps
-  come from, not from the same play, so what ties the two to the play is not in them.
-- **No positional bias.** The profile matches the players' jitter and nothing else of their positional error. A slowly
-  varying bias against the true position cannot be measured on ours (there is no reference to measure it against), so
-  none is added. Published accuracies for video-derived positions run from 0.08 to 0.09 m RMSE for a multi-camera
-  stadium system against a motion-capture reference (Linke, Link and Lames 2020, PLoS ONE 15(3): e0230179) to a median
-  of 1.1 to 1.7 m (mean 1.8 to 2.8 m) for a pipeline on broadcast video (Theiner et al., WACV 2022, arXiv:2110.11107,
-  Table 3), so a bias of the order of 0.5 to 2 m is plausible for ours and would hurt a method that reads distances more
-  than the benchmark says (the plan's range of 0.5 to 2 m is not stated by either source, which are the nearest
-  published figures; it is not our measurement). DFL's own positions are not noise-free either: their second difference
-  is dominated by rare jumps (R004), which the smoothing leaves in.
+  is not as empty of the player as in ours: a player who comes back after a lost span lands in the slot he had 47.4% of
+  the time (529 of 1,117 returns; 48.1% of 1,147 in version 2, 69.0% in version 1, R004, and 67.6% of 562 returns with
+  the walk, the episodes, the scale and the shortest piece but no cap), and a slot idles between two tracklets for a
+  median of 4.3 s (39.4% of its gaps at most 3 s, 5.3% over 60 s), where ours idles for 7.4 s (17.7% and 15.0%; A09,
+  R004c; version 2: 4.1 s, 42.0%, 5.3%; version 1: 2.3 s, 59.7%, 3.8%). No evidence source reads a slot's identity
+  today, beyond `nearest_player`'s argmin on exact ties, which goes to the lower slot; but **a method that follows a
+  slot across a loss would be validated optimistically here**, a little less than before the cap. The episodes are cut
+  at pairs within 2 m only, in both directions at one rate, and what is matched is the observable share, not the
+  episodes: on seed 0 the benchmark shows 75 to 159 observed episodes a match (mean 124.6), medians of 2.0 to 2.8 s and
+  90th percentiles of 8.2 to 14.5 s (R004c; version 2: 82 to 151, mean 121.6, 1.8 to 2.7 s and 9.4 to 14.4 s), against
+  ours 104, 2.7 s and 15.8 s (a swap inside 11 against 11 is invisible on ours, so the true number of ours is unknown).
+  **The cap keeps the players nearest the true ball**, so a method that decodes from the nearest player to the ball is
+  hurt little by it (R004b: the four yardsticks move by 0.4 points of spellF1 at most) and one that needs the players
+  far from the ball sees fewer of them than the real match gave it, as it does on ours; and the cap takes our counts
+  from the frames that the ball's gaps come from, not from the same play, so what ties the two to the play is not in
+  them.
+- **No positional bias.** The profile brings the players' jitter down towards ours (1.8 cm against 3.3 mm, T35) and does
+  nothing else about their positional error. A slowly varying bias against the true position cannot be measured on ours
+  (there is no reference to measure it against), so none is added. Published accuracies for video-derived positions run
+  from 0.08 to 0.09 m RMSE for a multi-camera stadium system against a motion-capture reference (Linke, Link and Lames
+  2020, PLoS ONE 15(3): e0230179) to a median of 1.1 to 1.7 m (mean 1.8 to 2.8 m) for a pipeline on broadcast video
+  (Theiner et al., WACV 2022, arXiv:2110.11107, Table 3), so a bias of the order of 0.5 to 2 m is plausible for ours and
+  would hurt a method that reads distances more than the benchmark says (the plan's range of 0.5 to 2 m is not stated by
+  either source, which are the nearest published figures; it is not our measurement). DFL's own positions are not
+  noise-free either: their second difference is dominated by rare jumps (R004), which the smoothing lowers to a fifth
+  and does not remove (T35, R004c).
 - The `context` profile ties the gaps to the play (lines, slow balls, few players near the ball, as ours are), which
   `gaps` and `tracking` do not, and it loses what they keep: `tracking` reads the cap's counts and the ball's mask from
   one window of ours, so both follow our camera, and here the cap reads a window of ours and the gaps are drawn from the

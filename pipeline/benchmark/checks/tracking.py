@@ -601,11 +601,12 @@ def handovers_of(owner):
 def test_a_slot_never_changes_player_between_adjacent_present_rows():
     """On two adjacent rows a slot that is present on both is held by one tracklet: it never changes player.
 
-    Ours cannot: its jitter is 3.28 mm over 3.2 million triples (A07), and one jump of 12 m between two frames would be
-    34 times all of it. A slot is free for a tracklet that starts at t only from the row after the one on which the last
-    tracklet in it stopped, so there is at least one empty row between two tracklets in a slot. Version 2 let the next
-    tracklet take the slot on the very row it was freed (that row's position was another player's), which put about 22
-    jumps of 12 to 17 m into every match and seed and made most of the 8.5 cm jitter per slot (R004c).
+    Ours cannot: its jitter is 3.28 mm over 3.2 million triples (A07), whose squares add to 34 m2, and one jump of 12 m
+    between two frames adds 288 m2 (two triples of 12 m), 8 times all of it. A slot is free for a tracklet that starts
+    at t only from the row after the one on which the last tracklet in it stopped, so there is at least one empty row
+    between two tracklets in a slot. Version 2 let the next tracklet take the slot on the very row it was freed (that
+    row's position was another player's): 372 times in 7 matches and 3 seeds (17.7 a match and seed, 9 to 30), a jump of
+    13.8 m at the median, and 96% of the squares of its 8.49 cm jitter per slot with the 5-frame average (R004c).
 
     Worked out from the records, on rows that are frames of the match: every pair of adjacent rows of every slot, over the
     steady match (6 players, the walk, the episodes, the cap and the rule, all on) for twelve seeds, and the same for the
@@ -1400,8 +1401,9 @@ def second_difference_shape(xy_m, present, spans):
     """(triples, RMS, median, 99th percentile, share of the squares in the largest 0.05% of triples) of the second
     difference p[t+1] - 2 p[t] + p[t-1] of the slots present at all three frames, inside each span, in metres.
 
-    The RMS is calibration.player_stats' jitter, and the rest says what it is made of: a jitter that is a few rare jumps
-    (a large share of its squares in a tiny share of the triples) is not what a moving average removes."""
+    The RMS is calibration.player_stats' jitter, and the rest says what it is made of: DFL's is a few rare jumps (a
+    large share of its squares in a tiny share of the triples) on a 1 cm grid, and not noise. What a centred average
+    does to them inside a piece is measured on the profile's own draws, with and without it (T35, R004c)."""
     norms = []
     for _, start, stop in spans:
         inside = present[start:stop]
@@ -1531,8 +1533,9 @@ def test_data_tracking_constants_follow_from_the_measurements():
                 jitter["unsmoothed"][1] += rough["jitter_triples"]
                 # The jitter taken inside tracklets only. Since version 3 a slot never changes player between two
                 # adjacent present rows, so every triple of a slot is inside one tracklet and the two figures are the
-                # same: asserted, and printed side by side (in versions 1 and 2 the per-slot one held the handovers,
-                # and was 8.5 cm against 0.4 to 2.0 cm inside the tracklets: R004c).
+                # same: asserted, and printed side by side. In versions 1 and 2 the per-slot figure held the triples
+                # that straddle a slot handover, and was 6.47 and 8.49 cm with the average against 1.80 and 1.75 cm
+                # inside the tracklets, on the same draws (3 seeds: R004c).
                 for name_, array, own in (("degraded", xy, records), ("unsmoothed", rough_xy, rough_records)):
                     count, rms_inside = jitter_inside_tracklets(array * pitch, own)
                     per_slot = stats[name] if name_ == "degraded" else rough

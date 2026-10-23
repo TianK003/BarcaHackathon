@@ -162,18 +162,30 @@ trusts one slot's team (the nearest player's, say) is wrong on those frames. The
 an 11 against 11 cannot be seen. P01's `tracking` profile puts such episodes into the degraded matches, and is checked
 against this share (R004).
 
-**T35 — DFL's jitter is a few jumps on a 1 cm grid: the RMS says "smooth" and a moving average removes little.** The RMS
-of the second difference of a DFL player's position (what `calibration.player_stats` calls jitter) is 9.0 cm over the 7
-matches, against 3.3 mm on ours, which is what a rule of the kind "smooth if more than twice ours" reads, and it is not
-noise. In the five 2. Bundesliga matches 98% of its squares sit in the largest 0.05% of the triples: rare jumps (in one
-half 61 steps of 1.52 million exceed 25 m/s, and the largest is 30 m). The rest is quantisation: the median second
-difference is 1.00 cm in every match and the 99th percentile 2.83 cm, against 1.4 mm and 9.6 mm on ours. A centred
-5-frame average lowers the RMS only a little: in version 1 from 9.0 cm (DFL's clean players) to 6.5 cm (the degraded
-players, so that the cuts changed the RMS as much as the average did), and in version 2, on the same draws with and
-without the average, from 12.0 to 8.7 cm (R004b); white noise would fall to 16%. The `tracking` profile smooths because
-its rule says so and leaves the jumps in. So when a method reads positions, speeds or accelerations, compare
-medians and percentiles and not an RMS, and know that the benchmark's players are rougher than ours
-(`test_data_tracking_constants_follow_from_the_measurements` prints them; R004).
+**T35 — DFL's jitter is a few jumps on a 1 cm grid, and what the benchmark first blamed on them was our own slot
+handovers.** The RMS of the second difference of a DFL player's position (what `calibration.player_stats` calls jitter)
+is 9.0 cm over the 7 matches, against 3.3 mm on ours, which is what a rule of the kind "smooth if more than twice ours"
+reads, and it is not noise. In the five 2. Bundesliga matches 98% of its squares sit in the largest 0.05% of the
+triples: rare jumps (in one half 61 steps of 1.52 million exceed 25 m/s, and the largest is 30 m). The rest is
+quantisation: the median second difference is 1.00 cm in every match and the 99th percentile 2.83 cm, against 1.4 mm
+and 9.6 mm on ours. That much is DFL's. **The 6.5 to 8.5 cm that the `tracking` profile still showed after its 5-frame
+average in versions 1 and 2 was not**: the slot rule let a tracklet take a slot on the very row it was freed, so one
+slot held a player up to row t - 1 and another from row t: in version 2 372 times in 7 matches x 3 seeds (17.7 a match
+and seed), the two players 13.8 m apart at the median and 40.1 m at the 90th percentile, in version 1 236 times, 5.3
+and 43.0 m. Ours has none: 3.28 mm over 3.2 million triples leaves no room for one, and a single jump of 12 m adds 8
+times the squares of all of ours. On the same draws, measured per slot and then only inside tracklets, version 2 gave
+8.49 and 1.75 cm after the average (version 1: 6.47 and 1.80 cm), and the 744 triples that straddle a handover held 96%
+of the squares per slot. The reading of R004 and R004b, that the average removes little because DFL's jumps stay in,
+was a reading of the handovers (R004c). Version 3 frees a slot only from the row after its tracklet, so a slot never
+changes player between two adjacent rows and the jitter per slot is the jitter inside tracklets: 8.90 cm without the
+average (DFL's own 9.00 again) and 1.80 cm with it, three seeds (8.75 and 1.77 cm at seed 0). Inside a piece the
+centred 5-frame average takes the RMS down to a fifth, which is the arithmetic of a jump: a step of J between two
+frames is two triples of +-J, and after the average two of +-J/5 (white noise falls to 16%). The 1.8 cm that is left,
+5.5 times ours, is DFL's, lowered; whether it is the jumps or the grid inside a piece was not measured. **No jump
+filter is needed**: the profile's own average takes the jumps down by that factor, and the only jumps left in the slot
+trajectories are DFL's own. So when a method reads positions, speeds or accelerations, compare medians and percentiles
+and not an RMS, and know that the benchmark's players are rougher than ours by 5.5 times in RMS
+(`test_data_tracking_constants_follow_from_the_measurements` prints it; R004c).
 
 **T36 — Two DFL matches have a team down to 10, and a gate on how many players are present cannot see it.** J03WN1's
 away team has 10 players from minute 7.1 of the first half to the end of the match (92.5% of its graded frames) and
@@ -192,14 +204,15 @@ The `tracking` profile draws a tracked span from our tracklet lengths, which are
 where our tracker loses a player, where an identity swaps and where the camera leaves players out. It then cuts the
 spans again, with the wrong-team episodes and with the cap of our low-count frames, and the benchmark's tracklets come
 out too short: pooled over the seven matches and three seeds the walk alone gives a median of 40.88 s against ours 41.28
-s, the episodes alone 29.26 s, the cap alone 24.44 s, both 19.68 s (R004b), and the first version of the cap failed the
-tracklet-median gate for it. A piece that a cut leaves under 8 frames is also no tracklet of ours (A09: the shortest is
-8 frames), and version 2 without the rule made 2.2% of its pieces so (906 of 40,866; 195 of them already short before
-the cap), because our count crosses the threshold 18 on 155 frames, 147 of them by one slot (18 and 19), and the dropped
-players come back for a few frames and go again. `degrade.TRACKED_SCALE` (2.042, the walk's
-drawn lengths multiplied once, from one label-free measurement, frozen) and `degrade.MIN_PIECE_FRAMES` (8) are the
-corrections. Any later part that cuts tracklets in the benchmark must be set against the tracklet median first, and a
-rescale of this kind is made once, logged with its measurement and never tuned.
+s, the episodes alone 29.26 s, the cap alone 24.44 s, both 19.68 s (R004b, with version 2's slot rule), and the first
+version of the cap failed the tracklet-median gate for it. A piece that a cut leaves under 8 frames is also no tracklet
+of ours (A09: the shortest is 8 frames), and version 2 without the rule made 2.2% of its pieces so (906 of 40,866; 195
+of them already short before the cap), because our count crosses the threshold 18 on 155 frames, 147 of them by one slot
+(18 and 19), and the dropped players come back for a few frames and go again. `degrade.TRACKED_SCALE` (2.072, the walk's
+drawn lengths multiplied once, from one label-free measurement, frozen; 2.042 until version 3's slot rule moved the
+measurement, R004c) and `degrade.MIN_PIECE_FRAMES` (8) are the corrections. Any later part that cuts tracklets in the
+benchmark must be set against the tracklet median first, and a rescale of this kind is made once, logged with its
+measurement and never tuned.
 
 ## Reproducibility and environment
 
