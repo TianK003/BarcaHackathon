@@ -53,8 +53,12 @@ frame offset + j of ours: up to M - n frames later than its own, 7.6 minutes for
 79,467-frame first half. Coverage worsens through each half (A02), and a gap falls at another minute of the half than
 the one it fell at in ours.
 
-What the transplant keeps of ours, by construction: the gaps' durations and the share missing, per half and through
-the half. What it does not: where the gaps are in the play. They are drawn without looking at the DFL play, so
+What the transplant keeps of ours, by construction: the gaps' durations, and the pattern of the mask over a stretch of n
+frames of ours. It does not keep the clock (the stretch is not at the benchmark half's own minutes: the offset is drawn
+uniformly, so it is up to M - n frames later, above) and it keeps the half's share missing only on average over the
+offset, since coverage worsens through our halves (A02) and a stretch from early in the source half is better covered
+than the half, one from late in it worse. What it does not keep: where the gaps are in the play. They are drawn
+without looking at the DFL play, so
 nothing that ties ours to it is in them: a dead ball is no likelier to be missing than any other frame (in the public
 window ours is about three times as likely as a frame of the window in general, 33.6% of the dead frames against 11.8%
 of all of them, A01), and where on the pitch a gap starts is the DFL ball's own place at a random frame, not ours (the

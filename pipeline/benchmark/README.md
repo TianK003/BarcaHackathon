@@ -108,8 +108,11 @@ which goes into every report: change what a profile does and bump it.
 end of its graded block (`calibration.py`; the Calibration is measured once and cached). A benchmark half of n frames
 takes the mask of our first or second half (1 or 2 with the same chance), read from an offset drawn uniformly over the
 frames that leave room for it, so frame j of the benchmark half is missing where frame `offset + j` of ours was. If the
-mask runs out, it goes on round the last 7,500 frames of ours. What it keeps of ours: the gaps' lengths, how much of the
-half is missing and how that grows through the half (coverage worsens, A02). What it does not: **where** the gaps are.
+mask runs out, it goes on round the last 7,500 frames of ours. What it keeps of ours: the gaps' lengths and the pattern
+of the mask over a stretch of the half. It does not keep the clock: the offset is drawn uniformly, so the stretch is not
+at the benchmark half's own minutes (it is up to M - n frames later, 7.6 minutes for a 68,000-frame half against our
+79,467-frame first half), and its share missing is the half's only on average over the offset, since coverage worsens
+through our halves (A02). What it does not keep: **where** the gaps are.
 They are drawn without looking at the play, so nothing that ties ours to it is in them: a dead ball is no likelier to be
 missing than any other frame (in the public window ours is about three times as likely as a frame of the window in
 general: 33.6% of the dead frames against 11.8% of all of them, A01), and where on the pitch a gap starts is the DFL
