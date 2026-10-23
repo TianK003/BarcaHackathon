@@ -4,7 +4,7 @@
 
     codes, sources = predict(config, inputs)         # one config on one match: the codes, and the evidence behind them
     result = evaluate_configs([path, path, ...])     # every config on every match, scored, compared, with its reports
-    write_reports(result)                            # <data dir>/runs/benchmark/<profile>/<stem>.json, one per config
+    write_reports(result)                            # <data dir>/runs/benchmark/<profile>/<stem>[...].json, one per config
 
 Prediction
 ----------
@@ -44,9 +44,13 @@ evaluate_configs() is what the team chooses between methods with, so it is built
   printed), floats are rounded to 9 decimals (BLAS summation order differs between machines), keys are sorted and the
   file is LF with an atomic rename. The same inputs, seed and versions give the same bytes, in any process
   (test_runner_json_identical_across_processes).
-* A subset never replaces a full report. The file is <stem>.json for all seven matches, <stem>.coarse.json under the
-  coarse truth, and for any other set of matches (one match, two, a different seven) `.m-<ids sorted, joined by "-">`
-  is added before `.json` (report_path), so `--matches J03WMX` writes <stem>.m-J03WMX.json next to the full report.
+* A run never replaces a report of another kind. The file is <stem>.json for all seven matches under the raw truth and
+  the default number of seeds; <stem>.coarse.json under the coarse truth; for any other set of matches (one match, two,
+  a different seven) `.m-<ids sorted, joined by "-">` is added, so `--matches J03WMX` writes <stem>.m-J03WMX.json next to
+  the full report; and a number of seeds other than DEFAULT_SEEDS adds `.s<n>` (a degraded profile only: the clean
+  profile has one seed, always), so a quick one-seed look never replaces the three-seed report. The order is
+  <stem>[.<truth>][.m-<ids>][.s<n>].json (report_path). A config's own name may hold no dot, which would be read as one
+  of these parts (BenchmarkError).
 
 What the clean profile is. The tracking exactly as DFL gives it: the ball is present on every frame, so nearest_player
 votes everywhere and majority_vote, which takes D only where nobody voted, labels almost nothing D, where the truth has
@@ -96,7 +100,7 @@ PROFILES = {CLEAN: 1}              # name -> version of how its tracking is made
 DEFAULT_PROFILE = CLEAN
 DEFAULT_SEEDS = 3                  # degradation seeds per match; the clean profile has nothing random and runs seed 0
 TRUTHS = ("raw", "coarse")
-REPORT_FOLDER = ("runs", "benchmark")        # <data dir>/runs/benchmark/<profile>/<stem>[.<truth>].json
+REPORT_FOLDER = ("runs", "benchmark")        # <data dir>/runs/benchmark/<profile>/<stem>[.<truth>][.m-<ids>][.s<n>].json
 DECIMALS = 9                       # floats in a report are rounded to this: BLAS summation order varies by machine
 LEVEL = score.INTERVAL_LEVEL       # the coverage of the t intervals (the printout names it, checks tie T_95 to it)
 METRICS = (("spell_f1_mean", "spellF1"), ("macro_f1", "macroF1"))   # what a comparison reports, ranking metric first
@@ -257,6 +261,11 @@ def _load_configs(config_paths):
     for path in config_paths:
         config = load_config(path)
         check_scope(config)
+        if "." in config.stem:
+            raise BenchmarkError(
+                "{}: the file name of a config is the name of its report, whose parts (<name>.coarse.m-<ids>.s<n>.json) "
+                "are told apart by dots, so a dot in the name would be read as one of them and the report would be "
+                "another run's; rename {} without a dot".format(config.stem, _shown(config.path)))
         if config.stem in paths:
             where = paths[config.stem]
             if os.path.normcase(where) == os.path.normcase(config.path):
@@ -412,26 +421,31 @@ def _shown(path):
     return path.replace(os.sep, "/")
 
 
-def report_path(data_dir, profile, stem, truth, match_ids=None):
-    """<data dir>/runs/benchmark/<profile>/<stem>[.<truth>][.m-<ids>].json: where a report goes, and never over another.
+def report_path(data_dir, profile, stem, truth, match_ids=None, seeds=None):
+    """<data dir>/runs/benchmark/<profile>/<stem>[.<truth>][.m-<ids>][.s<n>].json: where a report goes, never over another.
 
     `.<truth>` is left out for the raw truth. `.m-<the ids, sorted, joined by "-">` is added when `match_ids` are not
     exactly the registry's seven (a subset, whatever its order), so that a run on one match or two never replaces the
-    report of all seven that the same config wrote before: a full report is the one with neither suffix of its own.
+    report of all seven that the same config wrote before: a full report is the one with none of these suffixes of its
+    own. `.s<n>` is added when `seeds`, the number of degradation seeds the run used, is given and is not DEFAULT_SEEDS,
+    for the same reason: a one-seed look at a degraded profile is not the three-seed report. The clean profile has no
+    seeds to count (it runs seed 0 whatever it was asked), so its name never has one.
     """
     parts = [stem]
     if truth != "raw":
         parts.append(truth)
     if match_ids is not None and set(match_ids) != set(sources.MATCH_IDS):
         parts.append("m-" + "-".join(sorted(match_ids)))
+    if profile != CLEAN and seeds is not None and seeds != DEFAULT_SEEDS:
+        parts.append("s{}".format(seeds))
     return os.path.join(data_dir, *REPORT_FOLDER, profile, ".".join(parts) + ".json")
 
 
 def write_reports(result, data_dir=None):
     """Write each config's report under `data_dir` (default: the one the run read from); the paths, in order.
 
-    The file name carries the truth when it is not the raw one and the matches when they are not all seven
-    (report_path). The text is sort_keys, indent 2, ASCII, LF and a final newline; it is written to a temporary file in
+    The file name carries the truth when it is not the raw one, the matches when they are not all seven and the number
+    of seeds when it is not the default (report_path). The text is sort_keys, indent 2, ASCII, LF and a final newline; it is written to a temporary file in
     the same folder and renamed over the old report (os.replace), so that a run that is interrupted, or a disk that
     fills, never leaves half a report and never damages the one that was there. A failed write removes its temporary
     file and raises.
@@ -440,7 +454,8 @@ def write_reports(result, data_dir=None):
     ids = [record["id"] for record in result["matches"]]
     paths = []
     for entry in result["configs"]:
-        path = report_path(data_dir, result["profile"]["name"], entry["stem"], result["truth"]["name"], ids)
+        path = report_path(data_dir, result["profile"]["name"], entry["stem"], result["truth"]["name"], ids,
+                           len(result["seeds"]))
         text = json.dumps(entry["report"], sort_keys=True, indent=2, allow_nan=False) + "\n"
         os.makedirs(os.path.dirname(path), exist_ok=True)
         handle, temporary = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".tmp")

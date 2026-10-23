@@ -130,14 +130,18 @@ does not clear, and the public window is no tie-breaker either (T01).
 
 ### The report
 
-`<data dir>/runs/benchmark/<profile>/<stem>[.<truth>][.m-<ids>].json`, one per config, gitignored with the rest of
-`data/`. The name says what the report is of, so that one never replaces another:
+`<data dir>/runs/benchmark/<profile>/<stem>[.<truth>][.m-<ids>][.s<n>].json`, one per config, gitignored with the rest of
+`data/`. The name says what the report is of, so that one never replaces another of a different kind:
 
 | run | file |
 |---|---|
-| all seven matches, raw truth | `<stem>.json` |
+| all seven matches, raw truth, the default 3 seeds | `<stem>.json` |
 | all seven, coarse truth | `<stem>.coarse.json` |
 | any other set of matches | `.m-<the ids, sorted, joined by "-">` before `.json`, e.g. `<stem>.m-J03WMX.json`, `<stem>.coarse.m-J03WMX-J03WN1.json`. The order they were asked for in is not in the name; all seven in another order are still `<stem>.json` |
+| a number of seeds other than 3 (a degraded profile) | `.s<n>` last, e.g. `<stem>.s1.json`, `<stem>.coarse.m-J03WMX.s5.json`: a quick one-seed look never replaces the three-seed report. The clean profile has one seed, always, and its name never says so |
+
+A config's own file name may hold no dot: `x.coarse.toml` would write `x.coarse.json`, which is `x`'s report under another
+truth, so the runner refuses it and says to rename it.
 
 It is written with sorted keys, indented, LF, floats rounded to 9 decimals and no timing anywhere, to a temporary file
 renamed over the old report; the same inputs, seed and versions give the same bytes in any process.
@@ -182,11 +186,13 @@ at 18% to 29%).
 
 All three scores are asserted, exactly, because each is blind to something another sees: macroF1 counts frames, so it
 sees a single wrong frame anywhere; spellF1 matches whole possessions by IoU, so it forgives a boundary a frame out
-unless the possession is very short; alive/dead F1 sees only dead against alive, so it cannot see a team. A review that
-decoded the second half one row late saw it in macroF1 alone. The oracle's controls on J03WMX show that the check can
-see: one row late (both halves, the second half only, the first half only) is below 1.0 on all three scores, a swapped
-team in the second half leaves alive/dead F1 at exactly 1.0 and takes the other two far below it, and the raw oracle
-against the coarse truth is below 1.0 (the coarse truth is applied).
+unless the possession is very short; alive/dead F1 sees only dead against alive, so it cannot see a team. A review's
+mutant that left the first row of the second half undecoded (X) was seen by macroF1 and not by spellF1: the scorer
+back-fills an X at a half's start for the possession metrics. That is not the slip of the controls, which shift every
+label of a half by one row. The oracle's controls on J03WMX show that the check can see: one row late (both
+halves, the second half only, the first half only) is below 1.0 on all three scores, a swapped team in the second half
+leaves alive/dead F1 at exactly 1.0 and takes the other two far below it, and the raw oracle against the coarse truth
+is below 1.0 (the coarse truth is applied).
 
 The others pin the report's shape, that every number in it is what the scoring functions say, the direction of a
 comparison, that a match is gone before the next is loaded, that the same run writes the same bytes in another process

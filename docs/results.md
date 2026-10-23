@@ -589,8 +589,8 @@ What the tables say, and what they do not:
 - **Neither truth gives the published full-match order** (R000: `smooth50` 0.2433 > `smooth125` 0.2242 > `smooth25`
   0.1996 > `raw` 0.0486). Raw puts `w25` above `w125` (Δ of `w125` against `w25`: −0.0784, [−0.0866, −0.0702], 0 wins
   of 7; printed by `python pipeline/benchmark/run.py pipeline/benchmark/configs/nearest_w25.toml
-  pipeline/benchmark/configs/nearest_w125.toml --no-write`, with `w25` first, raw truth), and coarse puts `w125` above `w50`: `w125` is third under the raw truth, second in the published order and
-  first under the coarse one. This is the clean profile, where the ball is tracked on every frame (on ours it is
+  pipeline/benchmark/configs/nearest_w125.toml --no-write`, with `w25` first, raw truth), and coarse puts `w125` above
+  `w50`: `w125` is third under the raw truth, second in the published order and first under the coarse one. This is the clean profile, where the ball is tracked on every frame (on ours it is
   missing on 41% of the graded frames, A02), so the published order is not expected here. Whether the degraded
   profiles reproduce it is the fidelity check of the later tasks.
 - **There is almost no `D` on `clean`, as expected.** The ball is visible on every frame, so `nearest_player` votes
@@ -618,11 +618,15 @@ What the tables say, and what they do not:
   nearest player names the truth's team on 71% to 82% of the alive ball-visible frames of every match and half, and
   would on 18% to 29% with the teams swapped). All three scores are asserted because they are blind to different
   things: macroF1 counts frames and sees a single wrong frame; spellF1 matches possessions by IoU and forgives a
-  boundary a frame out; alive/dead F1 cannot see a team. A review that decoded the second half one row late saw it in
-  macroF1 alone. Controls on J03WMX (spellF1 / macroF1 / alive-dead F1): one row late in both halves 0.9898 / 0.9954 /
-  0.9988, in the second half only 0.9941 / 0.9976 / 0.9993, in the first half only 0.9957 / 0.9978 / 0.9995; the teams
-  swapped in the second half 0.4892 / 0.6992 / 1.0000; the raw oracle against the coarse truth 0.5843 / 0.9581 /
-  1.0000 (511 predicted possessions against 255), so the coarse truth is applied.
+  boundary a frame out; alive/dead F1 cannot see a team. A review's mutant that left the first row of the second half
+  undecoded (X) was seen by macroF1 and not by spellF1, because the scorer back-fills an X at a half's start; that is
+  not the slip of the controls, which shift every label of a half by one row. Controls on J03WMX (spellF1 / macroF1 /
+  alive-dead F1): one row late in both halves 0.9898 / 0.9954 / 0.9988, in the second half only 0.9941 / 0.9976 /
+  0.9993, in the first half only 0.9957 / 0.9978 / 0.9995; the teams swapped in the second half 0.4892 / 0.6992 /
+  1.0000; the raw oracle against the coarse truth 0.5843 / 0.9581 / 1.0000 (511 predicted possessions against 255),
+  so the coarse truth is applied. These control figures are those of `pipeline/benchmark/selftest.py --dfl` re-run at
+  `c65c252`, which added the controls to the check; the entry's own commit, `e479764`, is the one that made the
+  runs.
 
 Runtime: 8 to 10 s for the four configs on all seven matches with the DFL caches warm (about 1 s per config, nearly all
 the rest a cached load per match). The same command twice, and in two processes with different `PYTHONHASHSEED`, writes

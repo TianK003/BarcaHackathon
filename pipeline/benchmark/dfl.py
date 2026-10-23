@@ -743,17 +743,24 @@ PARSER_SHA256 = _text_sha256(__file__)
 
 
 def _read_array(path):
-    """One cached array; ValueError if the file is not a plain numpy array (an .npz or a pickle under an .npy name)."""
-    try:
-        array = np.load(path, allow_pickle=False)
-    except zipfile.BadZipFile as error:  # a zip cut short under an .npy name: not a ValueError, but as unreadable
-        raise ValueError("{}: not a readable numpy file ({})".format(path, error)) from error
-    if not isinstance(array, np.ndarray):
-        close = getattr(array, "close", None)
-        if close is not None:
-            close()  # an NpzFile keeps its file open, and Windows then refuses to rewrite it
-        raise ValueError("{}: not a plain numpy array".format(path))
-    return array
+    """One cached array; ValueError if the file is not a plain numpy array (an .npz or a pickle under an .npy name).
+
+    The file is opened here, and closed here on every path (the `with`), and np.load is given the open file: given a
+    path, np.load hands the file on to an NpzFile when it starts with a zip signature, and an .npz cut short fails
+    inside the NpzFile, after np.load has given up the file, so that nothing closed it. On Windows an open file cannot
+    be rewritten, and the rebuild that follows an unreadable cache rewrites it.
+    """
+    with open(path, "rb") as handle:
+        try:
+            array = np.load(handle, allow_pickle=False)
+        except zipfile.BadZipFile as error:  # a zip cut short under an .npy name: not a ValueError, but as unreadable
+            raise ValueError("{}: not a readable numpy file ({})".format(path, error)) from error
+        if not isinstance(array, np.ndarray):
+            close = getattr(array, "close", None)
+            if close is not None:
+                close()  # an NpzFile of a file object leaves the file to its owner; this is its own bookkeeping
+            raise ValueError("{}: not a plain numpy array".format(path))
+        return array
 
 
 def _read_manifest(folder):

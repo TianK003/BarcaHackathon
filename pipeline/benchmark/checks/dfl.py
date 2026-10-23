@@ -8,6 +8,7 @@ may be printed freely.
 
 import contextlib
 import dataclasses
+import gc
 import hashlib
 import importlib.util
 import io
@@ -20,6 +21,7 @@ import sys
 import tempfile
 import time
 import types
+import warnings
 
 import numpy as np
 
@@ -858,10 +860,72 @@ def test_match_cache_rebuilt_when_an_array_is_damaged():
                  ("objects", lambda: save(np.array([None] * original.n_frames, dtype=object), allow_pickle=True))]
         for label, damage in cases:
             damage()
-            rebuilt = load_synthetic(root, paths)
+            with resource_warnings() as caught:
+                rebuilt = load_synthetic(root, paths)
             assert rebuilt.report["cache"] == "built", "{}: a damaged array was loaded".format(label)
+            assert not caught, "{}: the load left a file open: {}".format(label, caught)
             assert_same_match(original, rebuilt)
             assert load_synthetic(root, paths).report["cache"] == "reused", label
+
+
+@contextlib.contextmanager
+def resource_warnings():
+    """The ResourceWarnings that the block, and a garbage collection after it, raise: a list that fills as they come.
+
+    Warnings as the interpreter raises them for an object that dies with its file open (always shown, and recorded
+    rather than turned into an exception, because a warning raised inside a destructor never reaches the caller: it is
+    only printed as an ignored exception).
+    """
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", ResourceWarning)
+        found = []
+        try:
+            yield found
+        finally:
+            gc.collect()
+            found += [str(item.message) for item in caught if issubclass(item.category, ResourceWarning)]
+
+
+def test_match_cache_array_reader_closes_its_file_on_every_path():
+    """dfl._read_array leaves no file open, whether it returns an array, or raises, and whatever it raises.
+
+    np.load hands the file to an NpzFile when it starts with a zip signature, and an .npz cut short fails inside the
+    NpzFile, after np.load has given up the file: nothing closed it (Task 9 saw the ResourceWarning). On Windows an
+    open file cannot be removed or rewritten, which is what the rebuild that follows a refused cache does, so each case
+    removes the file while the exception, and the frames it holds, are still alive: the failure that a collection
+    would have hidden. The warning is checked as well, for the platforms that let the file go.
+    """
+    from pipeline.benchmark import dfl
+    array = np.arange(50, dtype=np.int8)
+    plain, as_npz = io.BytesIO(), io.BytesIO()
+    np.save(plain, array)
+    np.savez(as_npz, array=array)
+    plain, as_npz = plain.getvalue(), as_npz.getvalue()
+    cases = [("a plain array", plain, None), ("an .npz under the .npy name", as_npz, ValueError),
+             ("an .npz cut short", as_npz[:len(as_npz) // 2], ValueError),
+             ("an .npz cut after its signature", as_npz[:6], ValueError),
+             ("the last byte missing", plain[:-1], ValueError), ("only the header", plain[:128], ValueError),
+             ("not an array", b"this is not a numpy file", ValueError), ("empty", b"", EOFError)]
+    with tempfile.TemporaryDirectory() as root:
+        for label, body, refused in cases:
+            path = os.path.join(root, "array.npy")
+            with open(path, "wb") as handle:
+                handle.write(body)
+            with resource_warnings() as caught:
+                held = None
+                try:
+                    loaded = dfl._read_array(path)
+                except (ValueError, EOFError) as error:
+                    assert refused is not None and isinstance(error, refused), (label, type(error), str(error))
+                    held = error                       # alive while the file is removed: its frames are alive too
+                    os.remove(path)                    # PermissionError on Windows if the file is still open
+                else:
+                    assert refused is None, "{}: expected {}, nothing was raised".format(label, refused.__name__)
+                    assert loaded.tolist() == array.tolist() and loaded.dtype == array.dtype
+                    os.remove(path)
+                del held
+            assert not caught, "{}: a file was left open: {}".format(label, caught)
+            assert not os.path.exists(path), label
 
 
 def test_match_cache_rebuilt_when_manifest_damaged():

@@ -484,7 +484,7 @@ def test_runner_a_subset_never_replaces_a_full_report():
     """A run on some of the matches is filed under its own name, so the full report of the config survives it.
 
     A report of all seven matches is `<stem>.json` (or `<stem>.coarse.json`). Any other set of matches adds
-    `.m-<ids sorted, joined by "->` before `.json`, whatever order they were asked for in; all seven in another order
+    `.m-<ids sorted, joined by "-"` before `.json`, whatever order they were asked for in; all seven in another order
     are still all seven. Run on one match, `--matches J03WMX` used to replace R002's seven-match report.
     """
     def serve(match_id):
@@ -515,6 +515,56 @@ def test_runner_a_subset_never_replaces_a_full_report():
     assert os.path.basename(
         benchmark_run.report_path("d", "clean", "s", "coarse", ["J03WMX"])) == "s.coarse.m-J03WMX.json"
     assert os.path.basename(benchmark_run.report_path("d", "gaps", "s", "raw", sources.MATCH_IDS)) == "s.json"
+
+
+def test_runner_report_names_keep_runs_of_different_kinds_apart():
+    """A file name says what makes a run another run, so that no run replaces a report of another kind.
+
+    `<stem>[.<truth>][.m-<ids>][.s<n>].json`: the truth when it is not the raw one, the matches when they are not all
+    seven, and the number of degradation seeds when it is not the default (a one-seed run, a quick look, never replaces
+    the three-seed report that a result is quoted from). The clean profile has nothing random: it runs seed 0 whatever
+    it was asked, so its name never carries a seed count. Through the runner too: the file that was written.
+    """
+    default = benchmark_run.DEFAULT_SEEDS
+    assert default == 3
+
+    def name(profile, truth="raw", ids=None, seeds=None):
+        return os.path.basename(benchmark_run.report_path("d", profile, "s", truth, ids, seeds))
+
+    assert name("gaps") == "s.json" and name("gaps", seeds=default) == "s.json", "the default number is not named"
+    assert name("gaps", seeds=1) == "s.s1.json" and name("gaps", seeds=5) == "s.s5.json"
+    assert name("gaps", "coarse", ["J03WMX"], 5) == "s.coarse.m-J03WMX.s5.json", "truth, matches, seeds, in that order"
+    assert name("gaps", "coarse", seeds=1) == "s.coarse.s1.json"
+    assert name("clean", seeds=1) == name("clean", seeds=5) == name("clean") == "s.json", "clean has one seed"
+    names = {name("gaps", truth, ids, seeds) for truth in ("raw", "coarse") for ids in (None, ["J03WMX"])
+             for seeds in (None, 1, 2)}
+    assert len(names) == 2 * 2 * 3, ("every kind of run has a name of its own", sorted(names))
+
+    def serve(match_id):
+        return random_match(match_id, seed=sources.MATCH_IDS.index(match_id))
+
+    with tempfile.TemporaryDirectory() as root, loading(serve):
+        result = benchmark_run.evaluate_configs([yardstick_path(25)], profile="clean", seeds=5, data_dir=root,
+                                                log=quiet)
+        assert [os.path.basename(path) for path in benchmark_run.write_reports(result)] == ["nearest_w25.json"]
+
+
+def test_runner_refuses_a_config_whose_name_has_a_dot():
+    """A config's file name is its report's name, whose parts are told apart by dots, so a dot in it would be read as one.
+
+    `x.coarse.toml` would write `x.coarse.json`, which is `x`'s own report under the coarse truth, and `x.m-J03WMX.toml`
+    one of `x`'s reports on a single match: another run's file. Refused before a match is loaded, naming the config
+    and saying to rename it.
+    """
+    matches = synthetic_matches()
+    with tempfile.TemporaryDirectory() as root:
+        for stem in ("x.coarse", "x.m-J03WMX", "x.s1", "a.b"):
+            path = write_text(root, stem + ".toml", read(yardstick_path(50)))
+            expect_error(benchmark_run.BenchmarkError, lambda: benchmark_run.evaluate_configs(
+                [path], profile="clean", matches=matches, data_dir=root, log=quiet), stem, "dot", "rename")
+        assert not os.path.exists(os.path.join(root, "runs")), "a refused run writes nothing"
+        fine = write_text(root, "x_coarse-1.toml", read(yardstick_path(50)))
+        benchmark_run.evaluate_configs([fine], profile="clean", matches=matches, data_dir=root, log=quiet)
 
 
 def test_runner_readme_names_checks_and_numbers_that_exist():
@@ -708,10 +758,12 @@ def test_dfl_oracle_scores_perfectly():
     Why all three scores are asserted, and exactly. Each is blind to something that another sees. macroF1 counts frames,
     so it sees a single wrong frame wherever it is; spellF1 matches whole possessions by IoU (down to 0.7), so a
     boundary a frame out is forgiven unless the possession is very short; alive/dead F1 sees only dead against alive,
-    so it cannot see a team at all. A review of this check decoded the second half one row late, and only macroF1 fell
-    for that mutant, so a check of one score alone would have passed it. The controls below, on J03WMX, are mutants of
-    the oracle itself: in the one-row slips measured here all three scores fall (by 0.0005 to 0.0102), and a swapped
-    team leaves alive/dead F1 at exactly 1.0 while the other two fall far, so no one of them can stand for the rest.
+    so it cannot see a team at all. A review of this check left the first row of the second half undecoded (X), and
+    only macroF1 fell for that mutant: the scorer back-fills an X at a half's start, so spellF1 never sees it, and a
+    check of spellF1 alone would have passed it. That is another mutant than the controls below, which are mutants of
+    the oracle itself, on J03WMX: in the one-row slips (every label of a half shifted by one row) all three scores fall
+    (by 0.0005 to 0.0102), and a swapped team leaves alive/dead F1 at exactly 1.0 while the other two fall far, so no
+    one of them can stand for the rest.
     """
     from pipeline import evidence as evidence_stage
     from pipeline.contracts import Evidence, no_opinion
