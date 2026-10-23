@@ -53,7 +53,7 @@ One track per person; swap freely.
 
 | track | week 1 (→ Oct 27) | week 2 (→ Nov 3) | week 3 (→ Nov 10) |
 |---|---|---|---|
-| Validation | P01 adapter and degraded benchmark, P02 | P12 | re-validate every candidate |
+| Validation | P01 (done 23 Oct, R002–R005), P02 | P12 | re-validate every candidate on P01 |
 | Pipeline and decoder | P03 | P06 | tune P06 on P01 |
 | Ball visible | P04 | P11 | P11 |
 | Dead ball | P05 rules | P05 classifier, P08 | P10 |
