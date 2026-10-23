@@ -266,6 +266,12 @@ def evaluate_configs(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_id
             record["id"], record["frames"], record["graded_frames"], truth))
         del match, codes_true                    # the next match is loaded only when this one is gone
 
+    # The matches ran in the order asked for, and a report is a function of the matches and not of that order: its
+    # records and halves are in match-id order (a stable sort, so a match's seeds and halves stay as they were run).
+    records.sort(key=lambda record: record["id"])
+    for stem in scores:
+        scores[stem].sort(key=lambda half: half.match_id)
+
     git = pipeline_run.git_state()
     environment = _environment()
     profile_info = degrade.profile_record(profile)       # name, version and, for context, tracking's version

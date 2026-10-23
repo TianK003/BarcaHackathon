@@ -721,6 +721,35 @@ def test_runner_labels_context_as_sensitivity_only_and_says_where_each_profiles_
         assert benchmark_run.DEFAULT_PROFILE + " " + reason not in helped and "(default tracking)" in helped, helped
 
 
+def test_runner_report_is_in_match_id_order_whatever_order_the_matches_are_given():
+    """[RND001, RND002] and [RND002, RND001] write the same bytes under the same name; each match runs when it is asked.
+
+    The order of --matches is the order the matches are run in (one in memory at a time), and not something a report
+    may depend on: its records, its halves and so everything made from them are in match-id order, a degraded profile's
+    seeds in order within a match. The clean and the gaps profile (two seeds, so that the order within a match is
+    seen), two configs so that the comparison is in it too."""
+    matches = synthetic_matches()
+    paths = [yardstick_path(50), yardstick_path(0)]
+    with tempfile.TemporaryDirectory() as root:
+        for profile, cal, seeds in (("clean", None, None), ("gaps", synthetic_calibration(), 2)):
+            written = {}
+            for order in (["RND001", "RND002"], ["RND002", "RND001"]):
+                out = os.path.join(root, profile + "_" + "_".join(order))
+                result = benchmark_run.evaluate_configs(paths, profile=profile, seeds=seeds, match_ids=order,
+                                                        matches=matches, calibration=cal, data_dir=root, log=quiet)
+                written[tuple(order)] = {os.path.relpath(path, out): read(path, "rb")
+                                         for path in benchmark_run.write_reports(result, data_dir=out)}
+                assert [record["id"] for record in result["matches"]] == ["RND001", "RND002"], (profile, order)
+            first, second = written.values()
+            assert first.keys() == second.keys() and len(first) == 2, (profile, sorted(first), sorted(second))
+            assert first == second, "{}: the bytes of a report depend on the order of the matches".format(profile)
+            report = strict_json(next(iter(first.values())).decode("utf-8"))
+            expected = [("RND00" + str(number), seed, half) for number in (1, 2) for seed in report["seeds"]
+                        for half in (1, 2)]
+            assert [(half["match_id"], half["seed"], half["half"]) for half in report["halves"]] == expected
+            assert [record["id"] for record in report["matches"]] == ["RND001", "RND002"]
+
+
 def test_runner_refuses_a_calibration_it_cannot_use():
     """A degraded profile needs a Calibration (loaded from the data directory if none is given), clean takes none."""
     matches, cal = synthetic_matches(), synthetic_calibration()
@@ -795,8 +824,9 @@ def test_runner_holds_one_match_at_a_time_and_in_the_order_given():
         assert shown == sorted(ids), "scores by match and deltas by match are both in id order: " + line
     assert [name for name, _ in made] == ids, "each match is loaded once, in the order given"
     for entry in result["configs"]:
-        assert [record["id"] for record in entry["report"]["matches"]] == ids
-        assert [half["match_id"] for half in entry["report"]["halves"]] == [i for i in ids for _ in (1, 2)]
+        # The report is in match-id order, whatever order the matches were run in (see the check of that name).
+        assert [record["id"] for record in entry["report"]["matches"]] == sorted(ids)
+        assert [half["match_id"] for half in entry["report"]["halves"]] == [i for i in sorted(ids) for _ in (1, 2)]
     gc.collect()
     assert all(ref() is None for _, refs in made for ref in refs), "a match is still held after the run"
 
@@ -889,8 +919,8 @@ def test_runner_json_identical_across_processes():
     first, so that the processes only read it and never build the same files at once.
     """
     report = identical_across_processes("clean", ".m-RND001-RND002-SYN001.json")
-    assert [record["id"] for record in report["matches"]] == ["SYN001", "RND001", "RND002"]
-    assert report["matches"][0]["sources"] is not None, "the synthetic DFL match names its files"
+    assert [record["id"] for record in report["matches"]] == ["RND001", "RND002", "SYN001"], "in match-id order"
+    assert report["matches"][2]["sources"] is not None, "the synthetic DFL match names its files"
     assert report["calibration"] is None and report["seeds"] == [0]
 
 
@@ -902,7 +932,7 @@ def test_runner_gaps_json_identical_across_processes():
     hash seed, the order of a directory) would show there as well as in the scores.
     """
     report = identical_across_processes("gaps", ".m-RND001-RND002-SYN001.s2.json")
-    assert [record["id"] for record in report["matches"]] == ["SYN001", "RND001", "RND002"]
+    assert [record["id"] for record in report["matches"]] == ["RND001", "RND002", "SYN001"]
     assert report["seeds"] == [0, 1] and len(report["halves"]) == 3 * 2 * 2
     assert report["calibration"]["sha256"] == calibration.digest(synthetic_calibration())
 
@@ -916,7 +946,7 @@ def test_runner_tracking_json_identical_across_processes():
     Calibration is the made-up one of tracking_calibration, which each process builds for itself (its digest is in the
     reports, so a measurement that depended on the process would show too), on the same three matches and two seeds."""
     report = identical_across_processes("tracking", ".m-RND001-RND002-SYN001.s2.json")
-    assert [record["id"] for record in report["matches"]] == ["SYN001", "RND001", "RND002"]
+    assert [record["id"] for record in report["matches"]] == ["RND001", "RND002", "SYN001"]
     assert report["seeds"] == [0, 1] and len(report["halves"]) == 3 * 2 * 2
     assert report["profile"] == {"name": "tracking", "version": 3}
     assert report["calibration"]["sha256"] == calibration.digest(tracking_calibration())
@@ -929,7 +959,7 @@ def test_runner_context_json_identical_across_processes():
     and the third of every frame, the durations and the draws of the sampler, which no hash may order. The Calibration is
     context_calibration's, a made-up hazard on the made-up tracking figures, built by each process for itself."""
     report = identical_across_processes("context", ".m-RND001-RND002-SYN001.s2.json")
-    assert [record["id"] for record in report["matches"]] == ["SYN001", "RND001", "RND002"]
+    assert [record["id"] for record in report["matches"]] == ["RND001", "RND002", "SYN001"]
     assert report["seeds"] == [0, 1] and len(report["halves"]) == 3 * 2 * 2
     assert report["profile"] == {"name": "context", "version": 1, "tracking_version": 3}
     assert report["sensitivity_only"] == benchmark_run.SENSITIVITY_ONLY["context"]
