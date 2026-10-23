@@ -106,7 +106,7 @@ matter.
   of the second half in the other. 18.3% of the seven matches' graded frames have 21 players, so a statistic on how
   many players are tracked is measured on the frames at full strength only (T36).
 - DFL's players jitter by a few jumps on a 1 cm grid: the RMS of the second difference is 9.0 cm against our 3.3 mm,
-  and a moving average removes little of it (T35).
+  and a 5-frame average inside a tracklet takes it down to a fifth, 1.8 cm (T35, R004c).
 
 ## 4. Possession rules implemented
 
@@ -150,7 +150,10 @@ our tracking to the one before, and has a version that goes into every report.
 | `context` | the gaps placed where our tracker loses the ball: a hazard fitted on our match (A08), not a transplanted mask | `tracking`'s | R005, in progress |
 
 R005 adds the `context` profile, with its own gates and table; the default and the tables below are "as of R004b" until
-then.
+then. R004c (`tracking` v3, 2026-10-23) changed one rule, that a slot is taken by a new tracklet only from the row after
+its last one stopped, and derived the scale of the tracked spans again (2.072): all eight gates still pass (tracklet
+median 26.52 s, 36% below ours; wrong-team share 0.0918), no check warns, and the ranking does not move (results.md
+R004c). What did move is the jitter per slot after smoothing, 1.80 cm: R004b's 8.5 cm was slot handovers (T35).
 
 **Fidelity, as of R004b** (`tracking` v2: 7 matches x 3 seeds, `fidelity.py --profile tracking`). Gates are our own
 values, measured the same way on each half from its kick-off, plus or minus a tolerance fixed before anything was
@@ -226,8 +229,8 @@ not our leaderboard's under either.
   a slot across a loss would be validated optimistically.
 - Players far from the ball: the cap keeps those nearest the true ball, so a nearest-player method barely notices it
   (it moves the four baselines by 0.4 points of spellF1 at most, R004b).
-- Positional error: the jitter after smoothing is 8.5 cm against our 3.3 mm (R004b; T35 says why an average removes
-  little), and no positional bias is added, since none can be measured on ours.
+- Positional error: the jitter after smoothing is 1.8 cm against our 3.3 mm (R004c; the 8.5 cm of R004b was slot
+  handovers, T35), and no positional bias is added, since none can be measured on ours.
 - The halves: a benchmark half starts at its kick-off, while our graded second half starts 117 s before it, all `D`
   (A06, T02).
 
