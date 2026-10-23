@@ -43,10 +43,13 @@ repeated, not a hole in the degradation. The clock is the half's own, from its k
 each half (A02), a benchmark half starts at its kick-off, and the Calibration measures ours from there too.
 
 What the transplant keeps of ours, by construction: the gaps' durations and the share missing, per half and through
-the half. What it does not: where the gaps are on the pitch. They are drawn without looking at the DFL play, so unlike
-ours they are not more likely at the lines or near dead balls (A01: 29% of ours start within 2 m of a line). That is
+the half. What it does not: where the gaps are in the play. They are drawn without looking at the DFL play, so
+nothing that ties ours to it is in them: a dead ball is no likelier to be missing than any other frame (in the public
+window ours is about three times as likely, A01), and where on the pitch a gap starts is the DFL ball's own place at a
+random frame, not ours (the share of onsets within 2 m of a line differs from ours, 36.0% against 28.0% in R003; the
+direction is not the one the plan guessed, and there is no base rate of ours to say what ours is relative to). That is
 the difference between this profile and the `context` one that comes later, and it is why fidelity.py checks the
-share of dead frames with the ball visible and the nearest player's agreement as warnings.
+share of dead frames with the ball visible and the nearest player's agreement as warnings, and prints the statistic.
 
 The ball is missing where the mask says so, and where DFL has no ball itself (a row with none stays NaN). Position x
 and y are removed together, as an Atd requires (atd_cache._check_presence). Every array of a degraded Atd is read-only.
@@ -216,9 +219,11 @@ def degrade(view, profile, calibration, seed):
     `calibration` is the Calibration of BAR-ATH (calibration.load()): the gaps profile needs it, the clean one does not
     use it. The Atd has the BAR-ATH cache's own layout (inputs.clean_atd), every array read-only, and the length of the
     match. `info` is JSON-ready and holds no frame of anybody: {"profile", "version", "seed", "match_id",
-    "match_index"} and, for gaps, "transplants" ({half: {"source_half", "offset", "frames"}}) and "ball_missing_share"
-    (of the frames the transplant covers). ValueError for a profile that is not in PROFILES, for a seed that is not a
-    whole number of at least 0 and for gaps without a Calibration.
+    "match_index"} and, for gaps, "transplants" ({half: {"source_half", "offset", "frames"}}) and "mask_share": the
+    share of the frames that the transplant covers where the transplanted mask says the ball is missing. It is the
+    mask's share, not the ball's after it: a ball that DFL itself has no frame for is missing as well. ValueError for a
+    profile that is not in PROFILES, for a seed that is not a whole number of at least 0 and for gaps without a
+    Calibration.
     """
     if profile not in PROFILES:
         raise ValueError("profile {!r} is not one of: {}".format(profile, ", ".join(sorted(PROFILES))))
@@ -245,7 +250,7 @@ def degrade(view, profile, calibration, seed):
     for array in (ball_xy, ball_speed):
         array.setflags(write=False)
     info["transplants"] = {half: transplants[half] for half in sorted(transplants)}
-    info["ball_missing_share"] = missing / covered if covered else None
+    info["mask_share"] = missing / covered if covered else None
     degraded = Atd(players_xy=atd.players_xy, players_speed=atd.players_speed, ball_xy=ball_xy, ball_speed=ball_speed,
                    slot_team=atd.slot_team)
     return degraded, info

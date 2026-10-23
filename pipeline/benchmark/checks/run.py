@@ -811,11 +811,18 @@ def cross_process_matches(root, paths):
     return {"SYN001": synthetic, **synthetic_matches()}
 
 
-def cross_process_run(root, out, paths):
-    """What each process of test_runner_json_identical_across_processes does: evaluate, and write to its own folder."""
+def cross_process_run(root, out, paths, profile="clean"):
+    """What each process of the determinism checks does: evaluate on `profile`, and write to its own folder.
+
+    The gaps profile needs a Calibration, and a process cannot be handed one: each measures the synthetic one itself
+    (common.synthetic_calibration), which is a check of its own determinism, since the report holds its digest.
+    """
     configs = [yardstick_path(width) for width in (50, 0, 125)]
-    result = evaluate_clean(configs, matches=cross_process_matches(root, paths), data_dir=root,
-                            log=quiet)
+    if profile == "clean":
+        result = evaluate_clean(configs, matches=cross_process_matches(root, paths), data_dir=root, log=quiet)
+    else:
+        result = benchmark_run.evaluate_configs(configs, profile=profile, seeds=2, calibration=synthetic_calibration(),
+                                                matches=cross_process_matches(root, paths), data_dir=root, log=quiet)
     return benchmark_run.write_reports(result, data_dir=out)
 
 
@@ -826,6 +833,30 @@ def test_runner_json_identical_across_processes():
     another order of keys or of matches. The synthetic DFL match is served through the cache, which is built here
     first, so that the two processes only read it and never build the same files at once.
     """
+    report = identical_across_processes("clean", ".m-RND001-RND002-SYN001.json")
+    assert [record["id"] for record in report["matches"]] == ["SYN001", "RND001", "RND002"]
+    assert report["matches"][0]["sources"] is not None, "the synthetic DFL match names its files"
+    assert report["calibration"] is None and report["seeds"] == [0]
+
+
+def test_runner_gaps_json_identical_across_processes():
+    """The default profile too: the degradation, its draws and the Calibration's digest are the same in every process.
+
+    Two seeds of the gaps profile on the same three matches, with the Calibration of the synthetic bundle measured by
+    each process for itself. The reports hold the digest of it, so a measurement that depended on the process (a set, a
+    hash seed, the order of a directory) would show there as well as in the scores.
+    """
+    report = identical_across_processes("gaps", ".m-RND001-RND002-SYN001.s2.json")
+    assert [record["id"] for record in report["matches"]] == ["SYN001", "RND001", "RND002"]
+    assert report["seeds"] == [0, 1] and len(report["halves"]) == 3 * 2 * 2
+    assert report["calibration"]["sha256"] == calibration.digest(synthetic_calibration())
+
+
+def identical_across_processes(profile, suffix):
+    """Run cross_process_run on `profile` in two processes with another PYTHONHASHSEED each and here: the one report.
+
+    Asserts that every file is the same bytes in the three places, and returns the parsed report of the last config.
+    """
     with tempfile.TemporaryDirectory() as root:
         os.makedirs(os.path.join(root, "source"))
         paths = write_synthetic_dfl(os.path.join(root, "source"))
@@ -834,19 +865,18 @@ def test_runner_json_identical_across_processes():
         for hash_seed in HASH_SEEDS:
             out = os.path.join(root, "out_" + hash_seed)
             code = ("import sys, json; from pipeline.benchmark.checks.run import cross_process_run as go; "
-                    "go(sys.argv[1], sys.argv[2], json.loads(sys.argv[3]))")
-            done = subprocess.run([sys.executable, "-c", code, root, out, json.dumps(paths)], cwd=ROOT,
+                    "go(sys.argv[1], sys.argv[2], json.loads(sys.argv[3]), sys.argv[4])")
+            done = subprocess.run([sys.executable, "-c", code, root, out, json.dumps(paths), profile], cwd=ROOT,
                                   env=dict(os.environ, PYTHONHASHSEED=hash_seed), capture_output=True, text=True,
                                   timeout=600)
             assert done.returncode == 0, "the run with PYTHONHASHSEED={} failed:\n{}".format(
                 hash_seed, done.stderr[-2000:])
-            folders[hash_seed] = os.path.join(out, "runs", "benchmark", "clean")
+            folders[hash_seed] = os.path.join(out, "runs", "benchmark", profile)
         here = os.path.join(root, "out_here")
-        cross_process_run(root, here, paths)
-        folders["here"] = os.path.join(here, "runs", "benchmark", "clean")
+        cross_process_run(root, here, paths, profile)
+        folders["here"] = os.path.join(here, "runs", "benchmark", profile)
 
         names = sorted(os.listdir(folders["here"]))
-        suffix = ".m-RND001-RND002-SYN001.json"
         assert names == ["nearest_w0" + suffix, "nearest_w125" + suffix, "nearest_w50" + suffix], names
         for label, folder in folders.items():
             assert sorted(os.listdir(folder)) == names, (label, os.listdir(folder))
@@ -854,9 +884,8 @@ def test_runner_json_identical_across_processes():
             contents = {label: read(os.path.join(folder, name), "rb") for label, folder in folders.items()}
             assert len(set(contents.values())) == 1, "{} differs between {}".format(name, sorted(contents))
         report = strict_json(contents["here"].decode("utf-8"))
-        assert [record["id"] for record in report["matches"]] == ["SYN001", "RND001", "RND002"]
-        assert report["matches"][0]["sources"] is not None, "the synthetic DFL match names its files"
         assert report["pooled"]["n_gt"] > 0 and report["pooled"]["n_pred"] > 0, "a run that scored nothing is no proof"
+        return report
 
 
 # -- the oracle -------------------------------------------------------------------------------------------------------

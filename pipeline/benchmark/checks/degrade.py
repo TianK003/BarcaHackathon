@@ -2,8 +2,10 @@
 
 They run on a DflMatch of random positions (checks/inputs.py's random_match) with the ball put back on every frame of
 both halves, so that the share of the ball that a degradation removes is the share of the mask it was given, and on
-masks built here, so that every figure is worked out from how they are made. The checks that need our own match (the
-Calibration's real masks) are in fidelity.py's module and are test_data_*; nothing here reads the data directory.
+masks built here, so that every figure is worked out from how they are made. The one check that needs our own match
+(test_data_gaps_profile_serves_a_real_match_with_our_real_masks: the Calibration's real masks on a downloaded DFL match)
+runs with --data, says NOT RUN where the DFL files are not there, and prints aggregates only; every other check here
+reads nothing from the data directory.
 """
 
 import ast
@@ -126,6 +128,28 @@ def test_transplant_choice_is_drawn_from_the_match_and_the_half():
                  "no ball masks", "calibration.load()")
 
 
+def test_transplant_offset_reaches_the_top_of_its_range():
+    """The offset is uniform over 0..max(0, M - n) with both ends in it: M - n itself is drawn, and nothing above it.
+
+    A draw over 0..M - n - 1 would pass the statistical check above (its means and ranges are loose), so this one
+    makes M - n small and enumerates the seeds: a mask 3 frames longer than the half has the offsets 0, 1, 2 and 3, one
+    1 frame longer has 0 and 1, and one exactly as long has only 0. The last offset places the mask's last frame on the
+    half's last frame, which is the one place that a draw one short would never use.
+    """
+    view = degrade.tracking_view(tracked_match())
+    for half, length in ((1, ROWS[0]), (2, ROWS[1])):
+        masks = {1: np.zeros(length + 3, dtype=bool), 2: np.zeros(length + 1, dtype=bool)}
+        offsets = {1: set(), 2: set()}
+        for seed in range(300):
+            choice = degrade.choose_transplant(view, half, types.SimpleNamespace(ball_masks=masks), seed)
+            offsets[choice.source_half].add(choice.offset)
+        assert offsets == {1: {0, 1, 2, 3}, 2: {0, 1}}, (half, offsets)
+        exact = types.SimpleNamespace(ball_masks={1: np.zeros(length, dtype=bool), 2: np.zeros(length, dtype=bool)})
+        assert {degrade.choose_transplant(view, half, exact, seed).offset for seed in range(50)} == {0}
+        last = degrade.transplant(np.arange(length + 3) % 2 == 0, length, 3)
+        assert last.tolist() == (np.arange(3, length + 3) % 2 == 0).tolist(), "M - n ends on the mask's last frame"
+
+
 def test_rng_for_is_the_documented_key_and_streams_are_apart():
     """np.random.default_rng([seed, match_index, COMPONENTS[component], half]), with no profile in it."""
     assert degrade.PROFILES == {"clean": 1, "gaps": 1}
@@ -164,8 +188,7 @@ def test_degrade_deterministic():
                    degrade.degrade(view, "gaps", calibration, seed)[1]["transplants"].items()) for seed in range(40)}
     assert len(drawn) > 30, len(drawn)
     # The record of the draws is JSON-ready: ints and floats, and no frame.
-    assert sorted(info) == ["ball_missing_share", "match_id", "match_index", "profile", "seed", "transplants",
-                            "version"]
+    assert sorted(info) == ["mask_share", "match_id", "match_index", "profile", "seed", "transplants", "version"]
     assert info["profile"] == "gaps" and info["version"] == 1 and info["match_id"] == "RND001"
     assert sorted(info["transplants"]) == [1, 2]
     assert all(sorted(record) == ["frames", "offset", "source_half"] for record in info["transplants"].values())
@@ -198,7 +221,7 @@ def test_degrade_gaps_only_touches_ball():
             kept = ~window
             assert np.array_equal(atd.ball_xy[start:stop][kept], match.ball_xy[start:stop][kept]), "the rest is DFL's"
             covered, missing = covered + (stop - start), missing + int(window.sum())
-        assert abs(info["ball_missing_share"] - missing / covered) < 1e-12
+        assert abs(info["mask_share"] - missing / covered) < 1e-12, "the share of the mask, DFL's gaps not in it"
         separator = np.ones(match.n_frames, dtype=bool)
         for _, start, stop in match.graded:
             separator[start:stop] = False
@@ -208,12 +231,27 @@ def test_degrade_gaps_only_touches_ball():
         assert atd.ball_present.tolist() == (~np.isnan(atd.ball_xy[:, 0])).tolist()
     # The match was not touched, and a DFL ball that was missing stays missing, whatever the mask says.
     assert {name: getattr(match, name).tobytes() for name in before} == before
+    # info["mask_share"] is the share of the mask that was transplanted, and not of the ball that is missing after it:
+    # DFL's own gaps are not in it. Ten frames of the first half that the mask leaves visible are missing in DFL's own
+    # ball, so the ball is missing on exactly ten frames more than the mask says.
+    start, stop = match.graded[0][1:]
+    _, probe = degrade.degrade(view, "gaps", calibration, 0)
+    record = probe["transplants"][1]
+    window = calibration.ball_masks[record["source_half"]][record["offset"]:record["offset"] + (stop - start)]
+    holes = start + np.flatnonzero(~window)[:10]
+    assert holes.size == 10
     holed = np.array(match.ball_xy)
-    holed[10:20] = np.nan
+    holed[holes] = np.nan
     holed.setflags(write=False)
     holey = degrade.tracking_view(dataclasses.replace(match, ball_xy=holed))
     atd, info = degrade.degrade(holey, "gaps", calibration, 0)
-    assert np.isnan(atd.ball_xy[10:20]).all()
+    assert np.isnan(atd.ball_xy[holes]).all(), "a DFL ball that was missing stays missing, whatever the mask says"
+    assert info["mask_share"] == probe["mask_share"], "the mask is the same: the holes are not in it"
+    inside = np.zeros(match.n_frames, dtype=bool)
+    for _, first, last in match.graded:
+        inside[first:last] = True
+    actual = np.isnan(atd.ball_xy[inside, 0]).sum() / inside.sum()
+    assert abs(actual - info["mask_share"] - 10 / inside.sum()) < 1e-12, (actual, info["mask_share"])
     # clean is DFL's tracking as it is: the ball, its speed and every player.
     atd, info = degrade.degrade(view, "clean", None, 7)
     assert atd.ball_xy.tobytes() == clean.ball_xy.tobytes() and atd.ball_speed.tobytes() == clean.ball_speed.tobytes()
@@ -322,16 +360,18 @@ def test_data_gaps_profile_serves_a_real_match_with_our_real_masks():
         for name in ("players_xy", "players_speed", "slot_team"):
             assert getattr(atd, name) is getattr(clean, name), "{}: the players are DFL's own arrays".format(name)
         assert np.isnan(atd.ball_speed).all() and atd.ball_xy.shape == match.ball_xy.shape
-        missing = 0
+        missing = masked = 0
         for half, start, stop in match.graded:
             record = info["transplants"][half]
             window = cal.ball_masks[record["source_half"]][record["offset"]:record["offset"] + (stop - start)]
             assert window.size == stop - start, "a DFL half fits inside one of ours: nothing cycles"
             gone = np.isnan(atd.ball_xy[start:stop, 0])
             assert np.array_equal(gone, window | np.isnan(match.ball_xy[start:stop, 0])), (seed, half)
-            missing += int(gone.sum())
-        shares.append(missing / sum(stop - start for _, start, stop in match.graded))
-        assert abs(shares[-1] - info["ball_missing_share"]) < 1e-9
+            missing, masked = missing + int(gone.sum()), masked + int(window.sum())
+        frames = sum(stop - start for _, start, stop in match.graded)
+        shares.append(missing / frames)
+        assert abs(masked / frames - info["mask_share"]) < 1e-9, "the mask's share, which is not the ball's"
+        assert shares[-1] >= info["mask_share"] - 1e-12
         inputs = match_inputs.MatchInputs(match, atd, profile="gaps", seed=seed)
         assert leaks(inputs, match) == [], "nothing of the match or its flags is reachable from the served inputs"
     ours = cal.scalars["missing_share"]

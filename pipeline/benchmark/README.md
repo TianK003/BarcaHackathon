@@ -108,8 +108,10 @@ takes the mask of our first or second half (1 or 2 with the same chance), read f
 frames that leave room for it, so frame j of the benchmark half is missing where frame `offset + j` of ours was. If the
 mask runs out, it goes on round the last 7,500 frames of ours. What it keeps of ours: the gaps' lengths, how much of the
 half is missing and how that grows through the half (coverage worsens, A02). What it does not: **where** the gaps are.
-They are drawn without looking at the play, so they are no likelier near a line or a dead ball, as ours are (A01: 29% of
-ours start within 2 m of a line); the warnings of the fidelity report show how much that matters.
+They are drawn without looking at the play, so nothing that ties ours to it is in them: a dead ball is no likelier to be
+missing than any other frame (in the public window ours is about three times as likely), and where on the pitch a gap
+starts is the DFL ball's own place at a random frame (36.0% of the onsets within 2 m of a line, against 28.0% of ours,
+R003). The warnings and statistics of the fidelity report show how much that matters.
 
 **No truth reaches the degrader.** It is handed a `TrackingView`, which has the tracking and the match's scalars and no
 `ball_status` or `ball_possession` (`test_degrade_never_sees_truth`, which also reads the degrader's source, and the deep
@@ -229,9 +231,9 @@ renamed over the old report; the same inputs, seed and versions give the same by
 
 `checks/run.py` holds the runner's, `checks/degrade.py` the degrader's (the transplant worked out exactly, determinism,
 what is touched and what is not, no truth, the order of the matches) and `checks/fidelity.py` the fidelity report's
-(every gate and check worked out by other code, pooling by sums, the exit code). The one that anchors the rest is `test_dfl_oracle_scores_perfectly`: an evidence
-source that is the truth itself, decoded by `majority_vote` with half-width 0, must score exactly 1.0 on spellF1,
-macroF1 and alive/dead F1 on every one of the seven matches.
+(every gate and check worked out by other code, pooling by sums, the exit code). The one that anchors the rest is
+`test_dfl_oracle_scores_perfectly`: an evidence source that is the truth itself, decoded by `majority_vote` with
+half-width 0, must score exactly 1.0 on spellF1, macroF1 and alive/dead F1 on every one of the seven matches.
 
 **What the oracle checks, and what it cannot.** It checks the chain from the *loaded match* to the score: the runner,
 `MatchInputs` and the separator rows between the halves, both halves and each one's first and last row, the decoder path
@@ -274,5 +276,7 @@ that this README names only checks that exist.
   has our gaps and nothing else of our tracking: its players are DFL's (one slot per player, no wrong-team slot, no
   NaN speeds), and its gaps are not placed by the play. The warnings and statistics of the fidelity report say by how
   much.
-- A transplanted mask is cut at the edge of the window it is read from, so up to two gaps of a benchmark half (the ones
-  at its ends) are fragments of ours; the gates are on the share and the median, which this barely moves.
+- A transplanted mask is cut at the edge of the window it is read from, so the gaps at the two ends of a benchmark half
+  are fragments of ours, and where the mask runs out and goes round there is one more at the seam (3 of the 42 halves
+  of R003: a DFL second half of 77,080 or 78,456 frames, against the 76,456 of ours); the gates are on the share and the
+  median, which this barely moves.

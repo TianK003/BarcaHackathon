@@ -591,9 +591,10 @@ What the tables say, and what they do not:
   0.1996 > `raw` 0.0486). Raw puts `w25` above `w125` (Δ of `w125` against `w25`: −0.0784, [−0.0866, −0.0702], 0 wins
   of 7; printed by `python pipeline/benchmark/run.py pipeline/benchmark/configs/nearest_w25.toml
   pipeline/benchmark/configs/nearest_w125.toml --no-write`, with `w25` first, raw truth), and coarse puts `w125` above
-  `w50`: `w125` is third under the raw truth, second in the published order and first under the coarse one. This is the clean profile, where the ball is tracked on every frame (on ours it is
-  missing on 41% of the graded frames, A02), so the published order is not expected here. Whether the degraded
-  profiles reproduce it is the fidelity check of the later tasks.
+  `w50`: `w125` is third under the raw truth, second in the published order and first under the coarse one. This is the
+  clean profile, where the ball is tracked on every frame (on ours it is missing on 41% of the graded frames, A02), so
+  the published order is not expected here. Whether the degraded profiles reproduce it is the fidelity check of the
+  later tasks.
 - **There is almost no `D` on `clean`, as expected.** The ball is visible on every frame, so `nearest_player` votes
   everywhere and `majority_vote`, which takes `D` only where nobody voted, predicts `D` on 0.0% of the graded frames
   against the truth's 44.8%. The `D` class therefore scores 0 and macroF1 stays near 0.4, and the alive/dead F1 is
@@ -640,7 +641,8 @@ yardsticks.
 ### R003 — The four yardsticks on the benchmark's `gaps` profile (2026-10-23, Tian)
 Proposal: P01 · Commit: `a8804bf` (the commit that adds this entry; the reports were first made on the working tree it
 was committed from, and the fidelity report and the eight run reports re-made on its clean tree, `dirty: false`, are the
-same to the last digit apart from the commit they name) · Commands: `python pipeline/benchmark/fidelity.py --profile gaps --seeds 3` first, whose gates passed, and then
+same to the last digit apart from the commit they name; the commit "Correct R003's account of the WARNs and tighten the
+gaps checks" after it rewords the explanation of the WARNs and a few sentences, and changes no number) · Commands: `python pipeline/benchmark/fidelity.py --profile gaps --seeds 3` first, whose gates passed, and then
 `python pipeline/benchmark/run.py pipeline/benchmark/configs/nearest_w50.toml pipeline/benchmark/configs/nearest_w0.toml pipeline/benchmark/configs/nearest_w25.toml pipeline/benchmark/configs/nearest_w125.toml --profile gaps --seeds 3`
 (the first config is the reference; run once more with `--truth coarse`, and `w25` first with `w125` second for the
 paired comparison of those two)
@@ -657,19 +659,22 @@ profile has the ball on every frame. The same four configs lose spellF1 when the
 0.4658) because `majority_vote` has `D` to give where nobody voted (33.4% of the graded frames for `w50`, none on
 `clean`). Reports: `data/runs/benchmark/gaps/<stem>.json` and `<stem>.coarse.json`, and
 `data/runs/benchmark/fidelity_gaps.json` (not committed; each carries the Calibration's digest).
-Checks: `pipeline/benchmark/selftest.py --dfl --data` passes all 186 checks (170 synthetic, 14 with `--dfl` and 2 with `--data`), and `pipeline/selftest.py` 33 of 33. The checks of
-the degrader, the fidelity report, the runner's wiring and Kendall's tau were run against 18 mutants of the code, and each
-is caught by a check: the cycle of a short mask started at its first frame, an `rng_for` key without the half, a ball
-speed left in, a mask applied to x only, the players nudged, an offset that ignores the match length, a source half that
-is always the first, a match index that depends on the order the matches were seen in, a missing share that is a mean of
-shares, a gap gate ten times as wide, a D-share band opened, a median gap of the first match only (this one was not
-caught at first, and a check of the pooling on hand-made parts was added), an agreement over frames that were not
-judged, a seed count that is always in the file name, a dot allowed in a config name, concordant pairs counted as
-discordant, `np.load` given a path again in `dfl._read_array`, and histograms of slots that are not padded to one length
-(the first real fidelity run stopped on that one: a squad is 39 or 40 people in the DFL matches, and a check of it was
-added). The real-match check `test_data_gaps_profile_serves_a_real_match_with_our_real_masks` runs the profile on J03WMX
-with our real Calibration: the players are DFL's own arrays, the ball is missing exactly where the transplanted window
-says (with DFL's own gaps added), and nothing of the match or its flags is reachable from the inputs it is served with.
+Checks: `pipeline/benchmark/selftest.py --dfl --data` passes all 189 checks (173 synthetic, 14 with `--dfl` and 2 with
+`--data`), and `pipeline/selftest.py` 33 of 33. The checks of the degrader, the fidelity report, the runner's wiring
+and Kendall's tau were run against 23 mutants of the code (the last five after the review: an offset that never
+reaches its top value, a `mask_share` that counts DFL's gaps, an array back in the repr of an `Atd`, a calibration
+that is not type-checked, a stream keyed by a string hash), and each is caught by a check: the cycle of a short mask
+started at its first frame, an `rng_for` key without the half, a ball speed left in, a mask applied to x only, the
+players nudged, an offset that ignores the match length, a source half that is always the first, a match index that
+depends on the order the matches were seen in, a missing share that is a mean of shares, a gap gate ten times as wide,
+a D-share band opened, a median gap of the first match only (this one was not caught at first, and a check of the
+pooling on hand-made parts was added), an agreement over frames that were not judged, a seed count that is always in
+the file name, a dot allowed in a config name, concordant pairs counted as discordant, `np.load` given a path again in
+`dfl._read_array`, and histograms of slots that are not padded to one length (the first real fidelity run stopped on
+that one: a squad is 39 or 40 people in the DFL matches, and a check of it was added). The real-match check
+`test_data_gaps_profile_serves_a_real_match_with_our_real_masks` runs the profile on J03WMX with our real Calibration:
+the players are DFL's own arrays, the ball is missing exactly where the transplanted window says (with DFL's own gaps
+added), and nothing of the match or its flags is reachable from the inputs it is served with.
 
 **Fidelity first** (`fidelity.py`, 7 matches x 3 seeds; centres are the Calibration's own values on our kick-off
 spans, tolerances the plan's; the `gaps` profile was frozen at version 1 once both gates passed, and nothing of it was
@@ -700,13 +705,22 @@ The ten warning checks (WARN is printed and discussed here; none was tuned towar
 
 What the warnings say. (1) **Possessions per minute.** All four yardsticks output 21% to 26% fewer possessions per minute
 on the benchmark than on ours, and the two that miss the band miss it by under 1.1 points. The direction is the same
-for all four, which a band's edge hides: the same decoders flicker more on our tracking than on this one. The nearest
-player is wrong on 22% of our ball-visible frames and our slots swap and carry the other team (T15, T32), and the
-`gaps` profile has none of that: its players are DFL's, one slot per player. That belongs to the `tracking` profile, and
-the two WARNs are left as they are. (2) **Dead-ball visibility.** 56.8% of the benchmark's dead frames have a ball,
+for all four, which a band's edge hides: the same decoders flicker more on our tracking than on this one. It is not
+that the nearest player is wrong less often here: it names the truth's team on 77.4% of the alive, ball-visible frames
+against 77.8% in our public window (check 3 below), so it is wrong on about 22.6% of them here and 22% on ours. What
+`gaps` lacks is the **structure** of our errors, not their rate: our slots swap and carry the other team for stretches
+(T15, T32: a slot of the wrong team on 10.5% of our frames, against none here, and tracklets of a median 41 s against
+one slot per player for a whole half), where DFL's players have no swap and no wrong-team slot. That the arrangement
+and not the amount of the errors makes the decoders flicker is a reading of these figures, not something measured here.
+It belongs to the `tracking` profile, and the two WARNs are left as they are. **What this implies for the next
+profile**: its wrong-team episodes (Task 13) will land on top of an agreement that already matches ours, so they may
+push `nearest_agreement` below its band (0.778 - 0.05: the benchmark is 4.6 points above the edge). That would be a WARN
+to report and discuss, not a miss to tune away; the possessions-per-minute WARNs are the ones that should go. (2)
+**Dead-ball visibility.** 56.8% of the benchmark's dead frames have a ball,
 against 58.1% of all its frames: the transplant puts gaps where it likes, with no regard for the ball being dead. In the
 public window the ball is visible on 66% of dead frames and on 88% of all frames, so on ours a dead ball is about three
-times as likely to be missing as any other frame; the benchmark has none of that association, by construction. It is why
+times as likely to be missing as any other frame; the benchmark has none of that association, by construction (it is
+what the `context` profile would have to bring, if it is built). It is why
 the alive/dead F1 of the four configs here (0.5761 to 0.6428) is under the 0.7110 of "always alive" that `clean` gave
 every one of them: a `D` that comes from the ball's absence is right on ours more often than it can be here. **Do not
 read the alive/dead F1 of this profile as a measure of dead-ball detection on ours; the ranking of the possession
@@ -752,13 +766,14 @@ What the tables say, and what they do not:
   `w50 > w25 > w125 > w0`; coarse: `w125 > w50 > w25 > w0`; published (R000, full match): `w50 > w125 > w25 > w0`. Kendall
   tau against the published order is **+0.667 under each truth** (5 of the 6 pairs concordant, 1 discordant: `w125` below
   `w25` under raw, above `w50` under coarse). Each truth keeps the same order in each of the three seeds.
-- **The published gaps are inside the noise (about 0.04), and they lie between the raw and the coarse ones.** Pooled
-  spellF1 gaps, published against raw against coarse: `w50` - `w25` +0.044 / +0.008 / +0.042; `w125` - `w25` +0.025 /
+- **The published gaps are inside the noise (about 0.04), and two of the three lie between the raw and the coarse
+  ones.** Pooled spellF1 gaps, published against raw against coarse: `w50` - `w25` +0.044 / +0.008 / +0.042; `w125` - `w25` +0.025 /
   -0.031 / +0.076; `w50` - `w125` +0.019 / +0.039 / -0.034. Paired over the matches, `w125` against `w25` is -0.0299
   [-0.0425, -0.0174], 0 wins of 7, under the raw truth, and +0.0763 [+0.0587, +0.0939], 7 wins of 7, under the coarse
   one (`python pipeline/benchmark/run.py pipeline/benchmark/configs/nearest_w25.toml pipeline/benchmark/configs/nearest_w125.toml --profile gaps --seeds 3 --no-write`,
   with `--truth coarse` for the second). That the published value of each of the two gaps that involve `w125` lies
-  between the raw and the coarse one fits A06's reading (DFL's grain is finer than ours, and the coarse truth stands in
+  between the raw and the coarse one (the third, `w50` - `w25`, does not: +0.044 against +0.008 and +0.042) fits A06's
+  reading (DFL's grain is finer than ours, and the coarse truth stands in
   for how much); it is two numbers, not a measurement of ours, and it is not used to choose anything (T26).
 - **The choice of truth decides `w125` against `w50` and `w25`, not the profile.** The sign of every paired delta
   against `w50` is the same on both competitions: raw `w125` -0.0478 on the two Bundesliga matches and -0.0346 on the five 2.
@@ -770,7 +785,7 @@ What the tables say, and what they do not:
   -0.0025 with an interval whose upper end is -0.000005, 3 wins in 7, p 0.125): a difference of a hundredth of a point
   that the interval only just excludes; it is not a result, and the published `w50` - `w25` of 0.044 is not reproduced
   under the raw truth but nearly is under the coarse (+0.042).
-- **The seeds move a pooled score by up to about 0.01.** Pooled spellF1 by seed (0 / 1 / 2): raw `w50` 0.2063 / 0.2082 /
+- **The seeds move a pooled score by up to about 0.015.** Pooled spellF1 by seed (0 / 1 / 2): raw `w50` 0.2063 / 0.2082 /
   0.2162, `w25` 0.1953 / 0.2003 / 0.2106, `w125` 0.1697 / 0.1711 / 0.1729, `w0` 0.0764 / 0.0774 / 0.0815; coarse `w50` 0.1903 /
   0.1957 / 0.2019, `w25` 0.1499 / 0.1521 / 0.1604, `w125` 0.2239 / 0.2347 / 0.2320, `w0` 0.0347 / 0.0316 / 0.0363. The
   intervals are over the matches, with the seeds pooled inside each match, so they say nothing of the seed-to-seed
@@ -781,9 +796,10 @@ What the tables say, and what they do not:
   the configs, not from the profile.
 - **What the benchmark is for after this.** `gaps` v1 is frozen: it resembles our match in the ball's missing share and
   gap lengths (the gates), in the nearest player's agreement and in the `D` shares of the four yardsticks (the checks), and
-  in nothing else of the tracking (the statistics above). A conclusion about a change that rests on the dead-ball
-  association, on the flicker of the nearest player or on slots that swap needs the `tracking` profile; one that rests on
-  how a decoder smooths over a ball that is gone for ten seconds is what this profile can answer.
+  in nothing else of the tracking (the statistics above). A conclusion about a change that rests on the flicker of the
+  nearest player or on slots that swap needs the `tracking` profile, and one that rests on the dead-ball association
+  (a ball that goes missing when it is dead) needs the `context` profile, if that is built; what rests on how a decoder
+  smooths over a ball that is gone for ten seconds is what this profile can answer.
 
 Runtime: 20 s for `fidelity.py` on all seven matches and three seeds, and 18 s for each run of the four configs (7 matches x
 3 seeds x 4 configs), with the DFL caches and the Calibration cached; the same command twice writes the same bytes.

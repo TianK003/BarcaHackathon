@@ -14,6 +14,7 @@ import io
 import json
 import os
 import tempfile
+import types
 
 import numpy as np
 
@@ -251,6 +252,10 @@ def test_fidelity_report_refuses_what_it_cannot_measure():
         expect_error(fidelity.FidelityError, lambda: measure(profile="tracking"), "tracking", "clean", "gaps")
         expect_error(fidelity.FidelityError, lambda: measure(seeds=0), "seeds", "at least 1")
         expect_error(fidelity.FidelityError, lambda: measure(seeds=True), "seeds")
+        expect_error(fidelity.FidelityError, lambda: measure(calibration=object()), "calibration", "Calibration",
+                     "calibration.load()")
+        expect_error(fidelity.FidelityError, lambda: measure(calibration=types.SimpleNamespace(ball_masks={})),
+                     "SimpleNamespace", "Calibration")
         expect_error(run.BenchmarkError, lambda: measure(match_ids=["RND009"]), "RND009", "RND001")
         expect_error(run.BenchmarkError, lambda: measure(match_ids=["RND001", "RND001"]), "RND001", "twice")
         wrong = {"RND001": synthetic_matches()["RND002"]}

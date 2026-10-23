@@ -25,7 +25,8 @@ the public window's 77.8%, by the same pipeline.evidence.describe), the share of
 visible, and, for each yardstick config, the possessions it outputs per graded minute and its D share (against what the
 four yardsticks output on ours). A miss is a WARN that results.md discusses. Some misses are no fault of the degradation
 (the truth's conventions differ from ours, A06), and some are what the profile does not model: its gaps are drawn
-without looking at the play, so unlike ours they are no likelier near a line or a dead ball. The bands are:
+without looking at the play, so what ties ours to it (a dead ball being likelier to be missing, say) is not in them.
+The bands are:
 
     nearest agreement      +-0.05      dead-ball ball visible share   +-0.10
     possessions per minute +-25%       D share                        +-0.05
@@ -113,7 +114,8 @@ def report(profile, seeds=DEFAULT_SEEDS, match_ids=None, matches=None, calibrati
     "warnings", "notes"}. "gates" is a list of {name, text, measured, centre, tolerance, status} (status pass or FAIL),
     "checks" a list of {name, measured, centre, band, kind, status} (ok or WARN), "passed" is whether every gate
     passed and "warnings" how many checks warn. FidelityError for a profile that has no gates (clean, which degrades
-    nothing) or that is not one, for seeds below 1, and run.BenchmarkError for matches that are not as asked.
+    nothing) or that is not one, for seeds below 1 and for a calibration that is not a Calibration, and
+    run.BenchmarkError for matches that are not as asked.
     """
     if profile not in degrade.PROFILES:
         raise FidelityError("profile {!r} is not one of: {}".format(profile, ", ".join(sorted(degrade.PROFILES))))
@@ -125,6 +127,9 @@ def report(profile, seeds=DEFAULT_SEEDS, match_ids=None, matches=None, calibrati
     ids = run.resolve_match_ids(match_ids, matches)
     if calibration is None:
         calibration = calibration_module.load(data_dir=data_dir)
+    if not isinstance(calibration, calibration_module.Calibration):
+        raise FidelityError("calibration must be a Calibration of our own match, as calibration.load() returns, and it "
+                            "is a {}".format(type(calibration).__name__))
     configs = [load_config(os.path.join(calibration_module.CONFIG_FOLDER, "nearest_w{}.toml".format(width)))
                for width in calibration_module.YARDSTICK_WIDTHS]
 

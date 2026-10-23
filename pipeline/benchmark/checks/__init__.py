@@ -10,7 +10,8 @@ module of its topic:
                  the calibration, our own tracking measured for the benchmark: every statistic exact on hand-built
                  objects, a synthetic bundle, the cache, and with --data the figures of A01, A02 and R001
     degrade.py   the degrader: the transplant worked out exactly, the draws, what the gaps profile touches and does not,
-                 that no truth reaches it, and that the order of the matches changes nothing (synthetic only)
+                 that no truth reaches it, and that the order of the matches changes nothing (synthetic, and with
+                 --data our real masks on a downloaded DFL match)
     fidelity.py  the fidelity report: every gate and check worked out by other code on a synthetic Calibration, the
                  pooling by sums, the file and the exit code (synthetic only)
     truth.py     the benchmark's truth from the DFL flags: codes, summary, line timing, nearest team, the coarse

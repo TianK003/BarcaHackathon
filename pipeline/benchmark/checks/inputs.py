@@ -676,6 +676,33 @@ def test_clean_atd_has_the_layout_of_the_bar_ath_cache():
     assert np.array_equal(atd.ball_present, ~np.isnan(match.ball_xy[:, 0]))
 
 
+def test_atd_repr_shows_no_array():
+    """repr(atd) holds no value of the tracking: the BAR-ATH Atd's, a clean one's, and a degraded one's.
+
+    A dataclass shows its fields, and numpy shows the head and tail of an array: an Atd printed by a log line, an
+    assertion message or a debugger would put our match's tracking (and, once degraded, where the ball was removed) in
+    a log. Every array field has repr=False, and a distinctive value planted in each does not appear.
+    """
+    import dataclasses
+    from pipeline.benchmark import degrade
+    from pipeline.benchmark.checks.degrade import made_up_calibration, tracked_match
+    assert all(field.repr is False for field in dataclasses.fields(atd_cache.Atd)), [
+        field.name for field in dataclasses.fields(atd_cache.Atd) if field.repr]
+    match = tracked_match()
+    degraded, _ = degrade.degrade(degrade.tracking_view(match), "gaps", made_up_calibration(), 0)
+    atds = {"clean": match_inputs.clean_atd(match), "degraded": degraded}
+    with tempfile.TemporaryDirectory() as root:
+        make_synthetic_bundle(root)
+        atds["synthetic BAR-ATH layout"] = synthetic_inputs(root, graded=[(1, 50, 280), (2, 320, 560)]).atd
+        for label, atd in atds.items():
+            shown = repr(atd)
+            assert shown.startswith("Atd(") and "array" not in shown and len(shown) < 100, (label, shown)
+            for name in ("players_xy", "ball_xy", "players_speed"):
+                first = getattr(atd, name).flat[0]
+                if np.isfinite(first):
+                    assert "{:.4f}".format(first) not in shown, (label, name)
+
+
 def test_clean_atd_never_changes_the_match_and_casts_what_does_not_fit():
     loose = random_match(writeable=True)
     atd = match_inputs.clean_atd(loose)
