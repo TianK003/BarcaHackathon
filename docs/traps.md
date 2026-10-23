@@ -9,7 +9,8 @@ out: what you saw, why it happens, what to do instead. Give it the next free ID 
 0.06 spellF1. It is also the best-covered 5 minutes of the match: the ball is missing on 12% of its frames, against
 40.7% overall and up to 80% per 5-minute block ([A02](results.md#a02--ball-coverage-across-the-match-2026-10-21)).
 And it ranks `smooth125` above `smooth50`, the reverse of the full match. Use it to check correctness, and decide on
-P01 validation with `--bootstrap 1000`.
+P01 validation: per-match t-intervals and the exact sign-flip test of
+[`pipeline/benchmark/README.md`](../pipeline/benchmark/README.md), never a bootstrap.
 
 **T02 — `X` means "repeat my last label" — and at the start of a half, "copy my first label".** Before computing
 spellF1, the scorer forward-fills `X` with the last non-`X` label in the half, and back-fills the head of the half.
@@ -37,6 +38,20 @@ baselines over the graded halves.
 
 **T07 — Noise floors.** On the full match, spellF1 gaps below ~0.04 and macroF1 gaps below ~0.01 are not real. On the
 public window, one possession is worth ~0.06.
+
+**T33 — DFL's possessions are fine-grained, and the public window cannot say by how much ours differ.** DFL's flag gives
+437 possessions a match, a median of 3.7 s (the literature's 175–220 is for control-based rules, 420 for every touch).
+It is tempting to read the public window's 4.23 possessions per alive minute against DFL's 8.30 as "ours is half as
+fine", and it is not safe: the window is alive on 80.4% of its frames, more than 96% of DFL's 5-minute windows, and
+DFL's rate falls as the alive share rises (r = −0.71). Against DFL's windows that are as lively the window is 1.34 times
+slower, and a quarter of them are as slow:
+[A06](results.md#a06--dfls-conventions-against-the-public-window-and-the-literature-2026-10-23).
+So the grain of our GT is not known, and neither is what a lag, a smoothing level or a switch penalty costs on it:
+EVALUATION.md's lag table (0.9818, 0.8933, 0.6539 at 3, 8 and 25 frames) does not reproduce on the public GT (1.0000,
+0.9529, 0.7765) and does not say what it was computed on. Rank every choice that depends on possession length under the
+raw DFL truth and under the coarse one (`truth.coarse_codes`, `COARSE_MIN_S` = 5 s) side by side, and treat a
+disagreement as a warning. The coarse truth is a sensitivity check, not a correction. Pick hyperparameters on the
+benchmark, never on the public window (T01).
 
 ## Alignment
 
@@ -73,7 +88,8 @@ ball-visible public frames (A01): passes in flight, duels, deflections.
 
 **T15 — Track slots are tracklets, not players.** There are 46 slots for 22 players; they appear, vanish, swap, and
 occasionally duplicate someone (more than 22 objects). `ShirtNumber` is just the slot index. Build collective,
-permutation-invariant features. Not yet checked: does a slot ever carry the wrong team after an identity switch?
+permutation-invariant features. A slot does carry the wrong team at times, after an identity switch: a team shows more
+than 11 slots while the other shows fewer on 10.8% of graded frames (T32, A07).
 
 **T16 — Units and orientation.** Coordinates are normalised 0–1, and the pitch is not square.
 - Scale by 105.3 × 68.0 m (`games.py`; the metadata says 105 × 68) before computing distances.
@@ -98,17 +114,105 @@ pipeline's `atd.players_present` and `atd.ball_present` do exactly that.
 **T19 — kloppy is slow on the full ATD.** Loading all 199,319 frames takes minutes and gigabytes. Stream the raw file
 once, as `starter/baseline.py` does, and cache arrays under `data/cache/`.
 
-**T30 — kloppy's DFL loader hides the dead ball.** `kloppy.sportec.load_open_tracking_data`, which loads P01's
-benchmark matches, defaults to `only_alive=True` and silently drops every dead-ball frame. That leaves no `D` to
-learn or score. Pass `only_alive=False`.
+**T30 — kloppy's DFL loader hides the dead ball.** Both of kloppy's DFL loaders,
+`kloppy.sportec.load_open_tracking_data` and `kloppy.sportec.load_tracking`, default to `only_alive=True` and silently
+drop every dead-ball frame. That leaves no `D` to learn or score. Pass `only_alive=False`.
 
-In the same loader (kloppy 3.18.0):
-- `ball_owning_team` is home when `BallPossession` is 1 and away otherwise, so a frame without a possession value
-  becomes away;
-- frames without a ball entry are skipped.
+Measured on the seven DFL matches on 2026-10-22 (kloppy 3.18.0; `python pipeline/benchmark/selftest.py --dfl`):
+- **The default drops the dead ball.** On J03WMX, `only_alive=True, limit=5000` returned 5,000 frames over N 10,000 to
+  15,823: none is dead in our parse, no alive row in that range is missing, and the 824 dead rows are the ones it
+  dropped. Dead frames are 40.7% to 51.7% of the ball frames of a match (J03WQQ the least, J03WN1 the most), so the
+  default deletes about half of every match.
+- **`limit` is per object and counts what the loader keeps.** With `only_alive=False` it stops after the first 5,000
+  frames of the first half (N 10,000 to 14,999, period 1 only). With the default it counts alive frames, so the same
+  limit reaches further.
+- **With `only_alive=False` it agrees with our parser** on those 5,000 frames: ball x, y and z, alive or dead, the
+  team in possession and three players, with 0 disagreements. Our frame numbers and its `frame_id` are the same N.
+- **The other two behaviours never fire on these files.** The loader reads `BallPossession` as home when it is 1 and
+  away otherwise, so a frame with no possession value would come out as away, and it skips a frame with no ball
+  entry. In all seven matches every ball frame has a `BallPossession` of 1 or 2 and a `BallStatus`, and no frame
+  number in a half is without a ball frame (0 in each count). Our own parser (`pipeline/benchmark/dfl.py`) counts the
+  first two and refuses any other code, so a file that changes this stops the parse.
 
-Check how often each happens, index frames by `frame_id` rather than by position, and read `BallPossession` == 2 for
-away yourself if the default is wrong. Found by reading the loader's source, not yet by running it.
+Its own download does not work: kloppy 3.18's DFL loader fetches from `springernature.figshare.com`, which sits behind a
+bot challenge, so `load_open_tracking_data` cannot get the files. P01 downloads them with
+`pipeline/benchmark/sources.py` and parses them with `pipeline/benchmark/dfl.py`. kloppy still reads local files
+(`kloppy.sportec.load_tracking(meta_data=..., raw_data=...)`), which is how the cross-check runs.
+
+If you do use kloppy on these files, index frames by `frame_id` rather than by position, and read `BallPossession`
+yourself for the away team.
+
+**T31 — The ATD ball-speed channel is unusable.** Where the ball's position exists, its speed is NaN on 92.2% of the
+graded frames (measured again on 2026-10-23: 92.17% of the 94,214 ball-present graded frames, 91.97% of those from each
+half's kick-off, A07). Where it is given, its median is 1.3 m/s against 4.8 m/s for the ball's speed from its own
+positions, and its correlation with that speed is at most 0.11 at any lag (the 2026-10-22 measurement, P01's plan): it
+behaves like a player's speed, not the ball's. Compute the ball's speed from successive positions (`hazard.features`
+does) and never read `atd.ball_speed`: a feature built on it is missing on nine frames in ten and noise on the tenth.
+The benchmark's degraded tracking sets `ball_speed` to NaN everywhere for this reason. T28 says the speed channel
+is not presence; this says it is not the ball's speed either.
+
+**T32 — A slot can carry the other team's player.** After an identity switch a slot keeps its team in the metadata while
+it follows a player of the other side, so a team shows more than 11 slots while the other shows fewer than 11, which a
+real match cannot do. Measured on the graded frames (A07): this happens on 10.8% of them (17,156 of 158,857), in 108
+episodes (63 with the home team in surplus, 45 the away team), median 2.7 s, p90 16 s, longest 50 s; from each half's
+kick-off, the span that the calibration stores, it is 10.5% of the frames (16,433 of 155,923) in 104 episodes. A team
+shows more than 11 slots on 12.9% of frames, and on 84% of those the other shows fewer than 11 (the 2026-10-22
+measurement, P01's plan). So `atd.slot_team` is the label of the slot and not of the player on it, and a feature that
+trusts one slot's team (the nearest player's, say) is wrong on those frames. The 10.8% is a lower bound: a swap inside
+an 11 against 11 cannot be seen. P01's `tracking` profile puts such episodes into the degraded matches, and is checked
+against this share (R004).
+
+**T35 — DFL's jitter is a few jumps on a 1 cm grid, and what the benchmark first blamed on them was our own slot
+handovers.** The RMS of the second difference of a DFL player's position (what `calibration.player_stats` calls jitter)
+is 9.0 cm over the 7 matches, against 3.3 mm on ours, which is what a rule of the kind "smooth if more than twice ours"
+reads, and it is not noise. In the five 2. Bundesliga matches 98% of its squares sit in the largest 0.05% of the
+triples: rare jumps (in one half 61 steps of 1.52 million exceed 25 m/s, and the largest is 30 m). The rest is
+quantisation: the median second difference is 1.00 cm in every match and the 99th percentile 2.83 cm, against 1.4 mm
+and 9.6 mm on ours. That much is DFL's. **The 6.5 to 8.5 cm that the `tracking` profile still showed after its 5-frame
+average in versions 1 and 2 was not**: the slot rule let a tracklet take a slot on the very row it was freed, so one
+slot held a player up to row t - 1 and another from row t: in version 2 372 times in 7 matches x 3 seeds (17.7 a match
+and seed), the two players 13.8 m apart at the median and 40.1 m at the 90th percentile, in version 1 236 times, 5.3
+and 43.0 m. Ours has none: 3.28 mm over 3.2 million triples leaves no room for one, and a single jump of 12 m adds 8
+times the squares of all of ours. On the same draws, measured per slot and then only inside tracklets, version 2 gave
+8.49 and 1.75 cm after the average (version 1: 6.47 and 1.80 cm), and the 744 triples that straddle a handover held 96%
+of the squares per slot. The reading of R004 and R004b, that the average removes little because DFL's jumps stay in,
+was a reading of the handovers (R004c). Version 3 frees a slot only from the row after its tracklet, so a slot never
+changes player between two adjacent rows and the jitter per slot is the jitter inside tracklets: 8.90 cm without the
+average (DFL's own 9.00 again) and 1.80 cm with it, three seeds (8.75 and 1.77 cm at seed 0). Inside a piece the
+centred 5-frame average takes the RMS down to a fifth, which is the arithmetic of a jump: a step of J between two
+frames is two triples of +-J, and after the average two of +-J/5 (white noise falls to 16%). The 1.8 cm that is left,
+5.5 times ours, is DFL's, lowered; whether it is the jumps or the grid inside a piece was not measured. **No jump
+filter is needed**: the profile's own average takes the jumps down by that factor, and the only jumps left in the slot
+trajectories are DFL's own. So when a method reads positions, speeds or accelerations, compare medians and percentiles
+and not an RMS, and know that the benchmark's players are rougher than ours by 5.5 times in RMS
+(`test_data_tracking_constants_follow_from_the_measurements` prints it; R004c).
+
+**T36 — Two DFL matches have a team down to 10, and a gate on how many players are present cannot see it.** J03WN1's
+away team has 10 players from minute 7.1 of the first half to the end of the match (92.5% of its graded frames) and
+J03WQQ's from minute 13.4 of the second half (37.2%): 18.3% of the seven matches' graded frames have 21 players, and
+none has more than 22. A statistic about how many slots are present (the share of frames with all 22, the mean) on all
+frames is pulled down by the missing player whatever the degradation does, while ours is one match that is assumed to
+have 22 players on the pitch throughout. The first version of R004 gated on all frames and passed on two effects that
+cancel (a profile with too many frames at 22, and 18.3% of frames that cannot have 22); with the tail it would have
+failed for a reason that had nothing to do with it. Measure such counts on the frames where the clean match has 22
+players (`fidelity.COUNT_GATES`, `fidelity.full_strength_blocks`), and look at the frames where a statistic cannot reach
+its value before trusting it. The wrong-team episodes are about half unobservable on 10 against 11, which lowers that
+share in those two matches (R004).
+
+**T37 — The walk's tracked spans are ours *after* the cuts, so every part of the profile that cuts counts them twice.**
+The `tracking` profile draws a tracked span from our tracklet lengths, which are our FINAL tracklets: they already end
+where our tracker loses a player, where an identity swaps and where the camera leaves players out. It then cuts the
+spans again, with the wrong-team episodes and with the cap of our low-count frames, and the benchmark's tracklets come
+out too short: pooled over the seven matches and three seeds the walk alone gives a median of 40.88 s against ours 41.28
+s, the episodes alone 29.26 s, the cap alone 24.44 s, both 19.68 s (R004b, with version 2's slot rule), and the first
+version of the cap failed the tracklet-median gate for it. A piece that a cut leaves under 8 frames is also no tracklet
+of ours (A09: the shortest is 8 frames), and version 2 without the rule made 2.2% of its pieces so (906 of 40,866; 195
+of them already short before the cap), because our count crosses the threshold 18 on 155 frames, 147 of them by one slot
+(18 and 19), and the dropped players come back for a few frames and go again. `degrade.TRACKED_SCALE` (2.072, the walk's
+drawn lengths multiplied once, from one label-free measurement, frozen; 2.042 until version 3's slot rule moved the
+measurement, R004c) and `degrade.MIN_PIECE_FRAMES` (8) are the corrections. Any later part that cuts tracklets in the
+benchmark must be set against the tracklet median first, and a rescale of this kind is made once, logged with its
+measurement and never tuned.
 
 ## Reproducibility and environment
 
@@ -131,6 +235,17 @@ or run final inference on CPU. Sort directory listings.
 - Stale files clutter the board, so use `--results <dir>`.
 - Don't name our files `baseline_*.csv`: the gitignore exception for that pattern would commit them.
 - `python starter/baseline.py` without `--out` overwrites the committed baselines.
+
+**T34 — `np.load(path)` can leave its file open, and Windows then refuses to rewrite it.** A zip cut short that carries
+an `.npy` name fails inside numpy's `NpzFile`, after `np.load` has handed the file over, so nothing closes it (a
+`ResourceWarning` on Linux and macOS; on Windows the rebuild that follows an unreadable cache, which rewrites the file,
+dies with `PermissionError` while the exception is still alive). Open the file yourself and give `np.load` the handle
+(`with open(path, "rb") as handle: np.load(handle, allow_pickle=False)`), as `dfl._read_array` does.
+`calibration._read_array` does the same now: it opens the file, and a zip cut short under an `.npy` name is a cache
+that is rebuilt, not a `BadZipFile` (`test_calibration_cache_is_keyed_and_unreadable_means_absent` damages one).
+`pipeline/inputs/atd_cache.py` still passes a path to `np.load` and does not catch `zipfile.BadZipFile`, so there a zip
+cut short under an `.npy` name raises instead of rebuilding (nothing makes such a file; a note for whoever next edits
+it).
 
 ## Rules and data handling
 

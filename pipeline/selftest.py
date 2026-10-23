@@ -349,6 +349,48 @@ def test_cache_arrays_read_only():
                 assert not getattr(atd, name).flags.writeable, "{} is writable ({})".format(name, inputs.atd_status)
 
 
+def test_cache_atd_repr_shows_no_array():
+    """repr(atd) holds no value of the tracking: an Atd that a log line, an assertion message or a debugger prints.
+
+    A dataclass shows its fields and numpy shows the head and tail of an array, which would put frames of the match
+    (CLAUDE.md: never to a log) in the output. Every array field has repr=False; a distinctive value planted in each
+    must not appear, in an Atd built here and in one parsed from the synthetic bundle."""
+    import dataclasses
+    from pipeline.inputs import atd_cache
+    assert all(field.repr is False for field in dataclasses.fields(atd_cache.Atd)), [
+        field.name for field in dataclasses.fields(atd_cache.Atd) if field.repr]
+    marker = 0.314159265
+    planted = atd_cache.Atd(players_xy=np.full((4, 3, 2), marker), players_speed=np.full((4, 3), marker + 1),
+                            ball_xy=np.full((4, 2), marker + 2), ball_speed=np.full(4, marker + 3),
+                            slot_team=np.array([0, 1, 1], dtype=np.int8))
+    with tempfile.TemporaryDirectory() as root:
+        make_synthetic_bundle(root)
+        parsed = synthetic_inputs(root).atd
+        for label, atd in (("planted", planted), ("parsed", parsed)):
+            shown = repr(atd)
+            assert shown.startswith("Atd(") and "array" not in shown and len(shown) < 100, (label, shown)
+            for name in ("players_xy", "players_speed", "ball_xy", "ball_speed"):
+                first = getattr(atd, name).flat[0]
+                if np.isfinite(first):
+                    assert "{:.3f}".format(first) not in shown, (label, name)
+    assert "0.314" not in repr(planted)
+
+
+def test_inputs_homography_repr_shows_no_array():
+    """repr(homography) holds no value either: its matrices are our match's homography, one per frame.
+
+    The same leak as the Atd's (test_cache_atd_repr_shows_no_array): every array field has repr=False."""
+    import dataclasses
+    from pipeline.inputs import Homography
+    assert all(field.repr is False for field in dataclasses.fields(Homography)), [
+        field.name for field in dataclasses.fields(Homography) if field.repr]
+    homography = Homography(matrices=np.full((4, 3, 3), 0.271828182), error=np.full(4, 1.41421356),
+                            valid=np.ones(4, dtype=bool))
+    shown = repr(homography)
+    assert shown.startswith("Homography(") and "array" not in shown and len(shown) < 100, shown
+    assert "0.271" not in shown and "1.414" not in shown and "True" not in shown, shown
+
+
 def test_cache_rebuilt_when_arrays_missing():
     with tempfile.TemporaryDirectory() as root:
         make_synthetic_bundle(root)

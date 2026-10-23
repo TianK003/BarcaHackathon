@@ -1,0 +1,12 @@
+# What pipeline/benchmark/ imports on top of the pipeline's own pins (docs/proposals.md, P01).
+#
+#   .venv/Scripts/python -m pip install -r requirements-benchmark.txt     # macOS/Linux: .venv/bin/python
+#   .venv/Scripts/python pipeline/benchmark/sources.py                    # download and verify the DFL files
+#
+# lxml reads the DFL XML files (the positions files are 350-420 MB each). Pin new imports here in the same commit that
+# adds them, as in requirements-pipeline.txt.
+#
+# The optional kloppy cross-check of selftest.py --dfl (test_dfl_parser_agrees_with_kloppy) uses the kloppy==3.18.0
+# that requirements-starter.txt pins; it is not repeated here, and without it the check reports NOT RUN.
+-r requirements-pipeline.txt
+lxml==6.1.3

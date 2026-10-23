@@ -1,0 +1,23 @@
+# A yardstick for the P01 benchmark: the organisers' baseline_raw, decoded per half.
+#
+# The organisers' baselines are the nearest player's team on every frame, then a centred majority vote of +/-w frames,
+# decoded over the whole file at once (scope = "file"). This is the same two steps decoded per graded half, as every
+# real config of ours is (docs/traps.md T11), so a benchmark match is scored the way our own is. It is a floor that a
+# change has to beat on the benchmark, not a rebuild of the published file: that is
+# pipeline/configs/smooth50_repro.toml, which pipeline/selftest.py --data checks byte for byte against the four
+# baselines.
+#
+# nearest_w0, nearest_w25, nearest_w50 and nearest_w125 differ in line 1, in the description and in half_width, and
+# in nothing else.
+
+description = "baseline_raw's rule, decoded per half: the nearest player's team on every frame, no smoothing. The published file is decoded per file (scope = file), this one per half, so it is a yardstick for the benchmark and not a rebuild of baseline_raw."
+seed = 0
+scope = "halves"
+
+[[evidence]]
+kind = "nearest_player"
+
+[decoder]
+kind = "majority_vote"
+half_width = 0       # frames each side of a frame; 0 is the raw label of each frame
+fallback = "D"       # where no source had an opinion anywhere in the window (the ball is not tracked)

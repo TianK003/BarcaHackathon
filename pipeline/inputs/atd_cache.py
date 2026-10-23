@@ -27,7 +27,7 @@ import io
 import json
 import os
 import platform
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
@@ -56,12 +56,16 @@ class Atd:
 
     Every array is read-only. A component that wants to transform one makes a copy; that is what stops one
     evidence source from silently changing the input of the next.
+
+    No array is in its repr (repr=False on every field): numpy prints the head and tail of an array, and an Atd printed
+    by a log line, an assertion message or a debugger would put frames of the match's tracking in a log (and, for the
+    benchmark's degraded Atd, show where the ball was removed). Print its shapes, or count.
     """
-    players_xy: np.ndarray     # (n, S, 2) float64
-    players_speed: np.ndarray  # (n, S) float64 -- may be NaN while the position exists (see the stage README)
-    ball_xy: np.ndarray        # (n, 2) float64
-    ball_speed: np.ndarray     # (n,) float64 -- same caveat
-    slot_team: np.ndarray      # (S,) int8: 0 = home (Barcelona), 1 = away, from the metadata XML
+    players_xy: np.ndarray = field(repr=False)     # (n, S, 2) float64
+    players_speed: np.ndarray = field(repr=False)  # (n, S) float64 -- may be NaN while the position exists (README)
+    ball_xy: np.ndarray = field(repr=False)        # (n, 2) float64
+    ball_speed: np.ndarray = field(repr=False)     # (n,) float64 -- same caveat
+    slot_team: np.ndarray = field(repr=False)      # (S,) int8: 0 = home (Barcelona), 1 = away, from the metadata XML
 
     @property
     def n_frames(self):
