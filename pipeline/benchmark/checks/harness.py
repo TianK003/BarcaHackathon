@@ -31,14 +31,28 @@ def run_main(modules, *flags):
     return code, [re.sub(r"  \([0-9.]+ s\)$", "", line) for line in shown.getvalue().rstrip("\n").split("\n")]
 
 
+def absolute_module(node, package):
+    """The dotted name that an `ast.ImportFrom` of a module of `package` takes from, with a relative import made
+    absolute: one dot is `package` itself, two are its parent, and so on. None for a relative import that climbs
+    out of the top-level package (it names nothing here)."""
+    if not node.level:
+        return node.module
+    parts = package.split(".")
+    if node.level > len(parts):
+        return None
+    base = ".".join(parts[:len(parts) - node.level + 1])
+    return base + ("." + node.module if node.module else "")
+
+
 def imports_of_other_check_modules(folder, package):
     """[(file, line, module)] of every import in the modules of `folder` that reaches a module of `package` other than
     common, sorted by file and line. The package's own __init__ is not scanned: it imports all the modules to list them.
 
     `package` is the dotted name of the folder (pipeline.benchmark.checks). An import is found wherever it stands, at the
     top or inside a function, whether it names the module (from package.run import x, import package.run) or takes it
-    from the package (from package import run). A module of another package whose name only starts like it
-    (pipeline.benchmark.checks_elsewhere) is not one.
+    from the package (from package import run), and whether it is absolute or relative (from .run import x, from .
+    import run). A module of another package whose name only starts like it (pipeline.benchmark.checks_elsewhere)
+    is not one.
     """
     allowed = package + ".common"
     found = []
@@ -48,11 +62,12 @@ def imports_of_other_check_modules(folder, package):
         with open(os.path.join(folder, name), encoding="utf-8") as handle:
             tree = ast.parse(handle.read(), name)
         for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom) and node.module == package:
+            module = absolute_module(node, package) if isinstance(node, ast.ImportFrom) else None
+            if module == package:
                 found += [(name, node.lineno, package + "." + alias.name) for alias in node.names
                           if package + "." + alias.name != allowed]
-            elif isinstance(node, ast.ImportFrom) and node.module and node.module.startswith(package + "."):
-                found += [(name, node.lineno, node.module)] if node.module != allowed else []
+            elif module and module.startswith(package + "."):
+                found += [(name, node.lineno, module)] if module != allowed else []
             elif isinstance(node, ast.Import):
                 found += [(name, node.lineno, alias.name) for alias in node.names
                           if alias.name.startswith(package + ".") and alias.name != allowed]
@@ -206,8 +221,10 @@ def test_a_check_module_imports_no_other_check_module():
     to neither, and a module that is renamed breaks a stranger's import; the review of Task 14 found eight such imports
     (two in common.py, three in fidelity.py, three in run.py), and they were moved to common.py. The scan reads every import in the module, at the top and inside a function, in both
     forms (`from pipeline.benchmark.checks.run import x`, `from pipeline.benchmark.checks import run`, and `import
-    pipeline.benchmark.checks.run`). It must flag each of those on made-up modules, let the imports of common and of
-    production code pass (and the __init__, which lists the modules by design), and find none in the real folder."""
+    pipeline.benchmark.checks.run`) and the relative ones (`from .run import x`, `from . import run`; the review of
+    Task 17 found that the first scan let them pass). It must flag each of those on made-up modules, let the
+    imports of common and of production code pass (and the __init__, which lists the modules by design), and find
+    none in the real folder."""
     package = "pipeline.benchmark.checks"
     with tempfile.TemporaryDirectory() as folder:
         write_text(folder, "__init__.py", "from pipeline.benchmark.checks import alpha, beta\n")
@@ -220,9 +237,15 @@ def test_a_check_module_imports_no_other_check_module():
         write_text(folder, "beta.py", "def test_one():\n    from pipeline.benchmark.checks.alpha import helper\n")
         write_text(folder, "gamma.py", "from pipeline.benchmark.checks import common, alpha\n")
         write_text(folder, "delta.py", "import pipeline.benchmark.checks.alpha\n")
+        # Relative imports are inside the package: one dot is the checks folder, two are pipeline.benchmark.
+        write_text(folder, "epsilon.py", "from .alpha import helper\n")
+        write_text(folder, "zeta.py", "def test_one():\n    from . import alpha, common\n")
+        write_text(folder, "eta.py", "from . import common\nfrom .common import helper\nfrom .. import dfl\n"
+                                      "from ..dfl import parse\nfrom .. import checks\nfrom ... import checks_elsewhere\n")
         found = imports_of_other_check_modules(folder, package)
         assert found == [("alpha.py", 1, package + ".beta"), ("beta.py", 2, package + ".alpha"),
-                         ("delta.py", 1, package + ".alpha"), ("gamma.py", 1, package + ".alpha")], found
+                         ("delta.py", 1, package + ".alpha"), ("epsilon.py", 1, package + ".alpha"),
+                         ("gamma.py", 1, package + ".alpha"), ("zeta.py", 2, package + ".alpha")], found
     here = os.path.dirname(os.path.abspath(__file__))
     assert imports_of_other_check_modules(here, package) == [], (
         "a check module imports another one; move what they share to pipeline/benchmark/checks/common.py")
