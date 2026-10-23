@@ -485,12 +485,12 @@ def render(result):
                       "{} {}".format(match_id, _number(report["per_match"][match_id]["spell_f1_mean"]))
                       for match_id in sorted(ids)),
                   "          seconds         {:.1f}".format(seconds)]
-    lines += ["", "{:<22}{:>15}{:>15}{:>20}   {}".format(
+    lines += ["", "{:<22}{:>16}{:>16}{:>22}   {}".format(
         "config", "pooled spellF1", "pooled macroF1", "pooled alive/dead F1",
         "mean per-match spellF1 [{} t-interval]".format(_level()))]
     for stem, report, _ in reports:
         pooled, interval = report["pooled"], report["t_interval"]["spell_f1_mean"]
-        lines.append("{:<22}{:>15}{:>15}{:>20}   {} {}".format(
+        lines.append("{:<22}{:>16}{:>16}{:>22}   {} {}".format(
             stem, _number(pooled["spell_f1_mean"]), _number(pooled["macro_f1"]), _number(pooled["alive_dead_f1"]),
             _number(interval["mean"]), _bounds(interval)))
 
