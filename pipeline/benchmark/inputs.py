@@ -26,7 +26,7 @@ flags and the codes made of them). A second check asserts that no component unde
 imports pipeline.benchmark, which would let it load the truth itself by the match id. Whatever oracle a check wants
 gets the truth by closure from its own test, never from here.
 
-clean_atd is the tracking as DFL gives it. The degrader (a later module) makes an Atd of the same layout from it, with
+clean_atd is the tracking as DFL gives it. The degrader (degrade.py) makes an Atd of the same layout from it, with
 BAR-ATH's gaps in the ball, and serves that through MatchInputs with its own profile and seed, which name where the
 tracking came from in the manifest and in `cache_dir`. Nothing is written there: the inputs are held in memory, and
 cache_dir only says where the pipeline would look for anything it cached for this (match, profile, seed).

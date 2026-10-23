@@ -26,10 +26,11 @@ scored, compared with the first, with one JSON report each); score.py scores the
 counts into the official scorer's number (HalfScore, score_halves, pooled, per_match) and holds the match-level
 statistics (t_interval, sign_flip_p, compare, kendall_tau); configs/ holds the yardsticks, the organisers' four baselines
 as per-half configs; degrade.py makes the tracking of a match look like ours from a view of it that has no truth in it
-(TrackingView, rng_for, the `gaps` profile: our own missing-ball masks, transplanted, and the `tracking` profile, work
-in progress, which adds our tracklets and slots to the players) and fidelity.py measures how far it got, with
-calibration.py's own statistics functions (gates that must pass, warnings that are discussed). README.md here
-says how to download the data, run a config and read what comes out.
+(TrackingView, rng_for, four profiles: `clean`, DFL's tracking as it is; `gaps`, our own missing-ball masks,
+transplanted; `tracking`, the default, which adds our tracklets, slots and counts to the players; and `context`, whose
+ball gaps a hazard fitted on our match draws, a sensitivity check only because it fails two of its gates, R005) and
+fidelity.py measures how far it got, with calibration.py's own statistics functions (gates that must pass, warnings
+that are discussed). README.md here says how to download the data, run a config and read what comes out.
 
 The self-checks live in checks/, one module per topic, and selftest.py is the harness that collects and runs them (to
 add a check, see checks/__init__.py).

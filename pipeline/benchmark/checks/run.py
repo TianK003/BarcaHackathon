@@ -641,8 +641,9 @@ def test_runner_gaps_runs_on_degraded_tracking():
 def test_runner_default_profile_is_tracking_and_runs_it():
     """With no --profile the runner degrades with the tracking profile: its version 3, its Calibration, its report.
 
-    The default is the profile that looks most like our match (R004b); a run that does not name one is the same run as
-    one that names tracking, to the byte of its reports, and says tracking version 3 in the report and in the printout.
+    The default is the profile that looks most like our match, the one whose gates all pass (R004c; context is not it,
+    R005); a run that does not name one is the same run as one that names tracking, to the byte of its reports, and says
+    tracking version 3 in the report and in the printout.
     The synthetic Calibration here has the made-up tracking figures (common.tracking_calibration), whose counts and
     masks are as long as each other."""
     assert benchmark_run.DEFAULT_PROFILE == "tracking" and benchmark_run.PROFILES["tracking"] == 3

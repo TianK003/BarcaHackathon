@@ -1,18 +1,21 @@
-"""Self-checks for the P01 benchmark: the DFL registry, download, parsers and cache now; the rest later.
+"""Self-checks for the P01 benchmark: the DFL data, the truth, the degrader, the Calibration, the runner, fidelity.
 
     python pipeline/benchmark/selftest.py           # synthetic checks only -- seconds, no data needed
     python pipeline/benchmark/selftest.py --dfl     # + the 21 downloaded DFL files: size and md5 (reads 2.6 GB),
                                                     #   the 7 matches loaded through the cache, J03WMX's cache
                                                     #   compared with a fresh parse, J03WMX cross-checked against
                                                     #   kloppy and by frame number, the T30 counts on all 7
-                                                    #   matches, the truth's conventions on all 7 (A06), the 7
+                                                    #   matches, the truth's conventions, the public window's
+                                                    #   liveliness and the coarse truth on all 7 (A06), the 7
                                                     #   matches served through MatchInputs, J03WMX scored through
-                                                    #   predict and pooled() against pm.evaluate, and the oracle
-                                                    #   (the truth as the prediction) scoring 1.0 on all seven through
-                                                    #   the runner (measured: 532 s
-                                                    #   while the 7 caches are built under data/cache/dfl/, then 99 to
-                                                    #   221 s, 111 s with the last two included: the machine's load
-                                                    #   decides)
+                                                    #   predict and pooled() against pm.evaluate, the oracle (the
+                                                    #   truth as the prediction) scoring 1.0 on all seven through
+                                                    #   the runner, no pool of slots running out on any of the 7
+                                                    #   under the tracking profile, and no slot changing player
+                                                    #   between two adjacent rows on J03WMX under it
+                                                    #   (test_dfl_a_slot_never_changes_player_on_a_real_match); the
+                                                    #   first run builds the 7 caches under data/cache/dfl/, which
+                                                    #   takes minutes more: the machine's load decides
     python pipeline/benchmark/selftest.py --data    # + checks that read the real match's data (aggregates only): the
                                                     #   calibration reproduces A01's, A02's and R001's figures, the
                                                     #   hazard of our ball gaps is fitted again and printed (A08),
@@ -158,8 +161,12 @@ def main(argv=None, modules=None):
                         help="also check the downloaded DFL files: size and md5 of all 21 (reads 2.6 GB), parse the 7 "
                              "match information files, load the 7 matches through the cache, compare J03WMX's "
                              "cache with a fresh parse, cross-check J03WMX against kloppy and by frame number, "
-                             "count T30's facts on all 7, and measure the truth's conventions on all 7 (A06) "
-                             "(measured: 532 s while the caches are built, then 99 to 221 s)")
+                             "count T30's facts on all 7, measure the truth's conventions, the public window's "
+                             "liveliness and the coarse truth on all 7 (A06), serve the 7 through MatchInputs, score "
+                             "J03WMX through predict against pm.evaluate, run the oracle on all 7 (it must score 1.0), "
+                             "and check on the real matches that no pool of slots runs out and that no slot of "
+                             "J03WMX changes player between two adjacent rows (the first run builds the caches: "
+                             "minutes more)")
     parser.add_argument("--data", action="store_true", help="also run the checks that read the real match's data")
     args = parser.parse_args(argv)
 

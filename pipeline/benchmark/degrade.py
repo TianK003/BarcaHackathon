@@ -13,7 +13,8 @@ as bad as ours, and fidelity.py measures with the Calibration's own statistics f
               The ball's speed is NaN everywhere (our speed channel is NaN on 92% of the frames that have a ball: T31).
               The players are untouched.
     context   the tracking profile's players, exactly (the cap's draws included), and a ball whose gaps are placed where
-              OURS were lost, by a hazard fitted on our own match, instead of copied in time from it (below).
+              OURS were lost, by a hazard fitted on our own match, instead of transplanted from it: its pattern, not
+              its clock (below).
     tracking  the gaps' ball, exactly, and the players broken up the way ours are: tracked spans and lost spans, and
               46 anonymous slots that tracklets take and leave; a wrong-team slot now and then, NaN speeds in runs and
               positions smoothed; and, since version 2, our frames with few players tracked, by a cap, no piece shorter
@@ -70,11 +71,11 @@ visible and the nearest player's agreement as warnings, and prints the statistic
 The ball is missing where the mask says so, and where DFL has no ball itself (a row with none stays NaN). Position x
 and y are removed together, as an Atd requires (atd_cache._check_presence). Every array of a degraded Atd is read-only.
 
-The context profile (version 1; context_probabilities, _context_ball, HAZARD_SCALE). The transplant copies our gaps in
-time and ignores the play; this profile places them where our tracker loses the ball: at the lines and on slow balls,
-with few players near it (A07, A08). The players are the tracking profile's, exactly (the same draws, the cap's
-included), and the ball's gaps are drawn from the hazard that the Calibration fitted on our own match (hazard.py): the
-chance, on each frame, that the next frame starts a gap.
+The context profile (version 1; context_probabilities, _context_ball, HAZARD_SCALE). The transplant copies the pattern
+of our gaps, not their clock, and ignores the play; this profile places them where our tracker loses the ball: at the
+lines, on slow balls and where players crowd round the ball (A07, A08). The players are the tracking profile's, exactly
+(the same draws, the cap's included), and the ball's gaps are drawn from the hazard that the Calibration fitted on our own
+match (hazard.py): the chance, on each frame, that the next frame starts a gap.
 
 * The features (hazard.features) are those of the CLEAN DFL ball, visible on every row it has, and of the DEGRADED
   players (the slots of the Atd, NaN where nobody is), in metres from a pitch corner on the match's own pitch, for each
@@ -91,8 +92,8 @@ chance, on each frame, that the next frame starts a gap.
   its third of the half the one of that frame's minute, and its length one of our own for that class and third,
   max(1, round(seconds * fps)) frames at the match's rate (context_durations). The mask is taken out of the ball by the
   gaps profile's own function (_remove_ball): x and y together, the speed NaN everywhere.
-* What it keeps and what it loses, against `tracking`. It keeps where ours loses the ball (lines, slow balls, a ball
-  with few players near it), and it ties the gaps to the DFL play, so a dead ball is as likely to be missing as the
+* What it keeps and what it loses, against `tracking`. It keeps where ours loses the ball (lines, slow balls, a crowd
+  of players round the ball), and it ties the gaps to the DFL play, so a dead ball is as likely to be missing as the
   hazard makes it. It loses the coupling between the cap and the gaps: `tracking` reads the counts and the mask from one
   window of ours, so both follow our camera, and here the cap reads a window of ours and the gaps are drawn from the
   play. The hazard is a logistic model of six features fitted on 143 onsets of one match, and DFL tracks the ball out
@@ -106,7 +107,8 @@ in ours: under the lowest-free rule (below) a player who comes back after a lost
 the time (860 of 1,247 returns, J03WMX, seed 0, with the wrong-team episodes on, as in version 1: R004), and a slot
 idles between two tracklets for a median of 2.3 s (59.7% of its gaps last at most 3 s and 3.8% over 60 s), where ours
 idles for 7.4 s (17.7% at most 3 s, 15.0% over 60 s: A09, R004). Before the episodes were added it was 76.0%, 2.0 s,
-67.1% and none over 60 s (A09): the same code with the scale at 0 gives those again. No evidence source reads a slot's
+67.1% and none over 60 s (A09: version 1 drew those, with the episodes off; version 3's slot rule does not give them
+again). No evidence source reads a slot's
 identity today, beyond nearest_player's argmin on exact ties, which goes to the lower slot; but a method that follows a
 slot across a loss would be validated optimistically here. The cap of version 2 (below) drops players and so breaks slot
 identity further: test_data_tracking_profile_on_a_real_match_with_our_real_calibration prints the figures with it.
@@ -1179,17 +1181,20 @@ def degrade(view, profile, calibration, seed):
 
     `calibration` is the Calibration of BAR-ATH (calibration.load()): the gaps, tracking and context profiles need it, the
     clean one does not use it. The Atd has the BAR-ATH cache's own layout (inputs.clean_atd), every array read-only, and the
-    length of the match; the tracking profile's has 46 slots (slot_team) where the others have one per DFL player.
+    length of the match; the tracking and context profiles' have 46 slots (slot_team) where the others have one per DFL
+    player.
     `info` is JSON-ready and holds no frame of anybody: {"profile", "version", "seed", "match_id", "match_index"} and,
     for gaps and tracking, "transplants" ({half: {"source_half", "offset", "frames"}}) and "mask_share": the share of
     the frames that the transplant covers where the transplanted mask says the ball is missing. It is the mask's
     share, not the ball's after it: a ball that DFL itself has no frame for is missing as well. For tracking also
     "players": the parameters and the counts of the tracklets, episodes and NaN runs (_players_record). For context,
-    the same "players" (the tracking profile's, byte for byte), "transplants" (the draws that its cap reads: no mask is
+    the same "players" (the tracking profile's, byte for byte), "tracking_version" (the version of tracking's players
+    that they are built from: CONTEXT_TRACKING_VERSION), "transplants" (the draws that its cap reads: no mask is
     transplanted) and "ball": the scale, c and the counts of the hazard's draws (_context_ball). ValueError for
     a profile that is not in PROFILES, for a seed that is not a whole number of at least 0, for a profile that needs
     the Calibration without one (or, for tracking, without the fields it reads: calibrated_parameters; for context,
-    without CONTEXT_FIELDS), and for a pool of slots with no free slot (choose_tracklets).
+    without CONTEXT_FIELDS, or with a hazard that does not go: its hazard_go is False, A08), and for a pool of slots
+    with no free slot (choose_tracklets).
     """
     if profile not in PROFILES:
         raise ValueError("profile {!r} is not one of: {}".format(profile, ", ".join(sorted(PROFILES))))

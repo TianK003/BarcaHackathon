@@ -24,8 +24,10 @@ the share with 14 or fewer present +-0.02 (these three on full-strength frames, 
 tracklet median +-50% and the NaN-speed share +-0.01. For context, those eight and the share of the gaps that start
 within 2 m of a line +-0.05, pooled as near-line onsets over interior gaps (the centre is the Calibration's
 near_line_share, on the kick-off spans). A gate is printed as measured, centre, tolerance, and pass or FAIL; a FAIL makes
-the command exit 1, and the profile is not frozen until it passes. Every gate of `tracking` counts since version 2,
-which has the low-count tail (the cap, degrade.cap_pieces).
+the command exit 1. A profile can be the runner's default only if all its gates pass: tracking's do (R004c), and context
+fails two of its nine (R005, the near-line share badly and the missing share narrowly), so it is kept, frozen as it is
+(§B14), as a sensitivity check. Every gate of `tracking` counts since version 2, which has the low-count tail (the cap,
+degrade.cap_pieces).
 
 Full strength (COUNT_GATES). The three gates about how many slots are present (exactly 22, the mean, 14 or fewer) are
 measured on the full-strength frames only: the frames, inside the same spans, where the clean DFL match has exactly 22
@@ -52,8 +54,9 @@ match should show anyway: the nearest player's agreement with the truth on alive
 the public window's 77.8%, by the same pipeline.evidence.describe), the share of dead frames on which the ball is
 visible, and, for each yardstick config, the possessions it outputs per graded minute and its D share (against what the
 four yardsticks output on ours). A miss is a WARN that results.md discusses. Some misses are no fault of the degradation
-(the truth's conventions differ from ours, A06), and some are what the profile does not model: its gaps are drawn
-without looking at the play, so what ties ours to it (a dead ball being likelier to be missing, say) is not in them.
+(the truth's conventions differ from ours, A06), and some are what the profile does not model: the gaps of `gaps` and
+`tracking` are drawn without looking at the play, so what ties ours to it (a dead ball being likelier to be missing,
+say) is not in them; `context` draws them from the play, by the hazard (A08).
 The bands are:
 
     nearest agreement      +-0.05      dead-ball ball visible share   +-0.10
@@ -185,8 +188,10 @@ def report(profile, seeds=DEFAULT_SEEDS, match_ids=None, matches=None, calibrati
     visibility and the four yardsticks' outputs. `calibration` is the Calibration of BAR-ATH, calibration.load() if
     none is given. One match is in memory at a time.
 
-    Returns {"profile", "seeds", "matches", "calibration", "gates", "checks", "statistics", "draws", "players_draws",
-    "full_strength", "passed", "warnings", "notes"}. "gates" is a list of {name, text, measured, centre, tolerance,
+    Returns {"profile", "seeds", "matches", "calibration", "git", "gates", "checks", "statistics", "draws",
+    "players_draws", "ball_draws", "full_strength", "passed", "warnings", "notes"}. "profile" is degrade.profile_record's
+    (name and version, and for context the version of tracking's players too) and "git" is {commit, dirty} of the code
+    that ran, as the runner's reports hold it. "gates" is a list of {name, text, measured, centre, tolerance,
     kind, status} (status pass, FAIL or pending: PENDING_GATES), "checks" a list of {name, measured, centre, band, kind,
     status} (ok or WARN), "passed" is whether no gate failed (a pending one is not counted) and "warnings" how many
     checks warn. "players_draws" is {} for a profile that draws nothing for its players and, for tracking and context, the counts

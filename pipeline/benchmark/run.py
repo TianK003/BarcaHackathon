@@ -54,11 +54,16 @@ evaluate_configs() is what the team chooses between methods with, so it is built
   tracking was degraded with, and a later run with a newer Calibration writes over the older report of the same name.
 
 The profiles (degrade.py). The tracking is served to every config as an Atd made by degrade.degrade from a TrackingView
-of the match, which has no flag of the truth. "gaps", the default, is what looks like our match so far: the ball is
-missing where ours was (the Calibration's masks, transplanted), so nearest_player votes on fewer frames, majority_vote
-has D to give, and the scores are no longer those of a ball that is always there. It needs the Calibration of BAR-ATH
-(calibration.load, measured once and cached), which evaluate_configs loads unless it is given one, and whose digest goes
-into every report. "clean" needs none.
+of the match, which has no flag of the truth. There are four (PROFILES, each with the version of its recipe, which a
+report holds). "clean" is DFL's tracking as it is and needs no Calibration. "gaps" has the ball missing where ours was
+(the Calibration's masks, transplanted), so nearest_player votes on fewer frames, majority_vote has D to give, and the
+scores are no longer those of a ball that is always there. "tracking", the default (version 3), adds the players broken
+up as ours are (tracked spans and lost spans, 46 anonymous slots, a wrong-team slot now and then, NaN speeds in runs and
+our frames with few players tracked): it is the profile whose gates all pass (R004c). "context" has tracking's players
+and a ball whose gaps a hazard fitted on our match draws; it fails two of its gates (R005), so it is a sensitivity check
+and not the yardstick, and the help, the printout and the report say so (SENSITIVITY_ONLY). Every profile but clean needs
+the Calibration of BAR-ATH (calibration.load, measured once and cached), which evaluate_configs loads unless it is
+given one, and whose digest goes into every report.
 
 What the clean profile is. The tracking exactly as DFL gives it: the ball is present on every frame, so nearest_player
 votes everywhere and majority_vote, which takes D only where nobody voted, labels almost nothing D, where the truth has
@@ -171,8 +176,10 @@ def make_atd(match, profile, seed, calibration=None):
 
     The match is handed to the degrader as a TrackingView, which has the tracking and no flag of the truth
     (degrade.py), and degrade.degrade makes the Atd: "clean" is DFL's tracking as it is (nothing is degraded, so the
-    seed and the calibration are not used) and "gaps" has our ball's missing masks transplanted onto it, which needs
-    `calibration`. BenchmarkError, listing the profiles there are, for any other name.
+    seed and the calibration are not used); "gaps" has our ball's missing masks transplanted onto it; "tracking" adds
+    the players broken up as ours are (tracklets, slots, a wrong-team slot now and then, NaN speeds, a cap on the frames
+    where ours tracks few); "context" has tracking's players and a ball whose gaps the hazard fitted on our match draws.
+    Every profile but clean needs `calibration`. BenchmarkError, listing the profiles there are, for any other name.
     """
     _check_profile(profile)
     return degrade.degrade(degrade.tracking_view(match), profile, calibration, seed)[0]
@@ -190,10 +197,11 @@ def evaluate_configs(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_id
     """Run each config on each match and score it; the result holds a JSON-ready report per config.
 
     `config_paths` are TOML files for pipeline.config.load_config; the first is the reference of the comparisons.
-    `profile` names how the tracking is made (PROFILES) and `seeds` is how many degradation seeds to run, 0 up to
-    seeds - 1 (None, the default, is DEFAULT_SEEDS). The clean profile has none to repeat: its one seed is 0, and a
-    note says so when a number of seeds was asked for (and is not 1) and not otherwise. `match_ids` are the
-    matches, in the order to run them (default: all seven, sources.MATCH_IDS' order); they are read through
+    `profile` names how the tracking is made (PROFILES; the default is tracking) and `seeds` is how many degradation
+    seeds to run, 0 up to seeds - 1 (None, the default, is DEFAULT_SEEDS). The clean profile has none to repeat: its one
+    seed is 0, and a note says so when a number of seeds was asked for (and is not 1) and not otherwise. `match_ids` are
+    the matches, in the order to run them (default: all seven, sources.MATCH_IDS' order; a report lists them in id order
+    whatever order they ran in); they are read through
     dfl.load_match from `data_dir` (default games.DATA_DIR). `matches` is {id: DflMatch} to use instead of loading (the
     checks pass synthetic ones). `calibration` is the Calibration of BAR-ATH that a degraded profile takes its gaps
     from; none given, calibration.load(data_dir) reads it from its cache or measures it, before the first match; the
