@@ -1984,7 +1984,10 @@ spans and the tolerances the plan's; nothing was changed after looking at it. Po
 The six gates on the players pass and equal R004c's `tracking` v3 figures to the last digit (the players are v3's, draw
 for draw); of the two on the gaps, the median gap passes (11.88 s; v3's 10.76 s) and the share missing fails (v3's
 0.4189 passed). `near_line_share` is the ninth gate, the one that `context` adds: the share of the gaps that begin
-within 2 m of a line at the frame before them, counted the way A08 counts our own gaps (40 of our 143 onsets). The
+within 2 m of a line at the frame before them, counted the way A08 counts our own gaps (40 of our 143 onsets).
+`tracking` has no such gate, and its own share is 0.3597 (the information row of its fidelity report; R003: 36.0% on the
+same ball), outside +-0.05 of ours too: the gate was pre-registered for `context`, the profile that claims to place the
+gaps by the play, and the transplant is blind to it by design. The
 count gates are measured on full-strength frames (T36: 818,710 of 1,002,644 frames,
 81.7%). The statistics beside the gates, benchmark against ours (information): gaps per 10,000 frames 9.57 against 9.36,
 gap length p10 / median / p90 5.40 / 11.88 / 31.52 s against 2.68 / 10.74 / 35.30 s.
@@ -2145,12 +2148,17 @@ v3 had 0.0002 apart under the raw truth).
   flatters such a method more, and not how far either flatters it beyond our match.
 - **`context` is not a better copy of our match than `tracking` v3, on the figures we can measure.** It was built to be
   nearer in one respect: its gaps follow the play in the model's six features, as ours do, which `tracking`'s copied
-  masks cannot. The near-line gate says that the way it does so is not ours (v3 has no such gate, and its near-line
-  share was not measured). On the two whole-match figures that both profiles have, it is further from ours than v3: the
-  share missing (0.4313 against 0.4110, where v3's 0.4189 passes) and the median gap (11.88 s against our 10.74 s, v3's
-  10.76 s). On the ball visible on dead frames it is further from the public window's figure (0.4622, against v3's
-  0.5684 and the window's 0.6637), and that is a distance from the window, not from the match (see the warning above).
-  No profile of the benchmark is ours, and on the share missing and the median gap this one is not nearer.
+  masks cannot. The near-line gate says that the way it does so is not ours, and v3 is not nearer on that count either:
+  its near-line share is 0.3597 against our 0.2797 (+0.0800, outside the gate's +-0.05; the information row
+  `near_line_onset_share` of `fidelity.py --profile tracking --seeds 3`, and R003's 36.0% on the same ball), so
+  `context`'s 0.5586 is further out, and **the default profile is outside the band too**. The gate is `context`'s alone,
+  as pre-registered: only `context` claims to place the gaps by the play, the transplant is blind to it by design, and
+  no gate was added to `tracking`. On the two whole-match figures that both profiles have, `context` is further from
+  ours than v3: the share missing (0.4313 against 0.4110, where v3's 0.4189 passes) and the median gap (11.88 s against
+  our 10.74 s, v3's 10.76 s). On the ball visible on dead frames it is further from the public window's figure (0.4622,
+  against v3's 0.5684 and the window's 0.6637), and that is a distance from the window, not from the match (see the
+  warning above). No profile of the benchmark is ours, and on the share missing and the median gap this one is not
+  nearer.
 - Per-seed yardstick scores were not computed for `context`, and the draws are not the same as v3's (the ball's mask is
   from another generator), so the pairing is over the matches and says nothing of the seeds.
 
