@@ -638,7 +638,9 @@ match's truth (the oracle; the file-to-truth link is A05's and A06's), and that 
 yardsticks.
 
 ### R003 — The four yardsticks on the benchmark's `gaps` profile (2026-10-23, Tian)
-Proposal: P01 · Commit: the one that adds this entry (the commit after it names the hash) · Commands: `python pipeline/benchmark/fidelity.py --profile gaps --seeds 3` first, whose gates passed, and then
+Proposal: P01 · Commit: `a8804bf` (the commit that adds this entry; the reports were first made on the working tree it
+was committed from, and the fidelity report and the eight run reports re-made on its clean tree, `dirty: false`, are the
+same to the last digit apart from the commit they name) · Commands: `python pipeline/benchmark/fidelity.py --profile gaps --seeds 3` first, whose gates passed, and then
 `python pipeline/benchmark/run.py pipeline/benchmark/configs/nearest_w50.toml pipeline/benchmark/configs/nearest_w0.toml pipeline/benchmark/configs/nearest_w25.toml pipeline/benchmark/configs/nearest_w125.toml --profile gaps --seeds 3`
 (the first config is the reference; run once more with `--truth coarse`, and `w25` first with `w125` second for the
 paired comparison of those two)
@@ -783,6 +785,8 @@ What the tables say, and what they do not:
   association, on the flicker of the nearest player or on slots that swap needs the `tracking` profile; one that rests on
   how a decoder smooths over a ball that is gone for ten seconds is what this profile can answer.
 
+Runtime: 20 s for `fidelity.py` on all seven matches and three seeds, and 18 s for each run of the four configs (7 matches x
+3 seeds x 4 configs), with the DFL caches and the Calibration cached; the same command twice writes the same bytes.
 Verdict: keep `gaps` v1 as the benchmark's profile, and the four yardsticks as its floor, not as candidates. The
 yardstick check passes in its robust part under both truths, and the profile reproduces what it was calibrated on
 (both gates). It does not make the truth's grain a non-issue: choose between `w125` and the others only where the raw and the
