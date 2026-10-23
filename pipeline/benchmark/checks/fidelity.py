@@ -18,6 +18,7 @@ import types
 
 import numpy as np
 
+from pipeline import run as pipeline_run
 from pipeline.benchmark import calibration, degrade, dfl, fidelity, run, sources
 from pipeline.benchmark import inputs as match_inputs
 from pipeline.benchmark import truth as truths
@@ -83,9 +84,11 @@ def test_fidelity_report_synthetic():
     with tempfile.TemporaryDirectory() as root:
         lines = []
         result = fidelity.report("gaps", seeds=SEEDS, matches=matches, calibration=cal, data_dir=root, log=lines.append)
-        assert sorted(result) == sorted(["profile", "seeds", "matches", "calibration", "gates", "checks", "statistics",
-                                         "draws", "players_draws", "ball_draws", "full_strength", "passed", "warnings",
-                                         "notes"])
+        assert sorted(result) == sorted(["profile", "seeds", "matches", "calibration", "git", "gates", "checks",
+                                         "statistics", "draws", "players_draws", "ball_draws", "full_strength",
+                                         "passed", "warnings", "notes"])
+        # The git state that the runner's reports hold (pipeline.run.git_state): which code made the figures.
+        assert result["git"] == pipeline_run.git_state() and set(result["git"]) == {"commit", "dirty"}, result["git"]
         assert result["players_draws"] == {}, "gaps degrades no player"
         assert result["ball_draws"] == {}, "gaps places its gaps by a transplant, which draws no count of its own"
         assert result["profile"] == {"name": "gaps", "version": 1} and result["seeds"] == [0, 1]
@@ -839,9 +842,11 @@ def test_fidelity_report_is_written_where_its_name_says_and_the_same_every_time(
         assert sorted(os.listdir(os.path.dirname(path))) == sorted(
             ["fidelity_gaps" + SUBSET + ".s1.json", "fidelity_gaps" + SUBSET + ".s2.json"]), "no .tmp left"
         text = "\n".join(fidelity.render(result))
+        git = result["git"]
         for fragment in ("missing_share", "median_gap_s", "nearest_agreement", "dead_ball_visible_share",
                          "possessions_per_min:nearest_w50", "d_share:nearest_w125", "pass" if result["passed"]
-                         else "FAIL", "calibration " + result["calibration"]["sha256"][:12], "half-draws"):
+                         else "FAIL", "calibration " + result["calibration"]["sha256"][:12], "half-draws",
+                         "commit " + (git["commit"] or "?") + (" +dirty" if git["dirty"] else "")):
             assert fragment in text, (fragment, text)
 
 

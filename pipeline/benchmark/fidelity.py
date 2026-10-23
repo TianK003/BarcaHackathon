@@ -91,6 +91,7 @@ import numpy as np  # noqa: E402
 
 import games  # noqa: E402
 from pipeline import evidence, output  # noqa: E402  (importing pipeline also puts evaluation/ on sys.path)
+from pipeline import run as pipeline_run  # noqa: E402
 from pipeline.benchmark import calibration as calibration_module  # noqa: E402
 from pipeline.benchmark import degrade, dfl, run  # noqa: E402
 from pipeline.benchmark import inputs as match_inputs  # noqa: E402
@@ -275,6 +276,7 @@ def report(profile, seeds=DEFAULT_SEEDS, match_ids=None, matches=None, calibrati
         "matches": list(ids),
         "calibration": {"sha256": calibration_module.digest(calibration),
                         "version": calibration_module.CALIBRATION_VERSION},
+        "git": pipeline_run.git_state(),                 # which code made these figures, as the runner's reports say
         "gates": gates,
         "checks": _checks(pool, calibration),
         "statistics": statistics(pool, calibration),
@@ -622,10 +624,13 @@ def _round(value):
 
 def render(result):
     """The lines that the command prints: the gates, the checks, the statistics, and the verdict."""
+    profile, git = result["profile"], result["git"]
+    versions = "version {}".format(profile["version"]) + (
+        ", on tracking version {}".format(profile["tracking_version"]) if "tracking_version" in profile else "")
     lines = ["",
-             "fidelity of profile {} (version {})   {} matches   seeds {}   calibration {}...".format(
-                 result["profile"]["name"], result["profile"]["version"], len(result["matches"]),
-                 ",".join(str(seed) for seed in result["seeds"]), result["calibration"]["sha256"][:12]),
+             "fidelity of profile {} ({})   {} matches   seeds {}   calibration {}...   commit {}{}".format(
+                 profile["name"], versions, len(result["matches"]), ",".join(str(seed) for seed in result["seeds"]),
+                 result["calibration"]["sha256"][:12], git["commit"] or "?", " +dirty" if git["dirty"] else ""),
              "", "gates (centre = our Calibration's value, measured on the kick-off spans; the plan's tolerance)",
              "  {:<18}{:>12}{:>12}{:>12}   {}".format("gate", "measured", "centre", "+-", "status")]
     for gate in result["gates"]:
