@@ -140,23 +140,25 @@ which absorbs every possession under 5 s that sits between two possessions of th
 a minute; the 5 s rule was written before the numbers were seen and blind to our match, A06). It is a sensitivity
 check, not a correction, and a ranking that differs between the two truths is a warning.
 
-**Profiles.** A profile says how a DFL match's tracking is made before a config sees it. Each adds one part of ours to
-the one before, and its version goes into every report.
+**Profiles.** A profile says how a DFL match's tracking is made before a config sees it. Each of the first three adds
+one part of ours to the one before, `context` keeps `tracking`'s players and replaces its ball, and the version of a
+profile goes into every report.
 
 | profile | the ball | the players | entry |
 |---|---|---|---|
 | `clean` v1 | DFL's, on every frame | DFL's, one slot per player | R002, the floor |
 | `gaps` v1 | missing as ours was: our own missing-ball masks, transplanted onto each half (their pattern, not their clock); its speed NaN (T31) | untouched | R003 |
 | `tracking` v3, **the default as of R004c** | `gaps`' ball, byte for byte | our tracklet lengths in 46 slots, wrong-team slots (T32), NaN-speed runs, 5-frame smoothing, and our low-count frames (only the players nearest the ball) | R004 to R004c |
-| `context` v1, **sensitivity only** | the gaps placed where our tracker loses the ball: a hazard fitted on our match (A08) | `tracking`'s | R005: fails the near-line gate |
+| `context` v1, **sensitivity only** | the gaps placed where our tracker loses the ball: a hazard fitted on our match (A08) | `tracking`'s | R005: fails two of its gates |
 
 Version 3 (R004c) changed one rule of version 2, so that a slot is taken by a new tracklet only from the row after its
 last one stopped, and derived the scale of the tracked spans again by the same one-shot rule, because the slot rule
 moved its measurement (2.042 to 2.072; T37). All eight gates pass, no check warns and the ranking does not move. What
 moved is the account of the jitter, 1.80 cm per slot after smoothing, where R004b's 8.5 cm was slot handovers (T35).
-`context` fails its near-line gate, 0.5586 of its gaps starting within 2 m of a line against our 0.2797 (+-0.05),
-because DFL tracks the ball out of play (R005, section 6). That gate binds only `context`: the default's transplanted
-gaps measure 36.0% on the same statistic (R003). `context` is a sensitivity check, the default stays `tracking`, and the
+`context` fails two of its gates (R005, section 6): the near-line share badly, 0.5586 of its gaps starting within 2 m
+of a line against our 0.2797 (+-0.05), because DFL tracks the ball out of play, and the share missing narrowly, 0.4313
+against 0.4110 (+-0.02). The near-line gate binds only `context`: the default's transplanted gaps measure 36.0% on the
+same statistic (R003). `context` is a sensitivity check, the default stays `tracking`, and the
 four yardsticks keep their order on it.
 
 **Fidelity, as of R004c** (`tracking` v3: 7 matches x 3 seeds, `fidelity.py --profile tracking`, which exits 0). A gate
@@ -242,8 +244,9 @@ benchmark cannot show is in section 6.
   tracked out of play and so spends more time near the lines (R003, R005), and the ball is visible on 0.5684 of the
   dead frames against 0.6637 in the public window (R003). A method that depends on where the gaps fall is validated on
   gaps that ignore the play.
-- **`context` does not fix that, and why.** It places the gaps by the play and fails its own near-line gate (the
-  default has none) on every seed, 0.5586 against 0.2797 (+-0.05): DFL tracks the ball out of play, so 25.2% of its
+- **`context` does not fix that, and why.** It places the gaps by the play and fails two of its gates: the near-line
+  one (the default has none) on every seed, 0.5586 against 0.2797 (+-0.05), and the share missing narrowly (0.4313
+  against 0.4110, +-0.02). The first is the data's doing: DFL tracks the ball out of play, so 25.2% of its
   at-risk rows are within 2 m of a line against 9.0% of ours, while the model's probability rises near a line by a
   similar factor on both (3.9 on DFL's rows, 2.9 on ours). No scale of the hazard moves it and no remedy was applied.
   It stays a sensitivity profile, and its numbers are not set beside `tracking`'s without saying so (R005).
@@ -271,3 +274,15 @@ python3.11 -m venv .venv                     # Windows: py -3.11 -m venv .venv
 
 Expected sha256 of `main.csv`: `<…>` (the run prints it). Runtime: about 20 s the first time, which includes parsing
 the tracking into `data/cache/` once, then a few seconds per run, on [hardware].
+
+The validation benchmark of section 5 is reproduced separately and is not needed for the CSV (the
+[benchmark README](../pipeline/benchmark/README.md) has the rest; reports go to `data/runs/benchmark/`):
+
+```bash
+.venv/bin/python -m pip install -r requirements-benchmark.txt          # the pipeline's pins + lxml
+.venv/bin/python pipeline/benchmark/sources.py --verify               # the 21 DFL files, md5 (drop --verify to fetch)
+.venv/bin/python pipeline/benchmark/fidelity.py --profile tracking --seeds 3     # the gates and warnings of section 5
+.venv/bin/python pipeline/benchmark/run.py pipeline/benchmark/configs/nearest_w50.toml \
+    pipeline/benchmark/configs/nearest_w0.toml pipeline/benchmark/configs/nearest_w25.toml \
+    pipeline/benchmark/configs/nearest_w125.toml --profile tracking --seeds 3    # R004c; again with --truth coarse
+```

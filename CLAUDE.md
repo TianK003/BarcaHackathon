@@ -71,7 +71,7 @@ python pipeline/run.py CONFIG --out ../team_name.csv    # CSVs only to evaluatio
 python pipeline/selftest.py                             # contract + equivalence checks on synthetic data (seconds)
 python pipeline/selftest.py --data                      # + the 4 committed baselines rebuilt byte for byte
 
-python pipeline/benchmark/sources.py [--verify]         # P01: fetch (or only check) the 7 DFL matches, 2.6 GB, md5
+python pipeline/benchmark/sources.py [--verify] [--data-dir D]   # P01: fetch (or only check) the 7 DFL matches, md5
 python pipeline/benchmark/run.py CONFIG [CONFIG ...]    # configs on the benchmark; the first is the reference
 python pipeline/benchmark/run.py CONFIG ... --truth coarse   # the same under the coarse truth; read both together
 python pipeline/benchmark/fidelity.py --profile tracking --seeds 3   # gates + WARNs: the copy against our match
@@ -96,9 +96,9 @@ The scorer writes `evaluation/scoreboard.csv` and `evaluation/reports/<name>.jso
 (organisers only) or a CSV path.
 
 The benchmark's `run.py` takes `--profile clean|gaps|tracking|context` (default `tracking`, version 3 as of R004c;
-`context` is a sensitivity check only, it fails its own near-line gate, R005) and `--truth raw|coarse`; `fidelity.py`
+`context` is a sensitivity check only, it fails two of its gates, R005) and `--truth raw|coarse`; `fidelity.py`
 takes `--profile gaps|tracking|context` (a profile that degrades nothing has no gates). Both take `--seeds N` (default
-3), `--matches ID ...`, `--data-dir D` and `--no-write`. Reports go to `data/runs/benchmark/`, caches to
+3), `--matches ID ...`, `--data-dir D` and `--no-write`; `sources.py` takes `--data-dir D` too. Reports go to `data/runs/benchmark/`, caches to
 `data/cache/`, and `fidelity.py` exits 1 if a gate fails.
 
 Run everything with the venv's interpreter — `.venv/Scripts/python` on Windows, `.venv/bin/python` on macOS/Linux —

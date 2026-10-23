@@ -559,8 +559,8 @@ RECORDED_NEAR_LINE = (0.5586, 0.2797)
 
 
 def test_default_profile_is_tracking_because_context_fails_a_gate():
-    """The runner's and the fidelity report's default profile is `tracking`, not `context`, because `context` fails its
-    near-line gate (R005).
+    """The runner's and the fidelity report's default profile is `tracking`, not `context`, because `context` fails two
+    of its gates (R005): the near-line share badly and the share missing narrowly.
 
     The rule (task 17, section B8): the default becomes `context` only if every one of its gates passes on all three
     seeds. It does not: the share of the gaps that start within 2 m of a line is 0.5586 against our 0.2797 +-0.05, and
@@ -578,7 +578,7 @@ def test_default_profile_is_tracking_because_context_fails_a_gate():
     assert (spec["tolerance"], spec["kind"]) == (0.05, "absolute") and "near_line_share" not in fidelity.PENDING_GATES
     assert abs(measured - centre) > spec["tolerance"], "the recorded share misses the gate: context is not the default"
     assert benchmark_run.DEFAULT_PROFILE == "tracking" != degrade.CONTEXT, (
-        "context fails its near-line gate (R005), so the default stays tracking")
+        "context fails two of its gates (R005), so the default stays tracking")
     assert benchmark_run.DEFAULT_PROFILE in degrade.PROFILES and degrade.PROFILES["context"] == 1
 
 

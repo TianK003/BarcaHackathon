@@ -218,9 +218,10 @@ after its last one stopped, which removed the slot handovers that had inflated t
 eight gates pass and none of the ten checks warns ([R004c](../docs/results.md)).
 
 **`context` is a sensitivity check, not a default.** It places the ball's gaps where our tracker loses the ball
-([A08](../docs/results.md)) and fails its own near-line gate, 0.5586 against our 0.2797 +-0.05, because DFL tracks the
-ball out of play ([R005](../docs/results.md)); the default's transplanted gaps measure 36.0% on the same statistic
-(R003), but only `context` has a gate on it. So `run.DEFAULT_PROFILE` stays `tracking`. Run `context` to see whether a
+([A08](../docs/results.md)) and fails two of its gates ([R005](../docs/results.md)): the near-line share badly, 0.5586
+against our 0.2797 +-0.05, because DFL tracks the ball out of play, and the share missing narrowly, 0.4313 against
+0.4110 +-0.02; the default's transplanted gaps measure 36.0% on the near-line statistic (R003), but only `context` has a
+gate on it. So `run.DEFAULT_PROFILE` stays `tracking`. Run `context` to see whether a
 ranking depends on how the gaps are placed, and say so when you quote it or set its number beside another profile's:
 `context` and `tracking` v3 order the four configs the same way under both truths (Kendall tau +1.000), and every config
 scores 0.3 to 2.2 points of spellF1 higher on `context` (R005). `run.py --profile clean|gaps|tracking|context` picks a

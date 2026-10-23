@@ -148,7 +148,7 @@ half's kick-off, A07). Where it is given, its median is 1.3 m/s against 4.8 m/s 
 positions, and its correlation with that speed is at most 0.11 at any lag (the 2026-10-22 measurement, P01's plan): it
 behaves like a player's speed, not the ball's. Compute the ball's speed from successive positions (`hazard.features`
 does) and never read `atd.ball_speed`: a feature built on it is missing on nine frames in ten and noise on the tenth.
-The benchmark's degraded tracking is to set `ball_speed` to NaN everywhere for this reason. T28 says the speed channel
+The benchmark's degraded tracking sets `ball_speed` to NaN everywhere for this reason. T28 says the speed channel
 is not presence; this says it is not the ball's speed either.
 
 **T32 — A slot can carry the other team's player.** After an identity switch a slot keeps its team in the metadata while
@@ -241,9 +241,11 @@ an `.npy` name fails inside numpy's `NpzFile`, after `np.load` has handed the fi
 `ResourceWarning` on Linux and macOS; on Windows the rebuild that follows an unreadable cache, which rewrites the file,
 dies with `PermissionError` while the exception is still alive). Open the file yourself and give `np.load` the handle
 (`with open(path, "rb") as handle: np.load(handle, allow_pickle=False)`), as `dfl._read_array` does.
-`calibration._read_array` and `pipeline/inputs/atd_cache.py` still pass a path to `np.load`, and neither catches
-`zipfile.BadZipFile`, so a zip cut short under an `.npy` name raises there instead of rebuilding (nothing makes such a
-file; a note for whoever next edits those two).
+`calibration._read_array` does the same now: it opens the file, and a zip cut short under an `.npy` name is a cache
+that is rebuilt, not a `BadZipFile` (`test_calibration_cache_is_keyed_and_unreadable_means_absent` damages one).
+`pipeline/inputs/atd_cache.py` still passes a path to `np.load` and does not catch `zipfile.BadZipFile`, so there a zip
+cut short under an `.npy` name raises instead of rebuilding (nothing makes such a file; a note for whoever next edits
+it).
 
 ## Rules and data handling
 

@@ -69,7 +69,7 @@ Week 4: feature freeze **Fri 13 Nov**; regenerate the file from a clean clone on
 ### P01 — A validation set we can trust
 
 **Status: done → [R002](results.md) to [R005](results.md).** The benchmark's default profile is `tracking` version 3
-([R004c](results.md)). `context` fails its near-line gate and is a sensitivity profile only ([R005](results.md)).
+([R004c](results.md)). `context` fails two of its gates and is a sensitivity profile only ([R005](results.md)).
 The overview is the [benchmark README](../pipeline/benchmark/README.md), and the technical document's section 5 has
 the design and the fidelity table.
 
@@ -118,8 +118,9 @@ to look like our ATD and run through our own pipeline.
      cannot be measured on ours, and a crowd around the ball raises the hazard too, less than the lines and slow balls
      do (A08). A transplanted mask is still placed without looking at the play: 36.0% of its gaps start within 2 m of a
      line against our 28.0% (R003). The `context` profile (R005) places the gaps with a hazard fitted on our own tracker
-     (A08) and **fails its near-line gate**, a gate that binds only it: 0.5586 against our 0.2797 +-0.05, because DFL
-     tracks the ball out of play, so a quarter of its at-risk rows are near a line against 9% of ours. It stays a
+     (A08) and **fails two of its gates**: the near-line share badly, a gate that binds only it (0.5586 against our
+     0.2797 +-0.05, because DFL tracks the ball out of play, so a quarter of its at-risk rows are near a line against 9%
+     of ours), and the missing share narrowly (0.4313 against 0.4110 +-0.02). It stays a
      sensitivity check, the default stays `tracking`, and the four yardsticks keep their order on `context` under both
      truths (R005).
    - **Break identities** into anonymous, team-labelled tracklets that appear, vanish and swap ([T15](traps.md); the
@@ -303,8 +304,8 @@ This is the backbone that everything else plugs into.
 - Measure on P01's **simulated ball gaps**, where the truth is known, and check against the public window's
   ball-missing frames (few: 6.5% of its in-play frames). Real gaps are harder than the `gaps` profile's, which are
   transplanted with their pattern and not their clock, and not placed by the play: ours start near the lines and on
-  slow balls, with more players around the ball (A08). The `context` profile (R005) places them that way, fails its
-  own near-line gate and is a sensitivity check only, so the benchmark's default still has gaps that are blind to the
+  slow balls, with more players around the ball (A08). The `context` profile (R005) places them that way, fails
+  two of its gates and is a sensitivity check only, so the benchmark's default still has gaps that are blind to the
   play.
 - Feed the probabilities into P06.
 

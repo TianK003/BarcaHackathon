@@ -23,7 +23,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R004 | 2026-10-23 | the same four yardsticks on the benchmark's `tracking` profile: our players' tracklets and slots, wrong-team slots, NaN-speed runs and smoothing on top of `gaps`' ball | — | — | — | 0.2000 raw (`w50`), 0.2195 coarse (`w125`); `w0` last under both | `tracking` v1 frozen as it is: the five counted gates pass and `fidelity.py` exits 0; its three count gates stay pending because they depend on the low-count tail, which v2 adds (exactly 22 present: 0.5631 of the full-strength frames against 0.5019 +-0.06; about 0.503 after the tail, an estimate that assumes its cap is placed by our counts), no WARN; the yardstick check holds, no order changes from `gaps` |
 | R004b | 2026-10-23 | the same four yardsticks on `tracking` version 2: R004's players plus our low-count frames (a cap that keeps the players nearest the ball), no piece shorter than 8 frames and the walk's tracked spans rescaled once | — | — | — | 0.1989 raw (`w50`), 0.2173 coarse (`w125`); `w0` last under both | `tracking` v2 frozen, `fidelity.py` exits 0: all eight gates pass (the three on how many slots are present are gates now: exactly 22 present 0.4938 against 0.5019 +-0.06, mean 20.60 against 20.52 +-0.5, 14 or fewer 0.0469 against 0.0525 +-0.02), no WARN; the yardstick check holds and the ranking does not move from R004 (the four configs move by 0.4 points of spellF1 at most) |
 | R004c | 2026-10-23 | the same four yardsticks on `tracking` version 3: R004b's players, but a slot is taken by a new tracklet only from the row after its last one stopped (versions 1 and 2 let it take the slot on the row it was freed), and the walk's tracked spans rescaled again, 2.042 to 2.072 | — | — | — | 0.2018 raw (`w50`), 0.2226 coarse (`w125`); `w0` last under both | `tracking` v3 frozen, `fidelity.py` exits 0: all eight gates pass (exactly 22 present 0.4925 against 0.5019 +-0.06, mean 20.60 against 20.52 +-0.5, 14 or fewer 0.0469 against 0.0525 +-0.02, tracklet median 26.52 s against 41.28 s, -36%), no WARN; the yardstick check holds and the ranking does not move from R004b (no config moves by more than 0.6 points of spellF1); the jitter per slot after smoothing is 1.80 cm and not R004b's 8.5 cm: that was the slot handovers and not DFL's jumps (T35) |
-| R005 | 2026-10-23 | the same four yardsticks on the `context` profile: `tracking` v3's players, and the ball's holes placed by a hazard fitted on our own match (A08: the line, the ball's speed, the players near it, the minute) instead of transplanted from our masks with their pattern and not their clock | — | — | — | 0.2193 raw (`w50`), 0.2443 coarse (`w125`); `w0` last under both | **`context` v1 fails two gates**, so `DEFAULT_PROFILE` stays `tracking`: the gaps that start within 2 m of a line 0.5586 against our 0.2797 +-0.05 (on each seed: DFL tracks the ball out of play, so a quarter of its at-risk rows are near a line against 9% of ours) and the share missing 0.4313 against 0.4110 +-0.02 (pooled, by 0.0003, and on seed 2), and one WARN (the ball visible on dead frames 0.4622 against the public window's 0.6637, which is not the match's; `tracking` v3 0.5684); no fix, no second rescale; the order of the four configs is `tracking` v3's under both truths (Kendall tau +1.000 between the two profiles' orders on pooled spellF1, +0.667 against the published order under each), and every config scores 0.3 to 2.2 points higher; sensitivity only; fails the near-line gate |
+| R005 | 2026-10-23 | the same four yardsticks on the `context` profile: `tracking` v3's players, and the ball's holes placed by a hazard fitted on our own match (A08: the line, the ball's speed, the players near it, the minute) instead of transplanted from our masks with their pattern and not their clock | — | — | — | 0.2193 raw (`w50`), 0.2443 coarse (`w125`); `w0` last under both | **`context` v1 fails two gates**, so `DEFAULT_PROFILE` stays `tracking`: the gaps that start within 2 m of a line 0.5586 against our 0.2797 +-0.05 (on each seed: DFL tracks the ball out of play, so a quarter of its at-risk rows are near a line against 9% of ours) and the share missing 0.4313 against 0.4110 +-0.02 (pooled, by 0.0003, and on seed 2), and one WARN (the ball visible on dead frames 0.4622 against the public window's 0.6637, which is not the match's; `tracking` v3 0.5684); no fix, no second rescale; the order of the four configs is `tracking` v3's under both truths (Kendall tau +1.000 between the two profiles' orders on pooled spellF1, +0.667 against the published order under each), and every config scores 0.3 to 2.2 points higher; sensitivity only; fails two of its gates |
 
 ### The four yardsticks on every profile, in one table
 
@@ -58,9 +58,9 @@ Bold is the first of the four. For comparison, the published full-match scores (
   spellF1 at most); superseded by R004c, which corrected its account of the jitter (T35).
 - **`tracking` v3 (R004c), the default:** all eight gates and all ten checks pass; no order moves from R004b (no config
   by more than 0.6 points); the jitter per slot is 1.80 cm and not R004b's 8.5 cm, which was slot handovers (T35).
-- **`context` v1 (R005):** fails its own near-line gate (0.5586 against 0.2797 +-0.05; `tracking` v3's transplanted
-  gaps measure 36.0% on it, R003, but have no gate) and the share missing pooled, so it is a sensitivity check and not
-  the default; it gives `tracking` v3's order under both truths (Kendall tau +1.000 between the two profiles' orders)
+- **`context` v1 (R005):** fails two of its gates, the near-line share badly (0.5586 against 0.2797 +-0.05;
+  `tracking` v3's transplanted gaps measure 36.0% on it, R003, but have no gate) and the share missing narrowly
+  (0.4313 against 0.4110 +-0.02, pooled), so it is a sensitivity check and not the default; it gives `tracking` v3's order under both truths (Kendall tau +1.000 between the two profiles' orders)
   with every config 0.3 to 2.2 points higher.
 
 What every row says: `w0` is last under both truths, and the rest of the order follows the truth. The raw truth puts
@@ -192,6 +192,12 @@ rows, the second half starts at row 70,733).
 - **Fields that are missing:** none of X, Y, S, Z, BallPossession or BallStatus is missing on any ball or player frame
   of J03WMX, and no row lacks a ball frame; the same holds for all seven matches (below), and in all seven no player
   frame lies outside the two halves (0 dropped).
+- **Bench players** (2026-10-23, aggregates only). The position arrays have a column for every squad member (40, 40,
+  39, 40, 40, 40 and 40 for J03WMX, J03WN1, J03WOH, J03WOY, J03WPY, J03WQQ and J03WR9), and a column of a player who
+  never had a position is NaN on every row: 8, 11, 7, 8, 9, 9 and 9 of them (home and away: 4 and 4, 4 and 7, 4 and 3,
+  4 and 4, 5 and 4, 5 and 4, 5 and 4), so 7 to 11 a match. Method: `np.load` of `players_xy.npy` and `player_team.npy`
+  of each match's folder under `data/cache/dfl/`, and a count of the columns whose x is NaN on all rows. `nearest_player`
+  ignores an absent slot, and the degrader walks only the players who have positions (`degrade.py`).
 
 Ball frames, by match, from the same parse (`rows w/o ball`, `no possession` and `no status` are 0 everywhere, and the
 parser refuses a possession that is not 1 or 2, so a clean parse is a 0 for that too):
@@ -938,7 +944,10 @@ changed after, whatever the warnings said). The two gates:
 | median gap in the ball | 10.76 s | 10.74 s | +-1.5 s | pass |
 
 The share per (match, seed) runs from 0.3927 to 0.4402. The 42 half-draws (7 matches x 3 seeds x 2 halves) took 21 masks
-from our first half and 21 from our second, at offsets from 0 to 11,222 frames.
+from our first half and 21 from our second, at offsets from 0 to 11,222 frames. In 3 of the 42 the benchmark half is
+longer than the mask it drew (J03WPY's second half under seed 2, J03WR9's under seeds 1 and 2: 77,080 and 78,456 frames
+against our second half's 76,456), so its offset is 0 and the mask goes on round its last 7,500 frames from its end
+(`degrade.transplant`); counted again on 2026-10-23 from the draws and the lengths of the DFL halves, aggregates only.
 
 The ten warning checks (WARN is printed and discussed here; none was tuned towards):
 
