@@ -540,7 +540,8 @@ Verdict: keep as the base everyone builds on (see [pipeline/README.md](../pipeli
 R000c, not a candidate.
 
 ### R002 — The four yardsticks on the benchmark's clean profile (2026-10-23, Tian)
-Proposal: P01 · Commit: the commit that adds this entry (its sha is filled in by the next commit) · Command:
+Proposal: P01 · Commit: `e479764` (the commit that adds this entry; run on its clean tree, so the reports say
+`dirty: false`, and an earlier run on the working tree gave the same tables to the last digit) · Command:
 `python pipeline/benchmark/run.py pipeline/benchmark/configs/nearest_w50.toml pipeline/benchmark/configs/nearest_w0.toml pipeline/benchmark/configs/nearest_w25.toml pipeline/benchmark/configs/nearest_w125.toml`
 (the first config is the reference; run once more with `--truth coarse`)
 Public: not applicable; no BAR-ATH data is read.
