@@ -3,6 +3,7 @@
     python pipeline/benchmark/sources.py                       # fetch what is missing or damaged, then it is all ok
     python pipeline/benchmark/sources.py --verify              # check size and md5 of what is on disk, download nothing
     python pipeline/benchmark/sources.py --matches J03WMX ...  # only these matches
+    python pipeline/benchmark/sources.py --data-dir DIR        # into DIR/external/dfl (default: data/, or $MTAH_DATA_DIR)
 
 Why these files
 ---------------
@@ -89,8 +90,11 @@ _PINNED = {
                "positions": (51643532, 372934140, "e060bb7d7a5a3bfbd15bbf9bc631024d")},
 }
 
-# The number of ball frames in each positions file, both halves together. The parser (a later task) checks what it
-# read against these, so a parse that comes out differently fails loudly instead of shifting every label.
+# The number of ball frames in each positions file, both halves together. The parser does not read it: dfl.load_match
+# compares only each file's size with the registry's (a hand-copied or other-version file is refused there) and
+# sources.py --verify the md5; these counts are checked by checks/dfl.py (test_dfl_all_matches_load for all seven,
+# test_dfl_positions_one_match for J03WMX) against what the parse reads, so that a parse that comes out differently
+# fails there instead of shifting every label.
 EXPECTED_BALL_FRAMES = {"J03WMX": 145967, "J03WN1": 141561, "J03WOH": 137214, "J03WOY": 142536,
                         "J03WPY": 146211, "J03WQQ": 142345, "J03WR9": 146810}
 
@@ -165,7 +169,8 @@ def download(files=None, data_dir=None, opener=None, log=print):
 
     A file that already passes its size and md5 is left alone and costs no request. Anything else is downloaded;
     a damaged file is removed first, so a download that fails leaves nothing at the final path. `log` gets one line
-    per file, and one more when figshare fails and the mirror is tried. `opener(request, timeout=...)` is
+    for a file that is ok, and two for one that is fetched (when it starts and when it is in place), and one more
+    when figshare fails and the mirror is tried. `opener(request, timeout=...)` is
     urllib.request.urlopen by default; it is a parameter so that the checks can serve bodies from memory through
     this same code.
     """
@@ -278,7 +283,10 @@ def main(argv=None, data_dir=None):
     parser.add_argument("--matches", nargs="+", choices=MATCH_IDS, metavar="ID",
                         help="only these matches (default: all {}); choices: {}".format(len(MATCH_IDS),
                                                                                        ", ".join(MATCH_IDS)))
+    parser.add_argument("--data-dir", help="the data bundle (default: data/, or $MTAH_DATA_DIR); the files go under "
+                                           "DIR/external/dfl, as run.py and fidelity.py read them")
     args = parser.parse_args(argv)
+    data_dir = args.data_dir or data_dir
     files = select(args.matches)
 
     if args.verify:

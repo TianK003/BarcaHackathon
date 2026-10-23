@@ -346,6 +346,37 @@ def test_cli_verify_lists_the_files_and_fails_when_one_is_not_ok():
         assert leftovers(root) == [], "--verify must download nothing and write nothing"
 
 
+def test_cli_takes_the_data_dir_as_a_flag():
+    """--data-dir names the bundle as run.py's and fidelity.py's flag does: --verify looks there and nowhere else.
+
+    A file of the wrong size put where the registry keeps J03WMX's match information under the folder `root` is found
+    there ("size") and the other two are missing; the flag is in the parser's help beside MTAH_DATA_DIR, which is what
+    the default follows (games.DATA_DIR); and a data dir in the argument list wins over main's own `data_dir`."""
+    from pipeline.benchmark import dfl, sources
+    remote = sources.FILES["J03WMX"]["information"]
+    with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as other:
+        present(remote, root, GOOD_BODY)
+        shown = io.StringIO()
+        with contextlib.redirect_stdout(shown):
+            code = sources.main(["--verify", "--matches", "J03WMX", "--data-dir", root])
+        text = shown.getvalue()
+        assert code == 1 and text.count("missing") == 2 and text.count("size") == 1, text
+        assert sources.external_dir(root) in text, "the summary says where it looked: " + text
+        shown = io.StringIO()
+        with contextlib.redirect_stdout(shown):
+            code = sources.main(["--verify", "--matches", "J03WMX", "--data-dir", other], data_dir=root)
+        assert code == 1 and shown.getvalue().count("missing") == 3, "the flag wins over main's own data_dir"
+        assert leftovers(other) == [], "--verify must download nothing and write nothing"
+        helped = io.StringIO()
+        with contextlib.redirect_stdout(helped):
+            try:
+                sources.main(["--help"])
+            except SystemExit as stop:
+                assert stop.code == 0, stop.code
+        assert "--data-dir" in helped.getvalue() and "MTAH_DATA_DIR" in helped.getvalue(), helped.getvalue()
+    assert "MTAH_DATA_DIR" in dfl.FETCH_ADVICE and "--data-dir" in dfl.FETCH_ADVICE, dfl.FETCH_ADVICE
+
+
 def test_cli_rejects_an_unknown_match():
     from pipeline.benchmark import sources
     with contextlib.redirect_stderr(io.StringIO()) as shown:

@@ -90,8 +90,10 @@ from pipeline.benchmark import sources
 MATCH_ID_PREFIX = "DFL-MAT-"             # General@MatchId reads "DFL-MAT-J03WMX"; we say "J03WMX" everywhere else
 ROLE_TEAM = {"home": 0, "guest": 1}      # Team@Role -> Player.team; DFL's "guest" is our away
 TOTAL_TIME_ATTRIBUTE = {1: "TotalTimeFirstHalf", 2: "TotalTimeSecondHalf"}  # half -> OtherGameInformation attribute
-FETCH_ADVICE = "run python pipeline/benchmark/sources.py"
-VERIFY_ADVICE = "the download is probably damaged, so {} --verify to check it".format(FETCH_ADVICE)
+FETCH_COMMAND = "python pipeline/benchmark/sources.py"
+# --data-dir DIR (or MTAH_DATA_DIR) is where the files go and are read from: without it, under data/.
+FETCH_ADVICE = "run {} (add --data-dir DIR, or set MTAH_DATA_DIR, if the data are not under data/)".format(FETCH_COMMAND)
+VERIFY_ADVICE = "the download is probably damaged, so run {} --verify to check it".format(FETCH_COMMAND)
 GAP_ROWS = 25                            # separator rows between the halves of a timeline (one second at 25 Hz)
 SECTIONS = {"firstHalf": 1, "secondHalf": 2}  # FrameSet@GameSection -> half, in time order
 FPS = 25                                 # the positions are sampled at 25 Hz (consecutive T differ by 40 ms)
@@ -321,6 +323,8 @@ def load_match(match_id, data_dir=None, rebuild=False, paths=None):
             " and ".join('"{}"'.format(kind) for kind in SOURCE_KINDS), sorted(paths)))
     for kind in SOURCE_KINDS:
         _require_file(paths[kind])
+    if match_id in sources.FILES:
+        _require_pinned_size(match_id, paths)
 
     from pipeline.inputs.atd_cache import describe_source  # here, not above: it pulls in pandas and the starter loaders
     folder = os.path.join(data_dir or games.DATA_DIR, *CACHE_FOLDER, match_id)
@@ -350,6 +354,20 @@ def load_match(match_id, data_dir=None, rebuild=False, paths=None):
 def _require_file(path):
     if not os.path.isfile(path):
         raise FileNotFoundError("{}: no such file; {} to download the DFL data".format(path, FETCH_ADVICE))
+
+
+def _require_pinned_size(match_id, paths):
+    """ValueError, naming the first file, unless every file read has the byte size that sources.FILES pins for it.
+
+    A cheap guard, for a match of the registry only (the synthetic ones have no pinned file): a hand-copied file, one
+    of another version or one cut short would parse and score without a word otherwise. The md5 is sources.py
+    --verify's to check, and the count of ball frames checks/dfl.py's (test_dfl_all_matches_load)."""
+    for kind in SOURCE_KINDS:
+        pinned, size = sources.FILES[match_id][kind].size, os.path.getsize(paths[kind])
+        if size != pinned:
+            raise ValueError("{}: {:,} bytes, but the pinned {} file of {} has {:,}; it is not the file that the "
+                             "benchmark was built on, and a match read from it would score without a word; {}".format(
+                                 paths[kind], size, kind, match_id, pinned, VERIFY_ADVICE))
 
 
 def _syntax_error(path, error):

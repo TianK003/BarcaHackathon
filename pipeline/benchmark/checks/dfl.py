@@ -1039,6 +1039,50 @@ def test_match_cache_names_what_is_wrong():
         assert not os.path.exists(os.path.join(root, "cache")), "a refused match must not be cached"
 
 
+def test_load_match_refuses_a_registry_file_of_the_wrong_size_and_only_a_registry_one():
+    """A registry id's files must be the size that sources.FILES pins, each of the two read kinds, before any parse.
+
+    The cheap guard of load_match against a hand-copied file, a file of another version or one cut short: the size, which
+    costs nothing, and not the md5 (sources.py --verify reads that) and not the ball-frame count (test_dfl_all_matches_load
+    checks it on the real files). The error names the file and says to run sources.py --verify. Junk of the pinned size
+    passes the guard and then fails in the parser, which shows that the guard is what stops the others; a match outside
+    the registry (the synthetic ones) is not compared with anything, and leaves a cache as ever."""
+    from pipeline.benchmark import dfl, sources
+    remote = sources.FILES["J03WMX"]
+    with tempfile.TemporaryDirectory() as root:
+        for kind in dfl.SOURCE_KINDS:
+            os.makedirs(os.path.dirname(remote[kind].path(root)), exist_ok=True)
+            with open(remote[kind].path(root), "wb") as handle:
+                handle.write(b"<not the pinned file/>")
+        message = expect_error(ValueError, lambda: dfl.load_match("J03WMX", data_dir=root),
+                               remote["information"].path(root), "22 bytes", "{:,}".format(remote["information"].size),
+                               "--verify")
+        assert remote["positions"].path(root) not in message, "one file is named: the first that is wrong"
+        # The information file at its pinned size: the guard passes it, and the positions file is the one named.
+        with open(remote["information"].path(root), "wb") as handle:
+            handle.write(b" " * remote["information"].size)
+        message = expect_error(ValueError, lambda: dfl.load_match("J03WMX", data_dir=root),
+                               remote["positions"].path(root), "--verify")
+        assert remote["information"].path(root) not in message, message
+        assert not os.path.exists(os.path.join(root, "cache")), "a refused match must not be cached"
+        # Both at their pinned sizes (the registry made to pin the 22 bytes of the junk, as a 418 MB file is too much to
+        # write here): the sizes are right, so the parser is what says that the files are junk.
+        pinned = sources.FILES["J03WMX"]
+        sources.FILES["J03WMX"] = {kind: dataclasses.replace(pinned[kind], size=22) for kind in sources.KINDS}
+        try:
+            with open(remote["information"].path(root), "wb") as handle:
+                handle.write(b"<not the pinned file/>")
+            message = expect_error(ValueError, lambda: dfl.load_match("J03WMX", data_dir=root), "J03WMX", "--verify")
+            assert "bytes, but the pinned" not in message, "the size is right: " + message
+        finally:
+            sources.FILES["J03WMX"] = pinned
+    # Not a registry id: the files are whatever size they are.
+    with tempfile.TemporaryDirectory() as root:
+        paths, folder = cache_setup(root)
+        assert all(os.path.getsize(paths[kind]) != sources.FILES["J03WMX"][kind].size for kind in dfl.SOURCE_KINDS)
+        assert load_synthetic(root, paths).report["cache"] == "built" and os.path.isdir(folder)
+
+
 # -- the downloaded DFL files (--dfl) ---------------------------------------------------------------------------------
 
 def test_dfl_files_verified():
