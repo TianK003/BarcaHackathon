@@ -332,9 +332,10 @@ Every match and every half is above 60% (the check asserts it), so home is team 
 misaligned. The second halves are 4 points lower on average (six of the seven).
 
 The pipeline's own `nearest_player`, served through `MatchInputs` (`test_dfl_match_inputs_serve_the_real_matches`),
-names a team on every graded row of the seven matches (asserted; it prints 100.0% of the rows of each match, the 25
-rows per match it cannot answer being the ungraded gap between the halves), and differs from the brute-force team
-above on 1 row of the 1,002,819: J03WMX row 58523, a tie between the best home and the best away player. In
+names a team on every graded row of the seven matches. The check asserts that the rows it cannot answer are exactly
+the 25 gap rows between the halves of each (`dfl.GAP_ROWS`), that the seven timelines have 1,002,819 rows together, and
+that the rows where it differs from the brute-force team above are the one tie, J03WMX row 58523, a tie between the
+best home and the best away player (1 row of the 1,002,819); it prints 100.0% answered for each match. In
 `nearest_player`'s arithmetic their squared distances are exactly equal and `argmin` takes the lower slot, which is
 home; in the brute force's they are 5e-15 m² apart, with the away player nearer.
 

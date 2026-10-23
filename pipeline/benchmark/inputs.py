@@ -155,9 +155,11 @@ class MatchInputs(Inputs):
 def _dfl_cache_manifest(match, data_dir):
     """(its manifest, None) if the match's DFL cache under `data_dir` is of this match, else ({}, the reason why not).
 
-    "Of this match" is that the manifest's match_id, fps, pitch and graded are the match's own, and that it records its
-    sources: a hand-built match under a real id, or a cache folder copied under another id, is not served as made from
-    the files of the match whose id it carries.
+    "Of this match" is that the manifest's match_id, fps, pitch, graded and report are the match's own, and that it
+    records its sources: a hand-built match under a real id, or a cache folder copied under another id, is not served as
+    made from the files of the match whose id it carries. The report (the parse's counts) is the strongest of the keys:
+    the seven real caches share one pitch and one rate, and a hand-built match has the defaults of both. The match's
+    report has one entry more than the manifest's, "cache" (how this load went, built or reused), which is left out.
     """
     path = os.path.join(data_dir, *dfl.CACHE_FOLDER, match.match_id, dfl.MANIFEST)
     try:
@@ -174,9 +176,19 @@ def _dfl_cache_manifest(match, data_dir):
            "graded": [[int(value) for value in block] for block in match.graded]}
     differ = ["{} is {} and the manifest says {}".format(name, value, manifest.get(name))
               for name, value in own.items() if manifest.get(name) != value]
+    if _as_json({name: value for name, value in match.report.items() if name != "cache"}) != manifest.get("report"):
+        differ.append("the report (the parse's counts) is not the one the cache recorded")
     if differ:
         return {}, "the DFL cache manifest filed under {} is of another match: {}".format(
             match.match_id, "; ".join(differ))
     if not isinstance(manifest.get("sources"), dict):
         return {}, "the DFL cache manifest of {} records no sources".format(match.match_id)
     return manifest, None
+
+
+def _as_json(value):
+    """`value` as a manifest holds it, once written as JSON and read back (str keys, lists); None if it cannot be."""
+    try:
+        return json.loads(json.dumps(value))
+    except (TypeError, ValueError):
+        return None

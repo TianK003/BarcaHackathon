@@ -9,6 +9,7 @@ ours, which is the truth. The one that reads a downloaded match is test_dfl_* (-
 """
 
 import ast
+import collections
 import dataclasses
 import functools
 import json
@@ -36,6 +37,7 @@ ASSET_MESSAGE = ("{0}: the benchmark matches have no {0} -- the DFL open data co
 # distances must be for a row to count as a tie.
 EXPECTED_TIES = {"J03WMX": (58523,)}
 TIE_DISTANCE = 1e-9
+EXPECTED_ROWS = 1002819                # the rows of the seven timelines together: A06 says 1 tie of them
 # The folders of pipeline/ whose components see the inputs, and the package none of them may reach: it holds the
 # loader of the truth (dfl.load_match), and MatchInputs names the match (inputs.game).
 PIPELINE_FOLDER = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -116,35 +118,40 @@ def truth_forms(match):
 def held_by(value):
     """[(how it is reached, what is reached)] for what `value` holds, one level down; [] for what holds nothing.
 
-    A container's items, a numpy array's base (a view is the array it looks into) and, for an array of objects, its
-    elements; an object's attributes (its __dict__ and its __slots__, which is a dataclass's fields), and what a
-    function, a bound method and a functools.partial close over. Classes, modules and plain values hold nothing here.
+    A container's items (dict, mapping proxy, list, tuple, deque, set), a numpy array's base (a view is the array it
+    looks into) and, for an array of objects, its elements; and what a function, a bound method and a
+    functools.partial close over or are given. Then, for anything that is not a plain value, its attributes: the
+    __dict__ and the __slots__ (those of a class that declares them, and of a dataclass with slots=True; a plain
+    dataclass keeps its fields in __dict__). Classes, modules and plain values hold nothing. The members of a set are
+    all named "{member}", with no position: their order is the hash's, and an object's hash is its id.
     """
-    if isinstance(value, dict):
-        return [("[{!r}]".format(key), item) for key, item in value.items()]
-    if isinstance(value, (list, tuple, set, frozenset)):
-        return [("[{}]".format(number), item) for number, item in enumerate(value)]
-    if isinstance(value, np.ndarray):
-        held = [(".base", value.base)] if isinstance(value.base, np.ndarray) else []
-        return held + ([("[{}]".format(number), item) for number, item in enumerate(value.flat)]
-                       if value.dtype == object else [])
-    if isinstance(value, functools.partial):
-        return ([(".func", value.func)] + [(".args[{}]".format(number), item) for number, item in enumerate(value.args)]
-                + [(".keywords[{!r}]".format(key), item) for key, item in (value.keywords or {}).items()])
-    if isinstance(value, types.MethodType):
-        return [(".__self__", value.__self__), (".__func__", value.__func__)]
-    if isinstance(value, types.FunctionType):
-        held = [(".defaults[{}]".format(number), item) for number, item in enumerate(value.__defaults__ or ())]
+    if isinstance(value, (str, bytes, int, float, complex, range, type, types.ModuleType, np.generic, np.dtype)):
+        return []
+    held = []
+    if isinstance(value, (dict, types.MappingProxyType)):
+        held += [("[{!r}]".format(key), item) for key, item in value.items()]
+    elif isinstance(value, (set, frozenset)):
+        held += [("{member}", item) for item in value]
+    elif isinstance(value, (list, tuple, collections.deque)):
+        held += [("[{}]".format(number), item) for number, item in enumerate(value)]
+    elif isinstance(value, np.ndarray):
+        held += [(".base", value.base)] if isinstance(value.base, np.ndarray) else []
+        held += ([("[{}]".format(number), item) for number, item in enumerate(value.flat)]
+                 if value.dtype == object else [])
+    elif isinstance(value, functools.partial):
+        held += [(".func", value.func)] + [(".args[{}]".format(number), item) for number, item in enumerate(value.args)]
+        held += [(".keywords[{!r}]".format(key), item) for key, item in (value.keywords or {}).items()]
+    elif isinstance(value, types.MethodType):
+        held += [(".__self__", value.__self__), (".__func__", value.__func__)]
+    elif isinstance(value, types.FunctionType):
+        held += [(".defaults[{}]".format(number), item) for number, item in enumerate(value.__defaults__ or ())]
         held += [(".kwdefaults[{!r}]".format(key), item) for key, item in (value.__kwdefaults__ or {}).items()]
         for name, cell in zip(value.__code__.co_freevars, value.__closure__ or ()):
             try:
                 held.append((".closure[{!r}]".format(name), cell.cell_contents))
             except ValueError:                                       # a cell that was never filled
                 pass
-        return held
-    if isinstance(value, (str, bytes, int, float, complex, range, type, types.ModuleType, np.generic, np.dtype)):
-        return []
-    held = [(".{}".format(name), item) for name, item in getattr(value, "__dict__", {}).items()]
+    held += [(".{}".format(name), item) for name, item in getattr(value, "__dict__", {}).items()]
     for cls in type(value).__mro__:
         slots = getattr(cls, "__slots__", ())
         for name in ((slots,) if isinstance(slots, str) else slots):
@@ -153,16 +160,32 @@ def held_by(value):
     return held
 
 
+def as_numbers(items):
+    """`items` (a list or tuple) as an int array if it is made of ints and bools only (a tolist() copy), else None."""
+    if all(isinstance(item, (bool, int, np.bool_, np.integer)) for item in items):
+        return np.array(items)
+    return None
+
+
 def leaks(inputs, match):
     """Where `inputs` holds the match or an array equal to its flags or its truth, however deep: [what, ...], sorted.
 
     Walks everything reachable from `inputs` (held_by), once each: a visited set keeps a cycle from running for ever.
-    A DflMatch is a finding by itself, an array of another dtype than object is compared with every form of the truth
-    (truth_forms), and a view is found through its base: `inputs.window.base == ball_possession`. What it cannot see is
-    a copy of a stretch that is not a whole array or a whole half, and anything made at run time that it does not
-    hold; test_components_import_nothing_from_the_benchmark closes the way to the match itself.
+    A DflMatch is a finding by itself; an array of another dtype than object, and a list or tuple of ints (a tolist()
+    copy) as long as one of the forms, are compared with every form of the truth (truth_forms); a view is found
+    through its base: `inputs.window.base == ball_possession`. Findings are sorted and without duplicates, so that they
+    do not depend on the order of a set.
+
+    What it does not see, so that nobody takes it for a proof. It is for an accidental leak: a component's author who
+    kept the match, or its flags, in a field, a cache, a closure or a view. It does not see a copy of a stretch that
+    is not a whole array or a whole half; a copy in another representation (bytes or a memoryview, letter codes such
+    as "H" and "A", a column of shape (n, 1), a pandas Series, floats, a set of numbers); a copy that is not equal to
+    a form (a smoothed one, a rolling window); an attribute computed by a property or a __getattr__ at the moment it
+    is read; anything built at run time that the inputs do not hold; and the match itself reached by an import or by
+    name. test_components_import_nothing_from_the_benchmark closes the plain import, with its own limits.
     """
     forms = truth_forms(match)
+    lengths = {array.shape[0] for array in forms.values()}
     found, seen, kept = [], set(), []
     pending = [("inputs", inputs)]
     while pending:
@@ -174,11 +197,14 @@ def leaks(inputs, match):
         if isinstance(value, dfl.DflMatch):
             found.append(path)
             continue
-        if isinstance(value, np.ndarray) and value.dtype != object:
-            found += ["{} == {}".format(path, form) for form, array in forms.items()
-                      if value.shape == array.shape and np.array_equal(value, array)]
+        array = value if isinstance(value, np.ndarray) and value.dtype != object else None
+        if array is None and isinstance(value, (list, tuple)) and len(value) in lengths:
+            array = as_numbers(value)
+        if array is not None:
+            found += ["{} == {}".format(path, form) for form, other in forms.items()
+                      if array.shape == other.shape and np.array_equal(array, other)]
         pending += [(path + how, item) for how, item in held_by(value)]
-    return sorted(found)
+    return sorted(set(found))
 
 
 # -- the contract -----------------------------------------------------------------------------------------------------
@@ -284,19 +310,45 @@ class Holder:
         return self.held
 
 
+class Slotted:
+    """An object with __slots__ and no __dict__: what it keeps is not in vars()."""
+    __slots__ = ("held",)
+
+    def __init__(self, held):
+        self.held = held
+
+
+@dataclasses.dataclass(slots=True)
+class SlottedBox:
+    """A dataclass with slots=True: its fields are slots, and only then."""
+    held: object
+
+
 def planted_leaks(match):
     """{what is hidden and where: plant(probe)}: ways to leave the truth in a MatchInputs below its first level.
 
     The review of Task 7 planted six that vars(inputs) and vars(inputs.atd) did not see (a match in the manifest, the
     flags in a list, the codes in a dict, the match in a tuple, in a namespace, a slice of the possession); the others
-    are of the same kind: the match or a flag array held in a container, in an object, behind a view, in an array of
-    objects, or behind a function that closes over it.
+    are of the same kind: the match or a flag array held in a container (a set, a deque, a mapping proxy, a list of
+    numbers), in an object (with __slots__ or not), behind a view, in an array of objects, in an attribute of a
+    function or a partial, or behind a function that closes over it.
     """
     codes, _ = truth.truth_codes(match)
     flags = np.array(match.ball_status)
 
     def in_atd(probe):                                    # an Atd is frozen: a field it does not declare is set by hand
         object.__setattr__(probe.atd, "debug", {"flags": [flags]})
+
+    def on_function(probe):
+        def lookup():
+            return None
+        lookup.match = match
+        probe.lookup = lookup
+
+    def on_partial(probe):
+        lookup = functools.partial(dict)
+        lookup.match = match
+        probe.lookup = lookup
 
     return {
         "a match in the manifest": lambda probe: probe.atd_manifest.update(debug=match),
@@ -314,6 +366,16 @@ def planted_leaks(match):
         "the match in a closure": lambda probe: setattr(probe, "lookup", lambda: match),
         "the match in a bound method": lambda probe: setattr(probe, "lookup", Holder(match).get),
         "the flags in a partial": lambda probe: setattr(probe, "lookup", functools.partial(dict, flags=flags)),
+        "the match in an attribute of a function": on_function,
+        "the match in an attribute of a partial": on_partial,
+        "the match in an object with __slots__": lambda probe: setattr(probe, "boxed", Slotted(match)),
+        "the match in a dataclass with slots": lambda probe: setattr(probe, "boxed", SlottedBox(match)),
+        "the match in a set": lambda probe: setattr(probe, "members", frozenset({Holder(match)})),
+        "the flags in a deque": lambda probe: setattr(probe, "queue", collections.deque([flags])),
+        "the match behind a mapping proxy": lambda probe: setattr(
+            probe, "view", types.MappingProxyType({"match": match})),
+        "the flags as a list of numbers": lambda probe: setattr(probe, "numbers", match.ball_status.tolist()),
+        "the codes as a tuple of numbers": lambda probe: setattr(probe, "numbers", tuple(codes.tolist())),
     }
 
 
@@ -331,7 +393,7 @@ def test_leak_detector_looks_at_every_depth():
     def fresh():
         return match_inputs.MatchInputs(match, match_inputs.clean_atd(match))
 
-    assert len(planted_leaks(match)) == 14
+    assert len(planted_leaks(match)) == 23
     for what, plant in planted_leaks(match).items():
         probe = fresh()
         plant(probe)
@@ -346,6 +408,9 @@ def test_leak_detector_looks_at_every_depth():
     assert leaks(clean, match) == [], "a cycle of containers or of the inputs itself is not a leak"
     clean.window, clean.speeds = match.players_xy[10:50], [match.ball_speed[:100], (match.ball_z,)]
     clean.names = {"home": "H", "away": "A", "sizes": (1, 2.5, None, True)}
+    clean.counts, clean.names_of_frames = list(range(match.n_frames)), ["H"] * match.n_frames
+    clean.members, clean.queue = frozenset({1, "x", (2, 3)}), collections.deque([match.players_xy[:5]])
+    clean.slotted, clean.lookup = Slotted(match.ball_z), functools.partial(dict, speed=match.ball_speed)
     assert leaks(clean, match) == [], "views and containers of the tracking are not the truth"
 
     # The finding names where it is, so that a failure says what to remove.
@@ -358,6 +423,19 @@ def test_leak_detector_looks_at_every_depth():
     probe = fresh()
     planted_leaks(match)["a slice of the possession"](probe)
     assert leaks(probe, match) == ["inputs.window.base == ball_possession"], leaks(probe, match)
+    # A member of a set is named without a position (its order is the hash's, which is the id's for an object): the
+    # same name in every run.
+    probe = fresh()
+    planted_leaks(match)["the match in a set"](probe)
+    assert leaks(probe, match) == ["inputs.members{member}.held"], leaks(probe, match)
+    for what, name in (("the match in an object with __slots__", "inputs.boxed.held"),
+                       ("the match in a dataclass with slots", "inputs.boxed.held"),
+                       ("the match in an attribute of a function", "inputs.lookup.match"),
+                       ("the match in an attribute of a partial", "inputs.lookup.match"),
+                       ("the flags as a list of numbers", "inputs.numbers == ball_status")):
+        probe = fresh()
+        planted_leaks(match)[what](probe)
+        assert leaks(probe, match) == [name], (what, leaks(probe, match))
 
 
 # -- no way round the guard: the components do not import the benchmark ----------------------------------------------
@@ -368,8 +446,13 @@ def benchmark_imports(source, package):
     Import statements, absolute or relative (resolved against `package`, so `from ..benchmark import dfl` in
     pipeline.evidence is found, and so is `from .. import benchmark`), a string that is the package's name (what
     importlib.import_module and __import__ take), and a dotted attribute chain that starts with it (`pipeline.benchmark
-    .dfl.load_match` after a plain `import pipeline`). A name built at run time is not seen: the walk of leaks() is
-    the guard for that.
+    .dfl.load_match` after a plain `import pipeline`).
+
+    It is for an accidental import, not a determined one. It does not see a name that is never whole in the source:
+    `__import__("pipeline", fromlist=["benchmark"])`, `importlib.import_module("benchmark", package="pipeline")` or
+    `import_module(".benchmark", "pipeline")`, `getattr(pipeline, "benchmark")`, "pipeline." + "benchmark", a name read
+    from a file or the environment; nor a module that loads another by path (`runpy`, `importlib.util`). The walk of
+    leaks() is the second line against what such a component would then get from the inputs, and no more.
     """
     found = set()
     for node in ast.walk(ast.parse(source)):
@@ -390,6 +473,35 @@ def benchmark_imports(source, package):
         found.update((node.lineno, name) for name in names
                      if name == BENCHMARK_PACKAGE or name.startswith(BENCHMARK_PACKAGE + "."))
     return sorted(found)
+
+
+def scan_components(root=PIPELINE_FOLDER, folders=COMPONENT_FOLDERS):
+    """({folder: how many modules were scanned}, ["folder/module.py:line name", ...]) for the component folders of root.
+
+    Every .py file under each folder, however deep, is read as a module of the package that its path says
+    (pipeline.evidence, pipeline.refine.deeper, ...). ValueError for a folder that is not there or has no
+    __init__.py: a misspelt or renamed folder would scan nothing, and nothing found is what a clean scan gives too.
+    """
+    scanned, found = {}, []
+    for folder in folders:
+        top = os.path.join(root, folder)
+        if not os.path.isfile(os.path.join(top, "__init__.py")):
+            raise ValueError("{}: no folder of components with an __init__.py there; fix COMPONENT_FOLDERS, or the "
+                             "folder".format(top))
+        scanned[folder] = 0
+        for here, dirs, files in os.walk(top):
+            dirs.sort()
+            for name in sorted(files):
+                if not name.endswith(".py"):
+                    continue
+                path = os.path.join(here, name)
+                relative = os.path.relpath(path, root).replace(os.sep, "/")
+                package = ".".join(["pipeline"] + relative.split("/")[:-1])
+                with open(path, encoding="utf-8") as handle:
+                    found += ["{}:{} {}".format(relative, line, what)
+                              for line, what in benchmark_imports(handle.read(), package)]
+                scanned[folder] += 1
+    return scanned, found
 
 
 def test_import_scanner_finds_every_way_in():
@@ -434,25 +546,33 @@ def test_components_import_nothing_from_the_benchmark():
     The guard on the inputs is that MatchInputs holds no truth, but it names the match (`inputs.game`), and a component
     that imported dfl.load_match could read the flags itself, whatever the inputs hold. This closes that route: the
     components are the code a config runs, and none of them needs the benchmark. Every module of the three folders is
-    scanned (the folders must hold some, or this proves nothing).
+    scanned, and each folder must be there with its __init__.py and at least that module scanned: a folder that is
+    renamed, or spelt wrong in COMPONENT_FOLDERS, is an error and not a clean scan of nothing.
     """
-    scanned, found = 0, []
-    for folder in COMPONENT_FOLDERS:
-        top = os.path.join(PIPELINE_FOLDER, folder)
-        for here, dirs, files in os.walk(top):
-            dirs.sort()
-            for name in sorted(files):
-                if not name.endswith(".py"):
-                    continue
-                path = os.path.join(here, name)
-                relative = os.path.relpath(path, PIPELINE_FOLDER).replace(os.sep, "/")
-                package = ".".join(["pipeline"] + relative.split("/")[:-1])
-                with open(path, encoding="utf-8") as handle:
-                    found += ["{}:{} {}".format(relative, line, what)
-                              for line, what in benchmark_imports(handle.read(), package)]
-                scanned += 1
-    assert scanned >= 4, "only {} modules found under pipeline/{}".format(scanned, ", ".join(COMPONENT_FOLDERS))
+    scanned, found = scan_components()
+    assert list(scanned) == list(COMPONENT_FOLDERS) and all(count >= 1 for count in scanned.values()), scanned
+    assert scanned["evidence"] >= 2 and scanned["decode"] >= 2, scanned       # the package's and the components' own
     assert not found, "components that reach pipeline.benchmark (they could load the truth): {}".format(found)
+
+
+def test_component_scan_cannot_lose_a_folder_or_a_nested_module():
+    """scan_components fails on a folder that is not there, and finds a violation however deep it is."""
+    expect_error(ValueError, lambda: scan_components(folders=("evidence", "decode", "refin")), "refin", "__init__.py")
+    expect_error(ValueError, lambda: scan_components(folders=("evidence", "nowhere")), "nowhere")
+    with tempfile.TemporaryDirectory() as root:
+        for folder in COMPONENT_FOLDERS:
+            os.makedirs(os.path.join(root, folder, "deeper", "still"))
+        for relative, text in (("evidence/__init__.py", ""), ("decode/__init__.py", ""), ("refine/__init__.py", ""),
+                               ("evidence/clean.py", "from pipeline.contracts import Evidence\n"),
+                               ("decode/viaparent.py", "import pipeline.benchmark.dfl\n"),
+                               ("refine/deeper/still/buried.py", "from ....benchmark import dfl\n"),  # up to pipeline
+                               ("refine/deeper/notes.txt", "from pipeline.benchmark import dfl\n")):
+            write_text(os.path.join(root, os.path.dirname(relative)), os.path.basename(relative), text)
+        scanned, found = scan_components(root)
+        assert scanned == {"evidence": 2, "decode": 2, "refine": 2}, scanned    # the .txt is not a module
+        assert found == ["decode/viaparent.py:1 pipeline.benchmark.dfl",
+                         "refine/deeper/still/buried.py:1 pipeline.benchmark",
+                         "refine/deeper/still/buried.py:1 pipeline.benchmark.dfl"], found
 
 
 # -- clean_atd --------------------------------------------------------------------------------------------------------
@@ -560,14 +680,18 @@ def test_manifest_names_sources_only_of_the_match_it_serves():
 
     The cache is found by the match's id, so a hand-built match that carries a real id (or a cache copied under another
     one) would otherwise be reported as made from files it was not made from. The manifest's match_id, fps, pitch and
-    graded must be the match's own; then `sources` is copied, and `sources_reason` is None. Otherwise `sources` (and
-    the cache's version) is None and `sources_reason` says why: which of the four differ, or that there is no manifest,
-    that it cannot be read, or that it records no sources.
+    graded and report (the parse's counts, without the "cache" entry that says how this load went) must be the match's
+    own; then `sources` is copied, and `sources_reason` is None. Otherwise `sources` (and the cache's version) is None
+    and `sources_reason` says why: which of the five differ, or that there is no manifest, that it cannot be read, or
+    that it records no sources.
     """
     with tempfile.TemporaryDirectory() as root:
         source = os.path.join(root, "source")
         os.makedirs(source)
-        real = whole_positions(dfl.load_match("SYN001", data_dir=root, paths=write_synthetic_dfl(source)))
+        paths = write_synthetic_dfl(source)
+        real = whole_positions(dfl.load_match("SYN001", data_dir=root, paths=paths))
+        reused = whole_positions(dfl.load_match("SYN001", data_dir=root, paths=paths))
+        assert (real.report["cache"], reused.report["cache"]) == ("built", "reused")
         cache_root = os.path.join(root, "cache", "dfl")
         with open(os.path.join(cache_root, "SYN001", "manifest.json"), encoding="utf-8") as handle:
             cache = json.load(handle)
@@ -598,17 +722,23 @@ def test_manifest_names_sources_only_of_the_match_it_serves():
         assert tied["sources"] == cache["sources"] and tied["cache_version"] == cache["cache_version"]
         assert tied["sources_reason"] is None and (tied["match_id"], tied["profile"], tied["seed"]) == (
             "SYN001", "clean", 0)
+        assert manifest_of(reused) == tied, "'reused' in the match's report is how its load went, not part of the key"
 
         # A hand-built match under the real id: another pitch and other halves, the same rate and id.
         built = random_match(match_id="SYN001")
         assert (built.fps, built.match_id) == (real.fps, real.match_id) and built.pitch != real.pitch
-        reason = untied(built, names=("pitch", "graded"), absent=("fps", "match_id"))
+        reason = untied(built, names=("pitch", "graded", "report"), absent=("fps", "match_id"))
         assert "105.0" in reason and "104.5" in reason, reason
         # One difference at a time, each named and no other.
         untied(dataclasses.replace(real, fps=30), names=("fps",), absent=("pitch", "graded", "match_id"))
         untied(dataclasses.replace(real, pitch=(105.0, 68.0)), names=("pitch",), absent=("fps", "graded", "match_id"))
         moved = tuple((half, start + 1, stop) for half, start, stop in real.graded)
         untied(dataclasses.replace(real, graded=moved), names=("graded",), absent=("fps", "pitch", "match_id"))
+        # The report (the parse's own counts) is part of the key as well: on the real caches the pitch and the rate are
+        # the same for all seven, and a hand-built match differs from them in little else.
+        untied(dataclasses.replace(real, report={}), names=("report",), absent=("fps", "pitch", "graded", "match_id"))
+        counted = dict(real.report, ball_frames=real.report["ball_frames"] + 1)
+        untied(dataclasses.replace(real, report=counted), names=("report",), absent=("fps", "pitch", "graded"))
         # A cache filed under another id (a folder that was copied): only its match_id differs.
         filed_under("RND001", json.dumps(cache))
         untied(dataclasses.replace(real, match_id="RND001"), names=("match_id",), absent=("fps", "pitch", "graded"))
@@ -637,13 +767,15 @@ def test_dfl_match_inputs_serve_the_real_matches():
     slot, the home player's; in nearest_team's they are 5e-15 m2 apart and the away player is nearer. The check says
     so and requires that every row where the two differ is such a tie, and that there are no others. The comparison
     is not loosened for any other frame. It also requires that nearest_player names a team on every graded row of
-    every match (the rows it cannot answer are the ungraded gap between the halves), and prints the share of all rows.
+    every match; the rows it cannot answer are exactly the GAP_ROWS (25) between the halves of each,
+    and the seven timelines have EXPECTED_ROWS rows together (A06 quotes both). The share of all rows is printed.
     A hand-built match under each real id must not be reported as made from that match's files.
     """
     from pipeline.benchmark import sources
     from pipeline.contracts import RunContext
     from pipeline.evidence import REGISTRY
     print("      {:<8} {:>9} {:>11} {:>11}".format("match", "rows", "answered", "tie rows"))
+    total_rows = 0
     for match_id in sources.MATCH_IDS:
         match = real_match(match_id)
         inputs = match_inputs.MatchInputs(match, match_inputs.clean_atd(match))
@@ -661,7 +793,8 @@ def test_dfl_match_inputs_serve_the_real_matches():
         # manifest names no sources and says which of the cache's fields it differs in.
         built = random_match(match_id=match_id)
         manifest = match_inputs.MatchInputs(built, match_inputs.clean_atd(built)).atd_manifest
-        assert manifest["sources"] is None and "graded" in manifest["sources_reason"], manifest
+        assert manifest["sources"] is None and all(
+            name in manifest["sources_reason"] for name in ("graded", "report")), manifest
 
         evidence = REGISTRY["nearest_player"](RunContext(inputs=inputs, seed=0))
         nearest = truth.nearest_team(match)
@@ -679,6 +812,13 @@ def test_dfl_match_inputs_serve_the_real_matches():
         answered = ~np.isnan(evidence.home)
         assert answered[inputs.graded_mask].all(), "{}: nearest_player has no opinion on {} graded rows".format(
             match_id, int((~answered & inputs.graded_mask).sum()))
+        assert int((~answered).sum()) == dfl.GAP_ROWS, "{}: {} rows unanswered, the gap is {}".format(
+            match_id, int((~answered).sum()), dfl.GAP_ROWS)
+        total_rows += match.n_frames
         print("      {:<8} {:>9,} {:>11.1%} {:>11}".format(match_id, match.n_frames, answered.mean(), len(rows)))
         assert rows == EXPECTED_TIES.get(match_id, ()), "{}: the tied rows are {}, expected {}".format(
             match_id, rows, EXPECTED_TIES.get(match_id, ()))
+    print("      {:<8} {:>9,}   (the {} rows of each that nearest_player cannot answer are its gap between the "
+          "halves)".format("all", total_rows, dfl.GAP_ROWS))
+    assert total_rows == EXPECTED_ROWS, "the seven timelines have {:,} rows, A06 says {:,}".format(
+        total_rows, EXPECTED_ROWS)

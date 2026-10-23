@@ -424,17 +424,43 @@ def student_quantile(df, probability=0.95):
     return (low + high) / 2
 
 
-def brute_force_flip_p(deltas):
-    """The sign-flip p by itertools, in exact arithmetic: each delta is the decimal that it prints as, as a Fraction.
+def exact_flip_p(values):
+    """The sign-flip p by itertools, in exact arithmetic: nothing is rounded, so there is no tolerance.
 
-    Every pattern of signs, and the share whose sum is at least as far from 0 as the data's: no tolerance, because
-    nothing is rounded (0.1 + 0.2 is 0.3 here, and 0.4 + 0.2 - 0.2 is 0.4).
+    `values` are ints, Fractions or floats. A float is its exact binary value, so a decimal that must stay a decimal
+    is given as a Fraction: Fraction(3, 20) is 0.15, and 3 * 0.05 is 0.15000000000000002, which is not (an oracle
+    built from the floats would break exactly the ties that FLIP_TOLERANCE is there to keep). The values are scaled to
+    integers over their common denominator, every pattern of signs is summed in integers, and the share of patterns
+    whose sum is at least as far from 0 as the data's is returned.
     """
-    exact = [Fraction(repr(float(delta))) for delta in deltas]
-    observed = abs(sum(exact))
-    count = sum(1 for signs in itertools.product((1, -1), repeat=len(exact))
-                if abs(sum(sign * delta for sign, delta in zip(signs, exact))) >= observed)
-    return count / 2 ** len(exact)
+    exact = [Fraction(value.item() if hasattr(value, "item") else value) for value in values]
+    scale = math.lcm(*(fraction.denominator for fraction in exact))
+    whole = [int(fraction * scale) for fraction in exact]
+    observed = abs(sum(whole))
+    count = sum(1 for signs in itertools.product((1, -1), repeat=len(whole))
+                if abs(sum(sign * k for sign, k in zip(signs, whole))) >= observed)
+    return count / 2 ** len(whole)
+
+
+def tie_vectors(seed, n):
+    """[(how they are made, the floats sign_flip_p is given, their exact values)]: n deltas, in five families.
+
+    Four are multiples of a step, so that exact ties are everywhere, made as a caller's arithmetic would make them
+    (k * 0.05, k / 20, k / 10, k / 100: the float of k * 0.05 is not the one of k / 20); the fifth is normal draws,
+    which have none. The exact values are Fractions of the integers k, never of the floats.
+    """
+    rng = np.random.default_rng([8, 5, seed, n])
+    twentieths = rng.integers(-6, 7, size=n)
+    tenths = rng.integers(-5, 6, size=n)
+    hundredths = np.round(rng.normal(size=n) * 100).astype(np.int64)
+    normal = rng.normal(size=n)
+
+    def exact(ks, step):
+        return [Fraction(int(k), step) for k in ks]
+
+    return [("k * 0.05", twentieths * 0.05, exact(twentieths, 20)), ("k / 20", twentieths / 20, exact(twentieths, 20)),
+            ("k / 10", tenths / 10, exact(tenths, 10)), ("k / 100", hundredths / 100, exact(hundredths, 100)),
+            ("normal", normal, normal.tolist())]
 
 
 def spell_half(match_id, n_gt, n_pred, tp, seed=0, half=1, confusion=ZERO_CONFUSION):
@@ -443,9 +469,10 @@ def spell_half(match_id, n_gt, n_pred, tp, seed=0, half=1, confusion=ZERO_CONFUS
 
 
 def spell_f1(tp, n_pred, n_gt):
-    """F1 from its definition: the harmonic mean of precision and recall, 0 where either is empty."""
-    precision, recall = tp / n_pred, tp / n_gt
-    return 2 * precision * recall / (precision + recall)
+    """F1 from its definition: the harmonic mean of precision and recall, 0.0 where there is nothing to divide by."""
+    precision = tp / n_pred if n_pred else 0.0
+    recall = tp / n_gt if n_gt else 0.0
+    return 2 * precision * recall / (precision + recall) if precision + recall else 0.0
 
 
 def test_t_table_is_the_two_sided_90_percent_quantile():
@@ -524,18 +551,54 @@ def test_sign_flip_small_case():
     # Nothing to tell apart: every pattern is as far from 0 as the data, which is at 0.
     assert score.sign_flip_p([0.0, 0.0, 0.0, 0.0]) == 1.0
     assert score.sign_flip_p([0.5]) == 1.0                              # one value: its flip is as far as it is
-    # Against an independent count in exact arithmetic, on random deltas with exact ties (multiples of 0.05, 0.1 or
-    # 0.01) and without.
-    rng = np.random.default_rng([8, 5])
-    for n in (2, 3, 5, 8, 10):
-        for deltas in (np.round(rng.normal(size=n), 2), rng.integers(-3, 4, size=n) * 0.05,
-                       rng.integers(-5, 6, size=n) / 10, rng.normal(size=n)):
-            assert score.sign_flip_p(deltas) == brute_force_flip_p(deltas.tolist()), (n, deltas)
+    # Four deltas of k * 0.05 with k = 3, 3, -2, -1 (3 * 0.05 is 0.15000000000000002): observed sum 3 (units of 0.05).
+    # The two 3s give +-6 or 0 (twice), the 2 and the 1 give +-3 or +-1, so the sums are 6 + (3, 1, -1, -3), 0 + (3, 1,
+    # -1, -3) twice and -6 + (3, 1, -1, -3): |sum| >= 3 for all 4 + 2 * 2 + 4 = 12 of 16 patterns, 0.75.
+    assert score.sign_flip_p(np.array([3, 3, -2, -1]) * 0.05) == 0.75 == exact_flip_p([3, 3, -2, -1])
+    assert score.sign_flip_p(np.array([3, 3, -2, -1]) / 20) == 0.75
+    # Against an independent count in exact arithmetic (exact_flip_p, from the integers behind the deltas) on twenty
+    # seeds, every size up to the benchmark's 7 matches and beyond, and the four families of exact ties and the one
+    # without any.
+    for seed in range(20):
+        for n in (2, 3, 5, 7, 8, 10):
+            for how, deltas, exact in tie_vectors(seed, n):
+                assert score.sign_flip_p(deltas) == exact_flip_p(exact), (how, seed, n, exact)
     # What it refuses: none, too many (17 would be 131,072 patterns), and values that are not numbers.
     expect_error(ValueError, lambda: score.sign_flip_p([]), "sign_flip_p", "no deltas")
     expect_error(ValueError, lambda: score.sign_flip_p(np.zeros(17)), "sign_flip_p", "17", "16")
     expect_error(ValueError, lambda: score.sign_flip_p([1.0, float("nan")]), "sign_flip_p", "NaN")
     expect_error(ValueError, lambda: score.sign_flip_p(np.zeros((2, 2))), "sign_flip_p", "one-dimensional")
+
+
+def test_sign_flip_tolerance_is_what_keeps_exact_ties_together():
+    """Without FLIP_TOLERANCE the tie families disagree with exact arithmetic, so the loop above can fail.
+
+    The tolerance of ruling B2 is not to be removed to make a check pass: here the same vectors are scored with it set
+    to 0 and a good share of them differ from the exact count, and with it restored none does.
+    """
+    vectors = [(how, deltas, exact) for seed in range(20) for n in (3, 5, 7, 8)
+               for how, deltas, exact in tie_vectors(seed, n) if how != "normal"]
+    assert len(vectors) == 320
+    original = score.FLIP_TOLERANCE
+    try:
+        score.FLIP_TOLERANCE = 0.0
+        broken = sum(1 for _, deltas, exact in vectors if score.sign_flip_p(deltas) != exact_flip_p(exact))
+    finally:
+        score.FLIP_TOLERANCE = original
+    assert broken >= 40, "only {} of {} vectors need the tolerance; the families are not tie-rich enough".format(
+        broken, len(vectors))
+    assert all(score.sign_flip_p(deltas) == exact_flip_p(exact) for _, deltas, exact in vectors)
+
+    # The comparison is inclusive: a pattern whose mean is exactly the tolerance below the observed one counts. With the
+    # tolerance at 1.0 (a power of two, so that nothing is rounded) and deltas 2 and 1 the four patterns have means
+    # +-1.5 and +-0.5; observed 1.5, threshold 0.5: all four count. At 0.5 the threshold is 1.0 and two count.
+    try:
+        score.FLIP_TOLERANCE = 1.0
+        assert score.sign_flip_p([2, 1]) == 1.0
+        score.FLIP_TOLERANCE = 0.5
+        assert score.sign_flip_p([2, 1]) == 0.5
+    finally:
+        score.FLIP_TOLERANCE = original
 
 
 def hand_built_configs():
@@ -573,7 +636,7 @@ def test_compare_arithmetic_and_direction():
     half = 2.353 * np.std(list(expected.values()), ddof=1) / 2                 # three degrees of freedom, sqrt(4) = 2
     assert math.isclose(result["high"] - result["mean_delta"], half, rel_tol=1e-9)
     assert result["low"] < 0 < result["high"]
-    assert result["p_sign_flip"] == brute_force_flip_p(list(expected.values()))
+    assert result["p_sign_flip"] == exact_flip_p([Fraction(1, 4), 0, Fraction(-1, 6), Fraction(1, 5)])
     # By competition: the mean delta of its matches, in the order of the names; a match the mapping lacks is "other".
     assert list(result["by_competition"]) == ["C1", "C2", "other"], result["by_competition"]
     assert math.isclose(result["by_competition"]["C1"], 0.125)
@@ -602,6 +665,48 @@ def test_compare_identical():
     assert result["by_competition"] == {"other": 0.0}, "synthetic matches are in no competition"
 
 
+def test_compare_counts_float_noise_as_a_tie():
+    """A delta within FLIP_TOLERANCE of 0 is neither a win nor a loss, as sign_flip_p already treats it.
+
+    Two F1s that are equal on paper can differ in the last bit: 1 matched of 2 predicted and 1 true is 2/3, and so is
+    3 matched of 5 predicted and 4 true, but the floats differ by 1.1e-16, which would be a loss; 1 of 4 and 1 against
+    2 of 5 and 5 are both 0.4 and differ by 5.6e-17, which would be a win. A real difference, 1e-7, still counts.
+    """
+    a = [spell_half("N1", 1, 2, 1), spell_half("N2", 1, 4, 1), spell_half("N3", 4, 4, 2),
+         spell_half("N4", 10 ** 7, 10 ** 7, 1)]
+    b = [spell_half("N1", 4, 5, 3), spell_half("N2", 5, 5, 2), spell_half("N3", 4, 4, 3),
+         spell_half("N4", 10 ** 7, 10 ** 7, 2)]
+    result = score.compare(a, b)
+    deltas = result["match_deltas"]
+    assert -1e-12 < deltas["N1"] < 0.0 and 0.0 < deltas["N2"] < 1e-12, deltas      # the noise is there, and is reported
+    assert math.isclose(deltas["N3"], 0.25) and math.isclose(deltas["N4"], 1e-7, rel_tol=1e-6)
+    assert (result["wins"], result["losses"], result["n"]) == (2, 0, 4), result
+    # The boundary: a delta exactly as large as the tolerance is within it. N3's is exactly 0.25 (0.5 to 0.75).
+    original = score.FLIP_TOLERANCE
+    try:
+        score.FLIP_TOLERANCE = 0.25
+        assert score.compare(a, b)["wins"] == 0
+        score.FLIP_TOLERANCE = 0.2
+        assert score.compare(a, b)["wins"] == 1
+    finally:
+        score.FLIP_TOLERANCE = original
+    # The other way round the two ties are ties again, and the two real differences are the losses.
+    assert score.compare(b, a)["wins"] == 0 and score.compare(b, a)["losses"] == 2
+
+
+def test_compare_orders_what_it_reports_and_ignores_the_order_it_was_given():
+    """Matches by id and competitions by name, whatever order the scores or the mapping come in."""
+    a, b, _ = hand_built_configs()
+    mapping = {"M1": "Z", "M2": "B", "M3": "A"}                  # inserted out of the order of the names
+    result = score.compare(list(reversed(a)), list(reversed(b)), mapping)
+    assert list(result["match_deltas"]) == ["M1", "M2", "M3", "M4"], list(result["match_deltas"])
+    assert list(result["by_competition"]) == ["A", "B", "Z", "other"], list(result["by_competition"])
+    by_competition = result["by_competition"]
+    assert math.isclose(by_competition["Z"], 0.25) and math.isclose(by_competition["A"], 0.5 - 2 / 3)
+    assert by_competition["B"] == 0.0 and math.isclose(by_competition["other"], 0.2)
+    assert result == score.compare(a, b, mapping), "the same comparison, whatever the order of the scores"
+
+
 def test_compare_groups_the_real_matches_by_competition():
     """With no mapping given, the benchmark's own: two Bundesliga matches and five 2. Bundesliga, by their ids."""
     from pipeline.benchmark import sources
@@ -619,7 +724,7 @@ def test_compare_groups_the_real_matches_by_competition():
     # Seven matches is six degrees of freedom (T_95[6]): the interval and the p are those of the deltas, unweighted.
     mean, low, high = score.t_interval(list(result["match_deltas"].values()))
     assert (result["mean_delta"], result["low"], result["high"]) == (mean, low, high)
-    assert result["p_sign_flip"] == brute_force_flip_p(list(result["match_deltas"].values()))
+    assert result["p_sign_flip"] == exact_flip_p([Fraction(gains[m] % 3, 10) for m in sources.MATCH_IDS])
 
 
 def test_compare_serves_macro_f1_through_the_metric_keyword():

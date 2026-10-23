@@ -56,7 +56,7 @@ IOUS = pm.SPELL_IOUS
 # df + 1 values. Ten degrees of freedom is the last row; the benchmark has 7 matches (6 degrees of freedom).
 T_95 = {1: 6.314, 2: 2.920, 3: 2.353, 4: 2.132, 5: 2.015, 6: 1.943, 7: 1.895, 8: 1.860, 9: 1.833, 10: 1.812}
 MAX_FLIP = 16                  # sign_flip_p enumerates 2^n patterns: 65,536 for n = 16, 8 MB of signs
-FLIP_TOLERANCE = 1e-12         # patterns whose mean is this close to the observed one count as equal (see sign_flip_p)
+FLIP_TOLERANCE = 1e-12         # means this close, or a delta this close to 0, are a tie (sign_flip_p, compare)
 METRICS = ("spell_f1_mean", "macro_f1", "alive_dead_f1")     # the scalar scores of pooled() that compare() can take
 OTHER_COMPETITION = "other"    # where compare() files a match that the competition mapping does not name
 
@@ -229,7 +229,9 @@ def compare(scores_a, scores_b, competition=None, *, metric="spell_f1_mean"):
       mean_delta     the mean of the match deltas, each match counting once: the statistic the next three are about
       low, high      its two-sided 90% t interval (t_interval)
       p_sign_flip    the exact sign-flip p of the match deltas (sign_flip_p)
-      wins, losses   how many matches have a delta above 0, and below 0; a delta of exactly 0 is neither
+      wins, losses   how many matches have a delta above 0, and below 0, by more than FLIP_TOLERANCE: a delta within it
+                     of 0 is a tie, neither (two F1s that are equal on paper can differ in the last bit, and
+                     sign_flip_p already treats such a delta as 0); match_deltas keeps every delta as it is
       n              the number of matches
       by_competition {competition: the mean delta of its matches}, by name; `competition` is a {match_id: name}
                      mapping, default sources.COMPETITION, and a match it does not name goes under "other"
@@ -275,8 +277,8 @@ def compare(scores_a, scores_b, competition=None, *, metric="spell_f1_mean"):
         "low": low,
         "high": high,
         "p_sign_flip": sign_flip_p(deltas),
-        "wins": sum(1 for delta in deltas if delta > 0),
-        "losses": sum(1 for delta in deltas if delta < 0),
+        "wins": sum(1 for delta in deltas if delta > FLIP_TOLERANCE),
+        "losses": sum(1 for delta in deltas if delta < -FLIP_TOLERANCE),
         "n": len(deltas),
         "by_competition": {name: float(np.mean(groups[name])) for name in sorted(groups)},
     }
