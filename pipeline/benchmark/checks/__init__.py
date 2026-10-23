@@ -10,11 +10,13 @@ module of its topic:
                  the calibration, our own tracking measured for the benchmark: every statistic exact on hand-built
                  objects, a synthetic bundle, the cache, the hazard fit of our ball gaps (rows, AUCs, the go rule, the
                  duration cells), and with --data the figures of A01, A02 and R001 and A08's fit
-    degrade.py   the degrader: the transplant worked out exactly, the draws, what the gaps profile touches and does not,
-                 the tracking profile's tracklets and slots (walks, lowest free slot, no overlap, the degenerate case
-                 equal to gaps, the lost share on long runs), that no truth reaches it, and that the order of the
-                 matches changes nothing (synthetic; with --dfl that no pool of slots runs out on the 7 matches; with
-                 --data our real masks and our real Calibration on a downloaded DFL match)
+    degrade.py   the degrader's shared parts: the transplant worked out exactly, the draws, what the gaps profile
+                 touches and does not, that no truth reaches it, and that the order of the matches changes nothing
+                 (synthetic; with --data our real masks on a downloaded DFL match)
+    tracking.py  the tracking profile of the degrader: tracklets and slots (walks, lowest free slot, no overlap, the
+                 degenerate case equal to gaps, the lost share on long runs), the wrong-team episodes, the NaN-speed
+                 runs, the smoothing, and that the profiles nest (synthetic; with --dfl that no pool of slots runs out
+                 on the 7 matches; with --data our real Calibration on a downloaded DFL match)
     fidelity.py  the fidelity report: every gate and check worked out by other code on a synthetic Calibration, the
                  pooling by sums, the file and the exit code (synthetic only)
     truth.py     the benchmark's truth from the DFL flags: codes, summary, line timing, nearest team, the coarse
@@ -47,6 +49,7 @@ cannot then shadow it.
 """
 
 from pipeline.benchmark.checks import (
-    calibration, degrade, dfl, fidelity, harness, hazard, inputs, run, score, sources, truth)
+    calibration, degrade, dfl, fidelity, harness, hazard, inputs, run, score, sources, tracking,
+    truth)
 
-MODULES = (sources, dfl, truth, inputs, score, run, hazard, calibration, degrade, fidelity, harness)
+MODULES = (sources, dfl, truth, inputs, score, run, hazard, calibration, degrade, tracking, fidelity, harness)

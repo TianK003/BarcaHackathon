@@ -174,6 +174,11 @@ def steady_match(match_id="RND001", seed=0, rows=ROWS, teams=(0, 0, 0, 1, 1, 1),
     return dataclasses.replace(match, players_xy=xy, player_team=np.array(teams, dtype=np.int8))
 
 
+def ball_bytes(atd):
+    """The bytes of a degraded Atd's ball (position and speed): equal bytes are the same ball, to the last bit."""
+    return atd.ball_xy.tobytes() + atd.ball_speed.tobytes()
+
+
 def made_up_calibration(seed=0, rows=MASK_ROWS):
     """What the degrader reads of a Calibration: `ball_masks`, with long runs of missing ball as ours has, and what the
     tracking profile reads: `tracklet_lengths_s` and `present_counts` (LENGTHS_S and PRESENT_COUNTS),

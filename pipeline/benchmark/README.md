@@ -315,10 +315,12 @@ renamed over the old report; the same inputs, seed and versions give the same by
 
 (The first time, while the seven caches are built, the `--dfl` run took 532 s; the machine's load decides the rest.)
 
-`checks/run.py` holds the runner's, `checks/degrade.py` the degrader's (the transplant, the tracklets, the episodes,
-the NaN-speed runs and the smoothing worked out exactly, determinism, what is touched and what is not, no truth, the
-order of the matches) and `checks/fidelity.py` the fidelity report's (every gate and check worked out by other code,
-pooling by sums, the exit code, the pending gates, the full-strength frames of the count gates and the gate kinds). The
+`checks/run.py` holds the runner's, `checks/degrade.py` the degrader's shared parts (the transplant worked out exactly,
+determinism, what the `gaps` profile touches and what it does not, no truth, the order of the matches),
+`checks/tracking.py` the `tracking` profile's (the tracklets, the episodes, the NaN-speed runs and the smoothing worked
+out exactly, and how it nests in `gaps`) and `checks/fidelity.py` the fidelity report's (every gate and check worked out
+by other code, pooling by sums, the exit code, the pending gates, the full-strength frames of the count gates and the
+gate kinds). The
 one that anchors the rest is `test_dfl_oracle_scores_perfectly`: an evidence source that is the truth itself, decoded by
 `majority_vote` with half-width 0, must score exactly 1.0 on spellF1, macroF1 and alive/dead F1 on every one of the
 seven matches.
