@@ -622,6 +622,81 @@ Changed vs the previous best: …
 Verdict: keep / drop / inconclusive — because …
 ```
 
+### A09 — The tracking profile's first part: the parameters from our match, and how far its players are from ours (2026-10-23)
+
+Proposal: P01 · Commit: the one that adds this entry (the commit after it cites its SHA) · Command: `python
+pipeline/benchmark/selftest.py --dfl --data`, checks
+`test_data_tracking_profile_on_a_real_match_with_our_real_calibration` (prints d, the mean spans, the second table and
+the lost share, and asserts that the lost share pooled over the matches is d to within 0.01) and
+`test_dfl_tracking_never_exhausts_a_pool_on_the_real_matches`; it takes 6 s and 8 s once the caches are warm. The
+Calibration is version 2 (A07, A08), read from its cache; the profile is `tracking` version 1 (`degrade.py`), **work in
+progress: no gates, no yardstick**. Aggregates only; nothing here is a row of BAR-ATH. Worked out apart from the checks
+and not printed by them, by throwaway scripts that read the Calibration, the ATD cache and the seven matches and print
+aggregates: the frame counts and the lengths of the first table, the spread of the tracklet median over matches and
+seeds, and the slot usage of ours.
+
+**What it draws from, measured on our kick-off spans** (both halves, 155,923 frames):
+
+| | value | how |
+|---|---|---|
+| tracklets of ours | 1,144 | `Calibration.tracklet_lengths_s`: maximal runs of one slot being present |
+| their lengths | median 41.3 s (1,032 frames), mean **111.9 s (2,797.1 frames)**, shortest 0.32 s (8 frames), longest 2,937 s (73,427 frames) | the shortest is 8 frames, so the rule that a tracked span is at least 1 frame is never used on ours |
+| frames with more than 18 slots present | 139,360 (89.4%) | the tail, 10.6% of the frames with 18 or fewer, is left out of d: it is the profile's next part |
+| mean slots present over them | 21.4500 | |
+| **d**, the share of an on-pitch player's frames that are lost | **0.0250** (0.025000) | 1 - 21.4500 / 22 |
+| **mu**, the mean lost span | **71.7 frames (2.87 s)** | 2,797.1 * d / (1 - d) |
+
+**What it makes** (J03WMX, seed 0; `calibration.player_stats` on the degraded match, from each kick-off to the end of
+its graded block, beside the Calibration's; not gated):
+
+| | degraded | ours |
+|---|---|---|
+| slots present, mean | 21.38 | 20.52 |
+| all 22 present | 54.0% | 50.2% |
+| 19 to 21 present | 45.5% | 37.0% |
+| 15 to 18 present | 0.5% | 5.4% |
+| 14 or fewer present | 0.0% | 5.2% |
+| tracklets (maximal runs of a slot) | 1,289 | 1,144 |
+| tracklet median | 35.3 s | 41.3 s |
+| NaN speeds, of the present slot-frames | 0.04% | 7.83% |
+| wrong-team frames | 0.0% | 10.5% |
+
+- **The present histogram is ours where the profile has made it ours, and not elsewhere.** Over the frames of ours with
+  more than 18 present the mean is 21.45; the degraded match has 21.38 over all its frames, 0.07 below that, because
+  this seed lost 2.80% of the on-pitch frames and not 2.50% (below). What is missing is the tail: 10.6% of our frames
+  have 18 or fewer present, 5.2% have 14 or fewer, and the degraded match has 0.5% and 0.0%. That is the next part's,
+  not a flaw of this one, and it is why the two upper buckets are fuller than ours (they hold the 10.6% that ours has
+  below).
+- **The lost share is d, a little over, and the draw moves it.** The share lost of the on-pitch frames, pooled over the
+  7 matches and seeds 0 to 4, is **2.59%** against d = 2.50%; by match 2.47% to 2.66%, and by match and seed 2.27% to
+  2.80% (J03WMX's seed 0 is the top of that). A DFL half is 68,000 to 78,000 frames and a tracked span of ours has a
+  mean of 2,797, so a run has about 25 cycles and the cut at its end is not negligible: the profile loses 0.09 points
+  more than d (4% of d), and that is not corrected.
+- **The tracklets are as many as ours, and a little shorter.** 1,026 to 1,301 per match and seed (35 runs) against
+  1,144. The median of their lengths is 39.4 s pooled (41,181 tracklets) against 41.3 s, and 34.8 s to 49.8 s over the
+  35 runs (SD 3.9 s). The 2 s under ours may be the cuts at the ends of the runs (not isolated). The 35.3 s of the table
+  is one seed, and of slot runs: the profile's tracklets are 1,301 on that run and the table's 1,289 are slot runs,
+  because where one tracklet ends on the frame that another takes its slot the two read as one run. It is inside the
+  spread.
+- **NaN speeds** are on the first frame of each tracklet and nowhere else (0.04% of the slot-frames); ours come in runs
+  (A07), 7.83%. **Wrong-team frames** are none. Both are the next part's.
+- **Slots.** The lowest free slot keeps a team in its first 11 slots all match (11 + 11 slots used on J03WMX), where
+  ours has 21 of its 24 home slots and 20 of its 22 away slots present on at least 10% of the frames (22 and 21 on at
+  least 1%; the median slot is present on 43.5% of the frames, home, and 46.1%, away): ours rotates through nearly all
+  of them as the tracker hands slots on. No component reads a slot's index today, but `nearest_player` breaks an exact
+  tie towards the lower slot.
+
+**No pool runs out.** On each of the 7 matches at most 11 players of a team have a position on any frame of the graded
+halves, and under parameters that make a slot change hands as often as it can (tracked spans of 1, 2, 5, 25 or 250
+frames, 30% of the time lost; 36,594 to 40,056 tracklets per match) and under those that lose nobody, 3 seeds, no team
+uses more than 11 slots. A pool of 24 or 22 slots has room for about twice that.
+
+**What this does not say.** It is the first of three parts of the profile, so none of these figures is a gate, a miss or
+a pass; the gates come with the last part, centred on the Calibration's own values, and the yardsticks' scores on
+`tracking` are not run. The shape of the tail (frames with few players tracked), the wrong-team episodes and the
+NaN-speed runs are what the next two parts bring. Its figures here are a baseline for them: they say what the profile
+looks like before those parts are added, and by how much each is short of ours.
+
 ### R001 — Pipeline skeleton (2026-10-22, Tian)
 Proposal: P03 · Commit: `787c6e4` · Command: `python pipeline/run.py pipeline/configs/main.toml --score`
 Public: macroF1 0.6207 (bootstrap 0.460 – 0.742) · spellF1 0.3256 (bootstrap 0.214 – 0.447) · poss 26 · dur 10.8 s ·

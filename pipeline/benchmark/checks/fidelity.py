@@ -249,7 +249,10 @@ def test_fidelity_report_refuses_what_it_cannot_measure():
             return fidelity.report(keywords.pop("profile", "gaps"), data_dir=root, log=quiet, **keywords)
 
         expect_error(fidelity.FidelityError, lambda: measure(profile="clean"), "clean", "no gates", "gaps")
-        expect_error(fidelity.FidelityError, lambda: measure(profile="tracking"), "tracking", "clean", "gaps")
+        expect_error(fidelity.FidelityError, lambda: measure(profile="tracking"), "tracking", "still being built",
+                     "no gates", "gaps")
+        expect_error(fidelity.FidelityError, lambda: measure(profile="context"), "context", "not one of", "clean",
+                     "gaps", "tracking")
         expect_error(fidelity.FidelityError, lambda: measure(seeds=0), "seeds", "at least 1")
         expect_error(fidelity.FidelityError, lambda: measure(seeds=True), "seeds")
         expect_error(fidelity.FidelityError, lambda: measure(calibration=object()), "calibration", "Calibration",

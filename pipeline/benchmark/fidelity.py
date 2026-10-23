@@ -114,14 +114,16 @@ def report(profile, seeds=DEFAULT_SEEDS, match_ids=None, matches=None, calibrati
     "warnings", "notes"}. "gates" is a list of {name, text, measured, centre, tolerance, status} (status pass or FAIL),
     "checks" a list of {name, measured, centre, band, kind, status} (ok or WARN), "passed" is whether every gate
     passed and "warnings" how many checks warn. FidelityError for a profile that has no gates (clean, which degrades
-    nothing) or that is not one, for seeds below 1 and for a calibration that is not a Calibration, and
-    run.BenchmarkError for matches that are not as asked.
+    nothing, and tracking, which is still being built) or that is not one, for seeds below 1 and for a calibration that
+    is not a Calibration, and run.BenchmarkError for matches that are not as asked.
     """
     if profile not in degrade.PROFILES:
         raise FidelityError("profile {!r} is not one of: {}".format(profile, ", ".join(sorted(degrade.PROFILES))))
     if profile not in GATES:
-        raise FidelityError("profile {!r} degrades nothing, so it has no gates to hold it to; fidelity is measured "
-                            "for: {}".format(profile, ", ".join(sorted(GATES))))
+        why = ("degrades nothing" if profile == degrade.CLEAN
+               else "is still being built, and its gates come with its last part")
+        raise FidelityError("profile {!r} {}, so it has no gates to hold it to; fidelity is measured for: {}".format(
+            profile, why, ", ".join(sorted(GATES))))
     if isinstance(seeds, bool) or not isinstance(seeds, int) or seeds < 1:
         raise FidelityError("seeds must be a whole number of at least 1, got {!r}".format(seeds))
     ids = run.resolve_match_ids(match_ids, matches)

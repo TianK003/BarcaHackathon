@@ -11,8 +11,10 @@ module of its topic:
                  objects, a synthetic bundle, the cache, the hazard fit of our ball gaps (rows, AUCs, the go rule, the
                  duration cells), and with --data the figures of A01, A02 and R001 and A08's fit
     degrade.py   the degrader: the transplant worked out exactly, the draws, what the gaps profile touches and does not,
-                 that no truth reaches it, and that the order of the matches changes nothing (synthetic, and with
-                 --data our real masks on a downloaded DFL match)
+                 the tracking profile's tracklets and slots (walks, lowest free slot, no overlap, the degenerate case
+                 equal to gaps, the lost share on long runs), that no truth reaches it, and that the order of the
+                 matches changes nothing (synthetic; with --dfl that no pool of slots runs out on the 7 matches; with
+                 --data our real masks and our real Calibration on a downloaded DFL match)
     fidelity.py  the fidelity report: every gate and check worked out by other code on a synthetic Calibration, the
                  pooling by sums, the file and the exit code (synthetic only)
     truth.py     the benchmark's truth from the DFL flags: codes, summary, line timing, nearest team, the coarse

@@ -59,7 +59,7 @@ What to know about the files (A05; `dfl.py` has the details and refuses what it 
 | option | meaning |
 |---|---|
 | `CONFIG ...` | pipeline TOML configs (`pipeline/config.py`), per half (`scope = "halves"`). **The first one is the reference**: every other config is compared with it, and a delta is `other - first`, so positive means the other is better. Put the config you want to beat first. |
-| `--profile P` | how the tracking is made (below): `gaps` (the default) or `clean`. |
+| `--profile P` | how the tracking is made (below): `gaps` (the default), `clean` or `tracking` (work in progress). |
 | `--seeds N` | degradation seeds per match (default 3: seeds 0, 1 and 2). The clean profile has nothing random to repeat, so it always runs seed 0 only; if you pass `--seeds` with more than 1 it says that it ignored it, and says nothing when you pass none. |
 | `--matches ID ...` | the matches to run, in this order (default: all seven). Fewer than seven are filed under a name that says which (see the report, below). |
 | `--truth raw\|coarse` | the truth to score against (below). Default `raw`. |
@@ -101,6 +101,7 @@ which goes into every report: change what a profile does and bump it.
 |---|---|---|---|
 | `clean` | 1 | DFL's, as it is: on every frame | DFL's, one slot per player |
 | `gaps` | 1 | missing where **ours** was: our own missing-ball masks, transplanted onto each half; its speed is NaN everywhere (T31) | untouched |
+| `tracking` | 1 | `gaps`'s, byte for byte | broken into tracklets of ours and given 46 slots, 24 home and 22 away, as ours are; the speeds are finite differences. **Work in progress** (below) |
 
 **The transplant.** `Calibration.ball_masks[half]` is our match's missing-ball mask of each half from its kick-off to the
 end of its graded block (`calibration.py`; the Calibration is measured once and cached). A benchmark half of n frames
@@ -114,12 +115,35 @@ general: 33.6% of the dead frames against 11.8% of all of them, A01), and where 
 ball's own place at a random frame (36.0% of the onsets within 2 m of a line, against 28.0% of ours, R003). The
 warnings and statistics of the fidelity report show how much that matters.
 
+**The tracklets (`tracking`, work in progress).** DFL has one column per player. Ours has 46 anonymous slots for 22
+players, and a slot is a tracklet: it ends when the tracker loses the player and is taken over by whoever it finds next
+(T15). The profile breaks each player's time on the pitch (each contiguous run of frames where DFL has a position) into
+tracked spans and lost spans. A tracked span is one of **our own tracklet lengths** (`Calibration.tracklet_lengths_s`,
+at the match's rate, at least 1 frame), drawn uniformly; a lost span is geometric (at least 1 frame) with the mean that
+makes the lost share d: d is 1 minus the mean number of slots present over the frames of ours with more than 18 present,
+over 22, which is 0.0250, the mean tracked span 2,797 frames (111.9 s) and the mean lost span 71.7 frames (2.87 s)
+(A09). Frames with 18 or fewer present, 10.6% of ours, are the profile's tail, which is another part's and is left out
+so as not to count it twice. Each tracklet takes the lowest free slot of its team's pool (home 0 to 23, away 24 to 45),
+in order of (start frame, player column); a slot is free when its previous tracklet has ended. All draws come from
+`rng_for(seed, match_index, "tracklets", half)`, players by column and runs in time order. The speeds are finite
+differences within a tracklet (NaN on its first frame), and the ball is exactly `gaps`'s, so that the two profiles
+differ by the players alone (`test_tracking_ball_is_exactly_gaps`).
+
+What this part does not have yet: our wrong-team slots (10.5% of our frames), our NaN-speed runs (7.8% of the present
+slot-frames) and our frames with few players tracked (5.2% with 14 or fewer). Until the profile has them it has **no
+fidelity gates and no yardstick results**: `fidelity.py --profile tracking` says so, and nothing here ranks a config on
+it. A09 prints, for information, how far the players are from ours. The checks that pin it:
+`test_tracklets_never_overlap_in_a_slot`, `test_each_tracklet_takes_the_lowest_free_slot_of_its_pool`,
+`test_slot_team_matches_pool`, `test_tracking_degenerate_equals_gaps` (one endless tracklet per stretch of a player is
+`gaps`'s players), `test_lost_share_on_long_synthetic`, and on the downloaded matches
+`test_dfl_tracking_never_exhausts_a_pool_on_the_real_matches` (11 players a side fit in 22 and 24 slots).
+
 **No truth reaches the degrader.** It is handed a `TrackingView`, which has the tracking and the match's scalars and no
 `ball_status` or `ball_possession` (`test_degrade_never_sees_truth`, which also reads the degrader's source, and the deep
 walk of the inputs, `test_degrade_serves_inputs_without_the_truth`). Its random draws are
 `rng_for(seed, match_index, component, half)`, one stream for each, with no profile and no loop order in the key
 (`test_degrade_independent_of_match_order`), so a match gets the same degradation whichever matches are run with it, and
-a later profile that degrades the players as well has exactly this profile's ball.
+the `tracking` profile, which degrades the players as well, has exactly this profile's ball.
 
 **A new calibration, a new report.** The report holds the digest of the Calibration its gaps were taken from. A report is
 named by what was run (below), not by which calibration, so a later run with a newer Calibration writes over the older
@@ -230,8 +254,9 @@ renamed over the old report; the same inputs, seed and versions give the same by
 
 (The first time, while the seven caches are built, the `--dfl` run took 532 s; the machine's load decides the rest.)
 
-`checks/run.py` holds the runner's, `checks/degrade.py` the degrader's (the transplant worked out exactly, determinism,
-what is touched and what is not, no truth, the order of the matches) and `checks/fidelity.py` the fidelity report's
+`checks/run.py` holds the runner's, `checks/degrade.py` the degrader's (the transplant and the tracklets worked out
+exactly, determinism, what is touched and what is not, no truth, the order of the matches) and `checks/fidelity.py` the
+fidelity report's
 (every gate and check worked out by other code, pooling by sums, the exit code). The one that anchors the rest is
 `test_dfl_oracle_scores_perfectly`: an evidence source that is the truth itself, decoded by `majority_vote` with
 half-width 0, must score exactly 1.0 on spellF1, macroF1 and alive/dead F1 on every one of the seven matches.
@@ -277,6 +302,11 @@ that this README names only checks that exist.
   has our gaps and nothing else of our tracking: its players are DFL's (one slot per player, no wrong-team slot, no
   NaN speeds), and its gaps are not placed by the play. The warnings and statistics of the fidelity report say by how
   much.
+- The `tracking` profile is work in progress: its players have our tracklets and slots and none of our wrong-team
+  slots, NaN-speed runs or frames with few players tracked, and it has no gates yet. Its slots are the lowest free ones,
+  so a team uses 11 of its slots over a whole match where ours has 21 of 24 and 20 of 22 present on at least a tenth
+  of the frames (A09); no component reads a slot's index today, but `nearest_player` breaks an exact tie towards the
+  lower slot.
 - A transplanted mask is cut at the edge of the window it is read from, so up to two gaps of a benchmark half (the ones
   at its ends) are fragments of ours, and where the mask runs out and goes round there is one more at the seam (3 of the
   42 halves of R003: a DFL second half of 77,080 or 78,456 frames, against the 76,456 of ours); the gates are on the

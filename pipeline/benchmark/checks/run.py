@@ -620,7 +620,7 @@ def test_runner_gaps_is_the_default_and_runs_on_degraded_tracking():
     seeds that is not the default, and the printout names the calibration that made the run.
     """
     assert benchmark_run.DEFAULT_PROFILE == "gaps" and benchmark_run.PROFILES == degrade.PROFILES == {
-        "clean": 1, "gaps": 1}
+        "clean": 1, "gaps": 1, "tracking": 1}
     matches, cal = synthetic_matches(), synthetic_calibration()
     paths = [yardstick_path(50), yardstick_path(0)]
     with tempfile.TemporaryDirectory() as root:
