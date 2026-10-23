@@ -154,7 +154,8 @@ Each stage's README has a template, its rules and the traps that apply. After an
 
 The public window is for correctness only. It holds 17 possessions and ranks the baselines the wrong way round
 ([T01](../docs/traps.md)). Choose between versions on P01's benchmark of other matches (DFL open data, degraded to
-look like ours), with bootstrap intervals. Hand labels on this match are not allowed, not even for validation
+look like ours), with per-match t-intervals and a sign-flip test, never a bootstrap
+([benchmark README](benchmark/README.md)). Hand labels on this match are not allowed, not even for validation
 ([T27](../docs/traps.md)).
 
 ## Rules that the code enforces, and ones it can't

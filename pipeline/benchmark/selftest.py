@@ -6,8 +6,10 @@
                                                     #   compared with a fresh parse, J03WMX cross-checked against
                                                     #   kloppy and by frame number, the T30 counts on all 7
                                                     #   matches, the truth's conventions on all 7 (A06), the 7
-                                                    #   matches served through MatchInputs and J03WMX scored through
-                                                    #   predict and pooled() against pm.evaluate (measured: 532 s
+                                                    #   matches served through MatchInputs, J03WMX scored through
+                                                    #   predict and pooled() against pm.evaluate, and the oracle
+                                                    #   (the truth as the prediction) scoring 1.0 on all seven through
+                                                    #   the runner (measured: 532 s
                                                     #   while the 7 caches are built under data/cache/dfl/, then 99 to
                                                     #   221 s, 111 s with the last two included: the machine's load
                                                     #   decides)

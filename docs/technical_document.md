@@ -56,8 +56,9 @@ duplicates. What we did about each. -->
 
 <!-- How we chose between versions: the public window for correctness only; the P01 benchmark of other matches
 (which matches, how they were degraded, how well the degraded copy reproduces our data's statistics, and whether it
-ranks the four baselines in their published order); bootstrap intervals. What the benchmark could not measure (Smart
-Tagging, camera, audio) and how we checked those instead. -->
+ranks the four baselines in their published order); per-match t-intervals and an exact sign-flip test, never a
+bootstrap (seven matches are not a sample to resample). What the benchmark could not measure (Smart Tagging, camera,
+audio) and how we checked those instead. -->
 
 ## 6. Limitations
 

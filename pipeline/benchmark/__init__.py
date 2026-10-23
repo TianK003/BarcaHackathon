@@ -7,6 +7,7 @@ real tracking with the ball's own alive/dead and possession flags, to be degrade
     python pipeline/benchmark/sources.py              # download the 21 DFL files (2.6 GB) into data/external/dfl/,
                                                       # then check every size and md5
     python pipeline/benchmark/sources.py --verify     # only check what is already there
+    python pipeline/benchmark/run.py CONFIG [CONFIG ...]    # score configs on the seven matches (README.md)
     python pipeline/benchmark/selftest.py             # synthetic checks, seconds
     python pipeline/benchmark/selftest.py --dfl       # + the downloaded files
 
@@ -18,9 +19,12 @@ degraded benchmark match later, and a Calibration of BAR-ATH that load() measure
 data/cache/benchmark/calibration/; docs/results.md A07);
 truth.py turns a match's flags into the scorer's H/A/D/X codes and reads off them what A06 measured; inputs.py serves
 a match to the pipeline as an Inputs (MatchInputs, clean_atd), with no truth in it; run.py runs a config on it through
-the pipeline's own functions (predict); score.py scores the result half by half and pools the counts into the official
-scorer's number (HalfScore, score_halves, pooled, per_match); configs/ holds the yardsticks, the organisers' four
-baselines as per-half configs. The degrader lands in its own module next to them.
+the pipeline's own functions (predict) and is the benchmark's command (evaluate_configs: every config on every match,
+scored, compared with the first, with one JSON report each); score.py scores the result half by half and pools the
+counts into the official scorer's number (HalfScore, score_halves, pooled, per_match) and holds the match-level
+statistics (t_interval, sign_flip_p, compare); configs/ holds the yardsticks, the organisers' four baselines as per-half
+configs. The degrader lands in its own module next to them. README.md here says how to download the data, run a config
+and read what comes out.
 
 The self-checks live in checks/, one module per topic, and selftest.py is the harness that collects and runs them (to
 add a check, see checks/__init__.py).

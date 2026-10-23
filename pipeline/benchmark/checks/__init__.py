@@ -16,6 +16,9 @@ module of its topic:
     score.py     HalfScore, pooled and per_match against the official pm.evaluate, predict against pipeline.run.run,
                  the yardstick configs, and the match-level statistics (t_interval, sign_flip_p, compare)
                  (synthetic, and a downloaded match with --dfl)
+    run.py       the benchmark runner: its reports, the reference and the direction of a comparison, the same bytes in
+                 another process, what it refuses, and the oracle, which must score 1.0 on every real match (synthetic,
+                 and the downloaded matches with --dfl)
     harness.py   the harness itself: what it collects, how it reports NOT RUN, the console set-up
     common.py    what several modules share: the synthetic DFL match, real_match, damaged, NotRun (no checks of its own)
 
@@ -35,6 +38,6 @@ Import with absolute imports (from pipeline.benchmark import dfl): a check modul
 cannot then shadow it.
 """
 
-from pipeline.benchmark.checks import calibration, dfl, harness, hazard, inputs, score, sources, truth
+from pipeline.benchmark.checks import calibration, dfl, harness, hazard, inputs, run, score, sources, truth
 
-MODULES = (sources, dfl, truth, inputs, score, hazard, calibration, harness)
+MODULES = (sources, dfl, truth, inputs, score, run, hazard, calibration, harness)

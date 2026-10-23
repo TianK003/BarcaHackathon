@@ -3,9 +3,11 @@
 Everything we run that is worth remembering: experiments *and* analyses, including the ones that failed. A number
 without the commit and command that produced it is not a result.
 
-Public-window scores alone decide nothing ([T01](traps.md)). Run `--bootstrap 1000` before calling a gap real, and
-add the [P01](proposals.md#p01--a-validation-set-we-can-trust) validation score once it exists. Record aggregates
-only — never raw data rows ([CLAUDE.md](../CLAUDE.md)).
+Public-window scores alone decide nothing ([T01](traps.md)). Run `--bootstrap 1000` before calling a public-window gap
+real, and add the [P01](proposals.md#p01--a-validation-set-we-can-trust) validation score: the benchmark's
+uncertainty is per-match t-intervals and an exact sign-flip test, never a bootstrap
+([benchmark README](../pipeline/benchmark/README.md)). Record aggregates only — never raw data rows
+([CLAUDE.md](../CLAUDE.md)).
 
 ## Scoreboard
 
@@ -16,6 +18,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | ID | date | what | public macroF1 | public spellF1 | poss / dur | val spellF1 | verdict |
 |---|---|---|---|---|---|---|---|
 | R001 | 2026-10-22 | `main`: pipeline skeleton, i.e. R000c per half | 0.6207 | 0.3256 | 26 / 10.8 s | — | keep as the base; the floor, not a candidate |
+| R002 | 2026-10-23 | the four yardsticks `nearest_w{0,25,50,125}` on the benchmark's `clean` profile | — | — | — | 0.3073 raw (`w50`), 0.3257 coarse (`w125`); clean, so not our match's | the benchmark's floor, not a candidate; the truth reorders them |
 
 ## Reference: the organisers' baselines (R000)
 
@@ -515,7 +518,7 @@ Copy this template for each run, and add a scoreboard row for anything worth com
 ### R0xx — <short name> (YYYY-MM-DD, <who>)
 Proposal: P0x · Commit: `abc1234` · Command: `…`
 Public: macroF1 … · spellF1 … (bootstrap … – …) · poss … · dur … · lat_f …
-Validation (P01 benchmark): spellF1 … (… matches, degradation seed …; bootstrap … – …)
+Validation (P01 benchmark): spellF1 … (… matches, profile …, truth …; 90% t-interval … – …, sign-flip p …)
 Changed vs the previous best: …
 Verdict: keep / drop / inconclusive — because …
 ```
@@ -535,6 +538,83 @@ on 77.8% of 5,640 frames, A01's figure, which confirms the alignment. Runtime: ~
 few seconds per run.
 Verdict: keep as the base everyone builds on (see [pipeline/README.md](../pipeline/README.md)). It is the floor,
 R000c, not a candidate.
+
+### R002 — The four yardsticks on the benchmark's clean profile (2026-10-23, Tian)
+Proposal: P01 · Commit: the commit that adds this entry (its sha is filled in by the next commit) · Command:
+`python pipeline/benchmark/run.py pipeline/benchmark/configs/nearest_w50.toml pipeline/benchmark/configs/nearest_w0.toml pipeline/benchmark/configs/nearest_w25.toml pipeline/benchmark/configs/nearest_w125.toml`
+(the first config is the reference; run once more with `--truth coarse`)
+Public: not applicable; no BAR-ATH data is read.
+Validation (P01 benchmark): 7 DFL matches, profile `clean`, 668.4 graded minutes. Raw truth: pooled spellF1 0.3073
+(`nearest_w50`), 0.2958 (`w25`), 0.2166 (`w125`), 0.0983 (`w0`). Coarse truth: 0.3257 (`w125`), 0.3037 (`w50`), 0.2280
+(`w25`), 0.0434 (`w0`). Intervals and sign-flip p below.
+Changed vs the previous best: first benchmark entry. These are the organisers' four baselines decoded per graded half
+instead of per file (`configs/nearest_w*.toml`; R000's published files are per file), so they are the benchmark's
+floor and not R000's numbers. Reports: `data/runs/benchmark/clean/<stem>.json` and `<stem>.coarse.json` (not
+committed).
+Checks: the oracle (the truth as the prediction) scores spellF1 = macroF1 = alive/dead F1 = 1.0000 on all seven
+matches, which checks the chain from the DFL file to the score, the half time included; see below.
+
+**Raw truth** (3,061 true possessions, 4.58 per graded minute; `D` is 44.8% of the graded frames). Δ is the config
+minus `nearest_w50`, the first config; the interval is the 90% t interval of the seven matches' deltas, and every
+interval below clears 0 by far more than the 1e-12 tie tolerance.
+
+| config | pooled spellF1 | macroF1 | alive/dead F1 | mean per-match spellF1 [90% t] | possessions predicted (per min) | Δ spellF1, mean per match [90% t] | sign-flip p | wins / losses |
+|---|---|---|---|---|---|---|---|---|
+| `nearest_w50` (reference) | **0.3073** | 0.3957 | 0.7110 | 0.3081 [0.2871, 0.3291] | 2,646 (3.96) | | | |
+| `nearest_w25` | 0.2958 | 0.3893 | 0.7110 | 0.2962 [0.2813, 0.3111] | 4,034 (6.04) | −0.0119 [−0.0212, −0.0026] | 0.0156 | 0 / 7 |
+| `nearest_w125` | 0.2166 | 0.3912 | 0.7110 | 0.2178 [0.2011, 0.2345] | 1,534 (2.29) | −0.0903 [−0.1026, −0.0780] | 0.0156 | 0 / 7 |
+| `nearest_w0` | 0.0983 | 0.3667 | 0.7110 | 0.0984 [0.0900, 0.1068] | 14,439 (21.60) | −0.2097 [−0.2377, −0.1818] | 0.0156 | 0 / 7 |
+
+**Coarse truth** (`COARSE_MIN_S` = 5 s: 1,659 true possessions, 2.48 per graded minute; the same `D`). Δ is again the
+config minus `nearest_w50`:
+
+| config | pooled spellF1 | macroF1 | alive/dead F1 | mean per-match spellF1 [90% t] | possessions predicted (per min) | Δ spellF1, mean per match [90% t] | sign-flip p | wins / losses |
+|---|---|---|---|---|---|---|---|---|
+| `nearest_w125` | **0.3257** | 0.4044 | 0.7110 | 0.3261 [0.3037, 0.3484] | 1,534 (2.29) | +0.0216 [+0.0073, +0.0358] | 0.0469 | 6 / 1 |
+| `nearest_w50` (reference) | 0.3037 | 0.3967 | 0.7110 | 0.3045 [0.2862, 0.3228] | 2,646 (3.96) | | | |
+| `nearest_w25` | 0.2280 | 0.3879 | 0.7110 | 0.2281 [0.2165, 0.2397] | 4,034 (6.04) | −0.0764 [−0.0887, −0.0641] | 0.0156 | 0 / 7 |
+| `nearest_w0` | 0.0434 | 0.3645 | 0.7110 | 0.0437 [0.0387, 0.0488] | 14,439 (21.60) | −0.2608 [−0.2812, −0.2403] | 0.0156 | 0 / 7 |
+
+What the tables say, and what they do not:
+- **The ranking differs between the two truths.** Under the raw truth `w50` beats `w125` on all seven matches (the
+  mean delta of `w125` is −0.0903); under the coarse truth `w125` beats `w50` on six of seven (+0.0216, p 0.047, the
+  one loss −0.0052), and `w0` is last under both. The raw order is `w50 > w25 > w125 > w0` and the coarse one
+  `w125 > w50 > w25 > w0`. This is the warning that A06 asks for. It is not resolved here: a smoothing
+  width taken from one truth alone is not safe to pick. In both tables the order of spellF1 is the order of how close
+  the predicted possessions per minute are to the truth's (raw, truth 4.58: `w50` 3.96, `w25` 6.04, `w125` 2.29, `w0`
+  21.60; coarse, truth 2.48: `w125` 2.29, `w50` 3.96, `w25` 6.04, `w0` 21.60). That describes the table; it does not
+  test why.
+- **Neither truth gives the published full-match order** (R000: `smooth50` 0.2433 > `smooth125` 0.2242 > `smooth25`
+  0.1996 > `raw` 0.0486). Raw puts `w25` above `w125` (Δ of `w125` against `w25`: −0.0784, [−0.0866, −0.0702], 0 wins
+  of 7), and coarse puts `w125` above `w50`: `w125` is third under the raw truth, second in the published order and
+  first under the coarse one. This is the clean profile, where the ball is tracked on every frame (on ours it is
+  missing on 41% of the graded frames, A02), so the published order is not expected here. Whether the degraded
+  profiles reproduce it is the fidelity check of the later tasks.
+- **There is almost no `D` on `clean`, as expected.** The ball is visible on every frame, so `nearest_player` votes
+  everywhere and `majority_vote`, which takes `D` only where nobody voted, predicts `D` on 0.0% of the graded frames
+  against the truth's 44.8%. The `D` class therefore scores 0 and macroF1 stays near 0.4, and the alive/dead F1 is
+  0.7110 for every config: it is the F1 of "always alive" (the scorer takes ALIVE as positive, and 55.2% of the graded
+  frames are alive). Nothing here ranks a dead-ball detector; that needs the `gaps` profile. The configs are not
+  "fixed" for it.
+- **Under the raw truth every difference to `w50` is as clear as seven matches can make it**: 0 wins and 7 losses give
+  the smallest sign-flip p there is, 2/128 = 0.0156, and the intervals clear 0. It holds in both competitions (the mean
+  Δ of `w25`: −0.0039 over the two Bundesliga matches and −0.0151 over the five 2. Bundesliga ones). It is a statement
+  about these seven matches, five of them one club's home games, under this truth and this profile; it does not say
+  that the gap is real on ours.
+- **Pooled and mean per match differ by at most 0.002** (spellF1 0.3073 against 0.3081 for `w50`). The pooled value is
+  the organisers' scorer's on all halves as one file (`score.py`); the mean per match is the one the interval is of.
+- **The oracle.** An evidence source equal to the raw truth, decoded with `majority_vote(half_width=0)`, scores exactly
+  1.0000 on spellF1, macroF1 and alive/dead F1 on each of the seven matches (3,061 possessions: 511, 500, 402, 456,
+  421, 401 and 370; both halves of each). Two controls: the same oracle one row late scores spellF1 0.9898 and macroF1
+  0.9954 on J03WMX, so an off-by-one shows; the raw oracle against the coarse truth scores spellF1 0.5843 and macroF1
+  0.9581 on J03WMX (511 predicted possessions against 255), so the coarse truth is applied.
+
+Runtime: 8 to 10 s for the four configs on all seven matches with the DFL caches warm (about 1 s per config, nearly all
+the rest a cached load per match). The same command twice, and in two processes with different `PYTHONHASHSEED`, writes
+the same bytes (`test_runner_json_identical_across_processes`).
+Verdict: keep as the benchmark's floor on `clean`, not a candidate. It decides nothing about smoothing width until the
+degraded profiles exist and both truths agree. It does show that the runner, the truth and the scoring line up (the
+oracle), and that the choice of truth can reorder the yardsticks.
 
 ## Submission log
 
