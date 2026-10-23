@@ -137,9 +137,9 @@ class MatchInputs(Inputs):
 
         `sources` is {"information": {"bytes", "sha256"}, "positions": {...}} as the match's DFL cache recorded them,
         so that a result names the files it came from, and `sources_reason` is None. It is copied only from a cache
-        that is of this very match: the id alone finds the cache, so the manifest's match_id, fps, pitch and graded
-        must also be the match's own. Otherwise (no cache, one that cannot be read, one of another match) `sources` and
-        `cache_version` are None and `sources_reason` says why.
+        that is of this very match: the id alone finds the cache, so the manifest's match_id, fps, pitch, graded and
+        report (the parse's counts) must also be the match's own. Otherwise (no cache, one that cannot be read, one of
+        another match) `sources` and `cache_version` are None and `sources_reason` says why.
         """
         return self._atd_manifest
 

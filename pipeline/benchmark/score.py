@@ -227,7 +227,10 @@ def compare(scores_a, scores_b, competition=None, *, metric="spell_f1_mean"):
       pooled_delta   the delta of the two configs' pooled scores, over all halves, matches and seeds
       match_deltas   {match_id: delta of that match's pooled score (per_match), its halves and seeds summed}, by id
       mean_delta     the mean of the match deltas, each match counting once: the statistic the next three are about
-      low, high      its two-sided 90% t interval (t_interval)
+      low, high      its two-sided 90% t interval (t_interval). It does not follow the tie rule below: deltas of the
+                     order of 1e-16 (two F1s that are equal on paper) can give an interval that excludes 0 while wins
+                     and losses are 0 and p_sign_flip is 1.0. Call an interval "excluding 0" only if it clears 0 by
+                     more than FLIP_TOLERANCE (the benchmark runner's table does)
       p_sign_flip    the exact sign-flip p of the match deltas (sign_flip_p)
       wins, losses   how many matches have a delta above 0, and below 0, by more than FLIP_TOLERANCE: a delta within it
                      of 0 is a tie, neither (two F1s that are equal on paper can differ in the last bit, and

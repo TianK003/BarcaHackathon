@@ -12,6 +12,8 @@ import ast
 import collections
 import dataclasses
 import functools
+import heapq
+import itertools
 import json
 import os
 import tempfile
@@ -123,7 +125,8 @@ def held_by(value):
     functools.partial close over or are given. Then, for anything that is not a plain value, its attributes: the
     __dict__ and the __slots__ (those of a class that declares them, and of a dataclass with slots=True; a plain
     dataclass keeps its fields in __dict__). Classes, modules and plain values hold nothing. The members of a set are
-    all named "{member}", with no position: their order is the hash's, and an object's hash is its id.
+    all named "{member}", with no position: their order is the hash's, and an object's hash is its id, so leaks() takes
+    its routes in the order of their names and never in the order that this returns them.
     """
     if isinstance(value, (str, bytes, int, float, complex, range, type, types.ModuleType, np.generic, np.dtype)):
         return []
@@ -173,23 +176,38 @@ def leaks(inputs, match):
     Walks everything reachable from `inputs` (held_by), once each: a visited set keeps a cycle from running for ever.
     A DflMatch is a finding by itself; an array of another dtype than object, and a list or tuple of ints (a tolist()
     copy) as long as one of the forms, are compared with every form of the truth (truth_forms); a view is found
-    through its base: `inputs.window.base == ball_possession`. Findings are sorted and without duplicates, so that they
-    do not depend on the order of a set.
+    through its base: `inputs.window.base == ball_possession`. Findings are sorted and without duplicates.
+
+    The label of a finding depends on the graph and never on the order in which a set happens to be iterated. The
+    routes are taken in the order of their names (a heap on the path string: a parent's name is a prefix of its
+    children's, so it is always taken first), and an object that two routes reach is named by the one that sorts
+    first. The members of a set share one name, "{member}", so they are all taken before anything below them, and
+    whichever of them is taken first, what they hold is named the same
+    (test_leak_labels_do_not_depend_on_the_order_of_a_set).
 
     What it does not see, so that nobody takes it for a proof. It is for an accidental leak: a component's author who
-    kept the match, or its flags, in a field, a cache, a closure or a view. It does not see a copy of a stretch that
-    is not a whole array or a whole half; a copy in another representation (bytes or a memoryview, letter codes such
-    as "H" and "A", a column of shape (n, 1), a pandas Series, floats, a set of numbers); a copy that is not equal to
-    a form (a smoothed one, a rolling window); an attribute computed by a property or a __getattr__ at the moment it
-    is read; anything built at run time that the inputs do not hold; and the match itself reached by an import or by
-    name. test_components_import_nothing_from_the_benchmark closes the plain import, with its own limits.
+    kept the match, or its flags, in a field, a cache, a closure or a view. It does not see:
+      * a copy of a stretch that is not a whole array or a whole half;
+      * a copy in another representation: bytes or a memoryview, letter codes such as "H" and "A", a column of shape
+        (n, 1), a pandas Series, a list or tuple of floats (a float ndarray copy is found, and so is a list of ints
+        or bools), a set of numbers;
+      * a copy that is not equal to a form (a smoothed one, a rolling window);
+      * an attribute computed by a property or a __getattr__ at the moment it is read;
+      * a class-level attribute: type(inputs)._last = match, or an object whose class holds the match, because
+        held_by looks into an instance's __dict__ and slots, and a class holds nothing for it
+        (test_leak_detector_limits_are_as_documented);
+      * anything built at run time that the inputs do not hold;
+      * the match itself reached by an import or by name. test_components_import_nothing_from_the_benchmark closes the
+        plain import in the three component folders, with its own limits: an import reached through another pipeline
+        module is not seen, because the scan reads only those folders.
     """
     forms = truth_forms(match)
     lengths = {array.shape[0] for array in forms.values()}
     found, seen, kept = [], set(), []
-    pending = [("inputs", inputs)]
+    order = itertools.count()                 # breaks a tie between equal names, which are never compared by value
+    pending = [("inputs", next(order), inputs)]
     while pending:
-        path, value = pending.pop()
+        path, _, value = heapq.heappop(pending)
         if id(value) in seen:
             continue
         seen.add(id(value))
@@ -203,7 +221,8 @@ def leaks(inputs, match):
         if array is not None:
             found += ["{} == {}".format(path, form) for form, other in forms.items()
                       if array.shape == other.shape and np.array_equal(array, other)]
-        pending += [(path + how, item) for how, item in held_by(value)]
+        for how, item in held_by(value):
+            heapq.heappush(pending, (path + how, next(order), item))
     return sorted(set(found))
 
 
@@ -308,6 +327,13 @@ class Holder:
 
     def get(self):
         return self.held
+
+
+class Keeper:
+    """Holds what it is given under another name than Holder does, so that a route through it has another label."""
+
+    def __init__(self, kept):
+        self.kept = kept
 
 
 class Slotted:
@@ -438,6 +464,53 @@ def test_leak_detector_looks_at_every_depth():
         assert leaks(probe, match) == [name], (what, leaks(probe, match))
 
 
+def test_leak_labels_do_not_depend_on_the_order_of_a_set():
+    """An object that two members of a set both hold is named by the same route in every run.
+
+    The members of a set are all called "{member}", and their order is the hash's, which for an object is its address.
+    A walk that took the routes in the order it found them named the match after whichever member the set happened to
+    list last: `inputs.members{member}.kept` in one run and `inputs.members{member}.held` in the next. The reviewer's
+    case, frozenset({A(match), B(match)}), is built here with the two classes allocated in each order, 20 times each
+    (a set's order follows the objects' addresses, which these allocations move around), and the label must be the
+    smaller route, `.held`, every time.
+    """
+    match = random_match()
+    labels = set()
+    for holder_first in (True, False):
+        for _ in range(20):
+            probe = match_inputs.MatchInputs(match, match_inputs.clean_atd(match))
+            members = (Holder(match), Keeper(match)) if holder_first else (Keeper(match), Holder(match))
+            probe.members = frozenset(members)
+            labels.add(tuple(leaks(probe, match)))
+    assert labels == {("inputs.members{member}.held",)}, sorted(labels)
+
+    # Two routes of different depth to one match: the smaller string wins, wherever each is in the container.
+    probe = match_inputs.MatchInputs(match, match_inputs.clean_atd(match))
+    probe.a_deep = {"x": [Holder(match)]}
+    probe.b_shallow = match
+    assert leaks(probe, match) == ["inputs.a_deep['x'][0].held"], leaks(probe, match)
+
+
+def test_leak_detector_limits_are_as_documented():
+    """What leaks() says it does not see, it does not see; and what it says it sees (a float copy), it does.
+
+    The docstring is the guard's list of limits, so it must be true: a class-level attribute is not reached (held_by
+    looks into an instance's __dict__ and slots, and classes hold nothing), a list of floats is not compared with the
+    flags, and a float ndarray copy is.
+    """
+    match = random_match()
+
+    class Probe(match_inputs.MatchInputs):
+        pass
+    Probe._last = match                                   # on the class, not on any instance
+    probe = Probe(match, match_inputs.clean_atd(match))
+    assert leaks(probe, match) == [], "a class-level attribute is a documented limit"
+    probe.floats = match.ball_possession.astype(float).tolist()
+    assert leaks(probe, match) == [], "a list of floats is a documented limit"
+    probe.copy = match.ball_possession.astype(float)
+    assert leaks(probe, match) == ["inputs.copy == ball_possession"], leaks(probe, match)
+
+
 # -- no way round the guard: the components do not import the benchmark ----------------------------------------------
 
 def benchmark_imports(source, package):
@@ -449,10 +522,10 @@ def benchmark_imports(source, package):
     .dfl.load_match` after a plain `import pipeline`).
 
     It is for an accidental import, not a determined one. It does not see a name that is never whole in the source:
-    `__import__("pipeline", fromlist=["benchmark"])`, `importlib.import_module("benchmark", package="pipeline")` or
-    `import_module(".benchmark", "pipeline")`, `getattr(pipeline, "benchmark")`, "pipeline." + "benchmark", a name read
-    from a file or the environment; nor a module that loads another by path (`runpy`, `importlib.util`). The walk of
-    leaks() is the second line against what such a component would then get from the inputs, and no more.
+    `__import__("pipeline", fromlist=["benchmark"])`, `import_module(".benchmark", "pipeline")`,
+    `getattr(pipeline, "benchmark")`, "pipeline." + "benchmark", a name read from a file or the environment; nor a
+    module that loads another by path (`runpy`, `importlib.util`). The walk of leaks() is the second line against what
+    such a component would then get from the inputs, and no more.
     """
     found = set()
     for node in ast.walk(ast.parse(source)):
@@ -544,10 +617,13 @@ def test_components_import_nothing_from_the_benchmark():
     """No module under pipeline/evidence, decode or refine imports pipeline.benchmark.
 
     The guard on the inputs is that MatchInputs holds no truth, but it names the match (`inputs.game`), and a component
-    that imported dfl.load_match could read the flags itself, whatever the inputs hold. This closes that route: the
-    components are the code a config runs, and none of them needs the benchmark. Every module of the three folders is
-    scanned, and each folder must be there with its __init__.py and at least that module scanned: a folder that is
-    renamed, or spelt wrong in COMPONENT_FOLDERS, is an error and not a clean scan of nothing.
+    that imported dfl.load_match could read the flags itself, whatever the inputs hold. This closes the plain route to
+    it: the components are the code a config runs, and none of them needs the benchmark. It is a guard against an
+    accident and not a proof (benchmark_imports lists what it cannot see), and its reach is those three folders only: a
+    component that imports another module of pipeline/, which itself reaches the benchmark, is not seen. Every module
+    of the three folders is scanned, and each folder must be there with its __init__.py and at least that module
+    scanned: a folder that is renamed, or spelt wrong in COMPONENT_FOLDERS, is an error and not a clean scan of
+    nothing.
     """
     scanned, found = scan_components()
     assert list(scanned) == list(COMPONENT_FOLDERS) and all(count >= 1 for count in scanned.values()), scanned
