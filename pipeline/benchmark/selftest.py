@@ -17,6 +17,9 @@
                                                     #   calibration reproduces A01's, A02's and R001's figures (measured:
                                                     #   12 s with the ATD cache and the calibration cache present)
 
+The real fidelity of the gaps profile is not a check but a command (fidelity.py: gates, warnings; R003 in results.md): it
+reads all seven matches and takes minutes.
+
 This file is the harness and the one command: it collects the checks, filters them by flag, runs them and reports.
 The checks themselves live in pipeline/benchmark/checks/, one module per topic (sources.py, dfl.py, ...), listed in
 checks.MODULES; to add one, write a function named test_* in the module of its topic, or start a new module there and

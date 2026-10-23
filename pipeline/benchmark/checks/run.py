@@ -30,10 +30,10 @@ import weakref
 import numpy as np
 
 import possession_metrics as pm
-from pipeline.benchmark import dfl, score, sources, truth
+from pipeline.benchmark import calibration, degrade, dfl, score, sources, truth
 from pipeline.benchmark import inputs as match_inputs
 from pipeline.benchmark import run as benchmark_run
-from pipeline.benchmark.checks.common import real_match, write_synthetic_dfl
+from pipeline.benchmark.checks.common import real_match, synthetic_calibration, write_synthetic_dfl
 from pipeline.benchmark.checks.inputs import random_match, whole_positions
 from pipeline.benchmark.checks.score import CONFIG_FOLDER
 from pipeline.config import ConfigError, load_config
@@ -64,6 +64,16 @@ fallback = "D"
 
 
 # -- helpers ----------------------------------------------------------------------------------------------------------
+
+def evaluate_clean(*arguments, **keywords):
+    """benchmark_run.evaluate_configs on the clean profile unless one is named: what most of these checks are about.
+
+    The runner's default profile is gaps (it needs our Calibration), and the checks that are about the runner, not
+    about a degradation, run on the clean one, which needs none.
+    """
+    keywords.setdefault("profile", "clean")
+    return benchmark_run.evaluate_configs(*arguments, **keywords)
+
 
 def yardstick_path(width):
     return os.path.join(CONFIG_FOLDER, "nearest_w{}.toml".format(width))
@@ -149,7 +159,7 @@ def test_runner_end_to_end_synthetic():
     paths = [yardstick_path(width) for width in (50, 0, 25)]
     with tempfile.TemporaryDirectory() as root:
         lines = []
-        result = benchmark_run.evaluate_configs(paths, matches=matches, data_dir=root, log=lines.append)
+        result = evaluate_clean(paths, matches=matches, data_dir=root, log=lines.append)
         configs = result["configs"]
         assert [entry["stem"] for entry in configs] == ["nearest_w50", "nearest_w0", "nearest_w25"]
         assert result["reference"] == "nearest_w50" and result["data_dir"] == root
@@ -232,7 +242,7 @@ def test_runner_end_to_end_synthetic():
                 assert got["interval_excludes_zero"] == benchmark_run.interval_excludes_zero(got["low"], got["high"])
 
         # Another config beside it changes nothing of a report but its comparison.
-        alone = benchmark_run.evaluate_configs([paths[2]], matches=matches, data_dir=root, log=quiet)
+        alone = evaluate_clean([paths[2]], matches=matches, data_dir=root, log=quiet)
         solo = alone["configs"][0]["report"]
         assert solo["versus"] is None
         assert {key: value for key, value in solo.items() if key != "versus"} == {
@@ -274,7 +284,7 @@ def test_runner_report_is_written_atomically():
     """The temporary file is renamed over the old report; if that fails, the old one is intact and no .tmp is left."""
     matches = synthetic_matches()
     with tempfile.TemporaryDirectory() as root:
-        result = benchmark_run.evaluate_configs([yardstick_path(50)], matches=matches, data_dir=root, log=quiet)
+        result = evaluate_clean([yardstick_path(50)], matches=matches, data_dir=root, log=quiet)
         path = benchmark_run.write_reports(result)[0]
         assert os.path.basename(path) == "nearest_w50" + SUBSET + ".json", path
         good = read(path, "rb")
@@ -298,8 +308,8 @@ def test_runner_scores_against_the_coarse_truth_when_asked():
     matches = synthetic_matches()
     path = yardstick_path(25)
     with tempfile.TemporaryDirectory() as root:
-        raw = benchmark_run.evaluate_configs([path], matches=matches, data_dir=root, log=quiet)
-        coarse = benchmark_run.evaluate_configs([path], matches=matches, truth="coarse", data_dir=root, log=quiet)
+        raw = evaluate_clean([path], matches=matches, data_dir=root, log=quiet)
+        coarse = evaluate_clean([path], matches=matches, truth="coarse", data_dir=root, log=quiet)
         report = coarse["configs"][0]["report"]
         assert report["truth"] == {"name": "coarse", "min_s": truth.COARSE_MIN_S} == {"name": "coarse", "min_s": 5}
         assert raw["configs"][0]["report"]["truth"] == {"name": "raw", "min_s": None}
@@ -323,20 +333,20 @@ def test_runner_clean_runs_one_seed_and_says_so():
     matches = synthetic_matches()
     with tempfile.TemporaryDirectory() as root:
         lines = []
-        result = benchmark_run.evaluate_configs([yardstick_path(0)], seeds=3, matches=matches, data_dir=root,
-                                                log=lines.append)
+        result = evaluate_clean([yardstick_path(0)], seeds=3, matches=matches, data_dir=root,
+                                log=lines.append)
         report = result["configs"][0]["report"]
         assert report["seeds"] == [0] and {half["seed"] for half in report["halves"]} == {0}
         assert len(report["halves"]) == 4
         assert any("seed" in line and "clean" in line and "ignored" in line for line in lines), lines
         quiet_lines = []
-        default = benchmark_run.evaluate_configs([yardstick_path(0)], matches=matches, data_dir=root,
-                                                 log=quiet_lines.append)
+        default = evaluate_clean([yardstick_path(0)], matches=matches, data_dir=root,
+                                 log=quiet_lines.append)
         assert not any("ignored" in line or "seed 0 only" in line for line in quiet_lines), (
             "no number of seeds was asked for, so there is nothing to say about ignoring one: " + str(quiet_lines))
         assert default["configs"][0]["report"] == report, "the default is the same run"
-        one = benchmark_run.evaluate_configs([yardstick_path(0)], seeds=1, matches=matches, data_dir=root,
-                                             log=quiet_lines.append)
+        one = evaluate_clean([yardstick_path(0)], seeds=1, matches=matches, data_dir=root,
+                             log=quiet_lines.append)
         assert one["configs"][0]["report"] == report
         assert not any("ignored" in line for line in quiet_lines), "seeds=1 is what clean runs: nothing is ignored"
 
@@ -346,8 +356,8 @@ def test_runner_one_match_has_no_interval_and_says_so():
     matches = synthetic_matches()
     with tempfile.TemporaryDirectory() as root:
         lines = []
-        result = benchmark_run.evaluate_configs([yardstick_path(50), yardstick_path(25)], match_ids=["RND002"],
-                                                matches=matches, data_dir=root, log=lines.append)
+        result = evaluate_clean([yardstick_path(50), yardstick_path(25)], match_ids=["RND002"],
+                                matches=matches, data_dir=root, log=lines.append)
         for entry in result["configs"]:
             interval = entry["report"]["t_interval"]["spell_f1_mean"]
             assert interval["n"] == 1 and interval["low"] is None and interval["high"] is None
@@ -382,7 +392,7 @@ def test_runner_rejects_unknown_profile():
     matches = synthetic_matches()
     path = yardstick_path(50)
     with tempfile.TemporaryDirectory() as root:
-        message = expect_error(benchmark_run.BenchmarkError, lambda: benchmark_run.evaluate_configs(
+        message = expect_error(benchmark_run.BenchmarkError, lambda: evaluate_clean(
             [path], profile="gappy", matches=matches, data_dir=root, log=quiet), "gappy", "not one of")
         for name in benchmark_run.PROFILES:
             assert name in message, (name, message)
@@ -395,7 +405,7 @@ def test_runner_rejects_unknown_profile():
         assert all(getattr(atd, name) is getattr(match, field) for name, field in (
             ("players_xy", "players_xy"), ("ball_xy", "ball_xy"), ("slot_team", "player_team"))), "clean is DFL's own"
         # Before any match is loaded: with no matches to inject and an empty data folder, loading would raise OSError.
-        expect_error(benchmark_run.BenchmarkError, lambda: benchmark_run.evaluate_configs(
+        expect_error(benchmark_run.BenchmarkError, lambda: evaluate_clean(
             [path], profile="gappy", data_dir=root, log=quiet), "gappy")
 
 
@@ -408,7 +418,7 @@ def test_runner_rejects_what_it_cannot_score():
         def evaluate(*configs, **keywords):
             keywords.setdefault("log", quiet)
             keywords.setdefault("data_dir", root)           # an empty folder: loading a real match would be an OSError
-            return benchmark_run.evaluate_configs(list(configs), **keywords)
+            return evaluate_clean(list(configs), **keywords)
 
         expect_error(refused, lambda: evaluate(), "no config", "CONFIG")
         expect_error(refused, lambda: evaluate(path, path), "nearest_w50", "twice")
@@ -463,14 +473,14 @@ def test_runner_names_unavailable_source():
             registered(refine_stage.REGISTRY, straighten=refine_with_homography):
         with tempfile.TemporaryDirectory() as root:
             video = write_text(root, "uses_video.toml", text)
-            message = expect_error(benchmark_run.BenchmarkError, lambda: benchmark_run.evaluate_configs(
+            message = expect_error(benchmark_run.BenchmarkError, lambda: evaluate_clean(
                 [yardstick_path(50), video], matches=matches, data_dir=root, log=quiet),
                 "uses_video", "pitch_lines", "needs_homography", "homography", "public window")
             assert "nearest_player" not in message, "the source that worked is not the one to blame: " + message
             assert not os.path.exists(os.path.join(root, "runs")), "nothing is written for a run that failed"
 
             late = write_text(root, "late_video.toml", refiner)
-            message = expect_error(benchmark_run.BenchmarkError, lambda: benchmark_run.evaluate_configs(
+            message = expect_error(benchmark_run.BenchmarkError, lambda: evaluate_clean(
                 [late], matches=matches, data_dir=root, log=quiet), "late_video", "homography", "public window")
             assert "no evidence source" in message and "majority_vote" in message, message
     assert evidence_stage.REGISTRY == before_evidence and refine_stage.REGISTRY == before_refine, (
@@ -493,7 +503,7 @@ def test_runner_a_subset_never_replaces_a_full_report():
     path = yardstick_path(25)
     with tempfile.TemporaryDirectory() as root, loading(serve):
         def written(truth_name="raw", **keywords):
-            result = benchmark_run.evaluate_configs([path], truth=truth_name, data_dir=root, log=quiet, **keywords)
+            result = evaluate_clean([path], truth=truth_name, data_dir=root, log=quiet, **keywords)
             [report_file] = benchmark_run.write_reports(result)
             return os.path.basename(report_file)
 
@@ -544,13 +554,13 @@ def test_runner_report_names_keep_runs_of_different_kinds_apart():
         return random_match(match_id, seed=sources.MATCH_IDS.index(match_id))
 
     with tempfile.TemporaryDirectory() as root, loading(serve):
-        result = benchmark_run.evaluate_configs([yardstick_path(25)], profile="clean", seeds=5, data_dir=root,
-                                                log=quiet)
+        result = evaluate_clean([yardstick_path(25)], profile="clean", seeds=5, data_dir=root,
+                                log=quiet)
         assert [os.path.basename(path) for path in benchmark_run.write_reports(result)] == ["nearest_w25.json"]
 
 
 def test_runner_refuses_a_config_whose_name_has_a_dot():
-    """A config's file name is its report's name, whose parts are told apart by dots, so a dot in it would be read as one.
+    """A config's file name is its report's name, whose parts are told apart by dots: a dot in it would be one.
 
     `x.coarse.toml` would write `x.coarse.json`, which is `x`'s own report under the coarse truth, and `x.m-J03WMX.toml`
     one of `x`'s reports on a single match: another run's file. Refused before a match is loaded, naming the config
@@ -560,11 +570,11 @@ def test_runner_refuses_a_config_whose_name_has_a_dot():
     with tempfile.TemporaryDirectory() as root:
         for stem in ("x.coarse", "x.m-J03WMX", "x.s1", "a.b"):
             path = write_text(root, stem + ".toml", read(yardstick_path(50)))
-            expect_error(benchmark_run.BenchmarkError, lambda: benchmark_run.evaluate_configs(
+            expect_error(benchmark_run.BenchmarkError, lambda: evaluate_clean(
                 [path], profile="clean", matches=matches, data_dir=root, log=quiet), stem, "dot", "rename")
         assert not os.path.exists(os.path.join(root, "runs")), "a refused run writes nothing"
         fine = write_text(root, "x_coarse-1.toml", read(yardstick_path(50)))
-        benchmark_run.evaluate_configs([fine], profile="clean", matches=matches, data_dir=root, log=quiet)
+        evaluate_clean([fine], profile="clean", matches=matches, data_dir=root, log=quiet)
 
 
 def test_runner_readme_names_checks_and_numbers_that_exist():
@@ -583,6 +593,125 @@ def test_runner_readme_names_checks_and_numbers_that_exist():
     assert "{:g}".format(score.FLIP_TOLERANCE) in readme and "score.FLIP_TOLERANCE" in readme
     assert "{:.0%}".format(score.INTERVAL_LEVEL) in readme
     assert ".m-" in readme and "MIN_AGREEMENT" in readme and truth_checks.MIN_AGREEMENT == 0.6 and "60%" in readme
+
+
+# -- the degraded profile ---------------------------------------------------------------------------------------------
+
+def independent_gaps_halves(match, config_path, cal, seed, data_dir):
+    """[HalfScore] of one config on one match under `gaps`: degrade, predict and score_halves called here."""
+    config = load_config(config_path)
+    codes_true = truth.truth_codes(match)[0]
+    atd, _ = degrade.degrade(degrade.tracking_view(match), "gaps", cal, seed)
+    inputs = match_inputs.MatchInputs(match, atd, profile="gaps", seed=seed, data_dir=data_dir)
+    codes, _ = benchmark_run.predict(config, inputs)
+    return score.score_halves(codes_true, codes, match.graded, match.match_id, seed)
+
+
+def half_tuples(halves):
+    return [(half["match_id"], half["half"], half["seed"], half["n_gt"], half["n_pred"], tuple(half["tp"]),
+             tuple(tuple(row) for row in half["confusion"])) for half in halves]
+
+
+def test_runner_gaps_is_the_default_and_runs_on_degraded_tracking():
+    """The default profile is gaps; it serves each match's degraded tracking, per seed, and the report says whose.
+
+    Every number is checked against the degrader, predict and score_halves called here: a seed degrades the match with
+    its own draws, the report holds the Calibration's digest and version, the file name carries `.s<n>` for a number of
+    seeds that is not the default, and the printout names the calibration that made the run.
+    """
+    assert benchmark_run.DEFAULT_PROFILE == "gaps" and benchmark_run.PROFILES == degrade.PROFILES == {
+        "clean": 1, "gaps": 1}
+    matches, cal = synthetic_matches(), synthetic_calibration()
+    paths = [yardstick_path(50), yardstick_path(0)]
+    with tempfile.TemporaryDirectory() as root:
+        lines = []
+        result = benchmark_run.evaluate_configs(paths, seeds=2, matches=matches, calibration=cal, data_dir=root,
+                                                log=lines.append)
+        assert result["profile"] == {"name": "gaps", "version": 1} and result["seeds"] == [0, 1]
+        for entry, width in zip(result["configs"], (50, 0)):
+            report = entry["report"]
+            assert report["profile"] == {"name": "gaps", "version": 1} and report["seeds"] == [0, 1]
+            assert report["calibration"] == {"sha256": calibration.digest(cal),
+                                             "version": calibration.CALIBRATION_VERSION}
+            expected = []
+            for match in matches.values():
+                for seed in (0, 1):
+                    expected += independent_gaps_halves(match, yardstick_path(width), cal, seed, root)
+            assert len(report["halves"]) == 8 and half_tuples(report["halves"]) == [
+                (h.match_id, h.half, h.seed, h.n_gt, h.n_pred, h.tp, h.confusion) for h in expected], width
+            for name, value in score.pooled(expected).items():
+                if name != "spell_f1":
+                    assert abs(report["pooled"][name] - value) < ROUNDING, (width, name)
+            minutes = (440 + 560) / 25 / 60 * 2
+            assert abs(report["possessions_per_graded_minute"]["graded_minutes"] - minutes) < ROUNDING, "two seeds"
+        table = "\n".join(lines)
+        assert "profile   gaps (version 1)" in table and "seeds 0,1" in table, table
+        assert any("calibration" in line and calibration.digest(cal)[:12] in line for line in lines), table
+
+        # The same run is the same report; a different seed count is a different run, with its own name.
+        again = benchmark_run.evaluate_configs(paths, seeds=2, matches=matches, calibration=cal, data_dir=root,
+                                               log=quiet)
+        assert [entry["report"] for entry in again["configs"]] == [entry["report"] for entry in result["configs"]]
+        three = benchmark_run.evaluate_configs(paths[:1], matches=matches, calibration=cal, data_dir=root, log=quiet)
+        assert three["seeds"] == [0, 1, 2] == three["configs"][0]["report"]["seeds"], "none asked for: DEFAULT_SEEDS"
+        one = benchmark_run.evaluate_configs(paths[:1], seeds=1, matches=matches, calibration=cal, data_dir=root,
+                                             log=quiet)
+        assert one["seeds"] == [0]
+        two = benchmark_run.evaluate_configs(paths[:1], seeds=2, matches=matches, calibration=cal, data_dir=root,
+                                             log=quiet)
+        names = [os.path.basename(benchmark_run.write_reports(each)[0]) for each in (two, three, one)]
+        assert names == ["nearest_w50" + SUBSET + ".s2.json", "nearest_w50" + SUBSET + ".json",
+                         "nearest_w50" + SUBSET + ".s1.json"], names
+        folder = os.path.join(root, "runs", "benchmark", "gaps")
+        assert sorted(os.listdir(folder)) == sorted(names), "three runs of three kinds, three files"
+        report = strict_json(read(os.path.join(folder, names[0])))
+        assert report["calibration"]["sha256"] == calibration.digest(cal) and report["seeds"] == [0, 1]
+
+        # The profile does something: the same config on the clean tracking scores differently.
+        clean = evaluate_clean(paths[:1], matches=matches, data_dir=root, log=quiet)
+        assert clean["configs"][0]["report"]["pooled"] != result["configs"][0]["report"]["pooled"]
+
+
+def test_runner_refuses_a_calibration_it_cannot_use():
+    """A degraded profile needs a Calibration (loaded from the data directory if none is given), clean takes none."""
+    matches, cal = synthetic_matches(), synthetic_calibration()
+    path = yardstick_path(50)
+    refused = benchmark_run.BenchmarkError
+    with tempfile.TemporaryDirectory() as root:
+        expect_error(refused, lambda: benchmark_run.evaluate_configs(
+            [path], profile="gaps", calibration=object(), matches=matches, data_dir=root, log=quiet),
+            "calibration", "Calibration", "calibration.load()")
+        expect_error(refused, lambda: evaluate_clean(
+            [path], calibration=cal, matches=matches, data_dir=root, log=quiet), "clean", "calibration", "ignored")
+        # None given: it is measured from, or read out of, the data directory, which here has nothing in it.
+        try:
+            benchmark_run.evaluate_configs([path], profile="gaps", matches=matches, data_dir=root, log=quiet)
+        except OSError as error:
+            assert "tactical" in str(error), str(error)
+        else:
+            raise AssertionError("an empty data directory has no calibration, and the run must say so")
+        assert not os.path.exists(os.path.join(root, "runs")), "a refused run writes nothing"
+
+
+def test_runner_names_the_order_of_the_published_baselines_and_how_far_a_run_agrees():
+    """Kendall's tau of the order a run gives the four yardsticks against the published one, in the result and table."""
+    matches, cal = synthetic_matches(), synthetic_calibration()
+    paths = [yardstick_path(width) for width in (50, 125, 25, 0)]
+    with tempfile.TemporaryDirectory() as root:
+        lines = []
+        result = benchmark_run.evaluate_configs(paths, seeds=1, matches=matches, calibration=cal, data_dir=root,
+                                                log=lines.append)
+        rank = result["rank"]
+        assert rank["published"] == ["nearest_w50", "nearest_w125", "nearest_w25", "nearest_w0"]
+        pooled = {entry["stem"]: score.pooled(entry["scores"])["spell_f1_mean"] for entry in result["configs"]}
+        assert rank["observed"] == sorted(pooled, key=lambda stem: -pooled[stem]), "best first, by pooled spellF1"
+        again = score.kendall_tau(rank["published"], pooled)
+        assert rank["kendall_tau"] == again["tau"] and rank["pairs"] == 6
+        assert any("Kendall" in line and "{:+.4f}".format(again["tau"]) in line for line in lines), lines
+        # Fewer than two of the published four: nothing to say about their order.
+        solo = benchmark_run.evaluate_configs(paths[:1], seeds=1, matches=matches, calibration=cal, data_dir=root,
+                                              log=quiet)
+        assert solo["rank"] is None
 
 
 # -- one match at a time, and in what order ---------------------------------------------------------------------------
@@ -609,8 +738,8 @@ def test_runner_holds_one_match_at_a_time_and_in_the_order_given():
     ids = ["J03WOH", "J03WMX", "J03WR9"]
     lines = []
     with tempfile.TemporaryDirectory() as root, loading(serve):
-        result = benchmark_run.evaluate_configs([yardstick_path(50), yardstick_path(0)], match_ids=ids, data_dir=root,
-                                                log=lines.append)
+        result = evaluate_clean([yardstick_path(50), yardstick_path(0)], match_ids=ids, data_dir=root,
+                                log=lines.append)
     by_match = [line for line in lines if "spellF1 by match" in line]
     deltas = [line for line in lines if line.strip().startswith("per match") and "spellF1 mean" not in line]
     assert len(by_match) == 2 and len(deltas) == 1, lines
@@ -627,7 +756,7 @@ def test_runner_holds_one_match_at_a_time_and_in_the_order_given():
     # Without ids: sources.MATCH_IDS' order.
     made.clear()
     with tempfile.TemporaryDirectory() as root, loading(serve):
-        benchmark_run.evaluate_configs([yardstick_path(25)], data_dir=root, log=quiet)
+        evaluate_clean([yardstick_path(25)], data_dir=root, log=quiet)
     assert [name for name, _ in made] == list(sources.MATCH_IDS), [name for name, _ in made]
 
 
@@ -643,7 +772,7 @@ def test_runner_main_runs_prints_and_writes():
         def run_main(*arguments):
             shown = io.StringIO()
             with contextlib.redirect_stdout(shown):
-                code = benchmark_run.main(list(arguments))
+                code = benchmark_run.main(["--profile", "clean"] + list(arguments))   # a later --profile wins
             return code, shown.getvalue()
 
         code, out = run_main(first, second, "--data-dir", root, "--matches", "J03WMX", "J03WN1", "J03WOH")
@@ -685,8 +814,8 @@ def cross_process_matches(root, paths):
 def cross_process_run(root, out, paths):
     """What each process of test_runner_json_identical_across_processes does: evaluate, and write to its own folder."""
     configs = [yardstick_path(width) for width in (50, 0, 125)]
-    result = benchmark_run.evaluate_configs(configs, matches=cross_process_matches(root, paths), data_dir=root,
-                                            log=quiet)
+    result = evaluate_clean(configs, matches=cross_process_matches(root, paths), data_dir=root,
+                            log=quiet)
     return benchmark_run.write_reports(result, data_dir=out)
 
 
@@ -790,11 +919,11 @@ def test_dfl_oracle_scores_perfectly():
             return write_text(root, name + ".toml", ORACLE.format(lag=lag, half=half, swap=str(swap).lower()))
 
         def on_j03wmx(path, truth_name="raw"):
-            result = benchmark_run.evaluate_configs([path], match_ids=["J03WMX"], truth=truth_name, log=quiet)
+            result = evaluate_clean([path], match_ids=["J03WMX"], truth=truth_name, log=quiet)
             return result["configs"][0]["report"]["per_match"]["J03WMX"]
 
         exact = config("oracle_exact")
-        result = benchmark_run.evaluate_configs([exact], log=quiet)
+        result = evaluate_clean([exact], log=quiet)
         report = result["configs"][0]["report"]
         assert [record["id"] for record in report["matches"]] == list(sources.MATCH_IDS)
         assert len(report["halves"]) == 2 * len(sources.MATCH_IDS), "both halves of every match"

@@ -522,6 +522,43 @@ def test_t_interval_edge_cases():
     assert all(math.isnan(value) for value in score.t_interval([1.0, float("nan"), 3.0]))
 
 
+def test_kendall_tau_by_hand():
+    """Kendall's tau of a reference order against scores, from pairs counted here: ties count in neither sum.
+
+    Order a > b > c > d has the six pairs ab, ac, ad, bc, bd, cd. A score is concordant on a pair if it puts the first
+    above the second (by more than FLIP_TOLERANCE), discordant if below, tied otherwise; tau is (concordant -
+    discordant) / pairs.
+    """
+    order = ["a", "b", "c", "d"]
+    top = score.kendall_tau(order, {"a": 4.0, "b": 3.0, "c": 2.0, "d": 1.0})
+    assert top == {"tau": 1.0, "concordant": 6, "discordant": 0, "tied": 0, "pairs": 6}, top
+    bottom = score.kendall_tau(order, {"a": 1.0, "b": 2.0, "c": 3.0, "d": 4.0})
+    assert bottom == {"tau": -1.0, "concordant": 0, "discordant": 6, "tied": 0, "pairs": 6}, bottom
+    # b and c swapped: bc is the one discordant pair, five are concordant: (5 - 1) / 6.
+    swapped = score.kendall_tau(order, {"a": 4.0, "b": 2.0, "c": 3.0, "d": 1.0})
+    assert (swapped["concordant"], swapped["discordant"], swapped["tied"]) == (5, 1, 0)
+    assert abs(swapped["tau"] - 4 / 6) < 1e-15
+    # b and c tied: pair bc counts in neither sum: (5 - 0) / 6. A tie is a difference of FLIP_TOLERANCE or less, so
+    # float noise between two equal scores is a tie, and a difference just beyond it is not.
+    tied = score.kendall_tau(order, {"a": 4.0, "b": 0.3, "c": 0.1 + 0.2, "d": 0.1})
+    assert 0.1 + 0.2 != 0.3 and (tied["concordant"], tied["discordant"], tied["tied"]) == (5, 0, 1), tied
+    assert abs(tied["tau"] - 5 / 6) < 1e-15
+    exact = score.kendall_tau(order, {"a": 4.0, "b": 2.0, "c": 2.0 + score.FLIP_TOLERANCE / 2, "d": 1.0})
+    assert (exact["concordant"], exact["tied"]) == (5, 1) and abs(exact["tau"] - 5 / 6) < 1e-15
+    beyond = score.kendall_tau(order, {"a": 4.0, "b": 2.0, "c": 2.0 + 3 * score.FLIP_TOLERANCE, "d": 1.0})
+    assert (beyond["discordant"], beyond["tied"]) == (1, 0)
+    # Names that are not in the order are left out (a run of three of the four), and the order is the reference's.
+    # ac and ad are concordant, cd is not (c is above d in the order, and scores below it): (2 - 1) / 3.
+    three = score.kendall_tau(order, {"a": 4.0, "c": 2.0, "d": 3.0, "extra": 9.0})
+    assert (three["pairs"], three["concordant"], three["discordant"], three["tied"]) == (3, 2, 1, 0), three
+    assert abs(three["tau"] - 1 / 3) < 1e-15
+    assert score.kendall_tau(["x", "y"], {"x": 1.0, "y": 0.0})["tau"] == 1.0
+    alone = score.kendall_tau(order, {"a": 4.0})
+    assert alone["pairs"] == 0 and math.isnan(alone["tau"])
+    expect_error(ValueError, lambda: score.kendall_tau(["a", "a", "b"], {"a": 1.0, "b": 2.0}), "twice", "a")
+    expect_error(ValueError, lambda: score.kendall_tau(order, {"a": float("nan"), "b": 1.0}), "a", "finite")
+
+
 def test_sign_flip_all_positive():
     """Seven deltas of one sign: only all-plus and all-minus are as far from 0 as the data, 2 of 128 patterns, 1/64."""
     assert score.sign_flip_p([0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07]) == 1 / 64

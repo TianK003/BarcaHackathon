@@ -184,6 +184,15 @@ or run final inference on CPU. Sort directory listings.
 - Don't name our files `baseline_*.csv`: the gitignore exception for that pattern would commit them.
 - `python starter/baseline.py` without `--out` overwrites the committed baselines.
 
+**T34 — `np.load(path)` can leave its file open, and Windows then refuses to rewrite it.** A zip cut short that carries
+an `.npy` name fails inside numpy's `NpzFile`, after `np.load` has handed the file over, so nothing closes it (a
+`ResourceWarning` on Linux and macOS; on Windows the rebuild that follows an unreadable cache, which rewrites the file,
+dies with `PermissionError` while the exception is still alive). Open the file yourself and give `np.load` the handle
+(`with open(path, "rb") as handle: np.load(handle, allow_pickle=False)`), as `dfl._read_array` does.
+`calibration._read_array` and `pipeline/inputs/atd_cache.py` still pass a path to `np.load`, and neither catches
+`zipfile.BadZipFile`, so a zip cut short under an `.npy` name raises there instead of rebuilding (nothing makes such a
+file; a note for whoever next edits those two).
+
 ## Rules and data handling
 
 **T25 — Data must never leave our machines the wrong way.**

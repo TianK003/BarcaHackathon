@@ -4,7 +4,7 @@
 
     codes, sources = predict(config, inputs)         # one config on one match: the codes, and the evidence behind them
     result = evaluate_configs([path, path, ...])     # every config on every match, scored, compared, with its reports
-    write_reports(result)                            # <data dir>/runs/benchmark/<profile>/<stem>[...].json, one per config
+    write_reports(result)                            # <data dir>/runs/benchmark/<profile>/<stem>[...].json, each
 
 Prediction
 ----------
@@ -46,11 +46,19 @@ evaluate_configs() is what the team chooses between methods with, so it is built
   (test_runner_json_identical_across_processes).
 * A run never replaces a report of another kind. The file is <stem>.json for all seven matches under the raw truth and
   the default number of seeds; <stem>.coarse.json under the coarse truth; for any other set of matches (one match, two,
-  a different seven) `.m-<ids sorted, joined by "-">` is added, so `--matches J03WMX` writes <stem>.m-J03WMX.json next to
-  the full report; and a number of seeds other than DEFAULT_SEEDS adds `.s<n>` (a degraded profile only: the clean
+  a different seven) `.m-<ids sorted, joined by "-">` is added, so `--matches J03WMX` writes <stem>.m-J03WMX.json next
+  to the full report; and a number of seeds other than DEFAULT_SEEDS adds `.s<n>` (a degraded profile only: the clean
   profile has one seed, always), so a quick one-seed look never replaces the three-seed report. The order is
   <stem>[.<truth>][.m-<ids>][.s<n>].json (report_path). A config's own name may hold no dot, which would be read as one
-  of these parts (BenchmarkError).
+  of these parts (BenchmarkError). What is not in the name is replaced: a report holds the digest of the Calibration its
+  tracking was degraded with, and a later run with a newer Calibration writes over the older report of the same name.
+
+The profiles (degrade.py). The tracking is served to every config as an Atd made by degrade.degrade from a TrackingView
+of the match, which has no flag of the truth. "gaps", the default, is what looks like our match so far: the ball is
+missing where ours was (the Calibration's masks, transplanted), so nearest_player votes on fewer frames, majority_vote
+has D to give, and the scores are no longer those of a ball that is always there. It needs the Calibration of BAR-ATH
+(calibration.load, measured once and cached), which evaluate_configs loads unless it is given one, and whose digest goes
+into every report. "clean" needs none.
 
 What the clean profile is. The tracking exactly as DFL gives it: the ball is present on every frame, so nearest_player
 votes everywhere and majority_vote, which takes D only where nobody voted, labels almost nothing D, where the truth has
@@ -86,7 +94,8 @@ import numpy as np  # noqa: E402
 
 import games  # noqa: E402
 from pipeline import run as pipeline_run  # noqa: E402  (importing pipeline also puts evaluation/ on sys.path)
-from pipeline.benchmark import dfl, score, sources  # noqa: E402
+from pipeline.benchmark import calibration as calibration_module  # noqa: E402
+from pipeline.benchmark import degrade, dfl, score, sources  # noqa: E402
 from pipeline.benchmark import inputs as match_inputs  # noqa: E402
 from pipeline.benchmark import truth as truths  # noqa: E402
 from pipeline.config import ConfigError, load_config  # noqa: E402
@@ -95,12 +104,15 @@ from pipeline.contracts import RunContext  # noqa: E402
 import possession_metrics as pm  # noqa: E402  isort:skip
 
 # Params
-CLEAN = "clean"
-PROFILES = {CLEAN: 1}              # name -> version of how its tracking is made (in the report); Task 11 swaps it
-DEFAULT_PROFILE = CLEAN
+CLEAN = degrade.CLEAN
+PROFILES = degrade.PROFILES        # name -> version of how its tracking is made (in the report): degrade.py's recipes
+DEFAULT_PROFILE = "gaps"           # the first one that looks like our match; clean is the floor it is measured against
 DEFAULT_SEEDS = 3                  # degradation seeds per match; the clean profile has nothing random and runs seed 0
+# The order of the four yardsticks in the full-match scores that the organisers published (R000: smooth50 0.2433 >
+# smooth125 0.2242 > smooth25 0.1996 > raw 0.0486), best first: what a profile's order is read against (rank_agreement).
+PUBLISHED_ORDER = ("nearest_w50", "nearest_w125", "nearest_w25", "nearest_w0")
 TRUTHS = ("raw", "coarse")
-REPORT_FOLDER = ("runs", "benchmark")        # <data dir>/runs/benchmark/<profile>/<stem>[.<truth>][.m-<ids>][.s<n>].json
+REPORT_FOLDER = ("runs", "benchmark")        # <data dir>/runs/benchmark/<profile>/<stem>[.<truth>][.m-..][.s<n>].json
 DECIMALS = 9                       # floats in a report are rounded to this: BLAS summation order varies by machine
 LEVEL = score.INTERVAL_LEVEL       # the coverage of the t intervals (the printout names it, checks tie T_95 to it)
 METRICS = (("spell_f1_mean", "spellF1"), ("macro_f1", "macroF1"))   # what a comparison reports, ranking metric first
@@ -144,12 +156,13 @@ def predict(config, inputs):
 def make_atd(match, profile, seed, calibration=None):
     """The tracking to serve for `match` under `profile` and `seed`, as an Atd of the BAR-ATH cache's own layout.
 
-    "clean" is DFL's tracking as it is (inputs.clean_atd): nothing is degraded, so the seed and the calibration are not
-    used. The degraded profiles come with Task 11, which routes them to the degrader here. BenchmarkError, listing the
-    profiles there are, for any other name.
+    The match is handed to the degrader as a TrackingView, which has the tracking and no flag of the truth
+    (degrade.py), and degrade.degrade makes the Atd: "clean" is DFL's tracking as it is (nothing is degraded, so the
+    seed and the calibration are not used) and "gaps" has our ball's missing masks transplanted onto it, which needs
+    `calibration`. BenchmarkError, listing the profiles there are, for any other name.
     """
     _check_profile(profile)
-    return match_inputs.clean_atd(match)
+    return degrade.degrade(degrade.tracking_view(match), profile, calibration, seed)[0]
 
 
 def _check_profile(profile):
@@ -169,20 +182,23 @@ def evaluate_configs(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_id
     note says so when a number of seeds was asked for (and is not 1) and not otherwise. `match_ids` are the
     matches, in the order to run them (default: all seven, sources.MATCH_IDS' order); they are read through
     dfl.load_match from `data_dir` (default games.DATA_DIR). `matches` is {id: DflMatch} to use instead of loading (the
-    checks pass synthetic ones), `calibration` the Calibration the profile needs (none of the profiles of this task
-    does, and one is refused) and `truth` "raw" or "coarse" (truth.coarse_codes). `log` receives each progress line
-    and then the printed table.
+    checks pass synthetic ones). `calibration` is the Calibration of BAR-ATH that a degraded profile takes its gaps
+    from; none given, calibration.load(data_dir) reads it from its cache or measures it, before the first match; the
+    clean profile degrades nothing and refuses one, so that a report cannot suggest that it was used. `truth` is "raw"
+    or "coarse" (truth.coarse_codes). `log` receives each progress line and then the printed table.
 
     Everything that can be refused is, before the first match is loaded: no config, one that does not load (ConfigError,
-    from the pipeline's own loader), one with scope = "file", two with the same name, an unknown profile or truth or
-    match, a repeated match, fewer than one seed. BenchmarkError says which. A source that needs an asset that a
-    benchmark match does not have (the video's homography, the Smart Tagging) stops the run with its config, its name
-    and kind and the asset named, instead of scoring zeros.
+    from the pipeline's own loader), one with scope = "file", one whose name has a dot, two with the same name, an
+    unknown profile or truth or match, a repeated match, fewer than one seed, a calibration that is not one or that the
+    profile does not take. BenchmarkError says which. A source that needs an asset that a benchmark match does not have
+    (the video's homography, the Smart Tagging) stops the run with its config, its name and kind and the asset named,
+    instead of scoring zeros.
 
-    Returns {"profile", "seeds", "truth", "matches", "git", "data_dir", "reference", "configs"}; "configs" is a list in
-    the order given of {"stem", "report", "scores", "seconds"}: the report is what write_reports writes (a function of
-    the config, the profile and the matches, with no timing), `scores` the HalfScores it was made from and `seconds`
-    the time spent on the config (printed, never written).
+    Returns {"profile", "seeds", "truth", "matches", "git", "data_dir", "reference", "configs", "rank"}; "configs" is a
+    list in the order given of {"stem", "report", "scores", "seconds"}: the report is what write_reports writes (a
+    function of the config, the profile, the matches and the calibration, with no timing), `scores` the HalfScores it
+    was made from and `seconds` the time spent on the config (printed, never written). "rank" is rank_agreement of the
+    configs, None unless at least two of them are among PUBLISHED_ORDER.
     """
     configs = _load_configs(config_paths)
     _check_profile(profile)
@@ -192,10 +208,15 @@ def evaluate_configs(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_id
     seeds = DEFAULT_SEEDS if seeds is None else seeds
     if isinstance(seeds, bool) or not isinstance(seeds, int) or seeds < 1:
         raise BenchmarkError("seeds must be a whole number of at least 1, got {!r}".format(seeds))
-    if calibration is not None:
+    if profile == CLEAN and calibration is not None:
         raise BenchmarkError("profile {!r} takes no calibration, and one was given: it would be ignored, and a report "
                              "must not suggest that it was used".format(profile))
-    ids = _match_ids(match_ids, matches)
+    if profile != CLEAN and calibration is not None and not isinstance(calibration, calibration_module.Calibration):
+        raise BenchmarkError("calibration must be a Calibration of our own match, as calibration.load() returns, and "
+                             "it is a {}".format(type(calibration).__name__))
+    ids = resolve_match_ids(match_ids, matches)
+    if profile != CLEAN and calibration is None:
+        calibration = calibration_module.load(data_dir=data_dir)
     data_dir_used = data_dir or games.DATA_DIR
     seed_list = [0] if profile == CLEAN else list(range(seeds))
     if profile == CLEAN and asked_for_seeds and seeds != 1:
@@ -235,17 +256,22 @@ def evaluate_configs(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_id
     git = pipeline_run.git_state()
     environment = _environment()
     profile_info = {"name": profile, "version": PROFILES[profile]}
+    calibration_info = None if profile == CLEAN else {"sha256": calibration_module.digest(calibration),
+                                                      "version": calibration_module.CALIBRATION_VERSION}
     truth_info = {"name": truth, "min_s": truths.COARSE_MIN_S if truth == "coarse" else None}
     reference = configs[0]
     entries = []
     for config in configs:
         versus = None if config is reference else _versus(reference, config, scores)
         report = _report(config, scores[config.stem], records, seed_list, profile_info, truth_info, git, environment,
-                         versus)
+                         versus, calibration_info)
         entries.append({"stem": config.stem, "report": report, "scores": scores[config.stem],
                         "seconds": seconds[config.stem]})
     result = {"profile": profile_info, "seeds": seed_list, "truth": truth_info, "matches": records, "git": git,
-              "data_dir": data_dir_used, "reference": reference.stem, "configs": entries}
+              "data_dir": data_dir_used, "reference": reference.stem, "configs": entries,
+              "calibration": calibration_info,
+              "rank": rank_agreement({config.stem: score.pooled(scores[config.stem])["spell_f1_mean"]
+                                      for config in configs})}
     for line in render(result):
         log(line)
     return result
@@ -263,21 +289,22 @@ def _load_configs(config_paths):
         check_scope(config)
         if "." in config.stem:
             raise BenchmarkError(
-                "{}: the file name of a config is the name of its report, whose parts (<name>.coarse.m-<ids>.s<n>.json) "
-                "are told apart by dots, so a dot in the name would be read as one of them and the report would be "
-                "another run's; rename {} without a dot".format(config.stem, _shown(config.path)))
+                "{}: the file name of a config is the name of its report, whose parts "
+                "(<name>.coarse.m-<ids>.s<n>.json) are told apart by dots, so a dot in the name would be read as one "
+                "of them and the report would be another run's; rename {} without a dot".format(
+                    config.stem, shown(config.path)))
         if config.stem in paths:
             where = paths[config.stem]
             if os.path.normcase(where) == os.path.normcase(config.path):
                 raise BenchmarkError("{} is given twice; a config is run once".format(config.stem))
             raise BenchmarkError("{} and {} have the same name, {}, so they would write the same report; rename one"
-                                 .format(_shown(where), _shown(config.path), config.stem))
+                                 .format(shown(where), shown(config.path), config.stem))
         paths[config.stem] = config.path
         configs.append(config)
     return configs
 
 
-def _match_ids(match_ids, matches):
+def resolve_match_ids(match_ids, matches):
     """The ids to run, in order: those asked for (or all), each of them known and none repeated."""
     known = list(sources.MATCH_IDS) if matches is None else list(matches)
     ids = known if match_ids is None else list(match_ids)
@@ -319,7 +346,25 @@ def _unavailable(config, inputs, error):
 
 # -- the report -------------------------------------------------------------------------------------------------------
 
-def _report(config, halves, records, seed_list, profile, truth, git, environment, versus):
+def rank_agreement(pooled_spell_f1):
+    """{"published", "observed", "kendall_tau", "concordant", "discordant", "tied", "pairs"} of a run, or None.
+
+    `pooled_spell_f1` is {config stem: pooled spellF1}. Of the configs that are among PUBLISHED_ORDER, "observed" lists
+    them best first (a tie, the order they were given in), and score.kendall_tau compares that ranking with the
+    published one. None when fewer than two of them are there, because one config has no order. It is a check and never
+    a goal (the plan's yardstick check): the published gaps are at or inside the noise.
+    """
+    present = [stem for stem in PUBLISHED_ORDER if stem in pooled_spell_f1]
+    if len(present) < 2:
+        return None
+    agreement = score.kendall_tau(PUBLISHED_ORDER, pooled_spell_f1)
+    observed = sorted(pooled_spell_f1, key=lambda stem: -pooled_spell_f1[stem])
+    return {"published": list(PUBLISHED_ORDER), "observed": [stem for stem in observed if stem in present],
+            "kendall_tau": agreement["tau"], "concordant": agreement["concordant"],
+            "discordant": agreement["discordant"], "tied": agreement["tied"], "pairs": agreement["pairs"]}
+
+
+def _report(config, halves, records, seed_list, profile, truth, git, environment, versus, calibration):
     """The JSON-ready report of one config over all its HalfScores: counts, scores, intervals, and nothing timed."""
     per = score.per_match(halves)
     confusion = np.sum([np.array(half.confusion, dtype=np.int64) for half in halves], axis=0)
@@ -331,7 +376,7 @@ def _report(config, halves, records, seed_list, profile, truth, git, environment
         mean, low, high = score.t_interval([per[match_id][metric] for match_id in sorted(per)])
         intervals[metric] = {"n": len(per), "level": LEVEL, "mean": mean, "low": low, "high": high}
     report = {
-        "config": {"path": _shown(config.path), "text": config.text.replace("\r\n", "\n")},
+        "config": {"path": shown(config.path), "text": config.text.replace("\r\n", "\n")},
         "profile": profile,
         "seeds": list(seed_list),
         "matches": records,
@@ -347,9 +392,9 @@ def _report(config, halves, records, seed_list, profile, truth, git, environment
                    "predicted": {pm.LABELS[column]: confusion[:, column].sum() / total for column in range(4)}},
         "halves": [dataclasses.asdict(half) for half in halves],
         "versus": versus,
-        "calibration": None,                 # the clean profile degrades nothing, so it measures nothing of ours
+        "calibration": calibration,          # {sha256, version} of the Calibration degraded with; None for clean
     }
-    return _plain(report)
+    return plain(report)
 
 
 def _versus(first, config, scores):
@@ -374,7 +419,7 @@ def interval_excludes_zero(low, high):
     return bool(low > score.FLIP_TOLERANCE or high < -score.FLIP_TOLERANCE)
 
 
-def _plain(value):
+def plain(value):
     """`value` as JSON can hold it, whatever it is made of: rounded, with text keys, and without NaN or numpy types.
 
     Floats are rounded to DECIMALS (and -0.0 is 0.0), a NaN or an infinity (an interval of one match) becomes None,
@@ -382,9 +427,9 @@ def _plain(value):
     ones. TypeError for anything else, so that a new field cannot reach a report unchecked.
     """
     if isinstance(value, dict):
-        return {_key(key): _plain(item) for key, item in value.items()}
+        return {_key(key): plain(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
-        return [_plain(item) for item in value]
+        return [plain(item) for item in value]
     if value is None or isinstance(value, str):
         return value
     if isinstance(value, (bool, np.bool_)):
@@ -411,7 +456,7 @@ def _environment():
             "platform": platform.platform()}
 
 
-def _shown(path):
+def shown(path):
     """A path as people read it: relative to the repository when inside it, absolute otherwise, with forward slashes."""
     path = os.path.abspath(path)
     if os.path.splitdrive(path)[0].lower() == os.path.splitdrive(ROOT)[0].lower():
@@ -422,7 +467,7 @@ def _shown(path):
 
 
 def report_path(data_dir, profile, stem, truth, match_ids=None, seeds=None):
-    """<data dir>/runs/benchmark/<profile>/<stem>[.<truth>][.m-<ids>][.s<n>].json: where a report goes, never over another.
+    """<data dir>/runs/benchmark/<profile>/<stem>[.<truth>][.m-<ids>][.s<n>].json: where a report goes.
 
     `.<truth>` is left out for the raw truth. `.m-<the ids, sorted, joined by "-">` is added when `match_ids` are not
     exactly the registry's seven (a subset, whatever its order), so that a run on one match or two never replaces the
@@ -434,21 +479,31 @@ def report_path(data_dir, profile, stem, truth, match_ids=None, seeds=None):
     parts = [stem]
     if truth != "raw":
         parts.append(truth)
+    parts += name_suffixes(profile, match_ids, seeds)
+    return os.path.join(data_dir, *REPORT_FOLDER, profile, ".".join(parts) + ".json")
+
+
+def name_suffixes(profile, match_ids=None, seeds=None):
+    """["m-<ids>", "s<n>"], those of them that a file name must carry for a run of this profile, matches and seeds.
+
+    The matches when they are not exactly the registry's seven, whatever their order; the number of seeds when it is
+    given, not DEFAULT_SEEDS, and the profile is a degraded one (the clean profile has one seed, always). Shared with
+    fidelity.py, whose reports follow the same rule for the same reason.
+    """
+    parts = []
     if match_ids is not None and set(match_ids) != set(sources.MATCH_IDS):
         parts.append("m-" + "-".join(sorted(match_ids)))
     if profile != CLEAN and seeds is not None and seeds != DEFAULT_SEEDS:
         parts.append("s{}".format(seeds))
-    return os.path.join(data_dir, *REPORT_FOLDER, profile, ".".join(parts) + ".json")
+    return parts
 
 
 def write_reports(result, data_dir=None):
     """Write each config's report under `data_dir` (default: the one the run read from); the paths, in order.
 
     The file name carries the truth when it is not the raw one, the matches when they are not all seven and the number
-    of seeds when it is not the default (report_path). The text is sort_keys, indent 2, ASCII, LF and a final newline; it is written to a temporary file in
-    the same folder and renamed over the old report (os.replace), so that a run that is interrupted, or a disk that
-    fills, never leaves half a report and never damages the one that was there. A failed write removes its temporary
-    file and raises.
+    of seeds when it is not the default (report_path). The text is written by write_json: atomically, so that a run
+    that is interrupted never leaves half a report and never damages the one that was there.
     """
     data_dir = data_dir or result["data_dir"]
     ids = [record["id"] for record in result["matches"]]
@@ -456,19 +511,29 @@ def write_reports(result, data_dir=None):
     for entry in result["configs"]:
         path = report_path(data_dir, result["profile"]["name"], entry["stem"], result["truth"]["name"], ids,
                            len(result["seeds"]))
-        text = json.dumps(entry["report"], sort_keys=True, indent=2, allow_nan=False) + "\n"
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        handle, temporary = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".tmp")
-        try:
-            with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as stream:
-                stream.write(text)
-            os.replace(temporary, path)
-        except BaseException:
-            with contextlib.suppress(OSError):
-                os.remove(temporary)
-            raise
+        write_json(path, entry["report"])
         paths.append(path)
     return paths
+
+
+def write_json(path, document):
+    """`document` (JSON-ready: see plain) at `path`: sorted keys, indent 2, ASCII, LF and a final newline, atomically.
+
+    The text goes to a temporary file in the same folder, renamed over the old file (os.replace), so that a run that is
+    interrupted, or a disk that fills, never leaves half a file and never damages the one that was there. A failed
+    write removes its temporary file and raises. fidelity.py writes its report the same way.
+    """
+    text = json.dumps(document, sort_keys=True, indent=2, allow_nan=False) + "\n"
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    handle, temporary = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".tmp")
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as stream:
+            stream.write(text)
+        os.replace(temporary, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.remove(temporary)
+        raise
 
 
 # -- the printout -----------------------------------------------------------------------------------------------------
@@ -483,6 +548,9 @@ def render(result):
                  result["profile"]["name"], result["profile"]["version"], result["truth"]["name"],
                  ",".join(str(seed) for seed in result["seeds"]), len(ids), git["commit"] or "?",
                  " +dirty" if git["dirty"] else "")]
+    if result["calibration"] is not None:
+        lines.append("calibration   {}... (version {}): the gaps are our match's, as measured by calibration.py".format(
+            result["calibration"]["sha256"][:12], result["calibration"]["version"]))
     for stem, report, seconds in reports:
         pooled, interval = report["pooled"], report["t_interval"]["spell_f1_mean"]
         rate, labels = report["possessions_per_graded_minute"], report["labels"]
@@ -522,6 +590,14 @@ def render(result):
                       "and an interval excludes 0 only if it clears 0 by more than that.".format(score.FLIP_TOLERANCE),
                   "with {} matches the smallest sign-flip p there can be is {:.4f}; neither it nor the interval "
                   "makes a gap real.".format(len(ids), 2.0 / 2 ** len(ids))]
+    rank = result["rank"]
+    if rank is not None:
+        lines += ["", "order by pooled spellF1   {}".format(" > ".join(rank["observed"])),
+                  "published order           {}".format(" > ".join(rank["published"])),
+                  "Kendall tau {} of the {} pairs ({} concordant, {} discordant, {} tied); a check of the profile, not "
+                  "a goal: the published gaps are at or inside the noise".format(
+                      _number(rank["kendall_tau"], signed=True), rank["pairs"], rank["concordant"], rank["discordant"],
+                      rank["tied"])]
     return lines
 
 
@@ -603,7 +679,7 @@ def main(argv=None):
         return 1
     print("")
     for path in paths:
-        print("report    {}".format(_shown(path)))
+        print("report    {}".format(shown(path)))
     if args.no_write:
         print("report    not written (--no-write)")
     return 0

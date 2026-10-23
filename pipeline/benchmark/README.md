@@ -7,12 +7,13 @@ matches**: the seven open DFL/IDSSE Bundesliga matches (CC BY 4.0), which carry 
 team in possession on every frame. A config runs on them through the pipeline's own functions, is scored the way the
 organisers' scorer scores, and is compared with another config with the uncertainty that seven matches allow.
 The plan is [P01](../../docs/proposals.md); what was measured is in [results.md](../../docs/results.md) (A05 to A07,
-R002).
+R002, R003).
 
 ```
 python pipeline/benchmark/sources.py          # data -> data/external/dfl/   (21 files, 2.6 GB, size and md5 checked)
 python pipeline/benchmark/run.py CONFIG ...   # configs -> scores, intervals, comparisons, one JSON report per config
-python pipeline/benchmark/selftest.py [--dfl] # the checks
+python pipeline/benchmark/fidelity.py         # how far the degraded profile looks like our match (gates, warnings)
+python pipeline/benchmark/selftest.py [--dfl] [--data]   # the checks
 ```
 
 ## Setup
@@ -58,17 +59,18 @@ What to know about the files (A05; `dfl.py` has the details and refuses what it 
 | option | meaning |
 |---|---|
 | `CONFIG ...` | pipeline TOML configs (`pipeline/config.py`), per half (`scope = "halves"`). **The first one is the reference**: every other config is compared with it, and a delta is `other - first`, so positive means the other is better. Put the config you want to beat first. |
-| `--profile P` | how the tracking is made. Only `clean` (DFL's tracking as it is) exists so far; the degraded ones come later. |
-| `--seeds N` | degradation seeds per match (default 3). The clean profile has nothing random to repeat, so it always runs seed 0 only; if you pass `--seeds` with more than 1 it says that it ignored it, and says nothing when you pass none. |
+| `--profile P` | how the tracking is made (below): `gaps` (the default) or `clean`. |
+| `--seeds N` | degradation seeds per match (default 3: seeds 0, 1 and 2). The clean profile has nothing random to repeat, so it always runs seed 0 only; if you pass `--seeds` with more than 1 it says that it ignored it, and says nothing when you pass none. |
 | `--matches ID ...` | the matches to run, in this order (default: all seven). Fewer than seven are filed under a name that says which (see the report, below). |
 | `--truth raw\|coarse` | the truth to score against (below). Default `raw`. |
 | `--data-dir D` | the data bundle (default `data/`, or `$MTAH_DATA_DIR`). |
 | `--no-write` | print only. |
 
-A run takes about 10 s on the clean profile with the caches warm (one cached load per match, a second or so per config).
-Everything that can be refused is refused before the first match is loaded, with a sentence that names what to change:
-no config, a config that does not load, `scope = "file"` (which decodes across half time; only
-`pipeline/configs/smooth50_repro.toml` needs it), two configs with the same name, an unknown profile, truth or match.
+A run takes about 10 s on the clean profile with the caches warm (one cached load per match, a second or so per config);
+the gaps profile runs each config once for each of its seeds. Everything that can be refused is refused before the first
+match is loaded, with a sentence that names what to change: no config, a config that does not load, `scope = "file"`
+(which decodes across half time; only `pipeline/configs/smooth50_repro.toml` needs it), a config whose file name has a
+dot, two configs with the same name, an unknown profile, truth or match, a calibration that is not one.
 A source that needs something a benchmark match does not have (the video's homography, the Smart Tagging) stops the run
 with its config, its name and kind and the asset named; it is never scored as zeros.
 
@@ -90,6 +92,62 @@ yardstick under both and read the two side by side**: a ranking that differs bet
 depends on the grain of the truth, not something to fix. The two reports are filed apart (`<stem>.json` and
 `<stem>.coarse.json`).
 
+### The profiles
+
+A profile says how the tracking of a DFL match is made before the config sees it (`degrade.py`). A profile has a version,
+which goes into every report: change what a profile does and bump it.
+
+| profile | version | the ball | the players |
+|---|---|---|---|
+| `clean` | 1 | DFL's, as it is: on every frame | DFL's, one slot per player |
+| `gaps` | 1 | missing where **ours** was: our own missing-ball masks, transplanted onto each half; its speed is NaN everywhere (T31) | untouched |
+
+**The transplant.** `Calibration.ball_masks[half]` is our match's missing-ball mask of each half from its kick-off to the
+end of its graded block (`calibration.py`; the Calibration is measured once and cached). A benchmark half of n frames
+takes the mask of our first or second half (1 or 2 with the same chance), read from an offset drawn uniformly over the
+frames that leave room for it, so frame j of the benchmark half is missing where frame `offset + j` of ours was. If the
+mask runs out, it goes on round the last 7,500 frames of ours. What it keeps of ours: the gaps' lengths, how much of the
+half is missing and how that grows through the half (coverage worsens, A02). What it does not: **where** the gaps are.
+They are drawn without looking at the play, so they are no likelier near a line or a dead ball, as ours are (A01: 29% of
+ours start within 2 m of a line); the warnings of the fidelity report show how much that matters.
+
+**No truth reaches the degrader.** It is handed a `TrackingView`, which has the tracking and the match's scalars and no
+`ball_status` or `ball_possession` (`test_degrade_never_sees_truth`, which also reads the degrader's source, and the deep
+walk of the inputs, `test_degrade_serves_inputs_without_the_truth`). Its random draws are
+`rng_for(seed, match_index, component, half)`, one stream for each, with no profile and no loop order in the key
+(`test_degrade_independent_of_match_order`), so a match gets the same degradation whichever matches are run with it, and
+a later profile that degrades the players as well has exactly this profile's ball.
+
+**A new calibration, a new report.** The report holds the digest of the Calibration its gaps were taken from. A report is
+named by what was run (below), not by which calibration, so a later run with a newer Calibration writes over the older
+report of the same name; compare the digests before comparing two reports.
+
+### Fidelity: does the benchmark look like our match?
+
+```
+.venv/Scripts/python pipeline/benchmark/fidelity.py --profile gaps --seeds 3       # -> data/runs/benchmark/fidelity_gaps.json
+```
+
+`fidelity.py` degrades each match under seeds 0 .. N-1, measures it with **the same two functions that measured ours**
+(`calibration.ball_stats` and `player_stats`), pools over matches and seeds (counts add, arrays are laid end to end: a
+median is the median of every gap), and sets the result against the Calibration. Two kinds of criteria, fixed before
+anything was measured and never tuned towards:
+
+- **Gates**: the profile is not frozen until they pass, and the command exits 1 if one fails. Each is our Calibration's
+  own value, measured on the kick-off spans (a benchmark half starts at its kick-off, so both sides are measured alike),
+  plus or minus the plan's tolerance. For `gaps`: the share of frames without a ball, +-0.02, and the median gap, +-1.5 s.
+  The plan's own figures (0.407, 10.7 s) were measured on other spans and are not used.
+- **Warnings**: the nearest player's agreement with the truth on alive, ball-visible frames (our public window's, +-0.05),
+  the share of dead frames with the ball visible (+-0.10), and for each yardstick its possessions per graded minute
+  (+-25%) and its D share (+-0.05), against what the yardsticks output on ours (over our graded halves, as the published
+  baselines are: an accepted offset of at most 1% of the frames). A WARN is printed and discussed in `results.md`; the
+  degradation is not adjusted towards it, because some misses are the truth's conventions and not the degradation's (A06).
+
+The report also lists the benchmark's other statistics next to ours (tracklets, wrong-team frames, NaN speeds, jitter...),
+which `gaps` does not model, so that what a later profile has to fix is on the page, and the degrader's draws (two
+integers a half). It holds no frame of our match, and it carries the Calibration's digest. It is named
+`fidelity_<profile>[.m-<ids>][.s<n>].json` by the runner's rule.
+
 ### What the clean profile cannot show
 
 The DFL ball is tracked on every frame, so `nearest_player` votes everywhere and `majority_vote`, which takes `D` only
@@ -97,7 +155,8 @@ where nobody voted, labels almost nothing `D`, where the truth has 41% to 52% of
 the alive/dead F1 is the same for every yardstick (it is the F1 of "always alive", the scorer's ALIVE being the positive
 class), the macroF1 is held down by an empty `D` class, and the ranking is only about who has the ball. That is
 expected, and is why the degraded profiles (which give the ball our tracking's gaps) exist. It is not a bug of the
-configs.
+configs. `gaps` gives the ball our gaps, so that `majority_vote` has `D` to give, and the scores are no longer those of a
+ball that is always there.
 
 ## Reading the printout
 
@@ -150,6 +209,7 @@ renamed over the old report; the same inputs, seed and versions give the same by
 |---|---|
 | `config` | `path`, and `text`: the TOML as run, with LF line endings |
 | `profile`, `seeds`, `truth` | the profile's name and version, the seeds run, and `{name, min_s}` of the truth |
+| `calibration` | `{sha256, version}` of the Calibration the tracking was degraded with (`calibration.digest`); null for `clean`, which degrades nothing |
 | `matches` | per match, in the order run: `id`, `frames`, `graded_frames`, `fps`, `carried_frames` (frames the truth had to carry: 0), and `sources`: the size and sha256 of the two DFL files it was made from (null if the match was not read through the cache, with `sources_reason`) |
 | `git`, `environment` | the commit and whether the tree was dirty; the Python, numpy and lxml versions and the platform |
 | `pooled`, `per_match` | the scores of all halves, and of each match: `spell_f1_mean`, `spell_f1` at each IoU, `macro_f1`, `alive_dead_f1`, `n_gt`, `n_pred`, `halves` |
@@ -157,7 +217,6 @@ renamed over the old report; the same inputs, seed and versions give the same by
 | `possessions_per_graded_minute`, `labels` | the rates and the label shares of the printout |
 | `halves` | the counts everything above was made from, per half: `n_gt`, `n_pred`, `tp` at each IoU, the 3x4 `confusion` of the unfilled codes |
 | `versus` | null for the reference; for the others, the comparison with it for `spell_f1_mean` and `macro_f1` (`score.compare`: deltas, interval, p, wins, losses, by competition, and whether the interval excludes 0) and the reference's name and config hash. It is the one field that depends on which other configs were run |
-| `calibration` | null: the clean profile degrades nothing, so it measures nothing of our tracking |
 
 ## The checks
 
@@ -168,7 +227,9 @@ renamed over the old report; the same inputs, seed and versions give the same by
 
 (The first time, while the seven caches are built, the `--dfl` run took 532 s; the machine's load decides the rest.)
 
-`checks/run.py` holds the runner's. The one that anchors the rest is `test_dfl_oracle_scores_perfectly`: an evidence
+`checks/run.py` holds the runner's, `checks/degrade.py` the degrader's (the transplant worked out exactly, determinism,
+what is touched and what is not, no truth, the order of the matches) and `checks/fidelity.py` the fidelity report's
+(every gate and check worked out by other code, pooling by sums, the exit code). The one that anchors the rest is `test_dfl_oracle_scores_perfectly`: an evidence
 source that is the truth itself, decoded by `majority_vote` with half-width 0, must score exactly 1.0 on spellF1,
 macroF1 and alive/dead F1 on every one of the seven matches.
 
@@ -201,7 +262,7 @@ that this README names only checks that exist.
 
 ## Limitations
 
-*A stub: the final version is written once the degraded profiles and the fidelity report exist.*
+*A stub: the final version is written once the remaining profiles exist.*
 
 - Seven matches, five of them one club's home games, are a small and not independent sample; the intervals are wide for
   that reason and are no more than that.
@@ -209,5 +270,9 @@ that this README names only checks that exist.
   far as we can tell (A06). That is what `--truth coarse` is for, and it does not correct a measured difference.
 - The benchmark has no video and no tagging: whatever uses the homography, the Smart Tagging, the camera or the audio is
   checked on the public window and not here.
-- The clean profile has the ball on every frame. Until a degraded profile is run, a score here says how a method works
-  when it can see the ball.
+- The clean profile has the ball on every frame, and says how a method works when it can see the ball. The `gaps` profile
+  has our gaps and nothing else of our tracking: its players are DFL's (one slot per player, no wrong-team slot, no
+  NaN speeds), and its gaps are not placed by the play. The warnings and statistics of the fidelity report say by how
+  much.
+- A transplanted mask is cut at the edge of the window it is read from, so up to two gaps of a benchmark half (the ones
+  at its ends) are fragments of ours; the gates are on the share and the median, which this barely moves.

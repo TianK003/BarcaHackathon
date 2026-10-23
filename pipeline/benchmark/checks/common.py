@@ -254,6 +254,25 @@ def damaged(path, damage):
     return write_text(os.path.dirname(path), os.path.basename(path), text)
 
 
+# -- a Calibration without our data ------------------------------------------------------------------------------------
+
+@functools.lru_cache(maxsize=1)
+def synthetic_calibration():
+    """A real Calibration: calibration.measure on the synthetic bundle of pipeline/selftest.py, measured once.
+
+    Two halves of 220 frames from their kick-offs, a made-up public truth and the four yardsticks run on it; what the
+    runner's and the fidelity report's checks need of a Calibration (masks, statistics, public window, baseline
+    outputs, a digest) without the data directory. The arrays are in memory: nothing here refers to the folder it was
+    measured in. Its numbers mean nothing about any match.
+    """
+    import tempfile
+    from pipeline.benchmark import calibration
+    from pipeline.benchmark.checks.calibration import synthetic_calibration_inputs
+    with tempfile.TemporaryDirectory() as root:
+        inputs, gt = synthetic_calibration_inputs(root)
+        return calibration.measure(inputs, gt)
+
+
 # -- the downloaded DFL files (--dfl) ---------------------------------------------------------------------------------
 
 LOAD_SECONDS = {}  # match id -> how long dfl.load_match took for it (real_match), for the check that prints it

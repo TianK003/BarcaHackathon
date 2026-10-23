@@ -216,6 +216,43 @@ def sign_flip_p(deltas):
     return float(np.count_nonzero(as_extreme)) / 2 ** n
 
 
+def kendall_tau(order, values):
+    """How far the ranking that `values` give agrees with `order`: Kendall's tau-a, and the pairs it is made of.
+
+    `order` lists names best first (the published order of the four baselines); `values` is {name: score}, higher
+    better. Every pair of names that are in both, taken in the order of `order`, is concordant if the earlier one
+    scores higher by more than FLIP_TOLERANCE, discordant if it scores lower by more than that, and tied otherwise (a
+    tie is not a ranking, and counts in neither sum, as compare() counts a tie as neither a win nor a loss). tau is
+    (concordant - discordant) / pairs, +1 for the same order and -1 for the reverse, NaN with no pair: tau-a, with the
+    ties left in the denominator. Names of `values` that are not in `order` are left out. Returns {"tau",
+    "concordant", "discordant", "tied", "pairs"}. ValueError for a name twice in `order` and for a score that is not
+    a finite number: neither can be ranked.
+    """
+    names = list(order)
+    repeated = sorted({name for name in names if names.count(name) > 1})
+    if repeated:
+        raise ValueError("kendall_tau: {} is in the order twice; an order names each of its members once".format(
+            repeated[0]))
+    kept = [name for name in names if name in values]
+    for name in kept:
+        if not np.isfinite(values[name]):
+            raise ValueError("kendall_tau: the score of {} is {}, which is not a finite number, so it has no place "
+                             "in a ranking".format(name, values[name]))
+    concordant = discordant = tied = 0
+    for position, first in enumerate(kept):
+        for second in kept[position + 1:]:
+            delta = values[first] - values[second]
+            if delta > FLIP_TOLERANCE:
+                concordant += 1
+            elif delta < -FLIP_TOLERANCE:
+                discordant += 1
+            else:
+                tied += 1
+    pairs = concordant + discordant + tied
+    return {"tau": (concordant - discordant) / pairs if pairs else float("nan"), "concordant": concordant,
+            "discordant": discordant, "tied": tied, "pairs": pairs}
+
+
 def compare(scores_a, scores_b, competition=None, *, metric="spell_f1_mean"):
     """Config b against config a, match by match: {the delta of each match, its mean and interval, a p, wins, ...}.
 
