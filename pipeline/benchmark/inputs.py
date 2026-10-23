@@ -99,6 +99,13 @@ class MatchInputs(Inputs):
     metres, so `metres` gives DFL distances), graded (a list of (half, start, stop), half-open), kickoffs (the first
     row of each half), rebuild (False) and atd_status ("benchmark"). `atd` and `atd_manifest` are properties.
 
+    What `cache_dir` and the manifest do NOT identify. They name the match, the profile and the seed, and nothing of how
+    the degraded tracking was made: no version of the profile (degrade.PROFILES) and no digest of the Calibration
+    (calibration.digest) go into either, so the folder of tracking v2 is the folder of v3, and a Calibration measured
+    again writes to the same one. Latent: nothing caches under it today. A component that does must key what it caches
+    on all three, the profile, its version and the Calibration's digest, which every report holds
+    (report["profile"], report["calibration"]), or one run would read what another made from different tracking.
+
     ValueError if the Atd and the match differ in length: a row of the tracking would then be another frame than the
     match's, and every score computed from it would be quietly wrong.
     """
@@ -136,7 +143,9 @@ class MatchInputs(Inputs):
         """What a report says about the run's inputs: the match, the profile and seed, and the DFL source files.
 
         `sources` is {"information": {"bytes", "sha256"}, "positions": {...}} as the match's DFL cache recorded them,
-        so that a result names the files it came from, and `sources_reason` is None. It is copied only from a cache
+        so that a result names the files it came from, and `sources_reason` is None. It names the DFL files and the
+        profile and seed, and, like cache_dir (class docstring), not the version of the profile or the digest of the
+        Calibration that made the tracking: a cache keyed on it alone is keyed on too little. It is copied only from a cache
         that is of this very match: the id alone finds the cache, so the manifest's match_id, fps, pitch, graded and
         report (the parse's counts) must also be the match's own. Otherwise (no cache, one that cannot be read, one of
         another match) `sources` and `cache_version` are None and `sources_reason` says why.

@@ -56,6 +56,11 @@ The manifest records the size and sha256 of both source files, the numpy and lxm
 sha256 of this very file (the parser) and CACHE_VERSION; a cache is reused only if all of them still match, so a
 re-downloaded file, a new library or another version of the parser does not read a cache that a different one built.
 
+The cache is one folder per match id, and not per key: one dfl.py per data dir. Two checkouts whose dfl.py differ (so
+whose parser hashes do) that share a data directory rebuild each other's caches, as often as they take turns (the seven
+take about 6 minutes), and two rebuilds at once could mix their arrays. Give each checkout its own MTAH_DATA_DIR, or
+run one of them at a time. (calibration.py's cache is one folder per key, so there two checkouts do not meet.)
+
 The parser's hash is taken once, when this module is imported (PARSER_SHA256), and not when load_match is called, so
 that the key describes the code that is running. A process that imported the parser before the file changed (a
 notebook left open across a git pull, a long run, a lane merged meanwhile) goes on running the old code, and keeps
