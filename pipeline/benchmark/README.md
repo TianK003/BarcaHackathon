@@ -150,7 +150,7 @@ temporary file renamed over the old report; the same inputs, seed and versions g
 
 ```
 .venv/Scripts/python pipeline/benchmark/selftest.py          # synthetic, seconds
-.venv/Scripts/python pipeline/benchmark/selftest.py --dfl    # + the seven downloaded matches (2 to 4 minutes with the caches warm)
+.venv/Scripts/python pipeline/benchmark/selftest.py --dfl    # + the seven downloaded matches (about 2 minutes with the caches warm)
 ```
 
 `checks/run.py` holds the runner's. The one that anchors the rest is `test_dfl_oracle_scores_perfectly`: an evidence
