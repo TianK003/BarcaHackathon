@@ -41,7 +41,7 @@ INFO_KEYS = ["ball", "mask_share", "match_id", "match_index", "players", "profil
 NEAR_M = 2.0                     # a ball closer than this to a line is near it (calibration.NEAR_LINE_M, strict)
 CAPPED_P = 1.0 - 1e-12           # a chance so close to 1 that c * scale * p is above the cap (1 - 1e-9) on every row
 # What the halves of capped_match say of the hazard: gaps of exactly 3 frames whatever the class and the third (0.12 s at
-# 25 Hz), and the chance CAPPED_P of an onset on every frame where all the features are defined.
+# 25 Hz), and a chance above the cap (CAPPED_P, and c = 1000) of an onset on every frame where all the features are defined.
 CAPPED_SECONDS = {onset_class: {third: (0.12,) for third in range(3)} for onset_class in (0, 1)}
 
 
@@ -72,7 +72,8 @@ def capped_match():
     are row 0 and the rows 1, 5, 9, ... and every other row is missing, up to the end of the half, which cuts the last
     gap."""
     match = steady_match(substitutions=False)
-    calibration = nobody_lost(context_namespace(p=CAPPED_P, seconds=CAPPED_SECONDS))
+    # c = 1000 puts c * HAZARD_SCALE * p above the cap whatever the frozen scale is (it is 0.699 now).
+    calibration = nobody_lost(context_namespace(p=CAPPED_P, c=1000.0, seconds=CAPPED_SECONDS))
     return match, calibration
 
 
@@ -454,6 +455,93 @@ def test_hazard_scale_odds_rescale_arithmetic():
         after = measured / (1.0 - measured) * factor
         assert abs(after / (1.0 + after) - target) < 1e-12, "the odds of the result are the target's"
     assert odds_rescale(1.0, 0.4, 0.2) > 0.4 / 0.2, "not the plain ratio of the shares, which undershoots"
+
+
+# The two measurements that HAZARD_SCALE was worked out from (docs/results.md R005, 2026-10-23): the frames without a ball
+# and the frames of the 7 DFL matches' kick-off spans under the context profile at scale 1.0, seed 0, pooled by sums, and
+# the Calibration's own missing share on its kick-off spans (Calibration.scalars["missing_share"], the centre of the gate).
+RECORDED_MISSING = (501013, 1002644)
+RECORDED_MISSING_TARGET = 0.410965669
+
+
+def hazard_scale_from_the_record():
+    """HAZARD_SCALE as it was worked out once: the odds rescale of 1.0 from the recorded share to the target, to 3
+    decimals."""
+    return round(odds_rescale(1.0, RECORDED_MISSING_TARGET, RECORDED_MISSING[0] / RECORDED_MISSING[1]), 3)
+
+
+def test_hazard_scale_is_the_frozen_one_and_follows_from_the_recorded_measurements():
+    """HAZARD_SCALE is 0.699, and 0.699 is what the two recorded measurements give on the odds.
+
+    At scale 1.0 the profile's missing share was 501,013 of 1,002,644 frames, 0.4997, against the Calibration's 0.4110:
+    0.0887 above it, past the gate's 0.02, so the scale was rescaled once, label-free: [0.4110 / 0.5890] / [0.4997 /
+    0.5003] = 0.6986, 0.699 to 3 decimals. A plain ratio of the shares (0.8224) would have undershot, since gaps start
+    only from visible frames and it is the odds that are about linear in the hazard. Only recorded constants are
+    compared, none measured, so the default run pins the frozen constant (it moves with a change nobody meant to be one,
+    or with a retune towards a gate, a WARN or a score, which R005 says never) and a moved constant fails here and says
+    which one; test_data_hazard_scale_follows_from_the_measurement makes the measurement again."""
+    share = RECORDED_MISSING[0] / RECORDED_MISSING[1]
+    assert abs(share - 0.4997) < 5e-5 and abs(RECORDED_MISSING_TARGET - 0.4110) < 5e-5
+    assert abs(share - RECORDED_MISSING_TARGET) > 0.02, "the share missed the gate's band, so the rescale was due"
+    assert abs(odds_rescale(1.0, RECORDED_MISSING_TARGET, share) - 0.6986) < 5e-5
+    assert abs(RECORDED_MISSING_TARGET / share - 0.8224) < 5e-5, "the plain ratio, which is not what was used"
+    assert hazard_scale_from_the_record() == 0.699
+    assert degrade.HAZARD_SCALE == hazard_scale_from_the_record() == 0.699, (
+        "HAZARD_SCALE is frozen: it was worked out once, from 0.4997 and 0.4110, and is never touched again",
+        degrade.HAZARD_SCALE)
+
+
+def test_data_hazard_scale_follows_from_the_measurement():
+    """The recorded measurement of HAZARD_SCALE made again: scale 1.0, seed 0, the 7 DFL matches, our real Calibration.
+
+    Needs our match (the Calibration) and the seven downloaded matches: runs with --data, NOT RUN where they are not
+    there. The missing share of the degraded ball is calibration.ball_stats' (frames without a ball over frames, on each
+    half from its kick-off, pooled by sums, as fidelity.py pools it), and it must reproduce the recorded counts exactly
+    (the code is the code that the scale was worked out with: the draws, the features and the players are the same), with
+    the Calibration's missing share the recorded target. Then the same at the frozen scale, printed: the share, the gaps,
+    the near-line share of the onsets and the figures that R005's stop conditions read, pooled over the 7 matches
+    (information; the gates are fidelity.py's)."""
+    from pipeline.benchmark import sources
+    for match_id in sources.MATCH_IDS:
+        for kind in dfl.SOURCE_KINDS:
+            if not os.path.isfile(sources.local_path(match_id, kind)):
+                raise NotRun("{} is not downloaded ({}); {} to fetch the DFL matches".format(
+                    match_id, kind, dfl.FETCH_ADVICE))
+    cal = calibration.load()
+    assert abs(cal.scalars["missing_share"] - RECORDED_MISSING_TARGET) < 1e-9, "the Calibration the scale was set against"
+    saved = degrade.HAZARD_SCALE
+    totals = {scale: {"missing": 0, "frames": 0, "interior": 0, "near": 0, "onsets": 0, "rows": 0, "at_risk": 0,
+                      "post_gap": 0, "nan": 0, "capped": 0} for scale in (1.0, saved)}
+    try:
+        for match_id in sources.MATCH_IDS:
+            match = real_match(match_id)
+            view = degrade.tracking_view(match)
+            spans = [(half, view.kickoffs[half], stop) for half, _, stop in view.graded]
+            pitch = np.asarray(view.pitch)
+            for scale in totals:
+                degrade.HAZARD_SCALE = scale
+                atd, info = degrade.degrade(view, "context", cal, 0)
+                stats = calibration.ball_stats(atd.ball_present, spans, atd.ball_xy * pitch, view.pitch, view.fps)
+                row = totals[scale]
+                row["missing"] += stats["missing_frames"]
+                row["frames"] += stats["frames"]
+                row["interior"] += stats["interior_gaps"]
+                row["near"] += stats["near_line_onsets"]
+                for name, key in (("onsets", "onsets"), ("rows", "rows"), ("at_risk", "at_risk_rows"),
+                                  ("post_gap", "post_gap_rows"), ("nan", "nan_feature_rows"),
+                                  ("capped", "capped_rows")):
+                    row[name] += info["ball"][key]
+            del match, view
+    finally:
+        degrade.HAZARD_SCALE = saved
+    assert (totals[1.0]["missing"], totals[1.0]["frames"]) == RECORDED_MISSING, (totals[1.0], RECORDED_MISSING)
+    for scale, row in totals.items():
+        print("      scale {:g}, seed 0, 7 matches: {:.4f} of the frames missing ({:,} of {:,}), {:,} gaps, near-line "
+              "share of the interior ones {:.4f} against ours {:.4f}; NaN features {:,} ({:.4%}), capped {:,}, "
+              "at risk {:,} of which {:,} ({:.2%}) within {} frames after a gap".format(
+                  scale, row["missing"] / row["frames"], row["missing"], row["frames"], row["onsets"],
+                  row["near"] / row["interior"], cal.scalars["near_line_share"], row["nan"], row["nan"] / row["rows"],
+                  row["capped"], row["at_risk"], row["post_gap"], row["post_gap"] / row["at_risk"], hazard.SPEED_STEPS))
 
 
 def test_context_ball_keeps_dfls_holes_and_the_rows_before_the_kickoff():

@@ -278,9 +278,14 @@ LINE_COLUMN = hazard.FEATURES.index("line_distance_m")    # the feature whose va
 CONTEXT_COUNTS = ("rows", "ball_missing_rows", "nan_feature_rows", "capped_rows", "onsets", "missing_frames",
                   "at_risk_rows", "post_gap_rows")      # the counts of info["ball"], per half and in all
 # The factor on the hazard's chance (context_probabilities), on top of the Calibration's hazard_c, which is 1 on our own
-# rows. It stays 1.0 until the profile's missing share has been measured once (R005); then it is rescaled ONCE, label-free,
-# on the odds if that misses the Calibration's, and frozen: never touch it again because of a gate, a WARN or a score.
-HAZARD_SCALE = 1.0
+# rows (it carries nothing to another match: the rate transfer is this). It calibrates a label-free statistic, the share
+# of the frames without a ball, and was rescaled ONCE, on the odds: gaps start only from visible frames, so missing /
+# visible is about linear in the hazard and the share is not, and a plain ratio would undershoot. At 1.0 the profile's
+# missing share, on seed 0 over the 7 DFL matches pooled by sums, was 501,013 of 1,002,644 frames, 0.4997, against the
+# Calibration's 0.4110 on its kick-off spans (+-0.02 is the gate), so the scale became 1.0 * [0.4110 / 0.5890] / [0.4997 /
+# 0.5003] = 0.6986, 0.699 to three decimals (2026-10-23, Task 17, R005). It is frozen: never touch it again because of a
+# gate, a WARN or a score.
+HAZARD_SCALE = 0.699
 # s, the scale of the wrong-team onsets (episode_pieces). It calibrates a label-free statistic: the observable share of
 # frames with a team in surplus (calibration.player_stats). That is less than the share of frames in an episode: a
 # team shows more than 11 slots only while the other team's 11 are all tracked, and an episode of the other team at the
