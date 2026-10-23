@@ -39,6 +39,11 @@ BALL_COUNTS = ("rows", "ball_missing_rows", "nan_feature_rows", "capped_rows", "
 BALL_KEYS = ("scale", "c") + BALL_COUNTS + ("halves",)
 INFO_KEYS = ["ball", "mask_share", "match_id", "match_index", "players", "profile", "seed", "transplants", "version"]
 NEAR_M = 2.0                     # a ball closer than this to a line is near it (calibration.NEAR_LINE_M, strict)
+# A hazard with a weight on every feature, in hazard.FEATURES' order (line distance, beyond a line, ball speed,
+# nearest player, players within 3 m, minute of the half), so that the value of a feature moves the mask in the
+# checks that use it. The steady match never leaves the pitch, so its beyond-a-line feature is 0 all through and that
+# weight shows only on a match whose ball does.
+WEIGHTS = [-0.02, 0.5, 0.05, -0.05, 0.3, 0.02]
 CAPPED_P = 1.0 - 1e-12           # a chance so close to 1 that c * scale * p is above the cap (1 - 1e-9) on every row
 # What the halves of capped_match say of the hazard: gaps of exactly 3 frames whatever the class and the third (0.12 s at
 # 25 Hz), and a chance above the cap (CAPPED_P, and c = 1000) of an onset on every frame where all the features are defined.
@@ -127,7 +132,9 @@ def test_context_never_sees_truth():
     steady_match has them), so a degradation that read either, in the hazard's features, in the class, in the third or in
     the mask, would come out different. It is run through the degrader and through the runner's own path (make_atd takes
     the match and builds the view itself), for two seeds. The inputs that a context match is served with hold nothing of
-    the truth either, to any depth (the deep walk of Task 8), and no field of the view is the truth."""
+    the truth either, to any depth (the deep walk of Task 8), and no field of the view is the truth. The hazard is the
+    weighted one (WEIGHTS), so that the value of every feature that the match varies moves the mask: with a flat
+    hazard only whether a feature is defined, and the class of the row, could."""
     match = steady_match()
     rng = np.random.default_rng([12])
     status = rng.integers(0, 2, size=match.n_frames).astype(np.int8)
@@ -139,7 +146,7 @@ def test_context_never_sees_truth():
         match.ball_possession, other.ball_possession), "the two matches must differ in their flags"
     assert np.array_equal(match.players_xy, other.players_xy, equal_nan=True) and np.array_equal(
         match.ball_xy, other.ball_xy, equal_nan=True), "and in nothing else"
-    cal = context_namespace()
+    cal = context_namespace(p=0.03, c=1.7, coef=WEIGHTS)
     for seed in (0, 1):
         first, info = degrade.degrade(degrade.tracking_view(match), "context", cal, seed)
         second, info_other = degrade.degrade(degrade.tracking_view(other), "context", cal, seed)
@@ -314,13 +321,12 @@ def test_context_mask_is_the_hazards_draw_for_the_documented_inputs():
     The features are those of the clean ball and the DEGRADED players (the Atd's own, lost spans and all, in metres from
     a corner), from the kick-off; the chance is c * HAZARD_SCALE * the model, capped, 0 where a feature is NaN; the
     class, the third and the durations are read at the at-risk frame. Two hazards (a flat one and one with weights on
-    the nearest player, the players near the ball and the minute), both halves, three seeds, and a second half whose
+    every feature), both halves, three seeds, and a second half whose
     kick-off is 30 rows after its block starts: the mask covers from the kick-off and the rows before it keep the
     ball."""
     match = steady_match()
     window = dataclasses.replace(match, kickoffs={1: match.kickoffs[1], 2: match.kickoffs[2] + 30})
-    weights = [0.0, 0.0, 0.0, -0.05, 0.3, 0.0]     # per metre to the nearest player, per player within 3 m
-    for hazard_fields in ({"p": 0.03}, {"p": 0.03, "c": 1.7, "coef": weights}):
+    for hazard_fields in ({"p": 0.03}, {"p": 0.03, "c": 1.7, "coef": WEIGHTS}):
         cal = context_namespace(**hazard_fields)
         for case in (match, window):
             view = degrade.tracking_view(case)
@@ -339,7 +345,7 @@ def test_context_mask_is_the_hazards_draw_for_the_documented_inputs():
     # The hazard's weights matter: with them the mask is another one (the check above could not tell otherwise).
     view = degrade.tracking_view(match)
     flat, _ = degrade.degrade(view, "context", context_namespace(p=0.03), 0)
-    weighted, _ = degrade.degrade(view, "context", context_namespace(p=0.03, c=1.7, coef=weights), 0)
+    weighted, _ = degrade.degrade(view, "context", context_namespace(p=0.03, c=1.7, coef=WEIGHTS), 0)
     assert flat.ball_xy.tobytes() != weighted.ball_xy.tobytes()
 
 
