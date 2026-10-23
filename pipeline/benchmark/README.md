@@ -2,10 +2,11 @@
 
 We may not hand-label our own match, not even to validate (the organisers' clarification of 22 Oct 2026,
 [CLAUDE.md](../../CLAUDE.md)), and the public window holds 17 possessions and ranks the baselines the wrong way round
-([T01](../../docs/traps.md)). So the choices that matter (decoder, evidence weights, thresholds) are validated on **other
-matches**: the seven open DFL/IDSSE Bundesliga matches (CC BY 4.0), which carry the ball's own alive/dead flag and the
-team in possession on every frame. A config runs on them through the pipeline's own functions, is scored the way the
-organisers' scorer scores, and is compared with another config with the uncertainty that seven matches allow.
+([T01](../../docs/traps.md)). So the choices that matter (decoder, evidence weights, thresholds) are validated on
+**other matches**: the seven open DFL/IDSSE matches (two Bundesliga, five 2. Bundesliga; CC BY 4.0), which carry the
+ball's own alive/dead flag and the team in possession on every frame. A config runs on them through the pipeline's own
+functions, is scored the way the organisers' scorer scores, and is compared with another config with the uncertainty
+that seven matches allow.
 The plan is [P01](../../docs/proposals.md); what was measured is in [results.md](../../docs/results.md) (A05 to A09,
 R002 to R005).
 
@@ -29,15 +30,26 @@ md5 are the pinned ones, so a file on disk is either complete and right or absen
 Hugging Face mirror of the same data). The files live in `data/external/dfl/<match id>/`, which git ignores; they are
 public data and not the competition's, so unlike everything else under `data/` they may be read and printed.
 
+**The data and its licence.** Seven full matches at 25 Hz, two Bundesliga and five 2. Bundesliga; five of the seven are
+Fortuna Düsseldorf home games (J03WOH, J03WOY, J03WPY, J03WQQ and J03WR9). Reference: Bassek, M., Rein, R., Weber, H.
+and Memmert, D. (2025). An integrated dataset of spatiotemporal and event data in elite soccer. *Scientific Data* 12,
+195. https://doi.org/10.1038/s41597-025-04505-y. The data are released under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) "with the authorization from the DFL" and are on figshare
+(DOI 10.6084/m9.figshare.28196177, as the paper's reference list gives it). We change the data (we degrade the
+tracking) and say so. The data are public and outside the competition bundle, so their own licence governs them and not
+the bundle's rules (the same reference is in section 2 of the
+[technical document](../../docs/technical_document.md#2-assets-used-and-dropped)).
+
 What to know about the files (A05; `dfl.py` has the details and refuses what it cannot be sure of):
 
-- A match is three XML files: the match information, the raw events (not read yet) and the observed positions
+- A match is three XML files: the match information, the raw events (never read) and the observed positions
   (350 to 420 MB each). `dfl.load_match(match_id)` is the one door to a match: it parses the positions once, stores the
-  arrays under `data/cache/dfl/<match id>/` (130 to 140 MB per match) and reads them back afterwards.
-- **A first parse takes about 46 s** (21 to 64 s measured: the machine's load decides) and peaks at about 310 MB;
-  **a cached load takes 0.7 to 1.9 s**, nearly all of it the sha256 of the two source files, which is what keeps a cache from being read after
-  its sources change. The cache is keyed on those hashes, on the numpy and lxml versions, and on the hash of `dfl.py`
-  itself, so **editing `dfl.py` rebuilds all seven caches (minutes)**.
+  arrays under `data/cache/dfl/<match id>/` (129 to 141 MB per match, A05) and reads them back afterwards.
+- **A first parse takes about 46 s** (21 to 64 s measured: the machine's load decides) and peaks at about 310 MB
+  (J03WMX); **a cached load takes 0.7 to 1.9 s**, nearly all of it the sha256 of the two source files, which is what
+  keeps a cache from being read after its sources change (A05). The cache is keyed on those hashes, on the numpy and
+  lxml versions, on `CACHE_VERSION` and on the hash of `dfl.py` itself, so **any edit to `dfl.py`, a docstring included,
+  rebuilds all seven caches (minutes)**: 174 s for the seven after a hash change, 326 s the first time (A05).
 - One timeline per match: the first half, 25 separator rows, then the second half. A row's place comes from the frame
   number `N`, never from the order of the file. Home and away come from each team's `Role`, never from the order of the
   teams in the file (the guest is listed first in four of the seven).
@@ -85,39 +97,46 @@ whole file at once, so these are yardsticks for the benchmark and not rebuilds o
 ### The two truths
 
 `--truth raw` is the DFL flags as they are: `D` where the ball is dead, otherwise the team in possession. DFL's flag is
-fine-grained, about twice our ground truth's grain (A06), and how fine ours is cannot be told from the public window. So
-there is a second truth, `--truth coarse` (`truth.coarse_codes`): the raw truth with every possession shorter than 5 s
-that sits between two possessions of the *other* team absorbed into it, a stand-in for a coarser grain. **Run the
-yardstick under both and read the two side by side**: a ranking that differs between them is a warning that the choice
-depends on the grain of the truth, not something to fix. The two reports are filed apart (`<stem>.json` and
-`<stem>.coarse.json`).
+fine-grained (437 possessions a match, a median of 3.7 s: A06), and how fine our ground truth is cannot be told from
+the public window (A06, T33). So there is a second truth, `--truth coarse` (`truth.coarse_codes`): the raw truth with
+every possession shorter than 5 s that sits between two possessions of the *other* team absorbed into it, a stand-in
+for a coarser grain (1,659 possessions against 3,061, A06). **Run the yardstick under both and read the two side by
+side**: a ranking that differs between them is a warning that the choice depends on the grain of the truth, not
+something to fix. The two reports are filed apart (`<stem>.json` and `<stem>.coarse.json`).
 
 ### The profiles
 
-A profile says how the tracking of a DFL match is made before the config sees it (`degrade.py`). A profile has a version,
-which goes into every report: change what a profile does and bump it.
+A profile says how the tracking of a DFL match is made before the config sees it (`degrade.py`). A profile has a
+version, which goes into every report: change what a profile does and bump it. Its constants are fitted once per
+version, from label-free measurements of our tracking, and then frozen with the measurement in the code; they are never
+tuned towards a gate, a WARN or a score (T26, T37).
 
 | profile | version | the ball | the players |
 |---|---|---|---|
 | `clean` | 1 | DFL's, as it is: on every frame | DFL's, one slot per player |
-| `gaps` | 1 | missing where **ours** was: our own missing-ball masks, transplanted onto each half; its speed is NaN everywhere (T31) | untouched |
+| `gaps` | 1 | missing where **ours** was: our own missing-ball masks, transplanted onto each half with their pattern and not their clock (below); its speed is NaN everywhere (T31) | untouched |
 | `tracking` | 3 | `gaps`'s, byte for byte | broken into tracklets of ours and given 46 slots, 24 home and 22 away, as ours are; a wrong-team slot now and then (10.5% of frames), NaN speeds in runs (7.8% of the slot-frames), 5-frame smoothing; **since version 2** only the players nearest the ball are tracked where ours has few (the cap), no piece is shorter than 8 frames, and the walk's spans are rescaled once (below). **since version 3** a slot is taken by a new tracklet only from the row after its last one stopped, and the scale is derived again (below); this is the default profile. Version 1 (R004) had none of the three of version 2, and versions 1 and 2 had the slot handovers that version 3 removes (R004c) |
 | `context` | 1 | missing where our tracker loses it: a hazard fitted on our own match (A08) places the gaps by the ball's distance to a line, its speed, the players near it and the minute of the half, with our gap lengths (`HAZARD_SCALE` 0.699, rescaled once). **It fails its near-line gate** (the gaps start within 2 m of a line 56% of the time, against 28% of ours: R005), so it is **not the default**, and is kept for the agreement check between generators | `tracking`'s, draw for draw (`test_context_players_equal_tracking`) |
 
-**The transplant.** `Calibration.ball_masks[half]` is our match's missing-ball mask of each half from its kick-off to the
-end of its graded block (`calibration.py`; the Calibration is measured once and cached). A benchmark half of n frames
-takes the mask of our first or second half (1 or 2 with the same chance), read from an offset drawn uniformly over the
-frames that leave room for it, so frame j of the benchmark half is missing where frame `offset + j` of ours was. If the
-mask runs out, it goes on round the last 7,500 frames of ours. What it keeps of ours: the gaps' lengths and the pattern
-of the mask over a stretch of the half. It does not keep the clock: the offset is drawn uniformly, so the stretch is not
-at the benchmark half's own minutes (it is up to M - n frames later, 7.6 minutes for a 68,000-frame half against our
-79,467-frame first half), and its share missing is the half's only on average over the offset, since coverage worsens
-through our halves (A02). What it does not keep: **where** the gaps are.
-They are drawn without looking at the play, so nothing that ties ours to it is in them: a dead ball is no likelier to be
-missing than any other frame (in the public window ours is about three times as likely as a frame of the window in
-general: 33.6% of the dead frames against 11.8% of all of them, A01), and where on the pitch a gap starts is the DFL
-ball's own place at a random frame (36.0% of the onsets within 2 m of a line, against 28.0% of ours, R003). The
-warnings and statistics of the fidelity report show how much that matters.
+**The transplant.** `Calibration.ball_masks[half]` is our match's missing-ball mask of each half, from its kick-off to
+the end of its graded block (M frames: 79,467 for the first half and 76,456 for the second, A07; `calibration.py`; the
+Calibration is measured once and cached). A benchmark half of n frames takes the mask of our first or second half (1 or
+2 with the same chance), read from an offset drawn uniformly over the frames that leave room for it (0 to M - n), so
+frame j of the benchmark half is missing where frame `offset + j` of ours was. If the mask runs out, it goes on round
+the last 7,500 frames of ours. In short, the gaps are transplanted **with their pattern and not their clock**, and they
+are not placed by the play, which is a separate matter:
+
+- *What it keeps of ours:* the gaps' lengths and the pattern of the mask over a stretch of the half.
+- *It does not keep the clock.* The offset is drawn uniformly, so the stretch is not at the benchmark half's own
+  minutes (it is up to M - n frames later, 7.6 minutes for a 68,000-frame half against our 79,467-frame first half),
+  and its share missing is the half's only on average over the offset, since coverage worsens through our halves (A02).
+- *It does not keep where the gaps are in the play.* The mask is cut from our match and laid over DFL's play, so it is
+  blind to it: a dead ball is no likelier to be missing than any other frame (in the public window ours is about three
+  times as likely as a frame of the window in general: 33.6% of the dead frames against 11.8% of all of them, A01), and
+  where on the pitch a gap starts is the DFL ball's own place at a random frame (36.0% of the gaps start within 2 m of
+  a line, against 28.0% of ours, R003).
+
+The warnings and statistics of the fidelity report show how much that matters.
 
 **The tracklets (`tracking`).** DFL has one column per player. Ours has 46 anonymous slots for 22 players, and a slot is
 a tracklet: it ends when the tracker loses the player and is taken over by whoever it finds next (T15). The profile
@@ -126,9 +145,9 @@ lost spans. A tracked span is one of **our own tracklet lengths** (`Calibration.
 rate, at least 1 frame), drawn uniformly and multiplied by `TRACKED_SCALE` (below); a lost span is geometric (at least 1
 frame) with the mean that makes the lost share d: d is 1 minus the mean number of slots present over the frames of ours
 with more than 18 present, over 22, which is 0.0250 (A09), and the mean lost span follows the scaled tracked spans
-(5.86 s against a mean tracked span of 228.5 s, J03WMX; before the scale 2.87 s and 111.9 s). Frames with 18 or fewer
-present, 10.6% of ours, are the cap's (below) and are left out of d so as not to count them twice. All draws of the walk
-come from `rng_for(seed, match_index, "tracklets", half)`, players by column and runs in time order.
+(5.94 s against a mean tracked span of 231.8 s, J03WMX, R004c; before the scale 2.87 s and 111.9 s). Frames with 18 or
+fewer present, 10.6% of ours, are the cap's (below) and are left out of d so as not to count them twice. All draws of
+the walk come from `rng_for(seed, match_index, "tracklets", half)`, players by column and runs in time order.
 
 **The wrong-team episodes (T32).** On 10.5% of our frames a team shows more than 11 slots while the other shows fewer: a
 slot of one team carries a player of the other, because the tracker's identity followed the wrong one out of a duel.
@@ -143,13 +162,14 @@ rest of his span is cut into a piece before it and a new tracklet after it (the 
 with no such pair is skipped and counted (`skipped_far`), and so is one whose player is already in an episode
 (`skipped_overlap`). Everything an onset needs is drawn up front from `rng_for(seed, match_index, "wrong_team", half)`,
 in the order: one uniform per row (the onsets), one pick per onset, one duration per onset, so that no draw depends on
-which onsets are skipped. Over the seven matches and three seeds of R004, 5,330 onsets made 3,445 episodes (64.6%) and
-skipped 1,759 as far (33.0%) and 126 as overlaps (2.4%). **s is 2.658, rescaled once** (it was 1.0): it calibrates the
-observable share, which `calibration.player_stats` measures as ours was, and which is lower than the share of frames in
-an episode (a team shows a surplus only while the other team has all 11 tracked and no episode of the other team runs
-the other way at the same time). At s = 1.0 the observable share was 0.0397 against our 0.1054 +-0.03, so s became 1.0 *
-0.1054 / 0.0397 and was frozen (`degrade.WRONG_TEAM_SCALE`, with the measurement in its comment; R004). It is a
-label-free statistic and is never touched again because of a WARN or a score.
+which onsets are skipped. Over the seven matches and three seeds of R004c (version 3), 5,330 onsets made 3,453 episodes
+(64.8%) and skipped 1,746 as far (32.8%) and 131 as overlaps (2.5%) (R004, version 1: 3,445, 1,759 and 126). **s is
+2.658, rescaled once** (it was 1.0): it calibrates the observable share, which `calibration.player_stats` measures as
+ours was, and which is lower than the share of frames in an episode (a team shows a surplus only while the other team
+has all 11 tracked and no episode of the other team runs the other way at the same time). At s = 1.0 the observable
+share was 0.0397 against our 0.1054 +-0.03, so s became 1.0 * 0.1054 / 0.0397 and was frozen
+(`degrade.WRONG_TEAM_SCALE`, with the measurement in its comment; R004). It is a label-free statistic and is never
+touched again because of a WARN or a score.
 
 **The speeds, and the smoothing.** The speed is a finite difference in m/s on the match's pitch, within a tracklet
 piece, NaN on its first row. Then NaN-speed runs are placed: each starts at a present slot-frame chosen uniformly over
@@ -271,20 +291,21 @@ freed, and `test_jitter_inside_tracklets_counts_what_it_says` pins the figure th
 per-slot jitter.
 
 **The `context` profile** (version 1; `degrade.context_probabilities`, `_context_ball`, `HAZARD_SCALE`). The `gaps`
-profile copies our masks in time and ignores the play. `context` keeps `tracking`'s players, draw for draw, and places
-each half's gaps with the hazard that the Calibration fitted on our own gaps (A08): a logistic model of six features on
-the 91,840 at-risk frames of our kick-off spans and their 143 onsets, with cross-half AUCs of 0.71 and 0.65. Per half,
-from its kick-off to the end of its graded block, `hazard.features` is computed in metres on the clean DFL ball and the
-degraded players: the distance to the nearest line, whether the ball is beyond it, its speed over the last five steps,
-the nearest player, the players within 3 m, and the minute of the half. The chance that the next frame starts a gap is
-`hazard_c` x `HAZARD_SCALE` x the model's probability, at most 1 - 1e-9, and 0 where a feature is undefined (42 rows of
-3,007,932 over the three seeds, R005). `hazard.sample_mask` draws the gaps from `rng_for(seed, match_index, "hazard",
-half)`: the class of an onset is "within 2 m of a line at the frame before it", its third of the half is that frame's,
-and its length is one of ours for that class and third at the match's rate. The ball is then made by the function that
-makes `gaps`'s (x and y together, the speed NaN). **`HAZARD_SCALE` is 0.699, rescaled once.** At 1.0 the share missing
-was 0.4997 against our 0.4110, and the rescale is on the odds, 0.6986 (gaps start only from visible frames, so the odds
-are about linear in the hazard and a plain ratio would undershoot); it is frozen, with both measurements, in the comment
-of the constant (`test_hazard_scale_is_the_frozen_one_and_follows_from_the_recorded_measurements`).
+profile transplants our masks with their pattern and not their clock, and is blind to the play. `context` keeps
+`tracking`'s players, draw for draw, and places each half's gaps with the hazard that the Calibration fitted on our own
+gaps (A08): a logistic model of six features on the 91,840 at-risk frames of our kick-off spans and their 143 onsets,
+with cross-half AUCs of 0.71 and 0.65. Per half, from its kick-off to the end of its graded block, `hazard.features` is
+computed in metres on the clean DFL ball and the degraded players: the distance to the nearest line, whether the ball is
+beyond it, its speed over the last five steps, the nearest player, the players within 3 m, and the minute of the half.
+The chance that the next frame starts a gap is `hazard_c` x `HAZARD_SCALE` x the model's probability, at most 1 - 1e-9,
+and 0 where a feature is undefined (42 rows of 3,007,932 over the three seeds, R005). `hazard.sample_mask` draws the
+gaps from `rng_for(seed, match_index, "hazard", half)`: the class of an onset is "within 2 m of a line at the frame
+before it", its third of the half is that frame's, and its length is one of ours for that class and third at the match's
+rate. The ball is then made by the function that makes `gaps`'s (x and y together, the speed NaN). **`HAZARD_SCALE` is
+0.699, rescaled once.** At 1.0 the share missing was 0.4997 against our 0.4110, and the rescale is on the odds, 0.6986
+(gaps start only from visible frames, so the odds are about linear in the hazard and a plain ratio would undershoot); it
+is frozen, with both measurements, in the comment of the constant
+(`test_hazard_scale_is_the_frozen_one_and_follows_from_the_recorded_measurements`).
 
 **`context` fails two gates, and is not the default (R005).** Over the three seeds the share of the gaps that start
 within 2 m of a line is 0.5586 against our 0.2797 +-0.05 (0.5647, 0.5644 and 0.5465 on the seeds: a fail on each), and
@@ -300,18 +321,20 @@ and a model that sees the distance clipped at 0 gives 0.489. Thinning the chance
 moves the visible rows further from ours, and so would be tuning towards a gate; a mask for the ball out of the pitch
 would be a new mechanism with a parameter that cannot be measured on ours (where the ball is during our gaps is
 unobservable). There was no second rescale of the scale either: the rule is once. The profile is kept for the check that
-the ranking of the configs does not depend on the generator (R005).
+the ranking of the configs does not depend on the generator: `context` and `tracking` version 3 give the same order
+under both truths (Kendall tau +1.000 between the two orders), with every config 0.3 to 2.2 points of spellF1 higher
+on `context` (R005).
 
 **No truth reaches the degrader.** It is handed a `TrackingView`, which has the tracking and the match's scalars and no
-`ball_status` or `ball_possession` (`test_degrade_never_sees_truth`, which also reads the degrader's source, and the deep
-walk of the inputs, `test_degrade_serves_inputs_without_the_truth`). Its random draws are
+`ball_status` or `ball_possession` (`test_degrade_never_sees_truth`, which also reads the degrader's source, and the
+deep walk of the inputs, `test_degrade_serves_inputs_without_the_truth`). Its random draws are
 `rng_for(seed, match_index, component, half)`, one stream for each, with no profile and no loop order in the key
 (`test_degrade_independent_of_match_order`), so a match gets the same degradation whichever matches are run with it, and
 the `tracking` profile, which degrades the players as well, has exactly this profile's ball.
 
-**A new calibration, a new report.** The report holds the digest of the Calibration its gaps were taken from. A report is
-named by what was run (below), not by which calibration, so a later run with a newer Calibration writes over the older
-report of the same name; compare the digests before comparing two reports.
+**A new calibration, a new report.** The report holds the digest of the Calibration its gaps were taken from. A report
+is named by what was run (below), not by which calibration, so a later run with a newer Calibration writes over the
+older report of the same name; compare the digests before comparing two reports.
 
 ### Fidelity: does the benchmark look like our match?
 
@@ -343,11 +366,12 @@ anything was measured and never tuned towards:
   version 1 of `tracking` had the three about how many slots are present (exactly 22, the mean, 14 or fewer) pending,
   because it had no low-count tail, and version 2 has the cap ("The cap, the shortest piece...", above), so they are
   gates like the rest. The mechanism stays for the next part of a profile that a gate waits for.
-- **Warnings**: the nearest player's agreement with the truth on alive, ball-visible frames (our public window's, +-0.05),
-  the share of dead frames with the ball visible (+-0.10), and for each yardstick its possessions per graded minute
-  (+-25%) and its D share (+-0.05), against what the yardsticks output on ours (over our graded halves, as the published
-  baselines are: an accepted offset of at most 1% of the frames). A WARN is printed and discussed in `results.md`; the
-  degradation is not adjusted towards it, because some misses are the truth's conventions and not the degradation's (A06).
+- **Warnings**: the nearest player's agreement with the truth on alive, ball-visible frames (our public window's,
+  +-0.05), the share of dead frames with the ball visible (+-0.10), and for each yardstick its possessions per graded
+  minute (+-25%) and its D share (+-0.05), against what the yardsticks output on ours (over our graded halves, as the
+  published baselines are: an accepted offset of at most 1% of the frames). A WARN is printed and discussed in
+  `results.md`; the degradation is not adjusted towards it, because some misses are the truth's conventions and not the
+  degradation's (A06).
 
 The report also lists the benchmark's other statistics next to ours (tracklets, wrong-team frames, NaN speeds,
 jitter...), which `gaps` does not model, so that what a later profile has to fix is on the page, the degrader's draws
@@ -362,8 +386,8 @@ where nobody voted, labels almost nothing `D`, where the truth has 41% to 52% of
 the alive/dead F1 is the same for every yardstick (it is the F1 of "always alive", the scorer's ALIVE being the positive
 class), the macroF1 is held down by an empty `D` class, and the ranking is only about who has the ball. That is
 expected, and is why the degraded profiles (which give the ball our tracking's gaps) exist. It is not a bug of the
-configs. `gaps` gives the ball our gaps, so that `majority_vote` has `D` to give, and the scores are no longer those of a
-ball that is always there.
+configs. `gaps` gives the ball our gaps, so that `majority_vote` has `D` to give, and the scores are no longer those of
+a ball that is always there.
 
 ## Reading the printout
 
@@ -374,8 +398,8 @@ Per config:
   they equal `pm.evaluate` on the halves laid end to end.
 - **per match**: the mean of the seven matches' own spellF1 and its 90% Student t interval. This one is not the
   scorer's number: it weighs each match once, and it is the one an interval can be put on.
-- **possessions** per graded minute, predicted and true, and the share of graded frames labelled `D`, predicted and true.
-  A config that flickers shows up here before it shows up in a score.
+- **possessions** per graded minute, predicted and true, and the share of graded frames labelled `D`, predicted and
+  true. A config that flickers shows up here before it shows up in a score.
 - spellF1 by match, and the seconds the config took (printed, never written to a report).
 
 With two or more configs, each against the first:
@@ -383,8 +407,8 @@ With two or more configs, each against the first:
 - **pooled delta** and **mean per-match delta**, with the 90% t interval of the match deltas. An interval is said to
   **exclude 0** only if it clears 0 by more than `score.FLIP_TOLERANCE` (1e-12, the margin under which two scores are
   equal), because a delta of the order of 1e-16 can otherwise make a gap out of float noise.
-- **sign-flip p**: the exact two-sided randomisation test of the seven deltas, with all 2^7 sign patterns enumerated. The
-  smallest p it can give with seven matches is 2/128 = 0.0156, and a config that wins every match gets exactly that.
+- **sign-flip p**: the exact two-sided randomisation test of the seven deltas, with all 2^7 sign patterns enumerated.
+  The smallest p it can give with seven matches is 2/128 = 0.0156, and a config that wins every match gets exactly that.
 - **wins and losses**: the matches whose delta is above and below 0 by more than `score.FLIP_TOLERANCE`.
 - **by competition** and **per match**: the same delta for the two Bundesliga matches and the five 2. Bundesliga ones,
   and for each match. Five of the seven are Fortuna Düsseldorf home games, so seven matches are not seven independent
@@ -396,8 +420,8 @@ does not clear, and the public window is no tie-breaker either (T01).
 
 ### The report
 
-`<data dir>/runs/benchmark/<profile>/<stem>[.<truth>][.m-<ids>][.s<n>].json`, one per config, gitignored with the rest of
-`data/`. The name says what the report is of, so that one never replaces another of a different kind:
+`<data dir>/runs/benchmark/<profile>/<stem>[.<truth>][.m-<ids>][.s<n>].json`, one per config, gitignored with the rest
+of `data/`. The name says what the report is of, so that one never replaces another of a different kind:
 
 | run | file |
 |---|---|
@@ -406,8 +430,8 @@ does not clear, and the public window is no tie-breaker either (T01).
 | any other set of matches | `.m-<the ids, sorted, joined by "-">` before `.json`, e.g. `<stem>.m-J03WMX.json`, `<stem>.coarse.m-J03WMX-J03WN1.json`. The order they were asked for in is not in the name; all seven in another order are still `<stem>.json` |
 | a number of seeds other than 3 (a degraded profile) | `.s<n>` last, e.g. `<stem>.s1.json`, `<stem>.coarse.m-J03WMX.s5.json`: a quick one-seed look never replaces the three-seed report. The clean profile has one seed, always, and its name never says so |
 
-A config's own file name may hold no dot: `x.coarse.toml` would write `x.coarse.json`, which is `x`'s report under another
-truth, so the runner refuses it and says to rename it.
+A config's own file name may hold no dot: `x.coarse.toml` would write `x.coarse.json`, which is `x`'s report under
+another truth, so the runner refuses it and says to rename it.
 
 It is written with sorted keys, indented, LF, floats rounded to 9 decimals and no timing anywhere, to a temporary file
 renamed over the old report; the same inputs, seed and versions give the same bytes in any process.
@@ -434,18 +458,18 @@ renamed over the old report; the same inputs, seed and versions give the same by
 
 (The first time, while the seven caches are built, the `--dfl` run took 532 s; the machine's load decides the rest.)
 
-`checks/run.py` holds the runner's, `checks/degrade.py` the degrader's shared parts (the transplant worked out exactly,
-determinism, what the `gaps` profile touches and what it does not, no truth, the order of the matches),
-`checks/tracking.py` the `tracking` profile's (the tracklets, the episodes, the NaN-speed runs and the smoothing worked
-out exactly, and how it nests in `gaps`), `checks/context.py` the `context` profile's (what the hazard is given, the chance, the class, third and durations read at
-the at-risk frame, the counts of its record on hand-built halves, the odds rescale and the frozen scale),
-`checks/cap.py` the tracking profile's cap of the low-count tail, its
-shortest-piece rule and the scale of its tracked spans, and `checks/fidelity.py` the fidelity report's (every gate and check worked out
+The checks live in `pipeline/benchmark/checks/`, one module per topic, listed in `checks.MODULES` (the folder's
+`__init__.py` says what each holds): `sources`, `dfl`, `truth`, `inputs`, `score`, `run`, `hazard`, `calibration`,
+`degrade`, `cap`, `tracking`, `context`, `fidelity` and `harness` (the harness itself). The profiles' are `degrade` (the
+transplant worked out exactly, determinism, what the `gaps` profile touches and what it does not, no truth, the order of
+the matches), `tracking` (the tracklets, the episodes, the NaN-speed runs and the smoothing worked out exactly, and how
+it nests in `gaps`), `cap` (the low-count tail's cap, its shortest-piece rule and the scale of the tracked spans),
+`context` (what the hazard is given, the chance, the class, third and durations read at the at-risk frame, the counts of
+its record on hand-built halves, the odds rescale and the frozen scale) and `fidelity` (every gate and check worked out
 by other code, pooling by sums, the exit code, the pending gates, the full-strength frames of the count gates and the
-gate kinds). The
-one that anchors the rest is `test_dfl_oracle_scores_perfectly`: an evidence source that is the truth itself, decoded by
-`majority_vote` with half-width 0, must score exactly 1.0 on spellF1, macroF1 and alive/dead F1 on every one of the
-seven matches.
+gate kinds). The one that anchors the rest is `test_dfl_oracle_scores_perfectly`: an evidence source that is the truth
+itself, decoded by `majority_vote` with half-width 0, must score exactly 1.0 on spellF1, macroF1 and alive/dead F1 on
+every one of the seven matches.
 
 **What the oracle checks, and what it cannot.** It checks the chain from the *loaded match* to the score: the runner,
 `MatchInputs` and the separator rows between the halves, both halves and each one's first and last row, the decoder path
@@ -455,9 +479,9 @@ answers and the runner's truth are the same `truth.truth_codes` of the same load
 the tracking, so a mistake in the parse or in `truth_codes` is on both sides and cancels (with H and A swapped inside
 `truth_codes` it still scores 1.0 on all seven matches). That link is covered by A05's checks of the parse against
 kloppy and by frame number (`test_dfl_parser_agrees_with_kloppy`, `test_dfl_second_half_spot_check`), and for the teams
-by `MIN_AGREEMENT` in `test_dfl_truth_conventions`: the nearest player must name the truth's team on more than 60% of the
-alive, ball-visible frames of every match and of each half (it does, at 71% to 82%; with the teams swapped it would be
-at 18% to 29%).
+by `MIN_AGREEMENT` in `test_dfl_truth_conventions`: the nearest player must name the truth's team on more than 60% of
+the alive, ball-visible frames of every match and of each half (it does, at 71% to 82%; with the teams swapped it would
+be at 18% to 29%).
 
 All three scores are asserted, exactly, because each is blind to something another sees: macroF1 counts frames, so it
 sees a single wrong frame anywhere; spellF1 matches whole possessions by IoU, so it forgives a boundary a frame out
@@ -476,63 +500,102 @@ that this README names only checks that exist.
 
 ## Limitations
 
-*A stub: the final version is written once the remaining profiles exist.*
+What the benchmark cannot show, and where its copy of our match is not ours. Section 6 of the
+[technical document](../../docs/technical_document.md#6-limitations), which the organisers read, lists the same limits,
+and this is the detail behind that list. None of them makes a benchmark number ours: absolute spellF1 here is not our
+leaderboard's, and a ranking that holds under both truths and in both competitions is worth more than one that does not.
 
-- Seven matches, five of them one club's home games, are a small and not independent sample; the intervals are wide for
-  that reason and are no more than that.
-- DFL's flags and Metrica's corrected tracking are different annotation systems, and DFL's grain is finer than ours as
-  far as we can tell (A06). That is what `--truth coarse` is for, and it does not correct a measured difference.
-- The benchmark has no video and no tagging: whatever uses the homography, the Smart Tagging, the camera or the audio is
-  checked on the public window and not here.
-- The clean profile has the ball on every frame, and says how a method works when it can see the ball. The `gaps` profile
-  has our gaps and nothing else of our tracking: its players are DFL's (one slot per player, no wrong-team slot, no
-  NaN speeds), and its gaps are not placed by the play. The warnings and statistics of the fidelity report say by how
-  much.
-- The `tracking` profile has our tracklets, slots, wrong-team episodes, NaN-speed runs, smoothing and low-count frames
-  (the cap), and its slots are still not ours. They are the lowest free ones, so a team uses fewer of its slots than
-  ours does over a whole match (J03WMX, seed 0, version 3: of the pools of 24 and 22, 13 and 13 slots are ever present,
-  12 and 12 on at least a tenth of the frames and 13 and 12 on at least a hundredth, where ours has 22 and 21, 21 and
-  20, 22 and 21; printed by `test_data_tracking_profile_on_a_real_match_with_our_real_calibration`), and a slot's index
-  is not as empty of the player as in ours: a player who comes back after a lost span lands in the slot he had 47.4% of
-  the time (529 of 1,117 returns; 48.1% of 1,147 in version 2, 69.0% in version 1, R004, and 67.6% of 562 returns with
-  the walk, the episodes, the scale and the shortest piece but no cap), and a slot idles between two tracklets for a
-  median of 4.3 s (39.4% of its gaps at most 3 s, 5.3% over 60 s), where ours idles for 7.4 s (17.7% and 15.0%; A09,
-  R004c; version 2: 4.1 s, 42.0%, 5.3%; version 1: 2.3 s, 59.7%, 3.8%). No evidence source reads a slot's identity
-  today, beyond `nearest_player`'s argmin on exact ties, which goes to the lower slot; but **a method that follows a
-  slot across a loss would be validated optimistically here**, a little less than before the cap. The episodes are cut
-  at pairs within 2 m only, in both directions at one rate, and what is matched is the observable share, not the
-  episodes: on seed 0 the benchmark shows 75 to 159 observed episodes a match (mean 124.6), medians of 2.0 to 2.8 s and
-  90th percentiles of 8.2 to 14.5 s (R004c; version 2: 82 to 151, mean 121.6, 1.8 to 2.7 s and 9.4 to 14.4 s), against
-  ours 104, 2.7 s and 15.8 s (a swap inside 11 against 11 is invisible on ours, so the true number of ours is unknown).
-  **The cap keeps the players nearest the true ball**, so a method that decodes from the nearest player to the ball is
-  hurt little by it (R004b: the four yardsticks move by 0.4 points of spellF1 at most) and one that needs the players
-  far from the ball sees fewer of them than the real match gave it, as it does on ours; and the cap takes our counts
-  from the frames that the ball's gaps come from, not from the same play, so what ties the two to the play is not in
-  them.
-- **No positional bias.** The profile brings the players' jitter down towards ours (1.8 cm against 3.3 mm, T35) and does
-  nothing else about their positional error. A slowly varying bias against the true position cannot be measured on ours
-  (there is no reference to measure it against), so none is added. Published accuracies for video-derived positions run
-  from 0.08 to 0.09 m RMSE for a multi-camera stadium system against a motion-capture reference (Linke, Link and Lames
-  2020, PLoS ONE 15(3): e0230179) to a median of 1.1 to 1.7 m (mean 1.8 to 2.8 m) for a pipeline on broadcast video
-  (Theiner et al., WACV 2022, arXiv:2110.11107, Table 3), so a bias of the order of 0.5 to 2 m is plausible for ours and
-  would hurt a method that reads distances more than the benchmark says (the plan's range of 0.5 to 2 m is not stated by
-  either source, which are the nearest published figures; it is not our measurement). DFL's own positions are not
-  noise-free either: their second difference is dominated by rare jumps (R004), which the smoothing lowers to a fifth
-  and does not remove (T35, R004c).
-- The `context` profile ties the gaps to the play (lines, slow balls, few players near the ball, as ours are), which
-  `gaps` and `tracking` do not, and it loses what they keep: `tracking` reads the cap's counts and the ball's mask from
-  one window of ours, so both follow our camera, and here the cap reads a window of ours and the gaps are drawn from the
-  play. Its ball features come from the clean ball, so on the five frames after a gap the speed is the true one, where
-  ours carries the speed from before the gap: 0.83% of the at-risk rows are in that window (0.84%, 0.81% and 0.84% by
-  seed), and the approximation is counted in the record (`post_gap_rows`). The hazard is a model of six features fitted
-  on 143 onsets of one match. And **DFL tracks the ball out of play**: 25.2% of its at-risk rows are within 2 m of a line
-  and 17.7% beyond one, against 9.0% and 4.1% of ours, so at the rate that the model gives those features **56% of the
-  gaps start near a line against our 28%, and the profile fails that gate (R005)**. It also leaves the ball visible on
-  46.2% of the dead frames, against 56.8% for `tracking` (version 3) and the public window's 66.4%, a WARN: the hazard
-  puts gaps on slow balls, a dead ball is slow, and the window is far better covered than the match (12% missing
-  against 41%), so some of that miss is the window's. It is not the default for that reason, and nothing here removes
-  the out-of-play ball (R005).
-- A transplanted mask is cut at the edge of the window it is read from, so up to two gaps of a benchmark half (the ones
-  at its ends) are fragments of ours, and where the mask runs out and goes round there is one more at the seam (3 of the
-  42 halves of R003: a DFL second half of 77,080 or 78,456 frames, against the 76,456 of ours); the gates are on the
-  share and the median, which this barely moves.
+- **Conventions and grain.** DFL's flags are one provider's, and ours may flip at other moments and cut possessions at
+  another grain. DFL's flag is fine-grained, 437 possessions a match with a median of 3.7 s, and its `D` is its own
+  ball-in-play clock to within 2 frames (A06). How fine our ground truth is cannot be told from the public window: the
+  window is alive on 80.4% of its frames, more than 96% of DFL's 5-minute windows, and against DFL's windows that lively
+  it is 1.34 times slower, which DFL's own conventions can produce (A06, T33). `--truth coarse` stands in for a coarser
+  grain and does not correct a measured difference, so a choice that depends on possession length (a smoothing level, a
+  switch penalty) is ranked under both truths and a disagreement is a warning. `D` timing against ours is unmeasured,
+  and the timing parameters come from the public window (P02).
+- **Seven matches, five of them Fortuna Düsseldorf's home games** (J03WOH, J03WOY, J03WPY, J03WQQ and J03WR9). The
+  sample is small, so the intervals are wide, and it is not independent, so even they may be too narrow; with seven
+  matches the smallest sign-flip p is 2/128 = 0.0156. A degradation seed moves a pooled spellF1 by up to about 0.015
+  (R003) and 0.013 (R004c), which the intervals, being over the matches, do not show; that is why three seeds are the
+  default.
+- **A team of 10 in two matches.** J03WN1's away team has 10 players from minute 7.1 of the first half, and J03WQQ's
+  from minute 13.4 of the second (T36); the open data gives no cause. A statistic on how many slots are present is
+  measured on full-strength frames only (81.7% of the pooled frames), and the wrong-team episodes are about half
+  unobservable on 10 against 11, which lowers that share in those two matches (R004).
+- **No video, audio, homography or Smart Tagging.** DFL has none, so whatever uses the camera, the audio, the homography
+  or the tagging is checked on the public window and not here, or simulated from the benchmark's truth with noise
+  measured on our match (A03).
+- **Aerial projection.** A camera-based tracker projects an airborne ball onto the pitch plane, which displaces it.
+  DFL's positions carry no such error and the benchmark adds none, and our ATD has no ball height, so the error cannot
+  be measured on ours. Nor can we tell how many of our ball gaps come from airborne balls: the plan said "crowded and
+  aerial", and what was measured is "lines and slow balls" (A08).
+- **No positional bias.** The profile brings the players' jitter down towards ours (next item) and does nothing else
+  about their positional error. A slowly varying bias against the true position cannot be measured on ours (there is no
+  reference to measure it against), so none is added. Published accuracies for video-derived positions run from 0.08 to
+  0.09 m RMSE for a multi-camera stadium system against a motion-capture reference (Linke, Link and Lames 2020, PLoS ONE
+  15(3): e0230179) to a median of 1.1 to 1.7 m (mean 1.8 to 2.8 m) for a pipeline on broadcast video (Theiner et al.,
+  WACV 2022, arXiv:2110.11107, Table 3), so a bias of the order of 0.5 to 2 m is plausible for ours and would hurt a
+  method that reads distances more than the benchmark says (the plan's range of 0.5 to 2 m is not stated by either
+  source, which are the nearest published figures; it is not our measurement).
+- **Rougher positions.** After the 5-frame smoothing the jitter is 1.80 cm per slot against our 3.3 mm, 5.5 times ours
+  in RMS (T35, R004c). DFL's clean 9.0 cm is a few jumps on a 1 cm grid, and the average takes it down to a fifth; what
+  is left is DFL's, lowered. A method that reads positions, speeds or accelerations sees rougher ones than ours, so
+  compare medians and percentiles and not an RMS (T35).
+- **The default's ball gaps are transplanted with their pattern and not their clock, and are blind to the play.** The
+  offset is drawn uniformly, so the pattern lags by up to M - n frames (our half less the benchmark's), 7.6 minutes in
+  a 68,000-frame half (R003's offsets reached 11,222 frames), and most of the climb through each half (A02) arrives
+  shifted. Separately, the mask is cut from our match and laid over DFL's play: a dead ball is no likelier to be missing
+  than any other frame, where in the public window ours is about three times as likely (33.6% of the dead frames
+  against 11.8% of all of them, A01), and 36.0% of the gaps start within 2 m of a line against 28.0% of ours (R003):
+  placed without regard to the play, they start near a line more often in a DFL match than ours do, and DFL tracks the
+  ball out of play (R005). The default has no gate on that share, which is `context`'s, and 36.0% is outside the +-0.05
+  that gate allows (R005). The ball is visible on 0.5684 of the benchmark's dead frames against 0.6637 in the public
+  window (R003, R004c), which is far better covered than the match (12% of its frames without the ball against 41%), so
+  ours over the whole match is unmeasured. A method that depends on where the gaps fall is validated on gaps that ignore
+  the play.
+- **`context` does not fix that, and its measured reason (R005).** It places the gaps by the play (lines, slow balls,
+  few players near the ball, as ours are) and fails its own near-line gate on every seed: **56% of its gaps start
+  within 2 m of a line against our 28%**. The cause is not the model, whose hazard is 2.9 times higher near a line on
+  ours and 3.9 times on DFL's rows (the same ratios at any scale), but the rows it is applied to: **DFL tracks the ball
+  out of play**, so 25.2% of the benchmark's at-risk rows are within 2 m of a line against 9.0% of ours, and 17.7% are
+  beyond one against 4.1%. No remedy was applied (R005). It also fails the share missing pooled (0.4313 against 0.4110
+  +-0.02) and warns on the ball visible on dead frames, 0.4622 against the public window's 0.6637 (`tracking` version 3:
+  0.5684): the hazard puts gaps on slow balls and a dead ball is slow (a reading, not measured), and the window is far
+  better covered than the match, so some of that miss is the window's. The hazard is a model of six features fitted on
+  143 onsets of one match. Its ball features come from the clean ball, so on the five frames after a gap the speed is
+  the true one, where ours carries the speed from before the gap: 0.83% of the at-risk rows are in that window (0.84%,
+  0.81% and 0.84% by seed), and the approximation is counted in the record (`post_gap_rows`). And `tracking` reads the
+  cap's counts and the ball's mask from one window of ours, so both follow our camera, where here the cap reads a window
+  of ours and the gaps are drawn from the play. So `context` is a sensitivity check and not the default.
+- **Tracklets and slots are not ours.** The tracklet median is 26.52 s against our 41.28 s, 36% below ours and inside
+  the gate's +-50% (R004c, T37). A slot's index is not as empty of the player as in ours. The profile gives each
+  tracklet the lowest free slot, so a team uses fewer of its slots than ours does over a whole match (J03WMX, seed 0,
+  version 3: of the pools of 24 and 22, 13 and 13 slots are ever present, 12 and 12 on at least a tenth of the frames
+  and 13 and 12 on at least a hundredth, where ours has 22 and 21, 21 and 20, 22 and 21; printed by
+  `test_data_tracking_profile_on_a_real_match_with_our_real_calibration`). A player who comes back after a lost span
+  lands in the slot he had 47.4% of the time (529 of 1,117 returns; 48.1% of 1,147 in version 2, 69.0% in version 1,
+  R004, and 67.6% of 562 returns with the walk, the episodes, the scale and the shortest piece but no cap), and a slot
+  idles between two tracklets for a median of 4.3 s (39.4% of its gaps at most 3 s, 5.3% over 60 s), where ours idles
+  for 7.4 s (17.7% and 15.0%; A09, R004c; version 2: 4.1 s, 42.0%, 5.3%; version 1: 2.3 s, 59.7%, 3.8%). No evidence
+  source reads a slot's identity today, beyond `nearest_player`'s argmin on exact ties, which goes to the lower slot;
+  but **a method that follows a slot across a loss would be validated optimistically here**, a little less than before
+  the cap. The episodes are cut at pairs within 2 m only, in both directions at one rate, and what is matched is the
+  observable share, not the episodes: on seed 0 the benchmark shows 75 to 159 observed episodes a match (mean 124.6),
+  medians of 2.0 to 2.8 s and 90th percentiles of 8.2 to 14.5 s (R004c; version 2: 82 to 151, mean 121.6, 1.8 to 2.7 s
+  and 9.4 to 14.4 s), against ours 104, 2.7 s and 15.8 s (a swap inside 11 against 11 is invisible on ours, so the true
+  number of ours is unknown).
+- **The cap keeps the players nearest the true ball.** Where ours has 18 or fewer slots present, the profile keeps the
+  nearest players, so a method that decodes from the nearest player to the ball is hurt little by it (R004b: the four
+  yardsticks move by 0.4 points of spellF1 at most), and one that needs the players far from the ball sees fewer of
+  them than the real match gave it, as it does on ours. The cap takes our counts from the frames that the ball's gaps
+  come from, not from the same play, so what ties the two to the play is not in them.
+- **The halves.** A benchmark half starts at its kick-off, while our graded second half starts 117 s before it, all `D`
+  (A06, T02). DFL's halves start alive in 11 of 14 (the other three have 1, 1 and 48 leading `D` frames) and all 14
+  end in `D`, so the benchmark cannot test the first and last seconds of a half as ours are (A06).
+- **`clean` and `gaps` are floors, not copies.** `clean` has the ball on every frame and DFL's players, one slot per
+  player. `gaps` has our gaps and DFL's players, with no wrong-team slot and no NaN speed. The fidelity report's
+  statistics say by how much each is short of ours, and "What the clean profile cannot show" says what that means.
+- **Where the transplant is cut.** A transplanted mask is cut at the edge of the window it is read from, so up to two
+  gaps of a benchmark half (the ones at its ends) are fragments of ours, and where the mask runs out and goes round
+  there is one more at the seam (3 of the 42 halves of R003: a DFL second half of 77,080 or 78,456 frames, against the
+  76,456 of ours); the gates are on the share and the median, which this barely moves.
