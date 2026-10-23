@@ -35,17 +35,19 @@ runs through the same pipeline and is rebuilt byte for byte as a regression chec
 | Tactical video (frames, audio) | | |
 | Broadcast video, ATD, homography | | |
 | Public 5-minute ground truth | | |
-| Labelled tracking of other matches: the DFL/IDSSE open data, 7 matches (P01) | yes, to validate only | Bassek et al., *Scientific Data* 12, 195 (2025), CC BY 4.0. We use the 25 Hz positions of players and ball, the ball's alive/dead flag and the team in possession on every frame (they give the truth: `D` where dead, otherwise the team), and the match information (teams, roles, pitch, halves). The tracking is degraded to look like ours and run through our pipeline. Nothing is trained on it so far (P13 is an idea) |
+| Labelled tracking of other matches: the DFL/IDSSE open data, 7 matches (P01) | yes, to validate only | Bassek et al. 2025 (reference below), CC BY 4.0. We use the 25 Hz positions of players and ball, the ball's alive/dead flag and the team in possession on every frame (they give the truth: `D` where dead, otherwise the team), and the match information (teams, roles, pitch, halves). The tracking is degraded to look like ours and run through our pipeline. Nothing is trained on it so far (P13 is an idea) |
 | The DFL/IDSSE event files; kloppy's DFL loader and download | dropped | The raw events, one of the three files of a match, are never read. kloppy's loader drops every dead-ball frame by default and its download fails (T30), so our own parser (`pipeline/benchmark/dfl.py`) reads the positions, and kloppy only cross-checks it: 0 disagreements (A05) |
 | Other external datasets or pretrained models | | |
 
-**The DFL/IDSSE data: sources, citation, licence.** Seven full matches, two Bundesliga and five 2. Bundesliga, 25 Hz,
-from Bassek et al., *Scientific Data* 12, 195 (2025), published under CC BY 4.0. We change the data (we degrade the
-tracking) and say so. The full reference (title, authors, DOI) and the licence link are still to be added. The data are
-public and outside the competition bundle, so their own licence governs them and not the bundle's rules.
-`pipeline/benchmark/sources.py` downloads the 21 files (2.6 GB) into `data/external/dfl/` (not committed) and accepts a
-file only if its size and md5 equal the pinned values; a Hugging Face mirror of the same data, pinned to one commit and
-checked the same way, is the fallback. Five of the seven matches are one club's home games.
+**The DFL/IDSSE data: sources, citation, licence.** Seven full matches, two Bundesliga and five 2. Bundesliga, 25 Hz.
+Reference: Bassek, M., Rein, R., Weber, H. and Memmert, D. (2025). An integrated dataset of spatiotemporal and event
+data in elite soccer. *Scientific Data* 12, 195. https://doi.org/10.1038/s41597-025-04505-y. The data are released
+under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) "with the authorization from the DFL" and are on
+figshare (DOI 10.6084/m9.figshare.28196177, as the paper's reference list gives it). We change the data (we degrade
+the tracking) and say so. The data are public and outside the competition bundle, so their own licence governs them and
+not the bundle's rules. `pipeline/benchmark/sources.py` downloads the 21 files (2.6 GB) into `data/external/dfl/` (not
+committed) and accepts a file only if its size and md5 equal the pinned values; a Hugging Face mirror of the same data,
+pinned to one commit and checked the same way, is the fallback. Five of the seven matches are one club's home games.
 
 No frame of this match was hand-labelled, for training, validation or the submission (RULES.md, as clarified on
 22 Oct 2026).
@@ -122,121 +124,139 @@ matter.
 **Why not the public window.** It holds 17 possessions, so one possession moves spellF1 by about 0.06. It is the
 best-covered 5 minutes of the match (the ball is missing on 12% of its frames, against 40.7% overall), and it ranks
 `smooth125` above `smooth50`, the reverse of the full match (T01). We may not hand-label this match, even to validate
-(T27). So we use the window to check that the pipeline is correct and to read this ground truth's timing conventions
-(P02), and we choose between versions on other matches.
+(T27). So the window checks that the pipeline is correct and shows this ground truth's timing conventions (P02), and we
+choose between versions on other matches.
 
-**The benchmark (P01).** The seven DFL/IDSSE matches of section 2, 668.4 graded minutes. The truth is built as ours is:
-`D` where `BallStatus` is dead, otherwise the team `BallPossession` names. A match is served to our own components as
-one of ours (`MatchInputs`, from which nothing of the truth is reachable, and a check walks everything the inputs
-reach), so a config runs on it unchanged, and its labels are scored with the organisers' own `possession_metrics`, half
-by half and pooled from summed counts. An evidence source equal to the truth scores exactly 1.0000 on spellF1, macroF1
-and alive/dead F1 on all seven matches, which anchors the chain from the loaded match to the score (R002).
+**The benchmark (P01).** The seven DFL/IDSSE matches of section 2, 668.4 graded minutes, with the truth built as ours
+is: `D` where `BallStatus` is dead, otherwise the team `BallPossession` names. Each match is served to our own
+components as one of ours (`MatchInputs`, with nothing of the truth reachable), so a config runs on it unchanged, and
+the organisers' own `possession_metrics` scores it half by half. An evidence source equal to the truth scores exactly
+1.0000 on all seven matches, which anchors the chain from the loaded match to the score (R002). The overview is
+`pipeline/benchmark/README.md`.
 
-**Two truths.** The raw truth is DFL's flags as they are: 3,061 possessions, 4.58 per graded minute. The grain of our GT
-is not known (section 3), so every choice that depends on possession length is ranked under a second, coarse truth too:
-it absorbs every possession under 5 s that sits between two possessions of the other team (1,659 possessions, 2.48 per
-graded minute). `COARSE_MIN_S` = 5 s came from a rule written before the numbers were seen and blind to our match
-(A06, R002). The coarse truth is a sensitivity check, not a correction, and a ranking that differs between the two is a
-warning.
+**Two truths.** The raw truth is DFL's flags as they are (3,061 possessions, 4.58 per graded minute). The grain of our
+GT is not known (section 3), so a choice that depends on possession length is ranked under a second, coarse truth too,
+which absorbs every possession under 5 s that sits between two possessions of the other team (1,659 possessions, 2.48
+a minute; the 5 s rule was written before the numbers were seen and blind to our match, A06). It is a sensitivity
+check, not a correction, and a ranking that differs between the two truths is a warning.
 
-**Profiles.** A profile says how the tracking of a DFL match is made before a config sees it. Each adds one part of
-our tracking to the one before, and has a version that goes into every report.
+**Profiles.** A profile says how a DFL match's tracking is made before a config sees it. Each adds one part of ours to
+the one before, and its version goes into every report.
 
 | profile | the ball | the players | entry |
 |---|---|---|---|
 | `clean` v1 | DFL's, on every frame | DFL's, one slot per player | R002, the floor |
-| `gaps` v1 | missing where ours was: our own missing-ball masks, transplanted onto each half; its speed NaN (T31) | untouched | R003 |
-| `tracking` v2, the default as of R004b | `gaps`' ball, byte for byte | our tracklet lengths in 46 slots (24 home, 22 away); wrong-team slots (T32); NaN-speed runs; 5-frame smoothing; and since v2 only the players nearest the ball where ours has 18 or fewer slots present, no piece under 8 frames, and the tracked spans rescaled once | R004 (v1), R004b (v2) |
-| `context` | the gaps placed where our tracker loses the ball: a hazard fitted on our match (A08), not a transplanted mask | `tracking`'s | R005, in progress |
+| `gaps` v1 | missing as ours was: our own missing-ball masks, transplanted onto each half (their pattern, not their clock); its speed NaN (T31) | untouched | R003 |
+| `tracking` v3, **the default as of R004c** | `gaps`' ball, byte for byte | our tracklet lengths in 46 slots, wrong-team slots (T32), NaN-speed runs, 5-frame smoothing, and our low-count frames (only the players nearest the ball) | R004 to R004c |
+| `context` v1, **sensitivity only** | the gaps placed where our tracker loses the ball: a hazard fitted on our match (A08) | `tracking`'s | R005: fails the near-line gate |
 
-R005 adds the `context` profile, with its own gates and table; the default and the tables below are "as of R004b" until
-then. R004c (`tracking` v3, 2026-10-23) changed one rule, that a slot is taken by a new tracklet only from the row after
-its last one stopped, and derived the scale of the tracked spans again (2.072): all eight gates still pass (tracklet
-median 26.52 s, 36% below ours; wrong-team share 0.0918), no check warns, and the ranking does not move (results.md
-R004c). What did move is the jitter per slot after smoothing, 1.80 cm: R004b's 8.5 cm was slot handovers (T35).
+Version 3 (R004c) changed one rule of version 2, so that a slot is taken by a new tracklet only from the row after its
+last one stopped, and derived the scale of the tracked spans again by the same one-shot rule, because the slot rule
+moved its measurement (2.042 to 2.072; T37). All eight gates pass, no check warns and the ranking does not move. What
+moved is the account of the jitter, 1.80 cm per slot after smoothing, where R004b's 8.5 cm was slot handovers (T35).
+`context` fails its near-line gate, 0.5586 of its gaps starting within 2 m of a line against our 0.2797 (+-0.05),
+because DFL tracks the ball out of play (R005, section 6). That gate binds only `context`: the default's transplanted
+gaps measure 36.0% on the same statistic (R003). `context` is a sensitivity check, the default stays `tracking`, and the
+four yardsticks keep their order on it.
 
-**Fidelity, as of R004b** (`tracking` v2: 7 matches x 3 seeds, `fidelity.py --profile tracking`). Gates are our own
-values, measured the same way on each half from its kick-off, plus or minus a tolerance fixed before anything was
-measured. The profile is frozen only when every counted gate passes (a gate can be pending and not counted, as three
-were for v1), and all eight are counted and pass:
+**Fidelity, as of R004c** (`tracking` v3: 7 matches x 3 seeds, `fidelity.py --profile tracking`, which exits 0). A gate
+is our own value, measured the same way on each half from its kick-off, plus or minus a tolerance fixed before anything
+was measured. The three count gates are measured where the clean match has all 22 players, since a team down to 10
+cannot show 22 slots (T36). All eight pass:
 
 | gate | benchmark | our match | tolerance | |
 |---|---|---|---|---|
 | ball missing, share of frames | 0.4189 | 0.4110 | +-0.02 | pass |
 | median gap in the ball | 10.76 s | 10.74 s | +-1.5 s | pass |
-| exactly 22 slots present, share of full-strength frames | 0.4938 | 0.5019 | +-0.06 | pass |
-| mean slots present, full-strength frames | 20.599 | 20.522 | +-0.5 | pass |
+| exactly 22 slots present, share of full-strength frames | 0.4925 | 0.5019 | +-0.06 | pass |
+| mean slots present, full-strength frames | 20.596 | 20.522 | +-0.5 | pass |
 | 14 or fewer slots present, share of full-strength frames | 0.0469 | 0.0525 | +-0.02 | pass |
-| wrong-team share of frames | 0.0942 | 0.1054 | +-0.03 | pass |
-| tracklet median | 27.08 s | 41.28 s | +-50% | pass (34% below ours) |
+| wrong-team share of frames | 0.0918 | 0.1054 | +-0.03 | pass |
+| tracklet median | 26.52 s | 41.28 s | +-50% | pass (36% below ours) |
 | NaN-speed share of the present slot-frames | 0.0788 | 0.0783 | +-0.01 | pass |
 
-The three count gates are measured on the frames where the clean DFL match has all 22 players, because a team down to
-10 cannot show 22 slots whatever the degradation does (T36). WARN checks are printed and discussed, and never tuned
-towards (none warns in R004b):
+Ten WARN checks are printed and never tuned towards, and none warns: the four yardsticks predict 18.7% to 24.3% fewer
+possessions a minute than on ours (band 25%), and the ball is visible on 0.5684 of the benchmark's dead frames against
+0.6637 in our public window (band 0.10; the ball is missing there on 12% of frames against 40.7% over the match, so
+ours over the whole match is unmeasured).
 
-| check | benchmark | our match | band |
-|---|---|---|---|
-| nearest player agrees with the truth, alive and ball visible | 0.7586 | 0.7784 (public window) | +-0.05 |
-| ball visible on dead frames | 0.5684 | 0.6637 (public window) | +-0.10 |
-| possessions per graded minute of `w0`, `w25`, `w50`, `w125` | 13.91, 5.39, 4.32, 3.06 | 18.40, 7.04, 5.61, 3.76 | +-25% (-24.4%, -23.5%, -23.0%, -18.7%) |
-| D share of `w0`, `w25`, `w50`, `w125` | 0.4189, 0.3764, 0.3341, 0.2329 | 0.4069, 0.3649, 0.3234, 0.2233 | +-0.05 |
+**The rule on degradations.** A degradation is fitted only on label-free statistics of our tracking (A07, A08), with
+constants from rules written before any score was seen, rescaled once per version from one label-free measurement,
+frozen with their measurement in the code, and never tuned towards a published score, a yardstick or a WARN (T26, T37).
+When a gate missed (the first low-count cap, on the tracklet median) we stopped, said so and made two corrections, each
+forced by its measurement: no piece under 8 frames, and one rescale of the tracked spans, applied whether or not the
+gate would then pass (R004b, T37). The degrader never reads `ball_status` or `ball_possession`, and a change to a
+profile bumps its version.
 
-**The rule on degradations.** A degradation is fitted only on label-free statistics of our tracking (A07, A08): the
-gaps, the tracklets, the slots, the wrong-team and NaN-speed shares, the jitter. Its constants come from rules written
-before any score was seen, are rescaled at most once, are frozen with their measurement in the code, and are never
-tuned towards a published score, a yardstick or a WARN (T26, T37). When a gate missed, we stopped and said so: the first
-version of the low-count cap missed the tracklet median by 0.96 s, and the fix was two corrections that its first
-measurement forced: no piece shorter than 8 frames, the length of our shortest tracklet, and one rescale (2.042) of the
-tracked spans, measured with the first in place and applied whether or not the gate would then pass (R004b, T37).
-The degrader never reads `ball_status` or `ball_possession`. A change to a profile bumps its version.
-
-**Statistics on seven clusters.** The pooled spellF1 is the official scorer's number on all halves of all matches as
-one file. An interval is the 90% Student t interval of the seven matches' paired deltas against a reference config. We
-add the exact sign-flip test over all 2^7 sign patterns (its smallest p is 2/128 = 0.0156) and the number of matches
-won out of seven. The printout also gives the mean delta per competition and per match. It is never a bootstrap:
-seven matches are not a sample to resample, and five of them are one club's home games. A degradation seed moves a
-pooled spellF1 by up to about 0.015 (R003 to R004b), and the intervals say nothing of that spread, so three seeds are
-the default and a gap of that size is read with care.
+**Statistics on seven clusters.** The pooled spellF1 is the official scorer's number on all halves as one file. An
+interval is the 90% Student t interval of the seven matches' paired deltas against a reference config, beside the exact
+sign-flip test (smallest p 2/128 = 0.0156) and the matches won out of seven. It is never a bootstrap: seven matches,
+five of them one club's home games, are not a sample to resample. A degradation seed moves a pooled spellF1 by up to
+about 0.015 (R003 to R004c), which the intervals do not show, so three seeds are the default.
 
 **Does it rank the four baselines as the full match does?** We run the organisers' four baselines decoded per half
-(`nearest_w{0,25,50,125}`; frame for frame the published files on the graded frames, A07), and ask it as a check, not a
-target. Pooled spellF1, R004b:
+(`nearest_w{0,25,50,125}`) as a check, not a target. Pooled spellF1 on the default profile (R004c; the other profiles'
+are in [the scoreboard summary of `docs/results.md`](results.md#the-four-yardsticks-on-every-profile-in-one-table)):
 
 | baseline | published, full match (R000) | benchmark, raw truth | benchmark, coarse truth |
 |---|---|---|---|
-| smooth50 (`w50`) | 0.2433 | 0.1989 | 0.1811 |
-| smooth125 (`w125`) | 0.2242 | 0.1624 | 0.2173 |
-| smooth25 (`w25`) | 0.1996 | 0.1897 | 0.1422 |
-| raw (`w0`) | 0.0486 | 0.0779 | 0.0341 |
+| smooth50 (`w50`) | 0.2433 | 0.2018 | 0.1842 |
+| smooth125 (`w125`) | 0.2242 | 0.1665 | 0.2226 |
+| smooth25 (`w25`) | 0.1996 | 0.1900 | 0.1432 |
+| raw (`w0`) | 0.0486 | 0.0777 | 0.0342 |
 
-The robust part holds: `w0` is last under both truths, losing to `w50` in 7 matches of 7 (R002 to R004b). The rest of
-the order follows the truth. Raw gives `w50 > w25 > w125 > w0` and coarse `w125 > w50 > w25 > w0`; neither is the
-published order `w50 > w125 > w25 > w0` (Kendall tau +0.667 under each from R003 on). `w125` against `w25` is
--0.0264 [-0.0389, -0.0139], 1 win of 7, under the raw truth and +0.0752 [+0.0613, +0.0892], 7 of 7, under the coarse
-one. So we decide between smoothing levels only where the two truths agree, and absolute spellF1 on the benchmark is
-not our leaderboard's under either.
-
-**What the benchmark could not measure, and how we check it instead.**
-
-- Whatever uses the homography, the Smart Tagging, the camera or the audio: DFL has no video. Those sources (P08, P09,
-  P10, P14, P15) are checked on the public window only, or simulated from the benchmark's truth with noise measured on
-  our match (A03).
-- Our ground truth's conventions: DFL's flags may flip at other moments than ours do, and the grain of our GT is not
-  known. The timing parameters come from the public window (P02), and `D` timing against ours is unmeasured (A06).
-- Slot identity. The profile's slots are the lowest free ones, so a player returns to his own slot 48.1% of the time
-  (ours has no identities) and a slot idles a median of 4.1 s where ours idles 7.4 s (R004b, A09). A method that follows
-  a slot across a loss would be validated optimistically.
-- Players far from the ball: the cap keeps those nearest the true ball, so a nearest-player method barely notices it
-  (it moves the four baselines by 0.4 points of spellF1 at most, R004b).
-- Positional error: the jitter after smoothing is 1.8 cm against our 3.3 mm (R004c; the 8.5 cm of R004b was slot
-  handovers, T35), and no positional bias is added, since none can be measured on ours.
-- The halves: a benchmark half starts at its kick-off, while our graded second half starts 117 s before it, all `D`
-  (A06, T02).
+`w0` is last under both truths, losing to `w50` in 7 matches of 7: the robust part of the check. The rest follows the
+truth. Raw gives `w50 > w25 > w125 > w0`, coarse `w125 > w50 > w25 > w0`, and neither is the published
+`w50 > w125 > w25 > w0` (Kendall tau +0.667 under each). `w125` against `w25` is -0.0228 [-0.0346, -0.0109], 0 wins of
+7, under the raw truth and +0.0795 [+0.0636, +0.0954], 7 of 7, under the coarse one. So we decide between smoothing
+levels only where the two truths agree, and absolute spellF1 on the benchmark is not our leaderboard's. What the
+benchmark cannot show is in section 6.
 
 ## 6. Limitations
 
-<!-- Where it fails, and what we would fix with more time. -->
+<!-- Where it fails, and what we would fix with more time. The pipeline's own limits: fill as decisions land. -->
+
+**Of the validation benchmark (P01)**, on which every choice between versions rests:
+
+- **Conventions.** DFL's flags may flip at other moments than ours do, and the grain of our ground truth is not known:
+  the public window is alive on 80.4% of its frames, more than 96% of DFL's 5-minute windows, so it cannot say how far
+  ours differs from DFL's 437 possessions a match (A06, T33). The coarse truth stands in for the difference and does not
+  correct it, and `D` timing against ours is unmeasured. The timing parameters come from the public window (P02).
+- **Seven matches, five of them Fortuna Düsseldorf's home games.** The sample is small, so the intervals are wide, and
+  not independent, so even they may be too narrow; the smallest sign-flip p is 0.0156. Two matches have a team down to
+  10 players, so statistics on how many players are tracked are measured at full strength only (T36).
+- **No video, audio, homography or Smart Tagging.** Whatever uses them (P08, P09, P10, P14, P15) is checked on the
+  public window only, or simulated from the benchmark's truth with noise measured on our match (A03).
+- **Aerial projection.** A camera-based tracker projects an airborne ball onto the pitch plane, which displaces it.
+  DFL's positions carry no such error and the benchmark adds none, and ours has no ball height, so the error cannot be
+  measured on ours. Nor can we tell how many of our ball gaps come from airborne balls: our first plan said "crowded
+  and aerial", and measured it is "lines and slow balls" (A08).
+- **Position bias.** None is added, because none can be measured on ours (there is no reference to measure it against),
+  so a method that reads distances is validated without whatever positional error ours carries.
+- **Rougher positions.** The jitter after smoothing is 1.80 cm per slot against our 3.3 mm, 5.5 times ours in RMS (T35,
+  R004c), which matters to a method that reads positions, speeds or accelerations.
+- **The default's ball gaps are transplanted and blind to the play.** They keep the pattern of our masks, not their
+  clock (the offset is drawn uniformly, so the pattern lags by up to 7.6 minutes in a 68,000-frame half, `degrade.py`;
+  R003's draws reached 11,222 frames) and not where our tracker loses the ball (near the lines, on slow balls, with
+  more players around, A08). 36.0% of them start within 2 m of a line against 28.0% of ours, because DFL's ball is
+  tracked out of play and so spends more time near the lines (R003, R005), and the ball is visible on 0.5684 of the
+  dead frames against 0.6637 in the public window (R003). A method that depends on where the gaps fall is validated on
+  gaps that ignore the play.
+- **`context` does not fix that, and why.** It places the gaps by the play and fails its own near-line gate (the
+  default has none) on every seed, 0.5586 against 0.2797 (+-0.05): DFL tracks the ball out of play, so 25.2% of its
+  at-risk rows are within 2 m of a line against 9.0% of ours, while the model's probability rises near a line by a
+  similar factor on both (3.9 on DFL's rows, 2.9 on ours). No scale of the hazard moves it and no remedy was applied.
+  It stays a sensitivity profile, and its numbers are not set beside `tracking`'s without saying so (R005).
+- **Tracklets and slots are not ours.** The tracklet median is 26.52 s against our 41.28 s, 36% below and inside its
+  +-50% band (R004c, T37). A player returns to his own slot 47.4% of the time (ours has no identities), and a slot
+  idles a median of 4.3 s where ours idles 7.4 s (both on J03WMX, seed 0, R004c, A09). A method that follows a slot
+  across a loss would be validated optimistically.
+- **The cap keeps the players nearest the ball.** Where ours has 18 or fewer slots present, the profile keeps the
+  players nearest the true ball. A nearest-player method barely notices (the four baselines move by 0.4 points of
+  spellF1 at most, R004b), and one that needs the players far from the ball sees fewer of them than the real match gave
+  it, as it does on ours. The cap's counts come from the frames of the ball's gaps and not from the same play.
+- **The halves.** A benchmark half starts at its kick-off, while our graded second half starts 117 s before it, all
+  `D` (A06, T02).
 
 ## 7. Reproduction
 

@@ -162,8 +162,8 @@ Every choice between two versions of the pipeline (a decoder, a smoothing width,
 made on **P01's benchmark**, never on the public window. The window checks that a run is correct (alignment, the file,
 each source's agreement) and is where we learn this ground truth's timing conventions (P02); it cannot rank versions
 ([T01](../docs/traps.md)). With no hand labels allowed on this match, the labels come from other matches: the seven open
-DFL/IDSSE Bundesliga matches (CC BY 4.0), whose tracking is degraded to look like ours, run through the pipeline's own
-components and scored by the organisers' scorer half by half.
+DFL/IDSSE matches (two Bundesliga, five 2. Bundesliga; CC BY 4.0), whose tracking is degraded to look like ours, run
+through the pipeline's own components and scored by the organisers' scorer half by half.
 
 ```bash
 pip install -r requirements-benchmark.txt && python pipeline/benchmark/sources.py     # once: the 7 matches, md5-checked
@@ -174,7 +174,7 @@ python pipeline/benchmark/run.py pipeline/benchmark/configs/nearest_w50.toml pip
 The first config is the reference, and every other one is compared with it (delta = other minus first, so positive
 means the other is better). The first run parses the seven matches (174 to 326 s, [A05](../docs/results.md)); later
 runs read them from `data/cache/` and take about 6 s a config on the default profile
-([R004b](../docs/results.md)). A config must run per graded half and use only what a benchmark match has: a source that
+([R004c](../docs/results.md)). A config must run per graded half and use only what a benchmark match has: a source that
 needs the video's homography or the Smart Tagging stops the run and names the asset.
 
 **How to read the printout.**
@@ -192,7 +192,7 @@ needs the video's homography or the Smart Tagging stops the run and names the as
   code (`DFL-COM-000001`: 2 matches, `DFL-COM-000002`: 5), and the delta of each match.
 - **Never a bootstrap.** Seven matches are not a sample to resample, and five of them are one club's home games, so they
   are not seven independent draws either. A gap that holds in every match and in both competitions is worth more than
-  one that does not. A degradation seed moves a pooled spellF1 by up to about 0.015 (R003 to R004b) and the intervals
+  one that does not. A degradation seed moves a pooled spellF1 by up to about 0.015 (R003 to R004c) and the intervals
   say nothing of that spread, so read a gap of that size with care.
 - **Both truths.** `--truth raw` is DFL's flags as they are. DFL's possessions are fine-grained (437 a match, median
   3.7 s) and how fine ours are is not known ([A06](../docs/results.md), [T33](../docs/traps.md)), so `--truth coarse`
@@ -201,7 +201,7 @@ needs the video's homography or the Smart Tagging stops the run and names the as
   to pick the truth that suits. Absolute spellF1 on the benchmark is not our leaderboard's under either truth.
 - **The yardstick check.** `nearest_w{0,25,50,125}.toml` are the organisers' four baselines decoded per half, and a
   change has to beat them here before it is worth anything. They are also the benchmark's own test: the check holds in
-  its robust part (`w0` is last under both truths, R002 to R004b), the rest of the order follows the truth, and neither
+  its robust part (`w0` is last under both truths, R002 to R004c), the rest of the order follows the truth, and neither
   truth gives the published full-match order (Kendall tau +0.667 under each, from R003 on). It is a check, not a target
   ([T26](../docs/traps.md)).
 - **Fidelity.** `python pipeline/benchmark/fidelity.py --profile tracking --seeds 3` measures how far the degraded copy
@@ -209,18 +209,27 @@ needs the video's homography or the Smart Tagging stops the run and names the as
   and discussed in `docs/results.md` and never tuned towards. Run it after any change to a profile. Degradations are
   fitted once on label-free statistics of our tracking, then frozen ([T37](../docs/traps.md)).
 
-**The default profile, as of R004b, is `tracking` version 2.** The ball is missing where ours was (our own masks,
-transplanted). The players have our tracklets in 46 slots, wrong-team slots (10.5% of our frames from each kick-off,
-10.8% of the graded ones, T32), NaN speeds in runs, smoothing, and our low-count frames (only the players nearest the
-ball tracked). All eight gates pass and none of the ten checks warns ([R004b](../docs/results.md)). R005 adds a
-`context` profile that places the ball's gaps where our tracker loses the ball ([A08](../docs/results.md)) and may
-change the default: `run.DEFAULT_PROFILE` and the benchmark README say which is current,
-`run.py --profile clean|gaps|tracking` picks another, and every report names its profile and version.
+**The default profile, as of R004c, is `tracking` version 3.** The ball is missing as ours was (our own masks,
+transplanted with their pattern and not their clock, so the gaps are not placed by the play). The players have our
+tracklets in 46 slots, wrong-team slots (10.5% of our frames from each kick-off, 10.8% of the graded ones, T32), NaN
+speeds in runs, smoothing, and our low-count frames (only the players nearest the ball tracked). The 5-frame smoothing
+leaves a jitter per slot of 1.80 cm against our 3.3 mm. Since v3 a slot is freed for a new tracklet only from the row
+after its last one stopped, which removed the slot handovers that had inflated the jitter to 6.5 to 8.5 cm (T35). All
+eight gates pass and none of the ten checks warns ([R004c](../docs/results.md)).
+
+**`context` is a sensitivity check, not a default.** It places the ball's gaps where our tracker loses the ball
+([A08](../docs/results.md)) and fails its own near-line gate, 0.5586 against our 0.2797 +-0.05, because DFL tracks the
+ball out of play ([R005](../docs/results.md)); the default's transplanted gaps measure 36.0% on the same statistic
+(R003), but only `context` has a gate on it. So `run.DEFAULT_PROFILE` stays `tracking`. Run `context` to see whether a
+ranking depends on how the gaps are placed, and say so when you quote it or set its number beside another profile's:
+`context` and `tracking` v3 order the four configs the same way under both truths (Kendall tau +1.000), and every config
+scores 0.3 to 2.2 points of spellF1 higher on `context` (R005). `run.py --profile clean|gaps|tracking|context` picks a
+profile, and every report names its profile and version.
 
 What it cannot test: whatever uses the homography, the Smart Tagging, the camera or the audio (DFL has no video), and
 the conventions of our ground truth beyond what the public window shows. Check those on the public window. The details
 (profiles, gates and WARN bands, the report, limitations) are in [`benchmark/README.md`](benchmark/README.md), and what
-was measured is in [`docs/results.md`](../docs/results.md) (A05 to A09, R002 to R004b).
+was measured is in [`docs/results.md`](../docs/results.md) (A05 to A09, R002 to R005; R004c is the default's).
 
 ## Rules that the code enforces, and ones it can't
 
@@ -233,10 +242,11 @@ was measured is in [`docs/results.md`](../docs/results.md) (A05 to A09, R002 to 
   ([T20–T22](../docs/traps.md)).
 - **One index everywhere.** Row *i* = tactical video frame *i*. Only stage 1 converts indices ([T08](../docs/traps.md)).
 - **Labels come from an algorithm.** No component may edit particular frames by hand (RULES.md).
-- **Per-frame arrays in reprs (a note for the team).** `Evidence`, `Decoded` and `run.RunResult` print their per-frame
-  arrays in their default reprs, so a `print(decoded)` in a notebook shows values of this match. `contracts.py` is
-  team-owned and the benchmark work left it alone; at the next change to the contracts, give those fields `repr=False`,
-  as `benchmark/calibration.Calibration` does for its arrays.
+- **Per-frame arrays in reprs (a note for the team).** `Evidence` and `Decoded` (in `contracts.py`) and `RunResult` (a
+  dataclass in `run.py`, not in `contracts.py`) print their per-frame arrays in their default reprs, so a
+  `print(decoded)` in a notebook shows values of this match. On a benchmark match a printed `Evidence` would show part
+  of our match's transplanted ball mask in its NaN pattern. `contracts.py` is team-owned and the benchmark work left it
+  alone: please give those per-frame fields `repr=False`, as `benchmark/calibration.Calibration` does for its arrays.
 - **Don't modify `evaluation/` or `starter/`.** The pipeline imports the official scorer and the organisers' loaders,
   so its checks are theirs.
 
