@@ -97,6 +97,7 @@ first and last run, which its edges may have cut short. The decoder returns a va
 | `min_possession` | 1 | the shortest run of `H` or of `A`; a hard floor under the penalty, which makes a run grow to its length where the evidence is half there |
 | `min_dead` | 1 | the shortest run of `D` |
 | `eps` | 1e-6 | the clip; a numerical guard, not a knob |
+| `posterior` | `false` | `true` also returns `Decoded.posterior`, the probability of `H`, `A` and `D` per frame ([below](#the-posterior)); the labels are the same either way |
 
 All four numbers are validated (no bool, no NaN or infinity, minimums are whole numbers of frames >= 1) and named in the
 error. Tune them on P01's benchmark, never on the public window ([T01](../../docs/traps.md)).
@@ -108,10 +109,38 @@ change of team across a stretch without evidence lands on the stretch's first fr
 **Cost.** About 2 µs a frame (80,000 frames with both minimums at 50 take 0.15 s): a plain-Python recursion over run
 starts with a running maximum, where the textbook chain with one substate per run length would cost O(minimum) a frame.
 
+### The posterior
+
+```toml
+[decoder]
+kind = "hmm"
+switch_team = 8
+switch_dead = 16
+posterior = true       # default false: Decoded.posterior is None
+```
+
+With `posterior = true`, `Decoded.posterior` is a `(len(block), 3)` float64 array: the probability of `H`, `A` and `D` at
+each frame under the same model, so a refiner can tell where an `X` is free (inside a possession, where `H` or `A` is
+close to 1) and where it would be expensive (at a hand-over). A valid path has weight `exp(score)`, and a frame's
+probability of a state is the total weight of the valid paths that hold it there, over the total weight of all valid
+paths. Each row sums to 1.
+
+- **The labels do not change.** They are the best single path (Viterbi), not the per-frame argmax of the posterior, and
+  the two part company where a stretch is close. A check pins that the labels are identical with the posterior on and off.
+- **It is the model's belief, no more.** It is as calibrated as the evidence it is given; `nearest_player`'s
+  `confidence` and `ball_presence`'s two values are what make it more or less sure.
+- **How it is computed.** A forward-backward pass over the textbook chain (each state split into "run length so far"
+  substates, the last with a self-loop, the first and last run exempt from the minimum), in log space, one vectorised
+  step per frame. The recursion over run starts that Viterbi uses sums the emissions over the whole block, and the
+  cancellation in those sums is harmless for a maximum but not for a probability of 1e-12, so it is not reused. The
+  pass is checked against an enumeration of every valid path (`pipeline/selftest.py`, blocks of up to 6 frames, with
+  blocks shorter than a minimum among them) and against reading a long block backwards.
+- **Cost.** It is O(`min_possession` + `min_dead`) a frame and holds `n_frames * (2 * min_possession + min_dead) * 8`
+  bytes (96 MB for 80,000 frames with both minimums at 50), so it is off by default and no benchmark grid asks for it.
+  80,000 frames with both minimums at 50 take about 2 s.
+
 **What it does not do yet.**
 
-- **No posterior:** `Decoded.posterior` is `None`, so a refiner cannot yet tell where an `X` is free. A forward-backward
-  pass over the same model gives it (P12).
 - **No duration priors beyond the minimums:** once a run is long enough it is as likely to last two minutes as five
   seconds. A semi-Markov version would take a prior over run lengths where the minimum is a hard step.
 - **`D` is only as good as its `alive` evidence.** `nearest_player` says nothing about it, so with that alone the
