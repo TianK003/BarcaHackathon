@@ -2,11 +2,12 @@
 
     [[evidence]]
     kind = "nearest_player"
+    confidence = 1.0     # optional, in [0.5, 1.0]; 1.0 is the baseline's hard 0 / 1
 
-On every frame where the tracking sees the ball and at least one player, `home` is 1.0 if the nearest tracked slot
-belongs to the home team and 0.0 if it belongs to the away team. Everywhere else -- the ball missing on 41% of graded
-frames, or nobody tracked -- it is NaN: no opinion, rather than a guess. `alive` is NaN on every frame, because
-distance says nothing about whether play is live; that is P05's job.
+On every frame where the tracking sees the ball and at least one player, `home` is `confidence` if the nearest tracked
+slot belongs to the home team and 1 - confidence if it belongs to the away team: 1.0 and 0.0 by default. Everywhere
+else -- the ball missing on 41% of graded frames, or nobody tracked -- it is NaN: no opinion, rather than a guess.
+`alive` is NaN on every frame, because distance says nothing about whether play is live; that is P05's job.
 
 This is deliberately the baseline's exact rule, computed so that it reproduces starter/baseline.py bit for bit:
 
@@ -16,10 +17,19 @@ This is deliberately the baseline's exact rule, computed so that it reproduces s
   is what the baseline's strict "<" keeps.
 
 What it is not: the possessor. With the ball visible and in play, the nearest player's team is wrong on 22% of
-frames -- passes in flight, duels, deflections (docs/traps.md T14). And it reports a hard 0 or 1 where a calibrated
-probability would be nearer 0.78. Both are what P04 (sticky ownership from controlled touches) is for; this source
-stays as the regression's first half and as a baseline to beat.
+frames -- passes in flight, duels, deflections (docs/traps.md T14). P04 (sticky ownership from controlled touches) is
+for that; this source stays as the regression's first half and as a baseline to beat.
+
+And by default it reports a hard 0 or 1 where a calibrated probability would be nearer 0.78, the share of in-play,
+ball-visible frames on which the nearest player's team is the right one (docs/results.md A01). A probabilistic decoder
+(P06) is given that number: confidence = 0.78 puts 0.78 or 0.22 on every frame the source answers, the same frames and
+the same direction as the hard output. It is one constant for the whole match, set from a measurement, not a fit.
+A majority vote sums the two sides, so it takes the same side as with the hard values, bar float rounding in an exact
+tie. The default, 1.0, gives 1.0 and 0.0 exactly (the second as 1 - 1.0), which is what the four baselines are rebuilt
+through, byte for byte.
 """
+
+import numbers
 
 import numpy as np
 
@@ -27,8 +37,15 @@ from pipeline.contracts import Evidence, no_opinion
 from starter.baseline import HOME
 
 
-def compute(run):
-    """Evidence(home = 1.0 / 0.0 by the nearest present slot's team, NaN without a ball or a player; alive = NaN)."""
+def compute(run, *, confidence=1.0):
+    """Evidence(home = confidence / 1 - confidence by the nearest present slot's team, NaN without a ball or a
+    player; alive = NaN). With the default confidence, home is the baseline's hard 1.0 / 0.0."""
+    # numbers.Real admits numpy floats too; bool is excluded, and NaN fails the range test.
+    if isinstance(confidence, bool) or not isinstance(confidence, numbers.Real) or not 0.5 <= confidence <= 1.0:
+        raise ValueError("nearest_player: confidence must be a number in [0.5, 1.0] (1.0 = the baseline's hard 0 / 1; "
+                         "below 0.5 would back the farther team), got {!r}".format(confidence))
+    confidence = float(confidence)
+
     inputs = run.inputs
     atd = inputs.atd
     length, width = inputs.pitch
@@ -48,5 +65,6 @@ def compute(run):
     # explicitly rather than trusted to come out as inf.
     answered = atd.ball_present & present.any(axis=1)
     home = no_opinion(inputs.n_frames)
-    home[answered] = (atd.slot_team[nearest[answered]] == HOME).astype(np.float64)
+    nearest_is_home = atd.slot_team[nearest[answered]] == HOME
+    home[answered] = np.where(nearest_is_home, confidence, 1.0 - confidence)
     return Evidence(alive=no_opinion(inputs.n_frames), home=home)

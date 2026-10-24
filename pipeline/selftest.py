@@ -428,6 +428,124 @@ def test_nearest_player_matches_baseline():
         assert np.isnan(evidence.alive).all(), "nearest_player has no opinion on alive vs dead"
 
 
+def nearest_player_runs(root, **parameters):
+    """(default output, output with `parameters`, the baseline's codes) on the synthetic match, which has home,
+    away and no-opinion frames."""
+    from pipeline.contracts import RunContext
+    from pipeline.evidence import REGISTRY
+    from starter import baseline
+    folder = make_synthetic_bundle(root)
+    inputs = synthetic_inputs(root)
+    run = RunContext(inputs=inputs, seed=0)
+    hard = REGISTRY["nearest_player"](run)
+    codes = baseline.nearest_player_labels(
+        os.path.join(folder, "BAR-ATH_tactical_atd.txt"),
+        baseline.team_of_each_track(os.path.join(folder, "BAR-ATH_tactical_atd.xml")),
+        SYNTHETIC_FRAMES, inputs.pitch)
+    assert {int(code) for code in np.unique(codes)} == {baseline.NOBODY, baseline.HOME, baseline.AWAY}, \
+        "the synthetic match no longer reaches every branch"
+    return hard, REGISTRY["nearest_player"](run, **parameters), codes
+
+
+def test_nearest_player_confidence_default_is_unchanged():
+    # The four committed baselines are rebuilt through this source (--data); the default must stay the hard 0 / 1.
+    from starter import baseline
+    with tempfile.TemporaryDirectory() as root:
+        hard, explicit, codes = nearest_player_runs(root, confidence=1.0)
+    expected = np.where(codes == baseline.HOME, 1.0, np.where(codes == baseline.AWAY, 0.0, np.nan))
+    for evidence in (hard, explicit):
+        assert np.array_equal(evidence.home, expected, equal_nan=True), "home differs from the baseline's"
+        assert np.isnan(evidence.alive).all(), "nearest_player has no opinion on alive vs dead"
+
+
+def test_nearest_player_confidence_sets_both_values():
+    with tempfile.TemporaryDirectory() as root:
+        hard, soft, _ = nearest_player_runs(root, confidence=0.78)
+    known = ~np.isnan(soft.home)
+    assert np.array_equal(np.isnan(soft.home), np.isnan(hard.home)), "NaN moved to other frames"
+    assert np.isin(soft.home[known], [0.78, 1 - 0.78]).all(), "a value other than 0.78 or 1 - 0.78"
+    assert (soft.home[hard.home == 1.0] == 0.78).all(), "a home frame is not exactly 0.78"
+    assert (soft.home[hard.home == 0.0] == 1 - 0.78).all(), "an away frame is not exactly 1 - 0.78"
+    assert np.isnan(soft.alive).all()
+
+
+def test_nearest_player_rejects_bad_confidence():
+    from pipeline.contracts import RunContext
+    from pipeline.evidence import REGISTRY
+    run = RunContext(inputs=None, seed=0)  # rejected before the match is touched
+    for bad in (0.4, 1.5, float("nan"), True, "0.8"):
+        expect_error(ValueError, lambda: REGISTRY["nearest_player"](run, confidence=bad), "nearest_player",
+                     "confidence")
+
+
+def ball_run(ball_present):
+    """A RunContext over a stand-in match that has only what ball_presence reads: n_frames and atd.ball_present."""
+    from types import SimpleNamespace
+    from pipeline.contracts import RunContext
+    atd = SimpleNamespace(ball_present=ball_present)
+    return RunContext(inputs=SimpleNamespace(n_frames=len(ball_present), atd=atd), seed=0)
+
+
+def test_ball_presence_values_and_margin():
+    from pipeline.contracts import check_evidence
+    from pipeline.evidence import REGISTRY
+    ball = np.ones(40, dtype=bool)
+    ball[:3] = False      # missing at the very start,
+    ball[20:30] = False   # for ten frames in the middle,
+    ball[38:] = False     # and at the very end
+    source = REGISTRY["ball_presence"]
+    seen = np.flatnonzero(ball)
+    gap = np.flatnonzero(~ball)
+    distance = np.abs(gap[:, None] - seen[None, :]).min(axis=1)  # to the nearest frame with a ball, by brute force
+
+    evidence = source(ball_run(ball))
+    assert (evidence.alive[ball] == 0.585).all() and (evidence.alive[~ball] == 0.2).all()
+    assert evidence.alive.dtype == np.float64 and evidence.home.dtype == np.float64
+    assert np.isnan(evidence.home).all()
+    check_evidence(evidence, 40)
+
+    evidence = source(ball_run(ball), margin=3)
+    assert (evidence.alive[ball] == 0.585).all()
+    assert (evidence.alive[gap[distance > 3]] == 0.2).all()
+    assert np.isnan(evidence.alive[gap[distance <= 3]]).all()
+    assert np.flatnonzero(evidence.alive == 0.2).tolist() == [23, 24, 25, 26], "the middle of the ten-frame gap"
+    check_evidence(evidence, 40)
+
+    nothing = source(ball_run(np.zeros(40, dtype=bool)), margin=3)  # no ball at all: nothing is near a ball frame
+    assert (nothing.alive == 0.2).all() and np.isnan(nothing.home).all()
+    check_evidence(nothing, 40)
+
+
+def test_ball_presence_seen_half_is_no_push():
+    from pipeline.evidence import REGISTRY
+    ball = np.arange(30) % 7 != 0
+    evidence = REGISTRY["ball_presence"](ball_run(ball), seen=0.5)
+    # log(2 * 0.5) = 0 in the decoder's emission rule: a visible ball then says nothing about alive vs dead.
+    assert (evidence.alive[ball] == 0.5).all() and (evidence.alive[~ball] == 0.2).all()
+
+
+def test_ball_presence_reads_read_only_inputs():
+    from pipeline.evidence import REGISTRY
+    ball = np.arange(30) % 7 != 0
+    ball.flags.writeable = False
+    evidence = REGISTRY["ball_presence"](ball_run(ball), margin=2)
+    assert (evidence.alive[ball] == 0.585).all()
+    assert ball.flags.writeable is False and ball.sum() == 25, "the input was touched"
+
+
+def test_ball_presence_rejects_bad_parameters():
+    from pipeline.evidence import REGISTRY
+    run = ball_run(np.ones(10, dtype=bool))
+    source = REGISTRY["ball_presence"]
+    for bad in (-1, 1.5, True):
+        expect_error(ValueError, lambda: source(run, margin=bad), "ball_presence", "margin")
+    for bad in (-0.1, 1.1, float("nan"), True, "0.2"):
+        expect_error(ValueError, lambda: source(run, missing=bad), "ball_presence", "missing")
+    for bad in (1.2, -0.5, float("nan"), True):
+        expect_error(ValueError, lambda: source(run, seen=bad), "ball_presence", "seen")
+    source(run, margin=np.int64(3), missing=np.float64(0.25), seen=1)  # numpy numbers from a sweep are fine
+
+
 # -- decode -----------------------------------------------------------------------------------------------------------
 
 def vote_context(home, start=0, stop=None, weights=None):
