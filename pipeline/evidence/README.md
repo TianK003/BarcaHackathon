@@ -51,9 +51,13 @@ the same as the hard values bar float rounding in an exact tie.
 missing on 33.6% of dead-ball frames and 6.5% of in-play ones in the public window, a ratio of 5.2 that is rounded down
 to 4 because that window is the best-covered block of the match (`missing = 0.2`); and it is seen on 66.4% against
 93.5%, a ratio of 1.41 for alive (`seen = 0.585`). `seen = 0.5` adds nothing to the decoder's emissions and is the
-control "without it". Per frame this is weak evidence on purpose: a missing ball is not a dead ball
-([T12](../../docs/traps.md)), and 41% of graded frames have no ball, in long gaps. `margin` leaves the edges of a gap to
-other evidence: only missing frames more than `margin` frames from the nearest frame with a ball speak.
+control "without it". A missing frame moves `D` over `H` and `A` by log(0.8 / 0.2) = 1.39 nats, four times what `seen`
+gives alive (0.34) and more than `nearest_player` at 0.78 (1.27), so across a long gap it outweighs any `switch_dead` in
+P06's grid: a gap longer than about 2 * `switch_dead` / 1.39 frames decodes to `D`. It is weaker than the baseline's
+hard rule only in that short gaps (and every visible stretch) can still be overruled. And a missing ball is not a dead
+ball ([T12](../../docs/traps.md)): 41% of graded frames have no ball, in long gaps, and in-play gaps of 10 s or more are
+normal. `margin` leaves the edges of a gap to other evidence: only missing frames more than `margin` frames from the
+nearest frame with a ball speak.
 
 ## Writing a source
 

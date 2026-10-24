@@ -115,8 +115,10 @@ starts with a running maximum, where the textbook chain with one substate per ru
 - **No duration priors beyond the minimums:** once a run is long enough it is as likely to last two minutes as five
   seconds. A semi-Markov version would take a prior over run lengths where the minimum is a hard step.
 - **`D` is only as good as its `alive` evidence.** `nearest_player` says nothing about it, so with that alone the
-  decoder never chooses `D` except on a block with no evidence at all. A dead-ball source (P05) is what gives it
-  something to decode.
+  decoder chooses `D` rarely, and only in gaps: `H`, `D`, `A` beats `H`, `A` across a gap when `switch_team` is more
+  than twice `switch_dead` and the gap is at least `min_dead` frames, and with `switch_dead = 0` a trailing stretch
+  without evidence ends in `D` by the tie preference. A dead-ball source (P05) is what gives it something real to
+  decode.
 
 ## Adding a decoder
 

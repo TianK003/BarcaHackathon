@@ -405,27 +405,16 @@ def test_cache_rebuilt_when_arrays_missing():
 # -- evidence ---------------------------------------------------------------------------------------------------------
 
 def test_nearest_player_matches_baseline():
-    from pipeline.contracts import RunContext, check_evidence
-    from pipeline.evidence import REGISTRY
+    from pipeline.contracts import check_evidence
     from starter import baseline
     with tempfile.TemporaryDirectory() as root:
-        folder = make_synthetic_bundle(root)
-        inputs = synthetic_inputs(root)
-        evidence = REGISTRY["nearest_player"](RunContext(inputs=inputs, seed=0))
-        check_evidence(evidence, SYNTHETIC_FRAMES)
-
-        codes = baseline.nearest_player_labels(
-            os.path.join(folder, "BAR-ATH_tactical_atd.txt"),
-            baseline.team_of_each_track(os.path.join(folder, "BAR-ATH_tactical_atd.xml")),
-            SYNTHETIC_FRAMES, inputs.pitch)
-        # The synthetic file has to reach every branch, or agreeing with it proves little.
-        assert {int(code) for code in np.unique(codes)} == {baseline.NOBODY, baseline.HOME, baseline.AWAY}
-
-        expected = np.where(codes == baseline.HOME, 1.0, np.where(codes == baseline.AWAY, 0.0, np.nan))
-        differ = ~((evidence.home == expected) | (np.isnan(evidence.home) & np.isnan(expected)))
-        assert not differ.any(), "{} frames differ, first at frame {}".format(
-            int(differ.sum()), int(np.flatnonzero(differ)[0]))
-        assert np.isnan(evidence.alive).all(), "nearest_player has no opinion on alive vs dead"
+        evidence, _, codes = nearest_player_runs(root)  # asserts that the match reaches every branch
+    check_evidence(evidence, SYNTHETIC_FRAMES)
+    expected = np.where(codes == baseline.HOME, 1.0, np.where(codes == baseline.AWAY, 0.0, np.nan))
+    differ = ~((evidence.home == expected) | (np.isnan(evidence.home) & np.isnan(expected)))
+    assert not differ.any(), "{} frames differ, first at frame {}".format(
+        int(differ.sum()), int(np.flatnonzero(differ)[0]))
+    assert np.isnan(evidence.alive).all(), "nearest_player has no opinion on alive vs dead"
 
 
 def nearest_player_runs(root, **parameters):
@@ -462,6 +451,7 @@ def test_nearest_player_confidence_sets_both_values():
     with tempfile.TemporaryDirectory() as root:
         hard, soft, _ = nearest_player_runs(root, confidence=0.78)
     known = ~np.isnan(soft.home)
+    assert (hard.home == 1.0).any() and (hard.home == 0.0).any(), "the synthetic match lacks home or away frames"
     assert np.array_equal(np.isnan(soft.home), np.isnan(hard.home)), "NaN moved to other frames"
     assert np.isin(soft.home[known], [0.78, 1 - 0.78]).all(), "a value other than 0.78 or 1 - 0.78"
     assert (soft.home[hard.home == 1.0] == 0.78).all(), "a home frame is not exactly 0.78"
@@ -807,6 +797,23 @@ def test_hmm_tie_lands_on_the_first_frame():
     assert (labels == D).all(), letters(labels)
 
 
+def test_hmm_tie_in_a_gap_with_alive_evidence():
+    # The same tie as above, but with ball_presence's shape of evidence: every frame of the gap has `alive` and no
+    # `home`, which adds the same number to H and to A. The running sums of H and A start from different values, so
+    # without care fl(sum_H + x) and fl(sum_A + x) drift apart by ulps and the change of team lands wherever the
+    # rounding noise peaks, not on the gap's first frame (viterbi subtracts H's column to make the tie exact).
+    # The votes are long enough to beat the gap's evidence for D (1.39 nats a frame): no path pays a switch to
+    # stay all D, so a shorter vote decodes to D throughout and tests nothing. With stretches of 60 frames, before the
+    # fix the change landed on the gap's last frame (30-frame gap) and in the middle of it (50 frames).
+    for gap in (30, 50):
+        home = home_runs((VOTE, 60), (np.nan, gap), (1.0 - VOTE, 60))
+        alive = np.concatenate([np.full(60, 0.585), np.full(gap, 0.2), np.full(60, 0.585)])
+        for min_possession in (1, 10):
+            labels = hmm_labels(hmm_context(home, alive), switch_team=1.0, switch_dead=100.0,
+                                min_possession=min_possession)
+            assert letters(labels) == "H" * 60 + "A" * (gap + 60), (gap, min_possession, letters(labels))
+
+
 def test_hmm_ties_follow_the_preference_order():
     """Equal scores, made exact with whole-number emissions: continue the run, then D, then H, then A."""
     from pipeline.contracts import H
@@ -828,7 +835,6 @@ def test_hmm_ties_follow_the_preference_order():
     assert decode(rows + [[5, -5, -5]], switch_team=0.0, switch_dead=0.0) == "HHHHH"
     assert decode(rows, switch_team=0.0, switch_dead=0.0) == "HDDD"
     home = np.full(30, 0.5)
-    from pipeline.contracts import H
     assert (hmm_labels(hmm_context(home, np.full(30, 0.9)), switch_team=2.0, switch_dead=2.0) == H).all(), \
         "a dead heat between the teams goes to the home side"
 
@@ -904,6 +910,13 @@ def test_hmm_rejects_bad_parameters():
             expect_error(ValueError, lambda: decode(**{name: bad}), "hmm", name)
     for bad in (0.0, 0.5, np.nan):
         expect_error(ValueError, lambda: decode(eps=bad), "hmm", "eps")
+    # viterbi takes emissions directly: it names what is wrong with them, the shape or the values.
+    from pipeline.decode import hmm
+    expect_error(ValueError, lambda: hmm.viterbi(np.zeros((5, 2)), 1.0, 1.0, 1, 1), "hmm", "shape (5, 2)")
+    for bad in (np.nan, np.inf, -np.inf):
+        emissions = np.zeros((5, 3))
+        emissions[2, 1] = bad
+        expect_error(ValueError, lambda: hmm.viterbi(emissions, 1.0, 1.0, 1, 1), "hmm", "finite", "1 of 15")
     # Whole numbers from a notebook sweep, a penalty of 0 and an integer penalty from a config are all fine.
     decode(switch_team=10, switch_dead=np.float64(5.0), min_possession=np.int64(5), min_dead=3, eps=1e-3)
     decode(switch_team=0, switch_dead=0)

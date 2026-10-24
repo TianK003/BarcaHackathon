@@ -73,8 +73,10 @@ What it does not do yet
   pass over the same chain, planned.
 * No duration priors beyond the minimums: a run is as likely to last 2 minutes as 5 seconds, once it is long enough.
   A semi-Markov decoder would take a log-prior over run lengths where the minimum is a hard step.
-* D is only as good as its `alive` evidence. With nearest_player alone nothing speaks for D and the decoder never
-  chooses it (except on a block with no evidence); a dead-ball source (P05) is what gives it something to decode.
+* D is only as good as its `alive` evidence. With nearest_player alone nothing speaks for D, so the decoder chooses it
+  rarely and only in gaps: H -> D -> A beats H -> A when switch_team > 2 * switch_dead and the gap is at least min_dead
+  frames, and with switch_dead = 0 a trailing stretch without evidence ends in D by the tie preference. A dead-ball
+  source (P05) is what gives it something real to decode.
 * The two penalties and the minimums are set by hand in the config; the benchmark (P01) is where they are chosen.
 """
 
@@ -140,8 +142,17 @@ def viterbi(emissions, switch_team, switch_dead, min_possession, min_dead):
     switch_team, switch_dead, min_possession, min_dead = _check_costs(
         switch_team, switch_dead, min_possession, min_dead)
     emissions = np.asarray(emissions, dtype=np.float64)
-    if emissions.ndim != 2 or emissions.shape[1] != 3 or not np.isfinite(emissions).all():
-        raise ValueError("hmm: emissions must be a finite (n_frames, 3) array, got shape {}".format(emissions.shape))
+    if emissions.ndim != 2 or emissions.shape[1] != 3:
+        raise ValueError("hmm: emissions must be an (n_frames, 3) array, got shape {}".format(emissions.shape))
+    if not np.isfinite(emissions).all():
+        raise ValueError("hmm: emissions must be finite, but {} of {} values are NaN or infinite".format(
+            int((~np.isfinite(emissions)).sum()), emissions.size))
+    # Every path takes one state per frame, so subtracting a frame's H score from all three states moves every path's
+    # score by the same constant and changes no decision. It makes the tie inside a ball gap exact: there `alive` adds
+    # the same number to H and to A, so their difference is exactly 0 where only `alive` is known, instead of two
+    # running sums that drift apart by ulps (and would put the change of team where the rounding noise peaks, not on
+    # the gap's first frame). A new array: the input is never written.
+    emissions = emissions - emissions[:, H:H + 1]
     n_frames = len(emissions)
     labels = np.empty(n_frames, dtype=np.int8)
     if n_frames == 0:

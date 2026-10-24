@@ -474,9 +474,10 @@ renamed over the old report; the same inputs, seed and versions give the same by
 .venv/Scripts/python pipeline/benchmark/selftest.py --data   # + our own match (aggregates only; minutes)
 ```
 
-The synthetic run is 272 checks and took 49 to 115 s; `--dfl --data` is 295 (16 with `--dfl`, 7 with `--data`) and took
-949 s (15 min 49 s) with the seven DFL caches and the Calibration rebuilt after an edit to `dfl.py` and `calibration.py`
-(A05, 2026-10-23, `fdc5eae`). The machine's load decides, and the first run on a machine also builds the caches (A05).
+The synthetic run is 273 checks and took 49 to 115 s. `--dfl` adds 16 and `--data` 7; all of them (295 checks then)
+took 949 s (15 min 49 s) with the seven DFL caches and the Calibration rebuilt after an edit to `dfl.py` and
+`calibration.py` (A05, 2026-10-23, `fdc5eae`). The machine's load decides, and the first run on a machine also builds
+the caches (A05).
 
 The checks live in `pipeline/benchmark/checks/`, one module per topic, listed in `checks.MODULES` (the folder's
 `__init__.py` says what each holds): `sources`, `dfl`, `truth`, `inputs`, `score`, `run`, `hazard`, `calibration`,
