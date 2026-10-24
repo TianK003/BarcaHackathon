@@ -18,6 +18,7 @@ import contextlib
 import dataclasses
 import gc
 import io
+import json
 import math
 import os
 import subprocess
@@ -32,7 +33,8 @@ from pipeline import evidence as evidence_stage
 from pipeline.benchmark import headroom, truth
 from pipeline.benchmark import inputs as match_inputs
 from pipeline.benchmark import run as benchmark_run
-from pipeline.benchmark.checks.common import (loading, random_match, read, synthetic_calibration, synthetic_matches)
+from pipeline.benchmark.checks.common import (loading, random_match, read, synthetic_calibration, synthetic_matches,
+                                              yardstick_path)
 from pipeline.config import Component, load_config
 from pipeline.contracts import A, D, H, X, RunContext, check_evidence
 from pipeline.selftest import expect_error, quiet, write_text
@@ -376,7 +378,7 @@ def test_headroom_oracles_say_what_the_truth_says():
         expect_error(ValueError, lambda: made[kind](RunContext(inputs=other, seed=0)), kind, "RND009", "truth")
 
 
-def test_headroom_oracles_are_registered_only_while_a_run_lasts():
+def test_headroom_restores_the_registry():
     """The evidence registry is equal before and after a run, and after a run that raised in the middle of it.
 
     Inside the context manager the three oracles are in it (the variants could not load otherwise); outside there is
@@ -470,24 +472,36 @@ def test_headroom_loads_each_match_once_and_keeps_none():
     assert all(ref() is None for _, refs in made for ref in refs), "a match is still held after the run"
 
 
-def test_headroom_writes_reports_only_when_asked_and_the_same_bytes_twice():
-    """write=True writes one report per config next to the runner's (<stem>.json, <stem>__alive.json, ...); else none.
+def test_headroom_writes_the_variants_reports_only_when_asked_and_never_the_references():
+    """write=True writes the five variants' reports (<stem>__alive.json, ...) and not CONFIG's; without it, none.
 
     The reports are the runner's own (write_reports) with the variants' stems, in <data dir>/runs/benchmark/<profile>/;
-    a second run writes the same bytes, the variants' files included, since their folder and text are fixed.
+    a second run writes the same bytes, the variants' files included, since their folder and text are fixed. CONFIG's
+    report is the runner's to write: here it is one that run.py wrote when CONFIG was the second of two configs, so that
+    it has a `versus` block, and a headroom run with write=True leaves it byte for byte as it was (a report written from
+    the headroom run would have replaced it with one that has no comparison).
     """
     with tempfile.TemporaryDirectory() as root:
         path = write_text(root, "hmm_free.toml", HMM)
+        folder = os.path.join(root, "runs", "benchmark", "gaps")
         on_gaps(path, root)
-        assert not os.path.exists(os.path.join(root, "runs", "benchmark", "gaps")), "no report unless asked for"
+        assert not os.path.exists(folder), "no report unless asked for"
+        suffix = ".m-RND001-RND002.s1.json"          # the synthetic matches are not the seven: the runner's own rule
+        runner = benchmark_run.evaluate_configs(
+            [yardstick_path(50), path], profile="gaps", seeds=1, matches=synthetic_matches(),
+            calibration=synthetic_calibration(), data_dir=root, log=quiet)
+        benchmark_run.write_reports(runner)
+        reference = os.path.join(folder, "hmm_free" + suffix)
+        reference_bytes = read(reference, "rb")
+        assert json.loads(reference_bytes)["versus"]["reference"]["stem"] == "nearest_w50", "it has a versus block"
         lines = []
         on_gaps(path, root, write=True, log=lines.append)
-        folder = os.path.join(root, "runs", "benchmark", "gaps")
-        names = sorted(["hmm_free.json"] + ["hmm_free__" + name + ".json" for name in STEMS])
-        suffix = ".m-RND001-RND002"          # the synthetic matches are not the seven: the runner's own rule
-        names = sorted(name[:-len(".json")] + suffix + ".s1.json" for name in names)
+        names = sorted(["hmm_free__" + name + suffix for name in STEMS] + ["hmm_free" + suffix, "nearest_w50" + suffix])
         assert sorted(os.listdir(folder)) == names, sorted(os.listdir(folder))
-        assert sum(line.startswith("report") for line in lines) == 6, lines
+        assert read(reference, "rb") == reference_bytes, "CONFIG's report, with its versus block, was replaced"
+        reported = [line for line in lines if line.startswith("report")]
+        assert len(reported) == 5 and not any("hmm_free" + suffix in line for line in reported), reported
+        names = sorted(name for name in names if "__" in name)
         first = {name: read(os.path.join(folder, name), "rb") for name in names}
         variants = {name: read(os.path.join(variants_folder(root), name), "rb")
                     for name in os.listdir(variants_folder(root))}
@@ -497,11 +511,110 @@ def test_headroom_writes_reports_only_when_asked_and_the_same_bytes_twice():
                 for name in os.listdir(variants_folder(root))} == variants, "variants differ on a rerun"
 
 
+def test_headroom_a_second_write_leaves_the_variants_alone():
+    """A second write_variants of the same config does not touch the files, even one that another process has open.
+
+    The raw and the coarse run are meant to go side by side, and write the same variants (the texts do not depend on
+    the truth) into one folder. On Windows os.replace onto a file that is open elsewhere is a PermissionError, so a
+    file that already holds the bytes is left alone: the modification times, set back to 2001 so that a coarse clock
+    cannot hide a rewrite, are as they were, no temporary file is left, and the call succeeds with every variant open
+    for reading. A config that changes (its seed here) is a text that changes, and is written. write_text says which
+    it did.
+    """
+    with tempfile.TemporaryDirectory() as root:
+        base = load_config(write_text(root, "full.toml", FULL))
+        written = headroom.write_variants(base, root)
+        folder = variants_folder(root)
+        paths = [path for _, path in written]
+        assert len(paths) == 5
+        old = 1_000_000_000 * 10 ** 9           # nanoseconds: 2001-09-09
+        for path in paths:
+            os.utime(path, ns=(old, old))
+        with contextlib.ExitStack() as holding:
+            for path in paths:
+                holding.enter_context(open(path, "rb"))
+            again = headroom.write_variants(base, root)
+        assert again == written
+        assert [os.stat(path).st_mtime_ns for path in paths] == [old] * 5, "a file that held the bytes was rewritten"
+        assert sorted(os.listdir(folder)) == sorted(os.path.basename(path) for path in paths), os.listdir(folder)
+        assert headroom.write_text(paths[0], read(paths[0])) is False, "same bytes: not written"
+
+        changed = headroom.write_variants(dataclasses.replace(base, seed=base.seed + 1), root)
+        assert [path for _, path in changed] == paths
+        assert all(os.stat(path).st_mtime_ns != old and tomllib.loads(read(path))["seed"] == base.seed + 1
+                   for path in paths), "a changed config must be written"
+        assert headroom.write_text(paths[0], "seed = 9\n") is True and read(paths[0]) == "seed = 9\n"
+
+
+def test_headroom_a_write_that_loses_a_race_for_the_same_bytes_is_not_an_error():
+    """A rename refused because the other run got there first, with the same bytes, is fine; with other bytes it is not.
+
+    Two runs that find no file both write one, and the second rename can be refused (Windows: the first run's loader has
+    the file open). os.replace is made to do exactly that here, after putting the other run's bytes in place. Where they
+    are the bytes that were to be written, write_text returns False and leaves no temporary file; where they are not,
+    the PermissionError is raised, since the file is not what this run meant and the runner would score another config.
+    """
+    real = os.replace
+
+    def beaten_by(content):
+        def replace(source, destination):
+            with open(destination, "wb") as handle:     # the other run wrote its file...
+                handle.write(content)
+            raise PermissionError(13, "the file is in use")  # ...and has it open: this run's rename is refused
+        return replace
+
+    with tempfile.TemporaryDirectory() as root:
+        folder = os.path.join(root, "configs")
+        path = os.path.join(folder, "x.toml")
+        text = "seed = 1\n"
+        os.replace = beaten_by(text.encode("utf-8"))
+        try:
+            assert headroom.write_text(path, text) is False
+        finally:
+            os.replace = real
+        assert read(path) == text and os.listdir(folder) == ["x.toml"], os.listdir(folder)
+
+        os.remove(path)
+        os.replace = beaten_by(b"seed = 2\n")
+        try:
+            expect_error(PermissionError, lambda: headroom.write_text(path, text), "in use")
+        finally:
+            os.replace = real
+        assert os.listdir(folder) == ["x.toml"], "no temporary file is left: " + str(os.listdir(folder))
+
+
+def test_headroom_visible_oracle_follows_the_degraded_ball():
+    """Under the gaps profile oracle_home_visible speaks on the live frames where the degraded ball is, not the clean.
+
+    The runner serves a degraded Atd, whose ball is missing where ours was (the Calibration's masks), and the oracle
+    reads run.inputs.atd.ball_present: its opinions are exactly the truth's H and A frames on which that ball is
+    present, with the truth's value (1 on H, 0 on A). The control is that this set is not the one of the clean ball on
+    these matches, so that an oracle that read the clean tracking would fail it. oracle_alive does not look at the
+    ball: it speaks on every graded frame.
+    """
+    match = random_match("RND001")
+    atd = benchmark_run.make_atd(match, "gaps", 0, synthetic_calibration())
+    inputs = match_inputs.MatchInputs(match, atd, profile="gaps", seed=0)
+    codes = truth.truth_codes(match)[0]
+    live = (codes == H) | (codes == A)
+    degraded, clean = np.asarray(inputs.atd.ball_present), np.asarray(match_inputs.clean_atd(match).ball_present)
+    assert ((live & degraded) != (live & clean)).any(), "the gaps profile must change the ball, or this proves nothing"
+
+    made = headroom.oracles({"RND001": codes})
+    run_context = RunContext(inputs=inputs, seed=0)
+    home = made["oracle_home_visible"](run_context).home
+    assert np.array_equal(~np.isnan(home), live & degraded), "it must speak exactly where the degraded ball is"
+    assert not (~np.isnan(home) & ~degraded).any() and not (~np.isnan(home) & clean & ~degraded).any()
+    assert np.array_equal(home[live & degraded], np.where(codes[live & degraded] == H, 1.0, 0.0))
+    alive = made["oracle_alive"](run_context).alive
+    assert np.array_equal(~np.isnan(alive), codes != X), "oracle_alive does not depend on the ball"
+
+
 def test_headroom_command_line_prints_the_table_and_the_report_lines():
     """main() runs CONFIG and its variants, prints the runner's table with CONFIG as the reference, says what it wrote.
 
     Served by random matches through dfl.load_match, on the clean profile (no Calibration to measure). With --write the
-    six reports are named; without it the output says that none was written. A config that cannot be run is
+    five variants' reports are named; without it the output says that none was written. A config that cannot be run is
     "FAILED    <sentence>" and exit code 1, not a traceback.
     """
     def serve(match_id):
@@ -518,7 +631,7 @@ def test_headroom_command_line_prints_the_table_and_the_report_lines():
         assert "against hmm_free (the first config" in out, out
         for name in STEMS:
             assert "hmm_free__" + name in out, (name, out)
-        assert sum(line.startswith("report") for line in out.split("\n")) == 6, out
+        assert sum(line.startswith("report") for line in out.split("\n")) == 5, out
 
         shown = io.StringIO()
         with contextlib.redirect_stdout(shown):

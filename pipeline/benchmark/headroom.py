@@ -53,15 +53,18 @@ that names an oracle does not load outside a headroom run. pipeline/decode/ and 
 The variants are configs
 ------------------------
 They are written as TOML text into <data dir>/runs/benchmark/headroom/configs/<stem>__<variant>.toml, a fixed folder,
-so that a config's path, its text (both are in its report) and so its report's bytes are the same on every run. They are
-rewritten each time, and read by the pipeline's own loader like any config: the benchmark is only worth anything if it
-scores what the submission pipeline does. The writer handles the flat tables that a Config holds, str, int, float and
-bool, and refuses a parameter of another kind by name (toml_value) before any file is written.
+so that a config's path, its text (both are in its report) and so its report's bytes are the same on every run. A file
+is written only if it does not already hold exactly these bytes (write_text): the texts are the same under both truths,
+and a raw run and a coarse run side by side would otherwise each replace files that the other has open, which Windows
+refuses. They are read by the pipeline's own loader like any config: the benchmark is only worth anything if it scores
+what the submission pipeline does. The writer handles the flat tables that a Config holds, str, int, float and bool, and
+refuses a parameter of another kind by name (toml_value) before any file is written.
 
-Reports are written only with --write (write=True), as the runner writes them: <stem>[__<variant>].json under
-<data dir>/runs/benchmark/<profile>/, with the same suffixes for a subset of matches, the coarse truth and a number of
-seeds. The CONFIG's own report is the one the runner would write for it, so a headroom run with --write replaces a
-report of CONFIG made earlier on the same matches, with the same numbers.
+Reports are written only with --write (write=True), for the five variants and not for CONFIG: <stem>__<variant>.json
+under <data dir>/runs/benchmark/<profile>/, with the suffixes of the runner's own rule for a subset of matches, the
+coarse truth and a number of seeds. CONFIG's report is the runner's to write (run.py), where it can say what a headroom
+run cannot, which other configs it was compared with; a report of CONFIG written here would replace that one and lose
+its `versus` block.
 
 What it does not tell
 ---------------------
@@ -301,18 +304,44 @@ def write_variants(config, data_dir=None):
 
 
 def write_text(path, text):
-    """`text` at `path`, UTF-8 with LF endings, atomically: through a temporary file in the folder, renamed over the
-    old one, so that a run that is interrupted never leaves half a config for the next to load."""
+    """`text` at `path`, UTF-8 with LF endings; True if written, False if the file already held exactly these bytes.
+
+    Atomically: through a temporary file in the folder, renamed over the old one, so that a run that is interrupted
+    never leaves half a config for the next to load. A file that already holds the bytes is not touched at all, not even
+    its modification time: the variants of a config are the same text under the raw and the coarse truth, two runs side
+    by side write the same files, and on Windows os.replace onto a file that another process has open (the other run,
+    reading its configs) is a PermissionError. The same error where the file turns out to hold these bytes by then is
+    the other run having written them first, which is as good as writing them: it is not raised. Any other one is.
+    """
+    data = text.encode("utf-8")
+    if _holds(path, data):
+        return False
     os.makedirs(os.path.dirname(path), exist_ok=True)
     handle, temporary = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".tmp")
     try:
-        with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as stream:
-            stream.write(text)
-        os.replace(temporary, path)
+        with os.fdopen(handle, "wb") as stream:
+            stream.write(data)
+        try:
+            os.replace(temporary, path)
+        except PermissionError:
+            if not _holds(path, data):
+                raise
+            os.remove(temporary)
+            return False
+        return True
     except BaseException:
         with contextlib.suppress(OSError):
             os.remove(temporary)
         raise
+
+
+def _holds(path, data):
+    """True if the file at `path` exists and holds exactly `data`."""
+    try:
+        with open(path, "rb") as handle:
+            return handle.read() == data
+    except OSError:
+        return False
 
 
 # -- the TOML a variant is written as ---------------------------------------------------------------------------------
@@ -392,13 +421,19 @@ def run_headroom(config_path, *, profile=DEFAULT_PROFILE, seeds=None, truth="raw
                  calibration=None, data_dir=None, log=print, write=False):
     """Run CONFIG and its five variants through evaluate_configs; its result (CONFIG is the reference).
 
-    The arguments are evaluate_configs' own, with `write`: True writes each config's report as run.write_reports does
-    and logs where. The variants are written first into <data dir>/runs/benchmark/headroom/configs/ (write_variants),
-    always, since the runner reads them as configs; `log` receives a line for each, then the runner's progress and
-    table.
-    `matches` is {id: DflMatch} to use instead of loading (the checks pass synthetic ones); its truth is made at once.
-    BenchmarkError for what the runner refuses and for a config the variants cannot be made of (check_config), before
-    any file is written; ConfigError for one that does not load.
+    The arguments are evaluate_configs' own, with `write`: True writes the report of each variant (not CONFIG's: the
+    reference is the runner's to write, run.py) as run.write_reports does, and logs where. The variants are written
+    first into <data dir>/runs/benchmark/headroom/configs/ (write_variants), always, since the runner reads them as
+    configs, and only where the file does not already hold the same bytes; `log` receives a line for each, then the
+    runner's progress and table. `matches` is {id: DflMatch} to use instead of loading (the checks pass synthetic ones);
+    its truth is made at once.
+
+    What is refused, and when. ConfigError for a config that does not load, and BenchmarkError for one that cannot be
+    run or have variants made of it (scope = "file", a dot in its name, no or several nearest_player sources, a
+    parameter that cannot be written, an unknown truth): all of these before any file is written. What only the
+    runner knows is refused by it, after the variants are written, because it loads them: an unknown profile or match,
+    a repeated match, a number of seeds below 1, a calibration that does not suit the profile. The files are a few
+    small configs in a fixed folder, rewritten by the next run, and no report is written for a run that was refused.
     """
     if truth not in run.TRUTHS:
         raise run.BenchmarkError("truth {!r} is not one of: {}".format(truth, ", ".join(run.TRUTHS)))
@@ -424,8 +459,10 @@ def run_headroom(config_path, *, profile=DEFAULT_PROFILE, seeds=None, truth="raw
                                       match_ids=match_ids, matches=served, calibration=calibration, truth=truth,
                                       data_dir=data_dir, log=log)
     if write:
+        # The variants' reports only: CONFIG is the reference, and a report of it written here would replace the
+        # runner's own, which has the `versus` block of the run that it was in.
         log("")
-        for path in run.write_reports(result):
+        for path in run.write_reports(dict(result, configs=result["configs"][1:])):
             log("report    {}".format(run.shown(path)))
     return result
 
@@ -447,7 +484,8 @@ def main(argv=None):
                         help="the truth to score against, and that the oracles carry: raw, or coarse")
     parser.add_argument("--matches", nargs="+", metavar="ID", help="the matches to run, in this order (default: all 7)")
     parser.add_argument("--data-dir", help="the data bundle (default: data/, or $MTAH_DATA_DIR)")
-    parser.add_argument("--write", action="store_true", help="also write each config's report (default: print only)")
+    parser.add_argument("--write", action="store_true",
+                        help="also write the reports of the five variants, not CONFIG's (default: print only)")
     args = parser.parse_args(argv)
     try:
         run_headroom(args.config, profile=args.profile, seeds=args.seeds, truth=args.truth, match_ids=args.matches,
