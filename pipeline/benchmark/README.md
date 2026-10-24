@@ -100,6 +100,11 @@ vote of +/- w frames) **decoded per graded half**, as every config of ours is. T
 whole file at once, so these are yardsticks for the benchmark and not rebuilds of them (that is
 `pipeline/configs/smooth50_repro.toml`). A change has to beat them here before it is worth anything.
 
+P06's grid configs live in `configs/p06/`, named `p06s1_t{TTT}_d{DDD}.toml` for Stage 1: the hmm decoder with
+`switch_team` TTT and `switch_dead` DDD (zero-padded to three digits), `nearest_player` at confidence 0.78 and
+`ball_presence` at its defaults. The 24 files cross `switch_dead` d in {4, 8, 16, 32, 64, 128} with `switch_team` in
+{d/4, d/2, d, 2d} (R006); later stages add their own prefix.
+
 ### The two truths
 
 `--truth raw` is the DFL flags as they are: `D` where the ball is dead, otherwise the team in possession. DFL's flag is

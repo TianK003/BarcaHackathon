@@ -1088,6 +1088,57 @@ def test_run_end_to_end_synthetic_hmm():
         expect_error(ConfigError, lambda: load_config(write_text(root, "incomplete.toml", incomplete)), "switch_dead")
 
 
+# The shape of every Stage-1 config of P06 (pipeline/benchmark/configs/p06/): both sources and the hmm decoder, here at
+# the grid's first point (p06s1_t001_d004). On the synthetic match's 230-frame blocks a heavier penalty decodes to D
+# throughout, which would let the check below pass without a team ever being decoded.
+P06_TRIAL_CONFIG = """
+description = "trial"
+seed = 0
+scope = "halves"
+
+[[evidence]]
+kind = "nearest_player"
+confidence = 0.78
+
+[[evidence]]
+kind = "ball_presence"
+margin = 0
+missing = 0.2
+seen = 0.585
+
+[decoder]
+kind = "hmm"
+switch_team = 1
+switch_dead = 4
+min_possession = 1
+min_dead = 1
+"""
+
+
+def test_run_end_to_end_synthetic_p06():
+    from pipeline import output
+    from pipeline.config import load_config
+    from pipeline.contracts import A, D, H, X
+    from pipeline.run import run
+    with tempfile.TemporaryDirectory() as root:
+        make_synthetic_bundle(root)
+        inputs = synthetic_inputs(root, graded=[(1, 50, 280), (2, 320, 560)])
+        config = load_config(write_text(root, "trial.toml", P06_TRIAL_CONFIG))
+        assert [source.kind for source in config.evidence] == ["nearest_player", "ball_presence"]
+        assert config.decoder.kind == "hmm"
+        out_path = os.path.join(root, "trial.csv")
+        result = run(config, inputs, out_path, log=quiet)
+        outside = np.ones(SYNTHETIC_FRAMES, dtype=bool)
+        outside[50:280] = outside[320:560] = False
+        assert (result.codes[outside] == X).all(), "frames outside the graded blocks must be X"
+        assert (result.codes[~outside] != X).all(), "the hmm decoder never abstains inside a block"
+        output.validate(out_path, SYNTHETIC_FRAMES, result.codes)
+        assert {int(code) for code in np.unique(result.codes[~outside])} == {H, A, D}, "a label never decoded"
+        assert set(result.evidence) == {"nearest_player", "ball_presence"}
+        assert np.isnan(result.evidence["ball_presence"].home).all(), "ball_presence says nothing about the team"
+        assert np.isnan(result.evidence["nearest_player"].alive).all(), "nearest_player says nothing about alive"
+
+
 def test_run_file_scope_equals_baseline_script():
     """The synthetic twin of the --data regression: same bytes as starter/baseline.py writes, line endings aside."""
     from pipeline.config import load_config

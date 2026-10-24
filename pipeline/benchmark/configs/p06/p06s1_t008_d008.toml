@@ -1,0 +1,28 @@
+# P06 Stage 1, one point of the grid: switch_dead = 8, switch_team = 8 (R006, docs/results.md).
+#
+# The 24 files p06s1_t<TTT>_d<DDD>.toml cross switch_dead d in {4, 8, 16, 32, 64, 128} with switch_team t in
+# {d/4, d/2, d, 2d} (all integers, zero-padded to 3 digits), both minimums at 1. They differ in the description and in
+# the two penalties, and in nothing else: nearest_player at 0.78 (A01, fixed, never tuned), ball_presence at its
+# by-rule defaults (A01, fixed) and the hmm decoder. Chosen on the benchmark by P06's protocol, never on the public
+# window (docs/traps.md T01), and never by retuning a degradation (T37).
+
+description = "P06 Stage 1 (R006): hmm decoder, switch_team = 8 nats, switch_dead = 8 nats, both minimums 1, nearest_player at confidence 0.78 and ball_presence at its defaults, decoded per half."
+seed = 0
+scope = "halves"
+
+[[evidence]]
+kind = "nearest_player"
+confidence = 0.78    # the share of in-play, ball-visible frames on which the nearest player's team is right (A01)
+
+[[evidence]]
+kind = "ball_presence"
+margin = 0           # frames: every missing frame speaks
+missing = 0.2        # P(alive) where the ball is missing: a likelihood ratio of 4 for dead (A01, rounded down)
+seen = 0.585         # P(alive) where the ball is seen: a ratio of 1.41 for alive (A01)
+
+[decoder]
+kind = "hmm"
+switch_team = 8      # nats a change of team (H <-> A) costs
+switch_dead = 8      # nats a change into or out of D costs
+min_possession = 1   # frames: no minimum yet (Stage 2 sweeps it)
+min_dead = 1         # frames: no minimum yet (Stage 2 sweeps it)
