@@ -443,6 +443,26 @@ def vote_context(home, start=0, stop=None, weights=None):
     return BlockContext(run=RunContext(inputs=None, seed=0), block=Block(None, start, stop), evidence=evidence)
 
 
+def hmm_context(home, alive=None, weights=None, start=0, stop=None):
+    """A BlockContext over [start, stop) of one or more sources, the way the runner builds one.
+
+    `home` is one array or a list of them, one source each; `alive` is None (every source has no opinion on it), one
+    array for a single source, or a list of arrays and Nones beside `home`'s.
+    """
+    from pipeline.contracts import Block, BlockContext, Evidence, RunContext, no_opinion
+    homes = home if isinstance(home, list) else [home]
+    alives = alive if isinstance(alive, list) else [alive] * len(homes)
+    assert len(alives) == len(homes), "one alive channel (or None) for each source"
+    weights = weights or [1.0] * len(homes)
+    stop = len(homes[0]) if stop is None else stop
+    evidence = {}
+    for index, (values, awake, weight) in enumerate(zip(homes, alives, weights)):
+        source = Evidence(alive=no_opinion(len(values)) if awake is None else awake, home=values,
+                          name="s{}".format(index), weight=weight)
+        evidence[source.name] = source.window(start, stop)
+    return BlockContext(run=RunContext(inputs=None, seed=0), block=Block(None, start, stop), evidence=evidence)
+
+
 def baseline_like_codes(n_frames, seed=0):
     """Team codes shaped like the raw baseline's: long runs of one team or of nothing, with single-frame flips."""
     from starter.baseline import AWAY, HOME, NOBODY
@@ -502,6 +522,295 @@ def test_majority_vote_rejects_bad_parameters():
     expect_error(ValueError, lambda: REGISTRY["majority_vote"](ctx, half_width=True), "half_width")
     REGISTRY["majority_vote"](ctx, half_width=np.int64(5))  # a numpy integer from a notebook sweep is fine
     expect_error(ValueError, lambda: REGISTRY["majority_vote"](ctx, half_width=5, fallback="Q"), "fallback", "Q")
+
+
+# The hmm decoder (P06). Its model is pinned here from the definition and not from the code: a reference scorer and a
+# reference validity rule written out below, and the best path found by trying every path.
+
+VOTE = 0.78  # a source's confidence in the hmm checks: it moves a frame by log(0.78 / 0.22) = 1.266 nats
+
+
+def home_runs(*runs):
+    """A `home` array from consecutive (value, frames) runs; a NaN value is a stretch without an opinion."""
+    return np.concatenate([np.full(frames, value) for value, frames in runs])
+
+
+def hmm_labels(ctx, **parameters):
+    """The hmm decoder's labels on ctx, with a team switch of 4 nats and a dead switch of 100 unless told otherwise."""
+    from pipeline.decode import REGISTRY
+    parameters = dict({"switch_team": 4.0, "switch_dead": 100.0}, **parameters)
+    return REGISTRY["hmm"](ctx, **parameters).labels
+
+
+def letters(labels):
+    """The labels as a string of H, A, D, X: what a failed assertion should show."""
+    from pipeline.contracts import LETTERS
+    return "".join(LETTERS[labels])
+
+
+def hmm_path_score(emissions, path, switch_team, switch_dead):
+    """The model's score of one path: its emissions, less a penalty for each change (D is one side of the change)."""
+    from pipeline.contracts import D
+    score = sum(emissions[frame, state] for frame, state in enumerate(path))
+    for before, after in zip(path, path[1:]):
+        if before != after:
+            score -= switch_dead if D in (before, after) else switch_team
+    return score
+
+
+def hmm_path_is_valid(path, min_possession, min_dead):
+    """Every run of H or A lasts min_possession frames and every run of D min_dead, the first and last run excepted."""
+    from pipeline.contracts import D
+    runs = []
+    for state in path:
+        if runs and runs[-1][0] == state:
+            runs[-1][1] += 1
+        else:
+            runs.append([state, 1])
+    return all(length >= (min_dead if state == D else min_possession) for state, length in runs[1:-1])
+
+
+def test_hmm_matches_brute_force():
+    import itertools
+    from pipeline.decode import hmm
+    constrained = 0
+    for case in range(300):
+        rng = np.random.default_rng([6, case])
+        n_frames = int(rng.integers(1, 8))
+        emissions = rng.uniform(-3.0, 3.0, size=(n_frames, 3))
+        switch_team, switch_dead = (float(value) for value in rng.uniform(0.1, 4.0, size=2))
+        min_possession, min_dead = (int(value) for value in rng.integers(1, 5, size=2))
+        labels = hmm.viterbi(emissions, switch_team, switch_dead, min_possession, min_dead)
+        assert labels.dtype == np.int8 and labels.shape == (n_frames,), (case, labels.dtype, labels.shape)
+        path = labels.tolist()
+        assert hmm_path_is_valid(path, min_possession, min_dead), (case, path)
+        scores = {candidate: hmm_path_score(emissions, candidate, switch_team, switch_dead)
+                  for candidate in itertools.product(range(3), repeat=n_frames)}
+        best = max(score for candidate, score in scores.items()
+                   if hmm_path_is_valid(candidate, min_possession, min_dead))
+        got = hmm_path_score(emissions, path, switch_team, switch_dead)
+        assert abs(got - best) < 1e-9, "case {}: viterbi scores {!r}, the best valid path {!r}".format(case, got, best)
+        constrained += max(scores.values()) > best + 1e-9
+    # A check in which no minimum ever bound would prove nothing about the minimums.
+    assert constrained >= 30, "only {} of 300 cases had a minimum that mattered".format(constrained)
+
+
+def test_hmm_minimum_one_is_unconstrained():
+    import itertools
+    from pipeline.decode import hmm
+    for case in range(200):
+        rng = np.random.default_rng([6, 1, case])
+        n_frames = int(rng.integers(1, 8))
+        emissions = rng.uniform(-3.0, 3.0, size=(n_frames, 3))
+        switch_team, switch_dead = (float(value) for value in rng.uniform(0.1, 4.0, size=2))
+        path = hmm.viterbi(emissions, switch_team, switch_dead, 1, 1).tolist()
+        best = max(hmm_path_score(emissions, candidate, switch_team, switch_dead)
+                   for candidate in itertools.product(range(3), repeat=n_frames))
+        got = hmm_path_score(emissions, path, switch_team, switch_dead)
+        assert abs(got - best) < 1e-9, "case {}: viterbi scores {!r}, the best path {!r}".format(case, got, best)
+
+
+def test_hmm_missing_channel_adds_nothing():
+    from pipeline.contracts import D, Evidence, no_opinion
+    from pipeline.decode import hmm
+    rng = np.random.default_rng([6, 100])
+    home = np.where(rng.random(200) < 0.3, np.nan, rng.random(200))
+    alive = np.where(rng.random(200) < 0.5, np.nan, rng.random(200))
+    source = Evidence(alive=alive, home=home, name="s", weight=1.0)
+    blank = Evidence(alive=no_opinion(200), home=no_opinion(200), name="blank", weight=3.0)
+    assert np.array_equal(hmm.log_likelihoods([source], 200, 1e-6), hmm.log_likelihoods([source, blank], 200, 1e-6)), \
+        "a source with no opinion changed the emissions"
+    home_only = Evidence(alive=no_opinion(200), home=home, name="s", weight=1.0)
+    emissions = hmm.log_likelihoods([home_only], 200, 1e-6)
+    assert emissions.shape == (200, 3) and (emissions[:, D] == 0.0).all(), "home says nothing about dead"
+    assert np.isfinite(emissions).all()
+    # Nothing to go on: D, the fallback of majority_vote, whatever the minimums and even with free switches.
+    for parameters in ({}, {"min_possession": 5, "min_dead": 5}, {"switch_team": 0.0, "switch_dead": 0.0}):
+        labels = hmm_labels(hmm_context(no_opinion(100)), **parameters)
+        assert (labels == D).all(), (parameters, letters(labels))
+
+
+def test_hmm_clips_hard_probabilities():
+    """nearest_player reports a hard 0 or 1; its log would be -inf, so the emissions clip at eps and stay finite."""
+    from pipeline.contracts import A, D, H, Evidence
+    from pipeline.decode import hmm
+    eps = 1e-3
+    source = Evidence(alive=np.array([1.0, 0.0, np.nan]), home=np.array([1.0, 0.0, 1.0]), name="s", weight=1.0)
+    emissions = hmm.log_likelihoods([source], 3, eps)
+    assert np.isfinite(emissions).all()
+    near, far = np.log(2.0 * (1.0 - eps)), np.log(2.0 * eps)
+    expected = np.array([[near + near, far + near, far],       # home and alive both 1
+                         [far + far, near + far, near],        # home and alive both 0
+                         [near, far, 0.0]])                    # home 1, alive unknown
+    assert np.allclose(emissions, expected, atol=1e-12, rtol=0.0), (emissions, expected)
+    assert emissions[0, H] > emissions[0, A] > emissions[0, D] and emissions[1, D] > emissions[1, A] > emissions[1, H]
+
+
+def test_hmm_weight_is_an_exponent():
+    from pipeline.contracts import Evidence
+    from pipeline.decode import hmm
+    rng = np.random.default_rng([6, 101])
+    home = np.where(rng.random(300) < 0.3, np.nan, rng.random(300))
+    alive = np.where(rng.random(300) < 0.4, np.nan, rng.random(300))
+    other = rng.random(300)
+    once = hmm.log_likelihoods([Evidence(alive=alive, home=home, name="s", weight=1.0)], 300, 1e-6)
+    twice = hmm.log_likelihoods([Evidence(alive=alive, home=home, name="s", weight=2.0)], 300, 1e-6)
+    assert np.array_equal(twice, 2.0 * once), "weight 2 is not exactly twice the emissions of weight 1"
+    parameters = {"switch_team": 3.0, "switch_dead": 6.0, "min_possession": 4}
+    heavy = hmm_labels(hmm_context(home, alive, weights=[2.0]), **parameters)
+    given_twice = hmm_labels(hmm_context([home, home], [alive, alive]), **parameters)
+    assert np.array_equal(heavy, given_twice), "weight 2 and the source given twice disagree on {} frames".format(
+        int((heavy != given_twice).sum()))
+    removed = hmm_labels(hmm_context(home, alive), **parameters)
+    muted = hmm_labels(hmm_context([home, other], [alive, other], weights=[1.0, 0.0]), **parameters)
+    assert np.array_equal(muted, removed), "a source of weight 0 still moved the labels"
+    for bad in (np.nan, np.inf, -1.0):
+        expect_error(ValueError, lambda: hmm_labels(hmm_context(home, weights=[bad])), "weight", "hmm")
+
+
+def test_hmm_holds_through_a_gap():
+    from pipeline.contracts import H
+    home = home_runs((VOTE, 100), (np.nan, 300), (VOTE, 100))
+    for switch_team in (1.0, 10.0):
+        labels = hmm_labels(hmm_context(home), switch_team=switch_team, switch_dead=100.0)
+        assert (labels == H).all(), "switch_team {}: {}".format(switch_team, letters(labels))
+
+
+def test_hmm_tie_lands_on_the_first_frame():
+    from pipeline.contracts import D
+    # The 30 frames between the votes cost the same whichever team holds them, so the change could be anywhere in them.
+    # The tie goes to the later run: the change of team lands on the first frame without evidence.
+    home = home_runs((VOTE, 20), (np.nan, 30), (1.0 - VOTE, 20))
+    for min_possession in (1, 10):
+        labels = hmm_labels(hmm_context(home), switch_team=1.0, switch_dead=100.0, min_possession=min_possession)
+        assert letters(labels) == "H" * 20 + "A" * 50, (min_possession, letters(labels))
+    # Free switches and no evidence at all: every path scores 0, and the preference for D decides.
+    labels = hmm_labels(hmm_context(home_runs((np.nan, 40))), switch_team=0.0, switch_dead=0.0)
+    assert (labels == D).all(), letters(labels)
+
+
+def test_hmm_ties_follow_the_preference_order():
+    """Equal scores, made exact with whole-number emissions: continue the run, then D, then H, then A."""
+    from pipeline.contracts import H
+    from pipeline.decode import hmm
+
+    def decode(rows, switch_team=0.5, switch_dead=0.5):
+        return letters(hmm.viterbi(np.array(rows, dtype=float), switch_team, switch_dead, 1, 1))
+
+    # Entering H from D or from A, both at the same cost and the same score: D.
+    assert decode([[-5, 0, 0]] * 3 + [[1, -5, -5]] * 3) == "DDDHHH"
+    # Entering D from H or from A: H. Entering A from D or from H: D.
+    assert decode([[0, 0, -5]] * 3 + [[-5, -5, 1]] * 3) == "HHHDDD"
+    assert decode([[0, -5, 0]] * 3 + [[-5, 1, -5]] * 3) == "DDDAAA"
+    # Ending in D or H, H or A, equally well: D, then H. (H and A tie on a frame voting 0.5 with the ball alive.)
+    assert decode([[1, 0, 1]] * 3) == "DDD" and decode([[1, 1, 0]] * 3) == "HHH"
+    # Free switches, and the frames between two votes for H cost the same in any state: the run goes on, rather than
+    # being handed to D (which is what the same rows say when they end without a vote: the final state is D then).
+    rows = [[1, 0, 0]] + [[0, 0, 0]] * 3
+    assert decode(rows + [[5, -5, -5]], switch_team=0.0, switch_dead=0.0) == "HHHHH"
+    assert decode(rows, switch_team=0.0, switch_dead=0.0) == "HDDD"
+    home = np.full(30, 0.5)
+    from pipeline.contracts import H
+    assert (hmm_labels(hmm_context(home, np.full(30, 0.9)), switch_team=2.0, switch_dead=2.0) == H).all(), \
+        "a dead heat between the teams goes to the home side"
+
+
+def test_hmm_blip_against_the_penalty():
+    # 5 x 1.266 = 6.3 nats of evidence for a blip does not pay two team switches of 10; 20 x 1.266 = 25.3 does.
+    for blip, expected in ((5, "H" * 105), (20, "H" * 50 + "A" * 20 + "H" * 50)):
+        home = home_runs((VOTE, 50), (1.0 - VOTE, blip), (VOTE, 50))
+        labels = hmm_labels(hmm_context(home), switch_team=10.0, switch_dead=100.0)
+        assert letters(labels) == expected, (blip, letters(labels))
+
+
+def test_hmm_minimum_possession_removes_short_runs():
+    from pipeline.contracts import A, H
+    home = home_runs((VOTE, 50), (1.0 - VOTE, 20), (VOTE, 50))
+    # The blip is worth keeping at a team switch of 1 (25.3 nats against 2), and so is a longer A run, until it has to
+    # swallow too much of the H frames around it: 40 frames hold the blip and 20 frames voting H, so 0 nats against 2.
+    labels = hmm_labels(hmm_context(home), switch_team=1.0, switch_dead=100.0, min_possession=40)
+    assert (labels == H).all(), letters(labels)
+    # At 25 frames the run still pays (the blip and 5 frames of H: 19 nats against 2), so it grows to the minimum.
+    labels = hmm_labels(hmm_context(home), switch_team=1.0, switch_dead=100.0, min_possession=25)
+    away = np.flatnonzero(labels == A)
+    assert len(away) == 25 and away[-1] - away[0] == 24 and away[0] <= 50 and away[-1] >= 69, letters(labels)
+
+    interior = 0
+    for case in range(50):
+        rng = np.random.default_rng([6, 1000 + case])
+        home = np.where(rng.random(2000) < 0.3, np.nan, rng.random(2000))
+        alive = np.where(rng.random(2000) < 0.5, np.nan, rng.random(2000))
+        switch_team, switch_dead = (float(value) for value in rng.uniform(0.2, 3.0, size=2))
+        min_possession, min_dead = (int(value) for value in rng.integers(1, 61, size=2))
+        labels = hmm_labels(hmm_context(home, alive), switch_team=switch_team, switch_dead=switch_dead,
+                            min_possession=min_possession, min_dead=min_dead)
+        assert hmm_path_is_valid(labels.tolist(), min_possession, min_dead), "case {}".format(case)
+        interior += max(0, int((np.diff(labels) != 0).sum()) + 1 - 2)  # runs, less the first and last
+    assert interior >= 200, "only {} interior runs in 50 decodes: the minimums were hardly tested".format(interior)
+
+
+def test_hmm_sees_only_its_block():
+    rng = np.random.default_rng([6, 102])
+    home, alive = rng.random(300), rng.random(300)
+    parameters = {"switch_team": 2.0, "switch_dead": 3.0, "min_possession": 5, "min_dead": 5}
+    first = hmm_labels(hmm_context(home, alive, start=100, stop=200), **parameters)
+    elsewhere_home, elsewhere_alive = home.copy(), alive.copy()
+    elsewhere_home[:100], elsewhere_home[200:] = 1.0 - home[:100], np.nan
+    elsewhere_alive[:100], elsewhere_alive[200:] = np.nan, 1.0 - alive[200:]
+    second = hmm_labels(hmm_context(elsewhere_home, elsewhere_alive, start=100, stop=200), **parameters)
+    assert len(first) == 100 and np.array_equal(first, second), "evidence outside the block moved a label"
+
+
+def test_hmm_accepts_read_only_evidence():
+    rng = np.random.default_rng([6, 103])
+    home, alive = rng.random(200), np.where(rng.random(200) < 0.5, np.nan, rng.random(200))
+    before = home.copy(), alive.copy()
+    home.flags.writeable = alive.flags.writeable = False
+    labels = hmm_labels(hmm_context(home, alive), switch_team=2.0, switch_dead=3.0, min_possession=5)
+    assert len(labels) == 200
+    assert np.array_equal(home, before[0]) and np.array_equal(alive, before[1], equal_nan=True), "evidence was written"
+
+
+def test_hmm_rejects_bad_parameters():
+    from pipeline.decode import REGISTRY
+    ctx = hmm_context(np.full(10, VOTE))
+
+    def decode(**parameters):
+        return REGISTRY["hmm"](ctx, **dict({"switch_team": 1.0, "switch_dead": 1.0}, **parameters))
+
+    for name in ("switch_team", "switch_dead"):
+        for bad in (-1.0, np.nan, np.inf, True):
+            expect_error(ValueError, lambda: decode(**{name: bad}), "hmm", name)
+    for name in ("min_possession", "min_dead"):
+        for bad in (0, 1.5, True):
+            expect_error(ValueError, lambda: decode(**{name: bad}), "hmm", name)
+    for bad in (0.0, 0.5, np.nan):
+        expect_error(ValueError, lambda: decode(eps=bad), "hmm", "eps")
+    # Whole numbers from a notebook sweep, a penalty of 0 and an integer penalty from a config are all fine.
+    decode(switch_team=10, switch_dead=np.float64(5.0), min_possession=np.int64(5), min_dead=3, eps=1e-3)
+    decode(switch_team=0, switch_dead=0)
+
+
+def test_hmm_speed():
+    """80,000 frames, two sources, minimums of 50: Viterbi must stay cheap enough for a sweep over seven matches."""
+    rng = np.random.default_rng([6, 104])
+    n_frames = 80000
+    team = np.repeat(rng.integers(0, 2, n_frames // 100), 100)  # who has the ball, in stretches of 4 s
+    homes, alives = [], []
+    for noise in (0.25, 0.4):
+        votes_home = rng.random(n_frames) < np.where(team == 0, 1.0 - noise, noise)
+        home = np.where(votes_home, VOTE, 1.0 - VOTE)
+        home[np.repeat(rng.random(n_frames // 200) < 0.4, 200)] = np.nan  # ball gaps of 8 s
+        alive = rng.choice([0.2, 0.585], size=n_frames)
+        alive[np.repeat(rng.random(n_frames // 200) < 0.5, 200)] = np.nan
+        homes.append(home)
+        alives.append(alive)
+    ctx = hmm_context(homes, alives)
+    started = time.perf_counter()
+    labels = hmm_labels(ctx, switch_team=4.0, switch_dead=8.0, min_possession=50, min_dead=50)
+    seconds = time.perf_counter() - started
+    print("      hmm: {:,} frames, two sources, both minimums 50: {:.2f} s".format(n_frames, seconds))
+    assert len(labels) == n_frames and seconds < 4.0, "{:.2f} s for {:,} frames".format(seconds, n_frames)
 
 
 # -- refine -----------------------------------------------------------------------------------------------------------
@@ -611,6 +920,41 @@ def test_run_end_to_end_synthetic():
         source = result.evidence["nearest_player"]
         assert not (source.alive.flags.writeable or source.home.flags.writeable), \
             "evidence must be read-only once checked: decoders get views of it"
+
+
+HMM_TRIAL_CONFIG = """
+[[evidence]]
+kind = "nearest_player"
+
+[decoder]
+kind = "hmm"
+switch_team = 5
+switch_dead = 20
+min_possession = 5
+min_dead = 5
+"""
+
+
+def test_run_end_to_end_synthetic_hmm():
+    from pipeline import output
+    from pipeline.config import ConfigError, load_config
+    from pipeline.contracts import X
+    from pipeline.run import run
+    with tempfile.TemporaryDirectory() as root:
+        make_synthetic_bundle(root)
+        inputs = synthetic_inputs(root, graded=[(1, 50, 280), (2, 320, 560)])
+        config = load_config(write_text(root, "trial.toml", HMM_TRIAL_CONFIG))
+        assert config.decoder.kind == "hmm"
+        out_path = os.path.join(root, "trial.csv")
+        result = run(config, inputs, out_path, log=quiet)
+        outside = np.ones(SYNTHETIC_FRAMES, dtype=bool)
+        outside[50:280] = outside[320:560] = False
+        assert (result.codes[outside] == X).all(), "frames outside the graded blocks must be X"
+        assert (result.codes[~outside] != X).all(), "the hmm decoder never abstains inside a block"
+        output.validate(out_path, SYNTHETIC_FRAMES, result.codes)
+        # Both penalties are required: a config that forgets one is refused before any data loads.
+        incomplete = HMM_TRIAL_CONFIG.replace("switch_dead = 20\n", "")
+        expect_error(ConfigError, lambda: load_config(write_text(root, "incomplete.toml", incomplete)), "switch_dead")
 
 
 def test_run_file_scope_equals_baseline_script():

@@ -36,7 +36,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P03](#p03--one-command-deterministic-cached) | One-command, deterministic, cached pipeline | reproducibility | S–M | enabling | done → R001 |
 | [P04](#p04--sticky-ownership-from-controlled-touches) | Sticky ownership from controlled touches | facts 3, 5 | S | high | idea |
 | [P05](#p05--a-real-dead-ball-detector) | Dead-ball detector | fact 4 | M | high | idea |
-| [P06](#p06--global-decoding-per-half-hmm--hidden-semi-markov) | Global decoder (HMM / semi-Markov) per half | fact 5 | M | high | idea |
+| [P06](#p06--global-decoding-per-half-hmm--hidden-semi-markov) | Global decoder (HMM / semi-Markov) per half | fact 5 | M | high | doing (Tian) |
 | [P07](#p07--possession-without-the-ball-team-shape-and-movement) | Possession without the ball: team shape | fact 1 | M | high | idea |
 | [P08](#p08--smart-tagging-as-soft-evidence) | Smart Tagging as soft evidence | facts 1, 4 | S | medium | idea |
 | [P09](#p09--camera-aim-as-a-coarse-ball-zone-prior) | Camera aim as a coarse ball-zone prior | fact 1 | S | low–medium | idea |
@@ -272,6 +272,9 @@ The graded stretch before the second-half kick-off (2,934 frames) must come out 
 Watch `alive_dead_f1` and the `D` row in the scorer's detail block.
 
 ### P06 — Global decoding per half: HMM / hidden semi-Markov
+
+**Status: doing (Tian).** The `hmm` decoder is in [`pipeline/decode/hmm.py`](../pipeline/decode/hmm.py);
+the posterior, the evidence it decodes and the tuning on P01 are still to come.
 
 **Why.** Majority voting is local. Possessions are intervals and spellF1 pays for every spurious split; a decoder
 weighs the evidence against the cost of each change, over a whole half at once.

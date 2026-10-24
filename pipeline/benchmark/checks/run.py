@@ -62,6 +62,21 @@ kind = "majority_vote"
 half_width = 0
 fallback = "D"
 """
+HMM = """
+description = "the hmm decoder on the nearest player's team"
+seed = 0
+scope = "halves"
+
+[[evidence]]
+kind = "nearest_player"
+
+[decoder]
+kind = "hmm"
+switch_team = 6
+switch_dead = 12
+min_possession = 5
+min_dead = 5
+"""
 
 
 # -- helpers ----------------------------------------------------------------------------------------------------------
@@ -636,6 +651,28 @@ def test_runner_gaps_runs_on_degraded_tracking():
         # The profile does something: the same config on the clean tracking scores differently.
         clean = evaluate_clean(paths[:1], matches=matches, data_dir=root, log=quiet)
         assert clean["configs"][0]["report"]["pooled"] != result["configs"][0]["report"]["pooled"]
+
+
+def test_hmm_runs_on_the_benchmark():
+    """The hmm decoder is a decoder like any other to the runner: its config scores beside a yardstick's, under gaps.
+
+    Two configs, nearest_w50 first (the reference) and an hmm one, on the synthetic matches with the synthetic
+    Calibration: two scored configs come back, each with a half for every graded half and seed, and the hmm one is
+    compared against the yardstick. What the scores are means nothing on random matches; that a decoder with a
+    parameter table of its own reaches the benchmark's scoring is what is held here.
+    """
+    matches, cal = synthetic_matches(), synthetic_calibration()
+    with tempfile.TemporaryDirectory() as root:
+        paths = [yardstick_path(50), write_text(root, "hmm_trial.toml", HMM)]
+        result = evaluate_gaps(paths, seeds=1, matches=matches, calibration=cal, data_dir=root, log=quiet)
+        assert [entry["stem"] for entry in result["configs"]] == ["nearest_w50", "hmm_trial"], result["configs"]
+        for entry in result["configs"]:
+            assert len(entry["scores"]) == 4 and len(entry["report"]["halves"]) == 4, entry["stem"]
+            assert 0.0 <= entry["report"]["pooled"]["spell_f1_mean"] <= 1.0, entry["stem"]
+        hmm_report = result["configs"][1]["report"]
+        assert result["configs"][0]["report"]["versus"] is None
+        assert hmm_report["versus"]["reference"]["stem"] == "nearest_w50"
+        assert hmm_report["config"]["text"] == HMM.replace("\r", ""), "the report holds the config as written"
 
 
 def test_runner_default_profile_is_tracking_and_runs_it():

@@ -38,7 +38,7 @@ outside the blocks, where nothing is graded. The one exception is `scope = "file
 file, which only `configs/smooth50_repro.toml` uses, because the organisers' baseline smooths straight through
 halftime and reproducing it byte for byte means doing the same. The runner prints a warning whenever it is used.
 
-## What is here now: `majority_vote` (a stand-in)
+## `majority_vote` (a stand-in)
 
 Step 2 of `starter/baseline.py`. Per frame, the `home` values within ±`half_width` frames (clipped to the block) are
 summed into a home score and an away score; the higher one wins, ties go to home, and a window where no source had
@@ -50,7 +50,7 @@ rebuilds all four published baselines byte for byte.
 | `half_width` | — (required) | frames each side; 50 = ±2 s. 0 = the raw per-frame labels |
 | `fallback` | `"D"` | the label where nobody voted in the window |
 
-What it cannot do, and why it will be replaced:
+What it cannot do, and why `hmm` replaces it:
 
 - It **ignores `alive`**, so `D` only comes from the fallback — wherever the tracking lost the ball. That is wrong on
   66% of dead-ball frames, where the ball is visible ([T12](../../docs/traps.md)).
@@ -58,21 +58,65 @@ What it cannot do, and why it will be replaced:
   possessions.
 - It pools several sources with a weighted mean of `home`, which only approximates a likelihood weight.
 
-## The decoder this stage is waiting for: P06
+## `hmm`: the global decoder (P06)
 
-A hidden (semi-)Markov model over `H`, `A`, `D`, decoded with Viterbi per block. The contract is shaped for it:
+A three-state hidden Markov model over `H`, `A` and `D`, decoded by Viterbi once per block, so a possession is an
+interval whose edges have to be paid for. Its module docstring ([`hmm.py`](hmm.py)) is the specification; the checks in
+`pipeline/selftest.py` pin it against a brute force over every path.
 
-- **Emissions from the two channels, as likelihood ratios.** Each channel says how much more likely each state
-  became after seeing the frame, relative to a prior: `home = h` adds `log(h / π)` to H, `log((1 − h) / (1 − π))`
-  to A and 0 to D (π ≈ 0.5); `alive = a` adds `log(a / π_a)` to H *and* to A, and `log((1 − a) / (1 − π_a))` to D.
-  A missing channel adds 0 to every state, so it cannot push the decoder anywhere — which is exactly what NaN
-  promises. (Writing `log P(H) = log a + log h` instead, and 0 for a missing `alive`, would hand D a head start on
-  every frame where only `home` is known.) Multiply each source's terms by its `weight`.
-- **Clip probabilities to [ε, 1 − ε] first.** `nearest_player` reports hard 0s and 1s, whose logs are −∞.
-- **A switch penalty and duration priors** decide how much evidence a change has to beat. Tune them on P01's
-  benchmark of other matches, never on the public window ([T01](../../docs/traps.md)).
-- **Return the posterior.** It is what tells a refiner where an `X` is free (inside a possession) and where it is
-  expensive (at a hand-over) — [EVALUATION.md](../../EVALUATION.md), P12.
+```toml
+[decoder]
+kind = "hmm"
+switch_team = 8        # nats a change of team costs
+switch_dead = 16       # nats a change into or out of D costs
+min_possession = 25    # frames; default 1
+min_dead = 25          # frames; default 1
+```
+
+**Emissions.** Each channel adds a log-likelihood ratio against a prior of one half, times the source's `weight` (an
+exponent on its likelihood: weight 2 counts the source twice, weight 0 not at all). Probabilities are clipped to
+`[eps, 1 - eps]` first, since `nearest_player` reports hard 0s and 1s.
+
+| channel, where it is known | H | A | D |
+|---|---|---|---|
+| `home = h` | `log 2h` | `log 2(1 - h)` | 0 |
+| `alive = a` | `log 2a` | `log 2a` | `log 2(1 - a)` |
+
+A channel that is `NaN` adds 0 to every state. That is what "no opinion" means, and it is why `P(H) = alive * home` was
+not used: it would put a missing `alive` at a coin flip and hand `D` a head start wherever only `home` is known.
+
+**The path.** Its score is the sum of the emissions along it, less `switch_team` for every `H` to `A` change and
+`switch_dead` for every change into or out of `D`; there is no penalty at a block's edges. A path is valid when every
+run of `H` or `A` lasts at least `min_possession` frames and every run of `D` at least `min_dead`, except the block's
+first and last run, which its edges may have cut short. The decoder returns a valid path of maximal score.
+
+| parameter | default | meaning |
+|---|---|---|
+| `switch_team` | — (required) | nats of evidence a change of team has to beat; a blip of n contrary frames is believed when n times its per-frame evidence exceeds twice this |
+| `switch_dead` | — (required) | the same for a stoppage; separate, because `alive` evidence is weak where `home` evidence is strong |
+| `min_possession` | 1 | the shortest run of `H` or of `A`; a hard floor under the penalty, which makes a run grow to its length where the evidence is half there |
+| `min_dead` | 1 | the shortest run of `D` |
+| `eps` | 1e-6 | the clip; a numerical guard, not a knob |
+
+All four numbers are validated (no bool, no NaN or infinity, minimums are whole numbers of frames >= 1) and named in the
+error. Tune them on P01's benchmark, never on the public window ([T01](../../docs/traps.md)).
+
+**Ties.** Equal scores are decided the same way every time: a path extends its current run first, then comes from `D`,
+then from `H`, then from `A`; the block ends in `D`, then `H`, then `A`. So a block without evidence is all `D`, and a
+change of team across a stretch without evidence lands on the stretch's first frame.
+
+**Cost.** About 2 µs a frame (80,000 frames with both minimums at 50 take 0.15 s): a plain-Python recursion over run
+starts with a running maximum, where the textbook chain with one substate per run length would cost O(minimum) a frame.
+
+**What it does not do yet.**
+
+- **No posterior:** `Decoded.posterior` is `None`, so a refiner cannot yet tell where an `X` is free. A forward-backward
+  pass over the same model gives it (P12).
+- **No duration priors beyond the minimums:** once a run is long enough it is as likely to last two minutes as five
+  seconds. A semi-Markov version would take a prior over run lengths where the minimum is a hard step.
+- **`D` is only as good as its `alive` evidence.** `nearest_player` says nothing about it, so with that alone the
+  decoder never chooses `D` except on a block with no evidence at all. A dead-ball source (P05) is what gives it
+  something to decode.
 
 ## Adding a decoder
 
