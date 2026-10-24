@@ -466,6 +466,59 @@ renamed over the old report; the same inputs, seed and versions give the same by
 | `halves` | the counts everything above was made from, per half: `n_gt`, `n_pred`, `tp` at each IoU, the 3x4 `confusion` of the unfilled codes |
 | `versus` | null for the reference; for the others, the comparison with it for `spell_f1_mean` and `macro_f1` (`score.compare`: deltas, interval, p, wins, losses, by competition, and whether the interval excludes 0) and the reference's name and config hash. It is the one field that depends on which other configs were run |
 
+## Headroom
+
+What would a perfect dead-ball detector, or a perfect possessor, be worth to a decoder that is already there? Before
+building P05 or P04 it is worth knowing how much of the score each could ever deliver. `headroom.py` runs a config on the
+benchmark beside five variants of it whose evidence is the truth itself:
+
+```
+.venv/Scripts/python pipeline/benchmark/headroom.py CONFIG [--profile P] [--seeds N] [--truth raw|coarse] [--matches ID ...] [--data-dir D] [--write]
+```
+
+`CONFIG` is the reference, run from its own file as it is, and needs exactly one `nearest_player` source (the home
+variants replace it). The runner's table then says, against it, what each variant gains:
+
+| config | evidence |
+|---|---|
+| `<stem>__alive` | CONFIG's own, plus `oracle_alive`: a perfect dead-ball detector |
+| `<stem>__home_visible` | `nearest_player` replaced by `oracle_home_visible`: the true possessor on the frames where the tracking has the ball, nothing where it does not |
+| `<stem>__home_all` | `nearest_player` replaced by `oracle_home_all`: the true possessor on every live frame, the ball seen or not |
+| `<stem>__alive_home_visible` | both of the above |
+| `<stem>__alive_home_all` | both, whole: the truth itself, which a decoder free to follow it reproduces (exactly 1.0 on all three scores for an hmm with switch penalties near 0 and minimums of 1) |
+
+The oracles are exact: `oracle_alive` is 1 on the truth's `H` and `A` and 0 on its `D`; the home oracles are 1 on `H` and
+0 on `A`, the visible one only where `atd.ball_present` (as the profile degraded it, so the ball is missing where ours was),
+and every channel they do not speak on is NaN. A source that replaces `nearest_player` keeps its weight, takes the name of
+its own kind and none of its parameters; `oracle_alive` is added after the config's own sources, at weight 1. To the hmm
+decoder a perfect source is about 13.8 nats a frame at the default `eps`, so the table is a bound on what the evidence could
+give this config and its penalties, and not an estimate of what a real source will.
+
+- **The truth reaches the oracles by closure, never through the inputs.** It is `truth.truth_codes` of the match that the
+  runner itself loaded (`truth.coarse_codes` of it under `--truth coarse`), found by `run.inputs.game`, so the oracle and the
+  score agree on which truth it is. Without `matches` the runner is handed a `Mapping` that loads each DFL match when asked,
+  one at a time, and keeps none, so a headroom run needs what any other needs.
+- **Oracles exist only while a run lasts.** `registered` puts them into `pipeline.evidence.REGISTRY` for the length of the
+  call and restores the registry afterwards, a run that raises included. Importing `headroom.py` registers nothing, and a
+  config that names an oracle does not load outside it. `pipeline/decode/` and `pipeline/evidence/` know nothing of it.
+- **The variants are files.** Written as TOML into `<data dir>/runs/benchmark/headroom/configs/<stem>__<variant>.toml`, a
+  fixed folder, so a config's path and text (both are in its report) and its report's bytes are the same on every run; the
+  folder is rewritten each time. A parameter that is not a str, int, float or bool (the flat tables that `Config` holds) is
+  refused by name before any file is written, and so is a config without one `nearest_player`.
+- **Reports** are written only with `--write`, as the runner writes them (`<stem>[__<variant>][.<truth>][.m-<ids>][.s<n>].json`
+  under `<data dir>/runs/benchmark/<profile>/`). The reference's own report is the one the runner would write for it.
+
+Read it as an upper bound and a loose one: no real detector is perfect, and these two do not need the ball, which a real
+one would. It says where not to spend time (a small gap is a small prize) and in which order to think about the work. Run it
+under both truths and read the two together, as for any comparison, and across the seven matches rather than in the pooled
+number alone. Nothing here is a config to submit. The checks that pin it are `test_headroom_variants_and_order`,
+`test_headroom_full_oracle_is_perfect`, `test_headroom_coarse_truth_reaches_the_oracles`,
+`test_headroom_oracles_say_what_the_truth_says`, `test_headroom_oracles_are_registered_only_while_a_run_lasts`,
+`test_headroom_never_in_production`, `test_headroom_variants_round_trip_what_config_holds`,
+`test_headroom_toml_writer_reads_back_as_written`, `test_headroom_refuses_what_it_cannot_make_variants_of`,
+`test_headroom_loads_each_match_once_and_keeps_none`, `test_headroom_writes_reports_only_when_asked_and_the_same_bytes_twice`
+and `test_headroom_command_line_prints_the_table_and_the_report_lines`, all in `checks/headroom.py` and all synthetic.
+
 ## The checks
 
 ```
