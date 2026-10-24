@@ -1,0 +1,31 @@
+# P06 control "margin 50" (R007): pipeline/configs/p06_hmm.toml with ball_presence's `margin` at 50 frames instead of
+# 0, and nothing else changed.
+#
+# With margin = 50 a missing frame speaks for D only when it is more than 50 frames (2 s) from the nearest frame with a
+# ball: D only inside the gaps' interiors, which is where majority_vote's fallback places it. It is a diagnostic of
+# where the HMM's D comes from (the interiors of the gaps, or their edges and the short gaps), and never a candidate.
+# Run by the controller on `tracking` and on `context`, under both truths.
+#
+# A control is a diagnostic of the chosen config and never a candidate. R007's choice was made before any control
+# ran, and nothing here is selected on a score (docs/traps.md T01, T37).
+
+description = "P06 control (R007): p06_hmm with ball_presence margin = 50 frames (D evidence only inside the gaps' interiors), everything else as p06_hmm."
+seed = 0
+scope = "halves"
+
+[[evidence]]
+kind = "nearest_player"
+confidence = 0.78    # the share of in-play, ball-visible frames on which the nearest player's team is right (A01)
+
+[[evidence]]
+kind = "ball_presence"
+margin = 50          # frames: a missing frame within 50 of a ball has no opinion (the control; p06_hmm has 0)
+missing = 0.2        # P(alive) where the ball is missing: a likelihood ratio of 4 for dead (A01, rounded down)
+seen = 0.585         # P(alive) where the ball is seen: a ratio of 1.41 for alive (A01)
+
+[decoder]
+kind = "hmm"
+switch_team = 8      # nats a change of team (H <-> A) costs
+switch_dead = 32     # nats a change into or out of D costs
+min_possession = 75  # frames: no run of H or A shorter than this (1 is no minimum)
+min_dead = 1         # frames: no run of D shorter than this (1 is no minimum)

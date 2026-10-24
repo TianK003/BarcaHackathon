@@ -1,0 +1,31 @@
+# P06 control "switch_dead 8" (R007): pipeline/configs/p06_hmm.toml with switch_dead at 8, a quarter of the chosen 32,
+# and nothing else changed.
+#
+# `tracking` places the ball's gaps blind to the play, so the switch_dead chosen on it is specific to it; `context`
+# places them with our own hazard. This file and p06ctl_d128.toml read that choice at a quarter and at four times its
+# value on `context`, under both truths. switch_team stays 8, which is at most 2 x 8, so a direct change of team still
+# costs no more than going through D.
+#
+# A control is a diagnostic of the chosen config and never a candidate. R007's choice was made before any control
+# ran, and nothing here is selected on a score (docs/traps.md T01, T37).
+
+description = "P06 control (R007): p06_hmm with switch_dead = 8 nats (a quarter of the chosen 32), everything else as p06_hmm."
+seed = 0
+scope = "halves"
+
+[[evidence]]
+kind = "nearest_player"
+confidence = 0.78    # the share of in-play, ball-visible frames on which the nearest player's team is right (A01)
+
+[[evidence]]
+kind = "ball_presence"
+margin = 0           # frames: every missing frame speaks
+missing = 0.2        # P(alive) where the ball is missing: a likelihood ratio of 4 for dead (A01, rounded down)
+seen = 0.585         # P(alive) where the ball is seen: a ratio of 1.41 for alive (A01)
+
+[decoder]
+kind = "hmm"
+switch_team = 8      # nats a change of team (H <-> A) costs
+switch_dead = 8      # nats a change into or out of D costs (the control; p06_hmm has 32)
+min_possession = 75  # frames: no run of H or A shorter than this (1 is no minimum)
+min_dead = 1         # frames: no run of D shorter than this (1 is no minimum)
