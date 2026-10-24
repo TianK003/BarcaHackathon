@@ -7,6 +7,7 @@
     min_possession = 25    # frames: the shortest run of H or of A (default 1: no minimum)
     min_dead = 25          # frames: the shortest run of D (default 1)
     eps = 1e-6             # probabilities are clipped to [eps, 1 - eps] before the log (default 1e-6)
+    posterior = false      # true: also return P(H), P(A), P(D) per frame (default false: Decoded.posterior is None)
 
 The model
 ---------
@@ -67,10 +68,23 @@ a <= t - m + 1, of Q[a] = E[a] - cum[a-1]. Both edge exemptions are written in: 
 needs no length), and the final answer also looks at runs that began fewer than m frames before the end (the last run
 needs none). The maximum is kept with a strict comparison, so the earlier start survives a tie.
 
+The posterior
+-------------
+With posterior = true, Decoded.posterior is the (len(block), 3) marginal probability of H, A and D per frame under the
+same model: a valid path has weight exp(its score), and a frame's probability of a state is the total weight of the
+valid paths that hold it there over the total weight of all valid paths. Each row sums to 1. The labels do not change:
+they are the best single path, not the per-frame argmax of the posterior, and the two part company where a stretch is
+close. The posterior is the model's belief given its evidence, so it is as calibrated as the evidence is and no more.
+
+It comes from `marginals`, a forward-backward pass over the textbook chain, in log space, written as a vectorised step
+per frame. The recursion over run starts above does not carry over: it works with running sums of the emissions as long
+as the block, and the cancellation in them (of the order of 1e-10 nats over 80,000 frames) is harmless for a maximum
+but not for a probability of 1e-12. The chain costs O(min_possession + min_dead) per frame and n_frames *
+(2 * min_possession + min_dead) * 8 bytes, so it is off by default: the benchmark never asks for it. 80,000 frames with
+both minimums at 50 take about 2 s.
+
 What it does not do yet
 -----------------------
-* No posterior (Decoded.posterior is None): a refiner cannot yet tell where an X is free. That is a forward-backward
-  pass over the same chain, planned.
 * No duration priors beyond the minimums: a run is as likely to last 2 minutes as 5 seconds, once it is long enough.
   A semi-Markov decoder would take a log-prior over run lengths where the minimum is a hard step.
 * D is only as good as its `alive` evidence. With nearest_player alone nothing speaks for D, so the decoder chooses it
@@ -92,14 +106,24 @@ EPS = 1e-6                    # default clip of a probability away from 0 and 1
 PRIOR_CHANCE = 2.0            # 1 / 0.5: log(x / prior) = log(2x) for a prior of one half
 PREFERENCE = (D, H, A)        # on a tie between two predecessors, the first one listed wins
 STATES = (H, A, D)            # also the columns of the emissions
+CHUNK = 4096                  # frames per step of the posterior's final normalisation: bounds its temporary arrays
 
 
-def decode(ctx, *, switch_team, switch_dead, min_possession=1, min_dead=1, eps=EPS):
-    """Decoded(labels) for ctx.block: the best valid path through the block's emissions. posterior is None."""
+def decode(ctx, *, switch_team, switch_dead, min_possession=1, min_dead=1, eps=EPS, posterior=False):
+    """Decoded(labels) for ctx.block: the best valid path through the block's emissions.
+
+    With posterior=True, Decoded.posterior is also the (len(block), 3) marginal probability of H, A and D per frame
+    under the same model (`marginals`); the labels are the same either way. Otherwise posterior is None.
+    """
     _check_costs(switch_team, switch_dead, min_possession, min_dead)
     _check_eps(eps)
+    if not isinstance(posterior, (bool, np.bool_)):
+        raise ValueError("hmm: posterior must be True or False, got {!r}".format(posterior))
     emissions = log_likelihoods(ctx.evidence.values(), len(ctx.block), eps)
-    return Decoded(labels=viterbi(emissions, switch_team, switch_dead, min_possession, min_dead))
+    labels = viterbi(emissions, switch_team, switch_dead, min_possession, min_dead)
+    if not posterior:
+        return Decoded(labels=labels)
+    return Decoded(labels=labels, posterior=marginals(emissions, switch_team, switch_dead, min_possession, min_dead))
 
 
 def log_likelihoods(sources, n_frames, eps):
@@ -141,12 +165,7 @@ def viterbi(emissions, switch_team, switch_dead, min_possession, min_dead):
     """
     switch_team, switch_dead, min_possession, min_dead = _check_costs(
         switch_team, switch_dead, min_possession, min_dead)
-    emissions = np.asarray(emissions, dtype=np.float64)
-    if emissions.ndim != 2 or emissions.shape[1] != 3:
-        raise ValueError("hmm: emissions must be an (n_frames, 3) array, got shape {}".format(emissions.shape))
-    if not np.isfinite(emissions).all():
-        raise ValueError("hmm: emissions must be finite, but {} of {} values are NaN or infinite".format(
-            int((~np.isfinite(emissions)).sum()), emissions.size))
+    emissions = _check_emissions(emissions)
     # Every path takes one state per frame, so subtracting a frame's H score from all three states moves every path's
     # score by the same constant and changes no decision. It makes the tie inside a ball gap exact: there `alive` adds
     # the same number to H and to A, so their difference is exactly 0 where only `alive` is known, instead of two
@@ -209,6 +228,96 @@ def viterbi(emissions, switch_team, switch_dead, min_possession, min_dead):
             return labels
         stop, state = begun, origin[state][begun]
         begun = started[state][stop - 1]
+
+
+def marginals(emissions, switch_team, switch_dead, min_possession, min_dead):
+    """(n_frames, 3) float64: the probability of H, A and D at each frame under the model in the module docstring.
+
+    The weight of a valid path is exp(its score), and the marginal of (frame, state) is the total weight of the valid
+    paths that hold the state there, over the total weight of all valid paths. Each row sums to 1 (to rounding).
+    Same arguments as `viterbi`; n_frames = 0 gives an empty array. The memory is n_frames * (2 * min_possession +
+    min_dead) * 8 bytes, the forward table below.
+
+    A forward-backward pass over the expanded chain: state s is split into substates "run length so far" 1..m_s, the
+    last with a self-loop, so a run is born in substate 1 of s from the *last* substate of another state, at the cost of
+    that change, and cannot be left before it has reached its m_s. A path starts in the last substate (the first run
+    needs no length) and ends in any substate (neither does the last), exactly as the textbook form of `viterbi`. Each
+    frame is one vectorised step over all substates in log space with `logaddexp`; the marginal of a state is the sum,
+    over its substates, of exp(forward + backward - log of the total weight).
+
+    Both passes subtract their own maximum from every frame's vector. That moves a frame's forward and backward values
+    by a scalar each, which the per-frame normalisation at the end divides out (forward * backward, summed over the
+    substates, is the same total weight at every frame), so no running sum of emissions, hundreds of thousands of
+    nats long, ever enters a subtraction. The recursion over run starts in `viterbi` has such sums, which is why it
+    cannot be reused here: its cancellation is harmless for a maximum and not for a probability of 1e-12.
+    """
+    switch_team, switch_dead, min_possession, min_dead = _check_costs(
+        switch_team, switch_dead, min_possession, min_dead)
+    emissions = _check_emissions(emissions)
+    n_frames = len(emissions)
+    posterior = np.empty((n_frames, 3))
+    if n_frames == 0:
+        return posterior
+
+    size = (min_possession, min_possession, min_dead)           # substates of each state, by state code
+    first = np.array([0, size[0], size[0] + size[1]])           # index of each state's first substate (run length 1)
+    last = first + np.array(size) - 1                           # ... and of its last (the minimum, with the self-loop)
+    owner = np.repeat(np.arange(3), size)                       # the state of each substate
+    # link[r, s]: the log-weight of a change from r to s; -inf on the diagonal, which is not a change.
+    link = -np.array([[0.0, switch_team, switch_dead],
+                      [switch_team, 0.0, switch_dead],
+                      [switch_dead, switch_dead, 0.0]])
+    np.fill_diagonal(link, -np.inf)
+
+    # forward[t, x]: log of the total weight of the valid prefixes through frame t that end in substate x, emission at
+    # t included, less a scalar per frame. A prefix that starts in a substate other than a last one is not valid.
+    forward = np.empty((n_frames, len(owner)))
+    forward[0] = -np.inf
+    forward[0, last] = emissions[0]
+    forward[0] -= forward[0].max()
+    for frame in range(1, n_frames):
+        previous, row = forward[frame - 1], forward[frame]
+        mature = previous[last]                                          # a run that may be left, per state
+        born = np.logaddexp.reduce(mature[:, None] + link, axis=0)       # into each state's substate 1
+        row[1:] = previous[:-1]                                          # a run one frame older
+        row[first] = -np.inf                                             # (the shift put another state's here)
+        row[last] = np.logaddexp(row[last], mature)                      # the self-loop of the last substate
+        row[first] = np.logaddexp(row[first], born)                      # ... which is substate 1 when the minimum is 1
+        row += emissions[frame][owner]
+        row -= row.max()
+
+    # backward[x]: log of the total weight of every continuation after frame t from substate x, emission at t not
+    # included, less a scalar; at the last frame every substate may end the path, so every continuation is empty.
+    # Folded into `forward` on the way down, which then holds forward * backward: no second table.
+    backward = np.zeros(len(owner))
+    for frame in range(n_frames - 2, -1, -1):
+        ahead = emissions[frame + 1][owner] + backward                   # the next frame, its emission paid
+        following = np.empty_like(ahead)
+        following[:-1] = ahead[1:]                                       # a run one frame older: the only way on
+        leave = np.logaddexp.reduce(ahead[first][None, :] + link, axis=1)  # a mature run ends: into another state
+        following[last] = np.logaddexp(ahead[last], leave)               # ... or goes on in the last substate
+        following -= following.max()
+        backward = following
+        forward[frame] += backward
+
+    for lo in range(0, n_frames, CHUNK):
+        rows = forward[lo:lo + CHUNK]
+        rows -= rows.max(axis=1, keepdims=True)
+        np.exp(rows, out=rows)
+        states = np.add.reduceat(rows, first, axis=1)
+        posterior[lo:lo + CHUNK] = states / states.sum(axis=1, keepdims=True)
+    return posterior
+
+
+def _check_emissions(emissions):
+    """`emissions` as an (n_frames, 3) float64 array; ValueError naming what is wrong with its shape or values."""
+    emissions = np.asarray(emissions, dtype=np.float64)
+    if emissions.ndim != 2 or emissions.shape[1] != 3:
+        raise ValueError("hmm: emissions must be an (n_frames, 3) array, got shape {}".format(emissions.shape))
+    if not np.isfinite(emissions).all():
+        raise ValueError("hmm: emissions must be finite, but {} of {} values are NaN or infinite".format(
+            int((~np.isfinite(emissions)).sum()), emissions.size))
+    return emissions
 
 
 def _check_costs(switch_team, switch_dead, min_possession, min_dead):

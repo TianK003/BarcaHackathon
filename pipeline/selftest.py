@@ -910,6 +910,8 @@ def test_hmm_rejects_bad_parameters():
             expect_error(ValueError, lambda: decode(**{name: bad}), "hmm", name)
     for bad in (0.0, 0.5, np.nan):
         expect_error(ValueError, lambda: decode(eps=bad), "hmm", "eps")
+    for bad in (1, 0, "yes", None):
+        expect_error(ValueError, lambda: decode(posterior=bad), "hmm", "posterior")
     # viterbi takes emissions directly: it names what is wrong with them, the shape or the values.
     from pipeline.decode import hmm
     expect_error(ValueError, lambda: hmm.viterbi(np.zeros((5, 2)), 1.0, 1.0, 1, 1), "hmm", "shape (5, 2)")
@@ -920,10 +922,15 @@ def test_hmm_rejects_bad_parameters():
     # Whole numbers from a notebook sweep, a penalty of 0 and an integer penalty from a config are all fine.
     decode(switch_team=10, switch_dead=np.float64(5.0), min_possession=np.int64(5), min_dead=3, eps=1e-3)
     decode(switch_team=0, switch_dead=0)
+    assert decode(posterior=np.True_).posterior is not None  # a flag from a notebook comparison is fine too
 
 
 def test_hmm_speed():
-    """80,000 frames, two sources, minimums of 50: Viterbi must stay cheap enough for a sweep over seven matches."""
+    """80,000 frames, two sources, minimums of 50: Viterbi must stay cheap enough for a sweep over seven matches.
+
+    The posterior, which no sweep asks for, gets a looser bound: it is O(minimum) a frame, in numpy calls.
+    """
+    from pipeline.decode import REGISTRY
     rng = np.random.default_rng([6, 104])
     n_frames = 80000
     team = np.repeat(rng.integers(0, 2, n_frames // 100), 100)  # who has the ball, in stretches of 4 s
@@ -942,6 +949,114 @@ def test_hmm_speed():
     seconds = time.perf_counter() - started
     print("      hmm: {:,} frames, two sources, both minimums 50: {:.2f} s".format(n_frames, seconds))
     assert len(labels) == n_frames and seconds < 4.0, "{:.2f} s for {:,} frames".format(seconds, n_frames)
+    started = time.perf_counter()
+    decoded = REGISTRY["hmm"](ctx, switch_team=4.0, switch_dead=8.0, min_possession=50, min_dead=50, posterior=True)
+    seconds = time.perf_counter() - started
+    print("      hmm: the same with posterior=True: {:.2f} s".format(seconds))
+    assert decoded.posterior.shape == (n_frames, 3) and seconds < 10.0, "{:.2f} s for the posterior".format(seconds)
+
+
+# The hmm decoder's posterior: P(H), P(A), P(D) per frame, the marginal over the valid paths with weight exp(score).
+
+def hmm_brute_force_marginals(emissions, switch_team, switch_dead, min_possession, min_dead):
+    """The definition of the posterior, by trying every path: (n_frames, 3) marginals and the number of valid paths."""
+    import itertools
+    paths = [path for path in itertools.product(range(3), repeat=len(emissions))
+             if hmm_path_is_valid(path, min_possession, min_dead)]
+    scores = np.array([hmm_path_score(emissions, path, switch_team, switch_dead) for path in paths])
+    weights = np.exp(scores - scores.max())
+    weights /= weights.sum()
+    marginals = np.zeros((len(emissions), 3))
+    for path, weight in zip(paths, weights):
+        for frame, state in enumerate(path):
+            marginals[frame, state] += weight
+    return marginals, len(paths)
+
+
+def test_hmm_posterior_matches_brute_force():
+    from pipeline.decode import hmm
+    constrained = shorter_than_a_minimum = 0
+    for case in range(200):
+        rng = np.random.default_rng([6, 2000 + case])
+        n_frames = int(rng.integers(1, 7))
+        emissions = rng.uniform(-3.0, 3.0, size=(n_frames, 3))
+        switch_team, switch_dead = (float(value) for value in rng.uniform(0.1, 4.0, size=2))
+        min_possession, min_dead = (int(value) for value in rng.integers(1, 5, size=2))
+        expected, valid_paths = hmm_brute_force_marginals(emissions, switch_team, switch_dead, min_possession, min_dead)
+        got = hmm.marginals(emissions, switch_team, switch_dead, min_possession, min_dead)
+        assert got.dtype == np.float64 and got.shape == (n_frames, 3), (case, got.dtype, got.shape)
+        assert np.allclose(got, expected, rtol=1e-9, atol=1e-12), (
+            "case {} ({} frames, minimums {} and {}): {!r} against the brute force {!r}".format(
+                case, n_frames, min_possession, min_dead, got, expected))
+        constrained += valid_paths < 3 ** n_frames
+        shorter_than_a_minimum += n_frames < max(min_possession, min_dead)
+    # A check where no minimum ever bound, or no block was cut short of one, would prove nothing about the exemptions.
+    assert constrained >= 30 and shorter_than_a_minimum >= 20, "{} constrained cases, {} short blocks of 200".format(
+        constrained, shorter_than_a_minimum)
+
+
+def test_hmm_posterior_rows_sum_to_one():
+    from pipeline.decode import REGISTRY, hmm
+    for case in range(12):
+        rng = np.random.default_rng([6, 3000 + case])
+        n_frames = int(rng.integers(200, 1500))
+        home = np.where(rng.random(n_frames) < 0.3, np.nan, rng.choice([0.0, 0.22, 0.78, 1.0], size=n_frames))
+        alive = np.where(rng.random(n_frames) < 0.5, np.nan, rng.random(n_frames))
+        weight = float(rng.choice([1.0, 3.0, 25.0]))  # at 25 the emissions span hundreds of nats, not tens
+        parameters = {"switch_team": float(rng.uniform(0.5, 30.0)), "switch_dead": float(rng.uniform(0.5, 30.0)),
+                      "min_possession": int(rng.integers(1, 60)), "min_dead": int(rng.integers(1, 60))}
+        posterior = REGISTRY["hmm"](hmm_context(home, alive, weights=[weight]), posterior=True, **parameters).posterior
+        assert posterior.dtype == np.float64 and posterior.shape == (n_frames, 3), (case, posterior.shape)
+        assert np.isfinite(posterior).all() and (posterior >= 0.0).all() and (posterior <= 1.0).all(), case
+        totals = posterior.sum(axis=1)
+        assert np.allclose(totals, 1.0, rtol=0.0, atol=1e-12), "case {}: rows sum to {:.15f} to {:.15f}".format(
+            case, totals.min(), totals.max())
+    # An empty block has an empty posterior, and a block without evidence is a prior over paths, not a NaN.
+    assert hmm.marginals(np.zeros((0, 3)), 1.0, 1.0, 1, 1).shape == (0, 3)
+    blank = hmm.marginals(np.zeros((40, 3)), 2.0, 5.0, 10, 10)
+    assert np.isfinite(blank).all() and np.allclose(blank.sum(axis=1), 1.0, rtol=0.0, atol=1e-12)
+
+
+def test_hmm_posterior_is_symmetric_in_time():
+    """The model has no arrow of time (penalties are symmetric, the first and last run are both exempt), so a block
+    read backwards has the reversed posterior. Brute force stops at 6 frames; this holds the long blocks, where the
+    forward and the backward pass run for thousands of frames, to the same answer from both ends."""
+    from pipeline.decode import hmm
+    for case in range(8):
+        rng = np.random.default_rng([6, 5000 + case])
+        n_frames = int(rng.integers(300, 2000))
+        emissions = rng.normal(0.0, float(rng.choice([0.3, 2.0, 30.0])), size=(n_frames, 3))
+        parameters = (float(rng.uniform(0.0, 20.0)), float(rng.uniform(0.0, 20.0)),
+                      int(rng.integers(1, 150)), int(rng.integers(1, 150)))
+        forwards = hmm.marginals(emissions, *parameters)
+        backwards = hmm.marginals(emissions[::-1], *parameters)[::-1]
+        assert np.allclose(forwards, backwards, rtol=0.0, atol=1e-10), "case {}: {:.1e} apart".format(
+            case, np.abs(forwards - backwards).max())
+
+
+def test_hmm_posterior_leaves_labels_alone():
+    from pipeline.decode import REGISTRY
+    for case in range(20):
+        rng = np.random.default_rng([6, 4000 + case])
+        n_frames = int(rng.integers(1, 800))
+        home = np.where(rng.random(n_frames) < 0.3, np.nan, rng.random(n_frames))
+        alive = np.where(rng.random(n_frames) < 0.5, np.nan, rng.random(n_frames))
+        parameters = {"switch_team": float(rng.uniform(0.0, 6.0)), "switch_dead": float(rng.uniform(0.0, 6.0)),
+                      "min_possession": int(rng.integers(1, 40)), "min_dead": int(rng.integers(1, 40))}
+        ctx = hmm_context(home, alive)
+        without = REGISTRY["hmm"](ctx, **parameters).labels
+        with_it = REGISTRY["hmm"](ctx, posterior=True, **parameters).labels
+        assert with_it.dtype == np.int8 and np.array_equal(without, with_it), "case {}: {} labels moved".format(
+            case, int((without != with_it).sum()))
+
+
+def test_hmm_posterior_off_by_default():
+    from pipeline.decode import REGISTRY
+    ctx = hmm_context(np.full(30, VOTE))
+    assert REGISTRY["hmm"](ctx, switch_team=1.0, switch_dead=1.0).posterior is None
+    assert REGISTRY["hmm"](ctx, switch_team=1.0, switch_dead=1.0, posterior=False).posterior is None
+    posterior = REGISTRY["hmm"](ctx, switch_team=1.0, switch_dead=1.0, posterior=True).posterior
+    assert posterior is not None and posterior.shape == (30, 3)
 
 
 # -- refine -----------------------------------------------------------------------------------------------------------
