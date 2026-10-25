@@ -36,8 +36,8 @@ rule (pipeline/decode/hmm.py). A frame without a ball stays NaN. `hold` = 0.5 is
 NaN is not 0.5 (pipeline/evidence/README.md).
 
 Everything is per graded block (kinematics.blocks): an episode is cut at the block's edge, a hold never crosses it, and
-frames outside the blocks are NaN. `alive` is NaN everywhere: whether the ball is in play is P05's question. `confidence`
-is measured, not tuned (docs/proposals.md P04).
+frames outside the blocks are NaN. `alive` is NaN everywhere: whether the ball is in play is P05's question.
+`confidence` is measured, not tuned (docs/proposals.md P04).
 """
 
 import numbers
