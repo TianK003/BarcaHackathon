@@ -67,12 +67,22 @@ What it writes. `public` writes two files under `<data dir>/runs/conventions/`. 
 (`compare`): the cells with their lags, which are numbers of frames and no frame of the match, and the summary.
 `public_transitions.csv` is for a person: one row per change of the public truth, its frame and every detector's lag
 there, so that somebody who may watch the video can look at exactly those moments. No LLM reads that file, and the code
-prints no row of it and no frame in it: what `public` prints is the summary (n, the share found, the median and the
-quartiles), at most a few lines, and what the check holds it to. `dfl` writes `dfl_<profile>_<truth>.json` (suffixed as
-the runner's reports are when the matches are not all seven or the seeds not the default) and prints the pooled summary
-and the per-match medians. `compare` prints, per (type, detector), the public median beside DFL's and the gap with a
-90% interval: 2,000 draws with replacement of the public changes' lags, `default_rng([2, 1])` freshly seeded for each
-cell so that a cell's interval does not depend on the others, DFL's median taken as it is.
+prints no row of it and no frame in it: what `public` prints is the summary (n, the share found, the median, and
+the quartiles of a cell with enough changes found, see below), at most a few lines, and what the check holds it to.
+`dfl` writes `dfl_<profile>_<truth>.json` (suffixed as the runner's reports are when the matches are not all seven or
+the seeds not the default) and prints the pooled summary and the per-match medians. `compare` prints, per
+(type, detector), the public median beside DFL's and the gap with a 90% interval: 2,000 draws with replacement of the
+public changes' lags, `default_rng([2, 1])` freshly seeded for each cell so that a cell's interval does not depend on
+the others, DFL's median taken as it is.
+
+What a printout of BAR-ATH may show (`MIN_SHOWN`, `limited`, `shown`, `interval_text`). The public window has a handful
+of changes of each type, so a cell is small: with one change found its median, p25 and p75 are that change's lag, and
+with two or three the linear quartiles fix every lag, which is a row of the person's file on the screen. So a cell of
+a BAR-ATH printout (the `public` summary, and the public side of `compare`) with fewer than MIN_SHOWN = 5 changes found
+prints n, the share found and the median only: no quartile, and in place of a bootstrap interval only whether it
+excludes 0. A cell with at least MIN_SHOWN found prints everything. DFL's printouts are not limited (its data are
+public), and the JSON files keep every value, since the code reads them. The rule lives in those three functions and
+nowhere else, so that any later printout of BAR-ATH lags (the latency and the shift tables) calls them.
 
 No truth reaches the detectors. In `dfl` every match is served through train_dead_ball.served_inputs (a MatchInputs,
 which holds the degraded tracking and no flag, as the trainer's rows are), and the truth is read from the match beside
@@ -128,6 +138,7 @@ TRUTHS = ("raw", "coarse")
 DEFAULT_PROFILE = run.DEFAULT_PROFILE
 DEFAULT_SEEDS = run.DEFAULT_SEEDS
 LAG_WIDTH = 7                       # the printout's column of a lag
+MIN_SHOWN = 5                       # a BAR-ATH printout shows quartiles and interval bounds from this many found
 
 _TRANSITION_TYPE = {(pm.H, pm.A): "team", (pm.A, pm.H): "team", (pm.H, pm.D): "into_dead", (pm.A, pm.D): "into_dead",
                     (pm.D, pm.H): "out_of_dead", (pm.D, pm.A): "out_of_dead"}
@@ -408,9 +419,10 @@ def public(inputs, gt_path, data_dir=None, log=print):
 
     `inputs` is BAR-ATH's (pipeline.inputs.Inputs); the GT is a frame,label CSV with X outside the public window, whose
     runs (pm.valid_runs) are the blocks. Writes public_transitions.csv and public_lags.json under
-    `<data_dir or inputs.data_dir>/runs/conventions/` and logs the summary only: counts, shares, medians and quartiles,
-    never a row of the CSV or a frame (module docstring). ConventionsError for a GT that is not one row per frame of the
-    match or has no graded frame, before anything is written; the document is JSON-ready.
+    `<data_dir or inputs.data_dir>/runs/conventions/` and logs the summary only: counts, shares and medians, and
+    quartiles for a cell with MIN_SHOWN changes found or more, never a row of the CSV or a frame (module docstring).
+    ConventionsError for a GT that is not one row per frame of the match or has no graded frame, before anything is
+    written; the document is JSON-ready.
     """
     labels = pm.read_label_csv(gt_path)
     reason = pm.validate_submission(labels, inputs.n_frames)
@@ -456,16 +468,18 @@ def _write_transitions(path, changes, rows, names):
 
 
 def render_public(document):
-    """The summary of the public window: a line per change type and detector, aggregates only."""
+    """The summary of the public window: a line per change type and detector, with the small cells limited (`shown`)."""
     lines = ["public    {} changes of the truth ({}), events: {}".format(
         sum(document["transitions"].values()), ", ".join("{} {}".format(kind, document["transitions"][kind])
                                                          for kind in TYPES),
         ", ".join("{} {}".format(name, count) for name, count in document["events"].items()))]
-    lines += _summary_lines("public", document["summary"], document["fps"])
+    lines += _summary_lines("public", document["summary"], document["fps"], limit=True)
     return lines
 
 
-def _summary_lines(label, summary, fps):
+def _summary_lines(label, summary, fps, limit=False):
+    """The table of a summary keyed by cell_name: with `limit` (BAR-ATH's) each row goes through `shown`, and a hidden
+    quartile is a "-"."""
     lines = ["{:<10}{:<13}{:<13}{:>5}{:>8}{:>{w}}{:>{w}}{:>{w}}{:>10}".format(
         label, "type", "detector", "n", "found", "median", "p25", "p75", "median s", w=LAG_WIDTH)]
     for kind in TYPES:
@@ -473,12 +487,17 @@ def _summary_lines(label, summary, fps):
             row = summary.get(cell_name(kind, name))
             if row is None:
                 continue
+            if limit:
+                row = shown(row)
+            quartiles = ["-" if row.get("limited") else _frames(row[key]) for key in ("p25", "p75")]
             lines.append("{:<10}{:<13}{:<13}{:>5}{:>8}{:>{w}}{:>{w}}{:>{w}}{:>10}".format(
-                "", kind, name, row["n"], _pct(row["share_found"]), _frames(row["median"]), _frames(row["p25"]),
-                _frames(row["p75"]), "n/a" if row["median_s"] is None else "{:+.2f}".format(row["median_s"]),
-                w=LAG_WIDTH))
+                "", kind, name, row["n"], _pct(row["share_found"]), _frames(row["median"]), *quartiles,
+                "n/a" if row["median_s"] is None else "{:+.2f}".format(row["median_s"]), w=LAG_WIDTH))
     lines.append("{:<10}lags in frames ({} per second): event - change, negative = the event came first; found = "
                  "share of the changes with an event in the window".format("", fps))
+    if limit:
+        lines.append("{:<10}-: fewer than {} changes found, so only the median is printed (a quartile would be a lag)"
+                     .format("", MIN_SHOWN))
     return lines
 
 
@@ -488,6 +507,39 @@ def _pct(value):
 
 def _frames(value):
     return "n/a" if value is None else "{:+.1f}".format(value)
+
+
+def limited(row, minimum=MIN_SHOWN):
+    """Whether a summarise row of BAR-ATH has too few changes found for its quartiles to be printed: 1 to minimum - 1.
+
+    A cell with nothing found has no quartile to hide. `minimum` defaults to MIN_SHOWN; the rule is this and the two
+    functions below, and every printout of BAR-ATH lags goes through them (module docstring).
+    """
+    return 0 < row["found"] < minimum
+
+
+def shown(row, minimum=MIN_SHOWN):
+    """The row as a printout of BAR-ATH may show it: itself, or a copy without its quartiles if it is limited.
+
+    A limited row keeps n, found, share_found, median and median_s, has p25, p75, p25_s and p75_s None and `limited`
+    True (a renderer prints "-" for those, not "n/a", which is "nothing found"). The row given is never changed.
+    """
+    if not limited(row, minimum):
+        return row
+    return {**row, "p25": None, "p75": None, "p25_s": None, "p75_s": None, "limited": True}
+
+
+def interval_text(low, high, public_row, minimum=MIN_SHOWN):
+    """A bootstrap interval as a printout of BAR-ATH may show it, given the public side's summarise row.
+
+    "n/a" without an interval, "[low, high]" in frames when the public side has `minimum` changes found or more, and
+    only "excludes 0: yes" or "excludes 0: no" below that: the bounds of a bootstrap of one to four lags are lags.
+    """
+    if low is None or high is None:
+        return "n/a"
+    if limited(public_row, minimum):
+        return "excludes 0: {}".format("yes" if low > 0 or high < 0 else "no")
+    return "[{}, {}]".format(_frames(low), _frames(high))
 
 
 # -- the DFL matches --------------------------------------------------------------------------------------------------
@@ -558,7 +610,8 @@ def dfl_path(data_dir, profile, truth, match_ids=None, seeds=None):
 def render_dfl(result):
     """The pooled summary, then each match's medians: counts, shares, medians and quartiles only."""
     fps = result["fps"]
-    lines = _summary_lines("pooled", summarise(result["table"], fps), fps)
+    pooled = {cell_name(*key): row for key, row in summarise(result["table"], fps).items()}
+    lines = _summary_lines("pooled", pooled, fps)
     cells = [key for kind in TYPES for key in ((kind, name) for name in DETECTORS) if key in result["table"]]
     ids = sorted(result["per_match"])
     lines.append("{:<10}{:<13}{:<13}".format("per match", "type", "detector") + "".join(
@@ -621,19 +674,21 @@ def compare(public_document, dfl_document):
 
 def render_compare(rows):
     """The comparison's lines: per cell the public median and DFL's, then the gap and its interval, in frames."""
-    lines = ["{:<13}{:<13}{:>5}{:>8}{:>9}   {:>7}{:>8}{:>9}   {:>9}{:>9}{:>9}".format(
-        "type", "detector", "n", "found", "median", "dfl n", "found", "median", "gap", "5%", "95%")]
+    lines = ["{:<13}{:<13}{:>5}{:>8}{:>9}   {:>7}{:>8}{:>9}   {:>9}   {}".format(
+        "type", "detector", "n", "found", "median", "dfl n", "found", "median", "gap", "90% interval of the gap")]
     for row in rows:
         public_row, dfl_row = row["public"], row["dfl"]
-        lines.append("{:<13}{:<13}{:>5}{:>8}{:>9}   {:>7}{:>8}{:>9}   {:>9}{:>9}{:>9}".format(
+        lines.append("{:<13}{:<13}{:>5}{:>8}{:>9}   {:>7}{:>8}{:>9}   {:>9}   {}".format(
             row["type"], row["detector"],
             "n/a" if public_row is None else public_row["n"], "n/a" if public_row is None else _pct(
                 public_row["share_found"]), "n/a" if public_row is None else _frames(public_row["median"]),
             "n/a" if dfl_row is None else dfl_row["n"], "n/a" if dfl_row is None else _pct(dfl_row["share_found"]),
-            "n/a" if dfl_row is None else _frames(dfl_row["median"]),
-            _frames(row["gap"]), _frames(row["low"]), _frames(row["high"])))
+            "n/a" if dfl_row is None else _frames(dfl_row["median"]), _frames(row["gap"]),
+            interval_text(row["low"], row["high"], public_row)))
     lines.append("lags in frames, event - change (negative: the event came first); gap = the public median minus "
                  "DFL's, with a 90% bootstrap interval of the public lags ({} draws)".format(BOOTSTRAP_DRAWS))
+    lines.append("with fewer than {} changes found on the public side the bounds would be lags, so only whether the "
+                 "interval excludes 0 is printed".format(MIN_SHOWN))
     return lines
 
 

@@ -673,6 +673,28 @@ def test_conventions_public_prints_aggregates_only():
         assert not printed & set(PUBLIC_TRANSITIONS), sorted(printed & set(PUBLIC_TRANSITIONS))
         assert not printed & {1000, 2600}, "nor the window's edges"
         assert "touch_start" in text and "line_out" in text and "tag_start" in text
+        # every cell of the public window has fewer than MIN_SHOWN changes found, so each line may show n, the share
+        # found and the median (in frames and in seconds) and no other number: a quartile of one to three changes is
+        # their lags, and the three figures of one change are its lag
+        cell_lines = {}
+        for line in lines:
+            named = re.match(r"\s+(team|into_dead|out_of_dead)\s+(\w+)\s", line)
+            if named:
+                cell_lines[named.groups()] = line
+        assert len(cell_lines) == 9, sorted(cell_lines)
+        for (kind, name), line in cell_lines.items():
+            cell = document["cells"][conventions.cell_name(kind, name)]
+            row = document["summary"][conventions.cell_name(kind, name)]
+            assert 0 < cell["found"] < conventions.MIN_SHOWN, (kind, name, cell["found"])
+            printed = re.findall(r"[+-]\d+\.\d+", line)
+            assert printed == ["{:+.1f}".format(row["median"]), "{:+.2f}".format(row["median_s"])], (kind, name, line)
+            if cell["found"] > 1:
+                assert row["p25"] is not None and row["p75"] is not None, "the document keeps the quartiles"
+                for lag in cell["lags"]:
+                    if lag != row["median"]:         # a lag that is the median is printed as the median, and may be
+                        assert "{:+.1f}".format(lag) not in printed, (kind, name, lag)
+        assert any(row["found"] == 1 for row in document["summary"].values()), "a one-change cell must be in the scene"
+        assert any(row["found"] == 2 for row in document["summary"].values()), "and a two-change one"
         folder = os.path.join(root, "runs", "conventions")
         assert sorted(os.listdir(folder)) == ["public_lags.json", "public_transitions.csv"]
         assert os.path.join("runs", "conventions") in text.replace("/", os.sep)
@@ -701,6 +723,8 @@ def test_conventions_public_prints_aggregates_only():
         with open(os.path.join(folder, "public_lags.json"), encoding="utf-8") as handle:
             loaded = json.load(handle)
         assert loaded == json.loads(json.dumps(document)), "the file is the document that public() returns"
+        assert all(row["p25"] is not None for row in loaded["summary"].values() if row["found"]), (
+            "the file keeps every value, whatever the printout shows")
         assert loaded["source"] == "public" and loaded["fps"] == 25
         cell = loaded["cells"][conventions.cell_name("into_dead", "line_out")]
         assert cell == {"n": 2, "found": 2, "lags": [-8, -5]}, cell
@@ -724,6 +748,71 @@ def test_conventions_public_prints_aggregates_only():
         with contextlib.redirect_stdout(io.StringIO()):
             conventions.public(inputs, gt, data_dir=root)
         assert {name: open(os.path.join(folder, name), "rb").read() for name in os.listdir(folder)} == before
+
+
+def table_of(cells):
+    """A lag table from {(type, detector): lags}: n is the found count plus two changes with nothing found."""
+    return {key: {"n": len(lags) + 2, "found": len(lags), "lags": list(lags)} for key, lags in cells.items()}
+
+
+SMALL_TABLE = table_of({("team", "touch_start"): [],
+                        ("into_dead", "line_out"): [-9],
+                        ("into_dead", "ball_lost"): [-8, -5],
+                        ("into_dead", "model_dead"): [-20, -10, -4, -2],
+                        ("out_of_dead", "ball_moves"): [1, 2, 3, 4, 10],
+                        ("out_of_dead", "model_alive"): [-30, -12, -6, -2, -1, 0]})
+
+
+def cell_line(lines, kind, name):
+    found_ = [line for line in lines if re.match(r"\s*{}\s+{}\s".format(kind, name), line)]
+    assert len(found_) == 1, (kind, name, lines)
+    return found_[0]
+
+
+def numbers_printed(line):
+    return re.findall(r"[+-]\d+\.\d+", line)
+
+
+def test_conventions_small_cells_show_the_median_only():
+    """Below MIN_SHOWN found, a BAR-ATH printout gives n, the share found and the median: no quartile, nothing else."""
+    assert conventions.MIN_SHOWN == 5
+    summary = conventions.summarise(SMALL_TABLE)
+    # the helper: a cell with 1 to 4 found is limited, with none (nothing to hide) or 5 and more it is not
+    assert [conventions.limited(summary[key]) for key in SMALL_TABLE] == [False, True, True, True, False, False]
+    row = summary[("into_dead", "model_dead")]
+    hidden = conventions.shown(row)
+    assert hidden["p25"] is None and hidden["p75"] is None and hidden["p25_s"] is None and hidden["p75_s"] is None
+    assert hidden["median"] == row["median"] and hidden["median_s"] == row["median_s"] and hidden["limited"] is True
+    assert (hidden["n"], hidden["found"], hidden["share_found"]) == (row["n"], row["found"], row["share_found"])
+    assert row["p25"] == -12.5 and "limited" not in row, "shown does not change the row it is given"
+    big = summary[("out_of_dead", "ball_moves")]
+    assert conventions.shown(big) is big
+    document = {"transitions": {"team": 2, "into_dead": 6, "out_of_dead": 4}, "events": {}, "fps": 25,
+                "summary": {conventions.cell_name(*key): value for key, value in summary.items()}}
+    lines = conventions.render_public(document)
+    assert numbers_printed(cell_line(lines, "team", "touch_start")) == []
+    one = cell_line(lines, "into_dead", "line_out")
+    assert numbers_printed(one) == ["-9.0", "-0.36"] and "33%" in one, one
+    two = cell_line(lines, "into_dead", "ball_lost")
+    assert numbers_printed(two) == ["-6.5", "-0.26"] and "50%" in two, two     # not -8, -5, -7.2 or -5.8
+    four = cell_line(lines, "into_dead", "model_dead")
+    assert numbers_printed(four) == ["-7.0", "-0.28"] and "67%" in four, four   # not -12.5 or -3.5
+    five = cell_line(lines, "out_of_dead", "ball_moves")
+    assert numbers_printed(five) == ["+3.0", "+2.0", "+4.0", "+0.12"], five
+    six = cell_line(lines, "out_of_dead", "model_alive")
+    assert numbers_printed(six) == ["-4.0", "-10.5", "-1.2", "-0.16"], six
+    assert any("fewer than 5" in line for line in lines), "the legend says why a quartile is missing"
+    # DFL's own printout is not limited: the same cells show their quartiles in the pooled table, one line per cell
+    result = {"profile": "tracking", "truth": "raw", "seeds": [0], "matches": ["M1"], "fps": 25,
+              "table": SMALL_TABLE, "per_match": {"M1": SMALL_TABLE}}
+    printout = conventions.render_dfl(result)
+    pooled = printout[:next(i for i, line in enumerate(printout) if line.startswith("per match"))]
+    for key in SMALL_TABLE:
+        cell_line(pooled, *key)                                      # exactly one line each
+    assert numbers_printed(cell_line(pooled, "into_dead", "ball_lost")) == ["-6.5", "-7.2", "-5.8", "-0.26"], pooled
+    assert numbers_printed(cell_line(pooled, "into_dead", "model_dead")) == ["-7.0", "-12.5", "-3.5", "-0.28"], pooled
+    assert numbers_printed(cell_line(pooled, "into_dead", "line_out")) == ["-9.0", "-9.0", "-9.0", "-0.36"], pooled
+    assert not any("fewer than" in line for line in pooled), "no legend about a limit that DFL's printout has not"
 
 
 def test_conventions_public_refuses_what_it_cannot_read():
@@ -857,6 +946,46 @@ def test_conventions_compare_interval():
     assert conventions.bootstrap_gap([1, 2], []) == (None, None, None)
     # a fresh generator for each call: calling twice or in another order changes nothing
     assert conventions.bootstrap_gap([1, 2, 3], [0]) == conventions.bootstrap_gap([1, 2, 3], [0])
+
+
+def test_conventions_compare_hides_the_bounds_of_small_cells():
+    """Compare's public side shows an interval's bounds from MIN_SHOWN found; below it, whether it excludes 0."""
+    dfl_lags = [-6, -5, -4, -4, -4, -3, -2]
+    shape = {("into_dead", "ball_lost"): [-30, -25, -20],                  # 3 found: far from 0
+             ("into_dead", "model_dead"): [-20, -10, -4, -2],              # 4 found: the line is at 5
+             ("out_of_dead", "ball_moves"): [-5, 0, 5],                    # 3 found: straddles 0
+             ("out_of_dead", "model_alive"): [-3, -2, -2, -1, 4],          # 5 found: shown
+             ("into_dead", "line_out"): [-12, -11, -10, -10, -9, -8]}      # 6 found: shown
+    public_document = {"source": "public", "fps": 25, "cells": {
+        conventions.cell_name(*key): cell for key, cell in table_of(shape).items()}}
+    dfl_document = {"source": "dfl", "profile": "tracking", "truth": "raw", "fps": 25, "cells": {
+        conventions.cell_name(*key): cell for key, cell in table_of({key: dfl_lags for key in shape}).items()}}
+    rows = {(row["type"], row["detector"]): row for row in conventions.compare(public_document, dfl_document)}
+    lines = conventions.render_compare(list(rows.values()))
+    for key, lags_ in shape.items():
+        row, line = rows[key], cell_line(lines, *key)
+        assert row["low"] is not None and row["high"] is not None
+        medians = ["{:+.1f}".format(float(np.median(lags_))), "{:+.1f}".format(float(np.median(dfl_lags)))]
+        gap = "{:+.1f}".format(row["gap"])
+        bounds = ["{:+.1f}".format(row["low"]), "{:+.1f}".format(row["high"])]
+        assert not set(bounds) & set(medians + [gap]), "the case must not hide a bound behind another number"
+        if len(lags_) < conventions.MIN_SHOWN:
+            assert numbers_printed(line) == medians + [gap], (key, line)
+            excludes = row["low"] > 0 or row["high"] < 0
+            assert "excludes 0: {}".format("yes" if excludes else "no") in line, (key, line)
+        else:
+            assert numbers_printed(line) == medians + [gap] + bounds, (key, line)
+            assert "excludes" not in line
+    assert "excludes 0: yes" in cell_line(lines, "into_dead", "ball_lost")
+    assert "excludes 0: no" in cell_line(lines, "out_of_dead", "ball_moves")
+    assert any("fewer than 5" in line for line in lines), "the legend says why a bound is missing"
+    # the numbers are all still there for the code: nothing is lost from the rows that compare returns
+    assert rows[("into_dead", "ball_lost")]["public"]["p25"] is not None
+    assert conventions.interval_text(None, None, rows[("into_dead", "ball_lost")]["public"]) == "n/a"
+    assert conventions.interval_text(-3.0, -1.0, {"found": 4}) == "excludes 0: yes"
+    assert conventions.interval_text(-3.0, 1.0, {"found": 4}) == "excludes 0: no"
+    assert conventions.interval_text(1.0, 3.0, {"found": 1}) == "excludes 0: yes"
+    assert conventions.interval_text(-3.0, 1.0, {"found": 5}) == "[-3.0, +1.0]"
 
 
 def test_conventions_compare_reads_the_two_files():
