@@ -38,7 +38,7 @@ from pipeline.benchmark.checks.common import (MIN_AGREEMENT, context_calibration
                                               tracking_calibration, whole_positions, write_synthetic_dfl,
                                               yardstick_path)
 from pipeline.config import ConfigError, load_config
-from pipeline.selftest import expect_error, quiet, write_text
+from pipeline.selftest import P06_TRIAL_CONFIG, expect_error, quiet, write_text
 
 # Params
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -76,6 +76,13 @@ switch_team = 6
 switch_dead = 12
 min_possession = 5
 min_dead = 5
+"""
+SHIFT = """
+[[refine]]
+kind = "shift_edges"
+team = 4
+into_dead = -3
+out_of_dead = 6
 """
 
 
@@ -673,6 +680,34 @@ def test_hmm_runs_on_the_benchmark():
         assert result["configs"][0]["report"]["versus"] is None
         assert hmm_report["versus"]["reference"]["stem"] == "nearest_w50"
         assert hmm_report["config"]["text"] == HMM.replace("\r", ""), "the report holds the config as written"
+
+
+def test_shift_edges_runs_on_the_benchmark():
+    """A refiner is a component like any other to the runner: a config that carries shift_edges is scored like one.
+
+    Two configs, the plain one first (the reference) and the same one with shift_edges after its decoder, on the
+    synthetic matches with the synthetic Calibration under gaps: two scored configs come back, each with a half for
+    every graded half and seed, the shifted one is compared against the plain one, its report holds the config as
+    written, and its frames are not the plain one's in at least one half (the refiner ran inside the runner's
+    prediction and its labels reached the scorer). The config is P06's shape, which decodes all three labels on these
+    matches: HMM above decodes D throughout there, and a shift of that would move nothing. What the scores are means
+    nothing on random matches.
+    """
+    matches, cal = synthetic_matches(), synthetic_calibration()
+    with tempfile.TemporaryDirectory() as root:
+        paths = [write_text(root, "p06_plain.toml", P06_TRIAL_CONFIG),
+                 write_text(root, "p06_shifted.toml", P06_TRIAL_CONFIG + SHIFT)]
+        result = evaluate_gaps(paths, seeds=1, matches=matches, calibration=cal, data_dir=root, log=quiet)
+        assert [entry["stem"] for entry in result["configs"]] == ["p06_plain", "p06_shifted"], result["configs"]
+        for entry in result["configs"]:
+            assert len(entry["scores"]) == 4 and len(entry["report"]["halves"]) == 4, entry["stem"]
+            assert 0.0 <= entry["report"]["pooled"]["spell_f1_mean"] <= 1.0, entry["stem"]
+        plain, shifted = (entry["report"] for entry in result["configs"])
+        assert plain["versus"] is None and shifted["versus"]["reference"]["stem"] == "p06_plain"
+        assert shifted["config"]["text"] == (P06_TRIAL_CONFIG + SHIFT).replace("\r", ""), \
+            "the report holds the config as written"
+        assert any(a["confusion"] != b["confusion"] for a, b in zip(plain["halves"], shifted["halves"])), (
+            "the shifted config scored the same frames in every half: the refiner did not reach the scorer")
 
 
 def test_runner_default_profile_is_tracking_and_runs_it():

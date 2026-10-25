@@ -2449,13 +2449,264 @@ def test_dead_ball_model_refuses_infinite_features():
 
 # -- refine -----------------------------------------------------------------------------------------------------------
 
-def test_config_refiner_registry_starts_empty():
+def test_config_refiner_unknown_kind_lists_the_registry():
     from pipeline.config import ConfigError, load_config
     text = ('[[evidence]]\nkind = "nearest_player"\n\n[decoder]\nkind = "majority_vote"\nhalf_width = 50\n\n'
             '[[refine]]\nkind = "min_duration"\n')
     with tempfile.TemporaryDirectory() as folder:
         path = write_text(folder, "trial.toml", text)
-        expect_error(ConfigError, lambda: load_config(path), "min_duration", "REGISTRY is empty")
+        expect_error(ConfigError, lambda: load_config(path), "min_duration", "available", "shift_edges")
+
+
+# shift_edges (P02): move each kind of edge by a fixed number of frames. The design's algorithm is written out below as
+# scalar loops, and the helpers work in letters so that a failed assertion shows the labels.
+
+def shift_codes(text):
+    """int8 label codes from a string of H, A, D and X."""
+    from pipeline.contracts import CODES
+    return np.array([CODES[letter] for letter in text], dtype=np.int8)
+
+
+def shift_labels(labels, start=0, kickoffs=None, posterior=None, **parameters):
+    """The Decoded that the shift_edges refiner returns for a block at [start, start + len(labels)).
+
+    `kickoffs` is the dict of video frames that Inputs.kickoffs holds (none by default); the inputs here are a stand-in
+    that has that and nothing else, which is all the refiner may ask of them.
+    """
+    from types import SimpleNamespace
+    from pipeline.contracts import Block, BlockContext, Decoded, RunContext
+    from pipeline.refine import REGISTRY
+    inputs = SimpleNamespace(kickoffs={} if kickoffs is None else kickoffs)
+    ctx = BlockContext(run=RunContext(inputs=inputs, seed=0), block=Block(None, start, start + len(labels)),
+                       evidence={})
+    return REGISTRY["shift_edges"](ctx, Decoded(labels=labels, posterior=posterior), **parameters)
+
+
+def shift_reference(labels, offsets, fixed):
+    """(boundaries, targets) by the design's rule as plain loops: target, clip, then a pass each way.
+
+    A fixed boundary keeps its position as its target, and nothing more: the passes may still push it, which is why
+    shift_edges.apply is held to this reference only where it leaves every fixed boundary where it was.
+    """
+    n = len(labels)
+    cuts = [i for i in range(1, n) if labels[i] != labels[i - 1]]
+    targets = [cut if keep else cut + int(offset) for cut, offset, keep in zip(cuts, offsets, fixed)]
+    targets = [min(max(target, 1), n - 1) for target in targets]
+    for i in range(1, len(targets)):
+        targets[i] = max(targets[i], targets[i - 1] + 1)
+    for i in reversed(range(len(targets))):
+        targets[i] = min(targets[i], (targets[i + 1] if i + 1 < len(targets) else n) - 1)
+    return cuts, targets
+
+
+def shift_paint(labels, cuts, targets):
+    """The labels with the run that starts at each of `cuts` starting at the matching target instead."""
+    n = len(labels)
+    painted = np.empty(n, dtype=np.int8)
+    labels_of_runs = [labels[0]] + [labels[cut] for cut in cuts]
+    edges = [0] + list(targets) + [n]
+    for label, first, stop in zip(labels_of_runs, edges, edges[1:]):
+        painted[first:stop] = label
+    return painted
+
+
+def run_labels(labels):
+    """The labels of the runs of `labels`, in order, as a list."""
+    import itertools
+    return [int(key) for key, _ in itertools.groupby(labels.tolist())]
+
+
+def test_shift_edges_zero_is_identity():
+    labels = shift_codes("HHHAAADDDHHHXXAAD")
+    posterior = np.full((len(labels), 3), 1.0 / 3.0)
+    for parameters in ({}, {"team": 0, "into_dead": 0, "out_of_dead": 0}, {"team": np.int64(0)}):
+        result = shift_labels(labels, posterior=posterior, **parameters)
+        assert result.labels.tobytes() == labels.tobytes() and result.labels.dtype == np.int8, parameters
+        assert result.posterior is posterior, "all zero must hand the posterior on as it was: {}".format(parameters)
+    # Anything else moves labels, so the posterior would no longer describe them: it is dropped.
+    moved = shift_labels(labels, posterior=posterior, team=1)
+    assert moved.posterior is None and moved.labels.tobytes() != labels.tobytes()
+    # A block with no edge at all is unchanged by any shift, and still drops the posterior (the rule is on the setting).
+    flat = shift_codes("D" * 20)
+    result = shift_labels(flat, posterior=np.zeros((20, 3)), team=5, into_dead=-5, out_of_dead=5)
+    assert result.labels.tobytes() == flat.tobytes() and result.posterior is None
+
+
+def test_shift_edges_moves_each_type():
+    labels = shift_codes("H" * 40 + "A" * 40 + "D" * 40 + "H" * 40)
+    for parameters, expected in (
+            ({"team": 3}, "H" * 43 + "A" * 37 + "D" * 40 + "H" * 40),
+            ({"team": -3}, "H" * 37 + "A" * 43 + "D" * 40 + "H" * 40),
+            ({"into_dead": -5}, "H" * 40 + "A" * 35 + "D" * 45 + "H" * 40),
+            ({"into_dead": 5}, "H" * 40 + "A" * 45 + "D" * 35 + "H" * 40),
+            ({"out_of_dead": 2}, "H" * 40 + "A" * 40 + "D" * 42 + "H" * 38),
+            ({"out_of_dead": -2}, "H" * 40 + "A" * 40 + "D" * 38 + "H" * 42),
+            ({"team": 3, "into_dead": -5, "out_of_dead": 2}, "H" * 43 + "A" * 32 + "D" * 47 + "H" * 38)):
+        got = letters(shift_labels(labels, **parameters).labels)
+        assert got == expected, "{}: got {}".format(parameters, got)
+    # The type is the pair of labels: H -> A and A -> H are both a team change, D -> A is a way out of the dead ball.
+    labels = shift_codes("A" * 30 + "H" * 30 + "D" * 30 + "A" * 30)
+    got = letters(shift_labels(labels, team=4, into_dead=-3, out_of_dead=2).labels)
+    assert got == "A" * 34 + "H" * 23 + "D" * 35 + "A" * 28, got
+
+
+def test_shift_edges_boundaries_and_types():
+    from pipeline.contracts import LETTERS
+    from pipeline.refine import shift_edges
+    expected = {"HA": "team", "AH": "team", "HD": "into_dead", "AD": "into_dead", "DH": "out_of_dead",
+                "DA": "out_of_dead"}
+    for case in range(100):
+        rng = np.random.default_rng([8, 1000 + case])
+        labels = rng.integers(0, 4, size=int(rng.integers(0, 40))).astype(np.int8)
+        positions, types = shift_edges.boundaries(labels)
+        cuts = [i for i in range(1, len(labels)) if labels[i] != labels[i - 1]]
+        assert positions.dtype == np.int64 and positions.tolist() == cuts, (case, positions, cuts)
+        assert isinstance(types, tuple) and len(types) == len(cuts), (case, types)
+        for cut, kind in zip(cuts, types):
+            pair = LETTERS[labels[cut - 1]] + LETTERS[labels[cut]]
+            assert kind == expected.get(pair, shift_edges.ABSTAIN), (case, pair, kind)
+    assert set(expected.values()) == set(shift_edges.TYPES)
+    # A change into or out of X is not one of the three kinds: it has no offset, and the refiner leaves it where it is.
+    positions, types = shift_edges.boundaries(shift_codes("HHXXAADD"))
+    assert positions.tolist() == [2, 4, 6] and types == (shift_edges.ABSTAIN, shift_edges.ABSTAIN, "into_dead"), types
+
+
+def shift_random_labels(rng, n, long_runs):
+    """n labels from H, A and D: independent per frame (dense boundaries), or runs of 1-9 frames (sparse ones)."""
+    if not long_runs:
+        return rng.integers(0, 3, size=n).astype(np.int8)
+    labels = []
+    while len(labels) < n:
+        label = int(rng.integers(0, 3))
+        while labels and label == labels[-1]:
+            label = int(rng.integers(0, 3))
+        labels += [label] * int(rng.integers(1, 10))
+    return np.array(labels[:n], dtype=np.int8)
+
+
+def test_shift_edges_brute_force():
+    from pipeline.refine import shift_edges
+    exact = displaced = anchored = 0
+    for case in range(500):
+        rng = np.random.default_rng([8, case])
+        n = int(rng.integers(2, 31))
+        labels = shift_random_labels(rng, n, long_runs=bool(case // 2 % 2))
+        before = labels.copy()
+        positions, _ = shift_edges.boundaries(labels)
+        m = len(positions)
+        offsets = rng.integers(-10, 11, size=m)
+        fixed = rng.random(m) < (0.3 if case % 2 else 0.0)           # odd cases hold some boundaries, even ones none
+        got = shift_edges.apply(labels, offsets, fixed)
+        assert got.dtype == np.int8 and got.shape == (n,) and np.array_equal(labels, before), case
+        new_positions, _ = shift_edges.boundaries(got)
+        # The runs keep their labels and their order, and every run keeps at least one frame.
+        assert run_labels(got) == run_labels(labels), (case, letters(labels), letters(got))
+        assert len(new_positions) == m, (case, letters(labels), letters(got))
+        assert (new_positions >= 1).all() and (new_positions <= n - 1).all() and (np.diff(new_positions) >= 1).all()
+        # A fixed boundary never moves.
+        assert np.array_equal(new_positions[fixed], positions[fixed]), (case, letters(labels), fixed)
+        # With none held, each boundary is where a closed form puts it. Clipped to the block, target j is c_j and
+        # pushes boundary i > j to c_j + (i - j) at the earliest; the block's end holds boundary i to n - m + i at the
+        # latest. A boundary that nothing pushes and nothing clips moves by exactly its offset.
+        targets = positions + offsets
+        clipped = np.clip(targets, 1, n - 1)
+        if not fixed.any():
+            for i in range(m):
+                reached = max((int(clipped[j]) + i - j for j in range(i)), default=1)
+                expected = min(max(int(clipped[i]), reached), n - m + i)
+                assert new_positions[i] == expected, (case, i, letters(labels), offsets)
+                if targets[i] == clipped[i] and reached <= targets[i] <= n - m + i:
+                    assert new_positions[i] == targets[i], (case, i, letters(labels), offsets)
+                    exact += 1
+                else:
+                    displaced += new_positions[i] != targets[i]
+        # The design's algorithm, as loops: the same labels wherever it leaves every fixed boundary alone.
+        cuts, reference = shift_reference(labels, offsets, fixed)
+        if np.array_equal(np.array(reference, dtype=np.int64)[fixed], positions[fixed]):
+            assert np.array_equal(got, shift_paint(labels, cuts, reference)), (case, letters(labels), offsets, fixed)
+        else:
+            anchored += 1                               # there the design's passes would have pushed a fixed boundary
+    # A check in which nothing was ever clipped, pushed or held would prove nothing about the passes.
+    print("      boundaries unclipped {}, clipped or pushed {}; cases where a fixed boundary stopped one: {}".format(
+        exact, displaced, anchored))
+    assert exact >= 250 and displaced >= 500 and anchored >= 50, (exact, displaced, anchored)
+
+
+def test_shift_edges_keeps_kickoffs():
+    labels = shift_codes("D" * 30 + "H" * 30 + "A" * 20)
+    # The boundary D -> H is at frame 1030 of the match: the block starts at 1000, so it cannot be moved.
+    kept = shift_labels(labels, start=1000, kickoffs={1: 1030, 2: 5000}, team=3, out_of_dead=5)
+    assert letters(kept.labels) == "D" * 30 + "H" * 33 + "A" * 17, letters(kept.labels)
+    # Without a kick-off there, the same setting moves it. A kick-off is a frame of the match and not of the block:
+    # 30 is where the boundary stands in the block, and it is not a kick-off there.
+    for kickoffs in ({}, {2: 5000}, {1: 30}):
+        moved = shift_labels(labels, start=1000, kickoffs=kickoffs, team=3, out_of_dead=5)
+        assert letters(moved.labels) == "D" * 35 + "H" * 28 + "A" * 17, (kickoffs, letters(moved.labels))
+    # Any kind of boundary at a kick-off frame stays, and the others move.
+    held = shift_labels(labels, start=1000, kickoffs={1: 1060}, team=3, out_of_dead=5)
+    assert letters(held.labels) == "D" * 35 + "H" * 25 + "A" * 20, letters(held.labels)
+    # A kick-off at the first frame of the block is no boundary (the first frame is not a change): nothing is held.
+    got = letters(shift_labels(labels, start=0, kickoffs={1: 0}, out_of_dead=5).labels)
+    assert got == "D" * 35 + "H" * 25 + "A" * 20, got
+
+
+def test_shift_edges_leaves_edges_of_x_alone():
+    # H -> X and X -> A are fixed; a boundary beside them is stopped by them and does not push them.
+    labels = shift_codes("H" * 10 + "A" * 2 + "X" * 10)
+    got = letters(shift_labels(labels, team=5, into_dead=-3, out_of_dead=3).labels)
+    assert got == "H" * 11 + "A" + "X" * 10, got
+    labels = shift_codes("X" * 10 + "H" * 2 + "A" * 10)
+    got = letters(shift_labels(labels, team=-5).labels)
+    assert got == "X" * 10 + "H" + "A" * 11, got
+    labels = shift_codes("HHHH" + "XXXX" + "DDDD" + "AAAA")
+    got = letters(shift_labels(labels, team=2, into_dead=-1, out_of_dead=2).labels)
+    assert got == "HHHH" + "XXXX" + "D" * 6 + "AA", got                # H -> X and X -> D stay; D -> A is a way out
+    # In between, D -> A has the room that X leaves it and no more.
+    labels = shift_codes("H" * 5 + "X" * 5 + "D" * 5 + "A" * 5 + "X" * 5)
+    got = letters(shift_labels(labels, out_of_dead=3).labels)
+    assert got == "H" * 5 + "X" * 5 + "D" * 8 + "A" * 2 + "X" * 5, got
+    got = letters(shift_labels(labels, out_of_dead=9).labels)
+    assert got == "H" * 5 + "X" * 5 + "D" * 9 + "A" * 1 + "X" * 5, got
+
+
+def test_shift_edges_rejects_bad_parameters():
+    labels = shift_codes("HHHAAADDD")
+    for name in ("team", "into_dead", "out_of_dead"):
+        for bad in (True, np.True_, 1.5, 3.0, 251, -251, np.nan, np.inf, "3", None):
+            expect_error(ValueError, lambda: shift_labels(labels, **{name: bad}), "shift_edges", name)
+        # The largest shift is accepted either way, as is a whole number from numpy or from a notebook sweep.
+        for good in (250, -250, np.int64(7), np.int8(-7)):
+            shift_labels(labels, **{name: good})
+
+
+def test_shift_edges_apply_rejects_bad_arguments():
+    from pipeline.refine import shift_edges
+    labels = shift_codes("HHAADD")                                    # two boundaries
+    offsets, fixed = np.array([1, -1]), np.array([False, False])
+    shift_edges.apply(labels, offsets, fixed)
+    for bad in (offsets[:1], np.array([1.0, -1.0]), np.array([True, False]), np.zeros((2, 1), dtype=np.int64)):
+        expect_error(ValueError, lambda: shift_edges.apply(labels, bad, fixed), "shift_edges", "offsets")
+    for bad in (fixed[:1], np.array([0, 1]), np.zeros((2, 1), dtype=bool)):
+        expect_error(ValueError, lambda: shift_edges.apply(labels, offsets, bad), "shift_edges", "fixed")
+    expect_error(ValueError, lambda: shift_edges.boundaries(np.zeros((2, 2), dtype=np.int8)), "shift_edges", "1-D")
+    expect_error(ValueError, lambda: shift_edges.boundaries(np.array([0, 4], dtype=np.int8)), "shift_edges", "0-3")
+    expect_error(ValueError, lambda: shift_edges.boundaries(np.array([0.0, 1.0])), "shift_edges", "integer")
+    # Nothing to move: no boundary, no offsets, and a copy comes back.
+    flat = shift_codes("AAAA")
+    got = shift_edges.apply(flat, np.zeros(0, dtype=np.int64), np.zeros(0, dtype=bool))
+    assert got.tobytes() == flat.tobytes() and got is not flat and got.dtype == np.int8
+
+
+def test_shift_edges_accepts_read_only_labels():
+    labels = shift_codes("H" * 20 + "A" * 20 + "D" * 20)
+    labels.flags.writeable = False
+    before = labels.tobytes()
+    posterior = np.full((60, 3), 1.0 / 3.0)
+    posterior.flags.writeable = False
+    for parameters in ({"team": 4, "into_dead": -4}, {}):
+        result = shift_labels(labels, posterior=posterior, **parameters)
+        assert labels.tobytes() == before and len(result.labels) == 60, parameters
+    assert letters(shift_labels(labels, team=4, into_dead=-4).labels) == "H" * 24 + "A" * 12 + "D" * 24
 
 
 # -- output -----------------------------------------------------------------------------------------------------------
@@ -2640,6 +2891,46 @@ def test_run_end_to_end_synthetic_p06():
         assert set(result.evidence) == {"nearest_player", "ball_presence"}
         assert np.isnan(result.evidence["ball_presence"].home).all(), "ball_presence says nothing about the team"
         assert np.isnan(result.evidence["nearest_player"].alive).all(), "nearest_player says nothing about alive"
+
+
+SHIFT_REFINER = """
+[[refine]]
+kind = "shift_edges"
+team = 3
+into_dead = -2
+out_of_dead = 4
+"""
+
+
+def test_run_end_to_end_synthetic_shift():
+    """A config with a [[refine]] shift_edges writes a valid file, whose runs are the unrefined file's, moved."""
+    from pipeline import output
+    from pipeline.config import ConfigError, load_config
+    from pipeline.contracts import A, D, H, X
+    from pipeline.run import run
+    with tempfile.TemporaryDirectory() as root:
+        make_synthetic_bundle(root)
+        inputs = synthetic_inputs(root, graded=[(1, 50, 280), (2, 320, 560)])
+        plain = run(load_config(write_text(root, "plain.toml", P06_TRIAL_CONFIG)), inputs,
+                    os.path.join(root, "plain.csv"), log=quiet)
+        config = load_config(write_text(root, "trial.toml", P06_TRIAL_CONFIG + SHIFT_REFINER))
+        assert [component.kind for component in config.refine] == ["shift_edges"]
+        assert config.refine[0].params == {"team": 3, "into_dead": -2, "out_of_dead": 4}
+        out_path = os.path.join(root, "trial.csv")
+        result = run(config, inputs, out_path, log=quiet)
+        outside = np.ones(SYNTHETIC_FRAMES, dtype=bool)
+        outside[50:280] = outside[320:560] = False
+        assert (result.codes[outside] == X).all(), "frames outside the graded blocks must be X"
+        assert (result.codes[~outside] != X).all(), "the refiner never writes an X"
+        output.validate(out_path, SYNTHETIC_FRAMES, result.codes)
+        assert {int(code) for code in np.unique(result.codes[~outside])} == {H, A, D}, "a label never decoded"
+        # The refiner moved edges: not one run is gone or new, in either half, but the labels are not the same.
+        assert not np.array_equal(result.codes, plain.codes), "the shift changed nothing"
+        for start, stop in ((50, 280), (320, 560)):
+            assert run_labels(result.codes[start:stop]) == run_labels(plain.codes[start:stop]), (start, stop)
+        # A misspelt parameter is refused when the config loads, before any data does.
+        typo = write_text(root, "typo.toml", P06_TRIAL_CONFIG + SHIFT_REFINER + "teams = 1\n")
+        expect_error(ConfigError, lambda: load_config(typo), "teams", "shift_edges")
 
 
 def test_run_file_scope_equals_baseline_script():
