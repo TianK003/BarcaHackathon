@@ -648,19 +648,20 @@ def test_kinematics_window_mean_matches_a_loop():
     blocks = [(5, 30), (40, 41), (50, 110)]
     values = rng.normal(size=n)
     values[rng.random(n) < 0.2] = np.nan
-    valid = ~np.isnan(values) & (rng.random(n) < 0.8)
+    valid = rng.random(n) < 0.8      # some valid frames carry NaN: a track's speed on a one-frame run is such a value
     for before in (0, 3, 25):
         for after in (0, 3, 25):
             reference = np.full(n, np.nan)
             for start, stop in blocks:
                 for t in range(start, stop):
                     low, high = max(start, t - before), min(stop, t + after + 1)
-                    window = [v for v, ok in zip(values[low:high], valid[low:high]) if ok]
+                    window = [v for v, ok in zip(values[low:high], valid[low:high]) if ok and not np.isnan(v)]
                     if window:
                         reference[t] = sum(window) / len(window)
             got = kinematics.window_mean(values, valid, blocks, before, after)
             assert np.array_equal(np.isnan(got), np.isnan(reference)), (before, after)
             assert np.nanmax(np.abs(got - reference)) < 1e-12, (before, after)
+    assert (valid & np.isnan(values)).any() and not np.isnan(got[60:100]).all(), "no NaN rode in on a valid frame"
     expect_error(ValueError, lambda: kinematics.window_mean(values, valid, blocks, -1, 0), "kinematics", "before")
 
 
