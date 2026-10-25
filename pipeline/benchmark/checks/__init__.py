@@ -47,6 +47,10 @@ module of its topic:
                  threads, the folds that exclude the held-out match, no truth in the features, the JSON artifact
                  (exact, LF, bounded), the logistic reference's bookkeeping, the rule values' rounding, and --verify
                  (synthetic only)
+    conventions.py
+                 the conventions instrument: the window rule against a plain loop, the detectors on hand-built
+                 tracking, that the DFL mode reads the truth beside its inputs, that the public mode prints
+                 aggregates and no transition frame, the bootstrap of the gap (synthetic only)
     harness.py   the harness itself: what it collects, how it reports NOT RUN, the console set-up, and that no check
                  module imports another one
     common.py    what several modules share, and no checks of its own: the synthetic DFL match, the random one
@@ -72,8 +76,8 @@ what two of them share goes to common.py (test_a_check_module_imports_no_other_c
 """
 
 from pipeline.benchmark.checks import (
-    calibration, cap, context, dead_ball, degrade, dfl, fidelity, harness, hazard, headroom, inputs, run, score,
-    sources, tracking, touch, truth)
+    calibration, cap, context, conventions, dead_ball, degrade, dfl, fidelity, harness, hazard, headroom, inputs, run,
+    score, sources, tracking, touch, truth)
 
 MODULES = (sources, dfl, truth, inputs, score, run, hazard, calibration, degrade, cap, tracking, context, fidelity,
-           headroom, touch, dead_ball, harness)
+           headroom, touch, dead_ball, conventions, harness)
