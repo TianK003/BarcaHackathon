@@ -479,3 +479,22 @@ def test_held_out_report_is_counts_and_means_only():
     assert all(set(row) == {"bin", "count", "mean_predicted", "mean_observed"} for row in table)
     lines = trainer.render_report(report)
     assert any("M1" in line for line in lines) and any("reliability" in line.lower() for line in lines)
+
+
+def test_export_refuses_what_it_cannot_read():
+    """A preprocessor, a missing private attribute or a changed layout is a ValueError that says so, never a crash."""
+    import types
+    X, y = random_rows(1500, seed=12)
+    estimator = trainer.hgb_estimator(X, y, NAMES)
+    estimator._preprocessor = object()
+    expect_error(ValueError, lambda: trainer.export_hgb(estimator), "export_hgb", "preprocessor", "reordered")
+    estimator._preprocessor = None
+    del estimator._preprocessor                       # a version without the attribute is read as having none
+    assert trainer.export_hgb(estimator)["trees"]
+    for name in ("_baseline_prediction", "_predictors", "n_trees_per_iteration_"):
+        broken = trainer.hgb_estimator(X, y, NAMES)
+        delattr(broken, name)
+        expect_error(ValueError, lambda: trainer.export_hgb(broken), "export_hgb", "requirements-benchmark.txt")
+    odd = trainer.hgb_estimator(X, y, NAMES)
+    odd._predictors = [[types.SimpleNamespace(nodes=np.zeros(3, dtype=[("value", "f8")]))]]
+    expect_error(ValueError, lambda: trainer.export_hgb(odd), "export_hgb", "is_categorical")

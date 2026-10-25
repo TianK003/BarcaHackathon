@@ -235,21 +235,29 @@ def export_hgb(estimator):
     stores, and refuses anything it does not recognise (a categorical split, several trees per round, a field that is
     gone): the export is then wrong, not merely different.
     """
+    fields = {"value", "feature_idx", "num_threshold", "missing_go_to_left", "left", "right", "is_leaf",
+              "is_categorical"}
+    pinned = "install the version pinned in requirements-benchmark.txt"
     try:
-        if estimator._preprocessor is not None:
-            raise AttributeError("a preprocessor reorders the columns")
+        preprocessor = estimator._preprocessor
+    except AttributeError:
+        preprocessor = None                       # a version without the attribute has no reordering either
+    if preprocessor is not None:
+        raise ValueError("train_dead_ball: export_hgb: the estimator has a preprocessor ({!r}); feature_idx would "
+                         "refer to reordered columns, not to the 30 features; fit on a plain numeric array, or {}"
+                         .format(type(preprocessor).__name__, pinned))
+    try:
         baseline = float(np.asarray(estimator._baseline_prediction).ravel()[0])
         predictors = estimator._predictors
         single = estimator.n_trees_per_iteration_ == 1 and all(len(round_) == 1 for round_ in predictors)
-        fields = {"value", "feature_idx", "num_threshold", "missing_go_to_left", "left", "right", "is_leaf",
-                  "is_categorical"}
         known = single and all(fields <= set(round_[0].nodes.dtype.names) for round_ in predictors)
-    except (AttributeError, IndexError, TypeError):
-        known = False
+    except (AttributeError, IndexError, TypeError) as error:
+        raise ValueError("train_dead_ball: export_hgb: this scikit-learn does not store its fitted trees as the "
+                         "exporter reads them ({}: {}); {}".format(type(error).__name__, error, pinned)) from error
     if not known:
-        raise ValueError("train_dead_ball: this scikit-learn does not store its trees as the exporter expects "
-                         "(binary, one tree a round, nodes with {}); install the version pinned in "
-                         "requirements-benchmark.txt".format(", ".join(sorted(fields))))
+        raise ValueError("train_dead_ball: export_hgb: this scikit-learn does not store its trees as the exporter "
+                         "expects (binary, one tree a round, nodes with {}); {}".format(", ".join(sorted(fields)),
+                                                                                       pinned))
     trees = []
     for round_ in predictors:
         nodes = round_[0].nodes

@@ -596,7 +596,7 @@ scores are R009's.
 .venv/Scripts/python pipeline/benchmark/selftest.py --data   # + our own match (aggregates only; minutes)
 ```
 
-The synthetic run is 305 checks (P06's added 16 to the 272 of A05, and P05's trainer 17 to the 288 after them). Its
+The synthetic run is 306 checks (P06's added 16 to the 272 of A05, and P05's trainer 18 to the 288 after them). Its
 time, 49 to 115 s, is as of A05 and not measured again. `--dfl` and `--data` are as of A05 (2026-10-23, `fdc5eae`),
 when the synthetic run was 272 checks: `--dfl` added 16 and `--data` 7, and all of them (295 checks then) took 949 s
 (15 min 49 s) with the seven DFL caches and the Calibration rebuilt after an edit to `dfl.py` and `calibration.py`.
