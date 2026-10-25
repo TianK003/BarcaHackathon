@@ -70,7 +70,9 @@ lead and not a measurement. What to do:
 - do not read a timing parameter off DFL as ours (a back-dating, a `D` onset, a threshold on the model's alive): the
   model and DFL's flag agree to a frame out of fold (+1 and 0 frames), and that says nothing about our truth;
 - before shifting any edge, or adding a feature that places one, read A11 for where our truth looks different and R012
-  for what our pipeline's own latency is at those 20 changes, and shift only by the rule declared for `shift_edges`;
+  for what our pipeline's own latency is (on DFL and at those 20 changes) and which shift the rule adopted (the
+  pipeline's own lag, 1 to 2 frames, and no gap to our convention), and shift only by the rule declared for
+  `shift_edges`;
 - a person can watch the 20 changes on the tactical video (`conventions.py public`, A11's "How a person can extend
   it") to see whether `D` begins at the line, the whistle or the stoppage, and what the flip of a team change is.
 

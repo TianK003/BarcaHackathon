@@ -1,0 +1,58 @@
+# P02 on top of P04 + P05 + P07: the edge shift R012 learned by its declared rule, applied after the decoder (R012).
+#
+#   python pipeline/run.py pipeline/configs/p02_shift.toml --score    # -> evaluation/results/p02_shift.csv
+#
+# This is R012's choice. R012 adopted it, so main.toml carries the same refiner; main.toml decides what we upload.
+#
+# Where the numbers come from. The evidence and the decoder are R011's `main.toml` verbatim (controlled_touch, the hgb
+# dead_ball_model, shape_possession at 0.2 on every graded frame, the hmm 4 / 32 / 25 / 25). The shift per type of
+# boundary is s_b + g, in frames, positive = the new label starts later:
+#   s_b, the pipeline's own lag: minus the median of (predicted - true) over DFL's matched changes (`tracking`, raw
+#     truth, 3 seeds, 7 matches; conventions.py latency): team +1, into_dead -2, out_of_dead 0. R012's guard kept it,
+#     because this config beats main.toml on `tracking` raw and no cell of {tracking, context} x {raw, coarse} loses
+#     more than 0.005 (the gains are +0.0000 to +0.0009 pooled spellF1, inside noise).
+#   g, the gap to our truth's convention, read from the public window by the declared rule (conventions.py shift):
+#     0 for every type, because no type clears all three of its conditions (a median of 3 frames or more, a 90%
+#     interval that excludes 0, and every leave-one-out median of the same sign), on 1 to 4 matched public changes each.
+# So the totals are s_b alone, and this file's evidence, decoder and refiner are those of the guard's
+# pipeline/benchmark/configs/p02/p02_sb.toml. No constant comes from the public window's score (docs/traps.md T01).
+
+description = "P02 (R012): controlled_touch 2.0 m / 6.0 m/s / 3 frames / hold 0.55 (confidence 0.91) + dead_ball_model (hgb, pipeline/models/dead_ball_hgb.json) at weight 1.0 + shape_possession (hgb, pipeline/models/shape_possession_hgb.json) at weight 0.2, scope all, min_prob 0.02, hmm 4/32/25/25, decoded per half, then shift_edges team +1 / into_dead -2 / out_of_dead 0 frames (the pipeline's own lag on DFL, g = 0)."
+seed = 0
+scope = "halves"
+
+[[evidence]]
+kind = "controlled_touch"
+radius = 2.0                                  # metres: the nearest player must be this close
+max_rel_speed = 6.0                           # m/s: and move with the ball
+min_frames = 3                                # an episode shorter than this is dropped
+confidence = 0.91                             # touch_stats.py: floor of the pooled agreement to a hundredth (91.9%)
+hold = 0.55                                   # the weak vote of the last team between episodes; 0.5 = off
+
+[[evidence]]
+kind = "dead_ball_model"
+weight = 1.0
+model = "pipeline/models/dead_ball_hgb.json"  # relative to the repo root
+
+[[evidence]]
+kind = "shape_possession"
+weight = 0.2                                          # an exponent on the source's likelihood (R011's choice)
+model = "pipeline/models/shape_possession_hgb.json"   # relative to the repo root; BAR-ATH has no fold, so `full`
+scope = "all"                                         # "gaps": ball missing only; "all": every graded frame
+min_prob = 0.02                                       # home is clipped to [0.02, 0.98]
+
+# Exactly one decoder (pipeline/decode/). Every key but kind is a keyword argument.
+[decoder]
+kind = "hmm"
+switch_team = 4                               # nats a change of team (H <-> A) costs
+switch_dead = 32                              # nats a change into or out of D costs
+min_possession = 25                           # frames: no run of H or A shorter than this (1 is no minimum)
+min_dead = 25                                 # frames: no run of D shorter than this (1 is no minimum)
+
+# R012's shift. A positive value moves the new label later, in frames; a change of label next to an X or at a kick-off
+# never moves (pipeline/refine/shift_edges.py).
+[[refine]]
+kind = "shift_edges"
+team = 1
+into_dead = -2
+out_of_dead = 0
