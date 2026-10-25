@@ -1794,7 +1794,7 @@ def test_dead_ball_rules_rejects_bad_parameters():
 
 
 def test_features_speed():
-    from pipeline.evidence import play_features
+    from pipeline.evidence import kinematics, play_features
     rng = np.random.default_rng(9)
     n, slots = 180_000, 46
     players = rng.random((n, slots, 2))
@@ -1805,10 +1805,13 @@ def test_features_speed():
     inputs.kickoffs = {}
     inputs.atd.players_present                      # the Atd's own cached masks are not this module's cost
     inputs.atd.ball_present
+    kinematics.ball_track(inputs)                   # the tracks have their own check (test_kinematics_speed)
+    kinematics.player_track(inputs)
     started = time.perf_counter()
     play_features.features(inputs)
     elapsed = time.perf_counter() - started
-    print("      features speed: 140,000 graded frames x {} slots (tracks included) in {:.2f} s".format(slots, elapsed))
+    print("      features speed: 140,000 graded frames x {} slots (tracks built beforehand) in {:.2f} s".format(
+        slots, elapsed))
     assert elapsed < 3.0, "{:.2f} s for 140,000 frames x 46 slots (the budget is 3 s)".format(elapsed)
 
 

@@ -71,7 +71,7 @@ _MEMO = weakref.WeakKeyDictionary()
 
 
 def features(inputs):
-    """(names, X): FEATURE_NAMES and the (n, 30) float64 feature matrix of `inputs`, read-only, remembered per object."""
+    """(names, X): FEATURE_NAMES and the (n, 30) float64 feature matrix of `inputs`, read-only, memoised per object."""
     cached = _MEMO.get(inputs)
     if cached is None:
         cached = _MEMO[inputs] = (FEATURE_NAMES, _build(inputs))

@@ -302,7 +302,8 @@ every duel.
 
 ### P05 — A real dead-ball detector
 
-**Status: doing (Tian).** Task 3 (features, rule source) is in; the measurement of the rule values and the classifier come next.
+**Status: doing (Tian).** The play features and the rule source are in; the measurement of the rule values and the
+classifier come next.
 
 **Why.** Fact 4. Every stoppage we miss merges two possessions, and every spurious one splits a possession.
 
