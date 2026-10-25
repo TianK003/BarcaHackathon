@@ -1300,6 +1300,518 @@ def test_hmm_posterior_off_by_default():
     assert posterior is not None and posterior.shape == (30, 3)
 
 
+# -- dead ball (P05) --------------------------------------------------------------------------------------------------
+#
+# Hand-built scenes, in metres on the default 105.3 x 68.0 pitch (centre spot (52.65, 34), penalty spots (11, 34) and
+# (94.3, 34), corners at the four corners). The Atd's own speed channels are NaN in every scene: nothing here may read
+# them.
+
+PLAY_NAMES = (
+    "ball_missing", "ball_outside_m", "ball_speed", "ball_still_s", "ball_spot_m", "ball_in_goal_area", "since_seen_s",
+    "until_seen_s", "last_outside_m", "last_speed", "next_outside_m", "next_spot_m", "n_present", "speed_mean",
+    "speed_p90", "slow_share", "speed_mean_past4", "speed_mean_future4", "slow_share_c1", "slow_share_c4",
+    "slow_share_c10", "speed_mean_c10", "own_half_share", "centre_player_m", "box_crowd", "corner_player_m",
+    "outside_player_m", "goal_area_players", "team_gap_m", "spread_m")
+PLAY_PITCH = (105.3, 68.0)
+PLAY_COLUMN = {name: index for index, name in enumerate(PLAY_NAMES)}
+
+
+def play_inputs(players_m, ball_m, teams=None, graded=None, kickoffs=None, pitch=PLAY_PITCH):
+    """A stand-in Inputs over positions given in metres: players_m (n, S, 2) and ball_m (n, 2), NaN where absent."""
+    from pipeline.inputs.atd_cache import Atd
+    players_m, ball_m = np.asarray(players_m, dtype=np.float64), np.asarray(ball_m, dtype=np.float64)
+    n, slots = players_m.shape[:2]
+    scale = np.array(pitch)
+    teams = (np.arange(slots) % 2) if teams is None else np.asarray(teams)
+    atd = Atd(players_xy=players_m / scale, players_speed=np.full((n, slots), np.nan), ball_xy=ball_m / scale,
+              ball_speed=np.full(n, np.nan), slot_team=teams.astype(np.int8))
+    inputs = kinematics_inputs(atd, graded or [(1, 0, n)], pitch=pitch)
+    inputs.kickoffs = dict(kickoffs or {})
+    return inputs
+
+
+def play_columns(inputs, *names):
+    from pipeline.evidence import play_features
+    got_names, X = play_features.features(inputs)
+    assert got_names == PLAY_NAMES
+    return [X[:, PLAY_COLUMN[name]] for name in names]
+
+
+def nobody(n, slots=1):
+    return np.full((n, slots, 2), np.nan)
+
+
+def nothing(n):
+    return np.full((n, 2), np.nan)
+
+
+def walkers(n, speed, starts, direction=(1.0, 0.0), fps=25):
+    """(n, S, 2) metres: slot s starts at starts[s] and moves at `speed` m/s along the unit vector `direction`."""
+    starts = np.asarray(starts, dtype=np.float64)
+    step = speed / fps * np.asarray(direction, dtype=np.float64)
+    return starts[None, :, :] + np.arange(n)[:, None, None] * step
+
+
+def kickoff_formation(n, home_left=True, others_speed=0.0):
+    """22 slots (0-10 home, 11-21 away): home in x 12-50 and away in x 56-94 (swapped ends if not home_left), slot 0
+    on the centre line 0.45 m from the centre spot and still, the rest moving along y at `others_speed`.
+    Returns (players_m, teams)."""
+    xs_home, xs_away = np.linspace(12, 50, 10), np.linspace(56, 94, 11)
+    ys = np.linspace(12, 20, 11)
+    home = np.stack([np.concatenate(([52.2], xs_home)), np.concatenate(([34.0], ys[:10]))], axis=1)
+    away = np.stack([xs_away, ys], axis=1)
+    if not home_left:
+        home[:, 0], away[:, 0] = PLAY_PITCH[0] - home[:, 0], PLAY_PITCH[0] - away[:, 0]
+    starts = np.concatenate([home, away])
+    players = walkers(n, others_speed, starts, direction=(0.0, 1.0))
+    players[:, 0] = starts[0]
+    return players, np.array([0] * 11 + [1] * 11)
+
+
+def test_features_shape_and_names():
+    from pipeline.evidence import play_features
+    assert play_features.FEATURE_NAMES == PLAY_NAMES and len(PLAY_NAMES) == 30
+    assert play_features.FEATURE_VERSION == 1
+    rng = np.random.default_rng(1)
+    atd = kinematics_atd(rng.random((300, 4, 2)), rng.random((300, 2)))
+    inputs = kinematics_inputs(atd, [(1, 50, 120), (2, 200, 250)])
+    names, X = play_features.features(inputs)
+    assert names == PLAY_NAMES and X.shape == (300, 30) and X.dtype == np.float64
+    outside = np.ones(300, dtype=bool)
+    outside[50:120] = outside[200:250] = False
+    assert np.isnan(X[outside]).all(), "rows outside the graded blocks must be all NaN"
+    assert not np.isnan(X[~outside][:, PLAY_COLUMN["n_present"]]).any()
+    assert not np.isnan(X[~outside][:, PLAY_COLUMN["ball_missing"]]).any()
+
+
+def test_features_hand_scenes():
+    # a ball 2 m beyond the touchline
+    n = 100
+    outside, missing = play_columns(play_inputs(nobody(n), np.tile([50.0, -2.0], (n, 1))), "ball_outside_m",
+                                    "ball_missing")
+    assert np.allclose(outside, 2.0) and not missing.any()
+
+    # a ball still on the corner point: the still run grows, is capped at 30 s, and the spot is under the ball
+    n = 900
+    still, spot, speed, goal = play_columns(play_inputs(nobody(n), np.zeros((n, 2))), "ball_still_s", "ball_spot_m",
+                                            "ball_speed", "ball_in_goal_area")
+    assert np.allclose(spot, 0.0) and np.allclose(speed, 0.0)
+    assert np.isclose(still[0], 1 / 25) and np.isclose(still[74], 3.0) and np.isclose(still[749], 30.0)
+    assert np.allclose(still[750:], 30.0), "ball_still_s must be capped at 30 s"
+    assert np.allclose(goal, 0.0), "the corner point is not in a goal area"
+    moving = play_columns(play_inputs(nobody(60), np.stack([np.linspace(30, 45, 60), np.full(60, 20.0)], axis=1)),
+                          "ball_still_s")[0]
+    assert np.allclose(moving, 0.0), "a moving ball has no still run"
+
+    # a ball gap: visible 5-9 (outside, 10 m/s), missing 10-39, visible 40-59 (still, inside), missing 60-69
+    n = 70
+    ball = np.full((n, 2), np.nan)
+    ball[5:10] = np.stack([50.0 + 0.4 * np.arange(5), np.full(5, -1.0)], axis=1)
+    ball[40:60] = [10.0, 20.0]
+    cols = play_columns(play_inputs(nobody(n), ball), "ball_missing", "since_seen_s", "until_seen_s",
+                        "last_outside_m", "last_speed", "next_outside_m", "next_spot_m", "ball_in_goal_area")
+    missing, since, until, last_out, last_speed, next_out, next_spot, goal = cols
+    assert np.isnan(since[:5]).all() and np.isclose(since[5], 0.0) and np.isclose(since[25], 16 / 25)
+    assert np.isclose(until[2], 3 / 25) and np.isclose(until[25], 15 / 25) and np.isclose(until[45], 0.0)
+    assert np.isnan(until[60:]).all() and np.isclose(since[65], 6 / 25)
+    assert np.isnan(last_out[:5]).all() and np.allclose(last_out[5:40], 1.0) and np.allclose(last_out[40:], -10.0)
+    assert np.allclose(last_speed[5:40], 10.0) and np.allclose(last_speed[40:], 0.0)
+    assert np.allclose(next_out[:10], 1.0) and np.allclose(next_out[10:60], -10.0) and np.isnan(next_out[60:]).all()
+    assert np.allclose(next_spot[10:60], np.hypot(1.0, 14.0)), "the nearest spot of (10, 20) is the penalty spot"
+    assert missing[:5].all() and not missing[5:10].any() and missing[10:40].all() and missing[60:].all()
+    assert np.isnan(goal[:5]).all() and goal[5] == 0.0
+    # since_seen and until_seen are capped at 60 s
+    n = 2000
+    ball = np.full((n, 2), np.nan)
+    ball[0] = ball[n - 1] = [30.0, 30.0]
+    since, until = play_columns(play_inputs(nobody(n), ball), "since_seen_s", "until_seen_s")
+    assert np.isclose(since[1990], 60.0) and np.isclose(until[10], 60.0) and np.isclose(since[500], 20.0)
+    # the goal area is 5.5 m deep and 18.32 m wide, centred on each goal
+    ball = np.array([[3.0, 34.0], [3.0, 43.0], [3.0, 44.0], [6.0, 34.0], [100.0, 30.0], [99.0, 20.0]])
+    goal = play_columns(play_inputs(nobody(6), ball), "ball_in_goal_area")[0]
+    assert goal.tolist() == [1.0, 1.0, 0.0, 0.0, 1.0, 0.0]
+
+    # everyone walking: slow_share 1; everyone running: 0
+    n = 200
+    starts = np.stack([np.linspace(10, 90, 8), np.linspace(10, 60, 8)], axis=1)
+    walking = play_inputs(walkers(n, 1.0, starts), nothing(n))
+    slow, mean, p90, present, c1 = play_columns(walking, "slow_share", "speed_mean", "speed_p90", "n_present",
+                                                "slow_share_c1")
+    assert np.allclose(slow, 1.0) and np.allclose(mean, 1.0) and np.allclose(p90, 1.0) and np.allclose(present, 8)
+    assert np.allclose(c1, 1.0)
+    running = play_columns(play_inputs(walkers(n, 5.0, starts, direction=(0.0, 1.0)), nothing(n)), "slow_share",
+                           "speed_mean")
+    assert np.allclose(running[0], 0.0) and np.allclose(running[1], 5.0)
+
+    # a kick-off formation
+    players, teams = kickoff_formation(100)
+    own, centre, corner, gap = play_columns(play_inputs(players, nothing(100), teams=teams),
+                                            "own_half_share", "centre_player_m", "corner_player_m", "team_gap_m")
+    assert np.allclose(own, 1.0) and np.allclose(centre, 0.45), (own[0], centre[0])
+    assert np.all(gap > 20.0) and np.all(corner > 5.0)
+
+    # a crowd in a box: 7 slots in the left penalty area (2 of them in the goal area), 3 in the right one (1 in its
+    # goal area), one beyond the touchline and 2 in midfield
+    xs = [3, 4, 8, 10, 12, 14, 16, 90, 95, 101, 30, 60, 40]
+    ys = [34, 30, 20, 40, 50, 25, 34, 20, 40, 34, 34, 34, -1.5]
+    box = play_inputs(np.tile(np.stack([xs, ys], axis=1)[None].astype(float), (30, 1, 1)), nothing(30))
+    crowd, goal_players, outside_p = play_columns(box, "box_crowd", "goal_area_players", "outside_player_m")
+    assert np.allclose(crowd, 7) and np.allclose(goal_players, 3), (crowd[0], goal_players[0])
+    assert np.allclose(outside_p, 1.5)
+    nobody_there = play_columns(play_inputs(nobody(10, 3), nothing(10)), "box_crowd", "n_present", "centre_player_m",
+                                "speed_mean", "own_half_share", "team_gap_m")
+    assert np.allclose(nobody_there[0], 0.0) and np.allclose(nobody_there[1], 0.0)
+    assert all(np.isnan(column).all() for column in nobody_there[2:])
+
+
+def test_features_see_only_their_block():
+    from pipeline.evidence import play_features
+    rng = np.random.default_rng(4)
+    n, graded = 500, [(1, 0, 200), (2, 250, 450)]
+    players = rng.random((n, 6, 2)) * PLAY_PITCH
+    ball = rng.random((n, 2)) * PLAY_PITCH
+    players[rng.random((n, 6)) < 0.3] = np.nan
+    ball[rng.random(n) < 0.3] = np.nan
+    base = play_features.features(play_inputs(players, ball, graded=graded))[1]
+    players2, ball2 = players.copy(), ball.copy()
+    players2[250:450] = rng.random((200, 6, 2)) * PLAY_PITCH
+    ball2[250:450] = rng.random((200, 2)) * PLAY_PITCH
+    players2[200:250] = 7.0       # frames between the blocks change nothing either
+    ball2[200:250] = 7.0
+    changed = play_features.features(play_inputs(players2, ball2, graded=graded))[1]
+    assert np.array_equal(base[:200], changed[:200], equal_nan=True), "block 2 leaked into block 1"
+    assert np.isnan(changed[200:250]).all() and np.isnan(changed[450:]).all()
+    assert not np.array_equal(base[250:450], changed[250:450], equal_nan=True)
+    moved = players.copy()
+    moved[:200] = rng.random((200, 6, 2)) * PLAY_PITCH     # and block 1 into block 2
+    again = play_features.features(play_inputs(moved, ball, graded=graded))[1]
+    assert np.array_equal(base[250:450], again[250:450], equal_nan=True), "block 1 leaked into block 2"
+
+
+def test_own_half_follows_each_block():
+    first, teams = kickoff_formation(100, home_left=True)
+    second, _ = kickoff_formation(100, home_left=False)
+    inputs = play_inputs(np.concatenate([first, second]), nothing(200), teams=teams,
+                         graded=[(1, 0, 100), (2, 100, 200)])
+    own, centre = play_columns(inputs, "own_half_share", "centre_player_m")
+    assert np.allclose(own, 1.0), "teams that swap ends keep their own half in each block"
+    assert np.allclose(centre, 0.45)
+    # the same two stretches in ONE block: one pair of ends for the whole block, so one stretch is in the wrong half
+    one = play_inputs(np.concatenate([first, second]), nothing(200), teams=teams, graded=[(1, 0, 200)])
+    assert play_columns(one, "own_half_share")[0].min() < 0.5
+
+
+def play_reference(inputs):
+    """Every feature with plain loops, from the tracks' own positions and speeds (kinematics is checked elsewhere)."""
+    import math
+    from pipeline.evidence import kinematics
+    ball, players = kinematics.ball_track(inputs), kinematics.player_track(inputs)
+    length, width = inputs.pitch
+    fps = inputs.fps
+    team_of = [int(team) for team in inputs.atd.slot_team]
+    n, slots = players.present.shape
+    X = np.full((n, 30), np.nan)
+    spots = [(length / 2, width / 2), (11.0, width / 2), (length - 11.0, width / 2), (0.0, 0.0), (0.0, width),
+             (length, 0.0), (length, width)]
+
+    def beyond(x, y):
+        bx, by = max(-x, x - length), max(-y, y - width)
+        if bx > 0 or by > 0:
+            return math.hypot(max(bx, 0.0), max(by, 0.0))
+        return max(bx, by)
+
+    def in_goal(x, y):
+        return abs(y - width / 2) <= 9.16 and (0 <= x <= 5.5 or length - 5.5 <= x <= length)
+
+    def in_box(x, y, left):
+        return abs(y - width / 2) <= 20.16 and (0 <= x <= 16.5 if left else length - 16.5 <= x <= length)
+
+    def window(values, t, start, stop, before, after):
+        chosen = [values[u] for u in range(max(start, t - before), min(stop, t + after + 1))
+                  if not math.isnan(values[u])]
+        return sum(chosen) / len(chosen) if chosen else math.nan
+
+    for _, start, stop in inputs.graded:
+        sums, counts = [0.0, 0.0], [0, 0]
+        for t in range(start, stop):
+            for s in range(slots):
+                if players.present[t, s]:
+                    sums[team_of[s]] += players.xy_m[t, s, 0]
+                    counts[team_of[s]] += 1
+        means = [sums[k] / counts[k] if counts[k] else math.nan for k in (0, 1)]
+        if counts[0] and counts[1]:
+            home_left = means[0] < means[1]
+        elif counts[0]:
+            home_left = means[0] < length / 2
+        elif counts[1]:
+            home_left = means[1] > length / 2
+        else:
+            home_left = True
+        speed_mean = [math.nan] * n
+        slow = [math.nan] * n
+        for t in range(start, stop):
+            row = X[t]
+            seen = bool(ball.visible[t])
+            row[0] = 0.0 if seen else 1.0
+            if seen:
+                x, y = ball.xy_m[t]
+                row[1] = beyond(x, y)
+                row[2] = ball.speed[t]
+                count = 0
+                for u in range(t, start - 1, -1):
+                    if ball.visible[u] and ball.speed[u] < 1.0:
+                        count += 1
+                    else:
+                        break
+                row[3] = min(count / fps, 30.0)
+                row[4] = min(math.hypot(x - sx, y - sy) for sx, sy in spots)
+                row[5] = 1.0 if in_goal(x, y) else 0.0
+            back = [u for u in range(t, start - 1, -1) if ball.visible[u]]
+            ahead = [u for u in range(t, stop) if ball.visible[u]]
+            if back:
+                u = back[0]
+                row[6] = min((t - u) / fps, 60.0)
+                row[8] = beyond(*ball.xy_m[u])
+                row[9] = ball.speed[u]
+            if ahead:
+                u = ahead[0]
+                row[7] = min((u - t) / fps, 60.0)
+                row[10] = beyond(*ball.xy_m[u])
+                row[11] = min(math.hypot(ball.xy_m[u, 0] - sx, ball.xy_m[u, 1] - sy) for sx, sy in spots)
+            here = [s for s in range(slots) if players.present[t, s]]
+            row[12] = len(here)
+            speeds = [players.speed[t, s] for s in here if not math.isnan(players.speed[t, s])]
+            if speeds:
+                speed_mean[t] = sum(speeds) / len(speeds)
+                slow[t] = sum(1 for value in speeds if value < 2.0) / len(speeds)
+                row[13], row[14], row[15] = speed_mean[t], np.percentile(speeds, 90), slow[t]
+            if here:
+                pos = [players.xy_m[t, s] for s in here]
+                own = 0
+                for s in here:
+                    px = players.xy_m[t, s, 0]
+                    defends_left = (team_of[s] == 0) == home_left
+                    own += (px <= length / 2 + 1.0) if defends_left else (px >= length / 2 - 1.0)
+                row[22] = own / len(here)
+                row[23] = min(math.hypot(px - length / 2, py - width / 2) for px, py in pos)
+                row[24] = max(sum(1 for px, py in pos if in_box(px, py, left)) for left in (True, False))
+                row[25] = min(math.hypot(px - cx, py - cy) for px, py in pos
+                              for cx, cy in spots[3:])
+                row[26] = max(beyond(px, py) for px, py in pos)
+                row[27] = sum(1 for px, py in pos if in_goal(px, py))
+            else:
+                row[24] = row[27] = 0.0
+            centroids, spreads = [], []
+            for team in (0, 1):
+                mine = [players.xy_m[t, s] for s in here if team_of[s] == team]
+                if mine:
+                    cx = sum(p[0] for p in mine) / len(mine)
+                    cy = sum(p[1] for p in mine) / len(mine)
+                    centroids.append((cx, cy))
+                    spreads.append(math.sqrt(sum((p[0] - cx) ** 2 + (p[1] - cy) ** 2 for p in mine) / len(mine)))
+            if len(centroids) == 2:
+                row[28] = math.hypot(centroids[0][0] - centroids[1][0], centroids[0][1] - centroids[1][1])
+                row[29] = sum(spreads) / 2
+        for t in range(start, stop):
+            row = X[t]
+            row[16] = window(speed_mean, t, start, stop, 4 * fps, 0)
+            row[17] = window(speed_mean, t, start, stop, 0, 4 * fps)
+            row[18] = window(slow, t, start, stop, fps, fps)
+            row[19] = window(slow, t, start, stop, 4 * fps, 4 * fps)
+            row[20] = window(slow, t, start, stop, 10 * fps, 10 * fps)
+            row[21] = window(speed_mean, t, start, stop, 10 * fps, 10 * fps)
+    return X
+
+
+def play_random_inputs(seed):
+    """A small random scene: two blocks, random-walk players of slow and fast slots, a ball that comes and goes."""
+    rng = np.random.default_rng(seed)
+    n, slots = 160, 6
+    graded = [(1, 10, 80), (2, 90, 150)]
+
+    def toggled(shape, rate):
+        flips = rng.random(shape) < rate
+        return (np.cumsum(flips, axis=0) + rng.integers(2, size=shape[1:])) % 2 == 0
+
+    walk = rng.choice([0.0002, 0.003], size=slots)
+    players = (rng.random((1, slots, 2)) * 1.1 - 0.05 + np.cumsum(rng.normal(size=(n, slots, 2)) * walk[None, :, None],
+                                                                   axis=0)) * PLAY_PITCH
+    players[~toggled((n, slots), 0.06)] = np.nan
+    start = [(0.0, 0.0), (0.5, 0.5), (0.1, 0.5), None, None][seed % 5]
+    start = rng.random(2) * 1.1 - 0.05 if start is None else np.array(start)
+    ball = (start + np.cumsum(rng.normal(size=(n, 2)) * rng.choice([0.00005, 0.0003]), axis=0)) * PLAY_PITCH
+    ball[~toggled((n,), 0.07)] = np.nan
+    teams = np.arange(slots) % 2 if seed % 3 else rng.integers(2, size=slots)
+    return play_inputs(players, ball, teams=teams, graded=graded)
+
+
+def test_features_match_a_loop():
+    from pipeline.evidence import play_features
+    for seed in range(50):
+        inputs = play_random_inputs(seed)
+        got = play_features.features(inputs)[1]
+        want = play_reference(inputs)
+        for index, name in enumerate(PLAY_NAMES):
+            assert np.allclose(got[:, index], want[:, index], rtol=1e-9, atol=1e-9, equal_nan=True), \
+                "seed {}: column {} differs, first at frame {}".format(
+                    seed, name, int(np.flatnonzero(~np.isclose(got[:, index], want[:, index], rtol=1e-9, atol=1e-9,
+                                                              equal_nan=True))[0]))
+
+
+def test_features_chunks_change_nothing():
+    from pipeline.evidence import play_features
+    inputs = play_random_inputs(11)
+    whole = play_features.features(inputs)[1]
+    saved = play_features.CHUNK
+    try:
+        for chunk in (1, 7, 64):
+            play_features.CHUNK = chunk
+            again = play_features._build(inputs)
+            assert np.array_equal(again, whole, equal_nan=True), chunk
+    finally:
+        play_features.CHUNK = saved
+
+
+def test_features_read_only_inputs():
+    from pipeline.evidence import play_features
+    inputs = play_random_inputs(7)
+    arrays = [inputs.atd.players_xy, inputs.atd.ball_xy, inputs.atd.slot_team]
+    saved = [array.copy() for array in arrays]
+    for array in arrays:
+        array.flags.writeable = False
+    names, X = play_features.features(inputs)
+    for array, copy in zip(arrays, saved):
+        assert np.array_equal(array, copy, equal_nan=True)
+    assert not X.flags.writeable, "features must hand out read-only arrays"
+    again_names, again = play_features.features(inputs)
+    assert again is X and again_names is names, "features is remembered per Inputs object"
+    other_names, other = play_features.features(play_random_inputs(8))
+    assert other is not X and not np.array_equal(other, X, equal_nan=True)
+
+
+RULE_VALUES = dict(alive_out=0.11, alive_still=0.22, alive_slow=0.33, alive_kickoff=0.44, alive_none=0.99)
+
+
+def rule_alive(inputs, **values):
+    from pipeline.contracts import RunContext, check_evidence
+    from pipeline.evidence import REGISTRY
+    evidence = REGISTRY["dead_ball_rules"](RunContext(inputs=inputs, seed=0), **dict(RULE_VALUES, **values))
+    check_evidence(evidence, len(inputs.atd.ball_xy))
+    assert np.isnan(evidence.home).all(), "dead_ball_rules has no opinion on who has the ball"
+    return evidence.alive
+
+
+def test_dead_ball_rules_triggers():
+    n = 100
+    walking = walkers(n, 1.0, np.stack([np.linspace(10, 90, 8), np.linspace(10, 60, 8)], axis=1))
+    # out: a ball 2 m beyond the touchline, moving
+    along = np.stack([20 + 0.4 * np.arange(n), np.full(n, -2.0)], axis=1)
+    assert np.allclose(rule_alive(play_inputs(nobody(n), along)), 0.11)
+    # a ball 0.4 m beyond is not out (the threshold is 0.5 m); nor does a moving ball trigger anything else
+    near = np.stack([20 + 0.4 * np.arange(n), np.full(n, -0.4)], axis=1)
+    assert np.allclose(rule_alive(play_inputs(nobody(n), near)), 0.99)
+    # still: 2 s (50 frames) at a restart spot, or on a line, or in a goal area; not in midfield
+    for where in ([52.65, 34.0], [30.0, 0.5], [3.0, 34.0], [94.3, 35.5]):
+        alive = rule_alive(play_inputs(nobody(n), np.tile(where, (n, 1))))
+        assert np.allclose(alive[:49], 0.99) and np.allclose(alive[49:], 0.22), where
+    assert np.allclose(rule_alive(play_inputs(nobody(n), np.tile([30.0, 20.0], (n, 1)))), 0.99)
+    # a ball that is missing is not still
+    assert np.allclose(rule_alive(play_inputs(nobody(n), nothing(n))), 0.99)
+    # slow: everyone walking
+    assert np.allclose(rule_alive(play_inputs(walking, nothing(n))), 0.33)
+    # kickoff: a kick-off formation whose slot at the centre stands and whose others run
+    players, teams = kickoff_formation(n, others_speed=5.0)
+    assert np.allclose(rule_alive(play_inputs(players, nothing(n), teams=teams)), 0.44)
+    # the minimum when several fire
+    assert np.allclose(rule_alive(play_inputs(players, along, teams=teams)), 0.11)
+    assert np.allclose(rule_alive(play_inputs(players, along, teams=teams), alive_out=0.6), 0.44)
+    still_ball = np.tile([52.65, 34.0], (n, 1))
+    alive = rule_alive(play_inputs(walking, still_ball))
+    assert np.allclose(alive[:49], 0.33) and np.allclose(alive[49:], 0.22)
+    alive = rule_alive(play_inputs(walking, still_ball), alive_still=0.5)
+    assert np.allclose(alive, 0.33)
+    # no opinion outside the graded blocks
+    inputs = play_inputs(np.concatenate([walking, walking]), nothing(2 * n), graded=[(1, 20, 80), (2, 120, 180)])
+    alive = rule_alive(inputs)
+    assert np.isnan(alive[:20]).all() and np.isnan(alive[80:120]).all() and np.isnan(alive[180:]).all()
+    assert np.allclose(alive[20:80], 0.33) and np.allclose(alive[120:180], 0.33)
+
+
+def test_dead_ball_pre_kickoff_is_dead():
+    from pipeline.evidence import play_features
+    n = 200
+    walking = walkers(n, 1.0, np.stack([np.linspace(10, 90, 8), np.linspace(10, 60, 8)], axis=1))
+    inputs = play_inputs(walking, nothing(n), graded=[(1, 0, 100), (2, 100, 200)], kickoffs={1: 40, 2: 150})
+    alive = rule_alive(inputs)
+    assert play_features.PRE_KICKOFF_ALIVE == 0.001
+    assert np.allclose(alive[:40], 0.001) and np.allclose(alive[100:150], 0.001)
+    assert np.allclose(alive[40:100], 0.33) and np.allclose(alive[150:], 0.33), "from the kick-off on, the rules decide"
+    mask = play_features.pre_kickoff_mask(inputs)
+    assert mask.shape == (n,) and mask.dtype == bool
+    assert mask[:40].all() and mask[100:150].all() and not mask[40:100].any() and not mask[150:].any()
+
+
+def test_dead_ball_pre_kickoff_needs_the_kickoff_in_its_block():
+    from pipeline.evidence import play_features
+    # the default synthetic bundle grades frames 0-600 while Inputs carries BAR-ATH's kick-offs (11185, 113742): the
+    # rule must stay silent, or every synthetic frame would count as before the kick-off
+    with tempfile.TemporaryDirectory() as root:
+        make_synthetic_bundle(root)
+        inputs = synthetic_inputs(root)
+        assert inputs.kickoffs == {1: 11185, 2: 113742}
+        assert not play_features.pre_kickoff_mask(inputs).any()
+        alive = rule_alive(inputs)
+        assert not np.any(alive == 0.001) and not np.isnan(alive[:600]).any()
+    n = 100
+    nobody_scene = (nobody(n), nothing(n))
+    # a kick-off at the block's first frame leaves nothing before it; one at its stop (or past it) is not inside it
+    for kickoffs in ({1: 0}, {1: 100}, {1: 500}, {1: -5}, {}):
+        inputs = play_inputs(*nobody_scene, graded=[(1, 0, 100)], kickoffs=kickoffs)
+        assert not play_features.pre_kickoff_mask(inputs).any(), kickoffs
+        assert np.allclose(rule_alive(inputs), 0.99), kickoffs
+    inputs = play_inputs(*nobody_scene, graded=[(1, 10, 100)], kickoffs={1: 11})
+    assert play_features.pre_kickoff_mask(inputs).sum() == 1 and play_features.pre_kickoff_mask(inputs)[10]
+    # the second half's kick-off lies in the first block only by accident of numbering: each half uses its own
+    inputs = play_inputs(np.full((200, 1, 2), np.nan), nothing(200), graded=[(1, 0, 100), (2, 100, 200)],
+                         kickoffs={1: 50, 2: 50})
+    mask = play_features.pre_kickoff_mask(inputs)
+    assert mask[:50].all() and not mask[50:].any()
+
+
+def test_dead_ball_rules_rejects_bad_parameters():
+    from pipeline.contracts import RunContext
+    from pipeline.evidence import REGISTRY
+    run = RunContext(inputs=None, seed=0)       # a bad parameter is refused before the inputs are touched
+    rules = REGISTRY["dead_ball_rules"]
+    for name in RULE_VALUES:
+        incomplete = {key: value for key, value in RULE_VALUES.items() if key != name}
+        expect_error(TypeError, lambda: rules(run, **incomplete), name)
+        for bad in (-0.1, 1.5, float("nan"), True, False, "0.5", None):
+            expect_error(ValueError, lambda: rules(run, **dict(RULE_VALUES, **{name: bad})), "dead_ball_rules", name)
+    expect_error(TypeError, lambda: rules(run, RULE_VALUES), "positional")
+    for edge in (0.0, 1.0, np.float64(0.25)):
+        rules(RunContext(inputs=play_inputs(nobody(5), nothing(5)), seed=0), **dict(RULE_VALUES, alive_none=edge))
+
+
+def test_features_speed():
+    from pipeline.evidence import play_features
+    rng = np.random.default_rng(9)
+    n, slots = 180_000, 46
+    players = rng.random((n, slots, 2))
+    players[rng.random((n, slots)) < 0.4] = np.nan
+    ball = rng.random((n, 2))
+    ball[rng.random(n) < 0.4] = np.nan
+    inputs = kinematics_inputs(kinematics_atd(players, ball), [(1, 5_000, 75_000), (2, 100_000, 170_000)])
+    inputs.kickoffs = {}
+    inputs.atd.players_present                      # the Atd's own cached masks are not this module's cost
+    inputs.atd.ball_present
+    started = time.perf_counter()
+    play_features.features(inputs)
+    elapsed = time.perf_counter() - started
+    print("      features speed: 140,000 graded frames x {} slots (tracks included) in {:.2f} s".format(slots, elapsed))
+    assert elapsed < 3.0, "{:.2f} s for 140,000 frames x 46 slots (the budget is 3 s)".format(elapsed)
+
+
 # -- refine -----------------------------------------------------------------------------------------------------------
 
 def test_config_refiner_registry_starts_empty():

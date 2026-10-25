@@ -35,7 +35,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P16](#p16--metricas-sample-games-in-our-ground-truth-providers-conventions) | Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing | boundary timing, grain | M | medium | idea |
 | [P03](#p03--one-command-deterministic-cached) | One-command, deterministic, cached pipeline | reproducibility | S–M | enabling | done → R001 |
 | [P04](#p04--sticky-ownership-from-controlled-touches) | Sticky ownership from controlled touches | facts 3, 5 | S | high | idea |
-| [P05](#p05--a-real-dead-ball-detector) | Dead-ball detector | fact 4 | M | high | idea |
+| [P05](#p05--a-real-dead-ball-detector) | Dead-ball detector | fact 4 | M | high | doing (Tian) |
 | [P06](#p06--global-decoding-per-half-hmm--hidden-semi-markov) | Global decoder (HMM / semi-Markov) per half | fact 5 | M | high | done → R006–R007, A10 |
 | [P07](#p07--possession-without-the-ball-team-shape-and-movement) | Possession without the ball: team shape | fact 1 | M | high, but only after P05: ~0 to this decoder without it at `margin` 0 (A10) | idea |
 | [P08](#p08--smart-tagging-as-soft-evidence) | Smart Tagging as soft evidence | facts 1, 4 | S | medium | idea |
@@ -301,6 +301,8 @@ every duel.
 - Calibrate r and k with P02/P01, not with the public score.
 
 ### P05 — A real dead-ball detector
+
+**Status: doing (Tian).** Task 3 (features, rule source) is in; the measurement of the rule values and the classifier come next.
 
 **Why.** Fact 4. Every stoppage we miss merges two possessions, and every spurious one splits a possession.
 
