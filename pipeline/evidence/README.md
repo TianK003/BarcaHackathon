@@ -149,11 +149,12 @@ refused), so the probability is already a likelihood and the decoder sets the cl
 everywhere: the shape of two teams is no evidence on whether the ball is in play.
 
 *Where it speaks.* Only on graded frames where at least one team has a present slot. With `scope = "gaps"`, the
-default, only where the ball is missing, because that is where nothing else says who has it and where ball-based
-evidence is better the rest of the time; `scope = "all"` also speaks where the ball is seen: R011 found it better than
-`gaps` at every weight on `tracking`, and `main.toml` uses it. A team that is present while the other is gone still
-gives an opinion (the absent team's columns are NaN, which the trees were fitted to handle). `home` is clipped to
-[`min_prob`, 1 − `min_prob`], 0.02 by default, since the decoder reads a probability as log(p / (1 − p)) nats a frame.
+default, only where the ball is missing, because that is where nothing else says who has it, and on the premise that
+ball-based evidence is better the rest of the time; `scope = "all"` also speaks where the ball is seen, and R011 found
+that premise wrong on `tracking`: `all` is better than `gaps` at every weight, and `main.toml` uses it. A team that is
+present while the other is gone still gives an opinion (the absent team's columns are NaN, which the trees were fitted
+to handle). `home` is clipped to [`min_prob`, 1 − `min_prob`], 0.02 by default, since the decoder reads a probability
+as log(p / (1 − p)) nats a frame.
 The trainer and the committed model are separate steps of P07: a config that names a model file that is missing, or
 one that is not shape_features', fails on load with the trainer's command.
 

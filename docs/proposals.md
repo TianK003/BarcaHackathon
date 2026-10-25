@@ -42,7 +42,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P09](#p09--camera-aim-as-a-coarse-ball-zone-prior) | Camera aim as a coarse ball-zone prior | fact 1 | S | low–medium | idea |
 | [P10](#p10--referee-whistle-from-the-audio-track) | Referee whistle from the audio track | fact 4 | S–M | medium (audio confirmed, A04) | idea |
 | [P11](#p11--touch-and-pass-events-to-place-boundaries) | Touch and pass events to place boundaries | fact 5 | M–L | medium–high | idea |
-| [P12](#p12--metric-aware-post-processing) | Metric-aware post-processing | fact 5 | S | medium | idea |
+| [P12](#p12--metric-aware-post-processing) | Metric-aware post-processing | fact 5 | S | medium | partly done → R012 (the shift; see its list for the rest) |
 | [P13](#p13--learn-from-external-labelled-tracking-data) | Pre-train on external labelled tracking data | facts 1, 2 | L (M on top of P01) | medium–high | idea |
 | [P14](#p14--recover-the-ball-from-the-video) | Recover the ball from the video | facts 1, 2 | L | medium–high, uncertain | idea |
 | [P15](#p15--broadcast-tracking-as-a-second-opinion) | Broadcast tracking as a second opinion | facts 1, 4 | L | medium | idea |
@@ -183,9 +183,10 @@ of possessions moved the other way on BAR-ATH (R011).
    types with a clear next team (a corner, a goal kick), it is a small source for `home` after a stoppage; if not, drop
    it.
 
-What the evidence does not support is a second round on P07's weight or features or on the shift's three integers: R011
-chose by its rule and added nothing after its results, and each gain is measured on DFL alone, at a size the benchmark
-cannot carry over to our match.
+What the evidence does not support is a second round on P07's features, on the shift's three integers or on P07's
+weight alone (item 1 may revisit the weight, as a second axis of the decoder's re-check, under a protocol declared
+first): R011 chose by its rule and added nothing after its results, and each gain is measured on DFL alone, at a size
+the benchmark cannot carry over to our match.
 
 ---
 
@@ -568,7 +569,8 @@ The broadcast audio has whistles too, but it is not aligned (P15).
 **What.**
 - Drop possession blips shorter than m frames, and `D` blips inside possessions. Validate m: the public GT has
   genuine 0.76 s and 1.32 s possessions.
-- Shift transitions by the measured mean latency.
+- Shift transitions by the measured mean latency. *Done as `shift_edges` (P02, R012): the pipeline's own median lag on
+  DFL, team +1, into `D` -2, out of `D` 0 frames.*
 - Write explicit `D`, never `X`, before kick-offs and once the ball is out ([T02](traps.md)).
 - Use `X` only inside possessions where the label is genuinely uncertain. It is free on spellF1 and only touches the
   macroF1 tie-break.

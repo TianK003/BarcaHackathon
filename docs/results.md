@@ -981,8 +981,9 @@ one that the label flipped first. The event taken is the nearest to the change, 
 side, bounded by the neighbouring changes of any type (or the block's edges) so that a change is never matched to
 another one's event; none in that range is "not found". The detectors run over the graded halves of each match and the
 lags are read at the changes only: on BAR-ATH they find 1,189 `touch_start` episodes, 81 `line_out`, 149 `ball_lost`, 71
-`ball_moves`, 248 `model_dead`, 247 `model_alive` and 59 `tag_start` and `tag_end` events in the graded halves, of which
-the public window's changes see only those within 5 s. On DFL the same code runs on the tracking as the pipeline sees it
+`ball_moves`, 248 `model_dead` and 247 `model_alive` events in the graded halves, and 59 `tag_start` and 59 `tag_end`
+(every `SET PIECES` interval of the match's Smart Tagging: the tags are not clipped to the graded halves), of which the
+public window's changes see only those within 5 s. On DFL the same code runs on the tracking as the pipeline sees it
 under `tracking` v3 and no flag (`MatchInputs`), and the truth is read beside it only to find the changes. `model_dead`
 and `model_alive` are scored on DFL by the model fitted without that match (out of fold, by the code's rule), and on
 BAR-ATH by the one fitted on all seven.
@@ -1079,10 +1080,10 @@ have no gap.
   1.48 s), a gap of -26 and -28 frames. The model's alive crosses 0.5 upward 36.5 frames (1.46 s) before our truth turns
   alive on 2 of 4, against 0 frames on DFL (a gap of -36.5). Both detectors put our `D`'s end later than DFL's flag
   would be on the same events, by 1.0 to 1.5 s, and both intervals exclude 0 under both truths, on 4 and 2 changes.
-  `ball_moves` finds nothing on any of the 4 (on DFL its flag turns alive a constant 3 frames after the ball starts to
-  move: p25 = p75 = -3.0, and every match's median is -3.0), so the sharper question, whether our `D` ends at the kick,
-  is not answered. Why our tracking shows no ball that is still for 25 frames and then moves near these restarts is not
-  explained here (a ball that is not visible, or not still).
+  `ball_moves` finds nothing on any of the 4 (on DFL its flag turns alive 3 frames after the ball starts to move in at
+  least half of the changes, p25 = p75 = -3.0, and every match's median is -3.0), so the sharper question, whether our
+  `D` ends at the kick, is not answered. Why our tracking shows no ball that is still for 25 frames and then moves near
+  these restarts is not explained here (a ball that is not visible, or not still).
 - **Taken together, the four `D`-edge gaps put our stoppages longer than DFL's flag would draw them.** Relative to
   DFL, on the same kind of tracking events, `D` starts 1.5 s earlier and ends 1.0 to 1.5 s later: about 2.5 to 3 s a
   stoppage (the sum of the gaps above, 64 to 76.5 frames, both truths). The signs differ between the start and the end,
@@ -1134,8 +1135,8 @@ against the ball and the whistle (below).
   `line_out` or `model_dead` on our tracking can be the tracker's, not the truth's. The model was fitted on DFL's flag,
   and its lag there, +1 and 0 frames out of fold, shows it reproduces DFL's timing; whether it does so on ours is what
   its found shares (75% and 50% against 93% and 96%) put in doubt (T39).
-- **`tag_start` and `tag_end` exist only on BAR-ATH**, so they have no gap; Smart Tagging's tag values are our
-  vocabulary and no LLM reads them, so no restart type is classified here (that stays with a person, below).
+- **`tag_start` and `tag_end` exist only on BAR-ATH**, so they have no gap; Smart Tagging's tag values are match data,
+  which no LLM may read, so no restart type is classified here (that stays with a person, below).
 - **The DFL side is pooled over three seeds**, so its `n` is three times the changes, and its medians are taken as fixed
   numbers in the gap's interval.
 
@@ -4563,6 +4564,13 @@ evaluation/run_evaluation.py --results <a folder outside the repository holding 
 out-of-fold file and R011's `main.csv`> --no-detail` (they are scored side by side), and `python pipeline/run.py
 pipeline/configs/main.toml` twice, after the switch. Every log ends `EXIT=0`.
 
+A later change of the tooling (the final review of P07 and P02): the latency files that these commands wrote are for
+R011's `main.toml`, which is now `p07_shape.toml`, and `main.toml` itself carries the shift. A latency file records a
+sha256 of the config's content (scope, seed, evidence, decoder and refine), and `conventions.py shift` refuses a file
+of another content, or one written before the files carried it, with the `latency` command to run again. So R012's own
+files are refused as they stand, and the rule is reproduced with `--config pipeline/configs/p07_shape.toml` (its
+commands are in the technical document, section 7).
+
 The rule was declared before any of these runs and is applied as written. For each type of change, s_b is minus the
 rounded median lag of the current `main.toml` on DFL (`tracking`, raw truth), and 0 below 30 matched changes. The
 benchmark guard keeps it only if `main.toml` plus `shift_edges(s_b)` beats `main.toml` on `tracking` with the raw truth
@@ -4666,12 +4674,13 @@ byte for byte, the four baselines rebuilt byte for byte) and `pipeline/benchmark
 `evaluation/validate_submission.py` accepts `evaluation/results/main.csv`.
 
 **Be plain about the size.** The shift is 1 to 2 frames at 439 boundaries (333 team flips and 106 changes into `D`) of
-a match of about 106 graded minutes, and its benchmark gains are +0.0000 to +0.0009 pooled spellF1, with every 90%
-interval including 0 and the raw cell's sign-flip p at 0.5000 (4 wins and 3 losses in 7 matches): inside the noise
-(0.04 on a full match, and the paired intervals here are 0.0008 to 0.0025 wide). It is adopted because the declared
-rule says so (a positive raw Δ on `tracking`, no cell under -0.005), not because it is shown to help. The only
-consistent effect is on the per-frame metrics, +0.0003 to +0.0004 macroF1 in all four cells, and macroF1 breaks ties;
-it does not rank. Dropping the `[[refine]]` entry returns R011's file (sha256 `8810afce...`).
+a match of about 106 graded minutes, and its benchmark gains are +0.0000 to +0.0009 pooled spellF1 (on `tracking` and
+`context`, raw and coarse truth), with every 90% interval including 0 and the raw `tracking` cell's sign-flip p at
+0.5000 (4 wins and 3 losses in 7 matches): inside the noise (0.04 on a full match, and the paired intervals here are
+0.0008 to 0.0025 wide). It is adopted because the declared rule says so (a positive raw Δ on `tracking`, no cell under
+-0.005), not because it is shown to help. The only consistent effect is on the per-frame metrics, +0.0003 to +0.0004
+macroF1 in all four cells, and macroF1 breaks ties; it does not rank. Dropping the `[[refine]]` entry returns R011's
+file (sha256 `8810afce...`).
 
 **The limits, and what the numbers do not say.**
 - **s_b is DFL's lag, not ours.** It measures the pipeline on a degraded copy of DFL's tracking against DFL's flag, and
@@ -4699,10 +4708,10 @@ The form keeps only the last response before the deadline, so log every upload.
 `a706e7f711b2d3faacc2f071b6e28963ed8e2f2326a7880e6d0776cce4295f1f` (P04 `controlled_touch` + P05
 `dead_ball_model` hgb + the `hmm` (4, 32, 25, 25)), identical to `p45_hmm.toml`'s file. It was NOT uploaded.
 
-`main.toml` was rewritten again by R011 (2026-10-25): it now produces sha256
+`main.toml` was rewritten again by R011 (2026-10-25): it then produced sha256
 `8810afce254e94fe159769f3b55e8eef65f41a25c84f4550034e2afbc20e8487` (P04 `controlled_touch` + P05
 `dead_ball_model` hgb + P07 `shape_possession` at weight 0.2, scope `all` + the `hmm` (4, 32, 25, 25)), identical
-to `p07_shape.toml`'s file; R010's file is still what `p45_hmm.toml` writes. It has NOT been uploaded.
+to `p07_shape.toml`'s file; R010's file is still what `p45_hmm.toml` writes. It was NOT uploaded.
 
 `main.toml` was rewritten a third time by R012 (2026-10-25): it now produces sha256
 `3fd06da011bde39f771ddd22f00da2bcbcf5205720d60f87662ab6fc0f76a702` (P04 `controlled_touch` + P05
