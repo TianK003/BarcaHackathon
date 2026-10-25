@@ -38,7 +38,7 @@ every value in [0, 1] or NaN. A length of ~164k means the broadcast was indexed 
 | `nearest_player` | NaN everywhere | `confidence` / `1 − confidence` by the team of the nearest tracked slot; NaN without a ball or a player | `confidence` ∈ [0.5, 1.0], default 1.0 | step 1 of `starter/baseline.py`, bit for bit at the default (hard 1.0 / 0.0). Opinion on 59.3% of graded frames; agrees with the public GT on 77.8% of 5,640 frames (= A01) |
 | `ball_presence` | `seen` with a ball; `missing` on a missing frame more than `margin` frames from one; NaN nearer | NaN everywhere | `margin` ≥ 0 frames, default 0; `missing` ∈ [0, 1], default 0.2; `seen` ∈ [0, 1], default 0.585 | the baseline's "no ball means stoppage" as evidence, for P06's decoder to weigh: exactly that only at `baseline_raw`'s half-width 0, and broader than `main`'s vote at `margin` 0 (below). P05 replaces it |
 | `dead_ball_rules` | the smallest of `alive_out`, `alive_still`, `alive_slow`, `alive_kickoff` among the rules that fire, else `alive_none`; 0.001 before a half's kick-off; NaN outside the graded blocks | NaN everywhere | the five values, each ∈ [0, 1], required, no default | P05's rules on `play_features`: ball beyond a line, still at a restart spot, a collective slowdown, a kick-off formation. Thresholds fixed (laws of the game, literature), values measured later |
-| `dead_ball_model` | the model's P(alive) from the 30 `play_features`, prior-corrected (logit p − logit prior_alive) and clipped to [`min_prob`, 1 − `min_prob`]; 0.001 before a half's kick-off; NaN outside the graded blocks | NaN everywhere | `model` (a path from the repo root, required), `min_prob` ∈ (0, 0.5), default 0.001 | P05's learned opinion, trained by `pipeline/benchmark/train_dead_ball.py` on the seven DFL matches degraded like ours. The model of a match is the one that never saw it (`folds[inputs.game]`); BAR-ATH and any other game use `full`. numpy only; 140,000 graded frames with 300 trees in under 4 s with the features |
+| `dead_ball_model` | the model's P(alive) from the 30 `play_features`, prior-corrected (logit p − logit prior_alive) and clipped to [`min_prob`, 1 − `min_prob`]; 0.001 before a half's kick-off; NaN outside the graded blocks | NaN everywhere | `model` (a path from the repo root, required), `min_prob` ∈ (0, 0.5), default 0.001 | P05's learned opinion, trained by `pipeline/benchmark/train_dead_ball.py` on the seven DFL matches degraded like ours. The model of a match is the one that never saw it (`folds[inputs.game]`); BAR-ATH and any other game use `full`. numpy only; the first call on 140,000 graded frames with 300 trees takes about 2 s with the features already computed, and its raw scores are remembered per `Inputs`, so configs that share a model walk the trees once |
 
 The nearest player is not the possessor — wrong on 22% of ball-visible, in-play frames ([T14](../../docs/traps.md)).
 P04 is its replacement.
@@ -93,15 +93,16 @@ a later task and passed as required parameters. `pre_kickoff_mask` and `PRE_KICK
 before its half's kick-off dead, only where the kick-off lies inside the block (T02).
 
 [`dead_ball_model.py`](dead_ball_model.py) is the learned counterpart of the rules. `python
-pipeline/benchmark/train_dead_ball.py --model hgb` fits a gradient-boosted classifier (fixed settings, never tuned) or,
-with `--model logistic`, the reference, on the benchmark's degraded tracking and writes `pipeline/models/dead_ball_<kind>.json`:
-a model per held-out match and one on all seven, as plain numbers, no pickle. The source reads the file with numpy
-alone (scikit-learn is imported only under `pipeline/benchmark/` and pinned in `requirements-benchmark.txt`), refuses a
-file whose `format`, `feature_version` or `features` are not `play_features`' and names the trainer command, picks
-`folds[inputs.game]` or else `full`, and gives the decoder a likelihood: `logit(alive) = logit(p) - logit(prior_alive)`,
-since the decoder sets the class prior itself and DFL's balance must not leak into it. `--verify` retrains and
-compares with the committed file (only the three source hashes of the provenance may differ), and `--rules` measures
-the five values `dead_ball_rules` needs (see `pipeline/benchmark/README.md`, "Dead-ball model").
+pipeline/benchmark/train_dead_ball.py --model hgb` fits a gradient-boosted classifier (fixed settings, never tuned)
+or, with `--model logistic`, the reference, on the benchmark's degraded tracking and writes
+`pipeline/models/dead_ball_<kind>.json`: a model per held-out match and one on all seven, as plain numbers, no pickle.
+The source reads the file with numpy alone (scikit-learn is imported only under `pipeline/benchmark/` and pinned in
+`requirements-benchmark.txt`), refuses a file whose `format`, `feature_version` or `features` are not `play_features`'
+and names the trainer command, picks `folds[inputs.game]` or else `full`, and gives the decoder a likelihood:
+`logit(alive) = logit(p) - logit(prior_alive)`, since the decoder sets the class prior itself and DFL's balance must
+not leak into it. `--verify` retrains and compares with the committed file (only the three source hashes of the
+provenance may differ), and `--rules` measures the five values `dead_ball_rules` needs (see
+`pipeline/benchmark/README.md`, "Dead-ball model").
 
 ## Writing a source
 

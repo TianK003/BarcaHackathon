@@ -38,14 +38,20 @@ What it does, in order
    from no ground truth, only fires where the kick-off lies inside its block, and on BAR-ATH makes the 2,934 graded
    frames before the second half's kick-off D (T02).
 
-Speed: features plus 300 trees of 15 leaves on 140,000 frames in under 4 s (test_dead_ball_model_speed). The trees are
-walked one node at a time over the rows that reach it, not one level at a time over all the rows: a tree has 29 nodes
-and a row passes through about five of them, so the work is the rows times the depth, in a few hundred numpy calls.
+Speed: with the features already computed, the first call on 140,000 frames and 300 trees of 15 leaves takes about 2 s
+on the development machine (test_dead_ball_model_speed prints it and holds it under 3 s); the features take about 2.7 s
+on top, cold. The walk (`_hgb_chunk`) reads a tree bottom up on all the rows of a 32,768-row chunk at once: each node
+gives byte masks for "goes left" and "goes right", and a node's leaf id is the left child's or the right child's by
+those masks, so after one pass from the last node to the root every row has its leaf. The raw scores are then
+remembered per Inputs object, so the many configs of a benchmark stage that share a model walk the trees once.
+A threshold of +inf (scikit-learn's split on missingness) is stored as the largest float, which is exact for finite
+features; an infinite feature value is therefore refused.
 """
 
 import json
 import numbers
 import os
+import weakref
 
 import numpy as np
 
@@ -61,6 +67,7 @@ CHUNK = 32768                                          # rows per step of the tr
 MAX_NODES = 255                                        # a leaf id is a node index held in one byte, and 255 is a mask
 MAX_MIN_PROB = 0.5                                     # min_prob must stay below this, or the clip would invert
 
+_MEMO = weakref.WeakKeyDictionary()                     # Inputs -> {(path, size, mtime, model key): raw scores}
 _CACHE = {}                                            # absolute path -> ((size, mtime_ns), parsed artifact)
 
 
@@ -71,16 +78,42 @@ def compute(run, *, model, min_prob=0.001):
     artifact = load(path)
 
     inputs = run.inputs
-    _, X = play_features.features(inputs)
-    graded = ~np.isnan(X[:, play_features.COLUMN["ball_missing"]])        # rows outside every graded block are NaN
-    chosen = artifact["folds"].get(inputs.game, artifact["full"])
-    alive = np.full(len(X), np.nan)
-    if graded.any():
-        score = raw_score(chosen, X[graded]) - _logit(chosen["prior_alive"])
-        alive[graded] = np.clip(_sigmoid(score), min_prob, 1.0 - min_prob)
-    kickoff = play_features.pre_kickoff_mask(inputs)
-    alive[kickoff & graded] = play_features.PRE_KICKOFF_ALIVE
-    return Evidence(alive=alive, home=no_opinion(len(X)))
+    key = inputs.game if inputs.game in artifact["folds"] else "full"
+    chosen = artifact["folds"][key] if key != "full" else artifact["full"]
+    score = _raw_scores(inputs, path, key, chosen)               # the model's own log-odds, NaN outside the blocks
+    graded = ~np.isnan(score)
+    alive = np.full(len(score), np.nan)
+    alive[graded] = np.clip(_sigmoid(score[graded] - _logit(chosen["prior_alive"])), min_prob, 1.0 - min_prob)
+    alive[play_features.pre_kickoff_mask(inputs) & graded] = play_features.PRE_KICKOFF_ALIVE
+    alive.flags.writeable = False
+    return Evidence(alive=alive, home=no_opinion(len(score)))
+
+
+def _raw_scores(inputs, path, key, model):
+    """The raw log-odds of `model` on every graded frame of `inputs` (NaN elsewhere), remembered per Inputs object.
+
+    A benchmark stage runs dozens of configs that share one model and differ only in the decoder's weights, on the
+    same Inputs; the walk of the trees is the expensive part and does not depend on them, so it is made once per
+    (file, size, modification time, model of the file) and the prior correction, the clip and the kick-off rule, which
+    are cheap, are applied after it. The memo is a WeakKeyDictionary on the Inputs object, as play_features' is, and
+    dies with it; the arrays in it are read-only.
+    """
+    stat = os.stat(path)
+    memo = _MEMO.setdefault(inputs, {})
+    stamp = (path, stat.st_size, stat.st_mtime_ns, key)
+    if stamp not in memo:
+        _, X = play_features.features(inputs)
+        graded = ~np.isnan(X[:, play_features.COLUMN["ball_missing"]])    # rows outside every graded block are NaN
+        score = np.full(len(X), np.nan)
+        if graded.any():
+            if np.isinf(X[graded]).any():
+                raise ValueError("dead_ball_model: a feature of {} is infinite; the trees are exact for finite values "
+                                 "and NaN only, and play_features gives no other".format(inputs.game))
+            score[graded] = raw_score(model, X[graded])
+        score.flags.writeable = False
+        memo.clear()                      # one model at a time per Inputs: a file that changed leaves nothing behind
+        memo[stamp] = score
+    return memo[stamp]
 
 
 def predict(model, X):

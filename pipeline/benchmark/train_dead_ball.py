@@ -179,6 +179,10 @@ def gather(profile, seeds, stride, matches=None, calibration=None, data_dir=None
     data, sources = {}, {}
     for match_id in sorted(ids):
         match = matches[match_id] if matches is not None else dfl.load_match(match_id, data_dir=data_dir)
+        if match.match_id != match_id:
+            raise BenchmarkError("train_dead_ball: the match given as {} says it is {}; its fold would be filed under "
+                                 "one id and looked up under the other, and scored by the model that saw it"
+                                 .format(match_id, match.match_id))
         codes, _ = truths.truth_codes(match)
         parts = []
         for seed in seed_list:
@@ -232,6 +236,8 @@ def export_hgb(estimator):
     gone): the export is then wrong, not merely different.
     """
     try:
+        if estimator._preprocessor is not None:
+            raise AttributeError("a preprocessor reorders the columns")
         baseline = float(np.asarray(estimator._baseline_prediction).ravel()[0])
         predictors = estimator._predictors
         single = estimator.n_trees_per_iteration_ == 1 and all(len(round_) == 1 for round_ in predictors)
@@ -251,8 +257,12 @@ def export_hgb(estimator):
         if nodes["is_categorical"][~leaf].any():
             raise ValueError("train_dead_ball: a tree splits on a categorical feature; the features are all numeric")
         threshold = np.where(leaf, 0.0, nodes["num_threshold"])
+        # A split on missingness (every seen value left, NaN right) has threshold +inf. The largest float stands in for
+        # it: x <= max is x <= inf for every finite x, and a NaN still follows missing_left. dead_ball_model refuses
+        # an infinite feature value, the one input for which the stand-in would differ.
+        threshold = np.where(threshold == np.inf, np.finfo(np.float64).max, threshold)
         if not np.isfinite(threshold).all() or not np.isfinite(nodes["value"]).all():
-            raise ValueError("train_dead_ball: a tree holds an infinite or NaN threshold or leaf value")
+            raise ValueError("train_dead_ball: a tree holds a NaN or -inf threshold or a non-finite leaf value")
         trees.append({"feature": np.where(leaf, -1, nodes["feature_idx"]).astype(np.int64).tolist(),
                       "threshold": threshold.tolist(),
                       "missing_left": nodes["missing_go_to_left"].astype(np.int64).tolist(),

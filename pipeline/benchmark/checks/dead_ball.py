@@ -132,6 +132,33 @@ def test_training_is_deterministic_across_threads():
     assert again == texts[0]
 
 
+def test_export_survives_splits_on_missingness():
+    """A split that sends every seen value left and NaN right has threshold +inf in scikit-learn; it must export."""
+    rng = np.random.default_rng(1)
+    n = 30000
+    X = rng.normal(size=(n, len(NAMES)))
+    missing = rng.random(n) < 0.4                      # like a missing ball: several columns NaN together
+    for column in (1, 2, 3, 4, 5):
+        X[missing, column] = np.nan
+    y = (np.where(missing, -1.5, 2.0) + 0.5 * np.nan_to_num(X[:, 6]) + rng.normal(size=n) * 0.5 > 0).astype(np.int64)
+    estimator = trainer.hgb_estimator(X, y, NAMES)
+    infinite = sum(int(np.isposinf(round_[0].nodes["num_threshold"][~round_[0].nodes["is_leaf"].astype(bool)]).sum())
+                   for round_ in estimator._predictors)
+    assert infinite > 0, "the data no longer produce a split on missingness; the check covers nothing"
+    model = trainer.fit("hgb", X, y, NAMES)
+    json.dumps(model, allow_nan=False)
+    assert any(value == np.finfo(np.float64).max for tree in model["trees"] for value in tree["threshold"])
+    worst = float(np.abs(dead_ball_model.predict(model, X) - estimator.predict_proba(X)[:, 1]).max())
+    print("      {} splits on missingness exported: max |difference| {:.3e}".format(infinite, worst))
+    assert worst <= 1e-12, worst
+
+
+def test_trainer_refuses_a_match_filed_under_another_id():
+    match = random_match("RND001")
+    expect_error(ValueError, lambda: trainer.gather("clean", 1, 5, matches={"RND001": match, "RND009": match}),
+                 "RND009", "RND001")
+
+
 def test_hgb_settings_are_the_designs():
     assert trainer.HGB_SETTINGS == {
         "loss": "log_loss", "learning_rate": 0.05, "max_iter": 300, "max_leaf_nodes": 15, "min_samples_leaf": 1000,
@@ -278,7 +305,7 @@ def test_provenance_holds_versions_and_hashes_and_no_commit():
 def test_artifact_json_is_exact_lf_and_bounded():
     artifact = small_artifact()
     text = trainer.dumps(artifact)
-    assert text.endswith("\n") and "\r" not in text and text.count("\n") == 1 or "\r" not in text
+    assert text.endswith("\n") and "\r" not in text and text.count("\n") == 1
     assert json.loads(text) == artifact, "floats must read back exactly"
     assert text == json.dumps(artifact, sort_keys=True) + "\n"
     expect_error(ValueError, lambda: trainer.dumps({"x": float("nan")}), "NaN")
