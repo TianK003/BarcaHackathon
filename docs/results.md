@@ -3151,10 +3151,10 @@ possessions per graded minute (the truth has 4.58 raw and 2.48 coarse) and the p
 **The choice, by the pre-declared rule.** Objective: pooled spellF1 under the raw truth. The best raw config is
 `p45a_r15_v6_k03_h55` at 0.2348. The tie band is 0.005, so the tied set is raw >= 0.2298. Two configs are in it:
 `p45a_r15_v6_k03_h55` (0.2348 raw, 0.2410 coarse) and `p45a_r20_v6_k03_h55` (0.2345 raw, 0.2433 coarse). The next,
-`r10_v6_k03_h55`, is at 0.2207, 0.0141 below the best. Among the tied, the best coarse score is `r20_v6_k03_h55`
-(0.2433 against 0.2410, by 0.0023), so the tie order (larger `min_frames`, smaller radius, smaller `max_rel_speed`, hold
-off) is not reached: the two share `min_frames`, `max_rel_speed` and `hold`, and the radius would have preferred 1.5.
-**Chosen: `p45a_r20_v6_k03_h55`**, 0.0003 below the raw best.
+`r10_v6_k03_h55`, is at 0.2207, 0.0141 below the best. Among the tied, the best coarse score is `r20_v6_k03_h55` (0.2433
+against 0.2410, by 0.0023), so the tie order (larger `min_frames`, smaller radius, smaller `max_rel_speed`, hold off) is
+not reached: the two share `min_frames`, `max_rel_speed` and `hold`, and the radius would have preferred 1.5. **Chosen:
+`p45a_r20_v6_k03_h55`**, 0.0003 below the raw best.
 - **The plateau** (within 0.005 of the best raw): those two configs, both at `max_rel_speed` 6.0, `min_frames` 3 and
   `hold` 0.55, radius 1.5 and 2.0. It is narrow. The best config outside it with `min_frames` 8 is 0.2169
   (`r20_v6_k08_h55`), with radius 1.0 0.2207 (`r10_v6_k03_h55`), with `max_rel_speed` 3.0 0.2013 (`r20_v3_k03_h55`) and
@@ -3189,15 +3189,16 @@ match (about 0.04, T07) is larger still. The choice between them is the rule's, 
 **Leave-one-match-out estimate of the selection.** As R007 did, from the per-match spellF1 the runner prints (four
 decimals): for each match, the selection is repeated on the other six matches and the chosen config's score on the
 held-out match is compared with the reference's on it; the seven differences give the mean Δ with its 90% t-interval,
-the exact sign-flip p over the 2^7 sign patterns, and the wins. The references are not candidates. - **The raw objective
-alone** (the config of the 24 with the highest mean per-match raw spellF1 on the six, no tie band):   `r15_v6_k03_h55`
-is picked for four matches (J03WMX, J03WN1, J03WOH, J03WPY) and `r20_v6_k03_h55` for three (J03WOY,   J03WQQ, J03WR9).
-Scored under the raw truth against `nearest_w50`: mean Δ +0.0316 [+0.0179, +0.0452], p 0.0156, 7 wins   and 0 losses
-(per match +0.0301, +0.0099, +0.0310, +0.0527, +0.0047, +0.0478, +0.0447). Scored under the coarse truth   against
-`nearest_w125`: mean Δ +0.0176 [+0.0117, +0.0236], p 0.0156, 7 wins and 0 losses. - **The whole rule** (on each fold:
-the tied set is the configs within 0.005 of the best six-match raw mean, then the   best six-match coarse mean among
-them): `r20_v6_k03_h55` is picked in all seven folds, so the held-out estimate is the   chosen config's own: +0.0334
-[+0.0203, +0.0464] raw and +0.0209 [+0.0156, +0.0261] coarse, p 0.0156, 7 wins and 0 losses   under each.
+the exact sign-flip p over the 2^7 sign patterns, and the wins. The references are not candidates.
+- **The raw objective alone** (the config of the 24 with the highest mean per-match raw spellF1 on the six, no tie
+  band): `r15_v6_k03_h55` is picked for four matches (J03WMX, J03WN1, J03WOH, J03WPY) and `r20_v6_k03_h55` for three
+  (J03WOY, J03WQQ, J03WR9). Scored under the raw truth against `nearest_w50`: mean Δ +0.0316 [+0.0179, +0.0452], p
+  0.0156, 7 wins and 0 losses (per match +0.0301, +0.0099, +0.0310, +0.0527, +0.0047, +0.0478, +0.0447). Scored under
+  the coarse truth against `nearest_w125`: mean Δ +0.0176 [+0.0117, +0.0236], p 0.0156, 7 wins and 0 losses.
+- **The whole rule** (on each fold: the tied set is the configs within 0.005 of the best six-match raw mean, then the
+  best six-match coarse mean among them): `r20_v6_k03_h55` is picked in all seven folds, so the held-out estimate is the
+  chosen config's own: +0.0334 [+0.0203, +0.0464] raw and +0.0209 [+0.0156, +0.0261] coarse, p 0.0156, 7 wins and 0
+  losses under each.
 
 The selection is stable (the same two configs in every fold), so the choice is not what produces the gap. The estimate
 does not cover the `confidence` measurement, which uses all seven matches, and seven matches from two competitions (five
@@ -3227,27 +3228,28 @@ every config, and the chosen config's 2.42 is close to the coarse truth's 2.48. 
 **Controls** (diagnostics, never candidates; run from a detached checkout at `32a8405`, header `32a84055019f`,
 `--profile tracking` or `--profile context`, `--seeds 3 --no-write`, the references first as in the grid; all four logs
 end `EXIT=0`, and the references and the chosen config score on `tracking` exactly as in the grid's logs, to the last
-printed digit). - **`p45actl_nearest`** (the chosen config plus `nearest_player` at 0.78) **on `tracking`: adding it
-costs both truths.**   Raw pooled spellF1 0.2184 against the chosen config's 0.2345 (-0.0161): the chosen config is
-better by +0.0160   [+0.0088, +0.0231] per match, p 0.0312, 6 wins in 7. Coarse 0.2081 against 0.2433 (-0.0352): the
-chosen config is better   by +0.0352 [+0.0280, +0.0423], p 0.0156, 7 wins in 7. Against the yardsticks, the control is
-+0.0166 over `nearest_w50`   raw (mean per match +0.0174 [+0.0085, +0.0263], p 0.0312, 6 wins) and -0.0145 under
-`nearest_w125` coarse (-0.0143   [-0.0248, -0.0037], p 0.0156, 0 wins in 7). It predicts 3.08 possessions per graded
-minute (the chosen config 2.42), a   `D` share of 43.0%, alive/dead F1 0.5691 (0.0040 below the chosen config) and
-macroF1 0.4649 raw, 0.4637 coarse (the   chosen config 0.4832, 0.4824). So the nearest-player vote does not complement
-the controlled-touch evidence here: with   it, the config is no better than the references coarse and clears
-`nearest_w50` raw by half the margin. The control   does not say why (more hand-overs, 3.08 against 2.42 per minute, is
-what the count shows). - **The chosen config on `context`** (sensitivity only, T38; `context` v1 fails two of its gates,
-R005). Pooled spellF1   0.2761 raw (mean per match 0.2775 [0.2596, 0.2954]) and 0.2977 coarse (0.2978 [0.2822, 0.3133]);
-alive/dead F1 0.6456   (`nearest_w50` 0.6575, `nearest_w125` 0.6711), 2.46 possessions per graded minute, `D` share
-44.5%. Against   `nearest_w50` raw: pooled Δ +0.0568, mean +0.0578 [+0.0474, +0.0681], p 0.0156, 7 wins in 7. Against
-`nearest_w125`   coarse: +0.0534, mean +0.0531 [+0.0353, +0.0709], p 0.0156, 7 wins in 7. The yardsticks on `context`
-are R005's (0.2193   raw `nearest_w50`, 0.2443 coarse `nearest_w125`). At the same decoder, R007's chosen config on
-`context` scored 0.2332   raw and 0.2261 coarse (R007), so the P04 gain there is +0.0429 raw and +0.0716 coarse, pooled.
+printed digit).
+- **`p45actl_nearest`** (the chosen config plus `nearest_player` at 0.78) **on `tracking`: adding it costs both
+  truths.** Raw pooled spellF1 0.2184 against the chosen config's 0.2345 (-0.0161): the chosen config is better by
+  +0.0160 [+0.0088, +0.0231] per match, p 0.0312, 6 wins in 7. Coarse 0.2081 against 0.2433 (-0.0352): the chosen config
+  is better by +0.0352 [+0.0280, +0.0423], p 0.0156, 7 wins in 7. Against the yardsticks, the control is +0.0166 over
+  `nearest_w50` raw (mean per match +0.0174 [+0.0085, +0.0263], p 0.0312, 6 wins) and -0.0145 under `nearest_w125`
+  coarse (-0.0143 [-0.0248, -0.0037], p 0.0156, 0 wins in 7). It predicts 3.08 possessions per graded minute (the chosen
+  config 2.42), a `D` share of 43.0%, alive/dead F1 0.5691 (0.0040 below the chosen config) and macroF1 0.4649 raw,
+  0.4637 coarse (the chosen config 0.4832, 0.4824). So the nearest-player vote does not complement the controlled-touch
+  evidence here: with it, the config is no better than the references coarse and clears `nearest_w50` raw by half the
+  margin. The control does not say why (more hand-overs, 3.08 against 2.42 per minute, is what the count shows).
+- **The chosen config on `context`** (sensitivity only, T38; `context` v1 fails two of its gates, R005). Pooled spellF1
+  0.2761 raw (mean per match 0.2775 [0.2596, 0.2954]) and 0.2977 coarse (0.2978 [0.2822, 0.3133]); alive/dead F1 0.6456
+  (`nearest_w50` 0.6575, `nearest_w125` 0.6711), 2.46 possessions per graded minute, `D` share 44.5%. Against
+  `nearest_w50` raw: pooled Δ +0.0568, mean +0.0578 [+0.0474, +0.0681], p 0.0156, 7 wins in 7. Against `nearest_w125`
+  coarse: +0.0534, mean +0.0531 [+0.0353, +0.0709], p 0.0156, 7 wins in 7. The yardsticks on `context` are R005's
+  (0.2193 raw `nearest_w50`, 0.2443 coarse `nearest_w125`). At the same decoder, R007's chosen config on `context`
+  scored 0.2332 raw and 0.2261 coarse (R007), so the P04 gain there is +0.0429 raw and +0.0716 coarse, pooled.
 - **The four profile x truth cells agree.** The chosen config is above its truth's strongest yardstick in all four, in 7
-matches of 7 each, p 0.0156: `tracking` raw +0.0328, `tracking` coarse +0.0206, `context` raw +0.0568, `context`
-coarse +0.0534. There is no warning to write (T38); the gain is larger on `context`, as every score is (R005,   R007),
-and `context` is a sensitivity check and not a second validation.
+  matches of 7 each, p 0.0156: `tracking` raw +0.0328, `tracking` coarse +0.0206, `context` raw +0.0568, `context`
+  coarse +0.0534. There is no warning to write (T38); the gain is larger on `context`, as every score is (R005, R007),
+  and `context` is a sensitivity check and not a second validation.
 
 Runtime of the controls: the chosen config's first config in each process took 48.7 to 50.6 s (the one-off pass), the
 control 29.2 and 29.6 s, the yardsticks 7.1 to 7.8 s.
