@@ -31,7 +31,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | ID | proposal | attacks | effort | impact | status |
 |---|---|---|---|---|---|
 | [P01](#p01--a-validation-set-we-can-trust) | Validation set we can trust: other matches, degraded to look like ours | deciding anything at all | M | enabling | done → R002–R005 |
-| [P02](#p02--learn-the-ground-truths-conventions-from-the-public-window) | Learn the GT's conventions from the public window | boundary timing | S | high | doing (Tian): automated part in A11 |
+| [P02](#p02--learn-the-ground-truths-conventions-from-the-public-window) | Learn the GT's conventions from the public window | boundary timing | S | high | doing (Tian): automated part in A11; the shift is R012 (adopted: the pipeline's own lag) |
 | [P16](#p16--metricas-sample-games-in-our-ground-truth-providers-conventions) | Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing | boundary timing, grain | M | medium | idea |
 | [P03](#p03--one-command-deterministic-cached) | One-command, deterministic, cached pipeline | reproducibility | S–M | enabling | done → R001 |
 | [P04](#p04--sticky-ownership-from-controlled-touches) | Sticky ownership from controlled touches | facts 3, 5 | S | high: +0.1421 raw at the chosen decoder (R010) | done → R008, R010 |
@@ -256,7 +256,9 @@ A11 reads it as a lead and not a measurement (2 to 4 changes behind each `D` cel
 controlled touch, where DFL's flag flips at it (the interval holds 0). Each is our truth's convention, or chance, or our
 tracker's coverage (it loses the ball near the lines), and A11 does not separate them.
 What is left needs a person who may watch the video: the restart type and whether `D` begins at the line, the whistle or
-the stoppage. The pipeline's own latency and the `shift_edges` values are a separate step (R012). The person's command,
+the stoppage. The pipeline's own latency and the `shift_edges` values are R012's: the rule adopted the pipeline's own
+lag on DFL (team +1, into `D` -2, out of `D` 0 frames) and no gap to our convention (g = 0, from 1 to 4 matched public
+changes per type); its gain is inside noise. The person's command,
 which regenerates the file to watch, is
 
 ```bash
