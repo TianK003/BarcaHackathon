@@ -777,6 +777,289 @@ def test_kinematics_memo_is_per_object():
     assert len(kinematics._PLAYER_MEMO) == held - 2, "the memo kept an object"
 
 
+# -- controlled_touch -------------------------------------------------------------------------------------------------
+#
+# Hand-built scenes in metres: slot 0 is home, slot 1 away, slot 2 home, ... (kinematics_atd). A slot is present only
+# on the frames it is given, so "an episode of 10 frames" is a slot that is 0.5 m from a static ball for 10 frames.
+
+TOUCH = dict(radius=2.0, max_rel_speed=3.0, min_frames=5, confidence=0.9)
+
+
+def touch_scene(n, ball=None, slots=None, graded=None):
+    """A RunContext over n frames of hand-built tracking in metres. `ball` is (n, 2) (NaN = missing; default a static
+    ball at (30, 30)), `slots` a dict slot -> (n, 2) (NaN = absent), `graded` a list of (start, stop) blocks (default
+    one block over every frame)."""
+    from pipeline.contracts import RunContext
+    scale = np.array([105.3, 68.0])
+    ball = np.tile([30.0, 30.0], (n, 1)) if ball is None else np.asarray(ball, dtype=np.float64)
+    players = np.full((n, max(max(slots) + 1 if slots else 2, 2), 2), np.nan)
+    for slot, track in (slots or {}).items():
+        players[:, slot] = track
+    graded = [(1, 0, n)] if graded is None else [(index + 1, start, stop) for index, (start, stop) in enumerate(graded)]
+    inputs = kinematics_inputs(kinematics_atd(players / scale, ball / scale), graded)
+    return RunContext(inputs=inputs, seed=0)
+
+
+def beside_ball(n, frames, offset=(0.5, 0.0), ball=(30.0, 30.0)):
+    """A slot's track: `offset` metres from a static ball on `frames` (a range), absent elsewhere."""
+    track = np.full((n, 2), np.nan)
+    track[list(frames)] = np.array(ball) + np.array(offset)
+    return track
+
+
+def touch(run, **parameters):
+    from pipeline.evidence import REGISTRY
+    return REGISTRY["controlled_touch"](run, **dict(TOUCH, **parameters))
+
+
+def test_touch_dribble_is_control():
+    n = 40
+    t = np.arange(n)
+    ball = np.stack([20.0 + 0.2 * t, np.full(n, 30.0)], axis=1)       # 5 m/s along x
+    mover = np.full((n, 2), np.nan)
+    mover[10:20] = ball[10:20] + [0.5, 0.0]                           # a home slot 0.5 m ahead of it, same velocity
+    evidence = touch(touch_scene(n, ball=ball, slots={0: mover}))
+    assert np.flatnonzero(evidence.home == 0.9).tolist() == list(range(10, 20)), np.flatnonzero(evidence.home == 0.9)
+    assert np.isnan(np.delete(evidence.home, range(10, 20))).all() and np.isnan(evidence.alive).all()
+
+
+def test_touch_flight_is_no_evidence():
+    n = 40
+    t = np.arange(n)
+    ball = np.stack([15.0 + 0.6 * t, np.full(n, 30.0)], axis=1)       # 15 m/s along x
+    stationary = np.tile([24.0, 30.8], (n, 1))                        # an away slot 0.8 m from the ball's line
+    near = np.hypot(*(ball - stationary).T) <= TOUCH["radius"]
+    assert near.sum() >= 5, "the ball must pass within the radius for the check to mean something"
+    assert np.isnan(touch(touch_scene(n, ball=ball, slots={1: stationary})).home).all()
+    # Without the speed test the same frames are control: it is the relative speed that rules them out.
+    loose = touch(touch_scene(n, ball=ball, slots={1: stationary}), max_rel_speed=np.inf, min_frames=1)
+    assert (loose.home[near] == 1.0 - 0.9).all()
+
+
+def test_touch_duel_is_no_evidence():
+    n = 20
+    home, away = beside_ball(n, range(n), (0.6, 0.0)), beside_ball(n, range(n), (-0.9, 0.0))
+    assert np.isnan(touch(touch_scene(n, slots={0: home, 1: away}), duel_radius=1.0).home).all()
+    # The same pair with the away slot beyond the duel radius: home controls it.
+    away = beside_ball(n, range(n), (-1.1, 0.0))
+    assert (touch(touch_scene(n, slots={0: home, 1: away}), duel_radius=1.0).home == 0.9).all()
+    assert np.isnan(touch(touch_scene(n, slots={0: home, 1: away}), duel_radius=1.2).home).all()
+
+
+def test_touch_short_episode_dropped():
+    n = 40
+    for length, kept in ((TOUCH["min_frames"] - 1, False), (TOUCH["min_frames"], True)):
+        evidence = touch(touch_scene(n, slots={1: beside_ball(n, range(10, 10 + length))}))
+        assert np.isnan(evidence.home).all() != kept, (length, kept)
+        if kept:
+            assert np.flatnonzero(evidence.home == 1.0 - 0.9).tolist() == list(range(10, 15))
+    # A change of team ends an episode: 4 + 4 frames beside the same ball, one team and then the other, keep nothing.
+    both = touch_scene(n, slots={0: beside_ball(n, range(10, 14)), 1: beside_ball(n, range(14, 18))})
+    assert np.isnan(touch(both).home).all()
+
+
+def test_touch_is_nan_without_the_ball():
+    n = 40
+    ball = np.tile([30.0, 30.0], (n, 1))
+    ball[15:25] = np.nan
+    slots = {0: beside_ball(n, range(n))}
+    evidence = touch(touch_scene(n, ball=ball, slots=slots), min_frames=2)
+    assert np.isnan(evidence.home[15:25]).all()
+    assert (evidence.home[:15] == 0.9).all() and (evidence.home[25:] == 0.9).all()
+    held = touch(touch_scene(n, ball=ball, slots=slots), min_frames=2, hold=0.6)
+    assert np.isnan(held.home[15:25]).all(), "a hold never fills a missing ball"
+
+
+def test_touch_outside_blocks_is_nan():
+    n = 60
+    slots = {0: beside_ball(n, range(n))}
+    evidence = touch(touch_scene(n, slots=slots, graded=[(10, 30), (40, 55)]), hold=0.6)
+    assert (evidence.home[10:30] == 0.9).all() and (evidence.home[40:55] == 0.9).all()
+    outside = np.ones(n, dtype=bool)
+    outside[10:30] = outside[40:55] = False
+    assert np.isnan(evidence.home[outside]).all() and np.isnan(evidence.alive).all()
+    # An episode is cut at the block's edge: two 20-frame pieces of one touch do not add up to 25.
+    assert np.isnan(touch(touch_scene(n, slots=slots, graded=[(0, 20), (30, 50)]), min_frames=25).home).all()
+
+
+def hold_scene(graded=None):
+    """Home controls 5..14, away 35..44, on a static ball that is missing on 25..29, in a 60-frame match."""
+    n = 60
+    ball = np.tile([30.0, 30.0], (n, 1))
+    ball[25:30] = np.nan
+    slots = {0: beside_ball(n, range(5, 15)), 1: beside_ball(n, range(35, 45))}
+    return touch_scene(n, ball=ball, slots=slots, graded=graded)
+
+
+def test_touch_hold_carries_the_last_team():
+    evidence = touch(hold_scene(), hold=0.6)
+    expected = np.full(60, np.nan)
+    for span, value in ((slice(5, 15), 0.9), (slice(15, 25), 0.6), (slice(30, 35), 0.6), (slice(35, 45), 1.0 - 0.9),
+                        (slice(45, None), 1.0 - 0.6)):
+        expected[span] = value
+    assert np.array_equal(evidence.home, expected, equal_nan=True), np.flatnonzero(evidence.home != expected)
+
+
+def test_touch_hold_stays_in_its_block():
+    evidence = touch(hold_scene(graded=[(0, 30), (30, 60)]), hold=0.6)
+    expected = np.full(60, np.nan)
+    expected[5:15], expected[15:25] = 0.9, 0.6               # nothing before the block's first episode
+    expected[35:45], expected[45:] = 1.0 - 0.9, 1.0 - 0.6   # the first block's home does not reach the second
+    assert np.array_equal(evidence.home, expected, equal_nan=True), np.flatnonzero(evidence.home != expected)
+
+
+def test_touch_hold_off_is_nan():
+    evidence = touch(hold_scene(), hold=0.5)
+    expected = np.full(60, np.nan)
+    expected[5:15], expected[35:45] = 0.9, 1.0 - 0.9               # 0.5 is not written as a value: NaN is not 0.5
+    assert np.array_equal(evidence.home, expected, equal_nan=True)
+    assert np.array_equal(evidence.home, touch(hold_scene()).home, equal_nan=True), "hold defaults to off"
+
+
+def test_touch_turnover_lands_on_new_control():
+    n = 80
+    slots = {0: beside_ball(n, range(10, 30)), 1: beside_ball(n, range(50, 70))}   # home, flight 30..49, away
+    scene = touch_scene(n, slots=slots)
+    options = dict(switch_team=1.0, switch_dead=100.0, min_possession=1, min_dead=1)
+    held = hmm_labels(hmm_context(touch(scene, hold=0.55).home), **options)
+    assert letters(held)[10:] == "H" * 40 + "A" * 30, letters(held)       # the first away control frame
+    free = hmm_labels(hmm_context(touch(scene).home), **options)
+    assert letters(free)[10:] == "H" * 20 + "A" * 50, letters(free)       # the tie rule: first frame after home's last
+
+
+def touch_loop(run, radius, max_rel_speed, min_frames, confidence, duel_radius, hold):
+    """The rule, frame by frame in plain Python, as the Design states it."""
+    from pipeline.evidence import kinematics
+    ball, players = kinematics.ball_track(run.inputs), kinematics.player_track(run.inputs)
+    team = run.inputs.atd.slot_team
+    home = np.full(len(ball.visible), np.nan)
+    for start, stop in kinematics.blocks(run.inputs):
+        frame_team = {}
+        for t in range(start, stop):
+            if not ball.visible[t]:
+                continue
+            distance = {s: float(np.hypot(*(players.xy_m[t, s] - ball.xy_m[t])))
+                        for s in range(len(team)) if players.present[t, s]}
+            if not distance:
+                continue
+            nearest = min(distance, key=lambda s: (distance[s], s))
+            rivals = [d for s, d in distance.items() if team[s] != team[nearest]]
+            relative = float(np.hypot(*(ball.vel[t] - players.vel[t, nearest])))
+            if distance[nearest] <= radius and (not rivals or min(rivals) > duel_radius) and relative <= max_rel_speed:
+                frame_team[t] = int(team[nearest])
+        kept, t = {}, start
+        while t < stop:
+            if t not in frame_team:
+                t += 1
+                continue
+            end = t
+            while end + 1 < stop and frame_team.get(end + 1) == frame_team[t]:
+                end += 1
+            if end - t + 1 >= min_frames:
+                kept.update({u: frame_team[t] for u in range(t, end + 1)})
+            t = end + 1
+        last = None
+        for t in range(start, stop):
+            if t in kept:
+                last = kept[t]
+                home[t] = confidence if last == 0 else 1.0 - confidence
+            elif hold > 0.5 and last is not None and ball.visible[t]:
+                home[t] = hold if last == 0 else 1.0 - hold
+    return home
+
+
+def test_touch_matches_a_loop():
+    rng = np.random.default_rng(7)
+    seen = {"home": 0, "away": 0, "held": 0}
+
+    def walk(shape):   # a random walk from a point of a 4 m square
+        return 15.0 + rng.random(shape[1:]) * 4.0 + np.cumsum(rng.normal(0.0, 0.05, shape), axis=0)
+
+    for scene in range(200):
+        n, slots = 80, 6
+        ball = walk((n, 2))
+        players = np.stack([walk((n, 2)) for _ in range(slots)], axis=1)
+        for track, shape in ((players, (n, slots)), (ball, (n,))):
+            track[np.cumsum(rng.random(shape) < 0.04, axis=0) % 2 == 1] = np.nan   # on, off, on ... in runs
+        parameters = dict(radius=float(rng.uniform(1.0, 3.0)), duel_radius=float(rng.uniform(0.5, 2.5)),
+                          max_rel_speed=float(rng.choice([1.0, 2.0, 4.0, np.inf])),
+                          min_frames=int(rng.integers(1, 7)), confidence=float(rng.uniform(0.6, 1.0)))
+        parameters["hold"] = 0.5 if scene % 2 else float(rng.uniform(0.5, parameters["confidence"]))
+        run = touch_scene(n, ball=ball, slots={s: players[:, s] for s in range(slots)}, graded=[(5, 40), (45, 78)])
+        evidence = touch(run, **parameters)
+        expected = touch_loop(run, **parameters)
+        assert np.array_equal(evidence.home, expected, equal_nan=True), (scene, parameters)
+        seen["home"] += int((evidence.home > 0.5).sum())
+        seen["away"] += int((evidence.home < 0.5).sum())
+        if parameters["hold"] > 0.5:
+            seen["held"] += int(np.isin(evidence.home, (parameters["hold"], 1.0 - parameters["hold"])).sum())
+    assert min(seen.values()) > 100, "the random scenes no longer reach every branch: {}".format(seen)
+
+
+def test_touch_rejects_bad_parameters():
+    run = touch_scene(20)
+    for name, bads in (("radius", (0, -1.0, True, np.inf, np.nan, "2")),
+                       ("duel_radius", (0, -1.0, True, np.inf, np.nan)),
+                       ("max_rel_speed", (0, -1.0, True, np.nan)), ("min_frames", (0, 1.5, True, -2)),
+                       ("confidence", (0.5, 0.4, 1.1, True, np.nan)), ("hold", (0.4, 0.95, True, np.nan))):
+        for bad in bads:
+            expect_error(ValueError, lambda: touch(run, **{name: bad}), "controlled_touch", name)
+    touch(run, radius=np.float64(2.0), min_frames=np.int64(3), max_rel_speed=np.inf, confidence=1, hold=0.9)
+
+
+def test_touch_reads_read_only_inputs():
+    n = 40
+    run = touch_scene(n, slots={0: beside_ball(n, range(10, 25))})
+    atd = run.inputs.atd
+    for array in (atd.players_xy, atd.ball_xy, atd.slot_team):
+        array.flags.writeable = False
+    before = (atd.players_xy.copy(), atd.ball_xy.copy())
+    evidence = touch(run, hold=0.6)
+    assert np.array_equal(atd.players_xy, before[0], equal_nan=True)
+    assert np.array_equal(atd.ball_xy, before[1], equal_nan=True)
+    assert (evidence.home[10:25] == 0.9).all() and evidence.home.dtype == np.float64
+
+
+CONTROLLED_TRIAL_CONFIG = """
+[[evidence]]
+kind = "controlled_touch"
+radius = 200.0
+duel_radius = 0.001
+max_rel_speed = inf
+min_frames = 1
+confidence = 0.9
+hold = 0.6
+
+[decoder]
+kind = "hmm"
+switch_team = 1
+switch_dead = 20
+min_possession = 1
+min_dead = 1
+"""
+
+
+def test_run_end_to_end_synthetic_touch():
+    from pipeline import output
+    from pipeline.config import load_config
+    from pipeline.contracts import X
+    from pipeline.run import run
+    with tempfile.TemporaryDirectory() as root:
+        make_synthetic_bundle(root)
+        inputs = synthetic_inputs(root, graded=[(1, 50, 280), (2, 320, 560)])
+        config = load_config(write_text(root, "trial.toml", CONTROLLED_TRIAL_CONFIG))
+        out_path = os.path.join(root, "trial.csv")
+        result = run(config, inputs, out_path, log=quiet)
+        outside = np.ones(SYNTHETIC_FRAMES, dtype=bool)
+        outside[50:280] = outside[320:560] = False
+        assert (result.codes[outside] == X).all(), "frames outside the graded blocks must be X"
+        assert (result.codes[~outside] != X).all(), "the hmm decoder never abstains inside a block"
+        output.validate(out_path, SYNTHETIC_FRAMES, result.codes)
+        home = result.evidence["controlled_touch"].home
+        assert (home > 0.5).sum() > 20 and (home < 0.5).sum() > 20, "the trial must give evidence for both teams"
+        assert np.isnan(home[outside]).all()
+
+
 # -- decode -----------------------------------------------------------------------------------------------------------
 
 def vote_context(home, start=0, stop=None, weights=None):
