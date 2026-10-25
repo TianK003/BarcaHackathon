@@ -4,13 +4,15 @@
 #
 # This is R012's choice. R012 adopted it, so main.toml carries the same refiner; main.toml decides what we upload.
 #
-# Where the numbers come from. The evidence and the decoder are R011's `main.toml` verbatim (controlled_touch, the hgb
-# dead_ball_model, shape_possession at 0.2 on every graded frame, the hmm 4 / 32 / 25 / 25). The shift per type of
-# boundary is s_b + g, in frames, positive = the new label starts later:
+# Where the numbers come from. The evidence and the decoder are R011's `main.toml` verbatim, which is now
+# pipeline/configs/p07_shape.toml (controlled_touch, the hgb dead_ball_model, shape_possession at 0.2 on every graded
+# frame, the hmm 4 / 32 / 25 / 25). The shift per type of boundary is s_b + g, in frames, positive = the new label
+# starts later:
 #   s_b, the pipeline's own lag: minus the median of (predicted - true) over DFL's matched changes (`tracking`, raw
 #     truth, 3 seeds, 7 matches; conventions.py latency): team +1, into_dead -2, out_of_dead 0. R012's guard kept it,
-#     because this config beats main.toml on `tracking` raw and no cell of {tracking, context} x {raw, coarse} loses
-#     more than 0.005 (the gains are +0.0000 to +0.0009 pooled spellF1, inside noise).
+#     because this config beats R011's main.toml (p07_shape.toml now; the present main.toml already holds this shift)
+#     on `tracking` raw and no cell of {tracking, context} x {raw, coarse} loses more than 0.005 (the gains are
+#     +0.0000 to +0.0009 pooled spellF1 across those four cells, inside noise).
 #   g, the gap to our truth's convention, read from the public window by the declared rule (conventions.py shift):
 #     0 for every type, because no type clears all three of its conditions (a median of at least 3 frames in absolute
 #     value, a 90% interval that excludes 0, and every leave-one-out median of the same sign), on 1 to 4 matched public

@@ -735,7 +735,9 @@ shows without any label.
 - **`latency CONFIG`** turns the instrument on the pipeline's own output: a predicted change matches a true one of the
   same pair of labels within 50 frames, and the lag is predicted minus true, so positive means our label changed late.
   `public` reads the CSV that `pipeline/run.py CONFIG` wrote against the public GT; `dfl` runs the config on every
-  benchmark match and seed. The config must decode per half.
+  benchmark match and seed. The config must decode per half. Each file records a sha256 of the config's content (scope,
+  seed, evidence, decoder and refine, no comment), and the public one also of the CSV it was read from; `shift`
+  refuses a file of another content or of none, with the `latency` command to run again.
 - **`shift --config CONFIG`** is P02's declared rule, and nothing in it is tuned. For each type, s_b is minus the
   rounded median of DFL's latencies (profile `tracking`, raw truth, so the benchmark's own default; the coarse truth's
   is reported beside it, T33), and 0 below 30 matched changes. A guard on the benchmark confirms or rejects s_b as a
@@ -750,8 +752,8 @@ shows without any label.
 R012 applied the rule: s_b is team +1, into_dead -2, out_of_dead 0, g is 0 for every type, and `main.toml` carries it.
 The checks are in `checks/conventions.py` (synthetic): the window rule against a plain loop, the detectors on hand-built
 tracking, that the DFL mode reads the truth beside its inputs, that no transition frame is printed, the bootstrap, the
-typed matching at the tolerance, each condition of the rule on a list that fails it, and the out-of-fold prediction
-against `shift_edges.apply`.
+typed matching at the tolerance, each condition of the rule on a list that fails it, the out-of-fold prediction
+against `shift_edges.apply`, and that a latency file of another content of the config, or of none, is refused.
 
 ## The checks
 

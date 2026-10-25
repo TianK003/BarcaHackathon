@@ -293,7 +293,7 @@ def test_shape_trainer_never_passes_truth():
         match = matches["RND001"]
 
         def spy(inputs):
-            seen.append(leaks(inputs, match))
+            seen.append([leaks(inputs, other) for other in matches.values()])      # against every match's truth
             return real(inputs)
         shape_features.features = spy
         real_fit = trainer.fit
@@ -304,9 +304,9 @@ def test_shape_trainer_never_passes_truth():
             trainer.fit = real_fit
             shape_features.features = real
         assert seen, "the trainer never asked for features"
-        assert all(found == [] for found in seen), (profile, seen)
+        assert all(found == [[] for _ in matches] for found in seen), (profile, seen)
         inputs = trainer.served_inputs(match, profile, 0, calibration, None)
-        assert leaks(inputs, match) == []
+        assert all(leaks(inputs, other) == [] for other in matches.values())
 
 
 def test_shape_trainer_needs_two_matches_and_a_known_profile():
