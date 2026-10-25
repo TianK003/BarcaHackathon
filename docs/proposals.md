@@ -34,8 +34,8 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P02](#p02--learn-the-ground-truths-conventions-from-the-public-window) | Learn the GT's conventions from the public window | boundary timing | S | high | idea |
 | [P16](#p16--metricas-sample-games-in-our-ground-truth-providers-conventions) | Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing | boundary timing, grain | M | medium | idea |
 | [P03](#p03--one-command-deterministic-cached) | One-command, deterministic, cached pipeline | reproducibility | S–M | enabling | done → R001 |
-| [P04](#p04--sticky-ownership-from-controlled-touches) | Sticky ownership from controlled touches | facts 3, 5 | S | high | doing (Tian) |
-| [P05](#p05--a-real-dead-ball-detector) | Dead-ball detector | fact 4 | M | high | doing (Tian) |
+| [P04](#p04--sticky-ownership-from-controlled-touches) | Sticky ownership from controlled touches | facts 3, 5 | S | high: +0.1421 raw at the chosen decoder (R010) | done → R008, R010 |
+| [P05](#p05--a-real-dead-ball-detector) | Dead-ball detector | fact 4 | M | high: +0.1661 raw at the chosen decoder, on a benchmark that overstates it (R010, T38, T39) | done → R009, R010 |
 | [P06](#p06--global-decoding-per-half-hmm--hidden-semi-markov) | Global decoder (HMM / semi-Markov) per half | fact 5 | M | high | done → R006–R007, A10 |
 | [P07](#p07--possession-without-the-ball-team-shape-and-movement) | Possession without the ball: team shape | fact 1 | M | high, but only after P05: ~0 to this decoder without it at `margin` 0 (A10) | idea |
 | [P08](#p08--smart-tagging-as-soft-evidence) | Smart Tagging as soft evidence | facts 1, 4 | S | medium | idea |
@@ -54,9 +54,9 @@ One track per person; swap freely.
 | track | week 1 (→ Oct 27) | week 2 (→ Nov 3) | week 3 (→ Nov 10) |
 |---|---|---|---|
 | Validation | P01 (done 23 Oct, R002–R005), P02 | P12 | re-validate every candidate on P01 |
-| Pipeline and decoder | P03 | P06 (done 25 Oct, R006–R007, A10) | P06 is tuned on P01 (R007); then [After P06](#after-p06) |
-| Ball visible | P04 | P11 | P11 |
-| Dead ball | P05 rules | P05 classifier, P08 | P10 |
+| Pipeline and decoder | P03 | P06 (done 25 Oct, R006–R007, A10) | P06 is tuned on P01 (R007); then [After P06](#after-p06); `main.toml` is P04 + P05 (R010), then [After P04 and P05](#after-p04-and-p05) |
+| Ball visible | P04 (done 25 Oct, R008, R010) | P11 | P11 |
+| Dead ball | P05 (done 25 Oct, R009, R010) | P08 | P10 |
 | Ball missing | P07 | P07, P09 | P13 or P14 spike → go / no-go |
 
 Week 4: feature freeze **Fri 13 Nov**; regenerate the file from a clean clone on a second machine; finish the
@@ -114,6 +114,30 @@ raw truth first and coarse second, and are upper bounds: the oracles are exact.
    of where the transplanted masks fall. `context` places the gaps by the play, so its direction is the check. P05
    would replace this source, so the sweep is worth running only as a hedge in case P05 does not land before the
    freeze on 13 Nov.
+
+### After P04 and P05
+
+A recommendation from [R010](results.md), written on 25 Oct. `main.toml` is now P04 + P05 (the bar is met under both
+truths and the label-free check passes), and the file has not been uploaded. Pooled spellF1 on `tracking`, raw truth
+first and coarse second.
+
+1. **Learn our GT's timing on the public window (P02), with a person watching the video around the published
+   transitions.** The back-dating, the 0.55 hold and the `D` onset follow DFL's flag, and nothing about them was
+   fitted to ours. It is the one place where the public window teaches something the benchmark cannot, and where a
+   possession's edges fall decides whether it matches at the higher IoU thresholds.
+2. **Re-check the decoder's edges under a new protocol.** The chosen `switch_team` 4 and `min_possession` 25 are the
+   lowest values tried and raw spellF1 falls from them (R010). The coarse truth wants the opposite end (0.5049 coarse
+   and 0.3532 raw at 16 and 100), so the grain of our GT (T33, A06) decides it. Declare the values and the rule before
+   running, and read both truths.
+3. **P07 for the gaps, now unlocked.** A10 found a perfect possessor inside the gaps worth +0.0008 raw until `D` was
+   right and +0.1971 once it was. `D` now has a source, so P07 can be tried, but `tracking` cannot value gap features
+   (T38): read it on `context` and on the public window as well.
+4. **A restart-team channel (P05's table).** After a stoppage `controlled_touch`'s hold weakly favours the team that
+   controlled the ball before it, until the first new episode names the team. A source for the team that restarts
+   would speak sooner. R010 does not measure its worth, so it comes after the first three.
+5. **Before the upload, decide how much of the gain to believe.** The benchmark's alive/dead F1 of 0.9726 rests on
+   DFL's ball being tracked out of play (T39). Our match's predicted `D` share is 36.0% against the benchmark's 44.6%,
+   and the public window's alive agreement is 86.6% of 7,500 frames. Neither says how the full match scores.
 
 ---
 
@@ -286,8 +310,10 @@ is in place, and `python pipeline/selftest.py --data` proves the four baselines 
 
 ### P04 — Sticky ownership from controlled touches
 
-**Status: doing (Tian).** The source is `controlled_touch`
-([`pipeline/evidence/`](../pipeline/evidence/README.md)); its measurements go to results.md as R008.
+**Status: done → R008, R010.** The source is `controlled_touch`
+([`pipeline/evidence/`](../pipeline/evidence/README.md)). Chosen on a 24-config grid (R008): radius 2.0 m, relative
+speed 6 m/s, 3 frames, hold 0.55, confidence 0.91. Alone it clears both halves of P06's bar (+0.0328 raw, +0.0206
+coarse); in the chosen config removing it costs +0.1421 raw and +0.2132 coarse (R010).
 
 **Why.** Fact 3, and the definition itself: possession changes only when the opponent gains *controlled* possession,
 and loose or contested balls stay with the last team. Nearest-player-per-frame flips on every pass in flight and
@@ -305,8 +331,11 @@ every duel.
 
 ### P05 — A real dead-ball detector
 
-**Status: doing (Tian).** The play features and the rule source are in; the measurement of the rule values and the
-classifier come next.
+**Status: done → R009, R010.** The 30 play features, a fixed-rule source and a gradient-boosted model are in
+(`dead_ball_rules`, `dead_ball_model`, the trained JSON in `pipeline/models/`). Boosting was chosen over logistic
+regression and the rules (R009). Alone it clears both halves of P06's bar by a wide margin (+0.1486 raw, +0.1924
+coarse), but the benchmark overstates it for our match by an amount it cannot measure (T38, T39). The restart-team table
+below is not built: no source names the team that restarts.
 
 **Why.** Fact 4. Every stoppage we miss merges two possessions, and every spurious one splits a possession.
 

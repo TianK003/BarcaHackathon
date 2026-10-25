@@ -63,7 +63,7 @@ validator, the scorer, and the alignment self-checks in the loaders.
 py -3.11 -m venv .venv                                            # macOS/Linux: python3.11 -m venv .venv
 .venv/Scripts/python -m pip install -r requirements-starter.txt   # numpy, pandas + kloppy==3.18.0, matplotlib, notebook
 .venv/Scripts/python -m pip install -r requirements-pipeline.txt  # exact pins of what pipeline/ imports
-.venv/Scripts/python -m pip install -r requirements-benchmark.txt # the same + lxml, for pipeline/benchmark/ (P01)
+.venv/Scripts/python -m pip install -r requirements-benchmark.txt # the same + lxml, scikit-learn: pipeline/benchmark/
 
 python pipeline/run.py pipeline/configs/main.toml       # data/ -> evaluation/results/main.csv, validated + manifest
 python pipeline/run.py CONFIG --score [GT]              # + scores vs public GT (or a labels CSV), per-source agreement
@@ -128,11 +128,12 @@ keeps that convention: its scripts swap their own folder on `sys.path` for the r
   configs). Five stages, one folder each with its own README: `inputs` (alignment; the ATD parsed once into
   `data/cache/atd_tactical/`) → `evidence` (per-frame `alive`/`home` probabilities, NaN = no opinion) → `decode` (one
   block per graded half) → `refine` → `output` (LF CSV, official validation, manifest in `data/runs/`). Components
-  are plain functions in each stage's `REGISTRY` (`evidence` holds `nearest_player` and `ball_presence`, `decode`
-  holds `majority_vote` and `hmm`), chosen by TOML configs in `pipeline/configs/` and checked against
-  their signatures before any data loads. `configs/smooth50_repro.toml` must rebuild `baseline_smooth50.csv` byte for
-  byte — run `selftest.py --data` after any change upstream of the decoder. Contracts live in
-  `pipeline/contracts.py`; change them only with the team.
+  are plain functions in each stage's `REGISTRY` (`evidence` holds `nearest_player`, `ball_presence`,
+  `controlled_touch`, `dead_ball_rules` and `dead_ball_model`, the last reading the trained JSON models in
+  `pipeline/models/`; `decode` holds `majority_vote` and `hmm`), chosen by TOML configs in `pipeline/configs/` and
+  checked against their signatures before any data loads. `configs/smooth50_repro.toml` must rebuild
+  `baseline_smooth50.csv` byte for byte — run `selftest.py --data` after any change upstream of the decoder. Contracts
+  live in `pipeline/contracts.py`; change them only with the team.
 - **`pipeline/benchmark/`** — P01's validation: the seven open DFL/IDSSE matches (Bassek et al. 2025, CC BY 4.0), the
   truth built as ours is (`D` where `BallStatus` is dead, else the team in `BallPossession`) and the tracking degraded
   to look like ours, run through the pipeline's own components and scored by the official scorer per half.

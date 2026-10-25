@@ -48,9 +48,9 @@ Aggregates only, never a frame's data. For today's `main.toml`:
 
 ```
 output    evaluation/results/main.csv   0.6 s
-          valid: 199,319 rows   sha256 678aa2d4…
-          graded frames: H 38.6%  A 29.1%  D 32.3%  X  0.0%
-          594 possessions in the graded halves, mean 7.2 s
+          valid: 199,319 rows   sha256 a706e7f7…
+          graded frames: H 37.5%  A 26.5%  D 36.0%  X  0.0%
+          450 possessions in the graded halves, mean 9.0 s
 ```
 
 Possessions are counted the way the scorer counts them: inside the graded halves, with `X` bridged by the label
