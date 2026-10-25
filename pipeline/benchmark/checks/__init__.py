@@ -41,6 +41,8 @@ module of its topic:
                  they are in no production registry and the registry is as it was after a run (raised or not), the
                  variants as files that read back as the config with the oracles in, the coarse truth reaching them,
                  and that the full oracle scores exactly 1.0 (synthetic only)
+    touch.py     touch_stats: its figures against a plain loop over the frames, the confidence rule, the grid and its
+                 labels, and that the source is never handed the truth (synthetic only)
     harness.py   the harness itself: what it collects, how it reports NOT RUN, the console set-up, and that no check
                  module imports another one
     common.py    what several modules share, and no checks of its own: the synthetic DFL match, the random one
@@ -67,7 +69,7 @@ what two of them share goes to common.py (test_a_check_module_imports_no_other_c
 
 from pipeline.benchmark.checks import (
     calibration, cap, context, degrade, dfl, fidelity, harness, hazard, headroom, inputs, run, score, sources,
-    tracking, truth)
+    tracking, touch, truth)
 
 MODULES = (sources, dfl, truth, inputs, score, run, hazard, calibration, degrade, cap, tracking, context, fidelity,
-           headroom, harness)
+           headroom, touch, harness)
