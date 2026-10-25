@@ -204,7 +204,7 @@ def outside_m(xy_m, pitch):
 
 
 def window_mean(values, valid, blocks, before, after):
-    """(n,) mean of the valid `values` over [t - before, t + after], clipped to t's block; NaN where there are none.
+    """(n,) mean of the valid, finite `values` over [t - before, t + after], clipped to t's block; NaN if none.
 
     NaN as well for every t outside all blocks. Cumulative sums per block, so the cost does not grow with the window.
     """
@@ -221,8 +221,9 @@ def window_mean(values, valid, blocks, before, after):
         m = stop - start
         if m <= 0:
             continue
-        total = np.concatenate(([0.0], np.cumsum(np.where(valid[start:stop], values[start:stop], 0.0))))
-        count = np.concatenate(([0], np.cumsum(valid[start:stop])))
+        ok = valid[start:stop] & np.isfinite(values[start:stop])   # a NaN would poison every later cumulative sum
+        total = np.concatenate(([0.0], np.cumsum(np.where(ok, values[start:stop], 0.0))))
+        count = np.concatenate(([0], np.cumsum(ok)))
         t = np.arange(m)
         low = np.maximum(t - before, 0)
         high = np.minimum(t + after + 1, m)
