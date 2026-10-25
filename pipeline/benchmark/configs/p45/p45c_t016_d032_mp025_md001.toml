@@ -1,0 +1,30 @@
+# P45 Stage C (R010), P04 and P05 together: the evidence is Stage A's and Stage B's chosen sources, the decoder
+# re-tuned: hmm switch_team 16, switch_dead 32, min_possession 25, min_dead 1.
+#
+# controlled_touch is Stage A's chosen setting (confidence 0.91 is touch_stats.py's measurement) and dead_ball_model is
+# Stage B's (hgb, weight 1.0); no nearest_player and no ball_presence. Chosen on the benchmark by the Stage C protocol,
+# never on the public window (docs/traps.md T01).
+
+description = "P45 Stage C (R010): controlled_touch 2.0 m / 6.0 m/s / 3 frames / hold 0.55 (confidence 0.91) + dead_ball_model (hgb, pipeline/models/dead_ball_hgb.json) at weight 1.0, hmm 16/32/25/1, decoded per half."
+seed = 0
+scope = "halves"
+
+[[evidence]]
+kind = "controlled_touch"
+radius = 2.0          # metres: the nearest player must be this close
+max_rel_speed = 6.0   # m/s: and move with the ball
+min_frames = 3         # an episode shorter than this is dropped
+confidence = 0.91      # touch_stats.py: floor of the pooled agreement to a hundredth (91.9%)
+hold = 0.55            # the weak vote of the last team between episodes; 0.5 = off
+
+[[evidence]]
+kind = "dead_ball_model"
+weight = 1.0
+model = "pipeline/models/dead_ball_hgb.json"
+
+[decoder]
+kind = "hmm"
+switch_team = 16      # nats a change of team (H <-> A) costs
+switch_dead = 32      # nats a change into or out of D costs
+min_possession = 25  # frames: no run of H or A shorter than this (1 is no minimum)
+min_dead = 1      # frames: no run of D shorter than this (1 is no minimum)
