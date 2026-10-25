@@ -2099,6 +2099,380 @@ def test_features_speed():
     assert elapsed < 3.0, "{:.2f} s for 140,000 frames x 46 slots (the budget is 3 s)".format(elapsed)
 
 
+# -- team shape and movement (P07) ------------------------------------------------------------------------------------
+#
+# Hand-built scenes in metres on the default 105.3 x 68.0 pitch, and random scenes of two blocks whose teams swap ends.
+# No scene needs a ball, and test_shape_features_ignore_the_ball puts one in and sees nothing change. The names are
+# spelled out here, apart from the module, so that a reordered column cannot pass by agreeing with itself.
+
+SHAPE_NAMES = (
+    "h_n", "h_adv_mean", "h_adv_p10", "h_adv_p90", "h_width", "h_vel_adv", "h_speed_mean", "h_att_third",
+    "h_own_third", "h_d_adv_1s", "h_d_adv_2s", "h_vel_adv_1s",
+    "a_n", "a_adv_mean", "a_adv_p10", "a_adv_p90", "a_width", "a_vel_adv", "a_speed_mean", "a_att_third",
+    "a_own_third", "a_d_adv_1s", "a_d_adv_2s", "a_vel_adv_1s",
+    "adv_gap", "n_diff")
+SHAPE_COLUMN = {name: index for index, name in enumerate(SHAPE_NAMES)}
+
+
+def shape_scene(seed, n=240, slots=16):
+    """(players_m, teams, graded): two blocks, the teams swapping ends between them, every slot drifting at its own
+    velocity and dropping out for a few frames at a time. In seeds 3, 7, ... one team is gone from the second block."""
+    rng = np.random.default_rng(seed)
+    length, width = PLAY_PITCH
+    graded = [(1, 12, 130), (2, 150, 230)]
+    teams = rng.permutation(np.array([0] * (slots // 2) + [1] * (slots - slots // 2)))
+    home_x, away_x = rng.random(slots) * 60.0 + 5.0, rng.random(slots) * 60.0 + 40.0
+    first = np.stack([np.where(teams == 0, home_x, away_x), rng.random(slots) * 64.0 + 2.0], axis=1)
+    second = first * [-1.0, 1.0] + [length, 0.0]                         # everybody on the other side of the pitch
+    base = np.where((np.arange(n) < 140)[:, None, None], first[None], second[None])
+    drift = rng.normal(size=(slots, 2)) * 1.5                            # m/s
+    players = (base + np.arange(n)[:, None, None] * drift[None] / 25
+               + np.cumsum(rng.normal(size=(n, slots, 2)) * 0.04, axis=0))
+    on = np.ones(slots, dtype=bool)
+    for frame in range(n):                                               # a slot is lost for about 10 frames in 60
+        on = np.where(on, rng.random(slots) >= 0.02, rng.random(slots) < 0.1)
+        players[frame, ~on] = np.nan
+    if seed % 4 == 3:
+        players[150:, teams == 0] = np.nan
+    return players, teams, graded
+
+
+def shape_inputs(players, teams, graded, ball=None):
+    return play_inputs(players, nothing(len(players)) if ball is None else ball, teams=teams, graded=graded)
+
+
+def shape_matrix(players, teams, graded, ball=None):
+    from pipeline.evidence import shape_features
+    names, X = shape_features.features(shape_inputs(players, teams, graded, ball))
+    assert names == SHAPE_NAMES
+    return X
+
+
+def shape_values(X, *names):
+    return [X[:, SHAPE_COLUMN[name]] for name in names]
+
+
+def test_shape_features_shape_and_names():
+    from pipeline.evidence import shape_features
+    assert shape_features.FEATURE_VERSION == 1
+    assert shape_features.FEATURE_NAMES == SHAPE_NAMES and len(SHAPE_NAMES) == 26
+    assert shape_features.COLUMN == SHAPE_COLUMN
+    players, teams, graded = shape_scene(0)
+    X = shape_matrix(players, teams, graded)
+    assert X.shape == (len(players), 26) and X.dtype == np.float64
+    assert np.isfinite(X[graded[0][1]:graded[0][2]]).mean() > 0.5, "the scene must give the columns something to say"
+
+
+def test_shape_features_ignore_the_ball():
+    rng = np.random.default_rng(5)
+    for seed in range(3):
+        players, teams, graded = shape_scene(seed)
+        n = len(players)
+        ball = rng.random((n, 2)) * PLAY_PITCH
+        ball[rng.random(n) < 0.3] = np.nan
+        hidden = shape_matrix(players, teams, graded)
+        seen = shape_matrix(players, teams, graded, ball)
+        assert hidden is not seen
+        assert np.array_equal(hidden, seen, equal_nan=True), "seed {}: a column reads the ball".format(seed)
+        assert np.isfinite(hidden).any()
+
+
+def test_shape_features_permutation_invariant():
+    rng = np.random.default_rng(6)
+    for seed in range(6):
+        players, teams, graded = shape_scene(seed)
+        order = rng.permutation(len(teams))
+        base = shape_matrix(players, teams, graded)
+        permuted = shape_matrix(players[:, order], teams[order], graded)
+        assert np.allclose(base, permuted, rtol=1e-12, atol=1e-9, equal_nan=True), "seed {}".format(seed)
+
+
+def test_shape_features_swap():
+    from pipeline.evidence import shape_features
+    for seed in range(8):
+        players, teams, graded = shape_scene(seed)
+        X = shape_matrix(players, teams, graded)
+        relabelled = shape_matrix(players, 1 - teams, graded)
+        swapped = shape_features.swap(X)
+        assert swapped is not X and not np.shares_memory(swapped, X) and swapped.flags.writeable
+        assert swapped.shape == X.shape and swapped.dtype == np.float64
+        assert np.array_equal(swapped, relabelled, equal_nan=True), "seed {}: swap is not exact".format(seed)
+        assert np.array_equal(shape_features.swap(swapped), X, equal_nan=True), "swap is not an involution"
+        assert np.allclose(swapped, relabelled, rtol=1e-12, atol=1e-9, equal_nan=True)
+    # a hand-made row: the two team blocks trade places, the two cross columns change sign, NaN stays NaN
+    row = np.arange(26, dtype=np.float64)
+    row[5], row[24] = np.nan, 0.0
+    flipped = shape_features.swap(row)
+    assert flipped.tolist()[:12] == [12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0]
+    assert np.isnan(flipped[17]) and flipped[12 + 6] == 6.0 and flipped[24] == 0.0 and flipped[25] == -25.0
+    assert not np.signbit(flipped[24]), "a zero stays +0.0, so that swap(X) is the relabelled features to the bit"
+    assert row[0] == 0.0 and np.isnan(row[5]), "swap must leave its argument alone"
+    expect_error(ValueError, lambda: shape_features.swap(np.zeros((4, 30))), "shape_features.swap", "26")
+    expect_error(ValueError, lambda: shape_features.swap(np.zeros(())), "shape_features.swap", "26")
+
+
+def test_shape_features_mirror_pitch():
+    length = PLAY_PITCH[0]
+    for seed in range(8):
+        players, teams, graded = shape_scene(seed)
+        mirrored = players.copy()
+        mirrored[..., 0] = length - mirrored[..., 0]
+        assert np.allclose(shape_matrix(players, teams, graded), shape_matrix(mirrored, teams, graded),
+                           rtol=1e-12, atol=1e-9, equal_nan=True), "seed {}".format(seed)
+
+
+def test_shape_features_known_values():
+    length = PLAY_PITCH[0]
+    n = 160
+    home = [(10.0, 20.0), (20.0, 30.0), (30.0, 40.0)]
+    away = [(60.0, 10.0), (70.0, 50.0)]
+    players = np.tile(np.array(home + away)[None], (n, 1, 1))
+    teams = np.array([0, 0, 0, 1, 1])
+
+    def check(X, tag):
+        values = dict(zip(SHAPE_NAMES, X[80]))
+        want = {"h_n": 3, "h_adv_mean": 20.0, "h_adv_p10": 12.0, "h_adv_p90": 28.0, "h_width": 38.0 - 22.0,
+                "h_vel_adv": 0.0, "h_speed_mean": 0.0, "h_att_third": 0.0, "h_own_third": 1.0,
+                "h_d_adv_1s": 0.0, "h_d_adv_2s": 0.0, "h_vel_adv_1s": 0.0,
+                "a_n": 2, "a_adv_mean": length - 65.0, "a_adv_p10": length - 70.0 + 0.1 * 10.0,
+                "a_adv_p90": length - 70.0 + 0.9 * 10.0, "a_width": 46.0 - 14.0, "a_vel_adv": 0.0,
+                "a_speed_mean": 0.0, "a_att_third": 0.0, "a_own_third": 0.0, "a_d_adv_1s": 0.0, "a_d_adv_2s": 0.0,
+                "a_vel_adv_1s": 0.0, "adv_gap": 20.0 - (length - 65.0), "n_diff": 1}
+        assert set(want) == set(SHAPE_NAMES)
+        for name, expected in want.items():
+            assert np.isclose(values[name], expected, rtol=1e-12, atol=1e-9), (tag, name, values[name], expected)
+        assert np.isclose(values["h_adv_p10"], np.percentile([10.0, 20.0, 30.0], 10))
+        assert np.isclose(values["h_adv_p90"], np.percentile([10.0, 20.0, 30.0], 90))
+
+    check(shape_matrix(players, teams, [(1, 0, n)]), "home on the left")
+    # the same scene seen from the other end of the pitch (everyone's x mirrored): nothing changes
+    mirrored = players.copy()
+    mirrored[..., 0] = length - mirrored[..., 0]
+    check(shape_matrix(mirrored, teams, [(1, 0, n)]), "home on the right")
+    # the third of the pitch is in adv: a forward line and a back line, two slots each, and a lone midfielder
+    rows = np.array([(5.0, 34.0), (30.0, 10.0), (50.0, 34.0), (75.0, 20.0), (98.0, 50.0)])
+    thirds = shape_matrix(np.tile(rows[None], (n, 1, 1)), np.array([0, 0, 0, 0, 0]), [(1, 0, n)])
+    assert thirds[80, SHAPE_COLUMN["h_own_third"]] == 2 / 5 and thirds[80, SHAPE_COLUMN["h_att_third"]] == 2 / 5
+    assert thirds[80, SHAPE_COLUMN["a_n"]] == 0 and thirds[80, SHAPE_COLUMN["n_diff"]] == 5
+    # one team on the move: both walk along +x at 2 m/s, so the home team (attacking +x) gains 2 m/s and the away team
+    # (attacking -x) loses 2 m/s; adv_mean moves 4 m in a second each way round
+    n = 200
+    starts = np.array(home + away)
+    walking = walkers(n, 2.0, starts, direction=(1.0, 0.0))
+    X = shape_matrix(walking, teams, [(1, 0, n)])
+    (h_vel, a_vel, h_speed, a_speed, h_vel_1s, a_vel_1s, h_d1, h_d2, a_d1, a_d2) = shape_values(
+        X, "h_vel_adv", "a_vel_adv", "h_speed_mean", "a_speed_mean", "h_vel_adv_1s", "a_vel_adv_1s", "h_d_adv_1s",
+        "h_d_adv_2s", "a_d_adv_1s", "a_d_adv_2s")
+    assert np.allclose(h_vel, 2.0) and np.allclose(a_vel, -2.0) and np.allclose(h_speed, 2.0)
+    assert np.allclose(a_speed, 2.0) and np.allclose(h_vel_1s, 2.0) and np.allclose(a_vel_1s, -2.0)
+    assert np.allclose(h_d1[25:175], 4.0) and np.allclose(a_d1[25:175], -4.0)
+    assert np.allclose(h_d2[50:150], 8.0) and np.allclose(a_d2[50:150], -8.0)
+    # ... and a team that walks across the pitch the other way round: the same numbers, mirrored
+    mirrored = walking.copy()
+    mirrored[..., 0] = length - mirrored[..., 0]
+    again = shape_matrix(mirrored, teams, [(1, 0, n)])
+    assert np.allclose(again, X, rtol=1e-12, atol=1e-9, equal_nan=True)
+
+
+def test_shape_features_nan_rules():
+    rng = np.random.default_rng(8)
+    # outside the graded blocks every column is NaN, `n` and `n_diff` included
+    players, teams, graded = shape_scene(1)
+    X = shape_matrix(players, teams, graded)
+    outside = np.ones(len(players), dtype=bool)
+    for _, start, stop in graded:
+        outside[start:stop] = False
+    assert np.isnan(X[outside]).all(), "rows outside the graded blocks must be all NaN"
+    assert not np.isnan(X[~outside][:, [SHAPE_COLUMN["h_n"], SHAPE_COLUMN["a_n"], SHAPE_COLUMN["n_diff"]]]).any()
+
+    # a team with nobody present has n = 0 and NaN elsewhere, windows included, even where its slots are back within
+    # a second; the other team's columns and n_diff are unaffected
+    n = 160
+    players = rng.random((n, 6, 2)) * PLAY_PITCH
+    players[:, 3:, 0] = players[:, 3:, 0] * 0.4 + 60.0
+    players[:, :3, 0] = players[:, :3, 0] * 0.4
+    players[60:100, 3:] = np.nan
+    X = shape_matrix(players, np.array([0, 0, 0, 1, 1, 1]), [(1, 0, n)])
+    away = [name for name in SHAPE_NAMES if name.startswith("a_") and name != "a_n"]
+    gone = np.zeros(n, dtype=bool)
+    gone[60:100] = True
+    assert (X[gone, SHAPE_COLUMN["a_n"]] == 0).all() and (X[~gone, SHAPE_COLUMN["a_n"]] == 3).all()
+    for name in away + ["adv_gap"]:
+        assert np.isnan(X[gone, SHAPE_COLUMN[name]]).all(), name
+    for name in ("a_adv_mean", "a_d_adv_1s", "a_d_adv_2s", "a_vel_adv_1s", "adv_gap"):
+        assert np.isfinite(X[~gone, SHAPE_COLUMN[name]]).any(), name
+    assert (X[gone, SHAPE_COLUMN["n_diff"]] == 3).all() and not np.isnan(X[gone, SHAPE_COLUMN["h_adv_mean"]]).any()
+    assert np.isfinite(X[gone, SHAPE_COLUMN["h_d_adv_1s"]]).any()
+    # frame 80 is the case: its slots are gone, and the frames a second either side of it are not
+    assert np.isfinite(X[[55, 105], SHAPE_COLUMN["a_adv_mean"]]).all() and np.isnan(X[80, SHAPE_COLUMN["a_d_adv_1s"]])
+
+    # no slot of a team at all, and nobody at all
+    X = shape_matrix(players[:, :3], np.array([0, 0, 0]), [(1, 0, n)])
+    assert (X[:, SHAPE_COLUMN["a_n"]] == 0).all() and np.isnan(X[:, 12 + 1:24]).all() and np.isnan(X[:, 24]).all()
+    assert (X[:, SHAPE_COLUMN["n_diff"]] == 3).all()
+    X = shape_matrix(nobody(20, 4), np.array([0, 1, 0, 1]), [(1, 0, 20)])
+    assert (X[:, SHAPE_COLUMN["h_n"]] == 0).all() and (X[:, SHAPE_COLUMN["a_n"]] == 0).all()
+    assert (X[:, SHAPE_COLUMN["n_diff"]] == 0).all()
+    assert np.isnan(X[:, [SHAPE_COLUMN[name] for name in SHAPE_NAMES if name not in ("h_n", "a_n", "n_diff")]]).all()
+
+    # d_adv_1s needs 25 frames each side inside the block and d_adv_2s 50; a full row of slots is there throughout
+    n, (start, stop) = 200, (20, 180)
+    players = rng.random((n, 8, 2)) * PLAY_PITCH
+    X = shape_matrix(players, np.arange(8) % 2, [(1, start, stop)])
+    for name, k in (("d_adv_1s", 25), ("d_adv_2s", 50)):
+        for prefix in ("h_", "a_"):
+            column = X[:, SHAPE_COLUMN[prefix + name]]
+            assert np.isnan(column[:start + k]).all() and np.isnan(column[stop - k:]).all(), prefix + name
+            assert np.isfinite(column[start + k:stop - k]).all(), prefix + name
+    # two blocks that touch: the look-ahead stops at the half's end, so the first block's last second is NaN
+    X = shape_matrix(rng.random((200, 8, 2)) * PLAY_PITCH, np.arange(8) % 2, [(1, 0, 100), (2, 100, 200)])
+    column = X[:, SHAPE_COLUMN["h_d_adv_1s"]]
+    assert np.isnan(column[75:125]).all() and np.isfinite(column[25:75]).all() and np.isfinite(column[125:175]).all()
+    assert np.isnan(column[:25]).all() and np.isnan(column[175:]).all()
+
+
+def test_shape_features_see_only_their_block():
+    rng = np.random.default_rng(12)
+    players, teams, graded = shape_scene(2)
+    (_, first_start, first_stop), (_, second_start, second_stop) = graded
+    base = shape_matrix(players, teams, graded)
+    moved = players.copy()
+    moved[second_start:second_stop] = rng.random((second_stop - second_start, len(teams), 2)) * PLAY_PITCH
+    moved[first_stop:second_start] = 7.0                                  # the frames between the blocks change nothing
+    again = shape_matrix(moved, teams, graded)
+    assert np.array_equal(base[:first_stop], again[:first_stop], equal_nan=True), "block 2 leaked into block 1"
+    assert np.isnan(again[first_stop:second_start]).all() and np.isnan(again[second_stop:]).all()
+    assert not np.array_equal(base[second_start:second_stop], again[second_start:second_stop], equal_nan=True)
+    moved = players.copy()
+    moved[:first_stop] = rng.random((first_stop, len(teams), 2)) * PLAY_PITCH
+    third = shape_matrix(moved, teams, graded)
+    assert np.array_equal(base[second_start:], third[second_start:], equal_nan=True), "block 1 leaked into block 2"
+
+
+def test_shape_features_follow_each_blocks_direction():
+    # the same kick-off formation twice, the teams swapping ends: the home team is on the left in the first block and
+    # on the right in the second, and each team's adv is measured from the goal line it defends in its own block
+    first, teams = kickoff_formation(100, home_left=True)
+    second, _ = kickoff_formation(100, home_left=False)
+    X = shape_matrix(np.concatenate([first, second]), teams, [(1, 0, 100), (2, 100, 200)])
+    h_mean, a_mean, h_own, h_att = shape_values(X, "h_adv_mean", "a_adv_mean", "h_own_third", "h_att_third")
+    home_adv = (52.2 + np.linspace(12, 50, 10).sum()) / 11               # x of the home slots in the first block
+    assert np.allclose(h_mean, home_adv) and np.allclose(a_mean, PLAY_PITCH[0] - 75.0)
+    assert np.allclose(h_own, 6 / 11) and np.allclose(h_att, 0.0)        # 6 of 11 slots under L/3, none over 2L/3
+    assert np.allclose(X[:, SHAPE_COLUMN["adv_gap"]], home_adv - (PLAY_PITCH[0] - 75.0))
+    # one block for both stretches: a single pair of ends, so one of the two stretches has the teams the wrong way
+    one = shape_matrix(np.concatenate([first, second]), teams, [(1, 0, 200)])
+    assert not np.allclose(one[:100, SHAPE_COLUMN["h_adv_mean"]], one[100:, SHAPE_COLUMN["h_adv_mean"]])
+
+
+def shape_reference(inputs):
+    """Every shape feature with plain loops over the present slots, from the tracks' own positions and velocities
+    (kinematics is checked elsewhere) and each block's direction from `play_features._own_half_is_left`."""
+    from pipeline.evidence import kinematics, play_features
+    players = kinematics.player_track(inputs)
+    length, fps = inputs.pitch[0], inputs.fps
+    teams = np.asarray(inputs.atd.slot_team)
+    n, slots = players.present.shape
+    X = np.full((n, 26), np.nan)
+    one_second = int(round(fps))
+    for _, start, stop in inputs.graded:
+        home_left = play_features._own_half_is_left(players, teams, start, stop, length)
+        for base, team in ((0, 0), (12, 1)):
+            right = home_left if team == 0 else not home_left
+            sign = 1.0 if right else -1.0
+            for t in range(start, stop):
+                mine = [s for s in range(slots) if teams[s] == team and players.present[t, s]]
+                X[t, base] = len(mine)
+                if not mine:
+                    continue
+                x, y = players.xy_m[t, mine, 0], players.xy_m[t, mine, 1]
+                adv = x if right else length - x
+                X[t, base + 1] = np.mean(adv)
+                X[t, base + 2], X[t, base + 3] = np.percentile(adv, [10, 90])
+                low, high = np.percentile(y, [10, 90])
+                X[t, base + 4] = high - low
+                known = [s for s in mine if np.isfinite(players.speed[t, s])]
+                if known:
+                    X[t, base + 5] = np.mean([sign * players.vel[t, s, 0] for s in known])
+                    X[t, base + 6] = np.mean([players.speed[t, s] for s in known])
+                X[t, base + 7] = np.mean(adv > 2 * length / 3)
+                X[t, base + 8] = np.mean(adv < length / 3)
+            count, mean, velocity = X[start:stop, base], X[start:stop, base + 1], X[start:stop, base + 5]
+            for t in range(stop - start):
+                if count[t] == 0:
+                    continue
+                for k, column in ((one_second, 9), (2 * one_second, 10)):
+                    if t - k >= 0 and t + k < stop - start:
+                        X[start + t, base + column] = mean[t + k] - mean[t - k]
+                near = velocity[max(t - one_second, 0):min(t + one_second, stop - start - 1) + 1]
+                near = near[np.isfinite(near)]
+                if len(near):
+                    X[start + t, base + 11] = near.mean()
+    X[:, 24] = X[:, 1] - X[:, 13]
+    X[:, 25] = X[:, 0] - X[:, 12]
+    return X
+
+
+def test_shape_features_match_a_loop():
+    from pipeline.evidence import shape_features
+    for seed in range(24):
+        players, teams, graded = shape_scene(seed)
+        inputs = shape_inputs(players, teams, graded)
+        got, want = shape_features.features(inputs)[1], shape_reference(inputs)
+        for index, name in enumerate(SHAPE_NAMES):
+            close = np.isclose(got[:, index], want[:, index], rtol=1e-9, atol=1e-9, equal_nan=True)
+            assert close.all(), "seed {}: column {} differs, first at frame {}".format(
+                seed, name, int(np.flatnonzero(~close)[0]))
+
+
+def test_shape_features_chunks_change_nothing():
+    from pipeline.evidence import shape_features
+    players, teams, graded = shape_scene(11)
+    inputs = shape_inputs(players, teams, graded)
+    whole = shape_features.features(inputs)[1]
+    saved = shape_features.CHUNK
+    try:
+        for chunk in (1, 7, 64):
+            shape_features.CHUNK = chunk
+            assert np.array_equal(shape_features._build(inputs), whole, equal_nan=True), chunk
+    finally:
+        shape_features.CHUNK = saved
+
+
+def test_shape_features_memo_and_read_only():
+    from pipeline.evidence import shape_features
+    players, teams, graded = shape_scene(7)
+    inputs = shape_inputs(players, teams, graded)
+    arrays = [inputs.atd.players_xy, inputs.atd.ball_xy, inputs.atd.slot_team]
+    saved = [array.copy() for array in arrays]
+    for array in arrays:
+        array.flags.writeable = False
+    names, X = shape_features.features(inputs)
+    for array, copy in zip(arrays, saved):
+        assert np.array_equal(array, copy, equal_nan=True), "features must not write to the inputs"
+    assert not X.flags.writeable, "features must hand out read-only arrays"
+    again_names, again = shape_features.features(inputs)
+    assert again is X and again_names is names, "features is remembered per Inputs object"
+    other_names, other = shape_features.features(shape_inputs(*shape_scene(8)))
+    assert other is not X and not np.array_equal(other, X, equal_nan=True)
+
+
+def test_shape_features_speed():
+    from pipeline.evidence import shape_features
+    rng = np.random.default_rng(10)
+    n, slots = 180_000, 30
+    players = rng.random((n, slots, 2))
+    players[rng.random((n, slots)) < 0.4] = np.nan
+    ball = rng.random((n, 2))
+    inputs = kinematics_inputs(kinematics_atd(players, ball), [(1, 5_000, 85_000), (2, 100_000, 180_000)])
+    started = time.perf_counter()                   # from a fresh Inputs: the tracks and the Atd's masks are in it
+    shape_features.features(inputs)
+    elapsed = time.perf_counter() - started
+    print("      shape features speed: 160,000 graded frames x {} slots (tracks included) in {:.2f} s".format(
+        slots, elapsed))
+    assert elapsed < 6.0, "{:.2f} s for 160,000 frames x 30 slots (the budget is 6 s)".format(elapsed)
+
+
 # -- the dead-ball model (P05) ----------------------------------------------------------------------------------------
 #
 # A hand-made artifact of a couple of trees, so that every number is worked out here and not by the trainer. Its one
