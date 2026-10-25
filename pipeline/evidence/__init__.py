@@ -12,7 +12,7 @@ decoder sees it.
 import numpy as np
 
 from pipeline.contracts import A, D, H, X
-from pipeline.evidence import ball_presence, controlled_touch, nearest_player
+from pipeline.evidence import ball_presence, controlled_touch, dead_ball_rules, nearest_player
 
 # Params
 # kind (as written in a config) -> compute function. Explicit on purpose: one line per source, no import magic, and
@@ -20,6 +20,7 @@ from pipeline.evidence import ball_presence, controlled_touch, nearest_player
 REGISTRY = {
     "ball_presence": ball_presence.compute,
     "controlled_touch": controlled_touch.compute,
+    "dead_ball_rules": dead_ball_rules.compute,
     "nearest_player": nearest_player.compute,
 }
 

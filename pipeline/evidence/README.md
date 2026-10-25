@@ -38,6 +38,7 @@ every value in [0, 1] or NaN. A length of ~164k means the broadcast was indexed 
 | `nearest_player` | NaN everywhere | `confidence` / `1 − confidence` by the team of the nearest tracked slot; NaN without a ball or a player | `confidence` ∈ [0.5, 1.0], default 1.0 | step 1 of `starter/baseline.py`, bit for bit at the default (hard 1.0 / 0.0). Opinion on 59.3% of graded frames; agrees with the public GT on 77.8% of 5,640 frames (= A01) |
 | `ball_presence` | `seen` with a ball; `missing` on a missing frame more than `margin` frames from one; NaN nearer | NaN everywhere | `margin` ≥ 0 frames, default 0; `missing` ∈ [0, 1], default 0.2; `seen` ∈ [0, 1], default 0.585 | the baseline's "no ball means stoppage" as evidence, for P06's decoder to weigh: exactly that only at `baseline_raw`'s half-width 0, and broader than `main`'s vote at `margin` 0 (below). P05 replaces it |
 | `controlled_touch` | NaN everywhere | `confidence` / `1 − confidence` on a kept control episode; `hold` / `1 − hold` between episodes if `hold` > 0.5; NaN elsewhere and without a ball | `radius`, `max_rel_speed` (may be `inf`), `min_frames`, `confidence` ∈ (0.5, 1], `duel_radius` default 1.0, `hold` ∈ [0.5, confidence], default 0.5 = off | P04: a player within `radius` of the ball, no opponent within `duel_radius`, moving with it, for at least `min_frames`. Silent in flight and in a duel, so the decoder keeps the last team there |
+| `dead_ball_rules` | the smallest of `alive_out`, `alive_still`, `alive_slow`, `alive_kickoff` among the rules that fire, else `alive_none`; 0.001 before a half's kick-off; NaN outside the graded blocks | NaN everywhere | the five values, each ∈ [0, 1], required, no default | P05's rules on `play_features`: ball beyond a line, still at a restart spot, a collective slowdown, a kick-off formation. Thresholds fixed (laws of the game, literature), values measured later |
 
 The nearest player is not the possessor — wrong on 22% of ball-visible, in-play frames ([T14](../../docs/traps.md)).
 P04 is its replacement.
@@ -85,6 +86,23 @@ maximal stretch of valid frames in one graded block), falling back to central an
 and NaN on a run of one frame, so nothing reads across a gap, a slot handover or half time. It never reads
 `atd.players_speed` or `atd.ball_speed` ([T28, T31](../../docs/traps.md)). Both tracks are remembered per `Inputs`
 object (a `weakref.WeakKeyDictionary`, in memory only); both together take about 1.3 s on 200,000 frames of 46 slots.
+
+## P05: play features and the dead-ball rules
+
+[`play_features.py`](play_features.py) (numpy only) turns the tracking into 30 per-frame numbers about the play:
+the ball's state (beyond a line, still, at a restart spot, in a goal area, how long unseen and what it was doing at
+each end of a gap), the players' speeds over windows, the set-piece shapes (kick-off, corner, goal area, touchline)
+and the teams' shape. `features(inputs)` gives `(FEATURE_NAMES, X)` with `X` of shape (n, 30), NaN outside the graded
+blocks, remembered per `Inputs` object and read-only; the definitions are fixed (`FEATURE_VERSION = 1`) and a team's
+half is decided per block. The features also feed a classifier (a later task). About 1.5 s on 140,000 graded frames of
+46 slots with the kinematics tracks already built.
+
+[`dead_ball_rules.py`](dead_ball_rules.py) reads four rules off those features: `out` (ball more than 0.5 m beyond a
+line), `still` (2 s motionless at a restart spot, on a line or in a goal area), `slow` (80% of the slots under 2 m/s
+over +/- 4 s) and `kickoff` (both teams in their own half, a slot within 2 m of the centre spot). The thresholds come
+from the laws of the game and the literature and are never tuned; the five probabilities are measurements, taken from
+a later task and passed as required parameters. `pre_kickoff_mask` and `PRE_KICKOFF_ALIVE` (0.001) make a graded frame
+before its half's kick-off dead, only where the kick-off lies inside the block (T02).
 
 ## Writing a source
 
