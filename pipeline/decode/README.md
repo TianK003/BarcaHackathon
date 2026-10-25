@@ -100,7 +100,8 @@ first and last run, which its edges may have cut short. The decoder returns a va
 | `posterior` | `false` | `true` also returns `Decoded.posterior`, the probability of `H`, `A` and `D` per frame ([below](#the-posterior)); the labels are the same either way |
 
 All four numbers are validated (no bool, no NaN or infinity, minimums are whole numbers of frames >= 1) and named in the
-error. Tune them on P01's benchmark, never on the public window ([T01](../../docs/traps.md)). The benchmark's choice is
+error. Tune them on P01's benchmark, never on the public window, which since 23 Oct 2026 is a rule and not only advice
+([T01](../../docs/traps.md)). The benchmark's choice is
 `switch_team` 8, `switch_dead` 32, `min_possession` 75 and `min_dead` 1 ([R006 and R007](../../docs/results.md), kept in
 [`configs/p06_hmm.toml`](../configs/p06_hmm.toml)); that config does not clear P06's bar and is not the submission
 config.

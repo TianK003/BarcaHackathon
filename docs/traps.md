@@ -5,12 +5,16 @@ out: what you saw, why it happens, what to do instead. Give it the next free ID 
 
 ## Scoring
 
-**T01 — Tuning on the public window.** The public window holds 17 possessions, so one possession is worth about
-0.06 spellF1. It is also the best-covered 5 minutes of the match: the ball is missing on 12% of its frames, against
-40.7% overall and up to 80% per 5-minute block ([A02](results.md#a02--ball-coverage-across-the-match-2026-10-21)).
-And it ranks `smooth125` above `smooth50`, the reverse of the full match. Use it to check correctness, and decide on
-P01 validation: per-match t-intervals and the exact sign-flip test of
-[`pipeline/benchmark/README.md`](../pipeline/benchmark/README.md), never a bootstrap.
+**T01 — No tuning on the public window: a rule, not just a bad idea.** Since the organisers' clarification of 23 Oct
+2026 (upstream `f8f2629`; RULES.md rule 2, EVALUATION.md) the public 5 minutes are for checking that the pipeline is
+correct (frames aligned, file well-formed, labels meaning what you think), and they are "not training data and not a
+tuning set". Choosing between two versions on it, setting or calibrating a constant on it and training on it all break
+that rule, out of fold or not. It would also pick the wrong answer. The window holds 17 possessions, so one possession
+is worth about 0.06 spellF1. It is the best-covered 5 minutes of the match: the ball is missing on 12% of its frames,
+against 40.7% overall and up to 80% per 5-minute block
+([A02](results.md#a02--ball-coverage-across-the-match-2026-10-21)). And it ranks `smooth125` above `smooth50`, the
+reverse of the full match. Use it to check correctness only, and decide on P01 validation: per-match t-intervals and
+the exact sign-flip test of [`pipeline/benchmark/README.md`](../pipeline/benchmark/README.md), never a bootstrap.
 
 **T02 — `X` means "repeat my last label" — and at the start of a half, "copy my first label".** Before computing
 spellF1, the scorer forward-fills `X` with the last non-`X` label in the half, and back-fills the head of the half.
@@ -71,10 +75,18 @@ lead and not a measurement. What to do:
   model and DFL's flag agree to a frame out of fold (+1 and 0 frames), and that says nothing about our truth;
 - before shifting any edge, or adding a feature that places one, read A11 for where our truth looks different and R012
   for what our pipeline's own latency is (on DFL and at those 20 changes) and which shift the rule adopted (the
-  pipeline's own lag, 1 to 2 frames, and no gap to our convention), and shift only by the rule declared for
-  `shift_edges`;
+  pipeline's own lag on DFL, 1 to 2 frames, and no gap to our convention), and shift only by the rule declared for
+  `shift_edges`, with its public half retired (below);
 - a person can watch the 20 changes on the tactical video (`conventions.py public`, A11's "How a person can extend
-  it") to see whether `D` begins at the line, the whistle or the stoppage, and what the flip of a team change is.
+  it") to understand whether `D` begins at the line, the whistle or the stoppage, and what the flip of a team change
+  is, and what they learn may shape a feature. It never becomes a number in a config, a label or a rule tied to those
+  frames (T27): a constant that fixes our convention would be tuned on the public window.
+
+*Changed 23 Oct 2026 (`f8f2629`):* R012's rule had two parts, s_b (the pipeline's own lag on the seven DFL matches,
+allowed) and g (the gap to our convention, read from the public window's latencies, which is now a tuning use of the
+window and not allowed). g came out 0 for every type, so `main.toml`'s shift is s_b alone, from DFL. g is **retired**:
+it stays 0 by rule, `conventions.py shift` still prints it for reference, and any future shift comes from other games
+only (P16).
 
 ## Alignment
 
@@ -312,23 +324,41 @@ it).
   switched on.
 
 **T26 — Nothing about this fixture from outside the bundle.** Event feeds, possession stats, match reports and goal
-times all count as "any other source of corrected possession data for this fixture", or close enough. Inferring the
-private GT's statistics from the published baseline scores is off-limits in spirit too: tune on our own validation.
+times are "human-produced data about the provided game, from any source" (RULES.md rule 2, as clarified on 23 Oct
+2026, `f8f2629`, which names event data, corrected tracking, possession data and annotations). The same kinds of data
+about other games are fine. Inferring the private GT's statistics from the published baseline scores is off-limits in
+spirit too: tune on our own validation.
 
-**T27 — No hand labels on this match, not even to validate.** The organisers changed the rule on 22 Oct 2026
-(upstream `c073f29`, RULES.md). Hand-labelled data from other matches is fine for training or validation, in any
-amount. Hand labels on BAR-ATH are not, whatever they are for.
+**T27 — No hand labels on this match, not even to validate, and the public window is not training data.** The
+organisers' rule comes in two clarifications, 22 Oct 2026 (upstream `c073f29`) and 23 Oct 2026 (upstream `f8f2629`),
+both in RULES.md (rule 1, "Training and validation data", and rule 2). Hand-labelled data from other games is fine for
+training or validation, in any amount, if the organisers can access it and the technical document says what was
+labelled, how, by whom and how much. Hand labels on BAR-ATH are not, in any amount and for any purpose.
+
+*Changed 23 Oct 2026 (`f8f2629`):* until then the published 5 minutes could be used, and a model trained on them had to
+predict the window out of fold, so that no ground-truth label was copied into the file. That reading is gone. The
+5 minutes are for checking that the pipeline is correct: "They are not training data and not a tuning set." So there
+is no out-of-fold use of them either; nothing is fitted, calibrated or chosen on them. The rule also grew a second
+source of data: nothing human-produced about this game, from any source.
 
 Not allowed on this match:
 - labelling possession or stoppages from its video, including "blind" calibration on the public window;
 - drawing ball boxes on its frames to fine-tune a detector (P14);
-- hand-correcting any output.
+- hand-correcting any output ("frame by frame, segment by segment or at transitions only");
+- correcting its tracking by hand (a ball position, an identity switch): "Corrections must come out of code";
+- training a model on the public GT, or fitting, calibrating or choosing a constant on it, in sample or out of fold;
+- any human-produced data about this game from any source: event data, corrected tracking, possession data,
+  annotations (T26).
 
-Still fine:
-- the published public GT;
-- watching the video and measuring around its published transitions (P02);
-- pseudo-labels our own code produces (P07);
-- labelled data of other matches (P01, P13).
+Still fine on this match:
+- watching the video and inspecting the data to understand them, debug the pipeline and design features. What is not
+  fine is turning what was seen into labels, corrections, or rules and constants tied to specific frames of the game, so
+  the person of P02 watches to understand and writes no number into a config;
+- learning without human labels: unsupervised or self-supervised methods, and pseudo-labels our own code produces (P07),
+  provided no person decided any of them;
+- using the public 5 minutes to check correctness: the file is valid, frames are aligned, a source's agreement reads as
+  it should, the run is deterministic (T01);
+- labelled data of other games (P01, P13, P16).
 
-A model trained on the public GT must predict the public window out of fold, so that no ground-truth label is copied
-into the file. Disclose every labelled dataset in the technical document.
+Disclose every labelled dataset in the technical document, with its source, who labelled it and how much (section 2),
+and none of it from BAR-ATH.

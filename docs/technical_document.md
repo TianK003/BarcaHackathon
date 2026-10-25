@@ -56,11 +56,13 @@ show. The file has not been uploaded.
 
 **The shift** (P02, `pipeline/refine/shift_edges.py`). After the decoder, each kind of edge of a half is moved by a
 whole number of frames: a change of team 1 frame later, a change into `D` 2 frames earlier, a change out of `D` not at
-all. They are the pipeline's own lag on the seven benchmark matches, negated, kept by a guard on the benchmark. The
-further gap to our truth's own convention that the public window could add came out 0 for every type, because it rests
-on 1 to 4 matched changes per type (R012, A11). The shift is adopted by a rule declared before the runs, and it is not
-shown to help: its benchmark gains are +0.0000 to +0.0009 pooled spellF1 (on `tracking` and `context`, raw and coarse
-truth), inside the noise (section 5).
+all. They are the pipeline's own lag on the seven benchmark matches, negated, kept by a guard on the benchmark. The rule
+R012 declared had a second term, a gap to our truth's own convention read from the public window. It came out 0 for
+every type (it rests on 1 to 4 matched changes per type, R012, A11), and since the organisers' rule of 23 Oct 2026 it is
+retired: reading a constant off the public window is tuning on a window that is for checking the pipeline only, so the
+term stays 0 by rule and the shift is the DFL lag alone. The shift is adopted by a rule declared before the runs, and it
+is not shown to help: its benchmark gains are +0.0000 to +0.0009 pooled spellF1 (on `tracking` and `context`, raw and
+coarse truth), inside the noise (section 5).
 
 ## 2. Assets used and dropped
 
@@ -71,7 +73,7 @@ truth), inside the noise (section 5).
 | Tactical homography | only in A03 | The pitch point under the image centre (the inverse homography of the centre pixel) was compared with the ATD ball over the graded frames: the camera's aim is a coarse zone prior for long ball gaps, not a position (A03). No source of the pipeline reads it (P09, which would, is an idea) |
 | Tactical video (frames, audio) | only its structure (A04) | `ffprobe` read the stream information (H.264, 1920×1080, 25 fps, 199,319 frames; AAC audio from t = 0), and no value of the file was read (A04). No source of the pipeline reads it (P10, the whistle in the audio, and P14, the ball in the frames, are ideas), and no LLM may see it, so what needs it is left to a person (A11) |
 | Broadcast video, ATD, homography | not used | The broadcast runs on its own 164,488-frame timeline (cuts, replays) and no mapping to the tactical frames is provided (T09), so the pipeline loads none of it. A04 read its structure only: the mp4 is one frame shorter than its ATD, and 34.2% of its homography rows are NaN. Aligning it is P15, an idea |
-| Public 5-minute ground truth | yes, to check and to measure | A correctness check of every file (valid, deterministic; the score is not used to choose, T01). It supplies the 20 changes of A11 and R012 (12 of team, 4 into `D`, 4 out of it), whose timing against label-free events and against the pipeline's own latency is measured. No constant of P07 was set on it (R011), and none of the shift's: the declared rule read the public latencies for g, which came out 0 for every type, so the shift is s_b alone, from DFL (R012). Nothing of this match was hand-labelled |
+| Public 5-minute ground truth | only to check the pipeline, and to inspect | RULES.md rule 2 (23 Oct 2026): "not training data and not a tuning set". It checks every file (valid, deterministic, each source's agreement; the score is not used to choose, T01) and it supplies the 20 changes (12 of team, 4 into `D`, 4 out of it) that A11 inspects, to understand how our truth flips against label-free events. Nothing is trained, calibrated or chosen on it, and no constant of the submission config comes from it (the audit in section 5). The one place the pipeline read it as an input was R012's g, which came out 0 for every type and is now retired, so the shift is s_b alone, from DFL. Nothing of this match was hand-labelled |
 | Labelled tracking of other matches: the DFL/IDSSE open data, 7 matches (P01) | yes, to validate, to train P05's dead-ball model and P07's shape model, and to measure P02's lag | Bassek et al. 2025 (reference below), CC BY 4.0. We use the 25 Hz positions of players and ball, the ball's alive/dead flag and the team in possession on every frame (they give the truth: `D` where dead, otherwise the team), and the match information (teams, roles, pitch, halves). The tracking is degraded to look like ours and run through our pipeline. The ball's alive/dead flag trains the dead-ball model (every fifth graded frame of the degraded matches, and each benchmark match is read by the model that never saw it). The team in possession trains the shape model of P07 (every fifth alive graded frame, each also as its team-swapped mirror, from 26 features that do not read the ball, and again each benchmark match is read by the model fitted without it); it is also used for validation and to measure the touch rule's confidence. For P02 the same matches give the pipeline's own latency against DFL's flag (R012) and DFL's flag timed against the same label-free events (A11). Nothing else is trained on it (P13 is an idea) |
 | The DFL/IDSSE event files; kloppy's DFL loader and download | dropped | The raw events, one of the three files of a match, are never read. kloppy's loader drops every dead-ball frame by default and its download fails (T30), so our own parser (`pipeline/benchmark/dfl.py`) reads the positions, and kloppy only cross-checks it: 0 disagreements (A05) |
 | Other external datasets or pretrained models | no | Nothing beyond the DFL/IDSSE matches above is used: P13 (more labelled tracking, such as SkillCorner's open data) and P14 (a pretrained soccer-ball detector) are ideas, not done |
@@ -86,8 +88,24 @@ not the bundle's rules. `pipeline/benchmark/sources.py` downloads the 21 files (
 committed) and accepts a file only if its size and md5 equal the pinned values; a Hugging Face mirror of the same data,
 pinned to one commit and checked the same way, is the fallback. Five of the seven matches are one club's home games.
 
-No frame of this match was hand-labelled, for training, validation or the submission (RULES.md, as clarified on
-22 Oct 2026).
+**Labelled data (SUBMISSION.md: every labelled dataset, its source, who labelled it and how much; none of it from the
+provided game).** One dataset is used, and it is about other games.
+
+| dataset | source | who labelled it | how much | used for |
+|---|---|---|---|---|
+| DFL/IDSSE open data: `BallStatus` (alive or dead) and `BallPossession` (the team) on every frame | Bassek et al. 2025, figshare, CC BY 4.0 (above) | DFL's official data (Bassek et al. 2025). The paper defines `BallStatus` and `BallPossession` but does not say who or what sets them. It says that the positions come from TRACAB Gen5 (ChyronHego), the match information from Sportec Solutions and the events from trained human operators, and that "all data are visually controlled by live operators for plausibility and undergo a final quality check after the game". So we treat the flags as human-checked labels | 7 full matches of other games (2 Bundesliga, 5 2. Bundesliga), 25 Hz: 668.4 graded minutes (about 1.0 million frames) per degradation seed, 437 possessions a match on average and 92 to 113 stoppages a match (A06) | the benchmark's truth (validation); the dead-ball model's labels (601,602 rows: every fifth graded frame, 3 seeds); the shape model's labels (331,881 rows, 663,762 with the team-swapped mirrors); the touch rule's confidence; the pipeline's own lag |
+
+Not in the list, and why: the public 5 minutes are published by the organisers, derived from Metrica's corrected
+tracking, and are used to check only (never to train, fit or choose); the Smart Tagging is generated automatically by
+Metrica "without manual review" (FAQ.md), so nobody labelled it, and no source of the pipeline reads it; and we produce
+no pseudo-labels that a model is trained on (the shape model learns from DFL's flag, not from the touch rule). We
+labelled nothing by hand on any game.
+
+No frame of this match was hand-labelled, none of its tracking was corrected by hand, and no human-produced data about
+it (event data, corrected tracking, possession data, annotations) was used, for training, validation or the submission
+(RULES.md, as clarified on 22 and 23 Oct 2026). The analyses of this document read its tracking and the public GT to
+understand the data and to check the pipeline, and no label, correction or constant tied to its frames came out of them
+(the audit in section 5).
 
 ## 3. Missing and noisy tracking
 
@@ -215,42 +233,93 @@ implements.
   least `min_dead` (25 frames). The second moves nothing: the two values differ by at most 0.0003 in spellF1 (R010).
 - **Restarts, who gets the ball:** No rule. After a stoppage the hold weakly favours the team that controlled the ball
   before it, until the first new episode, which names the team, and the shape source gives a view of its own from where
-  the teams stand. A restart-team channel (a corner to the attackers, a goal kick to the defenders) is deferred, and
-  the restart type is left for a person to read off the video (A11, section 6).
+  the teams stand. A restart-team channel (a corner to the attackers, a goal kick to the defenders) is deferred. Its
+  restart types would have to come from code (Smart Tagging's set-piece tags, P08, or other games' flags, P16): a type
+  that a person read off this match's video for each stoppage and fed to the pipeline would be a hand label, while a
+  person watching to judge whether such a channel is worth building is design and is allowed (A11, section 6).
 - **Abstentions (`X`):** The decoder never abstains inside a graded half, and the runner writes `X` on the ungraded
   frames, where it is free: the chosen file has none inside a graded block (R010 to R012). It can return the posterior
   of each state per frame, which shows where an `X` would be free (inside a possession), but no refiner reads it yet.
 - **Edge timing, where each rule flips against our ground truth, and the shift (A11, R012, T40):** The back-dating,
-  the hold and the `D` onset follow DFL's flag, so we timed every change of the public truth (12 of team, 4 into `D`,
-  4 out of it) against label-free events on our tracking, and the same events against the seven DFL matches' flags on
+  the hold and the `D` onset follow DFL's flag, so we timed every change of the public truth (12 of team, 4 into `D`, 4
+  out of it) against label-free events on our tracking, and the same events against the seven DFL matches' flags on
   `tracking` v3 (tracking degraded to look like ours; each DFL figure is raw truth, and the coarse truth's is given
   where it differs). Our truth flips a median 24 frames (0.96 s) before the new team's first controlled touch, where
-  DFL's flag flips 1 frame after it (on it under the coarse truth); 10 changes found, and the gap's 90% interval holds
-  0 under both truths. Our `D` begins a median 1.5 s (37 frames, on 2 of 4 stoppages) before the ball is first seen
-  beyond a line, where DFL's flag on the copy turns 0.12 s after it, under both truths (A06's 0.16 s is DFL's own
-  positions). Our `D` ends 1.0 to 1.5 s later than DFL's flag would, against the restart's first controlled touch (a
-  gap of -26 raw, -28 coarse) and against the dead-ball model's alive crossing 0.5 (-36.5 under both). Taken at face
-  value, our stoppages are 2.5 to 3 s longer than DFL's flag draws them. Three explanations fit and the data do not
-  separate them: a convention of our truth; chance, at 2 to 4 changes in 4 stoppages; and tracker coverage, which
-  predicts all four signs by itself (our tracker loses the ball near the lines, T39, so `line_out` and the model fire
-  late and the model's alive rises early on ours, and the copy's ball gaps ignore the play, R003). So it is a lead,
-  for a person to check on the video and for the `shift_edges` rule. That rule is declared and was applied once
-  (R012). The shift of a type of edge is s_b, the pipeline's own lag on the seven DFL matches (the median of predicted
-  minus true over the changes it matches within 50 frames, negated; team +1, into `D` -2, out of `D` 0 frames; kept by
-  a guard on the benchmark), plus g, the gap to our truth's convention that the public window shows, taken only where
-  its median lag is at least 3 frames in absolute value, its 90% bootstrap interval excludes 0 and every leave-one-out
-  median has its sign. g came out 0 for every type: the public window has 4, 1 and 1 matched changes of the three
-  types, in an unusually lively 5 minutes (A06), and a gap read from so few is what T01 warns against. So the shift is
-  s_b alone: a change of team 1 frame later and a change into `D` 2 frames earlier. It is within noise on the
-  benchmark (section 5), and it is here because the rule says so.
+  DFL's flag flips 1 frame after it (on it under the coarse truth); 10 changes found, and the gap's 90% interval holds 0
+  under both truths. Our `D` begins a median 1.5 s (37 frames, on 2 of 4 stoppages) before the ball is first seen beyond
+  a line, where DFL's flag on the copy turns 0.12 s after it, under both truths (A06's 0.16 s is DFL's own positions).
+  Our `D` ends 1.0 to 1.5 s later than DFL's flag would, against the restart's first controlled touch (a gap of -26 raw,
+  -28 coarse) and against the dead-ball model's alive crossing 0.5 (-36.5 under both). Taken at face value, our
+  stoppages are 2.5 to 3 s longer than DFL's flag draws them. Three explanations fit and the data do not separate them:
+  a convention of our truth; chance, at 2 to 4 changes in 4 stoppages; and tracker coverage, which predicts all four
+  signs by itself (our tracker loses the ball near the lines, T39, so `line_out` and the model fire late and the model's
+  alive rises early on ours, and the copy's ball gaps ignore the play, R003). So it is a lead, to understand and not to
+  fit: a person may watch the video to see which it is, and what is seen shapes a feature and sets no constant (T27).
+  The `shift_edges` rule is declared and was applied once (R012). The shift of a type of edge is s_b, the pipeline's own
+  lag on the seven DFL matches (the median of predicted minus true over the changes it matches within 50 frames,
+  negated; team +1, into `D` -2, out of `D` 0 frames; kept by a guard on the benchmark), plus g, a gap to our truth's
+  convention read from the public window under conditions declared beforehand (a median lag of at least 3 frames in
+  absolute value, a 90% bootstrap interval that excludes 0, every leave-one-out median with its sign). g came out 0 for
+  every type, at 4, 1 and 1 matched changes of the three types, in an unusually lively 5 minutes (A06). **g is retired**
+  since the organisers' rule of 23 Oct 2026: it reads the public window as an input, which is a tuning use, so it stays
+  0 by rule, the rule's table still prints it for reference, and any future shift comes from other games alone (P16). So
+  the shift is s_b alone: a change of team 1 frame later and a change into `D` 2 frames earlier. It is within noise on
+  the benchmark (section 5), and it is here because the rule says so.
 
 ## 5. Validation
 
-**Why not the public window.** It holds 17 possessions, so one possession moves spellF1 by about 0.06. It is the
-best-covered 5 minutes of the match (the ball is missing on 12% of its frames, against 40.7% overall), and it ranks
-`smooth125` above `smooth50`, the reverse of the full match (T01). We may not hand-label this match, even to validate
-(T27). So the window checks that the pipeline is correct and shows this ground truth's timing conventions (P02), and we
-choose between versions on other matches.
+**Why not the public window.** The organisers' rule (RULES.md, as clarified on 23 Oct 2026) is that its 5 minutes are
+for checking that the pipeline is correct and are "not training data and not a tuning set". It would also mislead. It
+holds 17 possessions, so one possession moves spellF1 by about 0.06. It is the best-covered 5 minutes of the match (the
+ball is missing on 12% of its frames, against 40.7% overall), and it ranks `smooth125` above `smooth50`, the reverse of
+the full match (T01). We may not hand-label this match, even to validate (T27). So the window checks that the pipeline
+is correct (alignment, the file, determinism, each source's agreement) and is inspected to understand this ground
+truth's timing conventions (P02), never to set a constant, and we choose between versions on other matches.
+
+**What set each constant of `main.toml` (the audit for the 23 Oct rule).** Every constant was traced to its entry in
+`docs/results.md`. None was set from the public window; the rows and the paragraph below the table say where
+window-derived values sat in the context of a choice.
+
+| constant | value | set in | basis |
+|---|---|---|---|
+| `controlled_touch` radius | 2.0 m | R008, the 24-config grid | the seven DFL matches (`tracking` v3, 3 seeds), by the rule declared before the grid; the zone follows Vidal-Codina et al. (2022). Every config carried `ball_presence` at A01's window-derived 0.2 / 0.585 and R007's decoder (below) |
+| `controlled_touch` max_rel_speed | 6.0 m/s | R008 | the same, with the same window-derived context |
+| `controlled_touch` min_frames | 3 | R008 | the same, with the same window-derived context |
+| `controlled_touch` confidence | 0.91 | R008, `touch_stats.py` | the floor, to a hundredth, of the pooled agreement of the kept episodes with DFL's flag over the seven matches (91.9%): a measurement on DFL and in sample there (section 6), never on the window |
+| `controlled_touch` hold | 0.55 | R008 | the grid's only non-off value, scored on the DFL matches, with the same window-derived context in every config |
+| `controlled_touch` duel_radius | not set (default 1.0 m) | the source's default | a fixed rule (Vidal-Codina et al.'s 1 m duel zone), never varied |
+| `dead_ball_model` | `dead_ball_hgb.json`, weight 1.0 | R009, kept by R010 | trees trained on DFL's `BallStatus` (degraded; settings fixed beforehand, not tuned), the source and the weight chosen on DFL's grid, every config of which carried `nearest_player` at A01's window-derived 0.78 (below); BAR-ATH is read by the model fitted on all seven; its feature thresholds are fixed rules (the laws of the game, the literature) |
+| `dead_ball_model` min_prob | not set (default 0.001) | the source's default | a fixed default, a clip to [0.001, 0.999] (also P(alive) before a kick-off); never varied |
+| pre-kick-off rule | `D` before a half's kick-off (P(alive) 0.001) | `play_features`, R009 | a fixed rule from the organisers' documented kick-offs (FAQ.md: the second half is graded from 110,808 and kicks off at 113,742), from no ground truth |
+| `shape_possession` model | `shape_possession_hgb.json` | R011, part 1 | trees trained on DFL's `BallPossession` with the ball hidden (settings fixed beforehand), each benchmark match read by the fold that never saw it; BAR-ATH by `full` |
+| `shape_possession` weight, scope | 0.2, `all` | R011's 12-config grid | the DFL benchmark, by the pre-declared rule (the only config within 0.005 of the best) |
+| `shape_possession` min_prob | 0.02 | R011, part 1 | fixed beforehand, a clip that caps a frame at 3.9 nats; not varied in the grid |
+| `hmm` switch_team, switch_dead, min_possession, min_dead | 4, 32, 25, 25 | R010's 72-config grid | the DFL benchmark, by the pre-declared rule, with neither window-derived source present. The grid was laid around R006's and R007's values, which were chosen with both (below), and 4 and 25 are the grid's lowest values in `switch_team` and `min_possession`, so its placement bounds them |
+| `hmm` eps | not set (default 1e-6) | the decoder's default | a fixed default, a numerical guard on the clip and not a knob |
+| `shift_edges` team, into_dead, out_of_dead | +1, -2, 0 frames | R012 | s_b alone: minus the median lag of the pipeline on DFL (`tracking` v3, raw truth, 3 seeds), kept by the benchmark guard; g, from the public window, is 0 and retired |
+| `seed`, `scope` | 0, `halves` | fixed | a seed for reproducibility; the scorer grades halves |
+
+Two sources do carry constants measured on the public window, and neither is in `main.toml`: `nearest_player`'s
+confidence 0.78 and `ball_presence`'s 0.2 and 0.585 (A01, P06; R006 to R010 and `p06_hmm.toml`). Since the 23 Oct rule
+they may not enter a submission config unless re-derived from other games (A06 measured the nearest player's agreement
+on the DFL matches, 77.5%).
+
+**Where the window-derived values sat in the choices.** In R006 to R009 every candidate config (the yardsticks aside,
+which carry neither) carried at least one of those two sources: all 24 configs of R008 held `ball_presence` at A01's
+values, with R007's decoder (8 / 32 / 75 / 1, itself chosen with both sources), and all 24 of R009 held `nearest_player`
+at 0.78. So the touch rule's radius, relative speed, minimum frames and hold (R008) and the `hgb` source and its weight
+1.0 (R009) were chosen on DFL with window-derived values present in every candidate. R010 chose the decoder again (4 /
+32 / 25 / 25) with neither source present, but R008's and R009's constants were not chosen again, and 4 and 25 sit on
+the lower edge of R010's grid, so the grid's placement bounds them. We judge this compliant: the window's labels never
+scored a candidate, and the window-derived values were part of the fixed context of selections scored on DFL's flags. We
+say it plainly because a strict reader could count that context as an influence. The decoder re-check of "After P07 and
+P02" item 1 in `docs/proposals.md`, run on `main.toml` (which has neither source), is where these choices get
+re-confirmed without the A01 sources, with R008's and R009's constants as extra axes if its protocol says so.
+
+Two further uses of the window are not constants: the agreement figures that `--score` prints (87.2%, 86.6%, 90.9%)
+are outputs and never inputs, and the benchmark's fidelity report sets two statistics of the window (the nearest
+player's agreement, the share of dead frames with the ball visible) beside the degraded copy as warnings, with no
+profile constant fitted to them (`pipeline/benchmark/README.md`).
 
 **The benchmark (P01).** The seven DFL/IDSSE matches of section 2, 668.4 graded minutes, with the truth built as ours
 is: `D` where `BallStatus` is dead, otherwise the team `BallPossession` names. Each match is served to our own
@@ -468,14 +537,14 @@ R011's `main.toml`, pooled spellF1 in four cells:
 | `context` | raw: sensitivity only | 0.5153 | 0.5162 | +0.0009 | 0.2500 | 4 / 3 |
 | `context` | coarse: sensitivity only | 0.5544 | 0.5544 | +0.0001 | 0.9531 | 4 / 3 |
 
-Every 90% interval of the mean per-match gain includes 0 (the raw one on `tracking` is [-0.0007, +0.0015]), and the
-only consistent effect is +0.0003 to +0.0004 macroF1 in all four cells. The rule asked for a positive raw gain and no
-cell below -0.005, which holds, so the shift is adopted: by the rule, and not because it is shown to help. The gap to
-our own truth's convention (g) was read from the public window and came out 0 for every type, at 4, 1 and 1 matched
-changes (section 6). On the public window, a correctness check only, spellF1 is 0.4000 with the shift in sample and out
-of fold and without it (the same 20 possessions), and macroF1 0.7159 in sample, 0.7125 out of fold and 0.7151 without.
-On our match the shift moves the labels of 0.34% of the graded frames, exactly the shifted boundaries, and leaves 439
-possessions.
+Every 90% interval of the mean per-match gain includes 0 (the raw one on `tracking` is [-0.0007, +0.0015]), and the only
+consistent effect is +0.0003 to +0.0004 macroF1 in all four cells. The rule asked for a positive raw gain and no cell
+below -0.005, which holds, so the shift is adopted: by the rule, and not because it is shown to help. The gap to our own
+truth's convention (g) that the rule read from the public window came out 0 for every type, at 4, 1 and 1 matched
+changes, and is retired (section 4). On the public window, a correctness check only, spellF1 is 0.4000 with the shift in
+sample and out of fold and without it (the same 20 possessions), and macroF1 0.7159 in sample, 0.7125 out of fold and
+0.7151 without. On our match the shift moves the labels of 0.34% of the graded frames, exactly the shifted boundaries,
+and leaves 439 possessions.
 
 **Why these choices.** Lang et al. (2022, *Scientific Reports*) predict the in-play status from tracking and find
 boosting the best of four classical families (92.0% frame accuracy, against 86.7% for logistic regression), from the
@@ -505,12 +574,13 @@ classes balance exactly and the model has no prior to subtract and no notion of 
   ours differs from DFL's 437 possessions a match (A06, T33). The coarse truth stands in for the difference and does not
   correct it, and `D` timing against ours is measured on four stoppages only (A11, T40). The pipeline's own lag on DFL
   is adopted as a shift of 1 to 2 frames (R012), and a gap to our convention read from the public window is not: it
-  came out 0 (P02).
+  came out 0 and the term is retired, because the window is no tuning set (P02, section 4).
 - **Seven matches, five of them Fortuna Düsseldorf's home games.** The sample is small, so the intervals are wide, and
   not independent, so even they may be too narrow; the smallest sign-flip p is 0.0156. Two matches have a team down to
   10 players, so statistics on how many players are tracked are measured at full strength only (T36).
 - **No video, audio, homography or Smart Tagging.** Whatever uses them (P08, P09, P10, P14, P15) is checked on the
-  public window only, or simulated from the benchmark's truth with noise measured on our match (A03).
+  public window for correctness only, with its strength fixed by a declared constant, or simulated from the
+  benchmark's truth with noise measured on our match (A03).
 - **Aerial projection.** A camera-based tracker projects an airborne ball onto the pitch plane, which displaces it.
   DFL's positions carry no such error and the benchmark adds none, and ours has no ball height, so the error cannot be
   measured on ours. Nor can we tell how many of our ball gaps come from airborne balls: our first plan said "crowded
@@ -570,12 +640,12 @@ unless a bullet cites another entry):
   scored by the model fitted without it. Seven matches, five from one club's home games, are not seven independent
   draws.
 - **DFL's switch timing is not ours.** The back-dating, the hold and the `D` onset follow DFL's flag, which turns at
-  the new team's control and a median 0.16 s after the ball is first seen beyond a line. Our GT's timing can be
-  learned only through the public window (P02), which gave the declared rule nothing to use (R012), so the one shift
-  made is the pipeline's own lag on DFL.
+  the new team's control and a median 0.16 s after the ball is first seen beyond a line. Our GT's timing may be
+  inspected on the public window (P02) and cannot be fitted to it (RULES.md, 23 Oct 2026), so the one shift made is the
+  pipeline's own lag on DFL; the only way to learn our provider's conventions is other games (P16).
 - **The restart team is deferred.** After a stoppage the hold weakly favours the team that controlled the ball before
   it, until the first new episode names the team, so the team after a stoppage is not decided by who restarts. Which
-  restart it is stays with a person (below).
+  restart it is cannot come from a person's reading of this match (below).
 - **`tracking` cannot value the gap features (T38).** The trees' features about the ball's last and next position
   around a gap are validated on gaps that ignore the play, so what they are worth on our match is unmeasured.
 
@@ -608,12 +678,14 @@ unless a bullet cites another entry):
   an edge on it. Against our truth the pipeline is a median 22 frames late at a team flip (4 matched changes), where
   against DFL's it is 1 early, and A11's `D` edges look 2.5 to 3 s longer than DFL's flag would draw them. That is a
   convention of our truth, chance or our tracker's coverage, and the data do not separate them. More transitions need
-  our provider's conventions on other games (P16), or a person watching the 20.
-- **The restart type is left for a person.** Which stoppage each of the 4 is (a throw-in, a goal kick, a corner, a free
+  our provider's conventions on other games (P16); a person watching the 20 can understand them and can set no constant.
+- **The restart type is not available.** Which stoppage each of the 4 is (a throw-in, a goal kick, a corner, a free
   kick, a foul) and whether `D` begins at the line, the whistle or when play stops cannot be read by code here: the
-  Smart Tagging intervals find none of the 4 starts and 1 of the 4 ends, and no LLM may see the video. A11 gives the
-  person the command and what to look at (`pipeline/benchmark/conventions.py public`), and no restart-team channel is
-  built on it.
+  Smart Tagging intervals find none of the 4 starts and 1 of the 4 ends, and no LLM may see the video. A person may
+  watch the video to understand them and to judge whether a restart-team channel is worth building (A11 gives the
+  command and what to look at, `pipeline/benchmark/conventions.py public`), which is design and is allowed. A restart
+  type written down per stoppage and fed to the pipeline would be a hand label (RULES.md, T27), so any such channel
+  must take its types from code, and none is built.
 - **The shift is adopted by its rule, not shown to help.** It is 1 to 2 frames at 439 boundaries, its benchmark gains
   are +0.0000 to +0.0009 pooled spellF1 (on `tracking` and `context`, raw and coarse truth) with every interval
   including 0, it is one whole number per type of edge (not a function of the ball's visibility or of the stoppage),
@@ -621,7 +693,8 @@ unless a bullet cites another entry):
   returns the file without it.
 
 **Of the P06 decoder's first choice** (R006, R007, A10; it did not clear its bar on `nearest_player` and
-`ball_presence`, and R010's retune replaced it; kept as the record of why):
+`ball_presence`, whose constants came from the public window, A01, and may not be used in a submission config since the
+23 Oct rule; R010's retune replaced it; kept as the record of why):
 
 - **`D` came only from ball presence until P05.** The ball is missing on 40.7% of the graded frames in long gaps, and
   a missing ball is not a dead ball (T12). The decoder's `D` has an alive/dead F1 of 0.5676 on the benchmark against

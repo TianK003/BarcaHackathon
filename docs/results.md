@@ -124,6 +124,15 @@ Slack for IoU ≥ 0.7, as the total boundary error over both ends, per possessio
 - A dead-ball detector cannot lean on ball visibility → P05.
 - Even with the ball visible, ownership needs control logic → P04.
 
+*Later (23 Oct rule, `f8f2629`):* A01 describes the public window and stands as a description. Two constants were
+derived from its statistics: `nearest_player`'s confidence 0.78 (77.8% of 5,640 frames) and `ball_presence`'s `missing`
+0.2 and `seen` 0.585 (the ball missing on 33.6% of the dead frames and 6.5% of the alive ones). They were used in R006
+to R010's research configs and in `p06_hmm.toml`. Setting a constant on the public window is the use that the
+organisers' second clarification forbids ("not training data and not a tuning set"), so neither value is usable in a
+submission config unless re-derived from other games, for instance from DFL (A06: 77.5% for the nearest player). Neither
+source is in `main.toml`, whose constants come from DFL, the benchmark, fixed rules or the organisers' documented
+kick-offs (the audit in the technical document, section 5).
+
 ### A02 — Ball coverage across the match (2026-10-21)
 
 Share of frames with no ball, per 5-minute block of graded play, counted from each half's first graded frame (from
@@ -475,7 +484,10 @@ rate is at or below the literature's upper bound, 220 possessions a match, which
   depends on how long a possession is (smoothing, a switch penalty λ, duration priors), rank it under the raw truth and
   under the coarse one side by side, and treat a disagreement between them as a warning, not as a licence to pick the
   one that suits. Fit timing (P04's back-dating, P05's `D` onset, P12's shift) on the public window through P02.
-  Absolute spellF1 on the benchmark is not our leaderboard's under either truth.
+  Absolute spellF1 on the benchmark is not our leaderboard's under either truth. *Later (23 Oct rule, `f8f2629`):* the
+  sentence on fitting timing on the public window is withdrawn. The window is for checking the pipeline and is "not a
+  tuning set": P02 may inspect it to understand how our truth flips, and no timing constant is fitted on it. A shift
+  comes from other games only (P16).
 - **What the benchmark cannot test:** DFL's halves start at the kick-off (11 of 14 start alive; the other three have 1,
   1 and 48 leading `D` frames) and all 14 end in `D`, whereas our graded second half starts 117 s before the kick-off,
   all `D` (T02).
@@ -1163,6 +1175,12 @@ of the three types passing the rule, so g = 0 and only the pipeline's lag on DFL
 of `D` 0). It says where to look first, the two `D` edges before the team flips, and in which direction (our `D`
 earlier at the start and later at the end, our team flips earlier), which is T40: a component tuned on the benchmark
 may carry DFL's timing.
+
+*Later (23 Oct rule, `f8f2629`):* A11 is inspection. It measured how our truth's changes sit against events our tracking
+shows, beside DFL's, and it adopted nothing, so its findings stand as understanding. Under the rule they may not set a
+constant: no back-dating, `D` onset or shift is to be tuned to them. "How a person can extend it" stays a way to
+understand: a person may watch those 20 changes to see how our truth flips and what kind of stoppage each is, and
+nothing seen may become a label, a restart type or a number written down for those frames.
 
 ## Experiments
 
@@ -4696,6 +4714,14 @@ file (sha256 `8810afce...`).
   does not narrow the lag's spread (an interquartile range of 30 frames at a team flip).
 - **The public window is a correctness check only.** It chose nothing here: s_b comes from DFL and g is 0 everywhere.
   Its spellF1 is R011's (0.4000) in sample and out of fold.
+
+*Later (23 Oct rule, `f8f2629`):* the declared rule read the public window as an input in one place, g, the gap to our
+convention taken from the public latencies. That is a tuning use of a window that is "not training data and not a tuning
+set", so **g is retired**: it stays 0 by rule, and `conventions.py shift` prints it for reference only. Nothing in the
+adopted file changes: `main.toml`'s shift (team +1, into `D` -2, out of `D` 0) is s_b alone, the pipeline's own lag on
+the seven DFL matches (other games), kept by the benchmark guard, and g was 0 for every type, so sha256 `3fd06da0...` is
+the same. The public latencies and the out-of-fold public score above stay as the record, read as an inspection and a
+check, and nothing is chosen from them. Any future shift comes from other games only (P16).
 
 ## Submission log
 

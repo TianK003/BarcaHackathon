@@ -27,6 +27,9 @@ the same direction as the hard output. It is one constant for the whole match, s
 A majority vote sums the two sides, so it takes the same side as with the hard values, bar float rounding in an exact
 tie. The default, 1.0, gives 1.0 and 0.0 exactly (the second as 1 - 1.0), which is what the four baselines are rebuilt
 through, byte for byte.
+
+The 0.78 is a public-window statistic (A01). Since the organisers' rule of 23 Oct 2026 (that window is not a tuning
+set) no submission config may use it unless it is re-derived on other games (A06 gives 77.5% on DFL's matches).
 """
 
 import numbers

@@ -12,8 +12,9 @@
 # (docs/traps.md T01) and never by retuning a degradation (T37):
 #   switch_team = 8, switch_dead = 32, min_possession = 75 frames (3 s), min_dead = 1 (R007, Stages 1, 2 and 2b).
 # The two evidence sources are fixed by rule from A01 and were never tuned: nearest_player at confidence 0.78 and
-# ball_presence at 0.2 / 0.585. R007 records that this config does not clear P06's bar on the benchmark: read it
-# before trusting anything here.
+# ball_presence at 0.2 / 0.585. Those constants came from the public window, which since the organisers' rule of
+# 23 Oct 2026 is no tuning set: this file must not become a submission config unless they are re-derived from other
+# games. R007 records that this config does not clear P06's bar on the benchmark: read it before trusting anything here.
 
 description = "P06 candidate (R007): hmm decoder, switch_team = 8 nats, switch_dead = 32 nats, min_possession = 75 frames, min_dead = 1 frame, nearest_player at confidence 0.78 and ball_presence at its defaults, decoded per half. Not the submission config."
 seed = 0

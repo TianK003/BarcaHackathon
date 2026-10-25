@@ -47,12 +47,14 @@ out_of_dead = 0    # frames: a change from D into H or A
 A boundary is a change of label inside the block, typed by the pair of labels. A positive value moves it later (the new
 label starts later), a negative one earlier. Values are whole numbers of frames with |value| <= 250 (bool is refused).
 The code ships with no value of its own: every default is 0, and all three at 0 returns the block exactly as it came,
-labels and posterior. The values are for P02's measurement to set ([docs/proposals.md](../../docs/proposals.md)), and
-`main.toml` sets them by the declared rule of [R012](../../docs/results.md): team 1, into_dead -2, out_of_dead 0. They
-are the pipeline's own lag on the DFL matches, negated (`conventions.py latency` and `shift`, in the
+labels and posterior. The values are for a declared rule on other games to set (R012's s_b;
+[docs/proposals.md](../../docs/proposals.md), P02), and `main.toml` sets them by the declared rule of
+[R012](../../docs/results.md): team 1, into_dead -2, out_of_dead 0. They are the pipeline's own lag on the DFL matches,
+negated (`conventions.py latency` and `shift`, in the
 [benchmark README](../benchmark/README.md#conventions-when-our-truth-flips-and-the-edge-shift)); the gap to our truth's
-own convention that the public window could add came out 0. The shift is 1 to 2 frames, at 439 boundaries, and its gain
-on the benchmark is inside the noise: the entry is there because the rule said so, not because it is shown to help.
+own convention that the public window could add (R012's g) came out 0 and is retired, since that window is no tuning
+set (23 Oct 2026, `f8f2629`). The shift is 1 to 2 frames, at 439 boundaries, and its gain on the benchmark is inside
+the noise: the entry is there because the rule said so, not because it is shown to help.
 
 **The rule.**
 

@@ -31,7 +31,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | ID | proposal | attacks | effort | impact | status |
 |---|---|---|---|---|---|
 | [P01](#p01--a-validation-set-we-can-trust) | Validation set we can trust: other matches, degraded to look like ours | deciding anything at all | M | enabling | done → R002–R005 |
-| [P02](#p02--learn-the-ground-truths-conventions-from-the-public-window) | Learn the GT's conventions from the public window | boundary timing | S | high; so far the pipeline's own lag, 1 to 2 frames, within noise (R012) | partly done → A11, R012 (a person can extend it) |
+| [P02](#p02--inspect-the-ground-truths-conventions-on-the-public-window-to-understand-and-never-to-tune) | Inspect the GT's conventions on the public window, to understand and never to tune | boundary timing | S | bounded since the 23 Oct rule: understanding only; so far the pipeline's own lag on DFL, 1 to 2 frames, within noise (R012) | partly done → A11, R012 (inspection only; a person may watch to understand) |
 | [P16](#p16--metricas-sample-games-in-our-ground-truth-providers-conventions) | Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing | boundary timing, grain | M | medium | idea |
 | [P03](#p03--one-command-deterministic-cached) | One-command, deterministic, cached pipeline | reproducibility | S–M | enabling | done → R001 |
 | [P04](#p04--sticky-ownership-from-controlled-touches) | Sticky ownership from controlled touches | facts 3, 5 | S | high: +0.1421 raw at the chosen decoder (R010) | done → R008, R010 |
@@ -90,7 +90,7 @@ P05 replaced `ball_presence` as the `alive` source.
      +0.07 to +0.09 for the possessor.
    - The features that need only the ATD and the pitch (the ball beyond a line or at a restart spot, a collective
      slowdown, set-piece shapes) can be benchmarked on the DFL matches, whose `BallStatus` is their `D`. The whistle
-     (P10) and the tags (P08) cannot, and are checked on the public window only. The new source replaces
+     (P10) and the tags (P08) cannot, and are checked on the public window for correctness only. The new source replaces
      `ball_presence` as `alive` evidence in the same decoder.
    - Do not expect +0.16. On `tracking` the gaps are blind to the play, so `ball_presence` carries almost no `D`
      information there and A10 measures from almost nothing to perfect; on our match it is better than that (A01).
@@ -124,23 +124,27 @@ truths and the label-free check passes), and the file has not been uploaded. Poo
 first and coarse second. *Later:* R011 did item 3 and A11 with R012 did part of item 1, and the next step is in
 [After P07 and P02](#after-p07-and-p02).
 
-1. **Learn our GT's timing on the public window (P02), with a person watching the video around the published
-   transitions.** The back-dating, the 0.55 hold and the `D` onset follow DFL's flag, and nothing about them was
-   fitted to ours. It is the one place where the public window teaches something the benchmark cannot, and where a
-   possession's edges fall decides whether it matches at the higher IoU thresholds.
+1. **Understand our GT's timing (P02), with a person watching the video around the published transitions, to design
+   features and never to derive a constant.** The back-dating, the 0.55 hold and the `D` onset follow DFL's flag, and
+   nothing about them was fitted to ours. Where a possession's edges fall decides whether it matches at the higher IoU
+   thresholds, so it is worth understanding. *Changed 23 Oct 2026 (`f8f2629`):* the public window is no tuning set, so
+   it cannot be where our timing is fitted: what a person sees may shape a feature or a question for other games
+   (P16), and any constant comes from other games by a declared rule.
 2. **Re-check the decoder's edges under a new protocol.** The chosen `switch_team` 4 and `min_possession` 25 are the
    lowest values tried and raw spellF1 falls from them (R010). The coarse truth wants the opposite end (0.5049 coarse
    and 0.3532 raw at 16 and 100), so the grain of our GT (T33, A06) decides it. Declare the values and the rule before
    running, and read both truths.
 3. **P07 for the gaps, now unlocked.** A10 found a perfect possessor inside the gaps worth +0.0008 raw until `D` was
    right and +0.1971 once it was. `D` now has a source, so P07 can be tried, but `tracking` cannot value gap features
-   (T38): read it on `context` and on the public window as well.
+   (T38): read it on `context`, and on the public window as a correctness check only.
 4. **A restart-team channel (P05's table).** After a stoppage `controlled_touch`'s hold weakly favours the team that
    controlled the ball before it, until the first new episode names the team. A source for the team that restarts
    would speak sooner. R010 does not measure its worth, so it comes after the first three.
 5. **Before the upload, decide how much of the gain to believe.** The benchmark's alive/dead F1 of 0.9726 rests on
-   DFL's ball being tracked out of play (T39). Our match's predicted `D` share is 36.0% against the benchmark's 44.6%,
-   and the public window's alive agreement is 86.6% of 7,500 frames. Neither says how the full match scores.
+   DFL's ball being tracked out of play (T39). Our match's predicted `D` share is 36.0% against the benchmark's 44.6%.
+   The decision rests on the benchmark and on label-free checks such as that share. The public window's alive agreement
+   (86.6% of 7,500 frames) checks correctness and may not weigh in (T01). Neither the benchmark nor the share says how
+   the full match scores.
 
 ### After P07 and P02
 
@@ -149,7 +153,8 @@ A recommendation from [R011](results.md), [R012](results.md) and
 `main.toml` is now P04 + P05 + P07 with P02's shift, and the file has not been uploaded. On the benchmark (`tracking`
 v3, raw truth, pooled spellF1) P07 took it from 0.4217 to 0.5159 and the shift added +0.0005, inside noise. Neither
 figure is a forecast for our match: the shape model never saw our teams, DFL tracks the ball out of play, and the count
-of possessions moved the other way on BAR-ATH (R011).
+of possessions moved the other way on BAR-ATH (R011). *Items 2 and 4 are rewritten for the organisers' 23 Oct rule
+(`f8f2629`): the public window checks the pipeline and never tunes it, and a person watches to understand.*
 
 1. **Next: re-check the decoder's edges with the new evidence ("After P04 and P05", item 2).** The reasons are in the
    results:
@@ -167,21 +172,32 @@ of possessions moved the other way on BAR-ATH (R011).
      evidence was memoised, after 143 to 156 s for the first config of each process (the runner's `seconds`). It needs
      a protocol declared before the first run (the values, the objective, the rule), the weight as a second axis only
      if that protocol says so, and nothing from the public window.
-2. **In parallel, and off the machine: a person on P02's transitions.** R012's rule found g = 0 for every type because 1
-   to 4 matched public changes cannot carry a gap, and A11's `D` edges (2.5 to 3 s longer than DFL's flag would draw
-   them) are a lead and not a measurement: our truth's convention, chance and our tracker's coverage all fit. A
-   person's check on the video of where `D` begins and ends (the line, the whistle, the stoppage) and of the restart
-   type is what would separate them (A11, "How a person can extend it"). It costs hours and not compute, so it can run
-   beside item 1; what comes out is aggregates and frame counts in the docs, never labels (T27).
+   - It is also where the choices made with window-derived values present get re-confirmed without them (the 23 Oct
+     rule). In R006 to R009 every candidate config (the yardsticks aside) carried `nearest_player` at 0.78 or
+     `ball_presence` at 0.2 / 0.585, both from the public window (A01), so R008's touch constants (radius,
+     `max_rel_speed`, `min_frames`, hold) and R009's source and weight were chosen with them present, and R010 re-chose
+     only the decoder. `main.toml` has neither source, so this protocol runs without them, and may add those constants
+     as axes if it declares so first.
+2. **In parallel, and off the machine: a person watching P02's transitions, to understand.** R012's rule found g = 0
+   for every type because 1 to 4 matched public changes cannot carry a gap, and A11's `D` edges (2.5 to 3 s longer than
+   DFL's flag would draw them) are a lead and not a measurement: our truth's convention, chance and our tracker's
+   coverage all fit. A person watching the video to see where `D` begins and ends (the line, the whistle, the stoppage)
+   and what kind of restart follows can understand which of them it is (A11, "How a person can extend it"). That
+   understanding can shape a feature. It cannot set a number: g is retired (T40), and a constant read off these 20
+   changes, or a label for a stoppage, is tuning on the public window or a hand label (T27). It costs hours and not
+   compute, so it can run beside item 1; what comes out of it is a note in the docs, in aggregates.
 3. **Before any upload, decide how much of the gain to believe ("After P04 and P05", item 5).** It is a decision and
-   not a run. R011's transfer gate (0.8251 against 0.7486) is a proxy and not an accuracy, the possession count moved
-   the other way on BAR-ATH, and the public window's spellF1 fell from 0.4686 to 0.4000, about one possession (a
-   correctness check, T01). The benchmark is still the best evidence we have, with the caveats of T38, T39 and R011,
-   and it has to be settled before the freeze on 13 Nov.
+   not a run. R011's transfer gate (0.8251 against 0.7486) is a proxy and not an accuracy, and the possession count
+   moved the other way on BAR-ATH. The public window's spellF1 fell from 0.4686 to 0.4000, about one possession, but it
+   is a correctness check and may not weigh in on this decision (T01): the decision rests on the benchmark, which is
+   still the best evidence we have, with the caveats of T38, T39 and R011, and on the label-free checks. It has to be
+   settled before the freeze on 13 Nov.
 4. **The restart-team channel, after those.** R010 and R011 do not measure its worth, and A11 gives it no signal: it
-   needs the restart type, which stays with a person (item 2). If that person finds the stoppages are mostly of a few
-   types with a clear next team (a corner, a goal kick), it is a small source for `home` after a stoppage; if not, drop
-   it.
+   needs the restart type of each stoppage. A type that a person read off this match's video for each stoppage and fed
+   to the pipeline would be a hand label (T27), so the types have to come from code (Smart Tagging's set-piece tags,
+   P08, which are automatic) or from other games' flags (P16). A person watching to judge whether the channel is worth
+   building is design, which is allowed. If the stoppages are mostly of a few types with a clear next team (a corner, a
+   goal kick), it is a small source for `home` after a stoppage; if not, drop it.
 
 What the evidence does not support is a second round on P07's features, on the shift's three integers or on P07's
 weight alone (item 1 may revisit the weight, as a second axis of the decoder's re-check, under a protocol declared
@@ -199,11 +215,17 @@ the benchmark cannot carry over to our match.
 The overview is the [benchmark README](../pipeline/benchmark/README.md), and the technical document's section 5 has
 the design and the fidelity table.
 
-**Rules changed on 22 Oct 2026.** The organisers' clarification (upstream `c073f29`, RULES.md and OVERVIEW.md) allows
-hand-labelled data from **other matches**, in any amount, and forbids hand labels on the competition match itself —
-for validation and calibration too ([T27](traps.md)). The first plan for P01 (label about 15 minutes of BAR-ATH from
-the video, after labelling the public window blind to calibrate) is therefore out. The goal is unchanged; the labels
-now come from other matches.
+**Rules changed on 22 and 23 Oct 2026.** The organisers' clarification of 22 Oct (upstream `c073f29`, RULES.md and
+OVERVIEW.md) allows hand-labelled data from **other matches**, in any amount, and forbids hand labels on the competition
+match itself — for validation and calibration too ([T27](traps.md)). The first plan for P01 (label about 15 minutes of
+BAR-ATH from the video, after labelling the public window blind to calibrate) is therefore out. The goal is unchanged;
+the labels now come from other matches. The clarification of 23 Oct (upstream `f8f2629`, RULES.md rules 1 and 2,
+EVALUATION.md, FAQ.md) tightens it three ways. The published 5 minutes are for checking that the pipeline is correct and
+are "not training data and not a tuning set", so the old reading (use them, predicted out of fold) is gone. No
+human-produced data about the game from any source (event data, corrected tracking, possession data, annotations) may
+be used, and external data must be about other games. And correcting the game's tracking by hand is hand annotation:
+corrections must come out of code. Learning without human labels (unsupervised, self-supervised, pseudo-labels an
+algorithm made) and watching the video or inspecting the data to understand them stay fine.
 
 **Why.** The public window holds 17 possessions — each worth about 0.06 spellF1 — and it is the easiest 5 minutes of
 the match (fact 2). It already picked the wrong baseline. Until we have a better yardstick, every other proposal is
@@ -278,27 +300,33 @@ to look like our ATD and run through our own pipeline.
 
 **What it cannot settle.**
 - **Conventions.** The DFL flags may flip at different moments from Metrica's corrected tracking. Use the benchmark
-  to rank methods and to fit what transfers (switch penalties, duration priors, model weights). Fit timing (P04's
-  back-dating, P05's `D` onset, P12's shift) on the public window through P02. A06 measured DFL's grain (437
-  possessions a match, median 3.7 s) and found that the public window cannot say how far ours differs, because it is
-  livelier than 96% of DFL's windows:
+  to rank methods and to fit what transfers (switch penalties, duration priors, model weights). Timing (P04's
+  back-dating, P05's `D` onset, P12's shift) may be inspected on the public window through P02, to understand it and
+  never to fit it (T01, T27; `f8f2629`), and what is not settled stays with other games (P16). A06 measured DFL's grain
+  (437 possessions a match, median 3.7 s) and found that the public window cannot say how far ours differs, because it
+  is livelier than 96% of DFL's windows:
   [A06](results.md#a06--dfls-conventions-against-the-public-window-and-the-literature-2026-10-23).
   So rank the choices that depend on possession length under the raw and the coarse truth (`truth.coarse_codes`,
   `--truth coarse`: a sensitivity check, not a correction) side by side, and treat a disagreement as a warning
   ([T33](traps.md)).
 - **Our other assets.** DFL comes without video, audio, homography or Smart Tagging, so P08, P09, P10, P14 and P15
   cannot be benchmarked directly. Either simulate them from the benchmark's truth with the noise measured on our match
-  (A03 for P09), or check them on the public window only.
+  (A03 for P09), or read them on the public window as a correctness check only, with their strength fixed by a declared
+  constant and never by the window.
 
 If a convention cannot be read from the DFL flags, hand-labelling other matches is allowed, in any amount. Never
 label BAR-ATH. The DFL data is public and outside the competition bundle, so its own licence governs it, not the
 bundle's rules. Cite it in the technical document.
 
-### P02 — Learn the ground truth's conventions from the public window
+### P02 — Inspect the ground truth's conventions on the public window, to understand and never to tune
 
-**Status: partly done → A11, R012 (a person can extend it):
+**Status: partly done → A11, R012 (inspection only; a person may watch to understand):
 [A11](results.md#a11--our-ground-truths-timing-against-dfls-from-tracking-events-2026-10-25-tian),
-[R012](results.md).** The instrument,
+[R012](results.md).** *Changed 23 Oct 2026 (`f8f2629`):* this proposal began as "learn our GT's timing conventions from
+the public window". The organisers' rule now says those 5 minutes are for checking that the pipeline is correct and are
+"not training data and not a tuning set", so P02 is inspection: it measures and watches to understand how our truth
+flips and to design features, and it fixes no constant. Its two findings stand as findings (A11 was inspection and
+adopted nothing); a number derived from them would be tuning. The instrument,
 [`pipeline/benchmark/conventions.py`](../pipeline/benchmark/conventions.py), times each of the 20 public changes against
 label-free events on our tracking and sets them beside DFL's (its `tracking` v3 copy, raw and coarse truth). A11 reads
 it as a lead and not a measurement (2 to 4 changes behind each `D` cell): the events our tracking sees put our `D` 2.5
@@ -307,16 +335,19 @@ where DFL's flag flips at it (the interval holds 0). Each is our truth's convent
 coverage (it loses the ball near the lines), and A11 does not separate them. The pipeline's own latency and the
 `shift_edges` values are R012's: the rule adopted the pipeline's own lag on DFL (team +1, into `D` -2, out of `D` 0
 frames) and no gap to our convention (g = 0, from 1 to 4 matched public changes per type); its gain is inside noise.
-What is left needs a person who may watch the video: the restart type, and whether `D` begins at the line, the whistle
-or the stoppage. The person's command, which regenerates the file to watch, is
+The rule's second half, g, read from the public window's latencies, is **retired**: it is a tuning use of the window, it
+stays 0 by rule, and any future shift comes from other games only (P16). What is left needs a person who may watch the
+video, to understand what the restart types are and whether `D` begins at the line, the whistle or the stoppage. The
+person's command, which regenerates the file to watch, is
 
 ```bash
 python pipeline/benchmark/conventions.py public     # writes data/runs/conventions/public_transitions.csv, gitignored
 ```
 
 with one row per change (its frame in the tactical video, the label before and after, the type, and each detector's
-lag). No LLM reads that file, and nothing is written from it but aggregates and frame counts (A11, "How a person can
-extend it"; T27 allows watching and measuring around the published transitions, and never labelling the match).
+lag). No LLM reads that file, and nothing is written from it but aggregates (A11, "How a person can extend it"; T27
+allows watching and inspecting to understand, and never turning what was seen into labels, corrections, or rules and
+constants tied to specific frames).
 
 **Why.** The GT is mechanical: `D` where the corrected tracking says the ball is dead, otherwise the team it names.
 *When* it flips matters more than anything. Does `D` start when the ball crosses the line, or at the whistle? Does
@@ -327,40 +358,47 @@ possession change at the first touch, or once control is established? With 0.3�
 - whether the ball is visible, and its position and speed;
 - the nearest player of each team and their distance;
 - where the ball is relative to the lines, and the time from the ball leaving the pitch to `D`;
-- the restart type.
+- the restart type, for the person's understanding and not as a record for those frames.
 
-Watch each transition on video. Write the conventions into [traps.md](traps.md) and the technical document, using
-aggregates and frame numbers only.
+Watch each transition on video to understand it. What goes into [traps.md](traps.md) and the technical document is what
+was understood, in aggregates, and never a constant or a rule tied to those frames.
 
-With no hand labels allowed on this match, this is the only place we can learn *this* GT's timing: P01's benchmark
-follows the DFL's conventions, not Metrica's. Watching the video and measuring around the published transitions is
-fine. Writing labels for frames of this match is not ([T27](traps.md)).
+P01's benchmark follows DFL's conventions, not Metrica's, and the public window is not a place to fit ours: it can be
+inspected to understand them, and read as a check. A convention of our provider has to come from other games (P16), and
+a constant from it is fixed by a declared rule on those games, never read off these 20 changes. Watching the video and
+measuring around the published transitions is fine. Writing labels for frames of this match, or turning what was seen
+into a number for a config, is not ([T27](traps.md)).
 
 ### P16 — Metrica's sample games, in our ground truth provider's conventions
 
-**Why.** P01's truth follows DFL's conventions, and P02 learns Metrica's from 20 transitions in one 5-minute window,
-which is livelier than 96% of DFL's windows (A06). When the flags flip and how fine our GT's possessions are remain the
-two things the benchmark cannot settle ([T33](traps.md)). Metrica's three public sample games come from the provider
-of our GT, and ship with event data to derive possession from (P13 lists them). Whether possession derived from events
-follows the conventions of our GT is what P16 tests: our GT comes from corrected tracking flags, and labels derived
-from events may not follow them. If they do, they give far more transitions than the public window's 20.
+**Why.** P01's truth follows DFL's conventions, and P02 inspects Metrica's in 20 transitions in one 5-minute window,
+which is livelier than 96% of DFL's windows (A06) and, since `f8f2629`, no place to fit them. When the flags flip and
+how fine our GT's possessions are remain the two things the benchmark cannot settle ([T33](traps.md)). Metrica's three
+public sample games come from the provider of our GT, and ship with event data to derive possession from (P13 lists
+them). Whether possession derived from events follows the conventions of our GT is the question P16 puts: our GT comes
+from corrected tracking flags, and labels derived from events may not follow them. Whether to adopt them is decided by
+a rule declared on the sample games themselves, never by their agreement with the public window, which is no
+validation set. If they pass, they give far more transitions than the public window's 20.
 
 **What.** Do it alongside P02.
 
-- Test first whether events reproduce our GT's conventions: compare the derived grain and `D` timing with what the
-  public window shows (P02), before trusting them for anything else.
+- Declare first, before any result, the rule that decides whether the derived labels are used, and apply it on the
+  sample games alone. A comparison of the derived grain and `D` timing with what the public window shows (P02) may be
+  read as a correctness check and to understand how they differ; it cannot gate adoption, and a constant taken from
+  P16 is fixed by the declared rule on the sample games alone.
 - Derive `H`, `A` and `D` per frame from each game's events and tracking, the way our GT is built: `D` where the ball
   is dead, otherwise the team that has it. The events tell where a possession starts and where play stops.
 - Study the switch timing as P02 does around the public transitions, but on many more of them: the lag between the
   touch that wins the ball and the flip, the `D` onset against the ball crossing a line, and the grain (possessions
   per alive minute, median length), set beside DFL's in A06.
-- Feed P04's back-dating, P05's `D` onset and P12's shift, and check each against the public window through P02. If
-  the grain lands between DFL's raw truth and the coarse one, add a truth of that grain next to the two, and never
-  retune a degradation towards it ([T37](traps.md)).
+- Feed P04's back-dating, P05's `D` onset and P12's shift from the sample games, and read each against the public
+  window through P02 as a correctness check only. If the grain lands between DFL's raw truth and the coarse one, add a
+  truth of that grain next to the two, and never retune a degradation towards it ([T37](traps.md)).
 
-**Rules.** Hand-labelled data from other matches is allowed, in any amount; BAR-ATH is never labelled
-([T27](traps.md)). Check each source's licence first, keep it public so that the organisers can access it, and cite it
-in the technical document (P13's rule). Use nothing about this fixture ([T26](traps.md)).
+**Rules.** Hand-labelled data and event data of other games is allowed, in any amount; BAR-ATH is never labelled, and
+nothing human-produced about it is used from any source ([T27](traps.md), `f8f2629`). Check each source's licence
+first, keep it public so that the organisers can access it, and cite it in the technical document with who labelled it
+and how much (P13's rule). Use nothing about this fixture ([T26](traps.md)).
 
 ### P03 — One command, deterministic, cached
 
@@ -398,7 +436,7 @@ every duel.
 - Keep the current team until the other team controls. Then **back-date** the change to the start of that control
   episode, so that confirmation does not turn into latency ([T03](traps.md)).
 - No ball → keep the current state.
-- Calibrate r and k with P02/P01, not with the public score.
+- Calibrate r and k on P01 (other games), never with the public window or its score (T01, `f8f2629`).
 
 ### P05 — A real dead-ball detector
 
@@ -491,8 +529,9 @@ ball). What comes next is in [After P07 and P02](#after-p07-and-p02).
   defensive-line heights, mean velocity toward the opponent's goal, players per third, and pressure near the ball
   zone. Add how each of these changes over ±1–2 s.
 - Derive each team's attacking direction per half from the data.
-- Train H-vs-A on ball-visible frames where P04 is confident (pseudo-labels, tens of thousands of frames), on P01's
-  matches with the ball masked (P13), and on the public GT, predicted out of fold ([T27](traps.md)).
+- Train H-vs-A on ball-visible frames where P04 is confident (pseudo-labels, tens of thousands of frames) and on P01's
+  matches with the ball masked (P13). Not on the public GT, out of fold or not: the organisers' 23 Oct rule (`f8f2629`)
+  makes it a check and no training data ([T27](traps.md)). What was built used P01's matches alone (R011).
 - Measure on P01's **simulated ball gaps**, where the truth is known, and check against the public window's
   ball-missing frames (few: 6.5% of its in-play frames). Real gaps are harder than the `gaps` profile's, which are
   transplanted with their pattern and not their clock, and not placed by the play: ours start near the lines and on
@@ -514,10 +553,11 @@ ball). What comes next is in [After P07 and P02](#after-p07-and-p02).
 | `SET PIECES` | a stoppage ending in a restart by the tagged team |
 | `GOALS` | a stoppage until the kick-off |
 
-Measure each code's agreement with the public GT first, then feed the votes to P06 as features. P01's matches have no
-Smart Tagging, so the public window is the only place to measure this source. Never copy
-intervals across as labels. Map `Barcelona` → H, `Atletic Club` → A and `N/A` → no vote. Tag windows are seconds wide,
-and phases are not possessions ([T17](traps.md)).
+Fix each code's vote beforehand, by the table above and not by its agreement with the public GT, then feed the votes to
+P06 as features. P01's matches have no Smart Tagging, so there is no benchmark for this source: its weight is a declared
+constant argued from what the tags mean, and the public window only checks that the votes are read the right way round
+(a correctness check, never a tuning set, `f8f2629`). Never copy intervals across as labels. Map `Barcelona` → H,
+`Atletic Club` → A and `N/A` → no vote. Tag windows are seconds wide, and phases are not possessions ([T17](traps.md)).
 
 ## Cheap signals worth checking
 
@@ -567,8 +607,8 @@ The broadcast audio has whistles too, but it is not aligned (P15).
 **Why.** Cheap last-mile gains on the ranking metric.
 
 **What.**
-- Drop possession blips shorter than m frames, and `D` blips inside possessions. Validate m: the public GT has
-  genuine 0.76 s and 1.32 s possessions.
+- Drop possession blips shorter than m frames, and `D` blips inside possessions. Validate m on P01's benchmark: the
+  public GT's genuine 0.76 s and 1.32 s possessions show that short ones exist, and do not set m.
 - Shift transitions by the measured mean latency. *Done as `shift_edges` (P02, R012): minus the pipeline's own median
   lag on DFL, team +1, into `D` -2, out of `D` 0 frames.*
 - Write explicit `D`, never `X`, before kick-offs and once the ball is out ([T02](traps.md)).
@@ -579,10 +619,10 @@ The broadcast audio has whistles too, but it is not aligned (P15).
 
 ### P13 — Learn from external labelled tracking data
 
-**Why.** The 7,500 publicly labelled frames of this match can train almost nothing, and since 22 Oct we may not add
-hand labels of our own on it ([T27](traps.md)). Public datasets of other matches carry our kind of labels, in any
-amount. The benchmark half of this idea moved to [P01](#p01--a-validation-set-we-can-trust); what stays here is
-training on them.
+**Why.** The 7,500 publicly labelled frames of this match can train almost nothing, and since 22 and 23 Oct we may
+neither add hand labels of our own on it nor train or tune on the published ones ([T27](traps.md)). Public datasets of
+other matches carry our kind of labels, in any amount. The benchmark half of this idea moved to
+[P01](#p01--a-validation-set-we-can-trust); what stays here is training on them.
 
 **What.** Three sources (kloppy 3.18.0 has loaders for the last two; the first has our own, below):
 - **DFL/IDSSE open data** (Bassek et al., *Sci Data* 12, 195, 2025): 7 matches, two Bundesliga and five 2. Bundesliga.
@@ -596,16 +636,18 @@ training on them.
   alive/dead flag from the possession field, so it is weaker.
 
 Degrade them the way P01 does, then pre-train P07 or a sequence model on them: a per-frame set encoder over the
-players plus the ball with a missing mask → TCN/BiGRU → per-frame logits → P06. Calibrate it afterwards on the public
-window, predicted out of fold. That is the only labelled data of this match we have.
+players plus the ball with a missing mask → TCN/BiGRU → per-frame logits → P06. Calibrate it afterwards on other games
+only (held-out DFL matches, P16's sample games). The public window may check that the result is correct and is never a
+calibration set, out of fold or not (`f8f2629`, [T27](traps.md)); we have no labelled data of this match to train on.
 
 Hold out P01's benchmark matches from training, or train and score across folds of matches, so that the benchmark
 still measures something.
 
-**Rules.** Conventions differ between providers, so use external data to rank methods and pre-train, then calibrate
-on the public window. Check every licence, keep the sources public (the organisers must be able to access them), and
-explain them in the technical document. **Never use anything about this fixture**: no event feeds, stats or match
-reports ([T26](traps.md)).
+**Rules.** Conventions differ between providers, so use external data to rank methods and pre-train, and calibrate on
+other games. External data must be about other games. Check every licence, keep the sources public (the organisers
+must be able to access them), and explain them in the technical document: what was labelled, how, by whom and how
+much. **Never use anything about this fixture**: no event feeds, stats or match reports, nothing human-produced about
+it from any source ([T26](traps.md)).
 
 ### P14 — Recover the ball from the video
 

@@ -96,6 +96,14 @@ No truth reaches the detectors. In `dfl` every match is served through train_dea
 which holds the degraded tracking and no flag, as the trainer's rows are), and the truth is read from the match beside
 it, only to find the changes (test_conventions_never_pass_truth). Matches are loaded one at a time and released.
 
+The public window is inspected here, never tuned on (the organisers' rule of 23 Oct 2026, upstream f8f2629, RULES.md
+rule 2: the 5 published minutes are for checking that the pipeline is correct and are "not training data and not a
+tuning set"). So `public`, and the public side of `compare` and `latency`, are for understanding how our truth flips and
+for correctness checks. They set no constant, and nothing a person sees on the video may become a number in a config.
+The half of the shift rule below that was read from the public window, g, is RETIRED: it must stay 0, the code still
+computes and prints it for reference only, and the shift to adopt is s_b alone, from the DFL matches (other games). Any
+future shift comes from other games only (docs/proposals.md P16).
+
 The pipeline's latency and the shift rule (docs/proposals.md P02, Phase C). The detectors say when the tracking shows
 a change; what costs score is when OUR labels change, so the same instrument is turned on the pipeline's own output.
 `latencies` matches the predicted changes to the truth's with pm.match_transitions at tol = 50 frames (2 s), typed by
@@ -121,14 +129,16 @@ only reported beside it, as a warning if it disagrees: T33). What the public win
 gap: L' = L_public + s_b, and g = -round(median L') only if |median L'| >= 3 frames, the 90% bootstrap interval of that
 median excludes 0 (2,000 draws, default_rng([2, 0]), percentiles 5 and 95) and every leave-one-out median has the sign
 of the full one, else 0; the shift is s_b + g. A single public change has no leave-one-out median (a median of nothing
-has no sign), so it is not called stable and never sets a shift. A rounding is numpy's (half to even).
+has no sign), so it is not called stable and never sets a shift. A rounding is numpy's (half to even). g is retired (see
+above): R012 found it 0 for every type, it is reported for reference only, and no g other than 0 may be adopted.
 
-Out of fold (`oof_codes`, T27). The public window taught g, so the shifted prediction's public score is read both in
-sample (every boundary moved by shift) and out of fold: a predicted boundary matched to public change i moves by
-s_b + g without i (the rule applied again to the other changes), and one that matched nothing by shift. The moves are
-made by `shift_edges.apply`, so an X edge never moves. (The refiner also holds a boundary at a kick-off frame; the
-public window's only kick-off is its first frame, a block's edge and no boundary, so there is nothing to hold here.)
-The score of either is a check and never a choice: adoption reads neither.
+Out of fold (`oof_codes`). g was read from the public window (it is now retired), so the shifted prediction's public
+score is read, as a correctness check only, both in sample (every boundary moved by shift) and out of fold: a
+predicted boundary matched to public change i moves by s_b + g without i (the rule applied again to the other
+changes), and one that matched nothing by shift. The moves are made by `shift_edges.apply`, so an X edge never
+moves. (The refiner also holds a boundary at a kick-off frame; the public window's only kick-off is its first frame, a
+block's edge and no boundary, so there is nothing to hold here.) The score of either is a check and never a choice:
+adoption reads neither.
 
 What a printout of BAR-ATH latencies may show is what `MIN_SHOWN` says above, by the same three functions:
 `latency CONFIG public` goes through `shown` (a type with fewer than 5 changes matched prints n, the share and the
@@ -1368,11 +1378,14 @@ def build_parser():
                                 help="degradation seeds per match (default {})".format(DEFAULT_SEEDS))
             source.add_argument("--matches", nargs="+", metavar="ID", help="the matches to run (default: all 7)")
     shift = commands.add_parser(
-        "shift", help="P02's declared shift rule: the table, shift_<config>.json and the out-of-fold CSV",
+        "shift", help="P02's declared shift rule (g, read from the public window, is retired and shown for reference "
+                      "only): the table, shift_<config>.json and the out-of-fold CSV",
         description="Work out the shift rule from the public latencies of the config's CSV and DFL's latency file "
                     "(latency CONFIG dfl, profile {}, truth {}), print its table, and write shift_<config>.json and "
-                    "evaluation/results/<config>_shift_oof.csv, the public window shifted out of fold.".format(
-                        *SHIFT_DFL))
+                    "evaluation/results/<config>_shift_oof.csv, the public window shifted out of fold. g, the gap read "
+                    "from the public window, is RETIRED since the organisers' rule of 23 Oct 2026 (that window is not "
+                    "a tuning set): it is reported for reference only and must stay 0, and the shift to adopt is s_b "
+                    "alone, from DFL.".format(*SHIFT_DFL))
     shift.add_argument("--config", required=True, help="the config's TOML file, e.g. pipeline/configs/main.toml")
     shift.add_argument("--s-b-rejected", nargs="+", choices=TYPES, default=[], metavar="TYPE",
                        help="the types whose s_b the benchmark guard rejected: 0 for them ({})".format(
