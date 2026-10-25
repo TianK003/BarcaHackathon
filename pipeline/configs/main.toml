@@ -22,24 +22,24 @@ scope = "halves"
 # passed to the source as a keyword argument.
 [[evidence]]
 kind = "controlled_touch"
-radius = 2.0          # metres: the nearest player must be this close
-max_rel_speed = 6.0   # m/s: and move with the ball
-min_frames = 3         # an episode shorter than this is dropped
-confidence = 0.91      # touch_stats.py: floor of the pooled agreement to a hundredth (91.9%)
-hold = 0.55            # the weak vote of the last team between episodes; 0.5 = off
+radius = 2.0                                  # metres: the nearest player must be this close
+max_rel_speed = 6.0                           # m/s: and move with the ball
+min_frames = 3                                # an episode shorter than this is dropped
+confidence = 0.91                             # touch_stats.py: floor of the pooled agreement to a hundredth (91.9%)
+hold = 0.55                                   # the weak vote of the last team between episodes; 0.5 = off
 
 [[evidence]]
 kind = "dead_ball_model"
 weight = 1.0
-model = "pipeline/models/dead_ball_hgb.json"   # relative to the repo root
+model = "pipeline/models/dead_ball_hgb.json"  # relative to the repo root
 
 # Exactly one decoder (pipeline/decode/). Every key but kind is a keyword argument.
 [decoder]
 kind = "hmm"
-switch_team = 4      # nats a change of team (H <-> A) costs
-switch_dead = 32      # nats a change into or out of D costs
-min_possession = 25  # frames: no run of H or A shorter than this (1 is no minimum)
-min_dead = 25      # frames: no run of D shorter than this (1 is no minimum)
+switch_team = 4                               # nats a change of team (H <-> A) costs
+switch_dead = 32                              # nats a change into or out of D costs
+min_possession = 25                           # frames: no run of H or A shorter than this (1 is no minimum)
+min_dead = 25                                 # frames: no run of D shorter than this (1 is no minimum)
 
 # Zero or more refiners (pipeline/refine/), applied in order after the decoder:
 # [[refine]]

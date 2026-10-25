@@ -3602,8 +3602,9 @@ public window, and they are not inputs: no constant of the chosen config comes f
 confidence 0.91 is touch_stats.py's floor over the seven benchmark matches, the trees were trained on those matches, and
 the decoder was chosen on them; this config has no `nearest_player`, and so none of A01's 0.78). Against R009's chosen
 config on the same window (0.6482, 0.3024, 24 possessions), R008's (0.6532, 0.3889, 19) and `baseline_smooth50`
-(0.6207, 0.3256, 26 possessions) every figure is higher, which says nothing either way (T01: one possession moves
-spellF1 about 0.06 here, and the window ranks `smooth125` above `smooth50`, the reverse of the full match).
+(0.6207, 0.3256, 26 possessions) both F1 scores are higher, while the possession count (18) is lower than all three
+(24, 19 and 26; the truth's is 17). That says nothing either way (T01: one possession moves spellF1 about 0.06 here,
+and the window ranks `smooth125` above `smooth50`, the reverse of the full match).
 Validation (P01 benchmark): 7 DFL matches x 3 degradation seeds (0, 1, 2), profile `tracking` version 3, 668.4 graded
 minutes per seed. The chosen config, `p45c_t004_d032_mp025_md025` (`controlled_touch` 2.0 m / 6.0 m/s / 3 frames / hold
 0.55 at confidence 0.91 and `dead_ball_model` with the `hgb` artifact at weight 1.0, no `nearest_player`, no
@@ -3618,18 +3619,26 @@ graded minute; `D` share 44.6% (the truth's 44.8%).
 | coarse | `nearest_w125` (the bar's) | +0.2330 | +0.2341 [+0.2202, +0.2480] | 0.0156 | 7 |
 | coarse | `nearest_w50` | +0.2714 | +0.2724 [+0.2537, +0.2910] | 0.0156 | 7 |
 
+Changed vs the previous best: the file `main.toml` wrote until now was R001's, nearest player plus a +-50-frame majority
+vote (`nearest_w50` on the benchmark: 0.2018 raw, 0.1842 coarse), public macroF1 0.6207, spellF1 0.3256, 26
+possessions, sha256 `678aa2d4bae99a79b478e6275257b3cbac464d55bcdc778eabf9dea1f05c84da` (R001 does not record the sha256;
+this is the one the file in `evaluation/results/` had before R010 rewrote it). The benchmark's previous best was R009's
+`p45b_hgb_w100_bp0`, 0.3503 raw and 0.4150 coarse; this config is +0.0714 and +0.0406 above it (pooled).
+
 **The bar is met under both truths, by a wide margin.** The label-free check on BAR-ATH (below) also passes, so
 `main.toml` is switched.
 
 **Read this before the numbers: the benchmark overstates P05 for BAR-ATH (T38), and with it the combined gain.** R009
 gives the reason and the measurements: DFL tracks the ball out of play and our tracker loses it near the lines (beyond a
 line on 4.07% of our at-risk rows against DFL's 17.68%), so the trees see the dead ball far more often on the benchmark
-than they will on our match, by an amount the benchmark cannot measure. Everything here that rests on the alive/dead
-F1 (0.9726 on the benchmark) inherits that, and so does the size of the Δs above; the sign of the raw one does not rest
-on it, since the config without P05 still beats `nearest_w50` raw (+0.0539, below). The public window's alive agreement
-(86.6% of 7,500 frames) and the predicted `D` share over the graded frames of our match, **36.0%** against 44.6% on the
-benchmark, are the two looks at our match. The share is the same as R009's alone (35.7%) and below R007's 42.3% and
-R008's 41.8%, but not off the scale of what a football match has (DFL's seven matches have 40.7% to 51.7%).
+than they will on our match, by an amount the benchmark cannot measure. Everything here that rests on the alive/dead F1
+(0.9726 on the benchmark) inherits that, and so does the size of the Δs above. The sign of the raw one does not rest on
+it, since the config without P05 still beats `nearest_w50` raw (+0.0539, below); the coarse half of the bar does
+(without P05: -0.0056 against `nearest_w125`, p 0.1094, below), so the domain shift threatens exactly that half. The
+public window's alive agreement (86.6% of 7,500 frames) and the predicted `D` share over the graded frames of our match,
+**36.0%** against 44.6% on the benchmark, are the two looks at our match. The share is close to R009's alone (35.7%) and
+below R007's 42.3% and R008's 41.8%, but not off the scale of what a football match has (DFL's seven matches have 40.7%
+to 51.7%).
 
 **The grid.** switch_team t in {4, 8, 16} x switch_dead d in {16, 32, 64} x `min_possession` in {25, 50, 75, 100}
 frames x `min_dead` in {1, 25} frames: 72 configs `p45c_t{TTT}_d{DDD}_mp{MMM}_md{NNN}`. The evidence is fixed and the
@@ -3787,9 +3796,9 @@ Paired against the chosen config (chosen minus the ablation; mean per match [90%
   +0.2589 above.
 - **The sum of the two gains.** At R007's decoder P04 gains +0.0292 raw and +0.0466 coarse, and P05 +0.1450 and +0.2183;
   the sum, +0.1742 and +0.2649, would give 0.3795 and 0.4616, and the combined config at the same decoder (the grid's
-  `p45c_t008_d032_mp075_md001`) scores 0.3873 and 0.4973. So the two gains add, and a little more (+0.0078 raw, +0.0357
-  coarse). The re-tuned decoder then adds +0.0344 raw (0.4217 against 0.3873) and costs 0.0417 coarse (0.4556 against
-  0.4973): the re-tuning follows the raw objective, which is what T33 is about.
+  `p45c_t008_d032_mp075_md001`) scores 0.3873 and 0.4973. So the two gains add, and a little more (pooled, no interval:
+  +0.0078 raw, +0.0357 coarse). The re-tuned decoder then adds +0.0344 raw (0.4217 against 0.3873) and costs 0.0417
+  coarse (0.4556 against 0.4973): the re-tuning follows the raw objective, which is what T33 is about.
 - **A10's ceilings** (at R007's decoder, with `nearest_player` for the team): a perfect `D` would reach 0.3678 raw and
   0.4417 coarse, and both parts perfect everywhere 0.7627 and 0.9226. The chosen config is +0.0539 raw and +0.0139
   coarse above the first (its team evidence is better than `nearest_player`, and its decoder is tuned to it), and is
@@ -3815,7 +3824,7 @@ trees' training, which holds out the scored match only through `folds`, and seve
 of them Fortuna Düsseldorf home games) are not seven independent draws.
 
 **Controls on `context`** (sensitivity only, T38; `context` v1 fails two gates, R005; run from `15580c1`,
-`--profile context`, `--seeds 3 --no-write`; both logs end `EXIT=0`, the references score on `context` exactly as in R005
+`--profile context`, `--seeds 3 --no-write`; both logs end `EXIT=0`; the references score on `context` as in R005
 and R009).
 - **The chosen config.** Pooled spellF1 0.4323 raw (mean per match 0.4341 [0.4116, 0.4565]) and 0.4654 coarse (0.4660
   [0.4466, 0.4854]); macroF1 0.8353 raw and 0.8361 coarse; alive/dead F1 0.9700; 2.81 possessions per graded minute; `D`
@@ -3827,13 +3836,15 @@ and R009).
   keeps DFL's out-of-play ball tracking, so it shares the caveat above.
 
 **The label-free check on our match.** The benchmark cannot show that the file is not degenerate on BAR-ATH, so this
-check is required in addition to the bar. It is computed over the graded blocks of BAR-ATH (`games.half_video_blocks`,
-158,857 frames) of `evaluation/results/p45_hmm.csv`, with no ground truth:
+check is required in addition to the bar; it was declared before Stage C ran, when no Stage C number existed. It is
+computed over the graded blocks of BAR-ATH (`games.half_video_blocks`, 158,857 frames) of
+`evaluation/results/p45_hmm.csv`, with no ground truth:
 - **(a) The predicted `D` share** is 36.0%, inside [30%, 62%] (DFL's seven matches have 40.7% to 51.7% dead, widened by
   10 points each way). It passes.
 - **(b) The `X` labels inside the graded blocks:** 0. It passes.
 - **(c) Determinism:** two runs of `pipeline/run.py pipeline/configs/p45_hmm.toml --score` give the same sha256
   (`a706e7f7...`), and the file is valid. It passes.
+
 It cannot say the labels are right; it says the file is not degenerate on our match.
 
 **Adoption.** The bar (the chosen config's raw Δ over `nearest_w50` and coarse Δ over `nearest_w125` both above 0 with
