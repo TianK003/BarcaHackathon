@@ -34,7 +34,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P02](#p02--learn-the-ground-truths-conventions-from-the-public-window) | Learn the GT's conventions from the public window | boundary timing | S | high | idea |
 | [P16](#p16--metricas-sample-games-in-our-ground-truth-providers-conventions) | Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing | boundary timing, grain | M | medium | idea |
 | [P03](#p03--one-command-deterministic-cached) | One-command, deterministic, cached pipeline | reproducibility | S–M | enabling | done → R001 |
-| [P04](#p04--sticky-ownership-from-controlled-touches) | Sticky ownership from controlled touches | facts 3, 5 | S | high | idea |
+| [P04](#p04--sticky-ownership-from-controlled-touches) | Sticky ownership from controlled touches | facts 3, 5 | S | high | doing (Tian) |
 | [P05](#p05--a-real-dead-ball-detector) | Dead-ball detector | fact 4 | M | high | idea |
 | [P06](#p06--global-decoding-per-half-hmm--hidden-semi-markov) | Global decoder (HMM / semi-Markov) per half | fact 5 | M | high | done → R006–R007, A10 |
 | [P07](#p07--possession-without-the-ball-team-shape-and-movement) | Possession without the ball: team shape | fact 1 | M | high, but only after P05: ~0 to this decoder without it at `margin` 0 (A10) | idea |
@@ -285,6 +285,9 @@ is in place, and `python pipeline/selftest.py --data` proves the four baselines 
 ## Core: fix what the baseline gets wrong
 
 ### P04 — Sticky ownership from controlled touches
+
+**Status: doing (Tian).** The source is `controlled_touch`
+([`pipeline/evidence/`](../pipeline/evidence/README.md)); its measurements go to results.md as R008.
 
 **Why.** Fact 3, and the definition itself: possession changes only when the opponent gains *controlled* possession,
 and loose or contested balls stay with the last team. Nearest-player-per-frame flips on every pass in flight and

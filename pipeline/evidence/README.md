@@ -37,6 +37,7 @@ every value in [0, 1] or NaN. A length of ~164k means the broadcast was indexed 
 |---|---|---|---|---|
 | `nearest_player` | NaN everywhere | `confidence` / `1 − confidence` by the team of the nearest tracked slot; NaN without a ball or a player | `confidence` ∈ [0.5, 1.0], default 1.0 | step 1 of `starter/baseline.py`, bit for bit at the default (hard 1.0 / 0.0). Opinion on 59.3% of graded frames; agrees with the public GT on 77.8% of 5,640 frames (= A01) |
 | `ball_presence` | `seen` with a ball; `missing` on a missing frame more than `margin` frames from one; NaN nearer | NaN everywhere | `margin` ≥ 0 frames, default 0; `missing` ∈ [0, 1], default 0.2; `seen` ∈ [0, 1], default 0.585 | the baseline's "no ball means stoppage" as evidence, for P06's decoder to weigh: exactly that only at `baseline_raw`'s half-width 0, and broader than `main`'s vote at `margin` 0 (below). P05 replaces it |
+| `controlled_touch` | NaN everywhere | `confidence` / `1 − confidence` on a kept control episode; `hold` / `1 − hold` between episodes if `hold` > 0.5; NaN elsewhere and without a ball | `radius`, `max_rel_speed` (may be `inf`), `min_frames`, `confidence` ∈ (0.5, 1], `duel_radius` default 1.0, `hold` ∈ [0.5, confidence], default 0.5 = off | P04: a player within `radius` of the ball, no opponent within `duel_radius`, moving with it, for at least `min_frames`. Silent in flight and in a duel, so the decoder keeps the last team there |
 
 The nearest player is not the possessor — wrong on 22% of ball-visible, in-play frames ([T14](../../docs/traps.md)).
 P04 is its replacement.
@@ -61,6 +62,18 @@ inside a gap, so a gap of 47 to 100 frames (at `switch_dead` 32), and the first 
 And a missing ball is not a dead ball ([T12](../../docs/traps.md)): 41% of graded frames have no ball, in long gaps, and
 in-play gaps of 10 s or more are normal. `margin` leaves the edges of a gap to other evidence: only missing frames more
 than `margin` frames from the nearest frame with a ball speak.
+
+**`controlled_touch`** reports who controls the ball, and only then. A frame is a candidate when the ball is visible,
+the nearest slot is within `radius`, the other team's nearest is beyond `duel_radius` and the two move together
+(|v_ball − v_player| ≤ `max_rel_speed`, both from positions, never the ATD speed channels). The zones follow
+Vidal-Codina et al. (2022): within a couple of metres of one player and no other, at his speed, the ball is his; two
+teams inside the duel radius make a contested ball, which is no evidence. A maximal run of candidate frames of one team
+lasting at least `min_frames` is an episode, and the evidence starts on its *first* frame, so a change of team decoded
+from it lands where control began: that is the back-dating of [T03](../../docs/traps.md), with no lag added. Between
+episodes the source is NaN, and `hold` > 0.5 adds a weak vote for the last controlling team on frames with the ball
+visible (never before a block's first episode, never across blocks): it makes the decoder keep the old team through a
+pass in flight, so a turnover lands on the new team's first control frame; with `hold` off it lands on the first frame
+after the old team's last one, the HMM's tie rule. `confidence` is measured, not tuned.
 
 ## Shared kinematics
 
