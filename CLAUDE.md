@@ -128,8 +128,10 @@ keeps that convention: its scripts swap their own folder on `sys.path` for the r
   configs). Five stages, one folder each with its own README: `inputs` (alignment; the ATD parsed once into
   `data/cache/atd_tactical/`) → `evidence` (per-frame `alive`/`home` probabilities, NaN = no opinion) → `decode` (one
   block per graded half) → `refine` → `output` (LF CSV, official validation, manifest in `data/runs/`). Components
-  are plain functions in each stage's `REGISTRY` (`evidence` holds `nearest_player` and `ball_presence`, `decode`
-  holds `majority_vote` and `hmm`), chosen by TOML configs in `pipeline/configs/` and checked against
+  are plain functions in each stage's `REGISTRY` (`evidence` holds `nearest_player`, `ball_presence`,
+  `controlled_touch`, `dead_ball_rules` and `dead_ball_model`, the last reading the trained JSON models in
+  `pipeline/models/`; `decode` holds `majority_vote` and `hmm`), chosen by TOML configs in `pipeline/configs/` and
+  checked against
   their signatures before any data loads. `configs/smooth50_repro.toml` must rebuild `baseline_smooth50.csv` byte for
   byte — run `selftest.py --data` after any change upstream of the decoder. Contracts live in
   `pipeline/contracts.py`; change them only with the team.
