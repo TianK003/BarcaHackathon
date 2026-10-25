@@ -60,8 +60,8 @@ Two design decisions run through the whole diagram:
 | # | stage | takes | gives | its job | today | lands here |
 |---|---|---|---|---|---|---|
 | 1 | [inputs](inputs/README.md) | `data/tactical/*` and `games.py` | `Inputs`: read-only arrays where row *i* = tactical video frame *i*; graded halves, kick-offs, pitch size | do every alignment once and check it; parse the 195 MB ATD once and cache it | ATD (cached), homography, Smart Tagging | P10 audio, P14 ball from video, P15 broadcast |
-| 2 | [evidence](evidence/README.md) | `Inputs` (the whole match) + config parameters | one `Evidence` per source: `alive` = P(ball in play), `home` = P(home has it \| in play), each float64 per frame, NaN = no opinion | per-frame opinions, never labels | `nearest_player` (baseline step 1) | P04, P05, P07, P08, P10 |
-| 3 | [decode](decode/README.md) | one block (a graded half) and every source cut to it | `Decoded`: one int8 label per frame (`H`, `A`, `D`, `X` = 0–3) and an optional posterior | turn opinions into a sequence that looks like football: intervals, few spurious changes | `majority_vote` (baseline step 2, a stand-in) | P06 HMM / semi-Markov |
+| 2 | [evidence](evidence/README.md) | `Inputs` (the whole match) + config parameters | one `Evidence` per source: `alive` = P(ball in play), `home` = P(home has it \| in play), each float64 per frame, NaN = no opinion | per-frame opinions, never labels | `nearest_player` (baseline step 1; its optional `confidence` replaces the hard 0/1 vote), `ball_presence` (whether the tracker sees the ball, as `alive` evidence; P05 replaces it) | P04, P05, P07, P08, P10 |
+| 3 | [decode](decode/README.md) | one block (a graded half) and every source cut to it | `Decoded`: one int8 label per frame (`H`, `A`, `D`, `X` = 0–3) and an optional posterior | turn opinions into a sequence that looks like football: intervals, few spurious changes | `majority_vote` (baseline step 2, a stand-in), `hmm` (P06: a Viterbi per block with switch penalties and minimum runs, and an optional posterior) | duration priors beyond the minimums (semi-Markov) |
 | 4 | [refine](refine/README.md) | the same block + the current `Decoded` | a new `Decoded`, same frames | metric-aware clean-ups, each switchable and measured | none yet | P11, P12 |
 | 5 | [output](output/README.md) | labels for the whole match | the CSV (LF, validated, sha256), the run manifest; with `--score`, the scores | own the bytes of the deliverable and check them as the organisers will | — | — |
 
@@ -92,8 +92,10 @@ def refine(ctx, decoded, **params) -> Decoded
 | `Decoded` | `labels`: int8 codes, the scorer's own (`H, A, D, X = 0, 1, 2, 3`) · `posterior`: `(len, 3)` P(H), P(A), P(D) or `None` |
 
 Why `alive` and `home` rather than three numbers: the ground truth is `D` where the ball is dead and otherwise the
-team that has it. Most sources answer only one of those two questions. A decoder recombines them as
-`P(H) = alive·home`, `P(A) = alive·(1 − home)`, `P(D) = 1 − alive`.
+team that has it. Most sources answer only one of those two questions. Read together, they say
+`P(H) = alive·home`, `P(A) = alive·(1 − home)`, `P(D) = 1 − alive`. The `hmm` decoder does not multiply them: it adds
+each channel's log-likelihood ratio to the states it speaks for and lets a NaN add nothing, so a missing `alive` is no
+opinion and not a coin flip ([decode README](decode/README.md#hmm-the-global-decoder-p06)).
 
 ## Configs
 
@@ -122,6 +124,7 @@ half_width = 50
 |---|---|
 | [`main.toml`](configs/main.toml) | the team's current pipeline, i.e. the file we would submit today. It is still the baseline in substance (nearest player + ±2 s vote, per half) |
 | [`smooth50_repro.toml`](configs/smooth50_repro.toml) | a regression check: it must rebuild `evaluation/results/baseline_smooth50.csv` byte for byte |
+| [`p06_hmm.toml`](configs/p06_hmm.toml) | P06's candidate: the `hmm` decoder with the parameters the benchmark chose (R006, R007), `nearest_player` at `confidence` 0.78 and `ball_presence`. It does not clear P06's bar and is not the submission config |
 
 Configs are checked strictly before any data loads. An unknown key, an unknown component, a duplicate source name or
 a parameter the function doesn't accept (`half_widht = 50`) stops the run with a sentence that says what to change.
@@ -208,6 +211,14 @@ needs the video's homography or the Smart Tagging stops the run and names the as
   looks like our match: eight gates, all of which must pass (it exits 1 otherwise), and ten WARN checks that are printed
   and discussed in `docs/results.md` and never tuned towards. Run it after any change to a profile. Degradations are
   fitted once per version on label-free statistics of our tracking, then frozen ([T37](../docs/traps.md)).
+- **Headroom.** `python pipeline/benchmark/headroom.py CONFIG` runs a config beside five variants whose evidence is the
+  truth itself (a perfect dead-ball detector, a perfect possessor where the ball is seen or everywhere, and both), to
+  say what P05, P04 or P07 could ever deliver to that config before anyone builds them
+  ([A10](../docs/results.md), the [benchmark README](benchmark/README.md#headroom)). The oracles exist only while a
+  run lasts and are never in a `REGISTRY`.
+- **The default profile cannot value evidence about the ball's gaps.** Its gaps are our masks transplanted blind to
+  the play, so a source or a parameter that depends on where the gaps fall (`ball_presence`, `switch_dead`, P05's and
+  P07's features) is also read on `context`, under both truths ([T38](../docs/traps.md)).
 
 **The default profile, as of R004c, is `tracking` version 3.** The ball is missing as ours was (our own masks,
 transplanted with their pattern and not their clock, and not placed by the play). The players have our
@@ -230,7 +241,8 @@ profile, and every report names its profile and version.
 What it cannot test: whatever uses the homography, the Smart Tagging, the camera or the audio (DFL has no video), and
 the conventions of our ground truth beyond what the public window shows. Check those on the public window. The details
 (profiles, gates and WARN bands, the report, limitations) are in [`benchmark/README.md`](benchmark/README.md), and what
-was measured is in [`docs/results.md`](../docs/results.md) (A05 to A09, R002 to R005; R004c is the default's).
+was measured is in [`docs/results.md`](../docs/results.md) (A05 to A09, R002 to R005; R004c is the default's; R006,
+R007 and A10 are P06's runs on it).
 
 ## Rules that the code enforces, and ones it can't
 
@@ -271,11 +283,11 @@ pipeline/
 ├── config.py            reads and strictly checks a TOML config
 ├── contracts.py         Evidence, Block, RunContext, BlockContext, Decoded and their checks
 ├── selftest.py          synthetic contract checks; --data for the byte-exact regression
-├── configs/             main.toml (current pipeline), smooth50_repro.toml (regression)
+├── configs/             main.toml (current pipeline), smooth50_repro.toml (regression), p06_hmm.toml (P06)
 ├── inputs/              stage 1: Inputs, the ATD cache                       README.md
-├── evidence/            stage 2: REGISTRY, nearest_player                    README.md
-├── decode/              stage 3: REGISTRY, majority_vote                     README.md
+├── evidence/            stage 2: REGISTRY, nearest_player, ball_presence     README.md
+├── decode/              stage 3: REGISTRY, majority_vote, hmm                README.md
 ├── refine/              stage 4: REGISTRY (empty)                            README.md
 ├── output/              stage 5: write, validate, summarise, score, manifest README.md
-└── benchmark/           validation (P01): DFL matches degraded like ours     README.md
+└── benchmark/           validation (P01): degraded DFL matches; headroom.py  README.md
 ```

@@ -36,7 +36,9 @@ Why each parameter exists
   so a blip of n contrary frames is believed only when n times its per-frame evidence exceeds 2 * switch_team: that is
   what removes the flicker the nearest-player labels are made of (docs/traps.md T04).
 * switch_dead is the same for stoppages. It is separate because the two kinds of change are not equally likely, and
-  because `alive` evidence is weak (ball seen or not) where `home` evidence is strong.
+  because `alive` evidence is lopsided where `home` evidence is not: a seen ball is weak evidence of play (0.34 nats a
+  frame from ball_presence) and a missing one is not weak evidence of a stoppage (1.39 nats, more than nearest_player's
+  1.27 between H and A at confidence 0.78).
 * min_possession and min_dead are the hard floor under it: a run shorter than the minimum is not a possession, whatever
   the evidence says, and the decoder pays for the frames it has to give a short run to reach the minimum. A minimum
   makes a run grow to its length where the evidence is only half there (a 20-frame blip with min_possession 25 becomes
@@ -167,10 +169,12 @@ def viterbi(emissions, switch_team, switch_dead, min_possession, min_dead):
         switch_team, switch_dead, min_possession, min_dead)
     emissions = _check_emissions(emissions)
     # Every path takes one state per frame, so subtracting a frame's H score from all three states moves every path's
-    # score by the same constant and changes no decision. It makes the tie inside a ball gap exact: there `alive` adds
-    # the same number to H and to A, so their difference is exactly 0 where only `alive` is known, instead of two
-    # running sums that drift apart by ulps (and would put the change of team where the rounding noise peaks, not on
-    # the gap's first frame). A new array: the input is never written.
+    # score by the same constant: in exact arithmetic that changes no decision. In floats it changes which of several
+    # exactly tied paths wins, and that is its purpose: it makes the tie inside a ball gap exact, so that the module
+    # docstring's tie rule decides it and rounding does not. There `alive` adds the same number to H and to A, so their
+    # difference is exactly 0 where only `alive` is known, instead of two running sums that drift apart by ulps (and
+    # would put the change of team where the rounding noise peaks, not on the gap's first frame). A new array: the
+    # input is never written.
     emissions = emissions - emissions[:, H:H + 1]
     n_frames = len(emissions)
     labels = np.empty(n_frames, dtype=np.int8)

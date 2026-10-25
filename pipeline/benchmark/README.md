@@ -14,6 +14,7 @@ R002 to R005).
 python pipeline/benchmark/sources.py          # data -> data/external/dfl/   (21 files, 2.6 GB, size and md5 checked)
 python pipeline/benchmark/run.py CONFIG ...   # configs -> scores, intervals, comparisons, one JSON report per config
 python pipeline/benchmark/fidelity.py         # how far the degraded profile looks like our match (gates, warnings)
+python pipeline/benchmark/headroom.py CONFIG  # a config beside five variants whose evidence is the truth itself
 python pipeline/benchmark/selftest.py [--dfl] [--data]   # the checks
 ```
 
@@ -542,14 +543,16 @@ than in the pooled number alone. Nothing here is a config to submit. The checks 
 .venv/Scripts/python pipeline/benchmark/selftest.py --data   # + our own match (aggregates only; minutes)
 ```
 
-The synthetic run is 273 checks and took 49 to 115 s. `--dfl` adds 16 and `--data` 7; all of them (295 checks then)
-took 949 s (15 min 49 s) with the seven DFL caches and the Calibration rebuilt after an edit to `dfl.py` and
-`calibration.py` (A05, 2026-10-23, `fdc5eae`). The machine's load decides, and the first run on a machine also builds
-the caches (A05).
+The synthetic run is 288 checks (P06's added 16 to the 272 of A05). Its time, 49 to 115 s, is as of A05 and not
+measured again. `--dfl` and `--data` are as of A05 (2026-10-23, `fdc5eae`), when the synthetic run was 272 checks:
+`--dfl` added 16 and `--data` 7, and all of them (295 checks then) took 949 s (15 min 49 s) with the seven DFL caches
+and the Calibration rebuilt after an edit to `dfl.py` and `calibration.py`. The machine's load decides, and the first
+run on a machine also builds the caches (A05).
 
 The checks live in `pipeline/benchmark/checks/`, one module per topic, listed in `checks.MODULES` (the folder's
 `__init__.py` says what each holds): `sources`, `dfl`, `truth`, `inputs`, `score`, `run`, `hazard`, `calibration`,
-`degrade`, `cap`, `tracking`, `context`, `fidelity` and `harness` (the harness itself). The profiles' are `degrade` (the
+`degrade`, `cap`, `tracking`, `context`, `fidelity`, `headroom` (the Headroom section's) and `harness` (the harness
+itself). The profiles' are `degrade` (the
 transplant worked out exactly, determinism, what the `gaps` profile touches and what it does not, no truth, the order of
 the matches), `tracking` (the tracklets, the episodes, the NaN-speed runs and the smoothing worked out exactly, and how
 it nests in `gaps`), `cap` (the low-count tail's cap, its shortest-piece rule and the scale of the tracked spans),

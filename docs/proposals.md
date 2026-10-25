@@ -36,7 +36,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P03](#p03--one-command-deterministic-cached) | One-command, deterministic, cached pipeline | reproducibility | S–M | enabling | done → R001 |
 | [P04](#p04--sticky-ownership-from-controlled-touches) | Sticky ownership from controlled touches | facts 3, 5 | S | high | idea |
 | [P05](#p05--a-real-dead-ball-detector) | Dead-ball detector | fact 4 | M | high | idea |
-| [P06](#p06--global-decoding-per-half-hmm--hidden-semi-markov) | Global decoder (HMM / semi-Markov) per half | fact 5 | M | high | doing (Tian) |
+| [P06](#p06--global-decoding-per-half-hmm--hidden-semi-markov) | Global decoder (HMM / semi-Markov) per half | fact 5 | M | high | done → R006–R007, A10 |
 | [P07](#p07--possession-without-the-ball-team-shape-and-movement) | Possession without the ball: team shape | fact 1 | M | high, but only after P05: ~0 to this decoder without it (A10) | idea |
 | [P08](#p08--smart-tagging-as-soft-evidence) | Smart Tagging as soft evidence | facts 1, 4 | S | medium | idea |
 | [P09](#p09--camera-aim-as-a-coarse-ball-zone-prior) | Camera aim as a coarse ball-zone prior | fact 1 | S | low–medium | idea |
@@ -54,7 +54,7 @@ One track per person; swap freely.
 | track | week 1 (→ Oct 27) | week 2 (→ Nov 3) | week 3 (→ Nov 10) |
 |---|---|---|---|
 | Validation | P01 (done 23 Oct, R002–R005), P02 | P12 | re-validate every candidate on P01 |
-| Pipeline and decoder | P03 | P06 | tune P06 on P01 |
+| Pipeline and decoder | P03 | P06 (done 25 Oct, R006–R007, A10) | P06 is tuned on P01 (R007); then [After P06](#after-p06) |
 | Ball visible | P04 | P11 | P11 |
 | Dead ball | P05 rules | P05 classifier, P08 | P10 |
 | Ball missing | P07 | P07, P09 | P13 or P14 spike → go / no-go |
@@ -324,8 +324,20 @@ Watch `alive_dead_f1` and the `D` row in the scorer's detail block.
 
 ### P06 — Global decoding per half: HMM / hidden semi-Markov
 
-**Status: doing (Tian).** The `hmm` decoder is in [`pipeline/decode/hmm.py`](../pipeline/decode/hmm.py);
-the posterior, the evidence it decodes and the tuning on P01 are still to come.
+**Status: done → [R006](results.md), [R007](results.md) and
+[A10](results.md#a10--headroom-what-perfect-evidence-would-be-worth-to-the-chosen-decoder-2026-10-25).** The `hmm`
+decoder is in [`pipeline/decode/hmm.py`](../pipeline/decode/hmm.py), with its posterior (off by default) and the first
+`alive` evidence, `ball_presence`. Its parameters were chosen on P01's benchmark and are kept in
+[`pipeline/configs/p06_hmm.toml`](../pipeline/configs/p06_hmm.toml), which is not the submission config.
+
+**Result.** Switch penalties of 8 and 32 nats (`switch_team`, `switch_dead`) and minimum runs of 75 frames and 1 give
+pooled spellF1 0.2053 under the raw truth and 0.1967 under the coarse one, against `nearest_w50`'s 0.2018 raw and
+`nearest_w125`'s 0.2226 coarse (R007, profile `tracking`). **The bar is not met**: +0.0036 over `nearest_w50` raw
+(sign-flip p 0.2500, 5 wins in 7) and -0.0259 against `nearest_w125` coarse (0 wins in 7), so `main.toml` is
+unchanged. Its `D` is worse than the yardsticks' (alive/dead F1 0.5676 against 0.6094 and 0.6428), and A10 sizes what
+better evidence would be worth: 0.3678 raw and 0.4417 coarse with a perfect dead-ball detector, 0.3586 and 0.3651 with
+a perfect possessor where the ball is seen, 0.7627 and 0.9226 with both everywhere. The code stays because P04, P05 and
+P07 plug into it; what to do next is [After P06](#after-p06).
 
 **Why.** Majority voting is local. Possessions are intervals and spellF1 pays for every spurious split; a decoder
 weighs the evidence against the cost of each change, over a whole half at once.

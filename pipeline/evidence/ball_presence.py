@@ -15,9 +15,9 @@ The two values come from A01 (docs/results.md), by rule, and are not tuned. In t
 33.6% of dead-ball frames and on 6.5% of in-play frames, so a missing ball is 5.2 times likelier in a stoppage. It is
 rounded down to 4, which is P(alive) = 1 / (1 + 4) = 0.2, because that window is the best-covered block of the match
 (A02) and the ratio over the whole match is expected to be lower (it cannot be measured without the private ground
-truth). A visible ball goes the other way, weakly: 66.4% of dead frames
-against 93.5% of in-play ones is a ratio of 1.41 for alive, P(alive) = 0.935 / (0.935 + 0.664) = 0.585. Both rest on a
-handful of stoppages (four in that window), so they are a first estimate, and P05 replaces this source.
+truth). A visible ball goes the other way, weakly: 66.4% of dead frames against 93.5% of in-play ones is a ratio of 1.41
+for alive, P(alive) = 0.935 / (0.935 + 0.664) = 0.585. Both rest on a handful of stoppages (four in that window), so
+they are a first estimate, and P05 replaces this source.
 
 The `seen` term is not decoration. Without it a stretch with the ball, between two stretches without, would pay for two
 changes of state out of what the home evidence earns there, about a sixth of a nat a frame for a nearest player right

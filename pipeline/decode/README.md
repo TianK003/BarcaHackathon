@@ -75,7 +75,7 @@ min_dead = 25          # frames; default 1
 
 **Emissions.** Each channel adds a log-likelihood ratio against a prior of one half, times the source's `weight` (an
 exponent on its likelihood: weight 2 counts the source twice, weight 0 not at all). Probabilities are clipped to
-`[eps, 1 - eps]` first, since `nearest_player` reports hard 0s and 1s.
+`[eps, 1 - eps]` first, since `nearest_player` reports hard 0s and 1s unless it is given a `confidence`.
 
 | channel, where it is known | H | A | D |
 |---|---|---|---|
@@ -93,14 +93,17 @@ first and last run, which its edges may have cut short. The decoder returns a va
 | parameter | default | meaning |
 |---|---|---|
 | `switch_team` | — (required) | nats of evidence a change of team has to beat; a blip of n contrary frames is believed when n times its per-frame evidence exceeds twice this |
-| `switch_dead` | — (required) | the same for a stoppage; separate, because `alive` evidence is weak where `home` evidence is strong |
+| `switch_dead` | — (required) | the same for a stoppage; separate, because `alive` evidence is lopsided where `home` evidence is not: a seen ball is weak evidence of play (0.34 nats a frame) and a missing one is not weak evidence of a stoppage (1.39 nats) |
 | `min_possession` | 1 | the shortest run of `H` or of `A`; a hard floor under the penalty, which makes a run grow to its length where the evidence is half there |
 | `min_dead` | 1 | the shortest run of `D` |
 | `eps` | 1e-6 | the clip; a numerical guard, not a knob |
 | `posterior` | `false` | `true` also returns `Decoded.posterior`, the probability of `H`, `A` and `D` per frame ([below](#the-posterior)); the labels are the same either way |
 
 All four numbers are validated (no bool, no NaN or infinity, minimums are whole numbers of frames >= 1) and named in the
-error. Tune them on P01's benchmark, never on the public window ([T01](../../docs/traps.md)).
+error. Tune them on P01's benchmark, never on the public window ([T01](../../docs/traps.md)). The benchmark's choice is
+`switch_team` 8, `switch_dead` 32, `min_possession` 75 and `min_dead` 1 ([R006 and R007](../../docs/results.md), kept in
+[`configs/p06_hmm.toml`](../configs/p06_hmm.toml)); that config does not clear P06's bar and is not the submission
+config.
 
 **Ties.** Equal scores are decided the same way every time: a path extends its current run first, then comes from `D`,
 then from `H`, then from `A`; the block ends in `D`, then `H`, then `A`. So a block without evidence is all `D`, and a
@@ -126,7 +129,8 @@ probability of a state is the total weight of the valid paths that hold it there
 paths. Each row sums to 1.
 
 - **The labels do not change.** They are the best single path (Viterbi), not the per-frame argmax of the posterior, and
-  the two part company where a stretch is close. A check pins that the labels are identical with the posterior on and off.
+  the two part company where a stretch is close. A check pins that the labels are identical with the posterior on and
+  off.
 - **It is the model's belief, no more.** It is as calibrated as the evidence it is given; `nearest_player`'s
   `confidence` and `ball_presence`'s two values are what make it more or less sure.
 - **How it is computed.** A forward-backward pass over the textbook chain (each state split into "run length so far"
@@ -146,8 +150,9 @@ paths. Each row sums to 1.
 - **`D` is only as good as its `alive` evidence.** `nearest_player` says nothing about it, so with that alone the
   decoder chooses `D` rarely, and only in gaps: `H`, `D`, `A` beats `H`, `A` across a gap when `switch_team` is more
   than twice `switch_dead` and the gap is at least `min_dead` frames, and with `switch_dead = 0` a trailing stretch
-  without evidence ends in `D` by the tie preference. A dead-ball source (P05) is what gives it something real to
-  decode.
+  without evidence ends in `D` by the tie preference. `ball_presence` (whether the tracker sees the ball) is the one
+  `alive` source today, and its `D` scores 0.5676 on alive/dead F1 on the benchmark against `nearest_w50`'s 0.6094
+  ([R007](../../docs/results.md)). A dead-ball source (P05) is what gives it something real to decode.
 
 ## Adding a decoder
 

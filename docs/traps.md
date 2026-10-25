@@ -214,6 +214,21 @@ measurement, R004c) and `degrade.MIN_PIECE_FRAMES` (8) are the corrections. Any 
 benchmark must be set against the tracklet median first, and a rescale of this kind is made once, logged with its
 measurement and never tuned.
 
+**T38 — The default profile cannot value evidence about where the ball's gaps fall, so a choice that depends on them is
+read on `context` too.** `tracking` v3 transplants our ball masks with their pattern and not their clock (R003), so a
+gap has nothing to do with the play. In our public window the ball is missing on 33.6% of dead frames against 11.8% of
+all frames (A01), a missing frame being 5.2 times likelier in a stoppage; on `tracking` it is visible on 56.8% of the
+dead frames against about 59% of all graded frames (R005), so a missing frame says almost nothing about `D`. P06's
+`ball_presence` is evidence of exactly that kind, so R006 and R007 chose `switch_dead` on a profile that cannot value
+it, and A10's `__alive` ceiling (+0.1625 raw) starts from almost no `D` information and overstates what a perfect
+detector would add on our match. `context` places the gaps by a hazard fitted on our tracker (46.2% of its dead frames
+are visible, against 56.9% of all frames, R005), and the chosen config's position against the yardsticks improves on it,
+as the design predicted (R007). It fails two gates and is a sensitivity profile, so it is a second look and not a
+second validation. Before adopting a source or a parameter that depends on the gaps (`ball_presence`'s `margin`,
+`switch_dead`, P05's and P07's features, P09's camera prior), run it on `tracking` and on `context`, under both truths,
+adopt it only where they agree, and say which profile each number is from. The `margin` follow-up in `proposals.md`
+("After P06") sets that rule.
+
 ## Reproducibility and environment
 
 **T20 — Use the team venv.** It runs Python 3.11.9 in `.venv`, with numpy 2.4.6, pandas 3.0.6 and kloppy 3.18.0.
