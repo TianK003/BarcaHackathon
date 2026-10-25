@@ -1,0 +1,32 @@
+# P45 Stage A (R008), P04: controlled_touch with radius 1.5 m, max_rel_speed 3.0 m/s, min_frames 3, hold off (0.5).
+#
+# The confidence 0.94 is touch_stats.py's measurement for this setting (tracking v3, seeds 0-2, all seven matches): the
+# pooled agreement of kept-episode teams with the truth is 94.8% at coverage 36.4% of the alive, ball-visible
+# frames, and the rule is floor(100 x agreement) / 100. Measured, never tuned. ball_presence is at its by-rule
+# defaults (A01) and the hmm decoder at p06_hmm.toml's (8, 32, 75, 1). Chosen on the benchmark by the Stage A protocol,
+# never on the public window (docs/traps.md T01).
+
+description = "P45 Stage A (R008): controlled_touch radius 1.5 m, max_rel_speed 3.0 m/s, min_frames 3, hold off (0.5), confidence 0.94 (measured agreement 94.8%), ball_presence at its defaults, hmm 8/32/75/1, decoded per half."
+seed = 0
+scope = "halves"
+
+[[evidence]]
+kind = "controlled_touch"
+radius = 1.5          # metres: the nearest player must be this close
+max_rel_speed = 3.0   # m/s: and move with the ball
+min_frames = 3         # an episode shorter than this is dropped
+confidence = 0.94      # touch_stats.py: floor of the pooled agreement to a hundredth (94.8%)
+hold = 0.5            # the weak vote of the last team between episodes; 0.5 = off
+
+[[evidence]]
+kind = "ball_presence"
+margin = 0           # frames: every missing frame speaks
+missing = 0.2        # P(alive) where the ball is missing: a likelihood ratio of 4 for dead (A01, rounded down)
+seen = 0.585         # P(alive) where the ball is seen: a ratio of 1.41 for alive (A01)
+
+[decoder]
+kind = "hmm"
+switch_team = 8      # nats a change of team (H <-> A) costs
+switch_dead = 32     # nats a change into or out of D costs
+min_possession = 75  # frames: no run of H or A shorter than this (1 is no minimum)
+min_dead = 1         # frames: no run of D shorter than this (1 is no minimum)

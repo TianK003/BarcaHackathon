@@ -569,7 +569,8 @@ prints a table of aggregates and nothing frame-level.
 
 Stage A's configs (P45) are named `pipeline/benchmark/configs/p45/p45a_r{RR}_v{V}_k{KK}_h{HH}.toml`: `RR` the radius
 in tenths of a metre (`10`, `15`, `20`), `V` the `max_rel_speed` in m/s (`3`, `6`), `KK` the `min_frames` (`03`, `08`),
-`HH` the hold in hundredths (`50` is off, `55`). The 24 files each hold `controlled_touch` with the measured
+`HH` the hold in hundredths (`50` is off, i.e. 0.5, and `55` is 0.55); `RR`, `KK` and `HH` are zero-padded to two digits
+and `V` is one digit, e.g. `p45a_r10_v3_k03_h50.toml`. The 24 files each hold `controlled_touch` with the measured
 confidence, `ball_presence` at its defaults and `hmm` at (8, 32, 75, 1). The controls are `p45actl_nearest` and the
 chosen config on `context`. The checks are in `checks/touch.py` (synthetic): `test_touch_stats_matches_a_loop`,
 `test_touch_stats_confidence_rule`, `test_touch_stats_default_grid`, `test_touch_stats_never_passes_truth` and
