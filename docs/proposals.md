@@ -132,9 +132,9 @@ first and coarse second.
 3. **P07 for the gaps, now unlocked.** A10 found a perfect possessor inside the gaps worth +0.0008 raw until `D` was
    right and +0.1971 once it was. `D` now has a source, so P07 can be tried, but `tracking` cannot value gap features
    (T38): read it on `context` and on the public window as well.
-4. **A restart-team channel (P05's table).** `controlled_touch` names the team only at the first control episode. A
-   source for the team that restarts would speak sooner. R010 does not measure its worth, so it comes after the first
-   three.
+4. **A restart-team channel (P05's table).** After a stoppage `controlled_touch`'s hold weakly favours the team that
+   controlled the ball before it, until the first new episode names the team. A source for the team that restarts
+   would speak sooner. R010 does not measure its worth, so it comes after the first three.
 5. **Before the upload, decide how much of the gain to believe.** The benchmark's alive/dead F1 of 0.9726 rests on
    DFL's ball being tracked out of play (T39). Our match's predicted `D` share is 36.0% against the benchmark's 44.6%,
    and the public window's alive agreement is 86.6% of 7,500 frames. Neither says how the full match scores.

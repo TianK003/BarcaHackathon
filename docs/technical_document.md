@@ -38,13 +38,15 @@ Its four parameters were chosen on the benchmark of section 5 by a protocol decl
 change to the decoder.
 
 **The evidence** (P04 and P05, `pipeline/evidence/`). Two sources, one per channel. `controlled_touch` (P04) gives
-`home`: it votes for a team only while one of that team's players controls the ball and says nothing otherwise, so a
-pass in flight or a duel keeps the last team and does not flip it. `dead_ball_model` (P05) gives `alive`: a
+`home`: it votes for a team at 0.91 inside the episodes where that team controls the ball, and weakly (0.55) for the
+last controlling team on the other frames where the ball is visible. It says nothing where the ball is missing, and so
+a pass in flight or a duel keeps the last team and does not flip it. `dead_ball_model` (P05) gives `alive`: a
 gradient-boosted tree model on 30 features of the play (where the ball is against the lines and the restart spots, how
 the players move, the set-piece shapes), trained on the seven benchmark matches degraded to look like ours. It reads
-the ball where it is visible and the players where it is not. `nearest_player` and `ball_presence` stay in the
-pipeline as the baselines' components and are not in the submission. **`main.toml` is this config** (R010): it meets the
-benchmark's bar under both truths, and section 6 says what that does and does not show. The file has not been uploaded.
+the ball where it is visible and the players where it is not. `nearest_player` (the baselines' team source) and
+`ball_presence` (P06's first `alive` source) stay in the pipeline and are not in the submission. **`main.toml` is this
+config** (R010): it meets the benchmark's bar under both truths, and section 6 says what that does and does not show.
+The file has not been uploaded.
 
 ## 2. Assets used and dropped
 
@@ -136,21 +138,25 @@ matter.
 What the submission does today is `main.toml` (R010): `controlled_touch` for the team, `dead_ball_model` for the
 ball in play, decoded by the `hmm` per half. The rules below are those it implements.
 
-- **Control, who has the ball:** A team controls the ball when its nearest tracked player is within 2.0 m of it, no
-  opponent is within 1.0 m, and the two move together, a relative speed of at most 6 m/s, for at least 3 consecutive
-  frames (0.12 s). Both speeds come from successive positions, never from the ATD's speed channel (T31). The zones are
-  Vidal-Codina et al.'s (2022, *Sports Engineering*): a zone around a player, and a 1 m duel zone around the ball where
-  two opponents make a contested ball. Link and Hoernig (2017, *PLOS ONE*) likewise start an individual possession from
-  the nearest player within a distance, and end it when the ball has left for a time. A run of control frames of one
-  team is an episode, and it votes for that team at 0.91, a measurement: the share of episode frames on which the
-  team is the truth's, floored to a hundredth, on the seven benchmark matches (R008).
+- **Control, who has the ball:** A team controls the ball when the nearest tracked player, of either team, is one of
+  its own and within 2.0 m of the ball, no opponent is within 1.0 m, and the two move together, a relative speed of at
+  most 6 m/s, for at least 3 consecutive frames (0.12 s). Both speeds come from successive positions, never from the
+  ATD's speed channel (T31). The zones are Vidal-Codina et al.'s (2022, *Sports Engineering*): a zone around a player,
+  and a 1 m duel zone around the ball where two opponents make a contested ball. Link and Hoernig (2017, *PLOS ONE*)
+  likewise start an individual possession from the nearest player within a distance, and end it when the ball has left
+  for a time. A run of control frames of one team is an episode, and it votes for that team at 0.91, a measurement:
+  the share of episode frames on which the team is the truth's, floored to a hundredth, on the seven benchmark matches
+  (R008).
 - **Back-dating:** The vote starts on the episode's first frame, not when its third has been seen, so a change of team
   lands where control began and confirmation costs no latency (T03).
-- **Loose balls and contested phases:** The source is silent in flight, in a duel and where the ball is missing, so
-  the decoder keeps the last team there. Between episodes it adds a weak hold for the last controlling team, 0.55
-  against the episodes' 0.91, on frames with the ball visible. DFL's flag turns at the new team's control and not at the
-  old team's last touch, so without the hold the change lands on the old team's last control frame (the decoder's
-  tie rule) and with it on the new team's first. Without the hold no config of R008's grid beats either yardstick.
+- **Loose balls and contested phases:** In flight and in a duel no episode holds, and the source gives a weak hold
+  instead: on every frame with the ball visible outside an episode, after the half's first episode, it votes 0.55 for
+  the last controlling team, against the episodes' 0.91. The last team is never reset, so the hold also carries it
+  through a stoppage. Where the ball is missing, and before the half's first episode, the source says nothing and the
+  decoder keeps its state. R008 reads DFL's flag as turning at the new team's control and not at the old team's last
+  touch (a reading and not a test: only 49.7% of its changes have an episode of the new team in the window). Without
+  the hold the change lands on the first frame after the old team's last control frame (the decoder's tie rule), and
+  with it on the new team's first. Without the hold no config of R008's grid beats either yardstick.
 - **Touches, deflections, aerial duels:** An episode under 3 frames is dropped, so a one-touch deflection is no
   possession. An aerial duel has two teams within 1 m of the ball and so no vote. Neither is modelled further.
 - **Change of possession:** A possession is a run of `H` or of `A`. The decoder holds the team until the evidence
@@ -160,18 +166,20 @@ ball in play, decoded by the `hmm` per half. The rules below are those it implem
 - **Dead ball, what the detector sees:** Thirty features: the ball beyond a touchline or goal line, now, next and when
   last seen; the ball still at a restart spot (the centre spot, a corner, a penalty spot, a goal area); a collective
   slowdown of the players over windows before and after the frame; the kick-off shape (every player in their own
-  half, a pair at the centre spot); and where the ball vanished and reappeared, which is what the tracker leaves of a
-  stoppage inside a gap. The trained trees split first on the ball's distance beyond a line, next or last, and
-  on the restart spots and the players' speeds, and never on whether the ball is missing (R009). The model's
+  half, a pair at the centre spot); the set-piece shapes (a crowd in a penalty area, a player at a corner point, a
+  player beyond a touchline, players in a goal area); the gap between the teams and how spread out they are; and where
+  the ball vanished and reappeared, which is what the tracker leaves of a stoppage inside a gap. The trained trees
+  split first on where the ball is (beyond a line, next or last seen) and on whether a player stands beyond a line,
+  and then on the restart spots and the players' speeds, and never on whether the ball is missing (R009). The model's
   probability is corrected for its training prior and clipped to [0.001, 0.999] before the decoder reads it.
 - **Dead ball, before the kick-off:** A graded frame before its half's documented kick-off is `D`, whatever the model
   says. The rule comes from the organisers' documented kick-offs and from no ground truth, and on our match it makes
   the 2,934 graded frames before the second half's kick-off `D` (T02).
 - **Dead ball, the decoder:** A change into or out of `D` costs `switch_dead` (32 nats), and a run of `D` lasts at
   least `min_dead` (25 frames). The second moves nothing: the two values differ by at most 0.0003 in spellF1 (R010).
-- **Restarts, who gets the ball:** No rule. After a stoppage the team is whichever `controlled_touch` names at the
-  first control episode, and nothing speaks for the team before it. A restart-team channel (a corner to the
-  attackers, a goal kick to the defenders) is deferred.
+- **Restarts, who gets the ball:** No rule. After a stoppage the hold weakly favours the team that controlled the ball
+  before it, until the first new episode, which names the team. A restart-team channel (a corner to the attackers, a
+  goal kick to the defenders) is deferred.
 - **Abstentions (`X`):** The decoder never abstains inside a graded half, and the runner writes `X` on the ungraded
   frames, where it is free: the chosen file has none inside a graded block (R010). It can return the posterior of each
   state per frame, which shows where an `X` would be free (inside a possession), but no refiner reads it yet.
@@ -337,7 +345,7 @@ the runs: its raw gain over `nearest_w50` and its coarse gain over `nearest_w125
 |---|---|---|---|---|---|
 | `nearest_w50` | 0.2018 | 0.1842 | 0.4592 | 0.6094 | 4.30 |
 | `nearest_w125` | 0.1665 | 0.2226 | 0.4407 | 0.6428 | 3.05 |
-| R007's `hmm` (8, 32, 75, 1) | 0.2053 | 0.1967 | | 0.5676 | 3.10 |
+| R007's `hmm` (8, 32, 75, 1) | 0.2053 | 0.1967 | 0.4569 | 0.5676 | 3.10 |
 | P04 + P05, chosen (4, 32, 25, 25) | 0.4217 | 0.4556 | 0.8275 | 0.9726 | 2.74 |
 | without P04 (`nearest_player` instead) | 0.2796 | 0.2424 | 0.7796 | 0.9726 | 5.09 |
 | without P05 (`ball_presence` instead) | 0.2556 | 0.2170 | 0.4851 | 0.5749 | 3.05 |
@@ -359,10 +367,12 @@ positions, speeds and accelerations, and ours are windows of the same kind. Vida
 Engineering*) give the set-piece triggers that became features and the zone sizes for control, and report that the
 best radius depends on the provider, which is why the radius is a grid and the confidence a measurement. Link and
 Hoernig (2017, *PLOS ONE*) show control as a proximity held over time, with the possession ended by the ball leaving.
-The model's settings (learning rate 0.05, 300 trees, 15 leaves, at least 1,000 training rows a leaf, no early stopping,
-no class weights) were fixed from this literature and not tuned on seven matches. The evidence reaches the decoder as
-probabilities that are corrected for the training prior and clipped, so that the decoder's own penalties set the prior
-and no frame is certain.
+The model's settings (learning rate 0.05, 300 trees, 15 leaves, at least 1,000 training rows a leaf, no early
+stopping, no class weights) come from general boosted-tree practice and not from these papers (Lang et al. used
+AdaBoost): a leaf of about 40 s of play, no early stopping on autocorrelated frames, the log-loss and no class
+weights, so that the probabilities stay probabilities. They were fixed and not tuned on seven matches. The evidence
+reaches the decoder as probabilities that are corrected for the training prior and clipped, so that the decoder's own
+penalties set the prior and no frame is certain.
 
 ## 6. Limitations
 
@@ -373,7 +383,8 @@ and no frame is certain.
 - **Conventions.** DFL's flags may flip at other moments than ours do, and the grain of our ground truth is not known:
   the public window is alive on 80.4% of its frames, more than 96% of DFL's 5-minute windows, so it cannot say how far
   ours differs from DFL's 437 possessions a match (A06, T33). The coarse truth stands in for the difference and does not
-  correct it, and `D` timing against ours is unmeasured. The timing parameters come from the public window (P02).
+  correct it, and `D` timing against ours is unmeasured. The timing parameters would come from the public window
+  (P02).
 - **Seven matches, five of them Fortuna Düsseldorf's home games.** The sample is small, so the intervals are wide, and
   not independent, so even they may be too narrow; the smallest sign-flip p is 0.0156. Two matches have a team down to
   10 players, so statistics on how many players are tracked are measured at full strength only (T36).
@@ -428,16 +439,18 @@ and no frame is certain.
   minute, between the raw truth's 4.58 and the coarse truth's 2.48. Which grain our GT has is not known.
 - **The chosen decoder sits on edges.** `switch_team` 4 and `min_possession` 25 are the lowest values tried, and raw
   spellF1 falls from them in both. P04's choice sits on the upper edge in radius and relative speed and the lower in
-  `min_frames`, and P05's on the upper edge in weight. By the protocol none was extended after the results.
-- **Measured values are measured on all seven matches.** The touch confidence (0.91), the fixed rules' values and the
-  trees' training use the matches the grids are scored on. They were never tuned towards a score, but they are not out
-  of sample, and the leave-one-match-out check does not remove that. Seven matches, five from one club's home games,
-  are not seven independent draws.
+  `min_frames`, and its hold of 0.55 is the only value tried besides off, with no config beating either yardstick
+  without it (R008). P05's sits on the upper edge in weight. By the protocol none was extended after the results.
+- **Some measured values are in sample.** The touch confidence (0.91), the fixed rules' values and the selection of the
+  configs use the seven matches the grids are scored on. They were never tuned towards a score, but they are not out
+  of sample, and the leave-one-match-out check does not remove that. The trees are different: each benchmark match is
+  scored by the model fitted without it. Seven matches, five from one club's home games, are not seven independent
+  draws.
 - **DFL's switch timing is not ours.** The back-dating, the hold and the `D` onset follow DFL's flag, which turns at
   the new team's control and a median 0.16 s after the ball is first seen beyond a line. Our GT's timing can be
   learned only through the public window (P02), and nothing was fitted to it.
-- **The restart team is deferred.** After a stoppage the team comes from the first control episode, so the team
-  after a stoppage is decided by that episode and not by who restarts.
+- **The restart team is deferred.** After a stoppage the hold weakly favours the team that controlled the ball before
+  it, until the first new episode names the team, so the team after a stoppage is not decided by who restarts.
 - **`tracking` cannot value the gap features (T38).** The trees' features about the ball's last and next position
   around a gap are validated on gaps that ignore the play, so what they are worth on our match is unmeasured.
 
@@ -485,20 +498,23 @@ python3.11 -m venv .venv                     # Windows: py -3.11 -m venv .venv
 ```
 
 Expected sha256 of `main.csv` (R010): `a706e7f711b2d3faacc2f071b6e28963ed8e2f2326a7880e6d0776cce4295f1f` (the run
-prints it). Runtime: about 20 s the first time, which includes parsing
-the tracking into `data/cache/` once, then a few seconds per run, on [hardware].
+prints it). The first run parses the tracking into `data/cache/` once. Every run then computes the play features
+and walks the trees: about 10 s in all with the cache warm, on [hardware].
 
 The two trained models are committed as JSON under `pipeline/models/` and read with numpy only, so the CSV needs no
 scikit-learn. `pipeline/benchmark/train_dead_ball.py --model hgb --verify` retrains one and checks that it is the
-same artifact (it needs `requirements-benchmark.txt`).
+same artefact; it is a benchmark command and sits with them below.
 
 The validation benchmark of section 5 is reproduced separately and is not needed for the CSV (the
 [benchmark README](../pipeline/benchmark/README.md) has the rest; reports go to `data/runs/benchmark/`):
 
 ```bash
-.venv/bin/python -m pip install -r requirements-benchmark.txt          # the pipeline's pins + lxml
+.venv/bin/python -m pip install -r requirements-benchmark.txt          # the pipeline's pins + lxml + scikit-learn
 .venv/bin/python pipeline/benchmark/sources.py --verify               # the 21 DFL files, md5 (drop --verify to fetch)
 .venv/bin/python pipeline/benchmark/fidelity.py --profile tracking --seeds 3     # the gates and warnings of section 5
+.venv/bin/python pipeline/benchmark/train_dead_ball.py --model hgb --verify    # retrains P05's model, checks the same
+                                                                                # artefact (needs the DFL files above
+                                                                                # and our match's calibration cache)
 .venv/bin/python pipeline/benchmark/run.py pipeline/benchmark/configs/nearest_w50.toml \
     pipeline/benchmark/configs/nearest_w0.toml pipeline/benchmark/configs/nearest_w25.toml \
     pipeline/benchmark/configs/nearest_w125.toml --profile tracking --seeds 3    # R004c; again with --truth coarse
