@@ -12,13 +12,14 @@ decoder sees it.
 import numpy as np
 
 from pipeline.contracts import A, D, H, X
-from pipeline.evidence import ball_presence, dead_ball_rules, nearest_player
+from pipeline.evidence import ball_presence, dead_ball_model, dead_ball_rules, nearest_player
 
 # Params
 # kind (as written in a config) -> compute function. Explicit on purpose: one line per source, no import magic, and
 # a merge conflict between two teammates' sources is a conflict on two adjacent lines.
 REGISTRY = {
     "ball_presence": ball_presence.compute,
+    "dead_ball_model": dead_ball_model.compute,
     "dead_ball_rules": dead_ball_rules.compute,
     "nearest_player": nearest_player.compute,
 }

@@ -15,6 +15,7 @@ python pipeline/benchmark/sources.py          # data -> data/external/dfl/   (21
 python pipeline/benchmark/run.py CONFIG ...   # configs -> scores, intervals, comparisons, one JSON report per config
 python pipeline/benchmark/fidelity.py         # how far the degraded profile looks like our match (gates, warnings)
 python pipeline/benchmark/headroom.py CONFIG  # a config beside five variants whose evidence is the truth itself
+python pipeline/benchmark/train_dead_ball.py --model hgb   # P05: train the dead-ball model (folds + full) as JSON
 python pipeline/benchmark/selftest.py [--dfl] [--data]   # the checks
 ```
 
@@ -538,6 +539,52 @@ than in the pooled number alone. Nothing here is a config to submit. The checks 
 `test_headroom_writes_the_variants_reports_only_when_asked_and_never_the_references` and
 `test_headroom_command_line_prints_the_table_and_the_report_lines`, all in `checks/headroom.py` and all synthetic.
 
+## Dead-ball model
+
+P05's classifier is trained here, on the benchmark's matches, and run by the pipeline from a file (`pipeline/models/`,
+JSON, no pickle). The split is the point: training needs scikit-learn and the seven DFL matches and lives in
+`pipeline/benchmark/train_dead_ball.py`; `pipeline/evidence/dead_ball_model.py` reads the numbers back and runs the
+trees with numpy alone, so the submission pipeline's pins stay numpy and pandas.
+
+```
+.venv/Scripts/python pipeline/benchmark/train_dead_ball.py --model hgb|logistic [--profile tracking] [--seeds 3] [--stride 5] [--out PATH] [--verify] [--data-dir D]
+.venv/Scripts/python pipeline/benchmark/train_dead_ball.py --rules [--profile tracking] [--seeds 3] [--data-dir D]
+```
+
+- **Rows.** Every match under every seed of the profile (default `tracking`, version 3, seeds 0 to 2) is served as
+  `MatchInputs`, and `play_features` computes the 30 features from those inputs, so no truth reaches them
+  (`test_trainer_never_passes_truth`). A row is every `stride`-th graded frame of a block from its start (default 5, which
+  is deterministic and cuts the autocorrelation), labelled 1 where `truth.truth_codes` is not `D`.
+- **Models.** `hgb` is `HistGradientBoostingClassifier` with fixed settings that are never tuned: log-loss, learning rate
+  0.05, 300 rounds, 15 leaves, at least 1,000 rows a leaf, L2 1.0, 255 bins, `random_state=0`, no class weights, no early
+  stopping (its random hold-out of autocorrelated frames leaks), monotone constraints of -1 on `ball_outside_m` and
+  `slow_share_c4`. `logistic` is the reference: a missing indicator and mean imputation for each feature with a NaN, constant
+  columns dropped (and recorded), then `hazard.fit_logistic(l2=1.0)`.
+- **Folds.** For each match, a model fitted on the other six (`folds`), and `full` on all seven. The source scores a
+  benchmark match with the model that never saw it and BAR-ATH with `full`; `test_trainer_folds_exclude_the_held_out_match`
+  pins the bookkeeping.
+- **The file.** `{format, kind, feature_version, features, profile, seeds, stride, provenance, folds, full}`, sorted
+  keys, Python's float text (reads back exactly), LF, no NaN, under 10 MB, no frame-level data. An `hgb` model is its
+  baseline and, per tree, the arrays `feature`, `threshold`, `missing_left`, `left`, `right`, `leaf` and `value`, read
+  out of scikit-learn's fitted predictors (a private structure, hence the exact pins in `requirements-benchmark.txt`);
+  `test_exported_trees_match_sklearn` holds the numpy walk of the exported trees to 1e-12 of `predict_proba`, NaNs included,
+  and `test_training_is_deterministic_across_threads` that one thread and four write the same bytes.
+- **Provenance** is the scikit-learn version, the Calibration's digest, the DFL files' sha256 and the sha256 of the three
+  source files the model depends on (`train_dead_ball.py`, `play_features.py`, `kinematics.py`), and no git commit, which
+  would change with every later commit. **`--verify`** retrains and compares with the committed file everything but those
+  three hashes: a different hash is a note (a comment edited after training is not a different model), anything else
+  exits 1 (`test_verify_ignores_only_source_hashes`).
+- **What it prints**, per held-out match on its out-of-fold predictions: log-loss, Brier score and AUC, and a pooled
+  10-bin reliability table, counts and means only.
+- **`--rules`** measures `dead_ball_rules`' five parameters: for each trigger and for "no trigger", on all graded frames,
+  P(trigger | alive) and P(trigger | dead), and the value P(t | alive) / (P(t | alive) + P(t | dead)) rounded towards 0.5
+  to two decimals (`test_rule_values_rule`). The triggers are read off the rules by probing them, never written twice
+  (`test_rule_counts_use_the_rules_own_triggers`). They are measured on all seven matches, which is a small optimism.
+
+The source takes the file's model for `inputs.game` or else `full`, and gives the decoder a likelihood, not a posterior:
+`logit(alive) = logit(p) - logit(prior_alive)`, clipped to `[min_prob, 1 - min_prob]`; the decoder sets the prior, and
+DFL's class balance does not leak into it. Nothing here has been trained yet: the artifacts and their scores are R009's.
+
 ## The checks
 
 ```
@@ -546,7 +593,7 @@ than in the pooled number alone. Nothing here is a config to submit. The checks 
 .venv/Scripts/python pipeline/benchmark/selftest.py --data   # + our own match (aggregates only; minutes)
 ```
 
-The synthetic run is 288 checks (P06's added 16 to the 272 of A05). Its time, 49 to 115 s, is as of A05 and not
+The synthetic run is 303 checks (P06's added 16 to the 272 of A05, and P05's trainer 15 to the 288 after them). Its time, 49 to 115 s, is as of A05 and not
 measured again. `--dfl` and `--data` are as of A05 (2026-10-23, `fdc5eae`), when the synthetic run was 272 checks:
 `--dfl` added 16 and `--data` 7, and all of them (295 checks then) took 949 s (15 min 49 s) with the seven DFL caches
 and the Calibration rebuilt after an edit to `dfl.py` and `calibration.py`. The machine's load decides, and the first
@@ -554,9 +601,9 @@ run on a machine also builds the caches (A05).
 
 The checks live in `pipeline/benchmark/checks/`, one module per topic, listed in `checks.MODULES` (the folder's
 `__init__.py` says what each holds): `sources`, `dfl`, `truth`, `inputs`, `score`, `run`, `hazard`, `calibration`,
-`degrade`, `cap`, `tracking`, `context`, `fidelity`, `headroom` (the Headroom section's) and `harness` (the harness
-itself). The profiles' are `degrade` (the transplant worked out exactly, determinism, what the `gaps` profile touches
-and what it does not, no truth, the order of the matches), `tracking` (the tracklets, the episodes, the NaN-speed runs
+`degrade`, `cap`, `tracking`, `context`, `fidelity`, `headroom` (the Headroom section's), `dead_ball` (the Dead-ball model section's) and
+`harness` (the harness itself). The profiles' are `degrade` (the transplant worked out exactly, determinism, what the
+`gaps` profile touches and what it does not, no truth, the order of the matches), `tracking` (the tracklets, the episodes, the NaN-speed runs
 and the smoothing worked out exactly, and how it nests in `gaps`), `cap` (the low-count tail's cap, its shortest-piece
 rule and the scale of the tracked spans), `context` (what the hazard is given, the chance, the class, third and
 durations read at the at-risk frame, the counts of its record on hand-built halves, the odds rescale and the frozen
