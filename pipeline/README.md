@@ -12,8 +12,8 @@ python pipeline/selftest.py --data                          # + the real match: 
 ```
 
 Use the team venv (`.venv/Scripts/python` on Windows, `.venv/bin/python` on macOS/Linux, Python 3.11.9). The first run
-parses the tracking (~15 s); later runs of `main.toml` take about 15 s, nearly all of it the evidence (the play and
-shape features and the trees; 12.7 of 14.6 s in a run on 25 Oct with the cache warm).
+parses the tracking (~15 s); later runs of `main.toml` take about 17 s, nearly all of it the evidence (the play and
+shape features and the trees; 14.9 of 17.1 s in the run of 25 Oct that wrote R011's file, with the cache warm).
 
 ## How it works
 
@@ -123,7 +123,7 @@ half_width = 50
 
 | config | what it is |
 |---|---|
-| [`main.toml`](configs/main.toml) | the team's current pipeline, i.e. the file we would submit today (not uploaded): `controlled_touch` and `shape_possession` (weight 0.2, every graded frame) for `home`, the gradient-boosted `dead_ball_model` for `alive`, the `hmm` decoder (4 / 32 / 25 / 25) and `shift_edges` (team +1, into_dead -2, out_of_dead 0). P04, P05 and the decoder were chosen in R010, P07 in R011 and the shift in R012, on the benchmark (the benchmark overstates P05 for our match, T38, T39, and its gain from P07 is not a forecast for it, R011) |
+| [`main.toml`](configs/main.toml) | the team's current pipeline, i.e. the file we would submit today (not uploaded): `controlled_touch` and `shape_possession` (weight 0.2, every graded frame) for `home`, the gradient-boosted `dead_ball_model` for `alive`, the `hmm` decoder (4 / 32 / 25 / 25) and `shift_edges` (team +1, into_dead -2, out_of_dead 0). P04, P05 and the decoder were chosen in R010 and P07 in R011, on the benchmark (it overstates P05 for our match, T38, T39, and its gain from P07 is not a forecast for it, R011); the shift was adopted in R012 by its declared rule and its gain is inside noise |
 | [`p02_shift.toml`](configs/p02_shift.toml) | R012's choice, written when it was chosen: R011's config plus the shift; it writes the same CSV as `main.toml` (the same sha256) |
 | [`p07_shape.toml`](configs/p07_shape.toml) | R011's choice, written when it was chosen: R010's config plus `shape_possession`; it writes the file `main.toml` wrote before R012 added the shift |
 | [`p45_hmm.toml`](configs/p45_hmm.toml) | R010's chosen config, written when it was chosen: `controlled_touch`, `dead_ball_model` and the `hmm`; it writes the file `main.toml` wrote before R011 |

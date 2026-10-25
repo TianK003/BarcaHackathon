@@ -4571,19 +4571,19 @@ they are kept or dropped together. Then g, the gap to our truth's convention, is
 latencies after s_b, for a type only if that median is at least 3 frames in absolute value, its 90% bootstrap interval
 (2,000 draws) excludes 0 and every leave-one-out median has its sign; the shift is s_b + g. Nothing in it is tuned.
 
-Public (a correctness check only, T01), `p02_shift.toml` in sample (every boundary moved by the shift): macroF1 0.7159 ·
-spellF1 0.4000 · alive/dead F1 0.9221 · transF1 0.1463 · lat_f +5.0 · 20 possessions against the truth's 17, mean
+Public (a correctness check only, T01), `p02_shift.toml` in sample (every boundary moved by the shift): macroF1 0.7159
+· spellF1 0.4000 · alive/dead F1 0.9221 · transF1 0.1463 · lat_f +5.0 · 20 possessions against the truth's 17, mean
 14.1 s. The same file out of fold (T27: a matched boundary moves by s_b plus the g that the other changes of its type
-give, an unmatched one by the shift; sha256 `1078b527d4eae9dda5d4bcb2da77c249a699fb3d62928cb815a7a524f3193d7e`, scored by
-the official scorer): macroF1 0.7125 · spellF1 0.4000 · transF1 0.1463 · lat_f +5.0 · 20 possessions, mean 14.1 s.
-R011's `main.toml` on the same window: macroF1 0.7151 · spellF1 0.4000 · alive/dead F1 0.9218 · transF1 0.1463 ·
-lat_f +5.3 · 20 possessions. The three have the same spellF1: one possession moves it about 0.06 here (T01), and these
-are the same 20. `p02_shift.toml` is valid (199,319 rows), sha256
+give, an unmatched one by the shift; sha256 `1078b527d4eae9dda5d4bcb2da77c249a699fb3d62928cb815a7a524f3193d7e`, scored
+by the official scorer): macroF1 0.7125 · spellF1 0.4000 · transF1 0.1463 · lat_f +5.0 · 20 possessions, mean 14.1 s.
+R011's `main.toml` on the same window: macroF1 0.7151 · spellF1 0.4000 · alive/dead F1 0.9218 · transF1 0.1463 · lat_f
++5.3 · 20 possessions. The three have the same spellF1: one possession moves it about 0.06 here (T01), and these are
+the same 20. `p02_shift.toml` is valid (199,319 rows), sha256
 `3fd06da011bde39f771ddd22f00da2bcbcf5205720d60f87662ab6fc0f76a702`, the same on two runs, and `main.toml` after the
 switch writes the same file. No bootstrap was run, because no public-window gap is claimed. The in-sample and the
-out-of-fold scores differ (macroF1 0.7159 and 0.7125), so leaving out one public change gives, for some type, a g other
-than 0, though the full set does not: that is T27's reason to read a shift out of fold, and one more reason not to
-trust a g from this window.
+out-of-fold scores differ (macroF1 0.7159 and 0.7125), so leaving out one public change gives, for some type, a g
+other than 0, though the full set does not: that is T27's reason to read a shift out of fold, and one more reason not
+to trust a g from this window.
 Validation (P01 benchmark): 7 DFL matches x 3 degradation seeds (0, 1, 2), `p02_sb` (`main.toml` plus `shift_edges`
 team +1, into_dead -2, out_of_dead 0) against `main.toml`, pooled spellF1, in four cells:
 
@@ -4594,13 +4594,13 @@ team +1, into_dead -2, out_of_dead 0) against `main.toml`, pooled spellF1, in fo
 | `context` | raw: sensitivity only | 0.5153 | 0.5162 | +0.0009 | +0.0008 [-0.0004, +0.0021] | 0.2500 | 4 / 3 |
 | `context` | coarse: sensitivity only | 0.5544 | 0.5544 | +0.0001 | +0.0001 [-0.0007, +0.0008] | 0.9531 | 4 / 3 |
 
-Pooled macroF1 is +0.0004, +0.0003, +0.0004 and +0.0003 in the same four cells (the 90% interval is above 0 in each, with
-7, 6, 7 and 6 wins in 7 matches) and pooled alive/dead F1 goes from 0.9729 to 0.9730 on `tracking` and from 0.9699 to
-0.9700 on `context`. The shift moves a team flip by 1 frame and a change into `D` by 2: the per-frame metric sees that
-and the ranking metric (possessions matched at IoU 0.3 to 0.7) hardly does. The predicted `D` share goes from 44.5% to
-44.6% on `tracking` and from 44.7% to 44.9% on `context` (the truth's 44.8%); possessions per graded minute do not
-change (3.17 and 3.15). The `main` rows are R011's to the last digit in all four cells (0.5159 and 0.5591 on `tracking`,
-0.5153 and 0.5544 on `context`).
+Pooled macroF1 is +0.0004, +0.0003, +0.0004 and +0.0003 in the same four cells (the 90% interval is above 0 in each,
+with 7, 6, 7 and 6 wins in 7 matches) and pooled alive/dead F1 goes from 0.9729 to 0.9730 on `tracking` and from
+0.9699 to 0.9700 on `context`. The shift moves a team flip by 1 frame and a change into `D` by 2: the per-frame metric
+sees that and the ranking metric (possessions matched at IoU 0.3 to 0.7) hardly does. The predicted `D` share goes
+from 44.5% to 44.6% on `tracking` and from 44.7% to 44.9% on `context` (the truth's 44.8%); possessions per graded
+minute do not change (3.17 and 3.15). The `main` rows are R011's to the last digit in all four cells (0.5159 and
+0.5591 on `tracking`, 0.5153 and 0.5544 on `context`).
 Changed vs the previous best: the previous best is R011's `main.toml`: 0.5159 raw and 0.5591 coarse on `tracking` v3,
 0.5153 and 0.5544 on `context`; public 0.7151 macroF1, 0.4000 spellF1, 20 possessions; sha256
 `8810afce254e94fe159769f3b55e8eef65f41a25c84f4550034e2afbc20e8487`. The shifted config is +0.0005 raw and +0.0000
@@ -4657,13 +4657,13 @@ transitions behind it for the rule to move a boundary on the public window's evi
 **Label-free checks on BAR-ATH** (`main.toml` after the switch, `--score` on `p02_shift.toml`): no `X` in a graded
 block (X 0.0%; H 37.5%, A 26.6%, D 36.0%, against R011's 37.6%, 26.6%, 35.8%), the same sha256 on two runs, and 439
 possessions in 105.905 graded minutes (4.1452 per graded minute, mean 9.3 s), as R011's `main.toml` (439; 4.1452). The
-labels differ from R011's on 545 of the 158,857 graded frames (0.34%), exactly the moved boundaries (333 team changes by
-1 frame and 106 changes into `D` by 2 frames; 333 + 212 = 545); the graded halves still hold 333, 106 and 105 such
-changes, so no boundary crossed another. `controlled_touch` agrees with the public GT on home on 87.2% of 5,489 frames,
-`dead_ball_model` on alive on 86.6% of 7,500 and `shape_possession` on home on 90.9% of 6,031, as in R011: neither source
-changed. `pipeline/selftest.py --data` passes (153 of 153 checks, `main.toml` run twice and compared byte for byte, the
-four baselines rebuilt byte for byte) and `pipeline/benchmark/selftest.py` passes (369 checks); `evaluation/
-validate_submission.py` accepts `evaluation/results/main.csv`.
+labels differ from R011's on 545 of the 158,857 graded frames (0.34%), exactly the moved boundaries (333 team changes
+by 1 frame and 106 changes into `D` by 2 frames; 333 + 212 = 545); the graded halves still hold 333, 106 and 105 such
+changes, so no boundary crossed another. `controlled_touch` agrees with the public GT on home on 87.2% of 5,489
+frames, `dead_ball_model` on alive on 86.6% of 7,500 and `shape_possession` on home on 90.9% of 6,031, as in R011:
+neither source changed. `pipeline/selftest.py --data` passes (153 of 153 checks, `main.toml` run twice and compared
+byte for byte, the four baselines rebuilt byte for byte) and `pipeline/benchmark/selftest.py` passes (369 checks);
+`evaluation/validate_submission.py` accepts `evaluation/results/main.csv`.
 
 **Be plain about the size.** The shift is 1 to 2 frames at 439 boundaries (333 team flips and 106 changes into `D`) of
 a match of about 106 graded minutes, and its benchmark gains are +0.0000 to +0.0009 pooled spellF1, with every 90%

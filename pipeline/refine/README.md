@@ -51,8 +51,8 @@ labels and posterior. The values are for P02's measurement to set ([docs/proposa
 `main.toml` sets them by the declared rule of [R012](../../docs/results.md): team 1, into_dead -2, out_of_dead 0. They
 are the pipeline's own lag on the DFL matches, negated (`conventions.py latency` and `shift`, in the
 [benchmark README](../benchmark/README.md#conventions-when-our-truth-flips-and-the-edge-shift)); the gap to our truth's
-own convention that the public window could add came out 0. The gain is 1 to 2 frames at 439 boundaries and inside the
-noise on the benchmark: the entry is there because the rule said so, not because it is shown to help.
+own convention that the public window could add came out 0. The shift is 1 to 2 frames, at 439 boundaries, and its gain
+on the benchmark is inside the noise: the entry is there because the rule said so, not because it is shown to help.
 
 **The rule.**
 

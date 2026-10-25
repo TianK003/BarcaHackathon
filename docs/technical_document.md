@@ -442,13 +442,15 @@ of the best (the next, weight 0.1, is 0.0102 below). Pooled spellF1 on `tracking
 
 **The bar is met**: +0.0942 raw over R010's config (mean per match +0.0940 [+0.0775, +0.1105], sign-flip p 0.0156, 7
 wins in 7), +0.1035 coarse, and on `context` +0.0831 raw and +0.0890 coarse, 7 wins in 7 in each cell. All 12 configs
-beat R010's in all four cells (the smallest +0.0290), the gain grows with the weight up to 0.2 and falls at 0.5, and a
-leave-one-match-out selection picks the chosen config in all seven folds. The label-free checks on our match pass: the
-transfer gate at 0.8251 on 41,052 frames against its declared 0.7486 (section 6), no `X` in a graded block, the same
-sha256 twice, predicted `D` 35.8% against R010's 36.0%, and 439 possessions against 450 (4.1452 per graded minute
-against 4.2491), the labels differing from R010's on 5.30% of the graded frames. On the public window, a correctness
-check only (T01), spellF1 is 0.4000 against R010's 0.4686 (20 possessions against 18; one possession moves it about
-0.06) and macroF1 0.7151 against 0.6996. The benchmark's gain is not a forecast for our match (section 6).
+beat R010's in all four cells (the smallest +0.0290), with scope `all` (every graded frame) the gain grows with the
+weight up to 0.2 and falls at 0.5 in all four cells, and a leave-one-match-out selection picks the chosen config in
+all seven folds.
+The label-free checks on our match pass: the transfer gate at 0.8251 on 41,052 frames against its declared 0.7486
+(section 6), no `X` in a graded block, the same sha256 twice, predicted `D` 35.8% against R010's 36.0%, and 439
+possessions against 450 (4.1452 per graded minute against 4.2491), the labels differing from R010's on 5.30% of the
+graded frames. On the public window, a correctness check only (T01), spellF1 is 0.4000 against R010's 0.4686 (20
+possessions against 18; one possession moves it about 0.06) and macroF1 0.7151 against 0.6996. The benchmark's gain is
+not a forecast for our match (section 6).
 
 **P02, the shift on the benchmark** (A11, R012). R012 measured the pipeline's own latency on the seven DFL matches
 (`tracking` v3, raw truth, 3 seeds): a predicted change is matched to a true one of the same pair of labels within 50
@@ -659,8 +661,9 @@ python3.11 -m venv .venv                     # Windows: py -3.11 -m venv .venv
 
 Expected sha256 of `main.csv` (R012): `3fd06da011bde39f771ddd22f00da2bcbcf5205720d60f87662ab6fc0f76a702` (the run
 prints it). The first run parses the tracking into `data/cache/` once. Every run then computes the play features
-and the shape features and walks the trees: about 15 s in all with the cache warm (a run of 25 Oct: 0.5 s for the
-inputs, 12.7 s for the evidence, 0.8 s for the decoder and the shift, 0.6 s for the output), on [hardware].
+and the shape features and walks the trees: about 17 s in all with the cache warm (the run of 25 Oct that wrote
+R011's file: 0.5 s for the inputs, 14.9 s for the evidence, 0.9 s for the decoder and 0.8 s for the output), on
+[hardware].
 
 The two trained models that `main.toml` reads, `dead_ball_hgb.json` and `shape_possession_hgb.json`, are committed as
 JSON under `pipeline/models/` and read with numpy only, so the CSV needs no scikit-learn. Two commands in

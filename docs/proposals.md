@@ -163,9 +163,10 @@ of possessions moved the other way on BAR-ATH (R011).
    - The grain is live again. P07 moved the predicted possessions per graded minute from 2.74 to 3.17 on the benchmark
      (the truth's 4.58 raw and 2.48 coarse) and from 4.25 to 4.15 on BAR-ATH, and the two truths still disagreed on the
      decoder in R010 (T33). Read both.
-   - It needs no new data: runs of about 25 s a config on the benchmark (R011), one process at a time. It needs a
-     protocol declared before the first run (the values, the objective, the rule), the weight as a second axis only if
-     that protocol says so, and nothing from the public window.
+   - It needs no new data: only benchmark runs, which R011 logged at 25.6 to 27.5 s a config on `tracking` once the
+     evidence was memoised, after 143 to 156 s for the first config of each process (the runner's `seconds`). It needs
+     a protocol declared before the first run (the values, the objective, the rule), the weight as a second axis only
+     if that protocol says so, and nothing from the public window.
 2. **In parallel, and off the machine: a person on P02's transitions.** R012's rule found g = 0 for every type because 1
    to 4 matched public changes cannot carry a gap, and A11's `D` edges (2.5 to 3 s longer than DFL's flag would draw
    them) are a lead and not a measurement: our truth's convention, chance and our tracker's coverage all fit. A
@@ -469,17 +470,18 @@ This is the backbone that everything else plugs into.
 
 **Status: done → [R011](results.md).** The source is `shape_possession`
 ([`pipeline/evidence/`](../pipeline/evidence/README.md)): boosted trees on 26 features of how the two teams stand and
-move, none of which reads the ball, trained on the seven DFL matches with the ball hidden and read symmetrically in the
-two teams (`pipeline/benchmark/train_shape.py`; the model is `pipeline/models/shape_possession_hgb.json`). Out of fold
-on the benchmark (`tracking` v3, raw truth), on the alive frames whose ball is missing it scores a log-loss of 0.3759
-and an accuracy of 0.8349 (ln 2 = 0.6931). The 12-config grid chose weight 0.2 and every graded frame: on `tracking`
-v3 it adds +0.0942 pooled spellF1 under the raw truth over P04 + P05 (7 wins in 7, p 0.0156; +0.1035 under the coarse
-one), and the label-free transfer gate on our match passes (0.8251 against 0.7486). `main.toml` carries it. The limits: the model never saw our teams, so the benchmark's gain is not a forecast
-for them; the count of possessions moves the other way on BAR-ATH (down 2.4%, where the benchmark's goes up 16%); and
-the public window's spellF1 fell by about one possession, 0.4686 to 0.4000 (a correctness check, T01). What was built
-differs from the plan below: the model trained on the DFL matches with the ball hidden (P13's route), not on
-pseudo-labels from P04 or on the public GT, and its features are R011's 26 (no hull area, and none near the ball zone,
-since none reads the ball). What comes next is in [After P07 and P02](#after-p07-and-p02).
+move, none of which reads the ball, trained on the seven DFL matches with the ball hidden and read symmetrically in
+the two teams (`pipeline/benchmark/train_shape.py`; the model is `pipeline/models/shape_possession_hgb.json`). Out of
+fold on the benchmark (`tracking` v3, raw truth), on the alive frames whose ball is missing it scores a log-loss of
+0.3759 and an accuracy of 0.8349 (ln 2 = 0.6931). The 12-config grid chose weight 0.2 and every graded frame: on
+`tracking` v3 it adds +0.0942 pooled spellF1 under the raw truth over P04 + P05 (7 wins in 7, p 0.0156; +0.1035 under
+the coarse one), and the label-free transfer gate on our match passes (0.8251 against 0.7486). `main.toml` carries it.
+The limits: the model never saw our teams, so the benchmark's gain is not a forecast for them; the count of
+possessions moves the other way on BAR-ATH (down 2.4%, where the benchmark's goes up 16%); and the public window's
+spellF1 fell by about one possession, 0.4686 to 0.4000 (a correctness check, T01). What was built differs from the
+plan below: the model trained on the DFL matches with the ball hidden (P13's route), not on pseudo-labels from P04 or
+on the public GT, and its features are R011's 26 (no hull area, and none near the ball zone, since none reads the
+ball). What comes next is in [After P07 and P02](#after-p07-and-p02).
 
 **Why.** Fact 1: four frames in ten have no ball, in gaps long enough to hold several possessions.
 

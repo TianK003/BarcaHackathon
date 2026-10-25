@@ -151,7 +151,7 @@ everywhere: the shape of two teams is no evidence on whether the ball is in play
 *Where it speaks.* Only on graded frames where at least one team has a present slot. With `scope = "gaps"`, the
 default, only where the ball is missing, because that is where nothing else says who has it and where ball-based
 evidence is better the rest of the time; `scope = "all"` also speaks where the ball is seen: R011 found it better than
-`gaps` at every weight on the benchmark, and `main.toml` uses it. A team that is present while the other is gone still
+`gaps` at every weight on `tracking`, and `main.toml` uses it. A team that is present while the other is gone still
 gives an opinion (the absent team's columns are NaN, which the trees were fitted to handle). `home` is clipped to
 [`min_prob`, 1 − `min_prob`], 0.02 by default, since the decoder reads a probability as log(p / (1 − p)) nats a frame.
 The trainer and the committed model are separate steps of P07: a config that names a model file that is missing, or
@@ -209,8 +209,8 @@ one that is not shape_features', fails on load with the trainer's command.
 
 - **An evidence cache** for slow sources (video features, say): keyed by
   `(kind, canonical JSON of the parameters, ATD sha256, the source file's hash)`, stored under
-  `data/cache/evidence/`. Until then every run recomputes every source: 12.7 s for `main.toml`'s three, in a run on
-  25 Oct with the cache warm.
+  `data/cache/evidence/`. Until then every run recomputes every source: 14.9 s for `main.toml`'s three, in the run of
+  25 Oct that wrote R011's file, with the cache warm.
 - **A `next_home` channel** — P(home restarts | the ball is dead) — for P05's restart types and P08's set-piece tags.
   It will be an optional field with a default, so existing sources keep working unchanged.
 

@@ -687,7 +687,7 @@ with numpy alone (`pipeline/evidence/trees.py` is the walk, shared with `dead_ba
   with scope `all`), seeds pooled per match and the matches pooled by frames: log-loss and accuracy on the alive frames
   and on those whose served ball is missing, `ln 2`, the frames where the source is silent (counted apart), and
   `touch_agreement`. It says whether the stop rule P07's design declared fires: the pooled held-out log-loss on the
-  alive frames with the ball missing must be below `ln 2 - 0.01` = 0.6831. A fold missing from the artifact is an error,
+  alive frames with the ball missing must be below `ln 2 - 0.01` = 0.6831. A fold missing from the artefact is an error,
   because the source would fall back to `full`, which saw the match. The numbers are R011's part 1.
 - **`touch_agreement(inputs, model)`** is the statistic that needs no truth: among the frames inside kept
   `controlled_touch` episodes (`conventions.TOUCH`, confidence 0.99, hold off, so that `home` is a number exactly on
@@ -696,7 +696,7 @@ with numpy alone (`pipeline/evidence/trees.py` is the walk, shared with `dead_ba
   the lowest held-out match). It is a proxy, and not an accuracy.
 
 The checks are in `checks/shape.py` (synthetic): the rows, the augmentation, the exported trees against scikit-learn's
-raw score, the same bytes on one and four threads, the folds, that no truth reaches the features, the artifact, the
+raw score, the same bytes on one and four threads, the folds, that no truth reaches the features, the artefact, the
 report, and `touch_agreement` on a hand-built scene.
 
 ## Conventions: when our truth flips, and the edge shift
