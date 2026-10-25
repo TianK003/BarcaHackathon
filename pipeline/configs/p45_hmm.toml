@@ -2,8 +2,8 @@
 #
 #   python pipeline/run.py pipeline/configs/p45_hmm.toml --score    # -> evaluation/results/p45_hmm.csv
 #
-# This is the CANDIDATE, Stage C's choice. It is NOT the submission config: main.toml decides what we upload, and
-# main.toml takes this file's evidence and decoder only if R010's rule (the bar) says so; read R010 for the verdict.
+# This is Stage C's choice. main.toml decides what we upload, and it took this file's evidence and decoder in R010,
+# because the bar was met (R010 has the verdict).
 #
 # Where the numbers come from. Chosen on the benchmark (the seven DFL matches degraded as `tracking` v3, three seeds,
 # raw truth, pooled spellF1; configs within 0.005 of the best count as tied, then the best coarse score, then the

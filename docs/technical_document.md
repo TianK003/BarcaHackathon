@@ -165,13 +165,13 @@ ball in play, decoded by the `hmm` per half. The rules below are those it implem
   the coarse truth prefers the opposite end (R010, section 6, T33).
 - **Dead ball, what the detector sees:** Thirty features: the ball beyond a touchline or goal line, now, next and when
   last seen; the ball still at a restart spot (the centre spot, a corner, a penalty spot, a goal area); a collective
-  slowdown of the players over windows before and after the frame; the kick-off shape (every player in their own
-  half, a pair at the centre spot); the set-piece shapes (a crowd in a penalty area, a player at a corner point, a
+  slowdown of the players over windows before and after the frame; the kick-off shape (every player in their own half,
+  the nearest player to the centre spot); the set-piece shapes (a crowd in a penalty area, a player at a corner point, a
   player beyond a touchline, players in a goal area); the gap between the teams and how spread out they are; and where
-  the ball vanished and reappeared, which is what the tracker leaves of a stoppage inside a gap. The trained trees
-  split first on where the ball is (beyond a line, next or last seen) and on whether a player stands beyond a line,
-  and then on the restart spots and the players' speeds, and never on whether the ball is missing (R009). The model's
-  probability is corrected for its training prior and clipped to [0.001, 0.999] before the decoder reads it.
+  the ball vanished and reappeared, which is what the tracker leaves of a stoppage inside a gap. The trained trees split
+  first on where the ball is (beyond a line, next or last seen) and on whether a player stands beyond a line, and then
+  on the restart spots and the players' speeds, and never on whether the ball is missing (R009). The model's probability
+  is corrected for its training prior and clipped to [0.001, 0.999] before the decoder reads it.
 - **Dead ball, before the kick-off:** A graded frame before its half's documented kick-off is `D`, whatever the model
   says. The rule comes from the organisers' documented kick-offs and from no ground truth, and on our match it makes
   the 2,934 graded frames before the second half's kick-off `D` (T02).
@@ -328,7 +328,8 @@ that the pipeline is correct (the file is valid and identical across runs), neve
 protocol (profile `tracking` v3, 3 seeds, the pooled raw spellF1 as the objective, a 0.005 tie band, then the coarse
 score), and the two were then crossed with the decoder's penalties. The bar for adopting a config was declared before
 the runs: its raw gain over `nearest_w50` and its coarse gain over `nearest_w125` both above 0 with a sign-flip p of
-0.05 or less, and a label-free check on our match that the file is not degenerate.
+0.05 or less, and, declared before Stage C ran, a label-free check on our match that the file is not
+degenerate.
 
 - **P04** (R008): 24 configs, radius {1.0, 1.5, 2.0} m x relative speed {3, 6} m/s x `min_frames` {3, 8} x hold {off,
   0.55}. Chosen: 2.0 m, 6 m/s, 3 frames, hold 0.55, confidence 0.91, with R007's decoder and `ball_presence`: 0.2345
@@ -336,7 +337,8 @@ the runs: its raw gain over `nearest_w50` and its coarse gain over `nearest_w125
   (p 0.0156, 7 in 7). At R007's decoder it adds +0.0292 raw and +0.0466 coarse over `nearest_player`.
 - **P05** (R009): 24 configs, source {fixed rules, logistic regression, gradient boosting} x weight {0.1, 0.25, 0.5,
   1.0} x `ball_presence` {off, on}. Chosen: the boosting model at weight 1.0 without `ball_presence`: 0.3503 raw and
-  0.4150 coarse, alive/dead F1 0.9725 (the yardsticks' 0.6094 and 0.6428). Boosting led logistic regression by
+  0.4150 coarse, alive/dead F1 0.9725 (the yardsticks' 0.6094 and 0.6428; an upper bound for our match, since DFL
+  tracks the ball out of play, T39). Boosting led logistic regression by
   0.0274 raw and had the lower out-of-fold log-loss on 7 of 7 matches (0.0837 against 0.1526 pooled).
 - **Both, with the decoder re-tuned** (R010): 72 configs, `switch_team` {4, 8, 16} x `switch_dead` {16, 32, 64} x
   `min_possession` {25, 50, 75, 100} x `min_dead` {1, 25}. Chosen: 4, 32, 25, 25.
@@ -350,15 +352,18 @@ the runs: its raw gain over `nearest_w50` and its coarse gain over `nearest_w125
 | without P04 (`nearest_player` instead) | 0.2796 | 0.2424 | 0.7796 | 0.9726 | 5.09 |
 | without P05 (`ball_presence` instead) | 0.2556 | 0.2170 | 0.4851 | 0.5749 | 3.05 |
 
-**The bar is met under both truths**: raw +0.2199 over `nearest_w50` (mean per match +0.2217 [+0.2019, +0.2415]),
-coarse +0.2330 over `nearest_w125` ([+0.2202, +0.2480]), sign-flip p 0.0156 and 7 wins in 7 each. The
-leave-one-match-out selection picks the chosen config in all seven folds, and on `context` (sensitivity only) it is
-above both yardsticks by +0.2130 and +0.2211. Each source is needed: without P04 the coarse half of the bar fails
-(+0.0198, p 0.1406) and without P05 it fails (-0.0056, p 0.1094), while the raw half holds without either. At R007's
-decoder the two gains add, and a little more (0.3873 raw against 0.3795 for the sum). Predicted `D` on our match is
-36.0%, inside the label-free check's band [30%, 62%], with no `X` inside a graded block and the same sha256 on two
-runs. On the public window, a correctness check only (T01), the file has macroF1 0.6996, spellF1 0.4686 and 18
-possessions against 17.
+**The bar is met under both truths**: raw +0.2199 over `nearest_w50` (mean per match +0.2217 [+0.2019, +0.2415]), coarse
++0.2330 over `nearest_w125` ([+0.2202, +0.2480]), sign-flip p 0.0156 and 7 wins in 7 each. The leave-one-match-out
+selection picks the chosen config in all seven folds, and on `context` (sensitivity only) it is above both yardsticks by
++0.2130 and +0.2211. At the chosen decoder each source is needed: without P04 the coarse half of the bar fails (+0.0198,
+p 0.1406) and without P05 it fails (-0.0056, p 0.1094), while the raw half holds without either; alone, at R007's
+decoder, each clears both halves (R008, R009). At R007's decoder the two gains add, and a little more (0.3873 raw
+against 0.3795 for the sum). Predicted `D` on our match is 36.0%, inside the label-free check's band [30%, 62%], with no
+`X` inside a graded block and the same sha256 on two runs. On the public window, a correctness check only (T01), the
+file has macroF1 0.6996, spellF1 0.4686 and 18 possessions against 17.
+
+These benchmark figures are upper bounds for our match, not predictions: DFL tracks the ball out of play, so the
+benchmark overstates P05 by an amount it cannot measure (section 6, T38, T39).
 
 **Why these choices.** Lang et al. (2022, *Scientific Reports*) predict the in-play status from tracking and find
 boosting the best of four classical families (92.0% frame accuracy, against 86.7% for logistic regression), from the
@@ -369,7 +374,8 @@ best radius depends on the provider, which is why the radius is a grid and the c
 Hoernig (2017, *PLOS ONE*) show control as a proximity held over time, with the possession ended by the ball leaving.
 The model's settings (learning rate 0.05, 300 trees, 15 leaves, at least 1,000 training rows a leaf, no early
 stopping, no class weights) come from general boosted-tree practice and not from these papers (Lang et al. used
-AdaBoost): a leaf of about 40 s of play, no early stopping on autocorrelated frames, the log-loss and no class
+AdaBoost): a leaf of at least 1,000 rows (every fifth frame over three seeds, so about 200 s of sampled frames and at
+least about 67 s of distinct play), no early stopping on autocorrelated frames, the log-loss and no class
 weights, so that the probabilities stay probabilities. They were fixed and not tuned on seven matches. The evidence
 reaches the decoder as probabilities that are corrected for the training prior and clipped, so that the decoder's own
 penalties set the prior and no frame is certain.
@@ -429,10 +435,10 @@ penalties set the prior and no frame is certain.
   begin, the ball is beyond a line on 17.68% of DFL's against 4.07% of ours, R009). The benchmark's alive/dead F1 of
   0.9726 is therefore not our match's, and the gain over the yardsticks is overstated by an amount the benchmark cannot
   measure (T38, T39). Neither `tracking` nor `context` removes it, since both keep DFL's out-of-play ball. The raw half
-  of the bar does not rest on P05 (the config without it still beats `nearest_w50` raw by +0.0539), and the coarse half
-  does. The two looks at our match are the public window (alive agreement 86.6% of 7,500 frames) and the predicted `D`
-  share, 36.0% against 44.6% on the benchmark and 40.7% to 51.7% in DFL's matches. How much `D` our match has is not
-  known beyond the public window.
+  of the bar does not rest on P05 at the chosen decoder (the config without it still beats `nearest_w50` raw by
+  +0.0539), and the coarse half does. The two looks at our match are the public window (alive agreement 86.6% of 7,500
+  frames) and the predicted `D` share, 36.0% against 44.6% on the benchmark and 40.7% to 51.7% in DFL's matches. How
+  much `D` our match has is not known beyond the public window.
 - **The two truths disagree on the decoder (T33).** The raw truth chose the shortest minimum possession and smallest
   switch penalty of the grid and the coarse truth the longest and the largest (`switch_team` 16, `min_possession` 100:
   0.5049 coarse and 0.3532 raw, against the chosen 0.4556 and 0.4217). The chosen config predicts 2.74 possessions a

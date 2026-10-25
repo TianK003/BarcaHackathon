@@ -22,8 +22,8 @@ The ball is missing on 41% of graded frames and visible on 66% of dead ones (doc
                                                         both teams in their own half, one slot at the centre spot
 
 The thresholds come from the laws of the game and the literature and are never tuned. The five probabilities are the
-parameters, required with no default: they are measurements (a later task's, on the benchmark), and a default here would
-be a number nobody measured. `alive` is the smallest value of the rules that fire (the most confident call of a
+parameters, required with no default: they are measurements (`train_dead_ball.py --rules`, R009), and a default here
+would be a number nobody measured. `alive` is the smallest value of the rules that fire (the most confident call of a
 stoppage wins) and `alive_none` where none does. NaN outside the graded blocks, and `home` is NaN everywhere: whether
 the ball is dead says nothing about who has it.
 

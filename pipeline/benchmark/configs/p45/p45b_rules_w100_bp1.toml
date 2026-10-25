@@ -1,4 +1,6 @@
-# P45 Stage B (R009), P05: dead_ball_rules with the five values measured on all seven matches at weight 1.0, ball_presence at its defaults, nearest_player at 0.78, hmm 8/32/75/1. The rule values are measured on all seven matches (train_dead_ball.py --rules, tracking v3, seeds 0-2), never tuned.
+# P45 Stage B (R009), P05: dead_ball_rules with its five values at weight 1.0, ball_presence at its defaults,
+# nearest_player at 0.78, hmm 8/32/75/1. The rule values are measured on all seven matches (train_dead_ball.py
+# --rules, tracking v3, seeds 0-2), never tuned.
 # Chosen on the benchmark by the Stage B protocol, never on the public window (docs/traps.md T01).
 
 description = "P45 Stage B (R009): nearest_player 0.78 + dead_ball_rules with the five values measured on all seven matches at weight 1.0, ball_presence at its defaults, hmm 8/32/75/1, decoded per half."

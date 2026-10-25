@@ -11,7 +11,7 @@
 # R010 on the P01 benchmark (the seven DFL matches degraded as `tracking` v3, three seeds) and adopted by R010's rule:
 # the bar (a gain over each yardstick under its truth, sign-flip p <= 0.05) was met, and so was a label-free check on
 # BAR-ATH. Its evidence and decoder are those of p45_hmm.toml. The benchmark overstates P05 for BAR-ATH by an amount
-# it cannot measure (docs/traps.md T38): read R010 before trusting the size of the gain.
+# it cannot measure (docs/traps.md T38, T39): read R010 before trusting the size of the gain.
 
 description = "P04 + P05 (R010): controlled_touch 2.0 m / 6.0 m/s / 3 frames / hold 0.55 (confidence 0.91) + dead_ball_model (hgb, pipeline/models/dead_ball_hgb.json) at weight 1.0, hmm 4/32/25/25, decoded per half."
 seed = 0

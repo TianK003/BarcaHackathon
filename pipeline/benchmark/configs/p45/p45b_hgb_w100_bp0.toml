@@ -1,4 +1,5 @@
-# P45 Stage B (R009), P05: dead_ball_model (hgb, pipeline/models/dead_ball_hgb.json) at weight 1.0, no ball_presence, nearest_player at 0.78, hmm 8/32/75/1.
+# P45 Stage B (R009), P05: dead_ball_model (hgb, pipeline/models/dead_ball_hgb.json) at weight 1.0, no ball_presence,
+# nearest_player at 0.78, hmm 8/32/75/1.
 # Chosen on the benchmark by the Stage B protocol, never on the public window (docs/traps.md T01).
 
 description = "P45 Stage B (R009): nearest_player 0.78 + dead_ball_model (hgb, pipeline/models/dead_ball_hgb.json) at weight 1.0, no ball_presence, hmm 8/32/75/1, decoded per half."

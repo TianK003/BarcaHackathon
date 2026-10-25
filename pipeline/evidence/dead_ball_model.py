@@ -26,10 +26,11 @@ What it does, in order
    probabilities agree with `predict_proba` to rounding (the trainer's check holds them to 1e-12). NaN features are
    handled where the trees were fitted to handle them: the tracker's missing ball is the commonest feature value of the
    match (A01). For `logistic` it is the linear predictor on the imputed, standardised features.
-4. Correct for the prior. The classifier's p is calibrated to the training set's alive share (`prior_alive`, 0.9 or so
-   on DFL, whose ball is dead less than ours). The decoder sets the class prior itself (pipeline/decode/), so the source
-   gives it likelihood and not posterior, the recipe of hybrid HMMs (Bourlard and Morgan 1994): logit(alive) =
-   logit(p) - logit(prior_alive). Without this, DFL's class balance would leak into the decoder's.
+4. Correct for the prior. The classifier's p is calibrated to the training set's alive share (`prior_alive`, about 0.55
+   on DFL, whose ball is dead in 41 to 52% of graded frames). The decoder sets the class prior itself
+   (pipeline/decode/), so the source gives it likelihood and not posterior, the recipe of hybrid HMMs (Bourlard and
+   Morgan 1994): logit(alive) = logit(p) - logit(prior_alive). Without this, DFL's class balance would leak into the
+   decoder's.
 5. Clip to [min_prob, 1 - min_prob]: a tree can be far more certain than the matches it was fitted on deserve, and the
    decoder reads a probability as evidence of log(p / (1 - p)) nats a frame (ball_presence has the same reasoning).
 6. NaN outside the graded blocks (no features there), `home` NaN everywhere (whether the ball is dead says nothing about

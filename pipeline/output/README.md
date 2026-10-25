@@ -61,9 +61,10 @@ With `--score` (the public window by default, or `--score path/to/labels.csv` fo
 this match, such as another run's output; there are no hand labels of this match, [T27](../../docs/traps.md)):
 
 ```
-score     evaluation/gt/BAR-ATH_possession_gt_public.csv: macroF1 0.6207  spellF1 0.3256  ...  possessions 26 (truth 17)
-          nearest_player       home agrees on 77.8% of 5,640 frames   alive agrees on -- (no opinion ...)
-results   | R0xx | 2026-10-22 | `main` @ <commit> | 0.6207 | 0.3256 | 26 / 10.8 s | | |
+score     evaluation/gt/BAR-ATH_possession_gt_public.csv: macroF1 0.6996  spellF1 0.4686  ...  possessions 18 (truth 17)
+          controlled_touch     home agrees on 87.2% of 5,489 frames   alive agrees on -- (no opinion ...)
+          dead_ball_model      home agrees on -- (no opinion ...)   alive agrees on 86.6% of 7,500 frames
+results   | R0xx | 2026-10-25 | `main` @ <commit> | 0.6996 | 0.4686 | 18 / 15.7 s | | |
 ```
 
 The public window checks correctness. It cannot rank versions: it prefers `smooth125` to `smooth50`, the reverse of
