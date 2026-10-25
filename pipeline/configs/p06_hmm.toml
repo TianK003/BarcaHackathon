@@ -8,7 +8,7 @@
 #
 # Where the numbers come from. Every one was chosen on the benchmark (the seven DFL matches degraded as `tracking`
 # v3, three seeds, raw truth, pooled spellF1; configs within 0.005 of the best count as tied, then the best coarse
-# truth, then the larger switch_team, min_possession, switch_dead and min_dead), never on the public window
+# score, then the larger switch_team, min_possession, switch_dead and min_dead), never on the public window
 # (docs/traps.md T01) and never by retuning a degradation (T37):
 #   switch_team = 8, switch_dead = 32, min_possession = 75 frames (3 s), min_dead = 1 (R007, Stages 1, 2 and 2b).
 # The two evidence sources are fixed by rule from A01 and were never tuned: nearest_player at confidence 0.78 and

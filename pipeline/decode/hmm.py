@@ -296,6 +296,7 @@ def marginals(emissions, switch_team, switch_dead, min_possession, min_dead):
     backward = np.zeros(len(owner))
     for frame in range(n_frames - 2, -1, -1):
         ahead = emissions[frame + 1][owner] + backward                   # the next frame, its emission paid
+        # np.empty_like is safe: the shift below fills every entry but the last, and `last` covers the last index.
         following = np.empty_like(ahead)
         following[:-1] = ahead[1:]                                       # a run one frame older: the only way on
         leave = np.logaddexp.reduce(ahead[first][None, :] + link, axis=1)  # a mature run ends: into another state

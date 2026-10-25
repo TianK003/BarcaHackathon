@@ -37,7 +37,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P04](#p04--sticky-ownership-from-controlled-touches) | Sticky ownership from controlled touches | facts 3, 5 | S | high | idea |
 | [P05](#p05--a-real-dead-ball-detector) | Dead-ball detector | fact 4 | M | high | idea |
 | [P06](#p06--global-decoding-per-half-hmm--hidden-semi-markov) | Global decoder (HMM / semi-Markov) per half | fact 5 | M | high | done → R006–R007, A10 |
-| [P07](#p07--possession-without-the-ball-team-shape-and-movement) | Possession without the ball: team shape | fact 1 | M | high, but only after P05: ~0 to this decoder without it (A10) | idea |
+| [P07](#p07--possession-without-the-ball-team-shape-and-movement) | Possession without the ball: team shape | fact 1 | M | high, but only after P05: ~0 to this decoder without it at `margin` 0 (A10) | idea |
 | [P08](#p08--smart-tagging-as-soft-evidence) | Smart Tagging as soft evidence | facts 1, 4 | S | medium | idea |
 | [P09](#p09--camera-aim-as-a-coarse-ball-zone-prior) | Camera aim as a coarse ball-zone prior | fact 1 | S | low–medium | idea |
 | [P10](#p10--referee-whistle-from-the-audio-track) | Referee whistle from the audio track | fact 4 | S–M | medium (audio confirmed, A04) | idea |
@@ -97,6 +97,8 @@ raw truth first and coarse second, and are upper bounds: the oracles are exact.
    together are worth more than apart (+0.3602 raw, against +0.3158 if they added). A real one will capture a part of
    its ceiling and no more.
 3. **P07 only after P05.** Without a source for `D` inside the gaps it is worth nothing to this decoder (+0.0008 raw).
+   That holds at `margin` 0, where the gaps' edges are `D` too; if the `margin` sweep (item 5) raises `margin`, the
+   edges become P07's again.
 4. **After any new source, re-run the minimum-run part of P06's protocol.** With the truth as its evidence the chosen
    config scores 0.7627 raw and 0.9226 coarse and not 1.0: its penalties and its 75-frame minimum, chosen under noisy
    evidence, cap it at DFL's fine grain.
@@ -324,7 +326,10 @@ Watch `alive_dead_f1` and the `D` row in the scorer's detail block.
 
 ### P06 — Global decoding per half: HMM / hidden semi-Markov
 
-**Status: done → [R006](results.md), [R007](results.md) and
+**Status: done →
+[R006](results.md#r006--the-hmm-decoders-first-grid-on-the-benchmark-the-two-switch-penalties-2026-10-25-tian),
+[R007](results.md#r007--the-hmm-decoders-second-grid-the-minimum-run-lengths-and-the-choice-of-its-parameters-2026-10-25-tian)
+and
 [A10](results.md#a10--headroom-what-perfect-evidence-would-be-worth-to-the-chosen-decoder-2026-10-25).** The `hmm`
 decoder is in [`pipeline/decode/hmm.py`](../pipeline/decode/hmm.py), with its posterior (off by default) and the first
 `alive` evidence, `ball_presence`. Its parameters were chosen on P01's benchmark and are kept in

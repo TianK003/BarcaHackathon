@@ -28,12 +28,13 @@ The oracles
   (run.inputs.atd.ball_present, which a degraded profile has made as it is in our match); NaN elsewhere. alive is NaN.
 * oracle_home_all: the same on every H and A frame. alive is NaN.
 
-They are ordinary evidence sources of exactly 1.0 and 0.0 and of weight 1, so a probabilistic decoder reads them as
-about 13.8 nats a frame at eps 1e-6: a bound on what the evidence can give, not an estimate of what a real source will.
-A replaced nearest_player keeps its weight and gives its place to the oracle (named as its kind, without its
-`confidence`); oracle_alive is added after the config's own sources at weight 1, and a ball_presence the config has
-stays, though next to the oracle it counts for nothing. Whatever a decoder, its penalties and the refiners do with a
-perfect source is the measurement: the headroom is that of this config, not of the benchmark.
+They are ordinary evidence sources of exactly 1.0 and 0.0, so a probabilistic decoder reads them as about 13.8 nats a
+frame at eps 1e-6 and weight 1: a bound on what the evidence can give, not an estimate of what a real source will. The
+alive oracle has weight 1; a home oracle takes the weight of the source it replaces. A replaced nearest_player gives its
+place to the oracle (named as its kind, without its `confidence`); oracle_alive is added after the config's own
+sources, and a ball_presence the config has stays, though next to the oracle it counts for nothing. Whatever a
+decoder, its penalties and the refiners do with a perfect source is the measurement: the headroom is that of this
+config, not of the benchmark.
 
 Where the truth comes from, and where the oracles live
 ------------------------------------------------------
@@ -102,7 +103,8 @@ from pipeline.contracts import A, D, H, Evidence, no_opinion  # noqa: E402
 # Params
 DEFAULT_PROFILE = run.DEFAULT_PROFILE
 FOLDER = ("runs", "benchmark", "headroom", "configs")   # under the data dir: where the variants are written
-# The kinds of source that say who has the ball, one of which the home variants replace.
+# The kinds of source that say who has the ball, one of which the home variants replace. A new one (P04's, when it
+# lands) is added here, or the variants cannot replace it.
 HOME_KINDS = ("nearest_player",)
 ALIVE_ORACLE = "oracle_alive"
 # (suffix of the stem, alive oracle added, home oracle replacing the source, what it measures), in the order they run.
@@ -249,7 +251,8 @@ def home_source(config):
     if not found:
         raise run.BenchmarkError(
             "{}: no evidence source of kind {} to replace with the home oracles (the variants home_visible, home_all, "
-            "alive_home_visible and alive_home_all take its place); add one, or run a config that has it".format(
+            "alive_home_visible and alive_home_all take its place); add one, or run a config that has it (a new kind "
+            "of source that says who has the ball is added to HOME_KINDS in pipeline/benchmark/headroom.py)".format(
                 config.stem, " or ".join(HOME_KINDS)))
     if len(found) > 1:
         raise run.BenchmarkError(

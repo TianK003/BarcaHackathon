@@ -25,7 +25,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R004c | 2026-10-23 | the same four yardsticks on `tracking` version 3: R004b's players, but a slot is taken by a new tracklet only from the row after its last one stopped (versions 1 and 2 let it take the slot on the row it was freed), and the walk's tracked spans rescaled again, 2.042 to 2.072 | — | — | — | 0.2018 raw (`w50`), 0.2226 coarse (`w125`); `w0` last under both | `tracking` v3 frozen, `fidelity.py` exits 0: all eight gates pass (exactly 22 present 0.4925 against 0.5019 +-0.06, mean 20.60 against 20.52 +-0.5, 14 or fewer 0.0469 against 0.0525 +-0.02, tracklet median 26.52 s against 41.28 s, -36%), no WARN; the yardstick check holds and the ranking does not move from R004b (no config moves by more than 0.6 points of spellF1); the jitter per slot after smoothing is 1.80 cm and not R004b's 8.5 cm: that was the slot handovers and not DFL's jumps (T35) |
 | R005 | 2026-10-23 | the same four yardsticks on the `context` profile: `tracking` v3's players, and the ball's holes placed by a hazard fitted on our own match (A08: the line, the ball's speed, the players near it, the minute) instead of transplanted from our masks with their pattern and not their clock | — | — | — | 0.2193 raw (`w50`), 0.2443 coarse (`w125`); `w0` last under both | **`context` v1 fails two gates**, so `DEFAULT_PROFILE` stays `tracking`: the gaps that start within 2 m of a line 0.5586 against our 0.2797 +-0.05 (on each seed: DFL tracks the ball out of play, so a quarter of its at-risk rows are near a line against 9% of ours) and the share missing 0.4313 against 0.4110 +-0.02 (pooled, by 0.0003, and on seed 2), and one WARN (the ball visible on dead frames 0.4622 against the public window's 0.6637, which is not the match's; `tracking` v3 0.5684); no fix, no second rescale; the order of the four configs is `tracking` v3's under both truths (Kendall tau +1.000 between the two profiles' orders on pooled spellF1, +0.667 against the published order under each), and every config scores 0.3 to 2.2 points higher; sensitivity only; fails two of its gates |
 | R006 | 2026-10-25 | the `hmm` decoder's first grid on `tracking` v3 (P06): switch_dead d in {4, 8, 16, 32, 64, 128} x switch_team t in {d/4, d/2, d, 2d}, 24 configs with both minimum runs at 1; `nearest_player` at confidence 0.78 and `ball_presence` at A01's values, both fixed | — | — | — | 0.1952 raw and 0.1700 coarse for the chosen `p06s1_t016_d064` (the best of the grid: 0.1959 raw, `t016_d032`, and 0.2228 coarse, `t064_d064`), against `nearest_w50` 0.2018 raw and `nearest_w125` 0.2226 coarse | **Stage 1 chooses (switch_team, switch_dead) = (16, 64)** by the pre-declared rule (4 configs within 0.005 of the best raw score, all at t = 16, and the best coarse score among them is d = 64); **no config clears the bar under either truth** (the best raw pooled Δ against `nearest_w50` is -0.0059, p 0.1719; the best coarse pooled Δ against `nearest_w125` is +0.0002, p 1.0000); alive/dead F1 is 0.4916 to 0.5761 for all 24, below both yardsticks (0.6094, 0.6428); the truths disagree on t (raw 16, coarse 64); Stage 2 (R007) adds the minimum run lengths |
-| R007 | 2026-10-25 | the `hmm` decoder's second grid on `tracking` v3 (P06): the minimum run lengths (`min_possession` 1 to 150 frames, `min_dead` 1 and 25) around Stage 1's choice, a one-step edge extension (Stage 2b), and the choice over the three stages; the chosen `pipeline/configs/p06_hmm.toml` is not the submission config | 0.6393 | 0.3500 | 23 / 11.4 s | 0.2053 raw and 0.1967 coarse for the chosen `p06s2b_t008_d032_mp075_md001` (the best of 123 configs: 0.2083 raw, `p06s2b_t004_d016_mp075_md001`, and 0.2310 coarse, `p06s2b_t008_d032_mp150_md001`), against `nearest_w50` 0.2018 raw and `nearest_w125` 0.2226 coarse | **(switch_team, switch_dead, min_possession, min_dead) = (8, 32, 75, 1)** by the pre-declared rule (6 configs within 0.005 of the best raw score, and the best coarse score among them is 8 / 32 / 75, by 0.0007); **the bar is not met under either truth** (the chosen config's raw pooled Δ against `nearest_w50` is +0.0036, p 0.2500; its coarse pooled Δ against `nearest_w125` is -0.0259, p 0.0156) and no config of the three stages meets it; the truths disagree on the minimum run (raw 75 frames, coarse 150 or more, the grid's upper edge); the winner is on an edge of Stage 2b's grid in t and d and is not extended; alive/dead F1 0.5676, below both yardsticks (0.6094, 0.6428); the public window is a correctness check only (valid, deterministic); controls (diagnostics, none a candidate): `seen` off costs 0.0063 raw on `tracking` (0 wins in 7) and moves nothing coarse; `margin` 50 is above the chosen config in all four profile and truth cells (two of them on `context`, sensitivity only; +0.0023 to +0.0071) and clears the raw half of the bar on `tracking` (+0.0107 over `nearest_w50`, p 0.0312, 6 wins in 7) but not the coarse half (-0.0236 against `nearest_w125`), so a `margin` sweep by its own protocol is the follow-up; `switch_dead` on `context` (sensitivity only) is flat under the raw truth (a span of 0.0035 over 8 to 128) and the coarse truth wants more; the headroom is A10 |
+| R007 | 2026-10-25 | the `hmm` decoder's second grid on `tracking` v3 (P06): the minimum run lengths (`min_possession` 1 to 150 frames, `min_dead` 1 and 25) around Stage 1's choice, a one-step edge extension (Stage 2b), and the choice over the three stages; the chosen `pipeline/configs/p06_hmm.toml` is not the submission config | 0.6393 | 0.3500 | 23 / 11.4 s | 0.2053 raw and 0.1967 coarse for the chosen `p06s2b_t008_d032_mp075_md001` (the best of 123 configs: 0.2083 raw, `p06s2b_t004_d016_mp075_md001`, and 0.2310 coarse, `p06s2b_t008_d032_mp150_md001`), against `nearest_w50` 0.2018 raw and `nearest_w125` 0.2226 coarse | **(switch_team, switch_dead, min_possession, min_dead) = (8, 32, 75, 1)** by the pre-declared rule over the set Stage 2b's ruling extended (6 configs within 0.005 of the best raw score, and the best coarse score among them is 8 / 32 / 75, by 0.0007; over Stage 1 and Stage 2 alone the rule picks `p06s2_t016_d064_mp050_md025`, 0.0012 under `nearest_w50` raw); **the bar is not met under either truth** (the chosen config's raw pooled Δ against `nearest_w50` is +0.0036, p 0.2500; its coarse pooled Δ against `nearest_w125` is -0.0259, p 0.0156) and no config of the three stages meets it; the truths disagree on the minimum run (raw 75 frames, coarse 150 or more, the grid's upper edge); the winner is on an edge of Stage 2b's grid in t and d and is not extended; alive/dead F1 0.5676, below both yardsticks (0.6094, 0.6428); the public window is a correctness check only (valid, deterministic; in-sample for the three evidence values A01 measured on it); controls (diagnostics, none a candidate): `seen` off costs 0.0063 raw on `tracking` (0 wins in 7) and moves nothing coarse; `margin` 50 is above the chosen config in all four profile and truth cells (two of them on `context`, sensitivity only; +0.0023 to +0.0071) and clears the raw half of the bar on `tracking` (+0.0107 over `nearest_w50`, p 0.0312, 6 wins in 7) but not the coarse half (-0.0236 against `nearest_w125`), so a `margin` sweep by its own protocol is the follow-up; `switch_dead` on `context` (sensitivity only) is flat under the raw truth (a span of 0.0035 over 8 to 128) and the coarse truth wants more; the headroom is A10 |
 
 ### The four yardsticks on every profile, in one table
 
@@ -2593,7 +2593,8 @@ graded frames of the match it labels H 33.7%, A 24.0% and D 42.3%, and finds 393
 mean 9.3 s) against `main`'s 594 (5.61 per graded minute, R001). The run was made at `9bbc3e3` with the file that
 `bdd699b` then committed, so the manifest (`data/runs/p06_hmm.json`, not committed) says `+dirty`. `--score` reports
 `nearest_player` agreeing with the public GT on 77.8% of 5,640 frames (A01's figure) and `ball_presence` on alive on
-81.8% of 7,500 frames. No bootstrap was run, because no public-window gap is claimed.
+81.8% of 7,500 frames. No bootstrap was run, because no public-window gap is claimed. The public scores are in-sample
+for the three evidence values A01 measured on those frames (`confidence` 0.78, `missing` 0.2 and `seen` 0.585).
 Validation (P01 benchmark): 7 DFL matches x 3 degradation seeds (0, 1, 2), profile `tracking` version 3, 668.4 graded
 minutes per seed. The chosen config, `p06s2b_t008_d032_mp075_md001` (switch_team 8, switch_dead 32, min_possession 75,
 min_dead 1): pooled spellF1 0.2053 raw (mean per match 0.2064 [0.1937, 0.2191]) and 0.1967 coarse (0.1972 [0.1860,
@@ -2605,9 +2606,10 @@ Changed vs the previous best: the benchmark's best so far are the four yardstick
 `nearest_w125` 0.2226 coarse; R006's Stage 1 chose `p06s1_t016_d064` at 0.1952 raw and 0.1700 coarse, below both. This
 entry adds the minimum run lengths to the same decoder (`min_possession` in {1, 6, 12, 25, 50} and `min_dead` in {1, 25}
 in Stage 2, then `min_possession` in {50, 75, 100, 150} at t in {4, 8} and d in {16, 32} in Stage 2b) and chooses over
-all three stages by the pre-declared rule. The chosen config scores +0.0101 raw and +0.0267 coarse above R006's choice,
-and +0.0036 raw above `nearest_w50`, but -0.0259 coarse below `nearest_w125`. The evidence sources are as in R006 and
-are not tuned: `nearest_player` at `confidence = 0.78` and `ball_presence` (margin 0, missing 0.2, seen 0.585).
+all three stages by the pre-declared rule (over the set Stage 2b's ruling extended: the choice below says what the rule
+alone would have picked). The chosen config scores +0.0101 raw and +0.0267 coarse above R006's choice, and +0.0036 raw
+above `nearest_w50`, but -0.0259 coarse below `nearest_w125`. The evidence sources are as in R006 and are not tuned:
+`nearest_player` at `confidence = 0.78` and `ball_presence` (margin 0, missing 0.2, seen 0.585).
 
 Reports: `data/runs/benchmark/tracking/p06s2_*.json`, `p06s2b_*.json` and the `.coarse.json` of each (not committed;
 each carries the Calibration's digest). The eight runs' stdout (six of Stage 2, two of Stage 2b) is the record of the
@@ -2617,23 +2619,24 @@ same in the fourteen logs of R006, Stage 2 and Stage 2b (seven per truth), to th
 and are R004c's. The six Stage-2 points with min_possession = min_dead = 1 that Stage 1 also ran score exactly as in
 R006 (every printed field, both truths, 0 mismatches), which is the consistency check R006 set. In all 45 pairs of Stage
 2, the config with min_dead = 25 prints the same numbers as its twin with min_dead = 1, under both truths. Stage 2b ran
-at `9bbc3e3`, which holds the posterior merged after Stage 2's commit (`952b392`, merged at `8160627`); that change does
-not touch a label and its checks pin that, but no config was run at both commits, so these logs cannot confirm it: the
+at `9bbc3e3`, which holds the posterior (`952b392`, merged at `8160627`, after Stage 2's commit); that change does not
+touch a label and its checks pin that, but no config was run at both commits, so these logs cannot confirm it: the
 references are the only repeat. The check was made afterwards, in the controls below.
 
 **The grid.** Stage 2 crossed (t, d) with t in {8, 16, 32} and d in {32, 64, 128} (nine pairs, all with t <= 2d) with
 `min_possession` in {1, 6, 12, 25, 50} and `min_dead` in {1, 25}: 90 configs, `p06s2_t<TTT>_d<DDD>_mp<MMM>_md<NNN>`.
 **Stage 2b, with its ruling.** The best raw config of Stage 2, `p06s2_t008_d032_mp050_md*` (0.2043 raw, 0.1760 coarse),
 sat on three edges of Stage 2's grid: the lowest t (8), the lowest d (32) and the highest `min_possession` (50). By a
-ruling declared before Stage 2b's results (the analogue of Stage 1's edge rule, capped at one extension), 15 more
-configs were written, `p06s2b_t<TTT>_d<DDD>_mp<MMM>_md001`: t in {4, 8} x d in {16, 32} x `min_possession` in {50, 75,
-100, 150}, `min_dead` 1 (Stage 2 had just shown it moves nothing), minus (8, 32, 50), which Stage 2 had run. The final
-choice is over Stage 1 (24 configs), Stage 2 (90) and Stage 2b (15): 123 distinct configs once the six that Stage 1 and
-Stage 2 share are counted once, and 78 score profiles without the min_dead = 25 twins. The table has every Stage-2 and
-Stage-2b config with `min_dead` 1, and Stage 1's at these (t, d), under both truths, as raw / coarse pooled spellF1 (62
-of the 78 profiles; the other 16 Stage-1 configs are in R006's table); a blank cell was not run. The `min_possession`
-= 1 cells are Stage 1's or Stage 2's, 6, 12, 25 and 50 are Stage 2's for its nine pairs, 50 is also Stage 2b's for t in
-{4, 8} with d in {16, 32} (8 / 32 is Stage 2's), and 75, 100 and 150 are Stage 2b's. The bold cell is the chosen config.
+ruling made after Stage 2's results and before Stage 2b's (the analogue of Stage 1's edge rule, capped at one
+extension), 15 more configs were written, `p06s2b_t<TTT>_d<DDD>_mp<MMM>_md001`: t in {4, 8} x d in {16, 32} x
+`min_possession` in {50, 75, 100, 150}, `min_dead` 1 (Stage 2 had just shown it moves nothing), minus (8, 32, 50), which
+Stage 2 had run. The final choice is over Stage 1 (24 configs), Stage 2 (90) and Stage 2b (15): 123 distinct configs
+once the six that Stage 1 and Stage 2 share are counted once, and 78 score profiles without the min_dead = 25 twins. The
+table has every Stage-2 and Stage-2b config with `min_dead` 1, and Stage 1's at these (t, d), under both truths, as raw
+/ coarse pooled spellF1 (62 of the 78 profiles; the other 16 Stage-1 configs are in R006's table); a blank cell was not
+run. The `min_possession` = 1 cells are Stage 1's or Stage 2's, 6, 12, 25 and 50 are Stage 2's for its nine pairs, 50 is
+also Stage 2b's for t in {4, 8} with d in {16, 32} (8 / 32 is Stage 2's), and 75, 100 and 150 are Stage 2b's. The bold
+cell is the chosen config.
 
 | t / d | mp 1 | mp 6 | mp 12 | mp 25 | mp 50 | mp 75 | mp 100 | mp 150 |
 |---|---|---|---|---|---|---|---|---|
@@ -2684,6 +2687,13 @@ switch_dead and min_dead), over Stage 1 ∪ Stage 2 ∪ Stage 2b:
 - The raw-only winner is `p06s2b_t004_d016_mp075_md001` (0.2083) and the coarse-only winner is
   `p06s2b_t008_d032_mp150_md001` (0.2310). The chosen config is the raw fourth and the coarse 29th of the 78 score
   profiles (0.0030 below the raw best; 0.0343 below the coarse best).
+- **What the declared rule alone would have chosen.** The protocol declared the choice over Stage 1 ∪ Stage 2; Stage 2b
+  was a ruling made after Stage 2's results and before its own, capped at one extension, and the chosen config comes
+  from it. Over Stage 1 ∪ Stage 2 the same rule (best raw 0.2043, a band of 0.1993 and above, four score profiles) picks
+  `p06s2_t016_d064_mp050_md025` (its `min_dead` 1 twin scores the same), at 0.2005 raw and 0.1936 coarse: -0.0012 raw
+  against `nearest_w50` (p 0.8281, 3 wins and 4 losses) and -0.0290 coarse against `nearest_w125` (p 0.0156, 0 wins and
+  7 losses), the runner's own lines in the Stage-2 logs. So the ruling moved the choice, and the sign of the raw Δ
+  (-0.0012 to +0.0036); both are level with `nearest_w50`, so the verdict does not change.
 - **The two truths disagree on the minimum run, as they did on t (R006).** Raw peaks at 75 frames in all four Stage-2b
   pairs and falls after it (0.1988 to 0.2003 at 100 and 0.1782 to 0.1805 at 150); coarse rises through the whole grid
   (0.1936 to 0.1967 at 75, 0.2083 to 0.2113 at 100, 0.2281 to 0.2310 at 150). The raw band and the coarse band (four
@@ -2774,15 +2784,15 @@ Against `nearest_w50` (the second yardstick; pooled spellF1 0.1842):
   DFL-COM-000002 (+0.0073) and not in the 2 of DFL-COM-000001 (-0.0036); per match it is +0.0024 (J03WMX), -0.0097
   (J03WN1), +0.0092 (J03WOH), +0.0109 (J03WOY), -0.0039 (J03WPY), +0.0056 (J03WQQ) and +0.0146 (J03WR9). Under the
   coarse truth the gap to `nearest_w125` is -0.0297 and -0.0240 in the two competitions, and is negative in every match.
-- **A minimum run length is worth more than any switch penalty was, and it substitutes for a large `switch_team`.** At
-  min_possession 1 R006's best was 0.1959 raw. At t = 8 min_possession 6 and 12 move nothing (0.1467 to 0.1473 for all
-  three d), 25 frames give 0.1797 to 0.1817 and 50 give 0.1990 to 0.2043, +0.0523 to +0.0572 over min_possession 1. At t
-  = 16 50 frames add +0.0038 to +0.0062, and at t = 32 nothing (at most +0.0002 raw, +0.0007 coarse). So with a minimum
-  of 50 frames t = 8 (0.2043) beats t = 16 (0.2021) and t = 32 (0.1883) at d = 32, which reorders R006's ranking at
-  minimum 1 (t = 16 first at 0.1959, t = 32 at 0.1881, t = 8 last at 0.1471). The chosen config is +0.0101 raw and
-  +0.0267 coarse above R006's choice. `min_dead` changes nothing in Stage 2 (identical numbers in all 45 pairs); the
-  likely reason is that no `D` run of the optimal paths is shorter than 25 frames at d >= 32, which the scores cannot
-  confirm.
+- **A minimum run length lifts the best score above what the switch penalties reached, and it substitutes for a large
+  `switch_team`.** At min_possession 1 R006's best was 0.1959 raw, and the best config with a minimum scores 0.2083. At
+  t = 8 min_possession 6 and 12 move nothing (0.1467 to 0.1473 for all three d), 25 frames give 0.1797 to 0.1817 and 50
+  give 0.1990 to 0.2043, +0.0523 to +0.0572 over min_possession 1. At t = 16 50 frames add +0.0038 to +0.0062, and at t
+  = 32 nothing (at most +0.0002 raw, +0.0007 coarse). So with a minimum of 50 frames t = 8 (0.2043) beats t = 16
+  (0.2021) and t = 32 (0.1883) at d = 32, which reorders R006's ranking at minimum 1 (t = 16 first at 0.1959, t = 32 at
+  0.1881, t = 8 last at 0.1471). The chosen config is +0.0101 raw and +0.0267 coarse above R006's choice. `min_dead`
+  changes nothing in Stage 2 (identical numbers in all 45 pairs); the likely reason is that no `D` run of the optimal
+  paths is shorter than 25 frames at d >= 32, which the scores cannot confirm.
 - **The chosen config sits between the two truths in possessions per minute**: 3.10 predicted (the four 75-frame
   configs 3.10 to 3.26, the four 150-frame ones 2.16 to 2.27) against 4.58 under the raw truth and 2.48 under the coarse
   one, and `nearest_w50`'s 4.30 and `nearest_w125`'s 3.05. Each truth's best configs sit at fewer possessions per minute
@@ -2815,8 +2825,9 @@ Against `nearest_w50` (the second yardstick; pooled spellF1 0.1842):
   7. The same two picks scored under the coarse truth give 0.1939 and 0.1972 against `nearest_w125`'s 0.2228, Δ -0.0290
   and -0.0256 (0 wins in 7, p 0.0156). Choosing among 123 configs costs nothing measurable across matches (the six-fold
   picks score 0.2090 held out, the raw best 0.2093 in sample), because the same config wins in six folds; the check
-  varies the match and not the degradation draws, which the three seeds share across folds, and it says nothing about
-  how DFL's degraded tracking transfers to ours.
+  varies the match and not the degradation draws, which the three seeds share across folds, it holds the grid fixed
+  although Stage 2 was centred, and Stage 2b placed, on results from all seven matches, and it says nothing about how
+  DFL's degraded tracking transfers to ours.
 
 Runtime: the runner's `seconds` line says 17.1 to 21.1 s per HMM config in Stage 2 (17.1 to 21.1 raw, 17.9 to 21.0
 coarse) with six processes side by side, against 7.8 to 9.4 s for the two yardsticks in the same runs; Stage 2b's say

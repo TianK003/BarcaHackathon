@@ -6,10 +6,11 @@
     missing = 0.2     # alive, where the ball is missing
     seen = 0.585      # alive, where the ball is seen
 
-The organisers' baseline already makes this call, silently: where the tracking has no ball it writes D, and nothing
-else ever produces a D. This source states the same rule as evidence, so that a decoder can weigh it, pay for the
-change into and out of D, and overrule it, which the baseline's fallback cannot. `home` is NaN on every frame: whether
-the tracker sees the ball says nothing about who has it.
+The organisers' baseline already makes this call, silently, and nothing else ever produces a D there: with no smoothing
+it writes D wherever the tracking has no ball, and with a vote of half_width w only where no ball is within w frames
+(more than 50 frames inside a gap, for main's w = 50). This source states the unsmoothed rule as evidence, so that a
+decoder can weigh it, pay for the change into and out of D, and overrule it, which the baseline's fallback cannot.
+`home` is NaN on every frame: whether the tracker sees the ball says nothing about who has it.
 
 The two values come from A01 (docs/results.md), by rule, and are not tuned. In the public window the ball is missing on
 33.6% of dead-ball frames and on 6.5% of in-play frames, so a missing ball is 5.2 times likelier in a stoppage. It is
@@ -30,9 +31,12 @@ frames, in 150 gaps with a median of 10.7 s, and in-play gaps of 10 s or more ar
 a missing frame moves D over H and A by log(0.8 / 0.2) = 1.39 nats, four times what `seen` gives alive (0.34) and more
 than nearest_player's 1.27 for a vote at 0.78. Across a long gap that outweighs any `switch_dead` in P06's grid, so a
 gap longer than about 2 * switch_dead / 1.39 frames decodes to D when nothing else speaks there (nearest_player has
-no opinion without a ball). It is weaker than the baseline's hard rule only in that short gaps (and every visible
-stretch) can still be overruled. `margin` leaves the edges of a gap to the other evidence: with margin = 3 only the
-frames more than 3 frames from the nearest frame with a ball speak.
+no opinion without a ball), its edges included. At margin 0 that is broader than the baseline's rule, not weaker: main's
+vote (w = 50) keeps the team in the first and last 50 frames of every gap and in any gap of 100 frames or less, and here
+a gap of 47 frames or more is D whole at switch_dead 32. Only a shorter gap (and every visible stretch) can still be
+overruled. R007's margin = 50 control measures the difference: the predicted D share falls from 43.1% to 38.3% and raw
+spellF1 rises by +0.0071. `margin` leaves the edges of a gap to the other evidence: with margin = 3 only the frames more
+than 3 frames from the nearest frame with a ball speak.
 """
 
 import numbers

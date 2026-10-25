@@ -104,7 +104,10 @@ whole file at once, so these are yardsticks for the benchmark and not rebuilds o
 P06's grid configs live in `configs/p06/`, named `p06s1_t{TTT}_d{DDD}.toml` for Stage 1: the hmm decoder with
 `switch_team` TTT and `switch_dead` DDD (zero-padded to three digits), `nearest_player` at confidence 0.78 and
 `ball_presence` at its defaults. The 24 files cross `switch_dead` d in {4, 8, 16, 32, 64, 128} with `switch_team` in
-{d/4, d/2, d, 2d} (R006); later stages add their own prefix.
+{d/4, d/2, d, 2d} (R006). Stage 2 is `p06s2_t{TTT}_d{DDD}_mp{MMM}_md{NNN}.toml` (90 files, with `min_possession` MMM and
+`min_dead` NNN added), Stage 2b `p06s2b_t{TTT}_d{DDD}_mp{MMM}_md001.toml` (15 files) and the four controls
+`p06ctl_{seen_off,margin50,d008,d128}.toml`, each the chosen `pipeline/configs/p06_hmm.toml` with one thing changed
+(R007).
 
 ### The two truths
 
@@ -552,16 +555,15 @@ run on a machine also builds the caches (A05).
 The checks live in `pipeline/benchmark/checks/`, one module per topic, listed in `checks.MODULES` (the folder's
 `__init__.py` says what each holds): `sources`, `dfl`, `truth`, `inputs`, `score`, `run`, `hazard`, `calibration`,
 `degrade`, `cap`, `tracking`, `context`, `fidelity`, `headroom` (the Headroom section's) and `harness` (the harness
-itself). The profiles' are `degrade` (the
-transplant worked out exactly, determinism, what the `gaps` profile touches and what it does not, no truth, the order of
-the matches), `tracking` (the tracklets, the episodes, the NaN-speed runs and the smoothing worked out exactly, and how
-it nests in `gaps`), `cap` (the low-count tail's cap, its shortest-piece rule and the scale of the tracked spans),
-`context` (what the hazard is given, the chance, the class, third and durations read at the at-risk frame, the counts of
-its record on hand-built halves, the odds rescale and the frozen scale) and `fidelity` (every gate and check worked out
-by other code, pooling by sums, the exit code, the pending gates, the full-strength frames of the count gates and the
-gate kinds). The one that anchors the rest is `test_dfl_oracle_scores_perfectly`: an evidence source that is the truth
-itself, decoded by `majority_vote` with half-width 0, must score exactly 1.0 on spellF1, macroF1 and alive/dead F1 on
-every one of the seven matches.
+itself). The profiles' are `degrade` (the transplant worked out exactly, determinism, what the `gaps` profile touches
+and what it does not, no truth, the order of the matches), `tracking` (the tracklets, the episodes, the NaN-speed runs
+and the smoothing worked out exactly, and how it nests in `gaps`), `cap` (the low-count tail's cap, its shortest-piece
+rule and the scale of the tracked spans), `context` (what the hazard is given, the chance, the class, third and
+durations read at the at-risk frame, the counts of its record on hand-built halves, the odds rescale and the frozen
+scale) and `fidelity` (every gate and check worked out by other code, pooling by sums, the exit code, the pending gates,
+the full-strength frames of the count gates and the gate kinds). The one that anchors the rest is
+`test_dfl_oracle_scores_perfectly`: an evidence source that is the truth itself, decoded by `majority_vote` with
+half-width 0, must score exactly 1.0 on spellF1, macroF1 and alive/dead F1 on every one of the seven matches.
 
 **What the oracle checks, and what it cannot.** It checks the chain from the *loaded match* to the score: the runner,
 `MatchInputs` and the separator rows between the halves, both halves and each one's first and last row, the decoder path

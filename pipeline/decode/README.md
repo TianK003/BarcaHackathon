@@ -122,8 +122,8 @@ switch_dead = 16
 posterior = true       # default false: Decoded.posterior is None
 ```
 
-With `posterior = true`, `Decoded.posterior` is a `(len(block), 3)` float64 array: the probability of `H`, `A` and `D` at
-each frame under the same model, so a refiner can tell where an `X` is free (inside a possession, where `H` or `A` is
+With `posterior = true`, `Decoded.posterior` is a `(len(block), 3)` float64 array: the probability of `H`, `A` and `D`
+at each frame under the same model, so a refiner can tell where an `X` is free (inside a possession, where `H` or `A` is
 close to 1) and where it would be expensive (at a hand-over). A valid path has weight `exp(score)`, and a frame's
 probability of a state is the total weight of the valid paths that hold it there, over the total weight of all valid
 paths. Each row sums to 1.
