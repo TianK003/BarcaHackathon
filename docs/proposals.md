@@ -569,8 +569,8 @@ The broadcast audio has whistles too, but it is not aligned (P15).
 **What.**
 - Drop possession blips shorter than m frames, and `D` blips inside possessions. Validate m: the public GT has
   genuine 0.76 s and 1.32 s possessions.
-- Shift transitions by the measured mean latency. *Done as `shift_edges` (P02, R012): the pipeline's own median lag on
-  DFL, team +1, into `D` -2, out of `D` 0 frames.*
+- Shift transitions by the measured mean latency. *Done as `shift_edges` (P02, R012): minus the pipeline's own median
+  lag on DFL, team +1, into `D` -2, out of `D` 0 frames.*
 - Write explicit `D`, never `X`, before kick-offs and once the ball is out ([T02](traps.md)).
 - Use `X` only inside possessions where the label is genuinely uncertain. It is free on spellF1 and only touches the
   macroF1 tie-break.

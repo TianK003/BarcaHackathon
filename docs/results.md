@@ -4568,7 +4568,7 @@ A later change of the tooling (the final review of P07 and P02): the latency fil
 R011's `main.toml`, which is now `p07_shape.toml`, and `main.toml` itself carries the shift. A latency file records a
 sha256 of the config's content (scope, seed, evidence, decoder and refine), and `conventions.py shift` refuses a file
 of another content, or one written before the files carried it, with the `latency` command to run again. So R012's own
-files are refused as they stand, and the rule is reproduced with `--config pipeline/configs/p07_shape.toml` (its
+files are refused as they stand, and the rule can be reproduced with `--config pipeline/configs/p07_shape.toml` (its
 commands are in the technical document, section 7).
 
 The rule was declared before any of these runs and is applied as written. For each type of change, s_b is minus the

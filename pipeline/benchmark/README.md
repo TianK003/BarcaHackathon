@@ -763,8 +763,8 @@ against `shift_edges.apply`, and that a latency file of another content of the c
 .venv/Scripts/python pipeline/benchmark/selftest.py --data   # + our own match (aggregates only; minutes)
 ```
 
-The synthetic run is 369 checks (P06's added 16 to the 272 of A05, then P04's touch_stats 5 and P05's trainer 19,
-which made 312; then P07's trainer and source 20 in `shape`, P02's instrument and rule 36 in `conventions`, and one in
+The synthetic run is 373 checks (P06's added 16 to the 272 of A05, then P04's touch_stats 5 and P05's trainer 19,
+which made 312; then P07's trainer and source 20 in `shape`, P02's instrument and rule 40 in `conventions`, and one in
 `run` that a config with `shift_edges` is scored like any other). Its time, 49 to 115 s, is as of A05 and not measured
 again. `--dfl` and `--data` are as of A05 (2026-10-23, `fdc5eae`), when the synthetic run was 272 checks: `--dfl`
 added 16 and `--data` 7, and all of them (295 checks then) took 949 s (15 min 49 s) with the seven DFL caches and the
