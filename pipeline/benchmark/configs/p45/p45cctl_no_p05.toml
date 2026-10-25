@@ -1,0 +1,27 @@
+# R010 ablation: Stage C's chosen config with P05 removed, the `dead_ball_model` source replaced by `ball_presence` at
+# its defaults (R007's `alive` evidence); controlled_touch and the decoder are unchanged (hmm 4/32/25/25).
+
+description = "R010 ablation, no P05: controlled_touch 2.0 m / 6.0 m/s / 3 frames / hold 0.55 (confidence 0.91) + ball_presence 0.2 / 0.585, hmm 4/32/25/25, decoded per half."
+seed = 0
+scope = "halves"
+
+[[evidence]]
+kind = "controlled_touch"
+radius = 2.0          # metres: the nearest player must be this close
+max_rel_speed = 6.0   # m/s: and move with the ball
+min_frames = 3         # an episode shorter than this is dropped
+confidence = 0.91      # touch_stats.py: floor of the pooled agreement to a hundredth (91.9%)
+hold = 0.55            # the weak vote of the last team between episodes; 0.5 = off
+
+[[evidence]]
+kind = "ball_presence"
+margin = 0           # frames: every missing frame speaks
+missing = 0.2        # P(alive) where the ball is missing (A01, rounded down)
+seen = 0.585         # P(alive) where the ball is seen (A01)
+
+[decoder]
+kind = "hmm"
+switch_team = 4      # nats a change of team (H <-> A) costs
+switch_dead = 32      # nats a change into or out of D costs
+min_possession = 25  # frames: no run of H or A shorter than this (1 is no minimum)
+min_dead = 25      # frames: no run of D shorter than this (1 is no minimum)
