@@ -50,7 +50,10 @@ module of its topic:
     conventions.py
                  the conventions instrument: the window rule against a plain loop, the detectors on hand-built
                  tracking, that the DFL mode reads the truth beside its inputs, that the public mode prints
-                 aggregates and no transition frame, the bootstrap of the gap (synthetic only)
+                 aggregates and no transition frame, the bootstrap of the gap; and P02's pipeline latency and
+                 declared shift rule: the typed matching at the tolerance, each condition of the rule on a list that
+                 fails it, the out-of-fold prediction against shift_edges.apply, and that nothing of BAR-ATH's is
+                 printed beyond `limited` / `shown` / `interval_text` (synthetic only)
     harness.py   the harness itself: what it collects, how it reports NOT RUN, the console set-up, and that no check
                  module imports another one
     common.py    what several modules share, and no checks of its own: the synthetic DFL match, the random one
