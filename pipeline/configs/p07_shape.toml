@@ -2,8 +2,9 @@
 #
 #   python pipeline/run.py pipeline/configs/p07_shape.toml --score    # -> evaluation/results/p07_shape.csv
 #
-# This is R011's choice. It is not the submission config unless R011 adopted it: main.toml decides what we upload, and
-# R011 has the verdict (the bar, the veto, the label-free checks, and whether main.toml took this file).
+# This is R011's choice, and R011 adopted it: main.toml took this evidence and decoder, and R012 has since added the
+# edge shift after the decoder (p02_shift.toml, which is main.toml's file). main.toml decides what we upload, and R011
+# has the verdict (the bar, the veto, the label-free checks).
 #
 # Where the numbers come from. The evidence and the decoder are R010's `main.toml` verbatim (controlled_touch,
 # the hgb dead_ball_model, the hmm 4 / 32 / 25 / 25); P07 adds one source. The weight and the scope were chosen from a
