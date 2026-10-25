@@ -4,11 +4,19 @@
     python pipeline/benchmark/conventions.py dfl     [--profile tracking] [--seeds 3] [--truth raw|coarse]
                                                      [--matches ID ...] [--data-dir D]
     python pipeline/benchmark/conventions.py compare [--profile tracking] [--truth raw] [--data-dir D]
+    python pipeline/benchmark/conventions.py latency CONFIG public [--gt PATH] [--data-dir D]
+    python pipeline/benchmark/conventions.py latency CONFIG dfl    [--profile tracking] [--seeds 3] [--truth raw|coarse]
+                                                                   [--matches ID ...] [--data-dir D]
+    python pipeline/benchmark/conventions.py shift --config CONFIG [--s-b-rejected TYPE ...] [--gt PATH] [--data-dir D]
 
     trans = transitions_of(codes, runs)      # [(frame, from, to, type)], type in TYPES
     found = events(inputs)                   # {detector: {"frames": int array, "team": int8 array or None}}
     table = lags(trans, found, runs, fps)    # {(type, detector): {"n", "found", "lags"}}
     print(summarise(table))                  # n, share found, median, p25, p75 in frames and in seconds
+
+    lag = latencies(gt_codes, pred_codes, runs)         # {type: [predicted - true, in frames]}, matched within 50
+    rule = shift_rule(lag_public, lag_dfl)              # {type: {"s_b", "g", "shift", ...}}, P02's declared rule
+    oof = oof_codes(pred_codes, gt_codes, runs, rule)   # the public window's prediction shifted out of fold
 
 Why it exists (docs/proposals.md P02). Nobody knows exactly when our ground truth flips its label: at the first touch of
 the new team, at the line, at the whistle? A pipeline that decides a change a few frames away from where the truth puts
@@ -87,6 +95,37 @@ nowhere else, so that any later printout of BAR-ATH lags (the latency and the sh
 No truth reaches the detectors. In `dfl` every match is served through train_dead_ball.served_inputs (a MatchInputs,
 which holds the degraded tracking and no flag, as the trainer's rows are), and the truth is read from the match beside
 it, only to find the changes (test_conventions_never_pass_truth). Matches are loaded one at a time and released.
+
+The pipeline's latency and the shift rule (docs/proposals.md P02, Phase C). The detectors say when the tracking shows
+a change; what costs score is when OUR labels change, so the same instrument is turned on the pipeline's own output.
+`latencies` matches the predicted changes to the truth's with pm.match_transitions at tol = 50 frames (2 s), typed by
+the pair of labels (a predicted H to D does not answer a true A to D), inside the runs and on the abstention-filled
+prediction (the scorer's own view of it), and gives pred - true in frames, listed under the truth's type in the order
+of the true changes. A positive number is a label that changed late. `latency CONFIG public` reads it from the CSV that
+`pipeline/run.py CONFIG` wrote, against the public GT; `latency CONFIG dfl` runs `run.predict` on every benchmark match
+and seed (the config must decode per half) against the truth, pooled by lags as everything above is.
+
+The shift rule is P02's declared one and nothing in it is tuned. For each type, s_b = -round(median of DFL's latencies)
+(0 below MIN_DFL = 30 matched changes) is the pipeline's own lag, measured where the truth is DFL's and so owes nothing
+to our convention; the benchmark then confirms or rejects it (`--s-b-rejected`), and the DFL latencies it is taken from
+are those of the `tracking` profile under the raw truth, the benchmark's own default (a file under the coarse truth is
+only reported beside it, as a warning if it disagrees: T33). What the public window shows beyond that is the convention
+gap: L' = L_public + s_b, and g = -round(median L') only if |median L'| >= 3 frames, the 90% bootstrap interval of that
+median excludes 0 (2,000 draws, default_rng([2, 0]), percentiles 5 and 95) and every leave-one-out median has the sign
+of the full one, else 0; the shift is s_b + g. A single public change has no leave-one-out median (a median of nothing
+has no sign), so it is not called stable and never sets a shift. A rounding is numpy's (half to even).
+
+Out of fold (`oof_codes`, T27). The public window taught g, so the shifted prediction's public score is read both in
+sample (every boundary moved by shift) and out of fold: a predicted boundary matched to public change i moves by
+s_b + g without i (the rule applied again to the other changes), and one that matched nothing by shift. The moves are
+made by `shift_edges.apply`, so an X edge never moves. (The refiner also holds a boundary at a kick-off frame; the
+public window's only kick-off is its first frame, a block's edge and no boundary, so there is nothing to hold here.)
+The score of either is a check and never a choice: adoption reads neither.
+
+What a printout of BAR-ATH latencies may show is what `MIN_SHOWN` says above, by the same three functions:
+`latency CONFIG public` goes through `shown` (a type with fewer than 5 changes matched prints n, the share and the
+median, no quartile) and the shift table through `limited` and `interval_text` (the median of L', and of its interval
+only whether it excludes 0, below 5). DFL's cells print in full. The JSON files keep every value.
 """
 
 import argparse
@@ -94,6 +133,7 @@ import csv
 import json
 import os
 import sys
+from collections.abc import Mapping
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
@@ -106,13 +146,15 @@ import numbers  # noqa: E402
 
 import numpy as np  # noqa: E402
 
+from pipeline import output  # noqa: E402
 from pipeline.benchmark import calibration as calibration_module  # noqa: E402
 from pipeline.benchmark import dfl, run, train_dead_ball  # noqa: E402
 from pipeline.benchmark import truth as truths  # noqa: E402
 from pipeline.benchmark.inputs import AssetUnavailable  # noqa: E402
-from pipeline.config import ConfigError  # noqa: E402
+from pipeline.config import ConfigError, load_config  # noqa: E402
 from pipeline.contracts import RunContext  # noqa: E402
 from pipeline.evidence import controlled_touch, dead_ball_model, kinematics, play_features  # noqa: E402
+from pipeline.refine import shift_edges  # noqa: E402
 
 import possession_metrics as pm  # noqa: E402  isort:skip
 
@@ -139,6 +181,12 @@ DEFAULT_PROFILE = run.DEFAULT_PROFILE
 DEFAULT_SEEDS = run.DEFAULT_SEEDS
 LAG_WIDTH = 7                       # the printout's column of a lag
 MIN_SHOWN = 5                       # a BAR-ATH printout shows quartiles and interval bounds from this many found
+TOL = 50                            # frames (2 s): pm.match_transitions' tolerance for the pipeline's latency
+MIN_DFL = 30                        # s_b is 0 where DFL has fewer matched changes of the type than this
+MIN_GAP = 3                         # frames: a median of L' smaller in size than this is not a convention gap to act on
+GAP_SEED = (2, 0)                   # default_rng(GAP_SEED), the design's, for the interval of the median of L'
+SHIFT_DFL = ("tracking", "raw")     # the profile and truth that s_b is read from: the benchmark's default
+SHIFT_COARSE = ("tracking", "coarse")   # reported beside it when its latency file is there, never used (T33)
 
 _TRANSITION_TYPE = {(pm.H, pm.A): "team", (pm.A, pm.H): "team", (pm.H, pm.D): "into_dead", (pm.A, pm.D): "into_dead",
                     (pm.D, pm.H): "out_of_dead", (pm.D, pm.A): "out_of_dead"}
@@ -544,6 +592,32 @@ def interval_text(low, high, public_row, minimum=MIN_SHOWN):
 
 # -- the DFL matches --------------------------------------------------------------------------------------------------
 
+def _plan(profile, seeds, truth, match_ids, matches, calibration, data_dir):
+    """(ids, seed list, calibration) for a run over the benchmark matches, or the runner's BenchmarkError.
+
+    Everything is checked before a match is loaded: the profile, the number of seeds, the truth and the match ids. The
+    calibration is read (calibration_module.load) only for a profile that degrades, and only if none was given.
+    """
+    run._check_profile(profile)
+    seeds = run.DEFAULT_SEEDS if seeds is None else seeds
+    if isinstance(seeds, bool) or not isinstance(seeds, numbers.Integral) or seeds < 1:
+        raise run.BenchmarkError("seeds must be a whole number of at least 1, got {!r}".format(seeds))
+    if truth not in TRUTHS:
+        raise run.BenchmarkError("truth {!r} is not one of: {}".format(truth, ", ".join(TRUTHS)))
+    ids = run.resolve_match_ids(match_ids, matches)
+    if profile != run.CLEAN and calibration is None:
+        calibration = calibration_module.load(data_dir=data_dir)
+    return ids, ([0] if profile == run.CLEAN else list(range(seeds))), calibration
+
+
+def _truth_of(match, truth):
+    """(codes, blocks): the match's truth, as it is or with short possessions absorbed, and its graded halves."""
+    codes, _ = truths.truth_codes(match)
+    if truth == "coarse":
+        codes = truths.coarse_codes(codes, match.graded, match.fps)
+    return codes, [(int(start), int(stop)) for _, start, stop in match.graded]
+
+
 def measure(*, profile=DEFAULT_PROFILE, seeds=None, truth="raw", match_ids=None, matches=None, calibration=None,
             data_dir=None, log=print):
     """The lag tables of the benchmark matches under `profile`, `seeds` and `truth`, pooled and per match.
@@ -555,25 +629,13 @@ def measure(*, profile=DEFAULT_PROFILE, seeds=None, truth="raw", match_ids=None,
     table and `per_match` {id: table}, each pooled over seeds. The runner's BenchmarkError for a profile, seeds,
     truth or match it refuses, before a match is loaded.
     """
-    run._check_profile(profile)
-    seeds = run.DEFAULT_SEEDS if seeds is None else seeds
-    if isinstance(seeds, bool) or not isinstance(seeds, numbers.Integral) or seeds < 1:
-        raise run.BenchmarkError("seeds must be a whole number of at least 1, got {!r}".format(seeds))
-    if truth not in TRUTHS:
-        raise run.BenchmarkError("truth {!r} is not one of: {}".format(truth, ", ".join(TRUTHS)))
-    ids = run.resolve_match_ids(match_ids, matches)
-    if profile != run.CLEAN and calibration is None:
-        calibration = calibration_module.load(data_dir=data_dir)
-    seed_list = [0] if profile == run.CLEAN else list(range(seeds))
+    ids, seed_list, calibration = _plan(profile, seeds, truth, match_ids, matches, calibration, data_dir)
 
     per_match, rates = {}, []
     for match_id in ids:
         match = matches[match_id] if matches is not None else dfl.load_match(match_id, data_dir=data_dir)
         rates.append(match.fps)
-        codes, _ = truths.truth_codes(match)             # read here, to find the changes; never handed to the events
-        if truth == "coarse":
-            codes = truths.coarse_codes(codes, match.graded, match.fps)
-        blocks = [(int(start), int(stop)) for _, start, stop in match.graded]
+        codes, blocks = _truth_of(match, truth)          # read here, to find the changes; never handed to the events
         changes = transitions_of(codes, blocks)
         tables = []
         for seed in seed_list:
@@ -692,6 +754,486 @@ def render_compare(rows):
     return lines
 
 
+# -- the pipeline's latency -------------------------------------------------------------------------------------------
+
+def match_changes(gt_codes, pred_codes, runs, tol=TOL):
+    """(changes, matches): the truth's typed changes, and those that a predicted change answers.
+
+    `changes` is transitions_of(gt_codes, runs) (frame, from, to, type). `matches` is [(type, true, predicted)] for the
+    pairs pm.match_transitions makes at +-tol frames, typed "pair" (both labels agree), inside `runs`, with the type of
+    the true change and each side a pm transition (frame, from, to), in the order of the true changes. The prediction is
+    the scorer's view of it: its X filled forward inside each run (pm.fill_abstentions), so a change is where the new
+    label shows. ConventionsError for codes of different lengths, a tol that is not a whole number of frames of at
+    least 0, and a truth with an X inside a run (transitions_of).
+    """
+    tol = _whole(tol, "tol", 0)
+    gt_codes, pred_codes = np.asarray(gt_codes), np.asarray(pred_codes)
+    if gt_codes.ndim != 1 or gt_codes.shape != pred_codes.shape:
+        raise ConventionsError("conventions: the truth has {} frames and the prediction {}; they must be one code per "
+                               "frame of the same match, of the same length".format(gt_codes.size, pred_codes.size))
+    runs = sorted((int(start), int(stop)) for start, stop in runs)
+    changes = transitions_of(gt_codes, runs)
+    predicted = pm.transitions(pm.fill_abstentions(pred_codes, runs), runs)
+    pairs, _, _ = pm.match_transitions([change[:3] for change in changes], predicted, tol, typed="pair")
+    matches = [(_TRANSITION_TYPE[(true[1], true[2])], true, found) for true, found in pairs]
+    matches.sort(key=lambda match: match[1][0])
+    return changes, matches
+
+
+def latency_cells(gt_codes, pred_codes, runs, tol=TOL):
+    """{type: {"n", "found", "lags"}} of match_changes, a cell for each of TYPES (also one with no change: n is 0).
+
+    n is the number of the truth's changes of the type, found those that a predicted change answered, and lags their
+    `predicted - true` in frames (ints), in the order of the true changes.
+    """
+    changes, matches = match_changes(gt_codes, pred_codes, runs, tol)
+    cells = {kind: {"n": sum(1 for change in changes if change[3] == kind), "found": 0, "lags": []} for kind in TYPES}
+    for kind, true, found in matches:
+        cells[kind]["found"] += 1
+        cells[kind]["lags"].append(found[0] - true[0])
+    return cells
+
+
+def latencies(gt_codes, pred_codes, runs, tol=TOL):
+    """{type: [predicted - true, in frames]} for each of TYPES: how late the pipeline's changes are, by the true type.
+
+    A positive number is a label that changed after the truth's. Only changes that were matched (match_changes) have a
+    latency; the lists are in the order of the true changes. See latency_cells for the counts beside them.
+    """
+    return {kind: cell["lags"] for kind, cell in latency_cells(gt_codes, pred_codes, runs, tol).items()}
+
+
+def _whole(value, name, minimum):
+    """`value` as an int, or a ConventionsError that names it: a whole number (bool refused) of at least `minimum`."""
+    if isinstance(value, bool) or not isinstance(value, numbers.Integral) or value < minimum:
+        raise ConventionsError("conventions: {} must be a whole number of at least {}, got {!r}".format(
+            name, minimum, value))
+    return int(value)
+
+
+def latency_path(data_dir, stem, source, profile=None, truth=None, match_ids=None, seeds=None):
+    """<data dir>/runs/conventions/latency_<stem>_public.json, or latency_<stem>_dfl_<profile>_<truth>.json for DFL.
+
+    The DFL name is suffixed (.m-<ids>, .s<n>) as dfl_path's and the runner's reports are, so that a subset of the
+    matches or a one-seed look never replaces the full file that `shift` reads.
+    """
+    if source == "public":
+        parts = ["latency_{}_public".format(stem)]
+    else:
+        parts = ["latency_{}_dfl_{}_{}".format(stem, profile, truth)] + run.name_suffixes(profile, match_ids, seeds)
+    return os.path.join(data_dir, *FOLDER, ".".join(parts) + ".json")
+
+
+def shift_path(data_dir, stem):
+    """<data dir>/runs/conventions/shift_<stem>.json: the shift rule, with every value it was worked out from."""
+    return os.path.join(data_dir, *FOLDER, "shift_{}.json".format(stem))
+
+
+def _read_labels(path):
+    """The frame,label table at `path`, or a ConventionsError that names the file and not what is in it."""
+    try:
+        return pm.read_label_csv(path)
+    except Exception as error:      # unreadable, empty, wrong columns: the scorer's own catch-all
+        raise ConventionsError("conventions: cannot read {} as a frame,label CSV ({})".format(
+            os.path.basename(path), type(error).__name__)) from error
+
+
+def public_pair(config, gt_path):
+    """(gt_codes, pred_codes, runs): the public truth, what `pipeline/run.py CONFIG` wrote for it, and its blocks.
+
+    The prediction is evaluation/results/<stem>.csv (output.default_out_path). OSError that says which command writes
+    it if it is not there; ConventionsError for a GT or a CSV that is not one row per frame of the same match, and for
+    a GT with no graded frame. The runs are pm.valid_runs of the GT: the public window.
+    """
+    csv_path = output.default_out_path(config.stem)
+    if not os.path.isfile(csv_path):
+        raise OSError("conventions: {} does not exist; write it with `python pipeline/run.py {}` (the config on the "
+                      "whole match), then run this again".format(run.shown(csv_path), run.shown(config.path)))
+    gt = _read_labels(gt_path)
+    reason = pm.validate_submission(gt, len(gt))
+    if reason is not None:
+        raise ConventionsError("conventions: the GT {} is not a frame,label file ({}); use the public GT, {}".format(
+            os.path.basename(gt_path), reason, GT_PUBLIC))
+    labels = _read_labels(csv_path)
+    reason = pm.validate_submission(labels, len(gt))
+    if reason is not None:
+        raise ConventionsError("conventions: {} is not a submission of the GT's {} frames ({}); write it again with "
+                               "`python pipeline/run.py {}`".format(os.path.basename(csv_path), len(gt), reason,
+                                                                    run.shown(config.path)))
+    gt_codes = pm.label_codes(gt)
+    runs = pm.valid_runs(gt_codes)
+    if not runs:
+        raise ConventionsError("conventions: the GT {} has no graded frame (every label is X), so there is no change "
+                               "of the truth to time".format(os.path.basename(gt_path)))
+    return gt_codes, pm.label_codes(labels), runs
+
+
+def latency_public(config, gt_path, data_dir, tol=TOL, log=print):
+    """The pipeline's latency on the public window; writes latency_<stem>_public.json and logs the summary only.
+
+    `config` is a pipeline.config.Config whose CSV `pipeline/run.py` wrote (public_pair), `gt_path` the public GT. The
+    document is JSON-ready and holds every lag; what is logged is a line per type with its counts and median, and
+    quartiles only for a type with MIN_SHOWN changes matched or more (render_latency, shown), never a frame.
+    """
+    tol = _whole(tol, "tol", 0)
+    gt_codes, pred_codes, runs = public_pair(config, gt_path)
+    cells = latency_cells(gt_codes, pred_codes, runs, tol)
+    document = {"source": "public", "config": config.stem, "gt": os.path.basename(gt_path),
+                "csv": os.path.basename(output.default_out_path(config.stem)), "fps": pm.FPS, "tol": tol,
+                "runs": len(runs), "cells": cells, "summary": summarise(cells, pm.FPS)}
+    path = latency_path(data_dir, config.stem, "public")
+    run.write_json(path, document)
+    for line in render_latency(document):
+        log(line)
+    log("wrote     {}".format(path))
+    return document
+
+
+def measure_latency(config, *, profile=DEFAULT_PROFILE, seeds=None, truth="raw", match_ids=None, matches=None,
+                    calibration=None, tol=TOL, data_dir=None, log=print):
+    """The pipeline's latency on the benchmark matches, pooled over matches and seeds, and per match.
+
+    Each match is loaded (dfl.load_match, or taken from `matches`, {id: DflMatch}), its truth read beside the inputs
+    (raw, or coarse), and for every seed the config is run on the match as the pipeline would see it
+    (train_dead_ball.served_inputs: the degraded tracking and no flag) through run.predict, its codes matched to the
+    truth. Returns {"config", "profile", "truth", "seeds", "matches", "fps", "tol", "cells", "per_match"}: `cells` is
+    the pooled {type: {"n", "found", "lags"}} and `per_match` {id: cells}. The runner's BenchmarkError for a config that
+    decodes across half time, a profile, seeds, truth or match it refuses (before a match is loaded), or an asset a
+    benchmark match does not have.
+    """
+    run.check_scope(config)
+    tol = _whole(tol, "tol", 0)
+    ids, seed_list, calibration = _plan(profile, seeds, truth, match_ids, matches, calibration, data_dir)
+    per_match, rates = {}, []
+    for match_id in ids:
+        match = matches[match_id] if matches is not None else dfl.load_match(match_id, data_dir=data_dir)
+        rates.append(match.fps)
+        codes, blocks = _truth_of(match, truth)
+        tables = []
+        for seed in seed_list:
+            inputs = train_dead_ball.served_inputs(match, profile, seed, calibration, data_dir)
+            tables.append(latency_cells(codes, run._codes(config, inputs), blocks, tol))
+            del inputs
+        per_match[match_id] = pool(tables)
+        log("match     {}   {} changes, {} seeds".format(
+            match_id, sum(cell["n"] for cell in per_match[match_id].values()) // len(seed_list), len(seed_list)))
+        del match, codes
+    if any(rate != rates[0] for rate in rates):
+        raise run.BenchmarkError("the matches have different frame rates ({}); lags in frames cannot be pooled".format(
+            ", ".join(str(rate) for rate in rates)))
+    return {"config": config.stem, "profile": profile, "truth": truth, "seeds": seed_list, "matches": sorted(ids),
+            "fps": rates[0], "tol": tol, "cells": pool([per_match[match_id] for match_id in ids]),
+            "per_match": per_match}
+
+
+def latency_dfl_document(result):
+    """The JSON-ready document of measure_latency's result: pooled cells with their lags, and summaries."""
+    fps = result["fps"]
+    return {"source": "dfl", "config": result["config"], "profile": result["profile"], "truth": result["truth"],
+            "seeds": result["seeds"], "matches": result["matches"], "fps": fps, "tol": result["tol"],
+            "cells": result["cells"], "summary": summarise(result["cells"], fps),
+            "per_match": {match_id: summarise(cells, fps) for match_id, cells in sorted(result["per_match"].items())}}
+
+
+def render_latency(document):
+    """The lines of a latency document: a row per type, then (DFL) each match's median.
+
+    The public window's rows go through `shown`, so a type with fewer than MIN_SHOWN changes matched has no quartile
+    printed ("-"), only its counts and median; DFL's are not limited. A document from latency_public or
+    latency_dfl_document (or the same keys).
+    """
+    fps, summary = document["fps"], document["summary"]
+    limit = document["source"] == "public"
+    if limit:
+        lines = ["latency   {}: {} changes of the public truth, the pipeline's matched within {} frames".format(
+            document["config"], sum(row["n"] for row in summary.values()), document["tol"])]
+    else:
+        lines = ["latency   {}: pooled over {} matches and {} seeds, matched within {} frames".format(
+            document["config"], len(document["matches"]), len(document["seeds"]), document["tol"])]
+    lines.append("{:<10}{:<13}{:>5}{:>9}{:>{w}}{:>{w}}{:>{w}}{:>10}".format(
+        "", "type", "n", "matched", "median", "p25", "p75", "median s", w=LAG_WIDTH))
+    for kind in TYPES:
+        row = summary.get(kind)
+        if row is None:
+            continue
+        if limit:
+            row = shown(row)
+        quartiles = ["-" if row.get("limited") else _frames(row[key]) for key in ("p25", "p75")]
+        lines.append("{:<10}{:<13}{:>5}{:>9}{:>{w}}{:>{w}}{:>{w}}{:>10}".format(
+            "", kind, row["n"], _pct(row["share_found"]), _frames(row["median"]), *quartiles,
+            "n/a" if row["median_s"] is None else "{:+.2f}".format(row["median_s"]), w=LAG_WIDTH))
+    lines.append("{:<10}lags in frames ({} per second): predicted - true, positive = our label changed late; matched = "
+                 "share of the true changes with a predicted one of the same pair of labels in {} frames".format(
+                     "", fps, document["tol"]))
+    if limit:
+        lines.append("{:<10}-: fewer than {} changes matched, so only the median is printed (a quartile would be a "
+                     "lag)".format("", MIN_SHOWN))
+    else:
+        ids = sorted(document["per_match"])
+        lines.append("{:<10}{:<13}".format("per match", "type") + "".join("{:>9}".format(match_id) for match_id in ids)
+                     + "   (median lag in frames)")
+        for kind in TYPES:
+            lines.append("{:<10}{:<13}".format("", kind) + "".join(
+                "{:>9}".format(_frames(document["per_match"][match_id][kind]["median"])) for match_id in ids))
+        lines.append("{:<10}profile {}, truth {}, seeds {}".format("", document["profile"], document["truth"],
+                                                                   document["seeds"]))
+    return lines
+
+
+# -- the shift rule ---------------------------------------------------------------------------------------------------
+
+def pipeline_lag(lags):
+    """s_b: -round(median of `lags`), DFL's latencies of one type, or 0 below MIN_DFL matched changes (numpy rounds)."""
+    return -int(np.round(np.median(lags))) if len(lags) >= MIN_DFL else 0
+
+
+def convention_gap(shifted):
+    """What the public latencies of one type, after s_b (L'), say about the convention: the design's three conditions.
+
+    Returns {"median", "low", "high", "loo_signs", "conditions", "g"}. `median` is that of L', `low` and `high` the 5th
+    and 95th percentiles of the medians of GAP_DRAWS resamples with replacement (a generator seeded afresh with GAP_SEED
+    on every call, so a result depends on its list alone), `loo_signs` the sign of each leave-one-out median in the
+    order of the list (none for fewer than two changes), and `conditions` {"size": |median| >= MIN_GAP, "interval": the
+    interval excludes 0, "stable": there are leave-one-out medians and each has the sign of the median}. g is
+    -round(median) (numpy, half to even) if all three hold, else 0. No lags: all None, False and 0.
+    """
+    lags = np.asarray(list(shifted), dtype=np.float64)
+    count = len(lags)
+    if count == 0:
+        return {"median": None, "low": None, "high": None, "loo_signs": [],
+                "conditions": {"size": False, "interval": False, "stable": False}, "g": 0}
+    median = float(np.median(lags))
+    rng = np.random.default_rng(list(GAP_SEED))
+    medians = np.median(lags[rng.integers(0, count, size=(BOOTSTRAP_DRAWS, count))], axis=1)
+    low, high = (float(value) for value in np.percentile(medians, PERCENTILES))
+    signs = [int(np.sign(np.median(np.delete(lags, index)))) for index in range(count)] if count > 1 else []
+    conditions = {"size": bool(abs(median) >= MIN_GAP), "interval": bool(low > 0 or high < 0),
+                  "stable": bool(signs) and all(sign == int(np.sign(median)) for sign in signs)}
+    return {"median": median, "low": low, "high": high, "loo_signs": signs, "conditions": conditions,
+            "g": -int(np.round(median)) if all(conditions.values()) else 0}
+
+
+def _lags_by_type(table, side):
+    """{type: [int]} for each of TYPES from a mapping of type to lags (none if left out), or a ConventionsError."""
+    if not isinstance(table, Mapping):
+        raise ConventionsError("conventions: the {} latencies must be a mapping of type to lags, got {}".format(
+            side, type(table).__name__))
+    unknown = [kind for kind in table if kind not in TYPES]
+    if unknown:
+        raise ConventionsError("conventions: the {} latencies name a type {!r}, and the types are {}".format(
+            side, unknown[0], ", ".join(TYPES)))
+    out = {}
+    for kind in TYPES:
+        values = list(table.get(kind, []))
+        for lag in values:
+            if isinstance(lag, bool) or not isinstance(lag, numbers.Integral):
+                raise ConventionsError("conventions: a {} latency of {} is {!r}; latencies are whole numbers of "
+                                       "frames".format(side, kind, lag))
+        out[kind] = [int(lag) for lag in values]
+    return out
+
+
+def _kept(s_b_kept):
+    """{type: int} from the override of s_b ({} for None), or a ConventionsError naming the type or value."""
+    if s_b_kept is None:
+        return {}
+    if not isinstance(s_b_kept, Mapping):
+        raise ConventionsError("conventions: s_b_kept must be a mapping of type to frames, got {}".format(
+            type(s_b_kept).__name__))
+    for kind, value in s_b_kept.items():
+        if kind not in TYPES:
+            raise ConventionsError("conventions: s_b_kept names a type {!r}, and the types are {}".format(
+                kind, ", ".join(TYPES)))
+        if isinstance(value, bool) or not isinstance(value, numbers.Integral):
+            raise ConventionsError("conventions: s_b_kept for {} must be a whole number of frames, got {!r}".format(
+                kind, value))
+    return {kind: int(value) for kind, value in s_b_kept.items()}
+
+
+def shift_rule(public, dfl, s_b_kept=None):
+    """{type: row} for each of TYPES: P02's declared rule from the public and DFL latencies (see the module docstring).
+
+    `public` and `dfl` map a type to its latencies (`latencies`' result, or the lags of a latency file); `s_b_kept`
+    maps a type to the s_b to use in place of DFL's (0 where the benchmark rejected it). A row holds `s_b` (the one
+    used), `s_b_dfl` (the one DFL gave), `n_dfl` and `dfl_median`, `n_public`, then convention_gap's median, low, high,
+    loo_signs and conditions for L' = public + s_b, `g`, and `shift` = s_b + g. JSON-ready. ConventionsError for a
+    latency that is not a whole number, a type that is not one of TYPES, or an override that is not a whole number.
+    """
+    public, dfl, kept = _lags_by_type(public, "public"), _lags_by_type(dfl, "dfl"), _kept(s_b_kept)
+    rule = {}
+    for kind in TYPES:
+        s_b_dfl = pipeline_lag(dfl[kind])
+        s_b = kept.get(kind, s_b_dfl)
+        gap = convention_gap([lag + s_b for lag in public[kind]])
+        rule[kind] = {"s_b": s_b, "s_b_dfl": s_b_dfl, "n_dfl": len(dfl[kind]),
+                      "dfl_median": float(np.median(dfl[kind])) if dfl[kind] else None,
+                      "n_public": len(public[kind]), "median": gap["median"], "low": gap["low"], "high": gap["high"],
+                      "loo_signs": gap["loo_signs"], "conditions": gap["conditions"], "g": gap["g"],
+                      "shift": s_b + gap["g"]}
+    return rule
+
+
+def _checked_rule(rule):
+    """`rule` itself, or a ConventionsError: it must be shift_rule's, a row with whole s_b and shift for each type."""
+    for kind in TYPES:
+        row = rule.get(kind) if isinstance(rule, Mapping) else None
+        if not isinstance(row, Mapping) or any(
+                isinstance(row.get(key), bool) or not isinstance(row.get(key), numbers.Integral)
+                for key in ("s_b", "shift")):
+            raise ConventionsError("conventions: oof_codes needs the shift rule that shift_rule returns, a row with a "
+                                   "whole s_b and shift for each of {}; {} has none".format(", ".join(TYPES), kind))
+    return rule
+
+
+def oof_codes(pred_codes, gt_codes, runs, rule, tol=TOL):
+    """A new int8 array: `pred_codes` with each boundary inside `runs` moved by the rule out of fold (T27).
+
+    Equal to `pred_codes` outside the runs. Inside them a boundary that answers public change i (match_changes at `tol`)
+    moves by s_b + g without i: the rule's s_b of the type, and g worked out again by convention_gap from the other
+    matched changes' latencies after s_b. A boundary that answers none moves by the rule's `shift` of its type, and a
+    boundary beside an X (shift_edges' "x") not at all. The moves are shift_edges.apply's, a positive one later. `rule`
+    is shift_rule's, worked out from the latencies of this very prediction (a rule whose shift is not its s_b plus the g
+    that those latencies give is refused, so that a stale rule is never applied); ConventionsError for that and for
+    anything else that is not a rule, and the errors of match_changes. The arrays handed in are only read.
+    """
+    rule = _checked_rule(rule)
+    pred_codes = np.asarray(pred_codes)
+    _, matches = match_changes(gt_codes, pred_codes, runs, tol)
+    runs = sorted((int(start), int(stop)) for start, stop in runs)
+    moves = {}                                  # a predicted change (frame, from, to) -> frames it moves by
+    for kind in TYPES:
+        own = [(true, found) for match_kind, true, found in matches if match_kind == kind]
+        s_b = int(rule[kind]["s_b"])
+        shifted = [found[0] - true[0] + s_b for true, found in own]
+        if int(rule[kind]["shift"]) != s_b + convention_gap(shifted)["g"]:
+            raise ConventionsError("conventions: the rule's shift for {} is {:+d}, which is not its s_b plus the g "
+                                   "that this prediction's own public latencies give ({:+d}); work the rule out from "
+                                   "the same CSV and GT with shift_rule(latencies(...), ...)".format(
+                                       kind, int(rule[kind]["shift"]), s_b + convention_gap(shifted)["g"]))
+        for position, (_, found) in enumerate(own):
+            moves[found] = s_b + convention_gap(shifted[:position] + shifted[position + 1:])["g"]
+    out = pred_codes.astype(np.int8)
+    for start, stop in runs:
+        window = pred_codes[start:stop]
+        positions, kinds = shift_edges.boundaries(window)
+        offsets = np.zeros(len(positions), dtype=np.int64)
+        fixed = np.zeros(len(positions), dtype=bool)
+        for index, (position, kind) in enumerate(zip(positions.tolist(), kinds)):
+            if kind == shift_edges.ABSTAIN:
+                fixed[index] = True
+            else:
+                change = (start + position, int(window[position - 1]), int(window[position]))
+                offsets[index] = moves.get(change, int(rule[kind]["shift"]))
+        out[start:stop] = shift_edges.apply(window, offsets, fixed)
+    return out
+
+
+def render_shift(rule, coarse_s_b=None):
+    """The shift table: a row per type, then what each column is. The public side is limited as BAR-ATH's printouts are.
+
+    Per type: DFL's matched changes and their median latency, the s_b used, the public changes matched, the median of
+    L' and its interval (`interval_text`: the bounds from MIN_SHOWN changes, below that only whether it excludes 0), the
+    three conditions (size, interval, leave-one-out) as yes or no, g and the shift. `coarse_s_b` ({type: s_b}) adds one
+    line for the coarse truth, which is reported beside the raw one and never used.
+    """
+    lines = ["{:<10}{:<13}{:>7}{:>11}{:>6}{:>10}{:>11}  {:<26}{:>13}{:>6}{:>7}".format(
+        "shift", "type", "dfl n", "dfl median", "s_b", "public n", "median L'", "90% interval of it", "conditions",
+        "g", "shift")]
+    for kind in TYPES:
+        row = rule[kind]
+        interval = interval_text(row["low"], row["high"], {"found": row["n_public"]})
+        held = "/".join("yes" if row["conditions"][name] else "no" for name in ("size", "interval", "stable"))
+        lines.append("{:<10}{:<13}{:>7}{:>11}{:>6}{:>10}{:>11}  {:<26}{:>13}{:>6}{:>7}".format(
+            "", kind, row["n_dfl"], _frames(row["dfl_median"]), "{:+d}".format(row["s_b"]), row["n_public"],
+            _frames(row["median"]), interval, held, "{:+d}".format(row["g"]), "{:+d}".format(row["shift"])))
+    for kind in TYPES:
+        if rule[kind]["s_b"] != rule[kind]["s_b_dfl"]:
+            lines.append("{:<10}s_b of {}: {:+d} in place of DFL's {:+d} (kept by the override: the benchmark rejected "
+                         "it)".format("", kind, rule[kind]["s_b"], rule[kind]["s_b_dfl"]))
+    if coarse_s_b is not None:
+        lines.append("{:<10}coarse truth, beside the raw one and never used: s_b {}".format(
+            "", ", ".join("{} {:+d}".format(kind, coarse_s_b[kind]) for kind in TYPES)))
+    lines.append("{:<10}dfl n, dfl median: DFL's matched changes of the type, and their median latency in frames "
+                 "(predicted - true); s_b = -round(median), 0 below {}".format("", MIN_DFL))
+    lines.append("{:<10}median L' = the public latencies' median after s_b, and its 90% bootstrap interval ({} draws); "
+                 "conditions: |median| >= {}, the interval excludes 0, every leave-one-out median has its sign; g = "
+                 "-round(median) if all three hold, else 0; shift = s_b + g".format("", BOOTSTRAP_DRAWS, MIN_GAP))
+    lines.append("{:<10}with fewer than {} public changes matched the bounds would be lags, so only whether the "
+                 "interval excludes 0 is printed".format("", MIN_SHOWN))
+    return lines
+
+
+def _check_latency_file(document, stem, tol, path, command):
+    """`document` itself, or a ConventionsError: a latency file of this config, at this tolerance, with every type."""
+    if document.get("config") != stem:
+        raise ConventionsError("conventions: {} was made for the config {!r}, not {!r}; write it again with `python "
+                               "pipeline/benchmark/conventions.py {}`".format(os.path.basename(path),
+                                                                              document.get("config"), stem, command))
+    if document.get("tol") != tol:
+        raise ConventionsError("conventions: {} matched changes within {} frames and the public side within {}; write "
+                               "it again with `python pipeline/benchmark/conventions.py {}`".format(
+                                   os.path.basename(path), document.get("tol"), tol, command))
+    cells = document.get("cells")
+    if not isinstance(cells, Mapping) or any(not isinstance(cells.get(kind, {}).get("lags"), list) for kind in TYPES):
+        raise ConventionsError("conventions: {} holds no lags for one of {}; write it again with `python "
+                               "pipeline/benchmark/conventions.py {}`".format(os.path.basename(path),
+                                                                              ", ".join(TYPES), command))
+    return document
+
+
+def run_shift(config, gt_path, data_dir, rejected=(), tol=TOL, log=print):
+    """The shift rule of `config`, its table, shift_<stem>.json, and the out-of-fold prediction's CSV; the document.
+
+    The public side is worked out from the CSV that `pipeline/run.py CONFIG` wrote (public_pair), so it cannot disagree
+    with the prediction that is shifted; DFL's is read from latency_<stem>_dfl_tracking_raw.json (SHIFT_DFL), which
+    `latency CONFIG dfl` writes, and refused if it is another config's or at another tolerance. A latency file for the
+    coarse truth (SHIFT_COARSE) is reported beside it when there is one. `rejected` names the types whose s_b the
+    benchmark rejected: it is 0 for them. Writes evaluation/results/<stem>_shift_oof.csv through the pipeline's own
+    output stage (checked path, LF, read back and validated) and logs the table, no frame and no public value that
+    `limited` would hide. Nothing is written if anything is refused.
+    """
+    tol = _whole(tol, "tol", 0)
+    rejected = list(rejected)
+    for kind in rejected:
+        if kind not in TYPES:
+            raise ConventionsError("conventions: no type called {!r}; the types are {}".format(kind, ", ".join(TYPES)))
+    gt_codes, pred_codes, runs = public_pair(config, gt_path)
+    public = latencies(gt_codes, pred_codes, runs, tol)
+
+    def command(truth):
+        return "latency {} dfl --profile {} --truth {}".format(run.shown(config.path), SHIFT_DFL[0], truth)
+
+    dfl_path = latency_path(data_dir, config.stem, "dfl", *SHIFT_DFL)
+    dfl_document = _check_latency_file(_read(dfl_path, command(SHIFT_DFL[1])), config.stem, tol, dfl_path,
+                                       command(SHIFT_DFL[1]))
+    coarse = None
+    coarse_path = latency_path(data_dir, config.stem, "dfl", *SHIFT_COARSE)
+    if os.path.isfile(coarse_path):
+        coarse_document = _check_latency_file(_read(coarse_path, command(SHIFT_COARSE[1])), config.stem, tol,
+                                              coarse_path, command(SHIFT_COARSE[1]))
+        coarse = {kind: pipeline_lag(coarse_document["cells"][kind]["lags"]) for kind in TYPES}
+    rule = shift_rule(public, {kind: dfl_document["cells"][kind]["lags"] for kind in TYPES},
+                      {kind: 0 for kind in rejected})
+    codes = oof_codes(pred_codes, gt_codes, runs, rule, tol)
+
+    out_path = output.default_out_path(config.stem + "_shift_oof")
+    output.check_out_path(out_path, data_dir)
+    sha256 = output.write_submission(out_path, codes)
+    output.validate(out_path, len(codes), codes)
+    document = {"config": config.stem, "tol": tol, "rule": rule, "s_b_rejected": rejected, "coarse_s_b": coarse,
+                "dfl": {"file": os.path.basename(dfl_path), "profile": dfl_document.get("profile"),
+                        "truth": dfl_document.get("truth"), "seeds": dfl_document.get("seeds"),
+                        "matches": dfl_document.get("matches")},
+                "oof": {"csv": os.path.basename(out_path), "sha256": sha256}}
+    path = shift_path(data_dir, config.stem)
+    run.write_json(path, document)
+    for line in render_shift(rule, coarse):
+        log(line)
+    log("wrote     {}".format(path))
+    log("wrote     {}   (the public window shifted out of fold; valid, sha256 {})".format(run.shown(out_path), sha256))
+    return document
+
+
 # -- the command line -------------------------------------------------------------------------------------------------
 
 def build_parser():
@@ -717,6 +1259,39 @@ def build_parser():
             command.add_argument("--seeds", type=int, default=DEFAULT_SEEDS,
                                  help="degradation seeds per match (default {})".format(DEFAULT_SEEDS))
             command.add_argument("--matches", nargs="+", metavar="ID", help="the matches to run (default: all 7)")
+    latency = commands.add_parser(
+        "latency", help="how late the pipeline's changes are: pred - true, matched within {} frames".format(TOL),
+        description="The pipeline's latency: its predicted changes matched to the truth's, typed by the pair of "
+                    "labels. public reads evaluation/results/<config>.csv (write it with pipeline/run.py CONFIG); "
+                    "dfl runs the config on the benchmark matches. Writes latency_<config>_public.json or "
+                    "latency_<config>_dfl_<profile>_<truth>.json.")
+    latency.add_argument("config", help="the config's TOML file, e.g. pipeline/configs/main.toml")
+    sources = latency.add_subparsers(dest="source", required=True, metavar="{public,dfl}")
+    for name, text in (("public", "the public window: the config's CSV against the public GT"),
+                       ("dfl", "the DFL matches, degraded as the pipeline's tracking is")):
+        source = sources.add_parser(name, help=text, description=text)
+        source.add_argument("--data-dir", help="the data bundle (default: data/, or $MTAH_DATA_DIR)")
+        if name == "public":
+            source.add_argument("--gt", help="the public GT (default {})".format(GT_PUBLIC))
+        else:
+            source.add_argument("--profile", default=DEFAULT_PROFILE, help=run.profile_help())
+            source.add_argument("--truth", choices=TRUTHS, default="raw",
+                                help="DFL's flags as they are (raw), or with short possessions absorbed (coarse)")
+            source.add_argument("--seeds", type=int, default=DEFAULT_SEEDS,
+                                help="degradation seeds per match (default {})".format(DEFAULT_SEEDS))
+            source.add_argument("--matches", nargs="+", metavar="ID", help="the matches to run (default: all 7)")
+    shift = commands.add_parser(
+        "shift", help="P02's declared shift rule: the table, shift_<config>.json and the out-of-fold CSV",
+        description="Work out the shift rule from the public latencies of the config's CSV and DFL's latency file "
+                    "(latency CONFIG dfl, profile {}, truth {}), print its table, and write shift_<config>.json and "
+                    "evaluation/results/<config>_shift_oof.csv, the public window shifted out of fold.".format(
+                        *SHIFT_DFL))
+    shift.add_argument("--config", required=True, help="the config's TOML file, e.g. pipeline/configs/main.toml")
+    shift.add_argument("--s-b-rejected", nargs="+", choices=TYPES, default=[], metavar="TYPE",
+                       help="the types whose s_b the benchmark guard rejected: 0 for them ({})".format(
+                           ", ".join(TYPES)))
+    shift.add_argument("--gt", help="the public GT (default {})".format(GT_PUBLIC))
+    shift.add_argument("--data-dir", help="the data bundle (default: data/, or $MTAH_DATA_DIR)")
     return parser
 
 
@@ -735,13 +1310,30 @@ def main(argv=None):
             for line in render_dfl(result):
                 print(line)
             print("wrote     {}".format(path))
-        else:
+        elif args.command == "compare":
             path = dfl_path(data_dir, args.profile, args.truth)
             for line in render_compare(compare(_read(os.path.join(data_dir, *FOLDER, PUBLIC_LAGS), "public"),
                                                _read(path, "dfl --profile {} --truth {}".format(args.profile,
                                                                                                args.truth)))):
                 print(line)
-    except (ConfigError, ConventionsError, run.BenchmarkError, OSError) as error:
+        elif args.command == "latency":
+            config = load_config(args.config)
+            if args.source == "public":
+                latency_public(config, args.gt or default_gt(), data_dir)
+            else:
+                result = measure_latency(config, profile=args.profile, seeds=args.seeds, truth=args.truth,
+                                         match_ids=args.matches, data_dir=args.data_dir)
+                path = latency_path(data_dir, config.stem, "dfl", args.profile, args.truth, args.matches, args.seeds)
+                document = latency_dfl_document(result)
+                run.write_json(path, document)
+                print("")
+                for line in render_latency(document):
+                    print(line)
+                print("wrote     {}".format(path))
+        else:
+            run_shift(load_config(args.config), args.gt or default_gt(), data_dir, rejected=args.s_b_rejected)
+    except (ConfigError, ConventionsError, run.BenchmarkError, output.UnsafeOutPath, output.SubmissionInvalid,
+            OSError) as error:
         print("FAILED    {}".format(error))
         return 1
     return 0
