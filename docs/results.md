@@ -29,6 +29,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R008 | 2026-10-25 | P04's controlled-touch evidence on `tracking` v3: the 12 rule settings (radius, `max_rel_speed`, `min_frames`, each `confidence` measured on all seven matches) x `hold` off or 0.55, 24 configs with `ball_presence` and the `hmm` (8, 32, 75, 1); the chosen `p45a_r20_v6_k03_h55` (not the submission config) | 0.6532 | 0.3889 | 19 / 13.9 s | 0.2345 raw and 0.2433 coarse for the chosen `p45a_r20_v6_k03_h55` (the best raw is `r15_v6_k03_h55` 0.2348; the best coarse is the chosen one), against `nearest_w50` 0.2018 raw and `nearest_w125` 0.2226 coarse, and R007's 0.2053 raw and 0.1967 coarse at the same decoder | **Stage A's choice is radius 2.0 m, `max_rel_speed` 6.0 m/s, `min_frames` 3, `hold` 0.55** (2 configs within 0.005 of the best raw, the best coarse among them is the chosen one by 0.0023); alone it clears both halves of P06's bar (raw Δ +0.0328 over `nearest_w50`, p 0.0156, 7 wins in 7; coarse Δ +0.0206 over `nearest_w125`, p 0.0156, 7 wins in 7) and the leave-one-match-out estimates agree (raw objective alone +0.0316 raw and +0.0176 coarse, the whole rule +0.0334 and +0.0209, 7 wins in 7 each); the winner is on the grid's edge in radius, speed, minimum frames and hold and nothing is added; with the hold off no config beats either yardstick; alive/dead F1 0.5731, no better than R007's 0.5676 by more than 0.006; the public window is a correctness check only; controls (diagnostics): adding `nearest_player` 0.78 costs 0.0161 raw and 0.0352 coarse (`p45actl_nearest`, 0.2184 and 0.2081), and on `context` (sensitivity only) the chosen config is +0.0568 raw over `nearest_w50` and +0.0534 coarse over `nearest_w125`, 7 wins in 7 each, so the four profile and truth cells agree; the combined bar is Stage C's |
 | R009 | 2026-10-25 | P05's dead-ball evidence on `tracking` v3: source (`rules`, `logit`, `hgb`) x weight (0.1 to 1.0) x `ball_presence` off or on, 24 configs with `nearest_player` 0.78 and the `hmm` (8, 32, 75, 1); the chosen `p45b_hgb_w100_bp0` (not the submission config) | 0.6482 | 0.3024 | 24 / 11.8 s | 0.3503 raw and 0.4150 coarse for the chosen `p45b_hgb_w100_bp0` (the best raw is `hgb_w100_bp1` 0.3529; the best coarse is the chosen one), against `nearest_w50` 0.2018 raw and `nearest_w125` 0.2226 coarse, and R007's 0.2053 raw and 0.1967 coarse at the same decoder | **Stage B's choice is the boosted trees at weight 1.0 without `ball_presence`** (2 configs within 0.005 of the best raw, the best coarse among them is the chosen one by 0.0029); alone it clears both halves of P06's bar (raw Δ +0.1486 over `nearest_w50`, p 0.0156, 7 wins in 7; coarse Δ +0.1924 over `nearest_w125`, p 0.0156, 7 wins in 7) and the leave-one-match-out estimates agree (+0.1498 and +0.1926 for the whole rule, 7 wins in 7 each); Stage B2 does not run (`hgb` leads `logit` by 0.0274 raw, and has the lower out-of-fold log-loss on 7 of 7 matches); alive/dead F1 0.9725 against 0.6094 and 0.6428; **the benchmark overstates P05 for BAR-ATH** (DFL tracks the ball out of play; our tracker loses the ball near the lines: beyond a line on 4.07% of our at-risk rows against DFL's 17.68%), by an amount it cannot measure, and the public window's alive agreement is 86.6% of 7,500 frames; the winner is on the grid's upper edge in weight and nothing is added; no evidence that `ball_presence` helps (costs up to 0.0917 raw below weight 1.0); the `context` control (sensitivity only) is +0.1359 raw and +0.1695 coarse over the yardsticks, 7 wins in 7 each, so the four profile and truth cells agree; the combined bar is Stage C's |
 | R010 | 2026-10-25 | P04 and P05 together on `tracking` v3: `controlled_touch` (R008) for `home` and the `hgb` `dead_ball_model` (R009) for `alive`, the `hmm` re-tuned over switch_team {4, 8, 16} x switch_dead {16, 32, 64} x `min_possession` {25, 50, 75, 100} x `min_dead` {1, 25}, 72 configs; the chosen `p45c_t004_d032_mp025_md025` is `pipeline/configs/p45_hmm.toml` and now `main.toml` | 0.6996 | 0.4686 | 18 / 15.7 s | 0.4217 raw and 0.4556 coarse for the chosen `p45c_t004_d032_mp025_md025` (the best raw; the best coarse is `p45c_t016_d032_mp100_md025` 0.5049, raw 0.3532), against `nearest_w50` 0.2018 raw and `nearest_w125` 0.2226 coarse, and R009's 0.3503 raw and 0.4150 coarse (P05 alone, R007's decoder) | **Chosen (switch_team, switch_dead, min_possession, min_dead) = (4, 32, 25, 25)** by the pre-declared rule (6 configs within 0.005 of the best raw score, all at switch_team 4 and min_possession 25, and the best coarse among them is the chosen one by 0.0002); **the bar is met under both truths** (raw Δ +0.2199 over `nearest_w50`, p 0.0156, 7 wins in 7; coarse Δ +0.2330 over `nearest_w125`, p 0.0156, 7 wins in 7) and the leave-one-match-out estimates agree (+0.2217 and +0.2341, 7 wins in 7 each); at the chosen decoder each source is needed (alone, at R007's decoder, each clears both halves; without `controlled_touch` the coarse Δ over `nearest_w125` is +0.0198, p 0.1406; without `dead_ball_model` it is -0.0056, p 0.1094; raw both hold); the truths disagree on the decoder (coarse prefers switch_team 16 and min_possession 100, T33) and the winner is on the grid's lower edge in switch_team and min_possession, nothing added; alive/dead F1 0.9726; the `context` control (sensitivity only) is +0.2130 raw and +0.2211 coarse over the yardsticks, 7 wins in 7 each; **the benchmark overstates P05 for BAR-ATH** (T38, T39), by an amount it cannot measure; the label-free check on our match passes (predicted `D` 36.0% of the graded frames, no `X` in a graded block, the same sha256 twice), so **`main.toml` is switched** (sha256 `a706e7f7...`, not uploaded); the public window is a correctness check only |
+| R011 | 2026-10-25 | P07's shape-possession evidence on `tracking` v3: the held-out shape model (7 DFL matches, ball hidden, part 1) and a 12-config grid, `shape_possession` weight {0.01, 0.02, 0.05, 0.1, 0.2, 0.5} x scope {`gaps`, `all`} on top of R010's `main.toml`, the `hmm` (4, 32, 25, 25) unchanged; the chosen `p07_w200_all` is `pipeline/configs/p07_shape.toml` and now `main.toml` | 0.7151 | 0.4000 | 20 / 14.1 s | 0.5159 raw and 0.5591 coarse for the chosen `p07_w200_all` (the best of the 12 under both truths), against R010's `main` 0.4217 raw and 0.4556 coarse (the same two sources and decoder without P07), and `nearest_w50` 0.2018 raw and `nearest_w125` 0.2226 coarse | **Chosen weight 0.2, scope `all`** by the pre-declared rule (the only config within 0.005 of the best raw score; the next is `p07_w100_all` 0.5057); **the bar is met** (`tracking` raw Δ +0.0942 over `main`, p 0.0156, 7 wins in 7) and the `context` veto does not fire (raw Δ +0.0831, 7 wins in 7); the coarse cells agree (+0.1035 on `tracking`, +0.0890 on `context`, 7 wins in 7 each), the leave-one-match-out estimate picks the same config in all seven folds (+0.0940 raw, 7 wins in 7), and all 12 configs beat `main` in all four cells (the smallest Δ +0.0290); alive/dead F1 0.9729; **the label-free checks on BAR-ATH pass** (`touch_agreement` with the `full` model 0.8251 on 41,052 frames against the gate's 0.7486, predicted `D` 35.8% against R010's 36.0%, 439 possessions = 4.1452 per graded minute against R010's 4.2491, no `X` in a graded block, the same sha256 twice), so **`main.toml` is switched** (sha256 `8810afce...`, not uploaded); the labels differ from R010's on 5.30% of the graded frames; the shape model was trained on other teams' matches, so the benchmark's gain is not a forecast for BAR-ATH, and the benchmark's count of possessions moves the other way (up 16%, BAR-ATH's down 2.4%); the public window is a correctness check only (spellF1 0.4000 against R010's 0.4686: 20 possessions against 18, one possession moves it about 0.06, T01; macroF1 0.7151 against 0.6996) |
 
 ### The four yardsticks on every profile, in one table
 
@@ -4109,25 +4110,66 @@ a correctness check only (valid, deterministic, 18 possessions against 17, alive
 
 ### R011 — P07's shape-possession evidence: the model's held-out scores, then the 12-config grid (2026-10-25, Tian)
 Proposal: P07 · Commit: `dd362bf` (the code the model was trained at: the trainer, `pipeline/benchmark/train_shape.py`,
-merged) and `7151e7a` (the trained model, `pipeline/models/shape_possession_hgb.json`, committed); the grid's configs
-are `pipeline/benchmark/configs/p07/p07_*.toml`, and part 2 names the commit the grid was run from · Command:
-`python pipeline/benchmark/train_shape.py` (writes the model; EXIT=0), `python pipeline/benchmark/train_shape.py
---verify` (retrains and compares with the committed file: exit 0, "is what the code trains") and
-`python pipeline/benchmark/train_shape.py --report` (the held-out scores below; EXIT=0), all with the defaults
-`--profile tracking --seeds 3 --stride 5`.
+merged) and `7151e7a` (the trained model, `pipeline/models/shape_possession_hgb.json`, committed); the grid's 12 configs
+`pipeline/benchmark/configs/p07/p07_*.toml` and its runner are those of `5245490`, from a detached checkout of which the
+four grid processes were run (the runner's header says `52454905e0a3`; its tree is `5c2b37d`'s, which part 2 builds on);
+the label-free checks, the public window and the new `main.toml` were run at `5c2b37d` with `p07_shape.toml` and the new
+`main.toml` not yet committed (the manifest says `+dirty`), and the commit that holds this entry adds both · Command:
+part 1: `python pipeline/benchmark/train_shape.py` (writes the model; EXIT=0), `python
+pipeline/benchmark/train_shape.py --verify` (retrains and compares with the committed file: exit 0, "is what the code
+trains") and `python pipeline/benchmark/train_shape.py --report` (the held-out scores below; EXIT=0), all with the
+defaults `--profile tracking --seeds 3 --stride 5`. Part 2: four processes, one per profile and truth, each
+`python pipeline/benchmark/run.py pipeline/configs/main.toml pipeline/benchmark/configs/nearest_w50.toml
+pipeline/benchmark/configs/nearest_w125.toml pipeline/benchmark/configs/p07/*.toml --profile tracking --seeds 3 --truth
+raw`, and the same with `--profile context`; under `--truth coarse` the two yardsticks come in the order `nearest_w125`,
+`nearest_w50`. The label-free gate and figures on BAR-ATH are the two commands in the section on that check below.
+Public window and determinism: `python pipeline/run.py pipeline/configs/p07_shape.toml --score`, then the same without
+`--score`; `python pipeline/run.py pipeline/configs/main.toml` twice after the switch.
 
-**This is part 1 of 2.** It records the model and what it scores held out, before any config of the grid has run.
-Part 2 adds the grid, the choice, the bar and the verdict: **the grid's results, the choice and the scoreboard row are
-pending (R011 part 2)**.
+Part 1 (the model and what it scores held out) was written before any config of the grid had run; part 2 (the grid, the
+choice, the bar, the veto, the gate and the verdict) after the four grid logs ended `EXIT=0`. Both apply the rules
+declared in part 1, as written.
 
-Public (a correctness check only, T01): pending (R011 part 2).
-Validation (P01 benchmark): the model's own out-of-fold scores are below. They are of 7 DFL matches x 3 degradation
-seeds (0, 1, 2), profile `tracking` version 3, the raw truth (`D` where `BallStatus` is dead, else the team in
-`BallPossession`), each match scored by the fold model that never saw it, the seeds pooled by frames. The grid's
-spellF1 is pending (R011 part 2).
-Changed vs the previous best: pending (R011 part 2). The previous best is R010's `main.toml`, 0.4217 raw and 0.4556
-coarse pooled spellF1 on `tracking` v3.
-Verdict: pending (R011 part 2). Part 1 settles one thing, that the stop rule does not fire, so the grid runs.
+Public (a correctness check only, T01): macroF1 0.7151 · spellF1 0.4000 · alive/dead F1 0.9218 · 20 possessions against
+the truth's 17, mean 14.1 s against its 14.2 s. The file is valid (199,319 rows), sha256
+`8810afce254e94fe159769f3b55e8eef65f41a25c84f4550034e2afbc20e8487`, the same twice. Over the graded frames of the
+match it labels H 37.6%, A 26.6% and D 35.8% (X 0.0%) and finds 439 possessions (mean 9.3 s). `--score` reports
+`controlled_touch` agreeing with the public GT on home on 87.2% of 5,489 frames and `dead_ball_model` on alive on 86.6%
+of 7,500 frames (both as in R010: neither source changed), and `shape_possession` agreeing on home on 90.9% of 6,031
+frames (the judged frames where it has an opinion), with an opinion on home on 100.0% of the graded frames and none on
+alive. Against R010's `main.toml` on the same window (0.6996, 0.4686, 0.9222, 18 possessions) macroF1 is 0.0155 higher
+and spellF1 0.0686 lower; that is about one possession's worth on this window (T01: one possession moves spellF1 about
+0.06 here), with two more possessions than R010's 18, and it says nothing either way. No bootstrap was run, because no
+public-window gap is claimed, and no constant of the config comes from that window: the weight and the scope come from
+the grid, `min_prob` was fixed beforehand, and the trees were trained on the DFL matches.
+Validation (P01 benchmark): 7 DFL matches x 3 degradation seeds (0, 1, 2), 668.4 graded minutes per seed. The chosen
+config, `p07_w200_all` (R010's `main.toml` plus `shape_possession` at weight 0.2, scope `all`, `min_prob` 0.02; each
+benchmark match scored by the fold model that never saw it): on `tracking` v3 pooled spellF1 0.5159 raw (mean per match
+0.5179 [0.4877, 0.5481]) and 0.5591 coarse (0.5602 [0.5355, 0.5850]); macroF1 0.8861 raw and 0.8892 coarse; alive/dead
+F1 0.9729; 3.17 possessions per graded minute; `D` share 44.5% (the truth's 44.8%). On `context` (sensitivity only,
+T38) 0.5153 raw (0.5176 [0.4869, 0.5482]) and 0.5544 coarse (0.5550 [0.5360, 0.5739]).
+
+| profile | truth | against | pooled Δ | mean per match Δ [90% t] | p | wins |
+|---|---|---|---|---|---|---|
+| `tracking` | raw | `main` (R010): the bar's | +0.0942 | +0.0940 [+0.0775, +0.1105] | 0.0156 | 7 |
+| `tracking` | coarse | `main`: a warning if negative (T33) | +0.1035 | +0.1033 [+0.0869, +0.1197] | 0.0156 | 7 |
+| `context` | raw | `main`: the veto's | +0.0831 | +0.0835 [+0.0737, +0.0932] | 0.0156 | 7 |
+| `context` | coarse | `main`: a warning if negative | +0.0890 | +0.0890 [+0.0834, +0.0945] | 0.0156 | 7 |
+
+Changed vs the previous best: the previous best is R010's `main.toml` (`p45c_t004_d032_mp025_md025`): 0.4217 raw and
+0.4556 coarse on `tracking` v3, 0.4323 and 0.4654 on `context`; public 0.6996 macroF1, 0.4686 spellF1, 18 possessions;
+sha256 `a706e7f711b2d3faacc2f071b6e28963ed8e2f2326a7880e6d0776cce4295f1f`. The chosen config is +0.0942 raw and +0.1035
+coarse above it on `tracking` (pooled), +0.0586 raw macroF1 (0.8275 to 0.8861) and +0.0003 alive/dead F1; on BAR-ATH
+it relabels 5.30% of the graded frames (below).
+Verdict: **P07's chosen config is weight 0.2, scope `all` (`p07_w200_all`)**, by the pre-declared rule: it is the only
+config of the 12 within 0.005 of the best raw score. **The bar is met** (`tracking` raw Δ +0.0942 over `main.toml`, p
+0.0156, 7 wins in 7), **the `context` veto does not fire** (raw Δ +0.0831), the coarse cells agree and so does the
+leave-one-match-out estimate, and the label-free checks on BAR-ATH pass (`touch_agreement` 0.8251 against the gate's
+0.7486, predicted `D` 35.8% against R010's 36.0%, 4.1452 possessions per graded minute against R010's 4.2491, no `X`
+in a graded block, the same sha256 twice). **`main.toml` is switched**, and now produces sha256 `8810afce...` (not
+uploaded). The limits are below: the shape model was trained on other teams' matches, the benchmark's size of the
+gain is not a forecast for BAR-ATH (the P05 caveat of R010 still holds), and the public window is a correctness
+check only.
 
 **The model.** A classifier of which team has the ball from the 26 `shape_features` of a frame (feature version 1: per
 team the present slots, the mean and the 10th and 90th percentile of how far up the pitch the team is, its width, its
@@ -4145,12 +4187,14 @@ bytes. `pipeline/evidence/shape_possession.py` runs the trees with numpy alone, 
 half of r(x) minus r(swap(x))) and clips `home` to [0.02, 0.98]. A benchmark match is scored by its own fold and BAR-ATH
 by `full`.
 
-**Held out.** Each fold model on its own match, served as the pipeline serves it (`shape_possession` with scope `all`
-and the default `min_prob` 0.02), against the raw truth on the alive frames (truth H or A) of all the graded frames, not
-only the training stride; `home` >= 0.5 is the accuracy's call. "Ball missing" is the alive frames where the served
-(degraded) ball has no position. The source had an opinion on every alive frame of every match (0 silent: it is silent
-only where nobody is present). `touch agreement` is the label-free cross-check described below. The pooled row sums the
-frames, and is not a mean of the matches.
+**Held out.** Profile `tracking` version 3, 7 DFL matches x 3 degradation seeds (0, 1, 2), the seeds pooled by frames.
+Each fold model on its own match, served as the pipeline serves it (`shape_possession` with scope `all` and the
+default `min_prob` 0.02), against the raw truth (`D` where `BallStatus` is dead, else the team in `BallPossession`) on
+the alive frames (truth H or A) of all the graded frames, not only the training stride; `home` >= 0.5 is the
+accuracy's call. "Ball missing" is the alive frames where the served (degraded) ball has no position. The source had
+an opinion on every alive frame of every match (0 silent: it is silent only where nobody is present). `touch
+agreement` is the label-free cross-check described below. The pooled row sums the frames, and is not a mean of the
+matches.
 
 | match | alive frames | log-loss | accuracy | ball missing: frames | log-loss | accuracy | touch frames | touch agreement |
 |---|---|---|---|---|---|---|---|---|
@@ -4201,8 +4245,8 @@ the rules below are fixed before any config of the grid has run, and none is cho
   never a validation (T38); the coarse cells are reported as warnings (T33).
 - *Label-free transfer gate:* on BAR-ATH, `touch_agreement` with the `full` model and scope `all` must be at least
   **0.7486**, the lowest per-match value above.
-- *The rest:* no `X` in the graded blocks and the same sha256 twice; the `D` share and the possessions over the graded
-  frames are reported against R010's (36.0% and 450).
+- *The rest:* no `X` in the graded blocks and the same sha256 twice; the `D` share and the possessions per graded
+  minute are reported against R010's (36.0% and 4.2491, which is 450 possessions over the graded frames).
 - If adopted, `main.toml` becomes the chosen config. `pipeline/configs/p07_shape.toml` is written either way.
 
 **The grid.** 12 configs `pipeline/benchmark/configs/p07/p07_w{WWW}_{gaps,all}.toml`: the weight w of `shape_possession`
@@ -4211,8 +4255,290 @@ only where the ball is missing) or `all` (every graded frame). Each is `main.tom
 (`controlled_touch` 2.0 m / 6.0 m/s / 3 frames / hold 0.55 at confidence 0.91, `dead_ball_model` with the `hgb` file at
 weight 1.0, hmm (4, 32, 25, 25) decoded per half, seed 0) plus `shape_possession` with the committed model and
 `min_prob` 0.02. The weight is an exponent on the source's likelihood, and `min_prob` caps a frame at 3.9 nats before
-it. The runs, pending: `main.toml`, `nearest_w50`, `nearest_w125` and the 12 configs, each on `tracking` v3 and on
+it. The runs (part 2): `main.toml`, `nearest_w50`, `nearest_w125` and the 12 configs, each on `tracking` v3 and on
 `context` (a sensitivity check and the veto only, T38), under the raw and the coarse truth, 3 seeds.
+
+**Part 2: the grid.** Four processes, one per profile and truth, each over `main.toml`, the two yardsticks and the 12
+configs (7 matches x 3 seeds; 668.4 graded minutes per seed). `main.toml` is R010's (this is before the switch) and is
+the reference of every Δ; the yardsticks are the references of R004c and R005 and are not candidates. The first table
+is `tracking` v3, the profile of the selection (the same `alive/dead F1`, possessions per minute and `D` share under
+both truths: the predicted labels do not depend on the truth); the second is `context`, sensitivity only (T38). The
+truth has 4.58 possessions per graded minute raw and 2.48 coarse, and `D` on 44.8% of the graded frames. The bold row
+is the chosen config.
+
+`tracking` v3:
+
+| config | raw spellF1 | coarse spellF1 | raw macroF1 | coarse macroF1 | alive/dead F1 | possessions / min | D share |
+|---|---|---|---|---|---|---|---|
+| `main` | 0.4217 | 0.4556 | 0.8275 | 0.8288 | 0.9726 | 2.74 | 44.6% |
+| `nearest_w50` | 0.2018 | 0.1842 | 0.4592 | 0.4602 | 0.6094 | 4.30 | 33.4% |
+| `nearest_w125` | 0.1665 | 0.2226 | 0.4407 | 0.4509 | 0.6428 | 3.05 | 23.3% |
+| `p07_w010_all` | 0.4537 | 0.4993 | 0.8636 | 0.8668 | 0.9726 | 2.80 | 44.6% |
+| `p07_w010_gaps` | 0.4528 | 0.4988 | 0.8634 | 0.8665 | 0.9726 | 2.81 | 44.6% |
+| `p07_w020_all` | 0.4694 | 0.5186 | 0.8711 | 0.8753 | 0.9726 | 2.88 | 44.6% |
+| `p07_w020_gaps` | 0.4673 | 0.5161 | 0.8706 | 0.8748 | 0.9726 | 2.89 | 44.6% |
+| `p07_w050_all` | 0.4923 | 0.5426 | 0.8791 | 0.8830 | 0.9726 | 2.98 | 44.6% |
+| `p07_w050_gaps` | 0.4866 | 0.5319 | 0.8768 | 0.8804 | 0.9726 | 3.06 | 44.6% |
+| `p07_w100_all` | 0.5057 | 0.5531 | 0.8829 | 0.8864 | 0.9727 | 3.05 | 44.6% |
+| `p07_w100_gaps` | 0.4961 | 0.5335 | 0.8788 | 0.8813 | 0.9727 | 3.18 | 44.6% |
+| **`p07_w200_all`** | 0.5159 | 0.5591 | 0.8861 | 0.8892 | 0.9729 | 3.17 | 44.5% |
+| `p07_w200_gaps` | 0.5046 | 0.5262 | 0.8799 | 0.8806 | 0.9729 | 3.33 | 44.5% |
+| `p07_w500_all` | 0.5051 | 0.5406 | 0.8839 | 0.8867 | 0.9727 | 3.35 | 44.3% |
+| `p07_w500_gaps` | 0.5032 | 0.5057 | 0.8789 | 0.8783 | 0.9727 | 3.56 | 44.3% |
+
+`context` v1 (sensitivity only):
+
+| config | raw spellF1 | coarse spellF1 | raw macroF1 | coarse macroF1 | alive/dead F1 | possessions / min | D share |
+|---|---|---|---|---|---|---|---|
+| `main` | 0.4323 | 0.4654 | 0.8353 | 0.8361 | 0.9700 | 2.81 | 44.8% |
+| `nearest_w50` | 0.2193 | 0.2057 | 0.5144 | 0.5160 | 0.6575 | 4.37 | 34.2% |
+| `nearest_w125` | 0.1774 | 0.2443 | 0.4770 | 0.4877 | 0.6711 | 3.07 | 23.1% |
+| `p07_w010_all` | 0.4626 | 0.5080 | 0.8660 | 0.8697 | 0.9700 | 2.86 | 44.8% |
+| `p07_w010_gaps` | 0.4613 | 0.5071 | 0.8657 | 0.8693 | 0.9700 | 2.86 | 44.8% |
+| `p07_w020_all` | 0.4737 | 0.5223 | 0.8718 | 0.8756 | 0.9700 | 2.91 | 44.8% |
+| `p07_w020_gaps` | 0.4721 | 0.5206 | 0.8713 | 0.8752 | 0.9700 | 2.92 | 44.8% |
+| `p07_w050_all` | 0.4969 | 0.5430 | 0.8790 | 0.8823 | 0.9699 | 3.01 | 44.8% |
+| `p07_w050_gaps` | 0.4902 | 0.5332 | 0.8770 | 0.8803 | 0.9699 | 3.08 | 44.8% |
+| `p07_w100_all` | 0.5082 | 0.5501 | 0.8825 | 0.8855 | 0.9699 | 3.07 | 44.8% |
+| `p07_w100_gaps` | 0.4987 | 0.5323 | 0.8786 | 0.8809 | 0.9699 | 3.19 | 44.8% |
+| **`p07_w200_all`** | 0.5153 | 0.5544 | 0.8847 | 0.8872 | 0.9699 | 3.15 | 44.7% |
+| `p07_w200_gaps` | 0.5053 | 0.5251 | 0.8792 | 0.8802 | 0.9699 | 3.31 | 44.7% |
+| `p07_w500_all` | 0.5088 | 0.5401 | 0.8831 | 0.8853 | 0.9697 | 3.33 | 44.4% |
+| `p07_w500_gaps` | 0.5095 | 0.5104 | 0.8793 | 0.8787 | 0.9697 | 3.49 | 44.4% |
+
+Paired against `main.toml` (the first config of each log; Δ = config minus `main`, so positive means the config is
+better; pooled Δ, then the mean per-match Δ with its 90% t-interval, the exact sign-flip p over the 2^7 sign patterns,
+and the wins in 7 matches; the yardsticks have 0 wins and 7 losses). With 7 matches the smallest p there can be is
+0.0156, so neither it nor an interval makes a gap real.
+
+`tracking` v3, raw truth (the bar's cell):
+
+| config | pooled spellF1 | pooled Δ | mean per match Δ [90% t] | p | wins in 7 | macroF1 Δ |
+|---|---|---|---|---|---|---|
+| `nearest_w50` | 0.2018 | -0.2199 | -0.2217 [-0.2415, -0.2019] | 0.0156 | 0 | -0.3683 |
+| `nearest_w125` | 0.1665 | -0.2552 | -0.2564 [-0.2732, -0.2396] | 0.0156 | 0 | -0.3868 |
+| `p07_w010_all` | 0.4537 | +0.0320 | +0.0321 [+0.0266, +0.0375] | 0.0156 | 7 | +0.0361 |
+| `p07_w010_gaps` | 0.4528 | +0.0311 | +0.0312 [+0.0259, +0.0366] | 0.0156 | 7 | +0.0358 |
+| `p07_w020_all` | 0.4694 | +0.0477 | +0.0480 [+0.0404, +0.0555] | 0.0156 | 7 | +0.0436 |
+| `p07_w020_gaps` | 0.4673 | +0.0456 | +0.0458 [+0.0381, +0.0536] | 0.0156 | 7 | +0.0430 |
+| `p07_w050_all` | 0.4923 | +0.0706 | +0.0709 [+0.0609, +0.0809] | 0.0156 | 7 | +0.0516 |
+| `p07_w050_gaps` | 0.4866 | +0.0650 | +0.0651 [+0.0564, +0.0737] | 0.0156 | 7 | +0.0492 |
+| `p07_w100_all` | 0.5057 | +0.0840 | +0.0841 [+0.0695, +0.0986] | 0.0156 | 7 | +0.0554 |
+| `p07_w100_gaps` | 0.4961 | +0.0745 | +0.0743 [+0.0642, +0.0844] | 0.0156 | 7 | +0.0512 |
+| **`p07_w200_all`** | 0.5159 | +0.0942 | +0.0940 [+0.0775, +0.1105] | 0.0156 | 7 | +0.0586 |
+| `p07_w200_gaps` | 0.5046 | +0.0830 | +0.0827 [+0.0719, +0.0935] | 0.0156 | 7 | +0.0524 |
+| `p07_w500_all` | 0.5051 | +0.0835 | +0.0830 [+0.0685, +0.0975] | 0.0156 | 7 | +0.0564 |
+| `p07_w500_gaps` | 0.5032 | +0.0815 | +0.0810 [+0.0694, +0.0927] | 0.0156 | 7 | +0.0514 |
+
+`tracking` v3, coarse truth (a warning, T33):
+
+| config | pooled spellF1 | pooled Δ | mean per match Δ [90% t] | p | wins in 7 | macroF1 Δ |
+|---|---|---|---|---|---|---|
+| `nearest_w50` | 0.1842 | -0.2714 | -0.2724 [-0.2910, -0.2537] | 0.0156 | 0 | -0.3686 |
+| `nearest_w125` | 0.2226 | -0.2330 | -0.2341 [-0.2480, -0.2202] | 0.0156 | 0 | -0.3779 |
+| `p07_w010_all` | 0.4993 | +0.0437 | +0.0437 [+0.0342, +0.0532] | 0.0156 | 7 | +0.0380 |
+| `p07_w010_gaps` | 0.4988 | +0.0432 | +0.0432 [+0.0342, +0.0522] | 0.0156 | 7 | +0.0377 |
+| `p07_w020_all` | 0.5186 | +0.0630 | +0.0631 [+0.0525, +0.0738] | 0.0156 | 7 | +0.0465 |
+| `p07_w020_gaps` | 0.5161 | +0.0605 | +0.0605 [+0.0504, +0.0706] | 0.0156 | 7 | +0.0459 |
+| `p07_w050_all` | 0.5426 | +0.0870 | +0.0870 [+0.0712, +0.1027] | 0.0156 | 7 | +0.0541 |
+| `p07_w050_gaps` | 0.5319 | +0.0762 | +0.0759 [+0.0628, +0.0891] | 0.0156 | 7 | +0.0515 |
+| `p07_w100_all` | 0.5531 | +0.0974 | +0.0973 [+0.0805, +0.1141] | 0.0156 | 7 | +0.0576 |
+| `p07_w100_gaps` | 0.5335 | +0.0779 | +0.0774 [+0.0652, +0.0897] | 0.0156 | 7 | +0.0525 |
+| **`p07_w200_all`** | 0.5591 | +0.1035 | +0.1033 [+0.0869, +0.1197] | 0.0156 | 7 | +0.0604 |
+| `p07_w200_gaps` | 0.5262 | +0.0706 | +0.0703 [+0.0582, +0.0824] | 0.0156 | 7 | +0.0518 |
+| `p07_w500_all` | 0.5406 | +0.0850 | +0.0844 [+0.0702, +0.0986] | 0.0156 | 7 | +0.0578 |
+| `p07_w500_gaps` | 0.5057 | +0.0501 | +0.0497 [+0.0400, +0.0594] | 0.0156 | 7 | +0.0494 |
+
+`context` v1, raw truth (the veto's cell, T38):
+
+| config | pooled spellF1 | pooled Δ | mean per match Δ [90% t] | p | wins in 7 | macroF1 Δ |
+|---|---|---|---|---|---|---|
+| `nearest_w50` | 0.2193 | -0.2130 | -0.2144 [-0.2324, -0.1963] | 0.0156 | 0 | -0.3209 |
+| `nearest_w125` | 0.1774 | -0.2549 | -0.2555 [-0.2741, -0.2368] | 0.0156 | 0 | -0.3583 |
+| `p07_w010_all` | 0.4626 | +0.0303 | +0.0305 [+0.0271, +0.0339] | 0.0156 | 7 | +0.0307 |
+| `p07_w010_gaps` | 0.4613 | +0.0290 | +0.0292 [+0.0251, +0.0332] | 0.0156 | 7 | +0.0304 |
+| `p07_w020_all` | 0.4737 | +0.0414 | +0.0417 [+0.0380, +0.0454] | 0.0156 | 7 | +0.0365 |
+| `p07_w020_gaps` | 0.4721 | +0.0398 | +0.0401 [+0.0355, +0.0446] | 0.0156 | 7 | +0.0361 |
+| `p07_w050_all` | 0.4969 | +0.0646 | +0.0650 [+0.0579, +0.0721] | 0.0156 | 7 | +0.0437 |
+| `p07_w050_gaps` | 0.4902 | +0.0579 | +0.0580 [+0.0509, +0.0652] | 0.0156 | 7 | +0.0417 |
+| `p07_w100_all` | 0.5082 | +0.0760 | +0.0764 [+0.0691, +0.0837] | 0.0156 | 7 | +0.0472 |
+| `p07_w100_gaps` | 0.4987 | +0.0664 | +0.0665 [+0.0610, +0.0721] | 0.0156 | 7 | +0.0433 |
+| **`p07_w200_all`** | 0.5153 | +0.0831 | +0.0835 [+0.0737, +0.0932] | 0.0156 | 7 | +0.0494 |
+| `p07_w200_gaps` | 0.5053 | +0.0730 | +0.0731 [+0.0672, +0.0789] | 0.0156 | 7 | +0.0439 |
+| `p07_w500_all` | 0.5088 | +0.0766 | +0.0765 [+0.0655, +0.0875] | 0.0156 | 7 | +0.0479 |
+| `p07_w500_gaps` | 0.5095 | +0.0772 | +0.0772 [+0.0690, +0.0853] | 0.0156 | 7 | +0.0440 |
+
+`context` v1, coarse truth (a warning):
+
+| config | pooled spellF1 | pooled Δ | mean per match Δ [90% t] | p | wins in 7 | macroF1 Δ |
+|---|---|---|---|---|---|---|
+| `nearest_w50` | 0.2057 | -0.2597 | -0.2601 [-0.2746, -0.2456] | 0.0156 | 0 | -0.3201 |
+| `nearest_w125` | 0.2443 | -0.2211 | -0.2213 [-0.2367, -0.2059] | 0.0156 | 0 | -0.3485 |
+| `p07_w010_all` | 0.5080 | +0.0426 | +0.0427 [+0.0400, +0.0453] | 0.0156 | 7 | +0.0336 |
+| `p07_w010_gaps` | 0.5071 | +0.0418 | +0.0417 [+0.0392, +0.0442] | 0.0156 | 7 | +0.0332 |
+| `p07_w020_all` | 0.5223 | +0.0570 | +0.0571 [+0.0525, +0.0617] | 0.0156 | 7 | +0.0395 |
+| `p07_w020_gaps` | 0.5206 | +0.0553 | +0.0553 [+0.0519, +0.0586] | 0.0156 | 7 | +0.0391 |
+| `p07_w050_all` | 0.5430 | +0.0776 | +0.0778 [+0.0693, +0.0863] | 0.0156 | 7 | +0.0462 |
+| `p07_w050_gaps` | 0.5332 | +0.0678 | +0.0677 [+0.0624, +0.0730] | 0.0156 | 7 | +0.0442 |
+| `p07_w100_all` | 0.5501 | +0.0848 | +0.0849 [+0.0757, +0.0940] | 0.0156 | 7 | +0.0494 |
+| `p07_w100_gaps` | 0.5323 | +0.0669 | +0.0668 [+0.0624, +0.0711] | 0.0156 | 7 | +0.0448 |
+| **`p07_w200_all`** | 0.5544 | +0.0890 | +0.0890 [+0.0834, +0.0945] | 0.0156 | 7 | +0.0511 |
+| `p07_w200_gaps` | 0.5251 | +0.0597 | +0.0596 [+0.0574, +0.0617] | 0.0156 | 7 | +0.0441 |
+| `p07_w500_all` | 0.5401 | +0.0747 | +0.0746 [+0.0645, +0.0847] | 0.0156 | 7 | +0.0492 |
+| `p07_w500_gaps` | 0.5104 | +0.0450 | +0.0447 [+0.0389, +0.0506] | 0.0156 | 7 | +0.0426 |
+
+**The choice, by the pre-declared rule.** Objective: pooled spellF1 under the raw truth on `tracking`, over the 12
+configs. The best is `p07_w200_all`, 0.5159. The tie band is 0.005, so the tied set is raw >= 0.5109, and it holds that
+one config: the next, `p07_w100_all`, is at 0.5057 (0.0102 below), then `p07_w500_all` at 0.5051 (0.0108) and
+`p07_w200_gaps` at 0.5046 (0.0113). There is no tie, so the tie order (best coarse, then the smaller weight, then `gaps`
+over `all`) is not reached. **Chosen: `p07_w200_all`**, weight 0.2, scope `all`, which is also the raw best.
+- **No plateau, a peak.** Along the weight, with scope `all`, raw spellF1 rises 0.4537, 0.4694, 0.4923, 0.5057, 0.5159
+  (weights 0.01 to 0.2) and falls to 0.5051 at 0.5; with `gaps` it is 0.4528, 0.4673, 0.4866, 0.4961, 0.5046, 0.5032.
+  The winner is inside the grid in weight, not on an edge: with `all` the steps are +0.0157, +0.0229, +0.0134 and
+  +0.0102, then -0.0108 at 0.5, and the peak is at 0.2 for `all` in all four cells.
+- **Scope.** `all` is above `gaps` at every weight under `tracking` raw (by 0.0009, 0.0021, 0.0057, 0.0096, 0.0113 and
+  0.0019 for weights 0.01 to 0.5) and under `tracking` coarse (0.0005 to 0.0349); on `context` it is above at all six
+  under the coarse truth and at five of six under the raw one (weight 0.5: `gaps` by 0.0007). So the shape source helps
+  on the frames where `controlled_touch` also speaks, and not only where the ball is missing, which is where it was
+  designed to be used; at the chosen weight the difference is 0.0113 raw and 0.0329 coarse.
+- **The truths agree.** The raw winner on `tracking` is also the coarse winner (0.5591), and `p07_w200_all` is the best
+  config of both `context` cells too (0.5153 raw, 0.5544 coarse). There is no T33 disagreement to read: four cells, one
+  winner. The possessions per graded minute it predicts, 3.17 on `tracking`, are 0.43 above `main`'s 2.74 and sit
+  between the two truths' (2.48 coarse, 4.58 raw), as `main`'s do.
+- **Every config beats `main`.** The smallest Δ of the 48 (12 configs x 4 cells) is +0.0290 (`p07_w010_gaps` on
+  `context` raw), the smallest on `tracking` raw +0.0311, and each has p 0.0156 and 7 wins in 7. With scope `all` the
+  gain grows with the weight up to 0.2 in all four cells, so it is not a threshold effect of the first small weight,
+  and the rule's choice is the largest gain, not the only one.
+- **At the edges.** The chosen config is inside the weight axis and `all` is one of the two scopes. **Per the protocol
+  nothing is added after the results**: a weight between 0.1 and 0.5, or above 0.5, was not tried, and the entry does
+  not claim it would not score higher, nor that it would be sound.
+
+**Leave-one-match-out estimate of the selection.** As R008 to R010 did, from the per-match spellF1 the runner prints
+(four decimals): for each match, the selection is repeated on the other six matches and the chosen config's score on
+the held-out match is compared with `main.toml`'s on it; the seven differences give the mean Δ with its 90%
+t-interval, the exact sign-flip p and the wins. Two rules over the 12 configs: the raw objective alone (the highest
+mean per-match `tracking` raw spellF1 on the six, no tie band) and the whole rule (the configs within 0.005 of the
+best six-match raw mean, then the best six-match coarse mean among them, then the smaller weight, then `gaps` over
+`all`). **Both pick `p07_w200_all` in all seven folds**, so the held-out estimate is the chosen config's own, computed
+from the rounded printed scores (the last digit can differ from the runner's by 0.0001):
+- `tracking` raw: mean Δ +0.0940 [+0.0775, +0.1105], p 0.0156, 7 wins and 0 losses (per match +0.0730, +0.0805,
+  +0.1009, +0.1388, +0.0983, +0.0901, +0.0764, in the order of the table above);
+- `tracking` coarse: +0.1033 [+0.0869, +0.1197], p 0.0156, 7 wins (+0.1119, +0.0788, +0.1242, +0.1317, +0.1136,
+  +0.0846, +0.0782);
+- `context` raw +0.0835 [+0.0737, +0.0933] and coarse +0.0890 [+0.0834, +0.0945], each p 0.0156 and 7 wins.
+
+The selection is stable (one config in every fold under each rule), so the choice is not what produces the gap. The
+estimate does not cover the model's training, which holds a match out only through `folds` (each fold model never saw
+the match it scores), and seven matches from two competitions, five of them Fortuna Düsseldorf home games, are not
+seven independent draws. By competition the raw Δ is +0.0767 on DFL-COM-000001 and +0.1009 on DFL-COM-000002.
+
+**The bar, the veto and the warnings** (declared in part 1, applied as written).
+- *Bar,* `tracking` raw, against `main.toml`: Δ +0.0942 > 0, sign-flip p 0.0156 <= 0.05, 7 wins in 7. **Met.**
+- *Veto,* `context` raw: Δ +0.0831 > 0. **It does not fire.** It is a veto and never a validation (T38): `context`
+  keeps DFL's out-of-play ball tracking and shares the caveats below.
+- *Warnings,* the coarse cells (T33): `tracking` +0.1035 and `context` +0.0890, both positive, p 0.0156, 7 wins in 7.
+  There is no warning to write.
+
+**The transfer gate and the label-free check on BAR-ATH.** The benchmark cannot show that the file is not degenerate on
+our match, and the shape model was trained on seven other matches and has never seen a frame of it, so these checks are
+required in addition to the bar. They were declared in part 1, before any config of the grid had run. They need no
+ground truth, and print aggregates only. The gate (the model `full`, since BAR-ATH is no fold):
+
+```
+python -c "from pipeline.inputs import Inputs; from pipeline.benchmark import train_shape; r = train_shape.touch_agreement(Inputs(), model='pipeline/models/shape_possession_hgb.json'); print('frames {:,}  agreement {:.4f}  gate >= 0.7486  {}'.format(r['frames'], r['agreement'], 'PASS' if r['agreement'] >= 0.7486 else 'FAIL'))"
+```
+
+It prints `frames 41,052  agreement 0.8251  gate >= 0.7486  PASS`. The figures from a written file, over the graded
+blocks of BAR-ATH (`games.half_video_blocks`, 158,857 frames, 105.90 minutes), run on
+`evaluation/results/p07_shape.csv` and again on `main.csv` after the switch (the same output, the same file), and on
+R010's file before it:
+
+```
+python -c "import sys; sys.path[:0]=['.', 'evaluation']
+import numpy as np, games, possession_metrics as pm
+c = pm.label_codes(pm.read_label_csv(sys.argv[1]))
+runs = [(a, b + 1) for _, a, b in games.half_video_blocks(games.GAME)]
+m = np.zeros(len(c), bool)
+for a, b in runs: m[a:b] = True
+g = c[m]
+s = pm.possession_spells(pm.fill_abstentions(c, runs), runs)
+print({l: round(float((g == i).mean()), 4) for i, l in enumerate(pm.LABELS)}, 'X frames', int((g == 3).sum()))
+print('possessions', len(s), 'per graded minute', round(len(s) / (m.sum() / 25 / 60), 4))" evaluation/results/p07_shape.csv
+```
+
+| | R010's `main.toml` (`a706e7f7`) | the chosen config (`8810afce`) | declared rule |
+|---|---|---|---|
+| gate: `touch_agreement`, `full`, scope `all` | n/a | **0.8251** on 41,052 frames | at least 0.7486 |
+| `D` share of the graded frames | 36.0% | 35.8% | reported |
+| H, A of the graded frames | 37.5%, 26.5% | 37.6%, 26.6% | reported |
+| `X` frames inside the graded blocks | 0 | 0 | none |
+| possessions | 450 | 439 | reported |
+| possessions per graded minute | 4.2491 | 4.1452 | reported |
+| mean possession | 9.0 s | 9.3 s | reported |
+| the same sha256 twice | yes | yes | yes |
+
+- **The gate passes**: 0.8251 against 0.7486, by 0.0765, and 0.0039 under the benchmark's pooled held-out value
+  (0.8290). It is a proxy and not an accuracy (the episode's team is right on about 92% of its frames, part 1). BAR-ATH
+  has 41,052 frames in kept episodes in one pass, against 25,470 to 33,408 per seed on the DFL matches (the held-out
+  table's frames over 3 seeds), so the statistic is read on a larger sample.
+- **The `D` share** moves by 0.2 points, 35.8% against R010's 36.0%, and stays inside the band R010 declared
+  ([30%, 62%], from DFL's 40.7% to 51.7% widened by 10 points). The alive/dead decision is P05's and the shape source
+  has no opinion on `alive`; the labels' alive/dead status differs on 0.22% of the graded frames between the two files.
+- **The possessions** are 439 against R010's 450 (4.1452 per graded minute against 4.2491, 2.4% fewer, and the mean
+  one 0.25 s longer). **The benchmark predicts the opposite direction**: on `tracking` v3 the chosen config has 3.17
+  per graded minute against `main`'s 2.74 (about 16% more). The two are different matches, with different ball
+  coverage and a count of 4.2 per minute where the benchmark has 2.7 (the same in R010), and nobody here knows what
+  our match's true count is; the entry reports the difference and does not explain it.
+- **How much of the file it changes**: the chosen config's labels differ from R010's on 5.30% of the graded frames, 0.22
+  points of them a change of alive/dead and 5.08 points a change of team (7.94% of the frames that are alive in both
+  files).
+- **No `X`, and the same sha256 twice**: `pipeline/run.py pipeline/configs/p07_shape.toml` gave
+  `8810afce254e94fe159769f3b55e8eef65f41a25c84f4550034e2afbc20e8487` twice (once with `--score`), and
+  `pipeline/configs/main.toml`, switched, gave the same sha256 twice, which is the sha256 of `p07_shape.toml`'s file.
+
+It cannot say the labels are right; it says the file is not degenerate on our match and that the shape source agrees
+with the touch episodes on it about as often as on the held-out matches (82.5% of their frames, against 74.9% to
+86.5% for the seven folds).
+
+**Adoption.** The bar is met, the veto does not fire, and the gate and the checks pass, so `pipeline/configs/main.toml`
+takes this config's evidence and decoder, under a header that says what it is now. `pipeline/run.py
+pipeline/configs/main.toml` writes `evaluation/results/main.csv` with sha256
+`8810afce254e94fe159769f3b55e8eef65f41a25c84f4550034e2afbc20e8487`, the same as `p07_shape.toml`'s (the two configs have
+the same evidence, decoder, seed and scope), and the file passes `evaluation/validate_submission.py` (199,319 rows).
+`pipeline/selftest.py --data` passes (153 of 153 checks; it runs `main.toml` twice and compares the bytes, and rebuilds
+the four baselines byte for byte) and `pipeline/benchmark/selftest.py` passes (369 checks). `p07_shape.toml` is written,
+and writes the same labels file under another name, as `p45_hmm.toml` does for R010's.
+
+**Checks on the runs.** All four logs end `EXIT=0`. Each lists `main`, the two yardsticks (raw: `nearest_w50` then
+`nearest_w125`; coarse the reverse) and the 12 configs, none missing or repeated. The `main` rows are R010's to the
+last digit in all four cells (0.4217 raw and 0.4556 coarse on `tracking`, 0.4323 and 0.4654 on `context`), and the
+yardsticks are R004c's and R005's (`nearest_w50` 0.2018 raw and `nearest_w125` 0.2226 coarse on `tracking`, 0.2193 and
+0.2443 on `context`). The runner's check on the yardsticks' order prints Kendall tau +1.0000 under the raw truth and
+-1.0000 under the coarse one on both profiles, as for the same two configs in R004c and R005 (the truth reorders them;
+a check of the profile, not a goal). Runtime, the runner's `seconds`: the first config of each process (`main`, with
+the one-off kinematics and features pass) took 144.9 and 143.3 s on `tracking` (raw, coarse) and 130.9 and 130.7 s on
+`context`; the first `p07` config 156.1 and 155.7 s (the shape logits are walked once and the memo serves the rest)
+and 141.8 and 140.9 s; the other 11 took 25.6 to 27.5 s on `tracking` and 23.4 to 25.1 s on `context`; a yardstick
+took 5.7 to 6.5 s.
+
+**The limits, and what the numbers do not say.**
+- **The model never saw our teams.** It was trained on seven matches of two competitions, five of them Fortuna
+  Düsseldorf home games, and BAR-ATH is a LaLiga match with neither team among them. The gate is the one look at
+  transfer, and a proxy: 0.8251 says the shape agrees with the touch episodes about as often as on the held-out matches,
+  not that its team is right that often where the ball is missing.
+- **The gain is the benchmark's.** The benchmark overstates P05 for BAR-ATH (T38, T39, R010), and the size of the
+  combined gain over R010 rests on that source as well; this entry's Δ is a gain over a `main.toml` that already
+  has it. The model's own held-out accuracy (part 1) is 0.8422 on the alive frames and 0.8349 with the ball missing,
+  both against DFL's fine-grained flag (A06).
+- **The count of possessions does not transfer.** The benchmark moves it up (2.74 to 3.17 a minute) and BAR-ATH moves
+  down (4.25 to 4.15 a minute), by 2.4%. The truth's count on our match is unknown.
+- **The public window** is a correctness check only: valid, deterministic, 20 possessions against 17, agreement of the
+  shape source on home 90.9% of 6,031 frames; its spellF1 is lower than R010's (0.4000 against 0.4686) by about one
+  possession's worth. It was not used to choose anything.
+- **Nothing was added after the results**: the weight axis is inside its grid and the scope is binary; neither a weight
+  between the grid's points nor above 0.5 was tried, and `min_prob` was fixed beforehand (T26).
+- **Seven matches from two competitions** are not seven independent draws; p 0.0156 is the smallest an exact test over
+  7 matches can give, and every one of the 48 cells has it.
 
 ## Submission log
 
@@ -4221,9 +4547,14 @@ The form keeps only the last response before the deadline, so log every upload.
 | date | file | sha256 | commit | command | notes |
 |---|---|---|---|---|---|
 
-`main.toml` was rewritten by R010 (2026-10-25): it now produces sha256
+`main.toml` was rewritten by R010 (2026-10-25): it then produced sha256
 `a706e7f711b2d3faacc2f071b6e28963ed8e2f2326a7880e6d0776cce4295f1f` (P04 `controlled_touch` + P05
-`dead_ball_model` hgb + the `hmm` (4, 32, 25, 25)), identical to `p45_hmm.toml`'s file. It has NOT been uploaded.
+`dead_ball_model` hgb + the `hmm` (4, 32, 25, 25)), identical to `p45_hmm.toml`'s file. It was NOT uploaded.
+
+`main.toml` was rewritten again by R011 (2026-10-25): it now produces sha256
+`8810afce254e94fe159769f3b55e8eef65f41a25c84f4550034e2afbc20e8487` (P04 `controlled_touch` + P05
+`dead_ball_model` hgb + P07 `shape_possession` at weight 0.2, scope `all` + the `hmm` (4, 32, 25, 25)), identical
+to `p07_shape.toml`'s file; R010's file is still what `p45_hmm.toml` writes. It has NOT been uploaded.
 
 Before each upload:
 1. Regenerate the file from a clean clone, ideally on a second machine, and compare the sha256 ([T21](traps.md)).

@@ -6,14 +6,18 @@
 # name), change it, run it, and log the run in docs/results.md. When an experiment wins on validation, its changes
 # come back here.
 #
-# Today this is P04 + P05 together: controlled_touch for `home` (P04), the hgb dead_ball_model for `alive` (P05) and
-# the hmm decoder re-tuned to them (switch_team 4, switch_dead 32, min_possession 25, min_dead 25). It was chosen in
-# R010 on the P01 benchmark (the seven DFL matches degraded as `tracking` v3, three seeds) and adopted by R010's rule:
-# the bar (a gain over each yardstick under its truth, sign-flip p <= 0.05) was met, and so was a label-free check on
-# BAR-ATH. Its evidence and decoder are those of p45_hmm.toml. The benchmark overstates P05 for BAR-ATH by an amount
-# it cannot measure (docs/traps.md T38, T39): read R010 before trusting the size of the gain.
+# Today this is P04 + P05 + P07 together: controlled_touch for `home` (P04), the hgb dead_ball_model for `alive` (P05),
+# shape_possession for `home` on every graded frame (P07, weight 0.2) and the hmm decoder tuned to the first two
+# (switch_team 4, switch_dead 32, min_possession 25, min_dead 25). P04 + P05 and the decoder were chosen in R010 and
+# P07's weight and scope in R011, both on the P01 benchmark (the seven DFL matches degraded as `tracking` v3, three
+# seeds). R011 adopted P07 by its rule: the bar (a gain over R010's main.toml on `tracking`, raw truth, sign-flip
+# p <= 0.05, and a gain on `context`) was met, and so were the label-free checks on BAR-ATH (the shape source agrees
+# with the touch episodes at least as often as on the worst held-out match, no X in a block, the same sha256 twice).
+# Its evidence and decoder are those of p07_shape.toml; R010's earlier main.toml is p45_hmm.toml. The benchmark
+# overstates P05 for BAR-ATH by an amount it cannot measure (docs/traps.md T38, T39), and the shape model was trained on
+# other teams' matches: read R010 and R011 before trusting the size of the gain.
 
-description = "P04 + P05 (R010): controlled_touch 2.0 m / 6.0 m/s / 3 frames / hold 0.55 (confidence 0.91) + dead_ball_model (hgb, pipeline/models/dead_ball_hgb.json) at weight 1.0, hmm 4/32/25/25, decoded per half."
+description = "P04 + P05 + P07 (R011): controlled_touch 2.0 m / 6.0 m/s / 3 frames / hold 0.55 (confidence 0.91) + dead_ball_model (hgb, pipeline/models/dead_ball_hgb.json) at weight 1.0 + shape_possession (hgb, pipeline/models/shape_possession_hgb.json) at weight 0.2, scope all, min_prob 0.02, hmm 4/32/25/25, decoded per half."
 seed = 0
 scope = "halves"
 
@@ -32,6 +36,13 @@ hold = 0.55                                   # the weak vote of the last team b
 kind = "dead_ball_model"
 weight = 1.0
 model = "pipeline/models/dead_ball_hgb.json"  # relative to the repo root
+
+[[evidence]]
+kind = "shape_possession"
+weight = 0.2                                          # an exponent on the source's likelihood (R011's choice)
+model = "pipeline/models/shape_possession_hgb.json"   # relative to the repo root; BAR-ATH has no fold, so `full`
+scope = "all"                                         # "gaps": ball missing only; "all": every graded frame
+min_prob = 0.02                                       # home is clipped to [0.02, 0.98]
 
 # Exactly one decoder (pipeline/decode/). Every key but kind is a keyword argument.
 [decoder]
