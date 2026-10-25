@@ -37,7 +37,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P04](#p04--sticky-ownership-from-controlled-touches) | Sticky ownership from controlled touches | facts 3, 5 | S | high | idea |
 | [P05](#p05--a-real-dead-ball-detector) | Dead-ball detector | fact 4 | M | high | idea |
 | [P06](#p06--global-decoding-per-half-hmm--hidden-semi-markov) | Global decoder (HMM / semi-Markov) per half | fact 5 | M | high | doing (Tian) |
-| [P07](#p07--possession-without-the-ball-team-shape-and-movement) | Possession without the ball: team shape | fact 1 | M | high, but only after P05: ~0 without it (A10) | idea |
+| [P07](#p07--possession-without-the-ball-team-shape-and-movement) | Possession without the ball: team shape | fact 1 | M | high, but only after P05: ~0 to this decoder without it (A10) | idea |
 | [P08](#p08--smart-tagging-as-soft-evidence) | Smart Tagging as soft evidence | facts 1, 4 | S | medium | idea |
 | [P09](#p09--camera-aim-as-a-coarse-ball-zone-prior) | Camera aim as a coarse ball-zone prior | fact 1 | S | low–medium | idea |
 | [P10](#p10--referee-whistle-from-the-audio-track) | Referee whistle from the audio track | fact 4 | S–M | medium (audio confirmed, A04) | idea |
@@ -71,10 +71,14 @@ started any of it. P06's decoder has not cleared its bar on the benchmark (R007)
 unchanged, and what follows is about where the next day of work goes. The A10 figures are pooled spellF1 on `tracking`,
 raw truth first and coarse second, and are upper bounds: the oracles are exact.
 
-1. **Next: P05, the dead-ball detector.**
-   - It is the largest single lever. A perfect dead-ball source adds +0.1625 raw and +0.2450 coarse (to 0.3678 and
-     0.4417). A perfect possessor where the ball is seen, P04's ceiling, adds +0.1533 and +0.1684, level with P05 under
-     the raw truth and well below it under the coarse one.
+1. **Next: P05, the dead-ball detector.** The case rests on its ceiling under the coarse truth, on its gating P07, on
+   `D` being the chosen config's weakest point, and on P04 running alongside it (item 2). It does not rest on a lead
+   over P04 under the raw truth, which A10 does not show.
+   - Its ceiling is the largest under the coarse truth and level with P04's under the raw one. A perfect dead-ball
+     source adds +0.1625 raw and +0.2450 coarse (to 0.3678 and 0.4417); a perfect possessor where the ball is seen,
+     P04's ceiling, adds +0.1533 and +0.1684. Raw: +0.0092 apart (mean per match +0.0100 [-0.0063, +0.0263], p 0.2500,
+     4 wins and 3 losses), which is no difference. Coarse: +0.0766 apart ([+0.0594, +0.0952], p 0.0156, 7 wins). The
+     `tracking` caveat below tilts the comparison towards P05, so even the coarse lead is an upper bound.
    - It gates P07. A perfect possessor inside the gaps adds only +0.0008 and +0.0007 on top of a perfect possessor where
      the ball is seen, and +0.1971 and +0.1810 once `D` is right: `ball_presence` calls every gap longer than about 3.7
      s dead, whatever the team evidence says.
@@ -89,21 +93,25 @@ raw truth first and coarse second, and are upper bounds: the oracles are exact.
    - Do not expect +0.16. On `tracking` the gaps are blind to the play, so `ball_presence` carries almost no `D`
      information there and A10 measures from almost nothing to perfect; on our match it is better than that (A01).
      Report P05's gain on `tracking` and on `context` (sensitivity only), and rank it under both truths.
-2. **P04 alongside it, because it is S.** Its ceiling is about P05's under the raw truth, and the two together are worth
-   more than apart (+0.3602 raw, against +0.3158 if they added). A real one will capture a part of its ceiling and no
-   more.
+2. **P04 alongside it, because it is S.** Its ceiling is level with P05's under the raw truth (above), and the two
+   together are worth more than apart (+0.3602 raw, against +0.3158 if they added). A real one will capture a part of
+   its ceiling and no more.
 3. **P07 only after P05.** Without a source for `D` inside the gaps it is worth nothing to this decoder (+0.0008 raw).
 4. **After any new source, re-run the minimum-run part of P06's protocol.** With the truth as its evidence the chosen
    config scores 0.7627 raw and 0.9226 coarse and not 1.0: its penalties and its 75-frame minimum, chosen under noisy
    evidence, cap it at DFL's fine grain.
 5. **A separate, small item: a sweep of `ball_presence`'s `margin`.** R007's diagnostic (`margin` 50, `D` evidence only
-   inside the gaps' interiors) is above the chosen config in all four profile and truth cells (+0.0023 to +0.0071),
-   and clears the raw half of the bar on `tracking` (+0.0107 over `nearest_w50`, p 0.0312, 6 wins in 7) but not the
-   coarse half (-0.0236 against `nearest_w125`). It was one look at one value, so it is not a candidate. A sweep (a few
-   dozen runs of about 20 s) would need a protocol declared before it runs: the values of `margin`, the objective
-   (pooled raw spellF1 on `tracking`, 3 seeds, the 0.005 tie band, then the coarse score), both truths side by side,
-   and `context` for the gap-dependent reading, as in R006 and R007. P05 would replace this source, so the sweep is
-   worth running only as a hedge in case P05 does not land before the freeze on 13 Nov.
+   inside the gaps' interiors) is above the chosen config in all four profile and truth cells (+0.0023 to +0.0071;
+   `context` is sensitivity only), and clears the raw half of the bar on `tracking` (+0.0107 over `nearest_w50`, p
+   0.0312, 6 wins in 7) but not the coarse half (-0.0236 against `nearest_w125`). It was one look at one value, so it
+   is not a candidate. A sweep (a few dozen runs of about 20 s) would need a protocol declared before it runs: the
+   values of `margin`, the objective (pooled raw spellF1 on `tracking`, 3 seeds, the 0.005 tie band, then the coarse
+   score), both truths side by side, and the rule that no value is adopted unless it also beats `margin` 0 on
+   `context` (sensitivity only) under both truths. `tracking` cannot value `ball_presence`: its gaps are blind to the
+   play, so its missing frames say almost nothing about `D` there, and a gain on `tracking` alone could be an artefact
+   of where the transplanted masks fall. `context` places the gaps by the play, so its direction is the check. P05
+   would replace this source, so the sweep is worth running only as a hedge in case P05 does not land before the
+   freeze on 13 Nov.
 
 ---
 
