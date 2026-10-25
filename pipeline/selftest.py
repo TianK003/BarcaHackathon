@@ -2447,6 +2447,86 @@ def test_dead_ball_model_refuses_infinite_features():
         expect_error(ValueError, lambda: model_alive(inputs, path), "dead_ball_model", "infinite")
 
 
+# -- the shared tree walker (P07) -------------------------------------------------------------------------------------
+
+def test_trees_score_matches_a_reference_walk():
+    # The walk is written for speed (whole-array byte masks, bottom up), so it is held against the plain definition on
+    # the committed model: follow `left` where x <= threshold, or where x is NaN and `missing_left`; sum the leaves.
+    import json
+    from pipeline.evidence import play_features, trees
+    with open(os.path.join(ROOT, "pipeline", "models", "dead_ball_hgb.json"), encoding="utf-8") as handle:
+        model = json.load(handle)["full"]
+    n_features = len(play_features.FEATURE_NAMES)
+    splits = {}                                           # feature -> the finite thresholds the trees split it on
+    for tree in model["trees"]:
+        for feature, threshold, leaf in zip(tree["feature"], tree["threshold"], tree["leaf"]):
+            if not leaf and threshold < 1e300:
+                splits.setdefault(feature, []).append(threshold)
+    low = np.array([min(splits.get(feature, [0.0])) for feature in range(n_features)])
+    high = np.array([max(splits.get(feature, [1.0])) for feature in range(n_features)])
+    rng = np.random.default_rng([7, 1])
+    # each column runs a little past its first and last split, so rows fall on both sides of most of them
+    X = (low - 0.1 * (high - low)) + 1.2 * (high - low) * rng.random((300, n_features))
+    for number, tree in enumerate(model["trees"][:50]):          # a value that sits exactly on a threshold goes left
+        X[number, tree["feature"][0]] = tree["threshold"][0]
+    X[rng.random(X.shape) < 0.2] = np.nan                        # a fifth of the values are missing
+
+    def reference(row):                                   # plain Python floats: the same arithmetic, much faster
+        total = float(model["baseline"])
+        for tree in model["trees"]:
+            node = 0
+            while not tree["leaf"][node]:
+                x = row[tree["feature"][node]]
+                goes_left = x <= tree["threshold"][node] or (x != x and tree["missing_left"][node])    # x != x: NaN
+                node = tree["left"][node] if goes_left else tree["right"][node]
+            total += tree["value"][node]
+        return total
+
+    expected = np.array([reference(row) for row in X.tolist()])
+    assert len(np.unique(expected)) > 100, "the rows no longer reach different leaves"
+    assert np.isnan(X).any() and (~np.isnan(X)).any()
+    got = trees.score(model, X)
+    assert got.shape == (300,) and got.dtype == np.float64
+    assert np.array_equal(got, expected), "trees.score differs from the plain walk by up to {:.3g}".format(
+        float(np.abs(got - expected).max()))
+    saved = trees.CHUNK
+    try:
+        for chunk in (64, 150, 299, 300):                          # the chunks only bound the temporaries
+            trees.CHUNK = chunk
+            assert np.array_equal(trees.score(model, X), expected), "CHUNK = {} changes the scores".format(chunk)
+    finally:
+        trees.CHUNK = saved
+    assert trees.score(model, X[:0]).shape == (0,), "no rows give no scores"
+
+
+def test_trees_check_names_its_caller():
+    # check_trees moved out of dead_ball_model; its messages start with the caller's name, so dead_ball_model's stay
+    # word for word and another learned source can use it under its own.
+    from pipeline.evidence import trees
+    good = hgb_model(MODEL_BASELINE, MODEL_SEEN, MODEL_MISSING, MODEL_PRIOR)
+    assert trees.check_trees(good, len(PLAY_NAMES), "full of m.json", "shape_possession") is None
+
+    def broken(**changes):
+        tree = dict(good["trees"][0], **changes)
+        return dict(good, trees=[tree])
+
+    too_many = {key: list(value) + [0] * 255 for key, value in good["trees"][0].items()}
+    for label, model, fragments in (
+            ("baseline", dict(good, baseline="0.3"), ("model full of m.json", "baseline")),
+            ("trees", dict(good, trees=None), ("model full of m.json", "trees")),
+            ("ragged", broken(left=[1, 0]), ("tree 0 of full of m.json", "seven node arrays")),
+            ("missing key", dict(good, trees=[{"feature": [0]}]), ("tree 0 of full of m.json", "seven node arrays")),
+            ("nodes", dict(good, trees=[too_many]), ("tree 0 of full of m.json", "258 nodes", "at most 255")),
+            ("feature", broken(feature=[len(PLAY_NAMES), -1, -1]), ("tree 0 of full of m.json", "node 0")),
+            ("child", broken(left=[0, 0, 0]), ("tree 0 of full of m.json", "node 0", "no later child"))):
+        message = expect_error(ValueError, lambda: trees.check_trees(model, len(PLAY_NAMES), "full of m.json",
+                                                                     "shape_possession"), *fragments)
+        assert message.startswith("shape_possession: "), "{}: {}".format(label, message)
+    # a feature count that does not reach the column of a split is refused
+    expect_error(ValueError, lambda: trees.check_trees(good, PLAY_COLUMN["ball_missing"], "x", "shape_possession"),
+                 "shape_possession", "node 0")
+
+
 # -- refine -----------------------------------------------------------------------------------------------------------
 
 def test_config_refiner_registry_starts_empty():
