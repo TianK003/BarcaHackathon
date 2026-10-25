@@ -3016,7 +3016,9 @@ recomputed as above.
 Runtime of the controls: the runner's `seconds` line says 16.7 to 18.4 s per HMM config on `tracking` (16.7 to 18.4 raw,
 17.3 to 18.1 coarse; the yardsticks 7.8 to 8.4 s) and 14.9 to 16.0 s on `context` (the yardsticks 6.3 to 7.3 s).
 Verdict: **(switch_team, switch_dead, min_possession, min_dead) = (8, 32, 75, 1) is P06's parameter set**, chosen by the
-pre-declared rule, and `pipeline/configs/p06_hmm.toml` holds it; the controls leave it as it is. It is not the
+pre-declared rule over the set that Stage 2b's ruling extended after Stage 2's results (over the declared set alone the
+rule picks `p06s2_t016_d064_mp050_md025`, -0.0012 raw against `nearest_w50`, and the verdict is the same), and
+`pipeline/configs/p06_hmm.toml` holds it; the controls leave it as it is. It is not the
 submission config, and `main.toml` is unchanged. On the benchmark's default profile it is level with the strongest
 yardstick under the raw truth (+0.0036, p 0.2500) and 0.0259 below it under the coarse one, so **the bar is not met and
 nothing here justifies replacing `main.toml`**. What the controls add. The `seen` term is worth 0.0063 raw on `tracking`
