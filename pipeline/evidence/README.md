@@ -62,6 +62,17 @@ And a missing ball is not a dead ball ([T12](../../docs/traps.md)): 41% of grade
 in-play gaps of 10 s or more are normal. `margin` leaves the edges of a gap to other evidence: only missing frames more
 than `margin` frames from the nearest frame with a ball speak.
 
+## Shared kinematics
+
+[`kinematics.py`](kinematics.py) (numpy only) is what the sources that look at motion share, so that they agree to the
+bit: `ball_track(inputs)` and `player_track(inputs)` give positions in metres and velocities and speeds in metres per
+second, NaN outside the graded blocks and where the ball or slot is absent; `derivative`, `window_mean`, `runs`,
+`ball_distances` and `outside_m` are the pieces. A velocity is the 7-frame Savitzky-Golay derivative inside a *run* (a
+maximal stretch of valid frames in one graded block), falling back to central and one-sided differences at a run's ends
+and NaN on a run of one frame, so nothing reads across a gap, a slot handover or half time. It never reads
+`atd.players_speed` or `atd.ball_speed` ([T28, T31](../../docs/traps.md)). Both tracks are remembered per `Inputs`
+object (a `weakref.WeakKeyDictionary`, in memory only); both together take about 1.3 s on 200,000 frames of 46 slots.
+
 ## Writing a source
 
 1. Create `pipeline/evidence/<your_source>.py`:

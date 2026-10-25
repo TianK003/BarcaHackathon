@@ -536,6 +536,247 @@ def test_ball_presence_rejects_bad_parameters():
     source(run, margin=np.int64(3), missing=np.float64(0.25), seen=1)  # numpy numbers from a sweep are fine
 
 
+# -- shared kinematics ------------------------------------------------------------------------------------------------
+
+def kinematics_inputs(atd, graded, fps=25, pitch=(105.3, 68.0)):
+    """A stand-in Inputs with what kinematics reads: atd, graded, fps, pitch and metres."""
+    scale = np.array(pitch)
+
+    class StandIn:   # a class, not a SimpleNamespace: the memo needs an object that can be weakly referenced
+        pass
+
+    inputs = StandIn()
+    inputs.atd, inputs.graded, inputs.fps, inputs.pitch = atd, graded, fps, pitch
+    inputs.metres = lambda xy: xy * scale
+    return inputs
+
+
+def kinematics_atd(players_xy, ball_xy, speed_fill=None, seed=0):
+    """An Atd over given positions; the speed channels are random, or all `speed_fill`."""
+    from pipeline.inputs.atd_cache import Atd
+    rng = np.random.default_rng(seed)
+    n, slots = players_xy.shape[:2]
+    players_speed = rng.random((n, slots)) * 9 if speed_fill is None else np.full((n, slots), speed_fill)
+    ball_speed = rng.random(n) * 30 if speed_fill is None else np.full(n, speed_fill)
+    return Atd(players_xy=players_xy, players_speed=players_speed, ball_xy=ball_xy, ball_speed=ball_speed,
+               slot_team=(np.arange(slots) % 2).astype(np.int8))
+
+
+def test_kinematics_derivative_is_exact_on_lines():
+    from pipeline.evidence import kinematics
+    fps = 25
+    blocks = [(0, 30), (30, 60)]
+    # (slot, start, stop): runs of 1, 2, 3, 7, 8 and 20 frames, some touching the half boundary from each side
+    pieces = [(0, 0, 20), (0, 22, 23), (0, 25, 27), (1, 3, 6), (1, 10, 17), (1, 20, 28), (2, 20, 30), (2, 30, 45),
+              (2, 50, 51), (2, 52, 60)]
+    rng = np.random.default_rng(3)
+    xy = rng.random((60, 3, 2)) * 100                    # junk on invalid frames
+    valid = np.zeros((60, 3), dtype=bool)
+    expected = np.full((60, 3, 2), np.nan)
+    for slot, start, stop in pieces:
+        slope = rng.normal(size=2) * 5                   # metres per second
+        offset = rng.random(2) * 50
+        t = np.arange(start, stop)[:, None] / fps
+        xy[start:stop, slot] = offset + slope * t
+        valid[start:stop, slot] = True
+        if stop - start >= 2:
+            expected[start:stop, slot] = slope
+    vel = kinematics.derivative(xy, valid, blocks, fps)
+    assert vel.shape == xy.shape
+    both = ~np.isnan(expected)
+    assert np.abs(vel[both] - expected[both]).max() < 1e-9
+    assert np.isnan(vel[~both]).all(), "NaN on invalid frames and on a run of one frame"
+    flat = kinematics.derivative(xy[:, 0], valid[:, 0], blocks, fps)    # the (n, 2) form agrees with the (n, K, 2) one
+    assert np.array_equal(flat, vel[:, 0], equal_nan=True)
+
+
+def test_kinematics_never_crosses_a_run_or_block():
+    from pipeline.evidence import kinematics
+    rng = np.random.default_rng(4)
+    blocks = [(5, 40), (50, 90)]
+    xy = rng.random((100, 4, 2)) * 100
+    valid = rng.random((100, 4)) < 0.8
+    valid[:, 3] = True                                    # one slot valid throughout, to meet the block edges
+    base = kinematics.derivative(xy, valid, blocks, 25)
+    junk = xy.copy()
+    junk[~valid] = rng.random(((~valid).sum(), 2)) * 1000   # positions beyond a run's ends change nothing in it
+    assert np.array_equal(kinematics.derivative(junk, valid, blocks, 25), base, equal_nan=True)
+    moved = xy.copy()
+    moved[40:] = rng.random((60, 4, 2)) * 1000              # the second block and the gap change nothing in the first
+    assert np.array_equal(kinematics.derivative(moved, valid, blocks, 25)[:40], base[:40], equal_nan=True)
+    moved = xy.copy()
+    moved[:50] = rng.random((50, 4, 2)) * 1000
+    assert np.array_equal(kinematics.derivative(moved, valid, blocks, 25)[50:], base[50:], equal_nan=True)
+    assert np.isnan(base[:5]).all() and np.isnan(base[40:50]).all() and np.isnan(base[90:]).all()
+    expect_error(ValueError, lambda: kinematics.derivative(xy, valid[:, :3], blocks, 25), "kinematics", "derivative")
+
+
+def test_kinematics_chunks_change_nothing():
+    from pipeline.evidence import kinematics
+    rng = np.random.default_rng(7)
+    xy = rng.random((200, 5, 2)) * 100
+    valid = rng.random((200, 5)) < 0.9
+    blocks = [(3, 90), (100, 199)]
+    whole = kinematics.derivative(xy, valid, blocks, 25)
+    saved = kinematics.CHUNK
+    try:
+        for chunk in (1, 4, 7, 64):
+            kinematics.CHUNK = chunk
+            assert np.array_equal(kinematics.derivative(xy, valid, blocks, 25), whole, equal_nan=True), chunk
+    finally:
+        kinematics.CHUNK = saved
+
+
+def test_kinematics_uses_metres():
+    from pipeline.evidence import kinematics
+    n, fps = 30, 25
+    t = np.arange(n)
+    ball = np.stack([0.2 + 0.01 * t, np.full(n, 0.5)], axis=1)                          # 0.01 in x per frame
+    players = np.stack([np.stack([np.full(n, 0.5), 0.1 + 0.01 * t], axis=1)], axis=1)   # and in y, for one slot
+    inputs = kinematics_inputs(kinematics_atd(players, ball), [(1, 0, n)], fps=fps, pitch=(105.3, 68.0))
+    ball_t, player_t = kinematics.ball_track(inputs), kinematics.player_track(inputs)
+    assert np.allclose(ball_t.vel[:, 0], 0.01 * 105.3 * fps, atol=1e-9) and np.allclose(ball_t.vel[:, 1], 0, atol=1e-9)
+    assert np.allclose(player_t.vel[:, 0, 1], 0.01 * 68.0 * fps, atol=1e-9)
+    assert np.allclose(ball_t.speed, 0.01 * 105.3 * fps) and np.allclose(player_t.speed[:, 0], 0.01 * 68.0 * fps)
+    assert np.allclose(ball_t.xy_m[:, 0], (0.2 + 0.01 * t) * 105.3) and ball_t.visible.all() and player_t.present.all()
+
+
+def test_kinematics_window_mean_matches_a_loop():
+    from pipeline.evidence import kinematics
+    rng = np.random.default_rng(5)
+    n = 120
+    blocks = [(5, 30), (40, 41), (50, 110)]
+    values = rng.normal(size=n)
+    values[rng.random(n) < 0.2] = np.nan
+    valid = ~np.isnan(values) & (rng.random(n) < 0.8)
+    for before in (0, 3, 25):
+        for after in (0, 3, 25):
+            reference = np.full(n, np.nan)
+            for start, stop in blocks:
+                for t in range(start, stop):
+                    low, high = max(start, t - before), min(stop, t + after + 1)
+                    window = [v for v, ok in zip(values[low:high], valid[low:high]) if ok]
+                    if window:
+                        reference[t] = sum(window) / len(window)
+            got = kinematics.window_mean(values, valid, blocks, before, after)
+            assert np.array_equal(np.isnan(got), np.isnan(reference)), (before, after)
+            assert np.nanmax(np.abs(got - reference)) < 1e-12, (before, after)
+    expect_error(ValueError, lambda: kinematics.window_mean(values, valid, blocks, -1, 0), "kinematics", "before")
+
+
+def test_kinematics_runs():
+    from pipeline.evidence import kinematics
+    starts, stops = kinematics.runs(np.array([1, 1, 0, 0, 1, 0, 1, 1, 1], dtype=bool))
+    assert starts.tolist() == [0, 4, 6] and stops.tolist() == [2, 5, 9]
+    starts, stops = kinematics.runs(np.zeros(4, dtype=bool))
+    assert len(starts) == 0 and len(stops) == 0
+
+
+def test_kinematics_outside_m():
+    from pipeline.evidence import kinematics
+    pitch = (100.0, 60.0)
+    points = np.array([[50, 30], [10, 20], [0, 30], [100, 10], [30, 0], [-3, 30], [103, 20], [50, -2], [50, 64],
+                       [103, 64], [-3, -4], [np.nan, np.nan]])
+    expected = [-30, -10, 0, 0, 0, 3, 3, 2, 4, 5, 5, np.nan]
+    got = kinematics.outside_m(points, pitch)
+    assert got.shape == (12,) and np.allclose(got, expected, equal_nan=True), got
+    assert kinematics.outside_m(points.reshape(3, 4, 2), pitch).shape == (3, 4)
+
+
+def test_kinematics_ball_distances():
+    from pipeline.evidence import kinematics
+    players = np.array([[[3.0, 4.0], [np.nan, np.nan]], [[1.0, 1.0], [0.0, 2.0]]])
+    ball = np.array([[0.0, 0.0], [np.nan, np.nan]])
+    got = kinematics.ball_distances(players, ball)
+    assert got.shape == (2, 2) and got[0, 0] == 5.0 and np.isnan(got[0, 1]) and np.isnan(got[1]).all()
+
+
+def kinematics_random_inputs(n=600, slots=6, seed=0, **atd_options):
+    rng = np.random.default_rng(seed)
+    players = rng.random((n, slots, 2))
+    players[rng.random((n, slots)) < 0.3] = np.nan
+    ball = rng.random((n, 2))
+    ball[rng.random(n) < 0.3] = np.nan
+    return kinematics_inputs(kinematics_atd(players, ball, **atd_options), SYNTHETIC_GRADED)
+
+
+def test_kinematics_reads_read_only_inputs():
+    from pipeline.evidence import kinematics
+    inputs = kinematics_random_inputs()
+    for array in (inputs.atd.players_xy, inputs.atd.ball_xy):
+        array.flags.writeable = False
+    before = (inputs.atd.players_xy.copy(), inputs.atd.ball_xy.copy())
+    ball, players = kinematics.ball_track(inputs), kinematics.player_track(inputs)
+    assert np.array_equal(inputs.atd.players_xy, before[0], equal_nan=True)
+    assert np.array_equal(inputs.atd.ball_xy, before[1], equal_nan=True)
+    for track in (ball, players):
+        for name in ("xy_m", "vel", "speed"):
+            assert getattr(track, name).flags.writeable is False, name
+    assert ball.visible.flags.writeable is False and players.present.flags.writeable is False
+    assert "array(" not in repr(ball) and "array(" not in repr(players), "an array is in the repr"
+    assert np.isnan(players.xy_m[~players.present]).all() and np.isnan(ball.xy_m[~ball.visible]).all()
+    assert (players.present == inputs.atd.players_present).all()   # SYNTHETIC_GRADED covers every frame
+
+
+def test_kinematics_never_reads_speed_channels():
+    from pipeline.evidence import kinematics
+    with_values = kinematics_random_inputs(seed=1)
+    without = kinematics_random_inputs(seed=1, speed_fill=np.nan)
+    assert not np.isnan(with_values.atd.players_speed).any() and np.isnan(without.atd.players_speed).all()
+    for name in ("xy_m", "vel", "speed"):
+        assert np.array_equal(getattr(kinematics.player_track(with_values), name),
+                              getattr(kinematics.player_track(without), name), equal_nan=True), name
+        assert np.array_equal(getattr(kinematics.ball_track(with_values), name),
+                              getattr(kinematics.ball_track(without), name), equal_nan=True), name
+
+
+def test_kinematics_graded_blocks_only():
+    from pipeline.evidence import kinematics
+    inputs = kinematics_random_inputs()
+    inputs.graded = [(1, 100, 300), (2, 350, 500)]
+    ball, players = kinematics.ball_track(inputs), kinematics.player_track(inputs)
+    outside = np.ones(600, dtype=bool)
+    outside[100:300] = outside[350:500] = False
+    assert not ball.visible[outside].any() and not players.present[outside].any()
+    assert np.isnan(ball.vel[outside]).all() and np.isnan(players.vel[outside]).all()
+    assert kinematics.blocks(inputs) == [(100, 300), (350, 500)]
+
+
+def test_kinematics_speed():
+    from pipeline.evidence import kinematics
+    rng = np.random.default_rng(6)
+    n, slots = 200_000, 46
+    players = rng.random((n, slots, 2))
+    players[rng.random((n, slots)) < 0.4] = np.nan
+    ball = rng.random((n, 2))
+    ball[rng.random(n) < 0.4] = np.nan
+    inputs = kinematics_inputs(kinematics_atd(players, ball), [(1, 11_185, 90_652), (2, 110_808, 190_198)])
+    inputs.atd.players_present                      # the Atd's own cached masks are not this module's cost
+    inputs.atd.ball_present
+    started = time.perf_counter()
+    kinematics.ball_track(inputs)
+    kinematics.player_track(inputs)
+    elapsed = time.perf_counter() - started
+    print("      kinematics speed: ball_track + player_track on {} x {} in {:.2f} s".format(n, slots, elapsed))
+    assert elapsed < 2.0, "{:.2f} s for 200,000 frames x 46 slots (the budget is 2 s)".format(elapsed)
+
+
+def test_kinematics_memo_is_per_object():
+    import gc
+    from pipeline.evidence import kinematics
+    first = kinematics_random_inputs(seed=1)
+    ball, players = kinematics.ball_track(first), kinematics.player_track(first)
+    assert kinematics.ball_track(first) is ball and kinematics.player_track(first) is players
+    other = kinematics_random_inputs(seed=2)            # other tracking, a new object: recomputed, not served stale
+    assert kinematics.ball_track(other) is not ball and kinematics.player_track(other) is not players
+    assert not np.array_equal(kinematics.ball_track(other).xy_m, ball.xy_m, equal_nan=True)
+    held = len(kinematics._BALL_MEMO)
+    del first, other, ball, players
+    gc.collect()
+    assert len(kinematics._BALL_MEMO) == held - 2, "the memo kept an object"
+    assert len(kinematics._PLAYER_MEMO) == held - 2, "the memo kept an object"
+
+
 # -- decode -----------------------------------------------------------------------------------------------------------
 
 def vote_context(home, start=0, stop=None, weights=None):
