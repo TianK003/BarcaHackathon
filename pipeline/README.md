@@ -12,7 +12,8 @@ python pipeline/selftest.py --data                          # + the real match: 
 ```
 
 Use the team venv (`.venv/Scripts/python` on Windows, `.venv/bin/python` on macOS/Linux, Python 3.11.9). The first run
-parses the tracking (~15 s); later runs take a few seconds.
+parses the tracking (~15 s); later runs of `main.toml` take about 17 s, nearly all of it the evidence (the play and
+shape features and the trees; 14.9 of 17.1 s in the run of 25 Oct that wrote R011's file, with the cache warm).
 
 ## How it works
 
@@ -60,9 +61,9 @@ Two design decisions run through the whole diagram:
 | # | stage | takes | gives | its job | today | lands here |
 |---|---|---|---|---|---|---|
 | 1 | [inputs](inputs/README.md) | `data/tactical/*` and `games.py` | `Inputs`: read-only arrays where row *i* = tactical video frame *i*; graded halves, kick-offs, pitch size | do every alignment once and check it; parse the 195 MB ATD once and cache it | ATD (cached), homography, Smart Tagging | P10 audio, P14 ball from video, P15 broadcast |
-| 2 | [evidence](evidence/README.md) | `Inputs` (the whole match) + config parameters | one `Evidence` per source: `alive` = P(ball in play), `home` = P(home has it \| in play), each float64 per frame, NaN = no opinion | per-frame opinions, never labels | `nearest_player` (baseline step 1; its optional `confidence` replaces the hard 0/1 vote), `ball_presence` (whether the tracker sees the ball, as `alive` evidence; P05 replaced it), `controlled_touch` (P04: `home` from control episodes and a weak hold for the last controlling team, NaN without the ball), `dead_ball_rules` and `dead_ball_model` (P05: `alive` from 30 play features, by fixed triggers or by a model loaded from JSON: gradient-boosted trees, or the logistic reference) | P07, P08, P10 (P04 and P05 are in) |
+| 2 | [evidence](evidence/README.md) | `Inputs` (the whole match) + config parameters | one `Evidence` per source: `alive` = P(ball in play), `home` = P(home has it \| in play), each float64 per frame, NaN = no opinion | per-frame opinions, never labels | `nearest_player` (baseline step 1; its optional `confidence` replaces the hard 0/1 vote), `ball_presence` (whether the tracker sees the ball, as `alive` evidence; P05 replaced it), `controlled_touch` (P04: `home` from control episodes and a weak hold for the last controlling team, NaN without the ball), `dead_ball_rules` and `dead_ball_model` (P05: `alive` from 30 play features, by fixed triggers or by a model loaded from JSON: gradient-boosted trees, or the logistic reference), `shape_possession` (P07: `home` from 26 features of how the two teams stand and move, none reading the ball, by boosted trees loaded from JSON; it speaks where the ball is missing and, in `main.toml`, at weight 0.2 on every graded frame) | P08, P10 (P04, P05 and P07 are in) |
 | 3 | [decode](decode/README.md) | one block (a graded half) and every source cut to it | `Decoded`: one int8 label per frame (`H`, `A`, `D`, `X` = 0–3) and an optional posterior | turn opinions into a sequence that looks like football: intervals, few spurious changes | `majority_vote` (baseline step 2, a stand-in), `hmm` (P06: a Viterbi per block with switch penalties and minimum runs, and an optional posterior) | duration priors beyond the minimums (semi-Markov) |
-| 4 | [refine](refine/README.md) | the same block + the current `Decoded` | a new `Decoded`, same frames | metric-aware clean-ups, each switchable and measured | none yet | P11, P12 |
+| 4 | [refine](refine/README.md) | the same block + the current `Decoded` | a new `Decoded`, same frames | metric-aware clean-ups, each switchable and measured | `shift_edges` (P02: each kind of edge moved by a fixed number of frames; every default is 0, and `main.toml` sets team +1, into_dead -2, out_of_dead 0, R012) | P11, P12 |
 | 5 | [output](output/README.md) | labels for the whole match | the CSV (LF, validated, sha256), the run manifest; with `--score`, the scores | own the bytes of the deliverable and check them as the organisers will | — | — |
 
 The runner ([`run.py`](run.py)) chains them, checks every hand-over (lengths, dtypes, value ranges, label codes),
@@ -122,8 +123,10 @@ half_width = 50
 
 | config | what it is |
 |---|---|
-| [`main.toml`](configs/main.toml) | the team's current pipeline, i.e. the file we would submit today: `controlled_touch` for `home`, the gradient-boosted `dead_ball_model` for `alive` and the `hmm` decoder re-tuned to them (4 / 32 / 25 / 25), chosen in R010 on the benchmark (the bar met under both truths; the benchmark overstates P05 for our match, T38, T39) |
-| [`p45_hmm.toml`](configs/p45_hmm.toml) | R010's chosen config, written when it was chosen; `main.toml` takes its evidence and decoder, so the two write the same file |
+| [`main.toml`](configs/main.toml) | the team's current pipeline, i.e. the file we would submit today (not uploaded): `controlled_touch` and `shape_possession` (weight 0.2, every graded frame) for `home`, the gradient-boosted `dead_ball_model` for `alive`, the `hmm` decoder (4 / 32 / 25 / 25) and `shift_edges` (team +1, into_dead -2, out_of_dead 0). P04, P05 and the decoder were chosen in R010 and P07 in R011, on the benchmark (it overstates P05 for our match, T38, T39, and its gain from P07 is not a forecast for it, R011); the shift was adopted in R012 by its declared rule and its gain is inside noise |
+| [`p02_shift.toml`](configs/p02_shift.toml) | R012's choice, written when it was chosen: R011's config plus the shift; it writes the same CSV as `main.toml` (the same sha256) |
+| [`p07_shape.toml`](configs/p07_shape.toml) | R011's choice, written when it was chosen: R010's config plus `shape_possession`; it writes the file `main.toml` wrote before R012 added the shift |
+| [`p45_hmm.toml`](configs/p45_hmm.toml) | R010's chosen config, written when it was chosen: `controlled_touch`, `dead_ball_model` and the `hmm`; it writes the file `main.toml` wrote before R011 |
 | [`smooth50_repro.toml`](configs/smooth50_repro.toml) | a regression check: it must rebuild `evaluation/results/baseline_smooth50.csv` byte for byte |
 | [`p06_hmm.toml`](configs/p06_hmm.toml) | P06's candidate: the `hmm` decoder with the parameters the benchmark chose (R006, R007), `nearest_player` at `confidence` 0.78 and `ball_presence`. It does not clear P06's bar and is not the submission config |
 
@@ -154,7 +157,7 @@ Each stage's README has a template, its rules and the traps that apply. After an
 | contracts | `python pipeline/selftest.py` | every stage rejects malformed input with a readable error; the cache parses bit-exactly; the evidence and the vote equal `starter/baseline.py` on synthetic tracking with every awkward case (ties, missing balls, empty frames); nothing risky is visible to git |
 | regression | `python pipeline/selftest.py --data` | on the real match, all four committed baselines are rebuilt byte for byte, and `main.toml` gives the same bytes twice |
 | the file | `python evaluation/validate_submission.py <csv>` | the organisers' own format check (the pipeline already runs the same functions) |
-| the scores | `python pipeline/run.py <config> --score` | public-window scores plus each source's agreement with the GT. For `main.toml` (R010) `controlled_touch` agrees on `home` on 87.2% of 5,489 frames and `dead_ball_model` on `alive` on 86.6% of 7,500 (a correctness check, T01); `nearest_player` agrees on 77.8% of 5,640 frames, exactly [A01](../docs/results.md) |
+| the scores | `python pipeline/run.py <config> --score` | public-window scores plus each source's agreement with the GT. For `main.toml` (R012) `controlled_touch` agrees on `home` on 87.2% of 5,489 frames, `dead_ball_model` on `alive` on 86.6% of 7,500 and `shape_possession` on `home` on 90.9% of 6,031 (a correctness check, T01); `nearest_player` agrees on 77.8% of 5,640 frames, exactly [A01](../docs/results.md) |
 
 The public window is for correctness only. It holds 17 possessions and ranks the baselines the wrong way round
 ([T01](../docs/traps.md)). Choose between versions on P01's benchmark of other matches, as the next section says. Hand
@@ -217,6 +220,11 @@ needs the video's homography or the Smart Tagging stops the run and names the as
   say what P05, P04 or P07 could ever deliver to that config before anyone builds them
   ([A10](../docs/results.md), the [benchmark README](benchmark/README.md#headroom)). The oracles exist only while a
   run lasts and are never in a `REGISTRY`.
+- **Timing.** `python pipeline/benchmark/conventions.py public|dfl|compare|latency|shift` times when our truth's
+  label changes against events that our tracking shows (A11), measures the pipeline's own lag on the DFL matches and
+  applies P02's declared rule for `shift_edges` ([R012](../docs/results.md), the
+  [benchmark README](benchmark/README.md#conventions-when-our-truth-flips-and-the-edge-shift)). `public` writes a file
+  of the public truth's changes under `data/runs/conventions/` for a person to watch the video by; no LLM reads it.
 - **The default profile cannot value evidence about the ball's gaps.** Its gaps are our masks transplanted blind to
   the play, so a source or a parameter that depends on where the gaps fall (`ball_presence`, `switch_dead`, P05's and
   P07's features) is also read on `context`, under both truths ([T38](../docs/traps.md)).
@@ -243,7 +251,7 @@ What it cannot test: whatever uses the homography, the Smart Tagging, the camera
 the conventions of our ground truth beyond what the public window shows. Check those on the public window. The details
 (profiles, gates and WARN bands, the report, limitations) are in [`benchmark/README.md`](benchmark/README.md), and what
 was measured is in [`docs/results.md`](../docs/results.md) (A05 to A09, R002 to R005; R004c is the default's; R006,
-R007 and A10 are P06's runs on it, and R008 to R010 are P04's and P05's).
+R007 and A10 are P06's runs on it, R008 to R010 are P04's and P05's, R011 is P07's, and A11 and R012 are P02's).
 
 ## Rules that the code enforces, and ones it can't
 
@@ -285,13 +293,17 @@ pipeline/
 ├── contracts.py         Evidence, Block, RunContext, BlockContext, Decoded and their checks
 ├── selftest.py          synthetic contract checks; --data for the byte-exact regression
 ├── configs/             main.toml (current pipeline), smooth50_repro.toml (regression), p06_hmm.toml (P06),
-│                        p45_hmm.toml (P04 + P05, R010)
+│                        p45_hmm.toml (P04 + P05, R010), p07_shape.toml (+ P07, R011),
+│                        p02_shift.toml (+ P02's shift, R012: main.toml's file)
 ├── inputs/              stage 1: Inputs, the ATD cache                       README.md
 ├── evidence/            stage 2: REGISTRY, nearest_player, ball_presence,    README.md
-│                        controlled_touch, dead_ball_rules, dead_ball_model
-├── models/              the trained dead-ball models, JSON (no pickles)
+│                        controlled_touch, dead_ball_rules, dead_ball_model,
+│                        shape_possession (and trees.py, shape_features.py)
+├── models/              the trained models, JSON (no pickles): the dead-ball
+│                        ones (P05) and the shape one (P07)
 ├── decode/              stage 3: REGISTRY, majority_vote, hmm                README.md
-├── refine/              stage 4: REGISTRY (empty)                            README.md
+├── refine/              stage 4: REGISTRY, shift_edges                       README.md
 ├── output/              stage 5: write, validate, summarise, score, manifest README.md
 └── benchmark/           validation (P01): degraded DFL matches; headroom.py  README.md
+                         train_shape.py (P07), conventions.py (P02)
 ```

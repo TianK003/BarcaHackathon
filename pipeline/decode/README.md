@@ -150,9 +150,11 @@ paths. Each row sums to 1.
 - **`D` is only as good as its `alive` evidence.** `nearest_player` says nothing about it, so with that alone the
   decoder chooses `D` rarely, and only in gaps: `H`, `D`, `A` beats `H`, `A` across a gap when `switch_team` is more
   than twice `switch_dead` and the gap is at least `min_dead` frames, and with `switch_dead = 0` a trailing stretch
-  without evidence ends in `D` by the tie preference. `ball_presence` (whether the tracker sees the ball) is the one
-  `alive` source today, and its `D` scores 0.5676 on alive/dead F1 on the benchmark against `nearest_w50`'s 0.6094
-  ([R007](../../docs/results.md)). A dead-ball source (P05) is what gives it something real to decode.
+  without evidence ends in `D` by the tie preference. `ball_presence` (whether the tracker sees the ball) was the one
+  `alive` source until P05, and its `D` scored 0.5676 on alive/dead F1 on the benchmark against `nearest_w50`'s 0.6094
+  ([R007](../../docs/results.md)). A dead-ball source (P05, `dead_ball_model`) is what gave it something real to
+  decode, and it is the `alive` source of `main.toml` (alive/dead F1 0.9726 in R010, on a benchmark that
+  overstates it, T38, T39).
 
 ## Adding a decoder
 

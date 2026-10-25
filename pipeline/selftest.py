@@ -2099,6 +2099,768 @@ def test_features_speed():
     assert elapsed < 3.0, "{:.2f} s for 140,000 frames x 46 slots (the budget is 3 s)".format(elapsed)
 
 
+# -- team shape and movement (P07) ------------------------------------------------------------------------------------
+#
+# Hand-built scenes in metres on the default 105.3 x 68.0 pitch, and random scenes of two blocks whose teams swap ends.
+# No scene needs a ball, and test_shape_features_ignore_the_ball puts one in and sees nothing change. The names are
+# spelled out here, apart from the module, so that a reordered column cannot pass by agreeing with itself.
+
+SHAPE_NAMES = (
+    "h_n", "h_adv_mean", "h_adv_p10", "h_adv_p90", "h_width", "h_vel_adv", "h_speed_mean", "h_att_third",
+    "h_own_third", "h_d_adv_1s", "h_d_adv_2s", "h_vel_adv_1s",
+    "a_n", "a_adv_mean", "a_adv_p10", "a_adv_p90", "a_width", "a_vel_adv", "a_speed_mean", "a_att_third",
+    "a_own_third", "a_d_adv_1s", "a_d_adv_2s", "a_vel_adv_1s",
+    "adv_gap", "n_diff")
+SHAPE_COLUMN = {name: index for index, name in enumerate(SHAPE_NAMES)}
+
+
+def shape_scene(seed, n=240, slots=16):
+    """(players_m, teams, graded): two blocks, the teams swapping ends between them, every slot drifting at its own
+    velocity and dropping out for a few frames at a time. In seeds 3, 7, ... one team is gone from the second block."""
+    rng = np.random.default_rng(seed)
+    length, width = PLAY_PITCH
+    graded = [(1, 12, 130), (2, 150, 230)]
+    teams = rng.permutation(np.array([0] * (slots // 2) + [1] * (slots - slots // 2)))
+    home_x, away_x = rng.random(slots) * 60.0 + 5.0, rng.random(slots) * 60.0 + 40.0
+    first = np.stack([np.where(teams == 0, home_x, away_x), rng.random(slots) * 64.0 + 2.0], axis=1)
+    second = first * [-1.0, 1.0] + [length, 0.0]                         # everybody on the other side of the pitch
+    base = np.where((np.arange(n) < 140)[:, None, None], first[None], second[None])
+    drift = rng.normal(size=(slots, 2)) * 1.5                            # m/s
+    players = (base + np.arange(n)[:, None, None] * drift[None] / 25
+               + np.cumsum(rng.normal(size=(n, slots, 2)) * 0.04, axis=0))
+    on = np.ones(slots, dtype=bool)
+    for frame in range(n):                                               # a slot is lost for about 10 frames in 60
+        on = np.where(on, rng.random(slots) >= 0.02, rng.random(slots) < 0.1)
+        players[frame, ~on] = np.nan
+    if seed % 4 == 3:
+        players[150:, teams == 0] = np.nan
+    return players, teams, graded
+
+
+def shape_inputs(players, teams, graded, ball=None):
+    return play_inputs(players, nothing(len(players)) if ball is None else ball, teams=teams, graded=graded)
+
+
+def shape_matrix(players, teams, graded, ball=None):
+    from pipeline.evidence import shape_features
+    names, X = shape_features.features(shape_inputs(players, teams, graded, ball))
+    assert names == SHAPE_NAMES
+    return X
+
+
+def shape_values(X, *names):
+    return [X[:, SHAPE_COLUMN[name]] for name in names]
+
+
+def test_shape_features_shape_and_names():
+    from pipeline.evidence import shape_features
+    assert shape_features.FEATURE_VERSION == 1
+    assert shape_features.FEATURE_NAMES == SHAPE_NAMES and len(SHAPE_NAMES) == 26
+    assert shape_features.COLUMN == SHAPE_COLUMN
+    players, teams, graded = shape_scene(0)
+    X = shape_matrix(players, teams, graded)
+    assert X.shape == (len(players), 26) and X.dtype == np.float64
+    assert np.isfinite(X[graded[0][1]:graded[0][2]]).mean() > 0.5, "the scene must give the columns something to say"
+
+
+def test_shape_features_ignore_the_ball():
+    rng = np.random.default_rng(5)
+    for seed in range(3):
+        players, teams, graded = shape_scene(seed)
+        n = len(players)
+        ball = rng.random((n, 2)) * PLAY_PITCH
+        ball[rng.random(n) < 0.3] = np.nan
+        hidden = shape_matrix(players, teams, graded)
+        seen = shape_matrix(players, teams, graded, ball)
+        assert hidden is not seen
+        assert np.array_equal(hidden, seen, equal_nan=True), "seed {}: a column reads the ball".format(seed)
+        assert np.isfinite(hidden).any()
+
+
+def test_shape_features_permutation_invariant():
+    rng = np.random.default_rng(6)
+    for seed in range(6):
+        players, teams, graded = shape_scene(seed)
+        order = rng.permutation(len(teams))
+        base = shape_matrix(players, teams, graded)
+        permuted = shape_matrix(players[:, order], teams[order], graded)
+        assert np.allclose(base, permuted, rtol=1e-12, atol=1e-9, equal_nan=True), "seed {}".format(seed)
+
+
+def test_shape_features_swap():
+    from pipeline.evidence import shape_features
+    for seed in range(8):
+        players, teams, graded = shape_scene(seed)
+        X = shape_matrix(players, teams, graded)
+        relabelled = shape_matrix(players, 1 - teams, graded)
+        swapped = shape_features.swap(X)
+        assert swapped is not X and not np.shares_memory(swapped, X) and swapped.flags.writeable
+        assert swapped.shape == X.shape and swapped.dtype == np.float64
+        assert np.array_equal(swapped, relabelled, equal_nan=True), "seed {}: swap is not exact".format(seed)
+        assert np.array_equal(shape_features.swap(swapped), X, equal_nan=True), "swap is not an involution"
+        assert np.allclose(swapped, relabelled, rtol=1e-12, atol=1e-9, equal_nan=True)
+    # a hand-made row: the two team blocks trade places, the two cross columns change sign, NaN stays NaN
+    row = np.arange(26, dtype=np.float64)
+    row[5], row[24] = np.nan, 0.0
+    flipped = shape_features.swap(row)
+    assert flipped.tolist()[:12] == [12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0]
+    assert np.isnan(flipped[17]) and flipped[12 + 6] == 6.0 and flipped[24] == 0.0 and flipped[25] == -25.0
+    assert not np.signbit(flipped[24]), "a zero stays +0.0, so that swap(X) is the relabelled features to the bit"
+    assert row[0] == 0.0 and np.isnan(row[5]), "swap must leave its argument alone"
+    expect_error(ValueError, lambda: shape_features.swap(np.zeros((4, 30))), "shape_features.swap", "26")
+    expect_error(ValueError, lambda: shape_features.swap(np.zeros(())), "shape_features.swap", "26")
+
+
+def test_shape_features_mirror_pitch():
+    length = PLAY_PITCH[0]
+    for seed in range(8):
+        players, teams, graded = shape_scene(seed)
+        mirrored = players.copy()
+        mirrored[..., 0] = length - mirrored[..., 0]
+        assert np.allclose(shape_matrix(players, teams, graded), shape_matrix(mirrored, teams, graded),
+                           rtol=1e-12, atol=1e-9, equal_nan=True), "seed {}".format(seed)
+
+
+def test_shape_features_known_values():
+    length = PLAY_PITCH[0]
+    n = 160
+    home = [(10.0, 20.0), (20.0, 30.0), (30.0, 40.0)]
+    away = [(60.0, 10.0), (70.0, 50.0)]
+    players = np.tile(np.array(home + away)[None], (n, 1, 1))
+    teams = np.array([0, 0, 0, 1, 1])
+
+    def check(X, tag):
+        values = dict(zip(SHAPE_NAMES, X[80]))
+        want = {"h_n": 3, "h_adv_mean": 20.0, "h_adv_p10": 12.0, "h_adv_p90": 28.0, "h_width": 38.0 - 22.0,
+                "h_vel_adv": 0.0, "h_speed_mean": 0.0, "h_att_third": 0.0, "h_own_third": 1.0,
+                "h_d_adv_1s": 0.0, "h_d_adv_2s": 0.0, "h_vel_adv_1s": 0.0,
+                "a_n": 2, "a_adv_mean": length - 65.0, "a_adv_p10": length - 70.0 + 0.1 * 10.0,
+                "a_adv_p90": length - 70.0 + 0.9 * 10.0, "a_width": 46.0 - 14.0, "a_vel_adv": 0.0,
+                "a_speed_mean": 0.0, "a_att_third": 0.0, "a_own_third": 0.0, "a_d_adv_1s": 0.0, "a_d_adv_2s": 0.0,
+                "a_vel_adv_1s": 0.0, "adv_gap": 20.0 - (length - 65.0), "n_diff": 1}
+        assert set(want) == set(SHAPE_NAMES)
+        for name, expected in want.items():
+            assert np.isclose(values[name], expected, rtol=1e-12, atol=1e-9), (tag, name, values[name], expected)
+        assert np.isclose(values["h_adv_p10"], np.percentile([10.0, 20.0, 30.0], 10))
+        assert np.isclose(values["h_adv_p90"], np.percentile([10.0, 20.0, 30.0], 90))
+
+    check(shape_matrix(players, teams, [(1, 0, n)]), "home on the left")
+    # the same scene seen from the other end of the pitch (everyone's x mirrored): nothing changes
+    mirrored = players.copy()
+    mirrored[..., 0] = length - mirrored[..., 0]
+    check(shape_matrix(mirrored, teams, [(1, 0, n)]), "home on the right")
+    # the third of the pitch is in adv: a forward line and a back line, two slots each, and a lone midfielder
+    rows = np.array([(5.0, 34.0), (30.0, 10.0), (50.0, 34.0), (75.0, 20.0), (98.0, 50.0)])
+    thirds = shape_matrix(np.tile(rows[None], (n, 1, 1)), np.array([0, 0, 0, 0, 0]), [(1, 0, n)])
+    assert thirds[80, SHAPE_COLUMN["h_own_third"]] == 2 / 5 and thirds[80, SHAPE_COLUMN["h_att_third"]] == 2 / 5
+    assert thirds[80, SHAPE_COLUMN["a_n"]] == 0 and thirds[80, SHAPE_COLUMN["n_diff"]] == 5
+    # one team on the move: both walk along +x at 2 m/s, so the home team (attacking +x) gains 2 m/s and the away team
+    # (attacking -x) loses 2 m/s; adv_mean moves 4 m in a second each way round
+    n = 200
+    starts = np.array(home + away)
+    walking = walkers(n, 2.0, starts, direction=(1.0, 0.0))
+    X = shape_matrix(walking, teams, [(1, 0, n)])
+    (h_vel, a_vel, h_speed, a_speed, h_vel_1s, a_vel_1s, h_d1, h_d2, a_d1, a_d2) = shape_values(
+        X, "h_vel_adv", "a_vel_adv", "h_speed_mean", "a_speed_mean", "h_vel_adv_1s", "a_vel_adv_1s", "h_d_adv_1s",
+        "h_d_adv_2s", "a_d_adv_1s", "a_d_adv_2s")
+    assert np.allclose(h_vel, 2.0) and np.allclose(a_vel, -2.0) and np.allclose(h_speed, 2.0)
+    assert np.allclose(a_speed, 2.0) and np.allclose(h_vel_1s, 2.0) and np.allclose(a_vel_1s, -2.0)
+    assert np.allclose(h_d1[25:175], 4.0) and np.allclose(a_d1[25:175], -4.0)
+    assert np.allclose(h_d2[50:150], 8.0) and np.allclose(a_d2[50:150], -8.0)
+    # ... and a team that walks across the pitch the other way round: the same numbers, mirrored
+    mirrored = walking.copy()
+    mirrored[..., 0] = length - mirrored[..., 0]
+    again = shape_matrix(mirrored, teams, [(1, 0, n)])
+    assert np.allclose(again, X, rtol=1e-12, atol=1e-9, equal_nan=True)
+
+
+def test_shape_features_nan_rules():
+    rng = np.random.default_rng(8)
+    # outside the graded blocks every column is NaN, `n` and `n_diff` included
+    players, teams, graded = shape_scene(1)
+    X = shape_matrix(players, teams, graded)
+    outside = np.ones(len(players), dtype=bool)
+    for _, start, stop in graded:
+        outside[start:stop] = False
+    assert np.isnan(X[outside]).all(), "rows outside the graded blocks must be all NaN"
+    assert not np.isnan(X[~outside][:, [SHAPE_COLUMN["h_n"], SHAPE_COLUMN["a_n"], SHAPE_COLUMN["n_diff"]]]).any()
+
+    # a team with nobody present has n = 0 and NaN elsewhere, windows included, even where its slots are back within
+    # a second; the other team's columns and n_diff are unaffected
+    n = 160
+    players = rng.random((n, 6, 2)) * PLAY_PITCH
+    players[:, 3:, 0] = players[:, 3:, 0] * 0.4 + 60.0
+    players[:, :3, 0] = players[:, :3, 0] * 0.4
+    players[60:100, 3:] = np.nan
+    X = shape_matrix(players, np.array([0, 0, 0, 1, 1, 1]), [(1, 0, n)])
+    away = [name for name in SHAPE_NAMES if name.startswith("a_") and name != "a_n"]
+    gone = np.zeros(n, dtype=bool)
+    gone[60:100] = True
+    assert (X[gone, SHAPE_COLUMN["a_n"]] == 0).all() and (X[~gone, SHAPE_COLUMN["a_n"]] == 3).all()
+    for name in away + ["adv_gap"]:
+        assert np.isnan(X[gone, SHAPE_COLUMN[name]]).all(), name
+    for name in ("a_adv_mean", "a_d_adv_1s", "a_d_adv_2s", "a_vel_adv_1s", "adv_gap"):
+        assert np.isfinite(X[~gone, SHAPE_COLUMN[name]]).any(), name
+    assert (X[gone, SHAPE_COLUMN["n_diff"]] == 3).all() and not np.isnan(X[gone, SHAPE_COLUMN["h_adv_mean"]]).any()
+    assert np.isfinite(X[gone, SHAPE_COLUMN["h_d_adv_1s"]]).any()
+    # frame 80 is the case: its slots are gone, and the frames a second either side of it are not
+    assert np.isfinite(X[[55, 105], SHAPE_COLUMN["a_adv_mean"]]).all() and np.isnan(X[80, SHAPE_COLUMN["a_d_adv_1s"]])
+
+    # no slot of a team at all, and nobody at all
+    X = shape_matrix(players[:, :3], np.array([0, 0, 0]), [(1, 0, n)])
+    assert (X[:, SHAPE_COLUMN["a_n"]] == 0).all() and np.isnan(X[:, 12 + 1:24]).all() and np.isnan(X[:, 24]).all()
+    assert (X[:, SHAPE_COLUMN["n_diff"]] == 3).all()
+    X = shape_matrix(nobody(20, 4), np.array([0, 1, 0, 1]), [(1, 0, 20)])
+    assert (X[:, SHAPE_COLUMN["h_n"]] == 0).all() and (X[:, SHAPE_COLUMN["a_n"]] == 0).all()
+    assert (X[:, SHAPE_COLUMN["n_diff"]] == 0).all()
+    assert np.isnan(X[:, [SHAPE_COLUMN[name] for name in SHAPE_NAMES if name not in ("h_n", "a_n", "n_diff")]]).all()
+
+    # d_adv_1s needs 25 frames each side inside the block and d_adv_2s 50; a full row of slots is there throughout
+    n, (start, stop) = 200, (20, 180)
+    players = rng.random((n, 8, 2)) * PLAY_PITCH
+    X = shape_matrix(players, np.arange(8) % 2, [(1, start, stop)])
+    for name, k in (("d_adv_1s", 25), ("d_adv_2s", 50)):
+        for prefix in ("h_", "a_"):
+            column = X[:, SHAPE_COLUMN[prefix + name]]
+            assert np.isnan(column[:start + k]).all() and np.isnan(column[stop - k:]).all(), prefix + name
+            assert np.isfinite(column[start + k:stop - k]).all(), prefix + name
+    # two blocks that touch: the look-ahead stops at the half's end, so the first block's last second is NaN
+    X = shape_matrix(rng.random((200, 8, 2)) * PLAY_PITCH, np.arange(8) % 2, [(1, 0, 100), (2, 100, 200)])
+    column = X[:, SHAPE_COLUMN["h_d_adv_1s"]]
+    assert np.isnan(column[75:125]).all() and np.isfinite(column[25:75]).all() and np.isfinite(column[125:175]).all()
+    assert np.isnan(column[:25]).all() and np.isnan(column[175:]).all()
+
+
+def test_shape_features_see_only_their_block():
+    rng = np.random.default_rng(12)
+    players, teams, graded = shape_scene(2)
+    (_, first_start, first_stop), (_, second_start, second_stop) = graded
+    base = shape_matrix(players, teams, graded)
+    moved = players.copy()
+    moved[second_start:second_stop] = rng.random((second_stop - second_start, len(teams), 2)) * PLAY_PITCH
+    moved[first_stop:second_start] = 7.0                                  # the frames between the blocks change nothing
+    again = shape_matrix(moved, teams, graded)
+    assert np.array_equal(base[:first_stop], again[:first_stop], equal_nan=True), "block 2 leaked into block 1"
+    assert np.isnan(again[first_stop:second_start]).all() and np.isnan(again[second_stop:]).all()
+    assert not np.array_equal(base[second_start:second_stop], again[second_start:second_stop], equal_nan=True)
+    moved = players.copy()
+    moved[:first_stop] = rng.random((first_stop, len(teams), 2)) * PLAY_PITCH
+    third = shape_matrix(moved, teams, graded)
+    assert np.array_equal(base[second_start:], third[second_start:], equal_nan=True), "block 1 leaked into block 2"
+
+
+def test_shape_features_follow_each_blocks_direction():
+    # the same kick-off formation twice, the teams swapping ends: the home team is on the left in the first block and
+    # on the right in the second, and each team's adv is measured from the goal line it defends in its own block
+    first, teams = kickoff_formation(100, home_left=True)
+    second, _ = kickoff_formation(100, home_left=False)
+    X = shape_matrix(np.concatenate([first, second]), teams, [(1, 0, 100), (2, 100, 200)])
+    h_mean, a_mean, h_own, h_att = shape_values(X, "h_adv_mean", "a_adv_mean", "h_own_third", "h_att_third")
+    home_adv = (52.2 + np.linspace(12, 50, 10).sum()) / 11               # x of the home slots in the first block
+    assert np.allclose(h_mean, home_adv) and np.allclose(a_mean, PLAY_PITCH[0] - 75.0)
+    assert np.allclose(h_own, 6 / 11) and np.allclose(h_att, 0.0)        # 6 of 11 slots under L/3, none over 2L/3
+    assert np.allclose(X[:, SHAPE_COLUMN["adv_gap"]], home_adv - (PLAY_PITCH[0] - 75.0))
+    # one block for both stretches: a single pair of ends, so one of the two stretches has the teams the wrong way
+    one = shape_matrix(np.concatenate([first, second]), teams, [(1, 0, 200)])
+    assert not np.allclose(one[:100, SHAPE_COLUMN["h_adv_mean"]], one[100:, SHAPE_COLUMN["h_adv_mean"]])
+
+
+def shape_reference(inputs):
+    """Every shape feature with plain loops over the present slots, from the tracks' own positions and velocities
+    (kinematics is checked elsewhere) and each block's direction from `play_features._own_half_is_left`."""
+    from pipeline.evidence import kinematics, play_features
+    players = kinematics.player_track(inputs)
+    length, fps = inputs.pitch[0], inputs.fps
+    teams = np.asarray(inputs.atd.slot_team)
+    n, slots = players.present.shape
+    X = np.full((n, 26), np.nan)
+    one_second = int(round(fps))
+    for _, start, stop in inputs.graded:
+        home_left = play_features._own_half_is_left(players, teams, start, stop, length)
+        for base, team in ((0, 0), (12, 1)):
+            right = home_left if team == 0 else not home_left
+            sign = 1.0 if right else -1.0
+            for t in range(start, stop):
+                mine = [s for s in range(slots) if teams[s] == team and players.present[t, s]]
+                X[t, base] = len(mine)
+                if not mine:
+                    continue
+                x, y = players.xy_m[t, mine, 0], players.xy_m[t, mine, 1]
+                adv = x if right else length - x
+                X[t, base + 1] = np.mean(adv)
+                X[t, base + 2], X[t, base + 3] = np.percentile(adv, [10, 90])
+                low, high = np.percentile(y, [10, 90])
+                X[t, base + 4] = high - low
+                known = [s for s in mine if np.isfinite(players.speed[t, s])]
+                if known:
+                    X[t, base + 5] = np.mean([sign * players.vel[t, s, 0] for s in known])
+                    X[t, base + 6] = np.mean([players.speed[t, s] for s in known])
+                X[t, base + 7] = np.mean(adv > 2 * length / 3)
+                X[t, base + 8] = np.mean(adv < length / 3)
+            count, mean, velocity = X[start:stop, base], X[start:stop, base + 1], X[start:stop, base + 5]
+            for t in range(stop - start):
+                if count[t] == 0:
+                    continue
+                for k, column in ((one_second, 9), (2 * one_second, 10)):
+                    if t - k >= 0 and t + k < stop - start:
+                        X[start + t, base + column] = mean[t + k] - mean[t - k]
+                near = velocity[max(t - one_second, 0):min(t + one_second, stop - start - 1) + 1]
+                near = near[np.isfinite(near)]
+                if len(near):
+                    X[start + t, base + 11] = near.mean()
+    X[:, 24] = X[:, 1] - X[:, 13]
+    X[:, 25] = X[:, 0] - X[:, 12]
+    return X
+
+
+def test_shape_features_match_a_loop():
+    from pipeline.evidence import shape_features
+    for seed in range(24):
+        players, teams, graded = shape_scene(seed)
+        inputs = shape_inputs(players, teams, graded)
+        got, want = shape_features.features(inputs)[1], shape_reference(inputs)
+        for index, name in enumerate(SHAPE_NAMES):
+            close = np.isclose(got[:, index], want[:, index], rtol=1e-9, atol=1e-9, equal_nan=True)
+            assert close.all(), "seed {}: column {} differs, first at frame {}".format(
+                seed, name, int(np.flatnonzero(~close)[0]))
+
+
+def test_shape_features_chunks_change_nothing():
+    from pipeline.evidence import shape_features
+    players, teams, graded = shape_scene(11)
+    inputs = shape_inputs(players, teams, graded)
+    whole = shape_features.features(inputs)[1]
+    saved = shape_features.CHUNK
+    try:
+        for chunk in (1, 7, 64):
+            shape_features.CHUNK = chunk
+            assert np.array_equal(shape_features._build(inputs), whole, equal_nan=True), chunk
+    finally:
+        shape_features.CHUNK = saved
+
+
+def test_shape_features_memo_and_read_only():
+    from pipeline.evidence import shape_features
+    players, teams, graded = shape_scene(7)
+    inputs = shape_inputs(players, teams, graded)
+    arrays = [inputs.atd.players_xy, inputs.atd.ball_xy, inputs.atd.slot_team]
+    saved = [array.copy() for array in arrays]
+    for array in arrays:
+        array.flags.writeable = False
+    names, X = shape_features.features(inputs)
+    for array, copy in zip(arrays, saved):
+        assert np.array_equal(array, copy, equal_nan=True), "features must not write to the inputs"
+    assert not X.flags.writeable, "features must hand out read-only arrays"
+    again_names, again = shape_features.features(inputs)
+    assert again is X and again_names is names, "features is remembered per Inputs object"
+    other_names, other = shape_features.features(shape_inputs(*shape_scene(8)))
+    assert other is not X and not np.array_equal(other, X, equal_nan=True)
+
+
+def test_shape_features_speed():
+    from pipeline.evidence import shape_features
+    rng = np.random.default_rng(10)
+    n, slots = 180_000, 30
+    players = rng.random((n, slots, 2))
+    players[rng.random((n, slots)) < 0.4] = np.nan
+    ball = rng.random((n, 2))
+    inputs = kinematics_inputs(kinematics_atd(players, ball), [(1, 5_000, 85_000), (2, 100_000, 180_000)])
+    started = time.perf_counter()                   # from a fresh Inputs: the tracks and the Atd's masks are in it
+    shape_features.features(inputs)
+    elapsed = time.perf_counter() - started
+    print("      shape features speed: 160,000 graded frames x {} slots (tracks included) in {:.2f} s".format(
+        slots, elapsed))
+    assert elapsed < 6.0, "{:.2f} s for 160,000 frames x 30 slots (the budget is 6 s)".format(elapsed)
+
+
+# -- the shape possession source (P07) --------------------------------------------------------------------------------
+#
+# Hand-made artifacts whose trees are stumps on the shape features, so that every number is worked out here and not by
+# the trainer. A stump on adv_gap with the baseline 0.7 and the leaves -1.0 (gap <= 0) and 2.0 (gap > 0) is not
+# antisymmetric by itself (its sigmoid is not); the source's (r(x) - r(swap(x))) / 2 makes it so, and cancels the
+# baseline: +-1.5 where the gap has a sign, 0 where it is 0 or NaN.
+
+SHAPE_TRAINER = "pipeline/benchmark/train_shape.py"
+STUMP_LOGIT = 1.5
+
+
+def shape_model(baseline, left, right, feature="adv_gap", threshold=0.0, missing_left=0, prior=0.5):
+    return {"baseline": baseline, "prior_home": prior,
+            "trees": [stump(SHAPE_COLUMN[feature], threshold, left, right, missing_left)]}
+
+
+def write_shape_model(folder, folds=None, full=None, name="shape_hgb.json", **changes):
+    import json
+    from pipeline.evidence import shape_features
+    artifact = {"format": 1, "kind": "hgb", "feature_version": shape_features.FEATURE_VERSION,
+                "features": list(SHAPE_NAMES), "profile": "tracking", "seeds": 3, "stride": 5, "provenance": {},
+                "folds": {"FOLD1": shape_model(-0.2, 1.0, -1.0)} if folds is None else folds,
+                "full": shape_model(0.7, -1.0, 2.0) if full is None else full}
+    artifact.update(changes)
+    return write_text(folder, name, json.dumps(artifact, sort_keys=True) + "\n")
+
+
+def shape_home(inputs, path, game="BAR-ATH", **values):
+    from pipeline.contracts import RunContext, check_evidence
+    from pipeline.evidence import REGISTRY
+    inputs.game = game
+    evidence = REGISTRY["shape_possession"](RunContext(inputs=inputs, seed=0), model=path, **values)
+    check_evidence(evidence, len(inputs.atd.ball_xy))
+    assert np.isnan(evidence.alive).all(), "shape_possession has no opinion on whether the ball is alive"
+    assert not (evidence.home.flags.writeable or evidence.alive.flags.writeable), "the arrays are read-only"
+    return evidence.home
+
+
+def stump_home(X, magnitude=STUMP_LOGIT, min_prob=0.02):
+    """The home probability of a stump on adv_gap, worked out from the gap alone: sign(gap) * magnitude as a logit,
+    0 where the gap is 0 or NaN, then clipped."""
+    gap = X[:, SHAPE_COLUMN["adv_gap"]]
+    logit_home = np.where(np.isnan(gap), 0.0, np.sign(gap)) * magnitude
+    return np.clip(1.0 / (1.0 + np.exp(-logit_home)), min_prob, 1.0 - min_prob)
+
+
+def someone_present(players):
+    return (~np.isnan(players[:, :, 0])).any(axis=1)
+
+
+def block_mask(n, graded):
+    mask = np.zeros(n, dtype=bool)
+    for _, start, stop in graded:
+        mask[start:stop] = True
+    return mask
+
+
+def test_shape_possession_values():
+    # logit(home) = (r(x) - r(swap(x))) / 2: the baseline cancels, so no prior is ever corrected for
+    with tempfile.TemporaryDirectory() as root:
+        for baseline in (0.7, -3.0, 0.0):
+            path = write_shape_model(root, full=shape_model(baseline, -1.0, 2.0))
+            for seed in (0, 1, 3, 5):
+                players, teams, graded = shape_scene(seed)
+                home = shape_home(shape_inputs(players, teams, graded), path, scope="all")
+                X = shape_matrix(players, teams, graded)
+                known = ~np.isnan(home)
+                assert known.sum() > 100 and (np.abs(home[known] - 0.5) > 0.2).any()
+                assert np.allclose(home[known], stump_home(X)[known], rtol=0, atol=1e-12), (baseline, seed)
+        # a model that gives every row the same leaf has no opinion to give: exactly 0.5, whatever its baseline
+        flat = write_shape_model(root, full=shape_model(2.5, 0.8, 0.8), name="flat.json")
+        home = shape_home(shape_inputs(*shape_scene(0)), flat, scope="all")
+        assert (home[~np.isnan(home)] == 0.5).all() and (~np.isnan(home)).any()
+
+
+def test_shape_possession_is_antisymmetric():
+    from pipeline.evidence import shape_features, trees
+    with tempfile.TemporaryDirectory() as root:
+        # none of the three trees is symmetric: one reads the home block only, one the away block only, one the gap
+        lopsided = {"baseline": 0.9, "prior_home": 0.5, "trees": [
+            stump(SHAPE_COLUMN["h_adv_mean"], 50.0, -0.8, 1.7, missing_left=1),
+            stump(SHAPE_COLUMN["a_vel_adv"], 0.0, 0.6, -0.3),
+            stump(SHAPE_COLUMN["adv_gap"], 0.0, -1.0, 2.0)]}
+        path = write_shape_model(root, full=lopsided)
+        for seed in range(8):
+            players, teams, graded = shape_scene(seed)
+            home = shape_home(shape_inputs(players, teams, graded), path, scope="all")
+            relabelled = shape_home(shape_inputs(players, 1 - teams, graded), path, scope="all")
+            known = ~np.isnan(home)
+            assert known.sum() > 100 and np.array_equal(known, ~np.isnan(relabelled)), seed
+            assert np.allclose(home[known], 1.0 - relabelled[known], rtol=0, atol=1e-12), \
+                "seed {}: relabelling the teams is not 1 - home".format(seed)
+            # the check has teeth: the trees alone, run on the two labellings, are not antisymmetric
+            X = shape_matrix(players, teams, graded)[known]
+            alone = 1.0 / (1.0 + np.exp(-trees.score(lopsided, X)))
+            alone_relabelled = 1.0 / (1.0 + np.exp(-trees.score(lopsided, shape_features.swap(X))))
+            assert np.abs(alone - (1.0 - alone_relabelled)).max() > 0.05, "the model is symmetric on its own"
+
+
+def test_shape_possession_scope():
+    with tempfile.TemporaryDirectory() as root:
+        path = write_shape_model(root)
+        rng = np.random.default_rng(11)
+        for seed in (0, 2, 3, 6):
+            players, teams, graded = shape_scene(seed)
+            n = len(players)
+            players[60:70] = np.nan                         # both teams gone for ten frames of the first block
+            ball = rng.random((n, 2)) * PLAY_PITCH
+            ball[rng.random(n) < 0.4] = np.nan
+            ball[:6] = ball[130:140] = np.nan               # ungraded frames, with players and no ball
+            inputs = shape_inputs(players, teams, graded, ball)
+            graded_rows = block_mask(n, graded)
+            someone = someone_present(players)
+            seen = ~np.isnan(ball[:, 0])
+            assert (graded_rows & someone & seen).any() and (graded_rows & someone & ~seen).any()
+            assert (graded_rows & ~someone).any() and (~graded_rows & someone & ~seen).any()
+            home_all = shape_home(inputs, path, scope="all")
+            assert np.array_equal(~np.isnan(home_all), graded_rows & someone), seed
+            home_gaps = shape_home(inputs, path, scope="gaps")
+            assert np.array_equal(~np.isnan(home_gaps), graded_rows & someone & ~seen), seed
+            assert np.array_equal(shape_home(inputs, path), home_gaps, equal_nan=True), "gaps is the default"
+            both = ~np.isnan(home_gaps)
+            assert np.array_equal(home_all[both], home_gaps[both]), "the scope only chooses where to speak"
+        # a team that is absent says nothing, but the other team's presence still gives an opinion (seed 3)
+        players, teams, graded = shape_scene(3)
+        X = shape_matrix(players, teams, graded)
+        lonely = (X[:, SHAPE_COLUMN["h_n"]] == 0) & (X[:, SHAPE_COLUMN["a_n"]] > 0)
+        assert lonely.any()
+        home = shape_home(shape_inputs(players, teams, graded), path, scope="all")
+        assert not np.isnan(home[lonely]).any()
+
+
+def test_shape_possession_fold_choice():
+    with tempfile.TemporaryDirectory() as root:
+        folds = {"FOLD1": shape_model(0.0, 1.0, -1.0), "FOLD2": shape_model(0.0, 3.0, -3.0)}
+        path = write_shape_model(root, folds=folds, full=shape_model(0.0, -1.0, 1.0))
+        players, teams, graded = shape_scene(0)
+        X = shape_matrix(players, teams, graded)
+        inputs = shape_inputs(players, teams, graded)
+        values = dict(scope="all", min_prob=0.0001)
+        full = shape_home(inputs, path, **values)
+        known = ~np.isnan(full)
+        assert np.allclose(full[known], stump_home(X, 1.0, 0.0001)[known], rtol=0, atol=1e-12)
+        side = np.sign(X[:, SHAPE_COLUMN["adv_gap"]])[known]                     # +1 home ahead, -1 away, 0/NaN mute
+        assert (side == 1).any() and (side == -1).any(), "the scene must give the models something to disagree on"
+        for game, magnitude in (("FOLD1", -1.0), ("FOLD2", -3.0)):
+            fold = shape_home(inputs, path, game=game, **values)
+            assert np.array_equal(known, ~np.isnan(fold))
+            expected = 1.0 / (1.0 + np.exp(-np.where(np.isnan(side), 0.0, side) * magnitude))
+            assert np.allclose(fold[known], expected, rtol=0, atol=1e-12), "{} is the fold of its own game".format(game)
+        for game in ("BAR-ATH", "NOT-IN-FOLDS", "full"):
+            other = shape_home(inputs, path, game=game, **values)
+            assert np.array_equal(other, full, equal_nan=True), "{}: a game with no fold gets `full`".format(game)
+        # the file is read again when it changes
+        write_shape_model(root, folds=folds, full=shape_model(0.0, 5.0, -5.0))
+        changed = shape_home(inputs, path, **values)
+        expected = 1.0 / (1.0 + np.exp(5.0 * np.where(np.isnan(side), 0.0, side)))
+        assert np.allclose(changed[known], expected, rtol=0, atol=1e-12)
+
+
+def test_shape_possession_rejects_bad_artifacts():
+    import json
+    from pipeline.evidence import shape_features
+    with tempfile.TemporaryDirectory() as root:
+        inputs = shape_inputs(*shape_scene(0))
+        renamed = list(SHAPE_NAMES)
+        renamed[3] = "h_adv_p95"
+        good = shape_model(0.0, -1.0, 1.0)
+
+        def refused(path, *fragments):
+            return expect_error(ValueError, lambda: shape_home(inputs, path), "shape_possession", SHAPE_TRAINER,
+                                *fragments)
+
+        for label, changes in (("format", {"format": 2}), ("format", {"format": None}),
+                               ("feature_version", {"feature_version": 2}),
+                               ("feature_version", {"feature_version": shape_features.FEATURE_VERSION + 1}),
+                               ("features", {"features": list(SHAPE_NAMES)[::-1]}), ("features", {"features": renamed}),
+                               ("features", {"features": list(SHAPE_NAMES)[:-1]}),
+                               ("features", {"features": ["a"] * 30}),
+                               ("kind", {"kind": "logistic"}), ("kind", {"kind": None}),
+                               ("folds", {"folds": [good]}), ("folds", {"folds": "FOLD1"})):
+            refused(write_shape_model(root, name="other.json", **changes), label)
+        refused(write_text(root, "list.json", "[1, 2]"), "model object")
+        for bad in (0.6, 0.0, 1.0, -0.5, True, "0.5", None):
+            refused(write_shape_model(root, full=dict(good, prior_home=bad), name="prior.json"), "prior_home", "full")
+            refused(write_shape_model(root, folds={"FOLD1": dict(good, prior_home=bad)}, name="prior.json"),
+                    "prior_home", "FOLD1")
+        no_prior = dict(good)
+        no_prior.pop("prior_home")
+        refused(write_shape_model(root, full=no_prior, name="noprior.json"), "prior_home")
+        ragged = shape_model(0.0, -1.0, 1.0)
+        ragged["trees"][0]["left"] = [1, 0]                      # arrays of unequal lengths
+        refused(write_shape_model(root, full=ragged, name="ragged.json"), "tree 0", "full")
+        wide = shape_model(0.0, -1.0, 1.0)
+        wide["trees"][0]["feature"][0] = len(SHAPE_NAMES)        # a column the features do not have
+        refused(write_shape_model(root, folds={"FOLD1": wide}, name="wide.json"), "tree 0", "FOLD1")
+        refused(write_shape_model(root, full=dict(good, baseline=None), name="nobase.json"), "baseline")
+        no_full = json.loads(open(write_shape_model(root), encoding="utf-8").read())
+        no_full.pop("full")
+        refused(write_text(root, "nofull.json", json.dumps(no_full)), "full")
+        refused(os.path.join(root, "absent.json"), "absent.json")
+        write_text(root, "text.json", "not json at all")
+        refused(os.path.join(root, "text.json"), "text.json")
+        # dead_ball_model's file is a model of other features: it must not load here
+        refused(write_model(root, name="dead.json"), "features")
+
+
+def test_shape_possession_parameters():
+    from pipeline.contracts import RunContext
+    from pipeline.evidence import REGISTRY
+    with tempfile.TemporaryDirectory() as root:
+        path = write_shape_model(root)
+        players, teams, graded = shape_scene(3)         # the home team is gone from the second block
+        inputs = shape_inputs(players, teams, graded)
+        for bad in ("GAPS", "", "none", None, True, 1, ["gaps"]):
+            expect_error(ValueError, lambda: shape_home(inputs, path, scope=bad), "shape_possession", "scope", "gaps",
+                         "all")
+        for bad in (0.0, 0.5, 0.6, -0.1, True, False, "0.1", None, float("nan"), float("inf")):
+            expect_error(ValueError, lambda: shape_home(inputs, path, min_prob=bad), "shape_possession", "min_prob")
+        for bad in (None, 5, "", True):
+            expect_error(ValueError, lambda: shape_home(inputs, bad), "shape_possession", "model")
+        expect_error(TypeError, lambda: REGISTRY["shape_possession"](RunContext(inputs=inputs, seed=0)), "model")
+        shape_home(inputs, path, scope="all", min_prob=np.float64(0.25))        # numpy numbers from a sweep are fine
+        shape_home(inputs, path, scope="gaps", min_prob=0.001)
+        # the defaults are the design's: scope "gaps", min_prob 0.02
+        assert np.array_equal(shape_home(inputs, path), shape_home(inputs, path, scope="gaps", min_prob=0.02),
+                              equal_nan=True)
+        # the clip: a score far out is held at min_prob and 1 - min_prob, and a mute row gets 0.5
+        extreme = write_shape_model(root, full=shape_model(0.0, -40.0, 40.0), name="extreme.json")
+        gap = shape_matrix(players, teams, graded)[:, SHAPE_COLUMN["adv_gap"]]
+        assert (gap > 0).any() and (gap < 0).any() and (np.isnan(gap) & block_mask(len(gap), graded)).any()
+        for min_prob in (0.02, 0.1, 0.4):
+            home = shape_home(inputs, extreme, scope="all", min_prob=min_prob)
+            known = ~np.isnan(home)
+            assert known.any() and home[known].min() >= min_prob and home[known].max() <= 1.0 - min_prob
+            assert np.allclose(home[known & (gap > 0)], 1.0 - min_prob, rtol=0, atol=1e-12)
+            assert np.allclose(home[known & (gap < 0)], min_prob, rtol=0, atol=1e-12)
+            assert np.array_equal(home[known & ~(np.abs(gap) > 0)], np.full((known & ~(np.abs(gap) > 0)).sum(), 0.5))
+        home = shape_home(inputs, path, scope="all")
+        assert home.dtype == np.float64 and home.shape == (len(players),)
+
+
+def test_shape_possession_reads_read_only_inputs():
+    from pipeline.evidence import shape_features
+    with tempfile.TemporaryDirectory() as root:
+        path = write_shape_model(root)
+        players, teams, graded = shape_scene(5)
+        inputs = shape_inputs(players, teams, graded, np.full((len(players), 2), np.nan))
+        arrays = [inputs.atd.players_xy, inputs.atd.ball_xy, inputs.atd.slot_team]
+        saved = [array.copy() for array in arrays]
+        for array in arrays:
+            array.flags.writeable = False
+        before = shape_features.features(inputs)[1].copy()
+        first = shape_home(inputs, path)
+        for array, copy in zip(arrays, saved):
+            assert np.array_equal(array, copy, equal_nan=True), "the source must not write to the inputs"
+        assert np.array_equal(shape_features.features(inputs)[1], before, equal_nan=True), "the features were changed"
+        second = shape_home(inputs, path)
+        assert np.array_equal(first, second, equal_nan=True), "a second call on the same inputs gives other numbers"
+
+
+def test_shape_possession_remembers_its_scores_per_inputs():
+    from pipeline.evidence import trees
+    with tempfile.TemporaryDirectory() as root:
+        path = write_shape_model(root)
+        inputs = shape_inputs(*shape_scene(0))
+        calls = []
+        real = trees.score
+        trees.score = lambda model, X: calls.append(len(X)) or real(model, X)
+        try:
+            first = shape_home(inputs, path, scope="all")
+            walked = len(calls)
+            assert walked >= 1
+            second = shape_home(inputs, path, scope="all")
+            assert len(calls) == walked and np.array_equal(first, second, equal_nan=True), "walked the trees again"
+            gaps = shape_home(inputs, path, scope="gaps", min_prob=0.3)             # another scope and clip: no walk
+            assert len(calls) == walked
+            assert np.nanmin(gaps) >= 0.3 and np.nanmax(gaps) <= 0.7, "a different min_prob must re-clip the score"
+            shape_home(inputs, path, game="FOLD1", scope="all")                      # another model of the file
+            assert len(calls) == 2 * walked
+            shape_home(inputs, path, game="FOLD1", scope="all")
+            assert len(calls) == 2 * walked
+            shape_home(shape_inputs(*shape_scene(0)), path)
+            assert len(calls) == 3 * walked, "the memo is per Inputs object"
+        finally:
+            trees.score = real
+
+
+def test_shape_possession_refuses_infinite_features():
+    from pipeline.evidence import shape_features
+    with tempfile.TemporaryDirectory() as root:
+        path = write_shape_model(root)
+        inputs = shape_inputs(*shape_scene(0))
+        names, X = shape_features.features(inputs)
+        broken = X.copy()
+        broken[40, SHAPE_COLUMN["h_adv_mean"]] = np.inf
+        real = shape_features.features
+        shape_features.features = lambda given: (names, broken)
+        try:
+            expect_error(ValueError, lambda: shape_home(inputs, path), "shape_possession", "infinite")
+        finally:
+            shape_features.features = real
+
+
+def test_shape_possession_speed():
+    from pipeline.contracts import RunContext
+    from pipeline.evidence import REGISTRY, shape_features
+    rng = np.random.default_rng(12)
+    n, slots = 180_000, 46
+    players = rng.random((n, slots, 2))
+    players[rng.random((n, slots)) < 0.4] = np.nan
+    ball = rng.random((n, 2))
+    ball[rng.random(n) < 0.4] = np.nan
+    inputs = kinematics_inputs(kinematics_atd(players, ball), [(1, 5_000, 75_000), (2, 100_000, 170_000)])
+    inputs.game = "BAR-ATH"
+    inputs.atd.players_present                      # the Atd's own cached masks are not this module's cost
+    inputs.atd.ball_present
+    model = random_hgb_model(rng, prior=0.5)        # of the size the trainer writes, over the 26 shape columns
+    model.pop("prior_alive")
+    model["prior_home"] = 0.5
+    for tree in model["trees"]:
+        tree["feature"] = [feature % len(SHAPE_NAMES) if feature >= 0 else feature for feature in tree["feature"]]
+    with tempfile.TemporaryDirectory() as root:
+        path = write_shape_model(root, full=model)
+        started = time.perf_counter()
+        shape_features.features(inputs)             # warm: the features have their own check
+        features_s = time.perf_counter() - started
+        started = time.perf_counter()
+        evidence = REGISTRY["shape_possession"](RunContext(inputs=inputs, seed=0), model=path)
+        first_s = time.perf_counter() - started
+        started = time.perf_counter()
+        REGISTRY["shape_possession"](RunContext(inputs=inputs, seed=0), model=path, scope="all", min_prob=0.01)
+        again_s = time.perf_counter() - started
+        print("      shape_possession speed: 140,000 graded frames, 300 trees of 15 leaves, two walks: first inference "
+              "{:.2f} s (features {:.2f} s before it, {:.2f} s in all), a second config on the same inputs {:.2f} s"
+              .format(first_s, features_s, features_s + first_s, again_s))
+        assert np.isnan(evidence.home[:5_000]).all() and not np.isnan(evidence.home[5_000:75_000]).all()
+        assert first_s < 6.0, "{:.2f} s for 300 trees, twice, on 140,000 frames with warm features (the budget is " \
+                              "6 s)".format(first_s)
+
+
+SHAPE_TRIAL_CONFIG = """
+[[evidence]]
+kind = "nearest_player"
+
+[[evidence]]
+kind = "shape_possession"
+model = {model}
+scope = "all"
+min_prob = 0.1
+
+[decoder]
+kind = "hmm"
+switch_team = 5
+switch_dead = 20
+min_possession = 1
+min_dead = 1
+"""
+
+
+def test_run_end_to_end_synthetic_shape_possession():
+    """Config -> registry -> evidence -> hmm -> CSV: the source is found by its kind and its parameters are checked."""
+    from pipeline import output
+    from pipeline.config import ConfigError, load_config
+    from pipeline.contracts import X
+    from pipeline.run import run
+    with tempfile.TemporaryDirectory() as root:
+        make_synthetic_bundle(root)
+        text = SHAPE_TRIAL_CONFIG.format(model=json_string(write_shape_model(root)))
+        inputs = synthetic_inputs(root, graded=[(1, 50, 280), (2, 320, 560)])
+        out_path = os.path.join(root, "shape.csv")
+        result = run(load_config(write_text(root, "shape.toml", text)), inputs, out_path, log=quiet)
+        outside = np.ones(SYNTHETIC_FRAMES, dtype=bool)
+        outside[50:280] = outside[320:560] = False
+        assert (result.codes[outside] == X).all() and (result.codes[~outside] != X).all()
+        output.validate(out_path, SYNTHETIC_FRAMES, result.codes)
+        source = result.evidence["shape_possession"]
+        assert np.isnan(source.alive).all() and np.isnan(source.home[outside]).all()
+        assert (~np.isnan(source.home[~outside])).mean() > 0.5, "the source speaks on most graded frames"
+        assert np.nanmin(source.home) >= 0.1 and np.nanmax(source.home) <= 0.9
+        for old, new in (("scope = \"all\"", "scope = \"everywhere\""), ("min_prob = 0.1", "min_prob = 0.7")):
+            bad = write_text(root, "bad.toml", text.replace(old, new))
+            expect_error(ValueError, lambda: run(load_config(bad), inputs, os.path.join(root, "bad.csv"), log=quiet),
+                         "shape_possession")
+        unknown = write_text(root, "unknown.toml", text.replace("min_prob = 0.1", "min_prob = 0.1\nradius = 2"))
+        expect_error(ConfigError, lambda: load_config(unknown), "shape_possession", "radius")
+
+
 # -- the dead-ball model (P05) ----------------------------------------------------------------------------------------
 #
 # A hand-made artifact of a couple of trees, so that every number is worked out here and not by the trainer. Its one
@@ -2447,15 +3209,441 @@ def test_dead_ball_model_refuses_infinite_features():
         expect_error(ValueError, lambda: model_alive(inputs, path), "dead_ball_model", "infinite")
 
 
+# -- the shared tree walker (P07) -------------------------------------------------------------------------------------
+
+def test_trees_score_matches_a_reference_walk():
+    # The walk is written for speed (whole-array byte masks, bottom up), so it is held against the plain definition on
+    # the committed model: follow `left` where x <= threshold, or where x is NaN and `missing_left`; sum the leaves.
+    import json
+    from pipeline.evidence import play_features, trees
+    with open(os.path.join(ROOT, "pipeline", "models", "dead_ball_hgb.json"), encoding="utf-8") as handle:
+        model = json.load(handle)["full"]
+    n_features = len(play_features.FEATURE_NAMES)
+    splits = {}                                           # feature -> the finite thresholds the trees split it on
+    for tree in model["trees"]:
+        for feature, threshold, leaf in zip(tree["feature"], tree["threshold"], tree["leaf"]):
+            if not leaf and threshold < 1e300:
+                splits.setdefault(feature, []).append(threshold)
+    low = np.array([min(splits.get(feature, [0.0])) for feature in range(n_features)])
+    high = np.array([max(splits.get(feature, [1.0])) for feature in range(n_features)])
+    rng = np.random.default_rng([7, 1])
+    # each column runs a little past its first and last split, so rows fall on both sides of most of them
+    X = (low - 0.1 * (high - low)) + 1.2 * (high - low) * rng.random((300, n_features))
+    for number, tree in enumerate(model["trees"][:50]):          # a value that sits exactly on a threshold goes left
+        X[number, tree["feature"][0]] = tree["threshold"][0]
+    X[rng.random(X.shape) < 0.2] = np.nan                        # a fifth of the values are missing
+
+    def reference(row):                                   # plain Python floats: the same arithmetic, much faster
+        total = float(model["baseline"])
+        for tree in model["trees"]:
+            node = 0
+            while not tree["leaf"][node]:
+                x = row[tree["feature"][node]]
+                goes_left = x <= tree["threshold"][node] or (x != x and tree["missing_left"][node])    # x != x: NaN
+                node = tree["left"][node] if goes_left else tree["right"][node]
+            total += tree["value"][node]
+        return total
+
+    expected = np.array([reference(row) for row in X.tolist()])
+    assert len(np.unique(expected)) > 100, "the rows no longer reach different leaves"
+    assert np.isnan(X).any() and (~np.isnan(X)).any()
+    got = trees.score(model, X)
+    assert got.shape == (300,) and got.dtype == np.float64
+    assert np.array_equal(got, expected), "trees.score differs from the plain walk by up to {:.3g}".format(
+        float(np.abs(got - expected).max()))
+    saved = trees.CHUNK
+    try:
+        for chunk in (64, 150, 299, 300):                          # the chunks only bound the temporaries
+            trees.CHUNK = chunk
+            assert np.array_equal(trees.score(model, X), expected), "CHUNK = {} changes the scores".format(chunk)
+    finally:
+        trees.CHUNK = saved
+    assert trees.score(model, X[:0]).shape == (0,), "no rows give no scores"
+
+
+def test_trees_check_names_its_caller():
+    # check_trees moved out of dead_ball_model; its messages start with the caller's name, so dead_ball_model's stay
+    # word for word and another learned source can use it under its own.
+    from pipeline.evidence import trees
+    good = hgb_model(MODEL_BASELINE, MODEL_SEEN, MODEL_MISSING, MODEL_PRIOR)
+    assert trees.check_trees(good, len(PLAY_NAMES), "full of m.json", "shape_possession") is None
+
+    def broken(**changes):
+        tree = dict(good["trees"][0], **changes)
+        return dict(good, trees=[tree])
+
+    too_many = {key: list(value) + [0] * 255 for key, value in good["trees"][0].items()}
+    for label, model, fragments in (
+            ("baseline", dict(good, baseline="0.3"), ("model full of m.json", "baseline")),
+            ("trees", dict(good, trees=None), ("model full of m.json", "trees")),
+            ("ragged", broken(left=[1, 0]), ("tree 0 of full of m.json", "seven node arrays")),
+            ("missing key", dict(good, trees=[{"feature": [0]}]), ("tree 0 of full of m.json", "seven node arrays")),
+            ("nodes", dict(good, trees=[too_many]), ("tree 0 of full of m.json", "258 nodes", "at most 255")),
+            ("feature", broken(feature=[len(PLAY_NAMES), -1, -1]), ("tree 0 of full of m.json", "node 0")),
+            ("child", broken(left=[0, 0, 0]), ("tree 0 of full of m.json", "node 0", "no later child"))):
+        message = expect_error(ValueError, lambda: trees.check_trees(model, len(PLAY_NAMES), "full of m.json",
+                                                                     "shape_possession"), *fragments)
+        assert message.startswith("shape_possession: "), "{}: {}".format(label, message)
+    # a feature count that does not reach the column of a split is refused
+    expect_error(ValueError, lambda: trees.check_trees(good, PLAY_COLUMN["ball_missing"], "x", "shape_possession"),
+                 "shape_possession", "node 0")
+
+
+def test_trees_helpers_name_their_caller():
+    # what the learned sources share besides the walk: each message starts with the caller's name, so a source's own
+    # tests (dead_ball_model's, shape_possession's) check its wording and this checks that there is one
+    import json
+    import weakref
+    from pipeline.evidence import trees
+    who = "some_source"
+    for bad in (None, 5, "", True):
+        message = expect_error(ValueError, lambda: trees.model_path(bad, who, "pipeline/models/x.json"), "model",
+                               "pipeline/models/x.json")
+        assert message.startswith("some_source: "), message
+    assert trees.model_path("pipeline/models/x.json", who, "y") == os.path.abspath(
+        os.path.join(ROOT, "pipeline", "models", "x.json"))
+    assert trees.model_path(os.path.abspath(__file__), who, "y") == os.path.abspath(__file__)
+    for bad in (0.0, 0.5, 1.0, -0.1, True, "0.1", None, float("nan")):
+        assert expect_error(ValueError, lambda: trees.check_min_prob(bad, who), "min_prob").startswith("some_source: ")
+    value = trees.check_min_prob(np.float64(0.25), who)
+    assert value == 0.25 and type(value) is float
+    assert expect_error(ValueError, lambda: trees.check_finite(np.array([[0.0, np.inf]]), who, "G1", "some_features"),
+                        "G1", "infinite", "some_features").startswith("some_source: ")
+    assert trees.check_finite(np.array([[0.0, np.nan]]), who, "G1", "some_features") is None
+    with np.errstate(over="raise", invalid="raise", divide="raise"):         # no overflow, however far out
+        far = trees.sigmoid(np.array([-1e4, -40.0, 0.0, 40.0, 1e4]))
+    assert far[0] == 0.0 and far[2] == 0.5 and far[4] == 1.0 and np.all(np.diff(far) >= 0)
+    assert np.allclose(trees.sigmoid(np.array([-3.0, 2.0])), 1.0 / (1.0 + np.exp([3.0, -2.0])), rtol=0, atol=1e-15)
+
+    good = hgb_model(MODEL_BASELINE, MODEL_SEEN, MODEL_MISSING, MODEL_PRIOR)
+    artifact = {"format": 1, "kind": "hgb", "feature_version": 3, "features": ["a", "b"], "folds": {"G1": good},
+                "full": good}
+    checked = []
+
+    def check(artifact, path, **changes):
+        options = dict(source="some_features", version=3, names=("a", "b"), kinds=("hgb", "other"),
+                       check_model=lambda model, where: checked.append(where))
+        options.update(changes)
+        trees.check_artifact(artifact, path, who, "retrain it, please", **options)
+
+    check(artifact, "m.json")
+    assert checked == ["G1 of m.json", "full of m.json"], checked
+    for label, changed, options in (
+            ("holds no model object", [1], {}), ("format", dict(artifact, format=2), {}),
+            ("some_features is at 3", dict(artifact, feature_version=4), {}),
+            ("features", dict(artifact, features=["b", "a"]), {}), ("some_features", artifact, {"names": ("a", "c")}),
+            ("kind", dict(artifact, kind="forest"), {}), ("folds", dict(artifact, folds=[]), {}),
+            ("full", {key: value for key, value in artifact.items() if key != "full"}, {})):
+        message = expect_error(ValueError, lambda: check(changed, "m.json", **options), label, "m.json",
+                               "retrain it, please")
+        assert message.startswith("some_source: "), message
+
+    with tempfile.TemporaryDirectory() as root:
+        path = write_text(root, "m.json", json.dumps(artifact))
+        cache, parsed = {}, []
+
+        def load():
+            return trees.load_artifact(path, who, lambda artifact, where: parsed.append(where), cache,
+                                       unreadable="train it", not_json="retrain it")
+
+        first = load()
+        assert load() is first and parsed == [path], "a file that did not change is not read or checked again"
+        write_text(root, "m.json", json.dumps(dict(artifact, seeds=3)))
+        assert load() is not first and len(parsed) == 2
+        message = expect_error(ValueError, lambda: trees.load_artifact(
+            os.path.join(root, "absent.json"), who, None, cache, unreadable="train it", not_json="retrain it"),
+            "absent.json", "train it")
+        assert message.startswith("some_source: "), message
+        write_text(root, "text.json", "not json")
+        message = expect_error(ValueError, lambda: trees.load_artifact(
+            os.path.join(root, "text.json"), who, None, cache, unreadable="train it", not_json="retrain it"),
+            "text.json", "retrain it")
+        assert message.startswith("some_source: "), message
+        assert os.path.join(root, "text.json") not in cache, "a file that is refused is not remembered"
+
+        class Holder:                                    # weakly referenceable, like an Inputs
+            pass
+
+        memo, built, holder = weakref.WeakKeyDictionary(), [], Holder()
+
+        def build():
+            built.append(1)
+            return np.arange(3.0)
+
+        array = trees.remember(memo, holder, path, "G1", build)
+        assert not array.flags.writeable and trees.remember(memo, holder, path, "G1", build) is array
+        assert len(built) == 1
+        assert trees.remember(memo, holder, path, "full", build) is not array and len(built) == 2
+        assert len(memo[holder]) == 1, "one model at a time per Inputs"
+        write_text(root, "m.json", json.dumps(dict(artifact, seeds=44)))
+        trees.remember(memo, holder, path, "full", build)
+        assert len(built) == 3, "a file that changed is a new stamp"
+        trees.remember(memo, Holder(), path, "full", build)
+        assert len(built) == 4, "the memo is per object"
+        del holder
+        assert len(memo) == 0, "the memo dies with the Inputs"
+
+
 # -- refine -----------------------------------------------------------------------------------------------------------
 
-def test_config_refiner_registry_starts_empty():
+def test_config_refiner_unknown_kind_lists_the_registry():
     from pipeline.config import ConfigError, load_config
     text = ('[[evidence]]\nkind = "nearest_player"\n\n[decoder]\nkind = "majority_vote"\nhalf_width = 50\n\n'
             '[[refine]]\nkind = "min_duration"\n')
     with tempfile.TemporaryDirectory() as folder:
         path = write_text(folder, "trial.toml", text)
-        expect_error(ConfigError, lambda: load_config(path), "min_duration", "REGISTRY is empty")
+        expect_error(ConfigError, lambda: load_config(path), "min_duration", "available", "shift_edges")
+
+
+# shift_edges (P02): move each kind of edge by a fixed number of frames. The design's algorithm is written out below as
+# scalar loops, and the helpers work in letters so that a failed assertion shows the labels.
+
+def shift_codes(text):
+    """int8 label codes from a string of H, A, D and X."""
+    from pipeline.contracts import CODES
+    return np.array([CODES[letter] for letter in text], dtype=np.int8)
+
+
+def shift_labels(labels, start=0, kickoffs=None, posterior=None, **parameters):
+    """The Decoded that the shift_edges refiner returns for a block at [start, start + len(labels)).
+
+    `kickoffs` is the dict of video frames that Inputs.kickoffs holds (none by default); the inputs here are a stand-in
+    that has that and nothing else, which is all the refiner may ask of them.
+    """
+    from types import SimpleNamespace
+    from pipeline.contracts import Block, BlockContext, Decoded, RunContext
+    from pipeline.refine import REGISTRY
+    inputs = SimpleNamespace(kickoffs={} if kickoffs is None else kickoffs)
+    ctx = BlockContext(run=RunContext(inputs=inputs, seed=0), block=Block(None, start, start + len(labels)),
+                       evidence={})
+    return REGISTRY["shift_edges"](ctx, Decoded(labels=labels, posterior=posterior), **parameters)
+
+
+def shift_reference(labels, offsets, fixed):
+    """(boundaries, targets) by the design's rule as plain loops: target, clip, then a pass each way.
+
+    A fixed boundary keeps its position as its target, and nothing more: the passes may still push it, which is why
+    shift_edges.apply is held to this reference only where it leaves every fixed boundary where it was.
+    """
+    n = len(labels)
+    cuts = [i for i in range(1, n) if labels[i] != labels[i - 1]]
+    targets = [cut if keep else cut + int(offset) for cut, offset, keep in zip(cuts, offsets, fixed)]
+    targets = [min(max(target, 1), n - 1) for target in targets]
+    for i in range(1, len(targets)):
+        targets[i] = max(targets[i], targets[i - 1] + 1)
+    for i in reversed(range(len(targets))):
+        targets[i] = min(targets[i], (targets[i + 1] if i + 1 < len(targets) else n) - 1)
+    return cuts, targets
+
+
+def shift_paint(labels, cuts, targets):
+    """The labels with the run that starts at each of `cuts` starting at the matching target instead."""
+    n = len(labels)
+    painted = np.empty(n, dtype=np.int8)
+    labels_of_runs = [labels[0]] + [labels[cut] for cut in cuts]
+    edges = [0] + list(targets) + [n]
+    for label, first, stop in zip(labels_of_runs, edges, edges[1:]):
+        painted[first:stop] = label
+    return painted
+
+
+def run_labels(labels):
+    """The labels of the runs of `labels`, in order, as a list."""
+    import itertools
+    return [int(key) for key, _ in itertools.groupby(labels.tolist())]
+
+
+def test_shift_edges_zero_is_identity():
+    labels = shift_codes("HHHAAADDDHHHXXAAD")
+    posterior = np.full((len(labels), 3), 1.0 / 3.0)
+    for parameters in ({}, {"team": 0, "into_dead": 0, "out_of_dead": 0}, {"team": np.int64(0)}):
+        result = shift_labels(labels, posterior=posterior, **parameters)
+        assert result.labels.tobytes() == labels.tobytes() and result.labels.dtype == np.int8, parameters
+        assert result.posterior is posterior, "all zero must hand the posterior on as it was: {}".format(parameters)
+    # Anything else moves labels, so the posterior would no longer describe them: it is dropped.
+    moved = shift_labels(labels, posterior=posterior, team=1)
+    assert moved.posterior is None and moved.labels.tobytes() != labels.tobytes()
+    # A block with no edge at all is unchanged by any shift, and still drops the posterior (the rule is on the setting).
+    flat = shift_codes("D" * 20)
+    result = shift_labels(flat, posterior=np.zeros((20, 3)), team=5, into_dead=-5, out_of_dead=5)
+    assert result.labels.tobytes() == flat.tobytes() and result.posterior is None
+
+
+def test_shift_edges_moves_each_type():
+    labels = shift_codes("H" * 40 + "A" * 40 + "D" * 40 + "H" * 40)
+    for parameters, expected in (
+            ({"team": 3}, "H" * 43 + "A" * 37 + "D" * 40 + "H" * 40),
+            ({"team": -3}, "H" * 37 + "A" * 43 + "D" * 40 + "H" * 40),
+            ({"into_dead": -5}, "H" * 40 + "A" * 35 + "D" * 45 + "H" * 40),
+            ({"into_dead": 5}, "H" * 40 + "A" * 45 + "D" * 35 + "H" * 40),
+            ({"out_of_dead": 2}, "H" * 40 + "A" * 40 + "D" * 42 + "H" * 38),
+            ({"out_of_dead": -2}, "H" * 40 + "A" * 40 + "D" * 38 + "H" * 42),
+            ({"team": 3, "into_dead": -5, "out_of_dead": 2}, "H" * 43 + "A" * 32 + "D" * 47 + "H" * 38)):
+        got = letters(shift_labels(labels, **parameters).labels)
+        assert got == expected, "{}: got {}".format(parameters, got)
+    # The type is the pair of labels: H -> A and A -> H are both a team change, D -> A is a way out of the dead ball.
+    labels = shift_codes("A" * 30 + "H" * 30 + "D" * 30 + "A" * 30)
+    got = letters(shift_labels(labels, team=4, into_dead=-3, out_of_dead=2).labels)
+    assert got == "A" * 34 + "H" * 23 + "D" * 35 + "A" * 28, got
+
+
+def test_shift_edges_boundaries_and_types():
+    from pipeline.contracts import LETTERS
+    from pipeline.refine import shift_edges
+    expected = {"HA": "team", "AH": "team", "HD": "into_dead", "AD": "into_dead", "DH": "out_of_dead",
+                "DA": "out_of_dead"}
+    for case in range(100):
+        rng = np.random.default_rng([8, 1000 + case])
+        labels = rng.integers(0, 4, size=int(rng.integers(0, 40))).astype(np.int8)
+        positions, types = shift_edges.boundaries(labels)
+        cuts = [i for i in range(1, len(labels)) if labels[i] != labels[i - 1]]
+        assert positions.dtype == np.int64 and positions.tolist() == cuts, (case, positions, cuts)
+        assert isinstance(types, tuple) and len(types) == len(cuts), (case, types)
+        for cut, kind in zip(cuts, types):
+            pair = LETTERS[labels[cut - 1]] + LETTERS[labels[cut]]
+            assert kind == expected.get(pair, shift_edges.ABSTAIN), (case, pair, kind)
+    assert set(expected.values()) == set(shift_edges.TYPES)
+    # A change into or out of X is not one of the three kinds: it has no offset, and the refiner leaves it where it is.
+    positions, types = shift_edges.boundaries(shift_codes("HHXXAADD"))
+    assert positions.tolist() == [2, 4, 6] and types == (shift_edges.ABSTAIN, shift_edges.ABSTAIN, "into_dead"), types
+
+
+def shift_random_labels(rng, n, long_runs):
+    """n labels from H, A and D: independent per frame (dense boundaries), or runs of 1-9 frames (sparse ones)."""
+    if not long_runs:
+        return rng.integers(0, 3, size=n).astype(np.int8)
+    labels = []
+    while len(labels) < n:
+        label = int(rng.integers(0, 3))
+        while labels and label == labels[-1]:
+            label = int(rng.integers(0, 3))
+        labels += [label] * int(rng.integers(1, 10))
+    return np.array(labels[:n], dtype=np.int8)
+
+
+def test_shift_edges_brute_force():
+    from pipeline.refine import shift_edges
+    exact = displaced = anchored = 0
+    for case in range(500):
+        rng = np.random.default_rng([8, case])
+        n = int(rng.integers(2, 31))
+        labels = shift_random_labels(rng, n, long_runs=bool(case // 2 % 2))
+        before = labels.copy()
+        positions, _ = shift_edges.boundaries(labels)
+        m = len(positions)
+        offsets = rng.integers(-10, 11, size=m)
+        fixed = rng.random(m) < (0.3 if case % 2 else 0.0)           # odd cases hold some boundaries, even ones none
+        got = shift_edges.apply(labels, offsets, fixed)
+        assert got.dtype == np.int8 and got.shape == (n,) and np.array_equal(labels, before), case
+        new_positions, _ = shift_edges.boundaries(got)
+        # The runs keep their labels and their order, and every run keeps at least one frame.
+        assert run_labels(got) == run_labels(labels), (case, letters(labels), letters(got))
+        assert len(new_positions) == m, (case, letters(labels), letters(got))
+        assert (new_positions >= 1).all() and (new_positions <= n - 1).all() and (np.diff(new_positions) >= 1).all()
+        # A fixed boundary never moves.
+        assert np.array_equal(new_positions[fixed], positions[fixed]), (case, letters(labels), fixed)
+        # With none held, each boundary is where a closed form puts it. Clipped to the block, target j is c_j and
+        # pushes boundary i > j to c_j + (i - j) at the earliest; the block's end holds boundary i to n - m + i at the
+        # latest. A boundary that nothing pushes and nothing clips moves by exactly its offset.
+        targets = positions + offsets
+        clipped = np.clip(targets, 1, n - 1)
+        if not fixed.any():
+            for i in range(m):
+                reached = max((int(clipped[j]) + i - j for j in range(i)), default=1)
+                expected = min(max(int(clipped[i]), reached), n - m + i)
+                assert new_positions[i] == expected, (case, i, letters(labels), offsets)
+                if targets[i] == clipped[i] and reached <= targets[i] <= n - m + i:
+                    assert new_positions[i] == targets[i], (case, i, letters(labels), offsets)
+                    exact += 1
+                else:
+                    displaced += new_positions[i] != targets[i]
+        # The design's algorithm, as loops: the same labels wherever it leaves every fixed boundary alone.
+        cuts, reference = shift_reference(labels, offsets, fixed)
+        if np.array_equal(np.array(reference, dtype=np.int64)[fixed], positions[fixed]):
+            assert np.array_equal(got, shift_paint(labels, cuts, reference)), (case, letters(labels), offsets, fixed)
+        else:
+            anchored += 1                               # there the design's passes would have pushed a fixed boundary
+    # A check in which nothing was ever clipped, pushed or held would prove nothing about the passes.
+    print("      boundaries unclipped {}, clipped or pushed {}; cases where a fixed boundary stopped one: {}".format(
+        exact, displaced, anchored))
+    assert exact >= 250 and displaced >= 500 and anchored >= 50, (exact, displaced, anchored)
+
+
+def test_shift_edges_keeps_kickoffs():
+    labels = shift_codes("D" * 30 + "H" * 30 + "A" * 20)
+    # The boundary D -> H is at frame 1030 of the match: the block starts at 1000, so it cannot be moved.
+    kept = shift_labels(labels, start=1000, kickoffs={1: 1030, 2: 5000}, team=3, out_of_dead=5)
+    assert letters(kept.labels) == "D" * 30 + "H" * 33 + "A" * 17, letters(kept.labels)
+    # Without a kick-off there, the same setting moves it. A kick-off is a frame of the match and not of the block:
+    # 30 is where the boundary stands in the block, and it is not a kick-off there.
+    for kickoffs in ({}, {2: 5000}, {1: 30}):
+        moved = shift_labels(labels, start=1000, kickoffs=kickoffs, team=3, out_of_dead=5)
+        assert letters(moved.labels) == "D" * 35 + "H" * 28 + "A" * 17, (kickoffs, letters(moved.labels))
+    # Any kind of boundary at a kick-off frame stays, and the others move.
+    held = shift_labels(labels, start=1000, kickoffs={1: 1060}, team=3, out_of_dead=5)
+    assert letters(held.labels) == "D" * 35 + "H" * 25 + "A" * 20, letters(held.labels)
+    # A kick-off at the first frame of the block is no boundary (the first frame is not a change): nothing is held.
+    got = letters(shift_labels(labels, start=0, kickoffs={1: 0}, out_of_dead=5).labels)
+    assert got == "D" * 35 + "H" * 25 + "A" * 20, got
+
+
+def test_shift_edges_leaves_edges_of_x_alone():
+    # H -> X and X -> A are fixed; a boundary beside them is stopped by them and does not push them.
+    labels = shift_codes("H" * 10 + "A" * 2 + "X" * 10)
+    got = letters(shift_labels(labels, team=5, into_dead=-3, out_of_dead=3).labels)
+    assert got == "H" * 11 + "A" + "X" * 10, got
+    labels = shift_codes("X" * 10 + "H" * 2 + "A" * 10)
+    got = letters(shift_labels(labels, team=-5).labels)
+    assert got == "X" * 10 + "H" + "A" * 11, got
+    labels = shift_codes("HHHH" + "XXXX" + "DDDD" + "AAAA")
+    got = letters(shift_labels(labels, team=2, into_dead=-1, out_of_dead=2).labels)
+    assert got == "HHHH" + "XXXX" + "D" * 6 + "AA", got                # H -> X and X -> D stay; D -> A is a way out
+    # In between, D -> A has the room that X leaves it and no more.
+    labels = shift_codes("H" * 5 + "X" * 5 + "D" * 5 + "A" * 5 + "X" * 5)
+    got = letters(shift_labels(labels, out_of_dead=3).labels)
+    assert got == "H" * 5 + "X" * 5 + "D" * 8 + "A" * 2 + "X" * 5, got
+    got = letters(shift_labels(labels, out_of_dead=9).labels)
+    assert got == "H" * 5 + "X" * 5 + "D" * 9 + "A" * 1 + "X" * 5, got
+
+
+def test_shift_edges_rejects_bad_parameters():
+    labels = shift_codes("HHHAAADDD")
+    for name in ("team", "into_dead", "out_of_dead"):
+        for bad in (True, np.True_, 1.5, 3.0, 251, -251, np.nan, np.inf, "3", None):
+            expect_error(ValueError, lambda: shift_labels(labels, **{name: bad}), "shift_edges", name)
+        # The largest shift is accepted either way, as is a whole number from numpy or from a notebook sweep.
+        for good in (250, -250, np.int64(7), np.int8(-7)):
+            shift_labels(labels, **{name: good})
+
+
+def test_shift_edges_apply_rejects_bad_arguments():
+    from pipeline.refine import shift_edges
+    labels = shift_codes("HHAADD")                                    # two boundaries
+    offsets, fixed = np.array([1, -1]), np.array([False, False])
+    shift_edges.apply(labels, offsets, fixed)
+    for bad in (offsets[:1], np.array([1.0, -1.0]), np.array([True, False]), np.zeros((2, 1), dtype=np.int64)):
+        expect_error(ValueError, lambda: shift_edges.apply(labels, bad, fixed), "shift_edges", "offsets")
+    for bad in (fixed[:1], np.array([0, 1]), np.zeros((2, 1), dtype=bool)):
+        expect_error(ValueError, lambda: shift_edges.apply(labels, offsets, bad), "shift_edges", "fixed")
+    expect_error(ValueError, lambda: shift_edges.boundaries(np.zeros((2, 2), dtype=np.int8)), "shift_edges", "1-D")
+    expect_error(ValueError, lambda: shift_edges.boundaries(np.array([0, 4], dtype=np.int8)), "shift_edges", "0-3")
+    expect_error(ValueError, lambda: shift_edges.boundaries(np.array([0.0, 1.0])), "shift_edges", "integer")
+    # Nothing to move: no boundary, no offsets, and a copy comes back.
+    flat = shift_codes("AAAA")
+    got = shift_edges.apply(flat, np.zeros(0, dtype=np.int64), np.zeros(0, dtype=bool))
+    assert got.tobytes() == flat.tobytes() and got is not flat and got.dtype == np.int8
+
+
+def test_shift_edges_accepts_read_only_labels():
+    labels = shift_codes("H" * 20 + "A" * 20 + "D" * 20)
+    labels.flags.writeable = False
+    before = labels.tobytes()
+    posterior = np.full((60, 3), 1.0 / 3.0)
+    posterior.flags.writeable = False
+    for parameters in ({"team": 4, "into_dead": -4}, {}):
+        result = shift_labels(labels, posterior=posterior, **parameters)
+        assert labels.tobytes() == before and len(result.labels) == 60, parameters
+    assert letters(shift_labels(labels, team=4, into_dead=-4).labels) == "H" * 24 + "A" * 12 + "D" * 24
 
 
 # -- output -----------------------------------------------------------------------------------------------------------
@@ -2640,6 +3828,113 @@ def test_run_end_to_end_synthetic_p06():
         assert set(result.evidence) == {"nearest_player", "ball_presence"}
         assert np.isnan(result.evidence["ball_presence"].home).all(), "ball_presence says nothing about the team"
         assert np.isnan(result.evidence["nearest_player"].alive).all(), "nearest_player says nothing about alive"
+
+
+# The shape of every config of P07's grid (pipeline/benchmark/configs/p07/): main.toml's evidence and decoder plus
+# `shape_possession` with the committed model, here at weight 0.1 and scope "gaps" (p07_w100_gaps). The synthetic
+# match is not a benchmark fold, so the source reads the file's `full` model (a game with a fold is scored by its own).
+P07_TRIAL_CONFIG = """
+description = "trial"
+seed = 0
+scope = "halves"
+
+[[evidence]]
+kind = "controlled_touch"
+radius = 2.0
+max_rel_speed = 6.0
+min_frames = 3
+confidence = 0.91
+hold = 0.55
+
+[[evidence]]
+kind = "dead_ball_model"
+weight = 1.0
+model = "pipeline/models/dead_ball_hgb.json"
+
+[[evidence]]
+kind = "shape_possession"
+weight = 0.1
+model = "pipeline/models/shape_possession_hgb.json"
+scope = "gaps"
+min_prob = 0.02
+
+[decoder]
+kind = "hmm"
+switch_team = 4
+switch_dead = 32
+min_possession = 25
+min_dead = 25
+"""
+
+
+def test_run_end_to_end_synthetic_p07():
+    """The committed model in main.toml's pipeline plus the shape source writes a valid file, no X in a block."""
+    from pipeline import output
+    from pipeline.config import load_config
+    from pipeline.contracts import X
+    from pipeline.run import run
+    with tempfile.TemporaryDirectory() as root:
+        make_synthetic_bundle(root)
+        inputs = synthetic_inputs(root, graded=[(1, 50, 280), (2, 320, 560)])
+        config = load_config(write_text(root, "trial.toml", P07_TRIAL_CONFIG))
+        assert [source.kind for source in config.evidence] == ["controlled_touch", "dead_ball_model",
+                                                               "shape_possession"]
+        assert config.evidence[2].weight == 0.1 and config.decoder.kind == "hmm"
+        out_path = os.path.join(root, "trial.csv")
+        result = run(config, inputs, out_path, log=quiet)
+        outside = np.ones(SYNTHETIC_FRAMES, dtype=bool)
+        outside[50:280] = outside[320:560] = False
+        assert (result.codes[outside] == X).all(), "frames outside the graded blocks must be X"
+        assert (result.codes[~outside] != X).all(), "the hmm decoder never abstains inside a block"
+        output.validate(out_path, SYNTHETIC_FRAMES, result.codes)
+        assert set(result.evidence) == {"controlled_touch", "dead_ball_model", "shape_possession"}
+        shape = result.evidence["shape_possession"]
+        assert np.isnan(shape.alive).all(), "the shape of the teams says nothing about alive"
+        speaks = ~np.isnan(shape.home)
+        assert speaks.any(), "the committed model said nothing on the synthetic match"
+        assert not speaks[outside].any() and not speaks[inputs.atd.ball_present].any(), \
+            "scope \"gaps\" speaks only inside a block, where the ball is missing"
+        assert np.nanmin(shape.home) >= 0.02 and np.nanmax(shape.home) <= 0.98, "min_prob clips home"
+
+
+SHIFT_REFINER = """
+[[refine]]
+kind = "shift_edges"
+team = 3
+into_dead = -2
+out_of_dead = 4
+"""
+
+
+def test_run_end_to_end_synthetic_shift():
+    """A config with a [[refine]] shift_edges writes a valid file, whose runs are the unrefined file's, moved."""
+    from pipeline import output
+    from pipeline.config import ConfigError, load_config
+    from pipeline.contracts import A, D, H, X
+    from pipeline.run import run
+    with tempfile.TemporaryDirectory() as root:
+        make_synthetic_bundle(root)
+        inputs = synthetic_inputs(root, graded=[(1, 50, 280), (2, 320, 560)])
+        plain = run(load_config(write_text(root, "plain.toml", P06_TRIAL_CONFIG)), inputs,
+                    os.path.join(root, "plain.csv"), log=quiet)
+        config = load_config(write_text(root, "trial.toml", P06_TRIAL_CONFIG + SHIFT_REFINER))
+        assert [component.kind for component in config.refine] == ["shift_edges"]
+        assert config.refine[0].params == {"team": 3, "into_dead": -2, "out_of_dead": 4}
+        out_path = os.path.join(root, "trial.csv")
+        result = run(config, inputs, out_path, log=quiet)
+        outside = np.ones(SYNTHETIC_FRAMES, dtype=bool)
+        outside[50:280] = outside[320:560] = False
+        assert (result.codes[outside] == X).all(), "frames outside the graded blocks must be X"
+        assert (result.codes[~outside] != X).all(), "the refiner never writes an X"
+        output.validate(out_path, SYNTHETIC_FRAMES, result.codes)
+        assert {int(code) for code in np.unique(result.codes[~outside])} == {H, A, D}, "a label never decoded"
+        # The refiner moved edges: not one run is gone or new, in either half, but the labels are not the same.
+        assert not np.array_equal(result.codes, plain.codes), "the shift changed nothing"
+        for start, stop in ((50, 280), (320, 560)):
+            assert run_labels(result.codes[start:stop]) == run_labels(plain.codes[start:stop]), (start, stop)
+        # A misspelt parameter is refused when the config loads, before any data does.
+        typo = write_text(root, "typo.toml", P06_TRIAL_CONFIG + SHIFT_REFINER + "teams = 1\n")
+        expect_error(ConfigError, lambda: load_config(typo), "teams", "shift_edges")
 
 
 def test_run_file_scope_equals_baseline_script():

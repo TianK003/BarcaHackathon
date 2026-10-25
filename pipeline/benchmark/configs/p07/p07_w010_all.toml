@@ -1,0 +1,42 @@
+# P07 grid (R011): main.toml's evidence and decoder (R010: controlled_touch, dead_ball_model, hmm 4/32/25/25) plus
+# shape_possession at weight 0.01, speaking on every graded frame (scope "all").
+#
+# Tests whether the shape and movement of the two teams, which needs no ball, adds to `home` on every graded
+# frame, beside controlled_touch where the ball is seen as well: does speaking there help or hurt?
+#
+# The model is pipeline/models/shape_possession_hgb.json, trained on the seven DFL matches with the ball hidden; a
+# benchmark match is scored by the fold that never saw it. The weight is an exponent on the source's likelihood, and
+# min_prob 0.02 caps a frame at 3.9 nats before it. The grid is weight {0.01, 0.02, 0.05, 0.1, 0.2, 0.5} x scope
+# {gaps, all}, 12 files; the choice is made on the benchmark by the rule declared in R011, never on the public window
+# (docs/traps.md T01).
+
+description = "P07 (R011): controlled_touch 2.0 m / 6.0 m/s / 3 frames / hold 0.55 (confidence 0.91) + dead_ball_model (hgb, pipeline/models/dead_ball_hgb.json) at weight 1.0 + shape_possession (hgb, pipeline/models/shape_possession_hgb.json) at weight 0.01, scope all, min_prob 0.02, hmm 4/32/25/25, decoded per half."
+seed = 0
+scope = "halves"
+
+[[evidence]]
+kind = "controlled_touch"
+radius = 2.0                                  # metres: the nearest player must be this close
+max_rel_speed = 6.0                           # m/s: and move with the ball
+min_frames = 3                                # an episode shorter than this is dropped
+confidence = 0.91                             # touch_stats.py: floor of the pooled agreement to a hundredth (91.9%)
+hold = 0.55                                   # the weak vote of the last team between episodes; 0.5 = off
+
+[[evidence]]
+kind = "dead_ball_model"
+weight = 1.0
+model = "pipeline/models/dead_ball_hgb.json"  # relative to the repo root
+
+[[evidence]]
+kind = "shape_possession"
+weight = 0.01                                         # an exponent on the source's likelihood: the grid's first axis
+model = "pipeline/models/shape_possession_hgb.json"   # relative to the repo root; a match with a fold gets it
+scope = "all"                                         # "gaps": ball missing only; "all": every graded frame
+min_prob = 0.02                                       # home is clipped to [0.02, 0.98]
+
+[decoder]
+kind = "hmm"
+switch_team = 4                               # nats a change of team (H <-> A) costs
+switch_dead = 32                              # nats a change into or out of D costs
+min_possession = 25                           # frames: no run of H or A shorter than this (1 is no minimum)
+min_dead = 25                                 # frames: no run of D shorter than this (1 is no minimum)

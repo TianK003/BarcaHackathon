@@ -28,7 +28,9 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R007 | 2026-10-25 | the `hmm` decoder's second grid on `tracking` v3 (P06): the minimum run lengths (`min_possession` 1 to 150 frames, `min_dead` 1 and 25) around Stage 1's choice, a one-step edge extension (Stage 2b), and the choice over the three stages; the chosen `pipeline/configs/p06_hmm.toml` is not the submission config | 0.6393 | 0.3500 | 23 / 11.4 s | 0.2053 raw and 0.1967 coarse for the chosen `p06s2b_t008_d032_mp075_md001` (the best of 123 configs: 0.2083 raw, `p06s2b_t004_d016_mp075_md001`, and 0.2310 coarse, `p06s2b_t008_d032_mp150_md001`), against `nearest_w50` 0.2018 raw and `nearest_w125` 0.2226 coarse | **(switch_team, switch_dead, min_possession, min_dead) = (8, 32, 75, 1)** by the pre-declared rule over the set Stage 2b's ruling extended (6 configs within 0.005 of the best raw score, and the best coarse score among them is 8 / 32 / 75, by 0.0007; over Stage 1 and Stage 2 alone the rule picks `p06s2_t016_d064_mp050_md025`, 0.0012 under `nearest_w50` raw); **the bar is not met under either truth** (the chosen config's raw pooled Δ against `nearest_w50` is +0.0036, p 0.2500; its coarse pooled Δ against `nearest_w125` is -0.0259, p 0.0156) and no config of the three stages meets it; the truths disagree on the minimum run (raw 75 frames, coarse 150 or more, the grid's upper edge); the winner is on an edge of Stage 2b's grid in t and d and is not extended; alive/dead F1 0.5676, below both yardsticks (0.6094, 0.6428); the public window is a correctness check only (valid, deterministic; in-sample for the three evidence values A01 measured on it); controls (diagnostics, none a candidate): `seen` off costs 0.0063 raw on `tracking` (0 wins in 7) and moves nothing coarse; `margin` 50 is above the chosen config in all four profile and truth cells (two of them on `context`, sensitivity only; +0.0023 to +0.0071) and clears the raw half of the bar on `tracking` (+0.0107 over `nearest_w50`, p 0.0312, 6 wins in 7) but not the coarse half (-0.0236 against `nearest_w125`), so a `margin` sweep by its own protocol is the follow-up; `switch_dead` on `context` (sensitivity only) is flat under the raw truth (a span of 0.0035 over 8 to 128) and the coarse truth wants more; the headroom is A10 |
 | R008 | 2026-10-25 | P04's controlled-touch evidence on `tracking` v3: the 12 rule settings (radius, `max_rel_speed`, `min_frames`, each `confidence` measured on all seven matches) x `hold` off or 0.55, 24 configs with `ball_presence` and the `hmm` (8, 32, 75, 1); the chosen `p45a_r20_v6_k03_h55` (not the submission config) | 0.6532 | 0.3889 | 19 / 13.9 s | 0.2345 raw and 0.2433 coarse for the chosen `p45a_r20_v6_k03_h55` (the best raw is `r15_v6_k03_h55` 0.2348; the best coarse is the chosen one), against `nearest_w50` 0.2018 raw and `nearest_w125` 0.2226 coarse, and R007's 0.2053 raw and 0.1967 coarse at the same decoder | **Stage A's choice is radius 2.0 m, `max_rel_speed` 6.0 m/s, `min_frames` 3, `hold` 0.55** (2 configs within 0.005 of the best raw, the best coarse among them is the chosen one by 0.0023); alone it clears both halves of P06's bar (raw Δ +0.0328 over `nearest_w50`, p 0.0156, 7 wins in 7; coarse Δ +0.0206 over `nearest_w125`, p 0.0156, 7 wins in 7) and the leave-one-match-out estimates agree (raw objective alone +0.0316 raw and +0.0176 coarse, the whole rule +0.0334 and +0.0209, 7 wins in 7 each); the winner is on the grid's edge in radius, speed, minimum frames and hold and nothing is added; with the hold off no config beats either yardstick; alive/dead F1 0.5731, no better than R007's 0.5676 by more than 0.006; the public window is a correctness check only; controls (diagnostics): adding `nearest_player` 0.78 costs 0.0161 raw and 0.0352 coarse (`p45actl_nearest`, 0.2184 and 0.2081), and on `context` (sensitivity only) the chosen config is +0.0568 raw over `nearest_w50` and +0.0534 coarse over `nearest_w125`, 7 wins in 7 each, so the four profile and truth cells agree; the combined bar is Stage C's |
 | R009 | 2026-10-25 | P05's dead-ball evidence on `tracking` v3: source (`rules`, `logit`, `hgb`) x weight (0.1 to 1.0) x `ball_presence` off or on, 24 configs with `nearest_player` 0.78 and the `hmm` (8, 32, 75, 1); the chosen `p45b_hgb_w100_bp0` (not the submission config) | 0.6482 | 0.3024 | 24 / 11.8 s | 0.3503 raw and 0.4150 coarse for the chosen `p45b_hgb_w100_bp0` (the best raw is `hgb_w100_bp1` 0.3529; the best coarse is the chosen one), against `nearest_w50` 0.2018 raw and `nearest_w125` 0.2226 coarse, and R007's 0.2053 raw and 0.1967 coarse at the same decoder | **Stage B's choice is the boosted trees at weight 1.0 without `ball_presence`** (2 configs within 0.005 of the best raw, the best coarse among them is the chosen one by 0.0029); alone it clears both halves of P06's bar (raw Δ +0.1486 over `nearest_w50`, p 0.0156, 7 wins in 7; coarse Δ +0.1924 over `nearest_w125`, p 0.0156, 7 wins in 7) and the leave-one-match-out estimates agree (+0.1498 and +0.1926 for the whole rule, 7 wins in 7 each); Stage B2 does not run (`hgb` leads `logit` by 0.0274 raw, and has the lower out-of-fold log-loss on 7 of 7 matches); alive/dead F1 0.9725 against 0.6094 and 0.6428; **the benchmark overstates P05 for BAR-ATH** (DFL tracks the ball out of play; our tracker loses the ball near the lines: beyond a line on 4.07% of our at-risk rows against DFL's 17.68%), by an amount it cannot measure, and the public window's alive agreement is 86.6% of 7,500 frames; the winner is on the grid's upper edge in weight and nothing is added; no evidence that `ball_presence` helps (costs up to 0.0917 raw below weight 1.0); the `context` control (sensitivity only) is +0.1359 raw and +0.1695 coarse over the yardsticks, 7 wins in 7 each, so the four profile and truth cells agree; the combined bar is Stage C's |
-| R010 | 2026-10-25 | P04 and P05 together on `tracking` v3: `controlled_touch` (R008) for `home` and the `hgb` `dead_ball_model` (R009) for `alive`, the `hmm` re-tuned over switch_team {4, 8, 16} x switch_dead {16, 32, 64} x `min_possession` {25, 50, 75, 100} x `min_dead` {1, 25}, 72 configs; the chosen `p45c_t004_d032_mp025_md025` is `pipeline/configs/p45_hmm.toml` and now `main.toml` | 0.6996 | 0.4686 | 18 / 15.7 s | 0.4217 raw and 0.4556 coarse for the chosen `p45c_t004_d032_mp025_md025` (the best raw; the best coarse is `p45c_t016_d032_mp100_md025` 0.5049, raw 0.3532), against `nearest_w50` 0.2018 raw and `nearest_w125` 0.2226 coarse, and R009's 0.3503 raw and 0.4150 coarse (P05 alone, R007's decoder) | **Chosen (switch_team, switch_dead, min_possession, min_dead) = (4, 32, 25, 25)** by the pre-declared rule (6 configs within 0.005 of the best raw score, all at switch_team 4 and min_possession 25, and the best coarse among them is the chosen one by 0.0002); **the bar is met under both truths** (raw Δ +0.2199 over `nearest_w50`, p 0.0156, 7 wins in 7; coarse Δ +0.2330 over `nearest_w125`, p 0.0156, 7 wins in 7) and the leave-one-match-out estimates agree (+0.2217 and +0.2341, 7 wins in 7 each); at the chosen decoder each source is needed (alone, at R007's decoder, each clears both halves; without `controlled_touch` the coarse Δ over `nearest_w125` is +0.0198, p 0.1406; without `dead_ball_model` it is -0.0056, p 0.1094; raw both hold); the truths disagree on the decoder (coarse prefers switch_team 16 and min_possession 100, T33) and the winner is on the grid's lower edge in switch_team and min_possession, nothing added; alive/dead F1 0.9726; the `context` control (sensitivity only) is +0.2130 raw and +0.2211 coarse over the yardsticks, 7 wins in 7 each; **the benchmark overstates P05 for BAR-ATH** (T38, T39), by an amount it cannot measure; the label-free check on our match passes (predicted `D` 36.0% of the graded frames, no `X` in a graded block, the same sha256 twice), so **`main.toml` is switched** (sha256 `a706e7f7...`, not uploaded); the public window is a correctness check only |
+| R010 | 2026-10-25 | P04 and P05 together on `tracking` v3: `controlled_touch` (R008) for `home` and the `hgb` `dead_ball_model` (R009) for `alive`, the `hmm` re-tuned over switch_team {4, 8, 16} x switch_dead {16, 32, 64} x `min_possession` {25, 50, 75, 100} x `min_dead` {1, 25}, 72 configs; the chosen `p45c_t004_d032_mp025_md025` is `pipeline/configs/p45_hmm.toml`, and was `main.toml` from R010 to R011 | 0.6996 | 0.4686 | 18 / 15.7 s | 0.4217 raw and 0.4556 coarse for the chosen `p45c_t004_d032_mp025_md025` (the best raw; the best coarse is `p45c_t016_d032_mp100_md025` 0.5049, raw 0.3532), against `nearest_w50` 0.2018 raw and `nearest_w125` 0.2226 coarse, and R009's 0.3503 raw and 0.4150 coarse (P05 alone, R007's decoder) | **Chosen (switch_team, switch_dead, min_possession, min_dead) = (4, 32, 25, 25)** by the pre-declared rule (6 configs within 0.005 of the best raw score, all at switch_team 4 and min_possession 25, and the best coarse among them is the chosen one by 0.0002); **the bar is met under both truths** (raw Δ +0.2199 over `nearest_w50`, p 0.0156, 7 wins in 7; coarse Δ +0.2330 over `nearest_w125`, p 0.0156, 7 wins in 7) and the leave-one-match-out estimates agree (+0.2217 and +0.2341, 7 wins in 7 each); at the chosen decoder each source is needed (alone, at R007's decoder, each clears both halves; without `controlled_touch` the coarse Δ over `nearest_w125` is +0.0198, p 0.1406; without `dead_ball_model` it is -0.0056, p 0.1094; raw both hold); the truths disagree on the decoder (coarse prefers switch_team 16 and min_possession 100, T33) and the winner is on the grid's lower edge in switch_team and min_possession, nothing added; alive/dead F1 0.9726; the `context` control (sensitivity only) is +0.2130 raw and +0.2211 coarse over the yardsticks, 7 wins in 7 each; **the benchmark overstates P05 for BAR-ATH** (T38, T39), by an amount it cannot measure; the label-free check on our match passes (predicted `D` 36.0% of the graded frames, no `X` in a graded block, the same sha256 twice), so **`main.toml` is switched** (sha256 `a706e7f7...`, not uploaded); the public window is a correctness check only |
+| R011 | 2026-10-25 | P07's shape-possession evidence on `tracking` v3: the held-out shape model (7 DFL matches, ball hidden, part 1) and a 12-config grid, `shape_possession` weight {0.01, 0.02, 0.05, 0.1, 0.2, 0.5} x scope {`gaps`, `all`} on top of R010's `main.toml`, the `hmm` (4, 32, 25, 25) unchanged; the chosen `p07_w200_all` is `pipeline/configs/p07_shape.toml`, and was `main.toml` from R011 to R012 | 0.7151 | 0.4000 | 20 / 14.1 s | 0.5159 raw and 0.5591 coarse for the chosen `p07_w200_all` (the best of the 12 under both truths), against R010's `main` 0.4217 raw and 0.4556 coarse (the same two sources and decoder without P07), and `nearest_w50` 0.2018 raw and `nearest_w125` 0.2226 coarse | **Chosen weight 0.2, scope `all`** by the pre-declared rule (the only config within 0.005 of the best raw score; the next is `p07_w100_all` 0.5057); **the bar is met** (`tracking` raw Δ +0.0942 over `main`, p 0.0156, 7 wins in 7) and the `context` veto does not fire (raw Δ +0.0831, 7 wins in 7); the coarse cells agree (+0.1035 on `tracking`, +0.0890 on `context`, 7 wins in 7 each), the leave-one-match-out estimate picks the same config in all seven folds (+0.0940 raw, 7 wins in 7), and all 12 configs beat `main` in all four cells (the smallest Δ +0.0290); alive/dead F1 0.9729; **the label-free checks on BAR-ATH pass** (`touch_agreement` with the `full` model 0.8251 on 41,052 frames against the gate's 0.7486, predicted `D` 35.8% against R010's 36.0%, 439 possessions = 4.1452 per graded minute against R010's 4.2491, no `X` in a graded block, the same sha256 twice), so **`main.toml` is switched** (sha256 `8810afce...`, not uploaded); the labels differ from R010's on 5.30% of the graded frames; the shape model was trained on other teams' matches, so the benchmark's gain is not a forecast for BAR-ATH, and the benchmark's count of possessions moves the other way (up 16%, BAR-ATH's down 2.4%); the public window is a correctness check only (spellF1 0.4000 against R010's 0.4686: 20 possessions against 18, one possession moves it about 0.06, T01; macroF1 0.7151 against 0.6996) |
+| R012 | 2026-10-25 | P02's edge shift on `tracking` v3: the pipeline's own lag on DFL (`conventions.py latency`, raw truth, 7 matches x 3 seeds), guarded by one config (`p02_sb`: R011's `main.toml` plus `shift_edges` team +1, into_dead -2, out_of_dead 0) in four cells, then the gap to our truth's convention read from the public window by the declared rule (g); the total is `pipeline/configs/p02_shift.toml` and now `main.toml` | 0.7159 in sample, 0.7125 out of fold | 0.4000 in sample and out of fold | 20 / 14.1 s | 0.5164 raw and 0.5592 coarse for `p02_sb`, against R011's `main` 0.5159 raw and 0.5591 coarse (pooled Δ +0.0005 raw, p 0.5000, 4 wins in 7; +0.0000 coarse); on `context` (sensitivity only) +0.0009 raw and +0.0001 coarse | **s_b is kept** by the guard (`tracking` raw Δ +0.0005 > 0, no cell below -0.005) and **g is 0 for every type** (1 to 4 matched public changes each, no type passes all three conditions), so the total is **team +1, into `D` -2, out of `D` 0 frames** and **`main.toml` is switched** (sha256 `3fd06da0...`, not uploaded); the shift is 1 to 2 frames and every benchmark gain is inside noise (all four intervals include 0, +0.0003 to +0.0004 macroF1 is the only consistent effect): adopted because the declared rule says so, not because it is shown to help; the labels differ from R011's on 0.34% of the graded frames, 439 possessions as before; the public window is a correctness check only (spellF1 0.4000 as R011's) |
 
 ### The four yardsticks on every profile, in one table
 
@@ -380,6 +382,11 @@ measurement looks only at the frames the truth calls alive.
   tracked ball is never more than about 4 m outside a line (x from −0.022 to 1.029 and y from −0.059 to 1.046 of the
   pitch over the seven matches; J03WQQ goes furthest).
 - Our match has no counterpart yet: it needs BAR-ATH's ball against the public GT's `D` onsets, which is P02.
+  *Later:* A11 has one, from 2 of the 4 public stoppages (the other 2 have no first sighting of the ball beyond a line
+  within 5 s): our tracking sees it a median 37 frames (1.48 s) after our `D` begins, where on DFL's `tracking` v3 copy
+  (raw and coarse truth alike) the flag turns 3 frames after the ball is seen, beside the 4 frames above, measured on
+  DFL's own positions. A lead, not a measurement: our truth's convention, or our tracker's loss of the ball near the
+  lines (T39).
 
 **The nearest player against the truth** (A01: 77.8% of 5,640 alive ball-visible frames on the public window). Brute
 force, in metres, present players only:
@@ -460,7 +467,10 @@ rate is at or below the literature's upper bound, 220 possessions a match, which
   (0.54 residual sd below). That is within what DFL's conventions produce, and 17 possessions cannot separate a
   different grain from noise. The 175–220 of the literature is what a control-based provider gives; whether ours is
   one is not shown here.
-- **D timing against ours is unmeasured.** DFL's counterpart needs BAR-ATH's ball, which is P02.
+- **D timing against ours is unmeasured.** DFL's counterpart needs BAR-ATH's ball, which is P02. *Later:* A11 measured
+  it on the public window's 4 stoppages and 12 team changes, weakly: against DFL's flag on the `tracking` v3 copy (raw
+  and coarse truth), the events our tracking sees put our `D` 2.5 to 3 s longer. That is our truth's convention, chance
+  or our tracker's coverage, and A11 does not separate them.
 - **Use:** hyperparameters are picked on the benchmark, never on the public window (CLAUDE.md, T01). Where a choice
   depends on how long a possession is (smoothing, a switch penalty λ, duration priors), rank it under the raw truth and
   under the coarse one side by side, and treat a disagreement between them as a warning, not as a licence to pick the
@@ -931,6 +941,228 @@ worth +0.0008 raw to this decoder, and +0.1971 once `D` is right; and any new so
 minimum-run choice. The recommendation that follows is in [proposals.md](proposals.md#after-p06). It stands on the
 coarse-truth ceiling, on P05 gating P07, on `D` being the chosen config's weakest point and on P04 running alongside
 it, and not on a raw-truth lead over P04.
+
+### A11 — Our ground truth's timing against DFL's, from tracking events (2026-10-25, Tian)
+
+Proposal: P02 · Commit: `9f06349` (the code all five runs were made at, from a detached checkout; the entry is in the
+commit that adds it) · Commands, with the data directory at the main checkout's `data/`; the instrument is
+`pipeline/benchmark/conventions.py`:
+
+```bash
+python pipeline/benchmark/conventions.py public
+python pipeline/benchmark/conventions.py dfl --profile tracking --seeds 3 --truth raw       # and --truth coarse
+python pipeline/benchmark/conventions.py compare --profile tracking --truth raw             # and --truth coarse
+```
+
+Public: the 20 changes of the public truth (12 of team, 4 into `D`, 4 out of it), timed on our real tracking.
+Validation (P01 benchmark): 7 DFL matches x 3 degradation seeds (0, 1, 2), profile `tracking` version 3, under the raw
+and under the coarse truth, pooled over matches and seeds by the lags themselves, never as a median of medians. All
+five logs end `EXIT=0`. This is a measurement and not a score: nothing is decoded, no configuration is compared and
+nothing is tuned or shifted from it (T01). Aggregates only; every figure is on a log line, or follows from two of them
+by arithmetic said where it is made.
+
+**What was measured.** A06 measured DFL's flag against the ball leaving the pitch and left the same question on our
+match open ("D timing against ours is unmeasured"). The instrument times every change of a truth's label against the
+nearest of eight events that the tracking shows without any label, so that no LLM has to see the match. A change is
+typed `team` (H to A or A to H), `into_dead` (H or A to D) or `out_of_dead` (D to H or A); a detector speaks only for
+the types it applies to:
+
+| detector | applies to | the event |
+|---|---|---|
+| `touch_start` | `team`, `out_of_dead` | the first frame of a kept `controlled_touch` episode of the new team (`main.toml`'s rule: 2.0 m, 6.0 m/s, 3 frames) |
+| `line_out` | `into_dead` | the first frame of a run where the ball is visible and beyond a line (`outside_m` above 0) |
+| `ball_lost` | `into_dead` | the first missing frame of a ball gap that opens inside the block |
+| `ball_moves` | `out_of_dead` | the first frame at or above `STILL_SPEED` after at least 25 frames below it, from positions (T31) |
+| `model_dead` / `model_alive` | `into_dead` / `out_of_dead` | where P05's `dead_ball_model` (R009, the file `main.toml` uses) alive crosses 0.5 down / up |
+| `tag_start` / `tag_end` | `into_dead` / `out_of_dead` | the start / end of a Smart Tagging `SET PIECES` interval; BAR-ATH only |
+
+The lag is `event - change` in frames (25 per second), so **a negative lag means the event came first**, and a positive
+one that the label flipped first. The event taken is the nearest to the change, the earlier on a tie, within 5 s either
+side, bounded by the neighbouring changes of any type (or the block's edges) so that a change is never matched to
+another one's event; none in that range is "not found". The detectors run over the graded halves of each match and the
+lags are read at the changes only: on BAR-ATH they find 1,189 `touch_start` episodes, 81 `line_out`, 149 `ball_lost`, 71
+`ball_moves`, 248 `model_dead` and 247 `model_alive` events in the graded halves, and 59 `tag_start` and 59 `tag_end`
+(every `SET PIECES` interval of the match's Smart Tagging: the tags are not clipped to the graded halves), of which the
+public window's changes see only those within 5 s. On DFL the same code runs on the tracking as the pipeline sees it
+under `tracking` v3 and no flag (`MatchInputs`), and the truth is read beside it only to find the changes. `model_dead`
+and `model_alive` are scored on DFL by the model fitted without that match (out of fold, by the code's rule), and on
+BAR-ATH by the one fitted on all seven.
+
+**The public window, on our tracking.** Found is the share of the changes with an event in the window. A cell with
+fewer than 5 changes found prints no quartile and no bound (the instrument's `MIN_SHOWN`: with so few they would be the
+lags of single stoppages), so only the median is given, and for the gap only whether its interval excludes 0:
+
+| type | detector | n | found | median | quartiles |
+|---|---|---|---|---|---|
+| `team` | `touch_start` | 12 | 10 (83%) | +24.0 frames (+0.96 s) | -4.5, +37.2 |
+| `into_dead` | `line_out` | 4 | 2 (50%) | +37.0 (+1.48 s) | not shown |
+| `into_dead` | `ball_lost` | 4 | 2 (50%) | +30.0 (+1.20 s) | not shown |
+| `into_dead` | `model_dead` | 4 | 3 (75%) | +39.0 (+1.56 s) | not shown |
+| `into_dead` | `tag_start` | 4 | 0 (0%) | none | |
+| `out_of_dead` | `touch_start` | 4 | 4 (100%) | +9.0 (+0.36 s) | not shown |
+| `out_of_dead` | `ball_moves` | 4 | 0 (0%) | none | |
+| `out_of_dead` | `model_alive` | 4 | 2 (50%) | -36.5 (-1.46 s) | not shown |
+| `out_of_dead` | `tag_end` | 4 | 1 (25%) | +19.0 (+0.76 s), one change | not shown |
+
+**DFL, on the degraded copy, under each truth.** Frames, with the median in seconds. `n` counts each change once per
+seed, so it is three times the changes: the raw truth has 3,760 (2,351 team, 710 into `D`, 699 out of it) and the coarse
+one 2,358 (949 team; it absorbs short possessions and leaves `D` as it is, A06), as the per-match lines of the logs add
+up and the pooled `n` divide by 3. Raw truth:
+
+| type | detector | n | found | median | p25 | p75 | median of each match |
+|---|---|---|---|---|---|---|---|
+| `team` | `touch_start` | 7,053 | 50% | -1.0 (-0.04 s) | -8.0 | +12.0 | -2.0 to -1.0 |
+| `into_dead` | `line_out` | 2,130 | 47% | -3.0 (-0.12 s) | -5.0 | -1.0 | -4.0 to -3.0 |
+| `into_dead` | `ball_lost` | 2,130 | 18% | +28.0 (+1.12 s) | -25.0 | +70.5 | +21.0 to +38.5 |
+| `into_dead` | `model_dead` | 2,130 | 93% | +1.0 (+0.04 s) | -1.0 | +2.0 | +1.0 to +2.0 |
+| `out_of_dead` | `touch_start` | 2,097 | 44% | +35.0 (+1.40 s) | +19.0 | +51.2 | +27.0 to +38.0 |
+| `out_of_dead` | `ball_moves` | 2,097 | 56% | -3.0 (-0.12 s) | -3.0 | -3.0 | -3.0 in all seven |
+| `out_of_dead` | `model_alive` | 2,097 | 96% | 0.0 (0.00 s) | -3.0 | +2.0 | 0.0 in six, -3.0 in J03WQQ |
+
+Coarse truth (the same matches, seeds and profile):
+
+| type | detector | n | found | median | p25 | p75 | median of each match |
+|---|---|---|---|---|---|---|---|
+| `team` | `touch_start` | 2,847 | 55% | 0.0 (0.00 s) | -7.0 | +25.0 | -1.0 to 0.0 |
+| `into_dead` | `line_out` | 2,130 | 47% | -3.0 (-0.12 s) | -5.0 | -1.0 | -4.0 to -3.0 |
+| `into_dead` | `ball_lost` | 2,130 | 19% | +23.0 (+0.92 s) | -36.0 | +67.0 | +4.0 to +36.0 |
+| `into_dead` | `model_dead` | 2,130 | 93% | +1.0 (+0.04 s) | -1.0 | +2.0 | +1.0 to +2.0 |
+| `out_of_dead` | `touch_start` | 2,097 | 48% | +37.0 (+1.48 s) | +21.0 | +59.0 | +34.0 to +39.0 |
+| `out_of_dead` | `ball_moves` | 2,097 | 56% | -3.0 (-0.12 s) | -3.0 | -3.0 | -3.0 in all seven |
+| `out_of_dead` | `model_alive` | 2,097 | 96% | 0.0 (0.00 s) | -3.0 | +2.0 | 0.0 in six, -3.0 in J03WQQ |
+
+The coarse truth removes team changes (the `team` n falls from 7,053 to 2,847), so a window bounded by the neighbouring
+changes reaches further. The cells whose events sit within a few frames of the change do not move (`line_out`,
+`model_dead`, `ball_moves` and `model_alive` are the same to the digit under both truths). Those whose events sit tens
+of frames away find more of them, a share 1 to 5 points higher, and move by 1 to 5 frames (`ball_lost` 5 earlier,
+`touch_start` after a restart 2 later, `team` 1 later). A check on the copy: its `line_out` median, -3 frames, is A06's
+4 frames (DFL's flag turning 0.16 s after the ball is first seen beyond a line, measured on its own positions) to within
+a frame, so the instrument reproduces A06 on the copy.
+
+**The gap: the public median minus DFL's**, with a 90% bootstrap interval of the public lags (2,000 draws; DFL's median
+is taken as it is, so the interval carries the public side's sampling only). Where the public side has fewer than 5
+changes found only whether the interval excludes 0 is printed:
+
+| type | detector | raw truth: gap | coarse truth: gap |
+|---|---|---|---|
+| `team` | `touch_start` | +25.0 (+1.00 s), [-9.0, +40.0] | +24.0 (+0.96 s), [-10.0, +39.0] |
+| `into_dead` | `line_out` | +40.0 (+1.60 s), excludes 0: yes | +40.0 (+1.60 s), excludes 0: yes |
+| `into_dead` | `ball_lost` | +2.0 (+0.08 s), excludes 0: no | +7.0 (+0.28 s), excludes 0: no |
+| `into_dead` | `model_dead` | +38.0 (+1.52 s), excludes 0: no | +38.0 (+1.52 s), excludes 0: no |
+| `out_of_dead` | `touch_start` | -26.0 (-1.04 s), excludes 0: yes | -28.0 (-1.12 s), excludes 0: yes |
+| `out_of_dead` | `model_alive` | -36.5 (-1.46 s), excludes 0: yes | -36.5 (-1.46 s), excludes 0: yes |
+
+`tag_start` and `tag_end` have no DFL counterpart, and `ball_moves` found nothing on the public side, so those three
+have no gap.
+
+**What it says about when our GT flips** (each against DFL's flag, on the events our tracking sees):
+
+- **Team changes: ours flips about a second before the new team's first controlled touch; DFL's flips at it.** On our
+  tracking the new team's first controlled touch comes a median 24 frames (0.96 s) after our truth flips, in 10 of the
+  12 changes (quartiles -4.5 and +37.2). On DFL's copy the touch comes 1 frame before the flag flips under the raw
+  truth and on the same frame under the coarse one (quartiles -8 and +12, -7 and +25), so DFL's flag turns where
+  control begins. The gap is +25 frames [-9, +40] raw and +24 [-10, +39] coarse. Both intervals hold 0, so **a
+  difference is not shown**; it is the best-supported cell on the public side (10 changes found) and it points one way,
+  with a spread (42 frames between the quartiles, against DFL's 20) wider than the gap itself. A flip at the moment the
+  ball is won, before the controlled touch is confirmed on our tracking, would give this; so would a later start of
+  controlled episodes on our tracker than on the copy. Nothing here separates them.
+- **`D` starts early, or our tracker sees the stoppage late: the ball is seen beyond a line about 1.5 s after our truth
+  turns to `D`, where DFL's flag turns just after it.** `line_out` is +37 frames (1.48 s) on the 2 of 4 stoppages where
+  our tracking sees the ball beyond a line within 5 s, against -3 (-0.12 s) on DFL, and the model's alive crosses 0.5
+  downward 39 frames (1.56 s) after our `D` begins on 3 of 4, against +1 frame on DFL, out of fold. The gaps are +40 and
+  +38 frames, the same under both truths. They are on 2 and 3 changes, and one interval excludes 0 where the other does
+  not, which is what 2 and 3 observations do and not a difference between the detectors. `ball_lost` agrees with DFL
+  (+30 against +28 raw, gap +2 and +7) and carries nothing: the copy's ball gaps are our masks transplanted with their
+  pattern and not their clock (R003), so where they fall is not placed by the stoppage.
+- **`D` ends late, or the two trackings' cues differ: the restart's first controlled touch comes 9 frames after our
+  truth turns alive, where DFL's comes 35 to 37 after its flag.** A first controlled touch is found at all 4 restarts, a
+  median 9 frames (0.36 s) after our flip; on DFL's copy it follows the flag by 35 (raw) or 37 (coarse) frames (1.40 s,
+  1.48 s), a gap of -26 and -28 frames. The model's alive crosses 0.5 upward 36.5 frames (1.46 s) before our truth turns
+  alive on 2 of 4, against 0 frames on DFL (a gap of -36.5). Both detectors put our `D`'s end later than DFL's flag
+  would be on the same events, by 1.0 to 1.5 s, and both intervals exclude 0 under both truths, on 4 and 2 changes.
+  `ball_moves` finds nothing on any of the 4 (on DFL its flag turns alive 3 frames after the ball starts to move in at
+  least half of the changes, p25 = p75 = -3.0, and every match's median is -3.0), so the sharper question, whether our
+  `D` ends at the kick, is not answered. Why our tracking shows no ball that is still for 25 frames and then moves near
+  these restarts is not explained here (a ball that is not visible, or not still).
+- **Taken together, the four `D`-edge gaps put our stoppages longer than DFL's flag would draw them.** Relative to
+  DFL, on the same kind of tracking events, `D` starts 1.5 s earlier and ends 1.0 to 1.5 s later: about 2.5 to 3 s a
+  stoppage (the sum of the gaps above, 64 to 76.5 frames, both truths). The signs differ between the start and the end,
+  so one constant offset between our tracking and the truth's frames (T08, T29) cannot be all of it, since it would
+  move every gap the same way. That does not leave a difference in convention as the explanation: tracker coverage
+  also gives opposite signs at the two ends (see "How strong", below).
+- **Smart Tagging says nothing yet.** `tag_start` finds no `SET PIECES` interval within 5 s of any of the 4 stoppages
+  and `tag_end` one of 4 (+19 frames, 0.76 s, a single change). A tag marks a window of a few seconds around an event
+  (T17), so it is not an instant, and it is absent from most of these edges.
+
+How strong: only the team cell has more than 4 changes, and its interval holds 0. The `D` findings rest on 2 to 4
+changes each. The four `D`-edge gaps that carry anything (`line_out` +40 and `model_dead` +38 at the start,
+`touch_start` after a restart -26 and `model_alive` -36.5 at the end, raw truth) all point to a longer `D`, and three of
+them exclude 0. Three explanations fit, and these data do not separate them:
+- **A difference in convention**: our truth turns `D` on earlier and off later than DFL's flag does.
+- **Chance**: four stoppages, found on 2 to 4 changes each, from one lively stretch of the match.
+- **Tracker coverage**, which predicts all four signs by itself. Our tracker loses the ball near the lines (T39: beyond
+  a line on 4.07% of our at-risk rows against DFL's 17.68%), so on ours `line_out` and `model_dead`, which lean on the
+  ball beyond a line, fire late (a positive gap at the start of `D`). With fewer cues that the ball is dead on ours, the
+  model's alive rises early (a negative `model_alive` gap at the end). And the copy's ball gaps are our masks placed
+  blind to the play (R003), which can delay the copy's first visible touch after a restart and inflate DFL's +35 (a
+  negative `touch_start` gap at the end). It gives no sizes, so how much of 2.5 to 3 s it could carry is not known.
+
+So they are **a lead and not a measurement**. The model-based pair mixes our truth's convention with the model's
+transfer to our tracking (below); the model-free pair (`line_out`, `touch_start` after a restart) avoids the model's
+transfer but not the coverage difference, since they are the two detectors most exposed to it, and rests on 2 and 4
+changes. What would separate convention from coverage is a person's check on the video of where `D` begins and ends
+against the ball and the whistle (below).
+
+**Caveats.**
+- **Four changes into `D`, four out of it, 12 of team.** Several `D` cells rest on 1 to 3 found changes (`line_out` and
+  `ball_lost` 2, `model_dead` 3, `model_alive` 2, `tag_end` 1), so a median is close to a single observation (over two
+  changes it is the midpoint of the pair), and an interval over so few says little. The quartiles of those cells and
+  every bound of their intervals are withheld on purpose.
+- **Two different trackings.** The detectors run on our real tracking for BAR-ATH and on DFL's positions degraded by
+  `tracking` v3 for the benchmark, so a gap mixes our truth's convention with any difference between our tracker and
+  the copy. For example, controlled-touch episodes may start later on our tracking than on the copy, which would show
+  as a positive team gap with no convention behind it. And the copy's ball is missing on 41.9% of the graded frames
+  (R004c's gate, 0.4189) while the public window's is missing on 11.8% (A01; 33.6% of its dead frames), so the copy's
+  first visible touch after a restart may come later than it really does, which would inflate DFL's +35 and with it the
+  negative `out_of_dead` gap. Found shares are partly that coverage (83% against 50% for team changes), and a median is
+  only over the changes found.
+- **The public window is unusually lively** (A06): alive on 80.4% of its frames, more than 96% of DFL's 5-minute
+  windows, and the best-covered stretch of the match. Its 4 stoppages and 12 team changes are not a sample of the
+  match's, and the restarts of a whole half (throw-ins, goal kicks, corners, free kicks in different shares) are not
+  represented.
+- **DFL tracks the ball out of play** (T39), which helps `line_out` and `model_dead` on the copy (the ball is beyond a
+  line on 17.68% of DFL's at-risk rows against 4.07% of ours, R009), and our tracker loses it near the lines. A late
+  `line_out` or `model_dead` on our tracking can be the tracker's, not the truth's. The model was fitted on DFL's flag,
+  and its lag there, +1 and 0 frames out of fold, shows it reproduces DFL's timing; whether it does so on ours is what
+  its found shares (75% and 50% against 93% and 96%) put in doubt (T39).
+- **`tag_start` and `tag_end` exist only on BAR-ATH**, so they have no gap; Smart Tagging's tag values are match data,
+  which no LLM may read, so no restart type is classified here (that stays with a person, below).
+- **The DFL side is pooled over three seeds**, so its `n` is three times the changes, and its medians are taken as fixed
+  numbers in the gap's interval.
+
+**How a person can extend it.** `python pipeline/benchmark/conventions.py public` regenerates
+`data/runs/conventions/public_transitions.csv` (gitignored, on our machines only): one row per change of the public
+truth, with its frame (the tactical video's frame, row i = frame i), the label before and after, its type and each
+detector's lag there, blank where the detector does not apply or found nothing. No LLM reads it, and no row of it is
+quoted anywhere. Watching the video around those frames, and measuring around the published transitions, is allowed;
+labelling frames of this match is not (T27). Things to watch at each change, and to write into the docs as aggregates
+and frame counts only:
+- at a change into `D`: whether `D` begins at the ball crossing the line, at the whistle or when play stops, and what
+  kind of stoppage it is (a throw-in, a goal kick, a corner, a free kick, a foul, a goal, an offside);
+- at a change out of `D`: the restart type, and whether `D` ends at the whistle, at the kick or at the first touch;
+- at a team change: what happens at the flip (a tackle, an interception, a deflection, the old team's last touch or the
+  new team's first), and whether the ball is visible there;
+- the four restarts where `ball_moves` found nothing, and the stoppages where `line_out` and `tag_start` found nothing.
+
+A frame-exact decode of the tactical video seeks back to a keyframe, at most 49 frames earlier (T23). More than 20
+transitions would come from P16's sample games in our truth's provider's conventions, not from the public window.
+
+**What it changes.** Nothing is adopted and no shift is derived from A11: its gaps are between detectors on two
+sources, and the pipeline's own latency at these 20 changes is what the `shift_edges` rule reads (R012: it found none
+of the three types passing the rule, so g = 0 and only the pipeline's lag on DFL is adopted, team +1, into `D` -2, out
+of `D` 0). It says where to look first, the two `D` edges before the team flips, and in which direction (our `D`
+earlier at the start and later at the end, our team flips earlier), which is T40: a component tuned on the benchmark
+may carry DFL's timing.
 
 ## Experiments
 
@@ -3864,21 +4096,606 @@ process). In the controls the first config took 135.5 s and 135.6 s on `tracking
 on `context`; the ablations took 20.8 s and 22.5 s (raw) and 20.8 s and 22.7 s (coarse).
 
 Verdict: **`p45c_t004_d032_mp025_md025` (`controlled_touch` and `dead_ball_model` with
-`pipeline/models/dead_ball_hgb.json` at weight 1.0 and the hmm (4, 32, 25, 25)) is P04 and P05's chosen config**, by the
-pre-declared rule over the 72 configs, and is written to `pipeline/configs/p45_hmm.toml`. It meets the bar under both
-truths (raw +0.2199 over `nearest_w50`, p 0.0156, 7 wins in 7; coarse +0.2330 over `nearest_w125`, p 0.0156, 7 wins in
-7), the leave-one-match-out estimates agree (+0.2217 and +0.2341, 7 wins in 7 each), the `context` profile is above
-both yardsticks by a wide margin (+0.2130, +0.2211), at the chosen decoder each source is needed (without P04 the
-coarse half of the bar fails, +0.0198, p 0.1406; without P05 it fails, -0.0056, p 0.1094; alone, at R007's decoder,
-each clears both halves, R008 and R009), and the label-free check on BAR-ATH passes (`D`
-36.0%, no `X` in a graded block, the same sha256 twice). **`main.toml` is switched**, and now produces sha256
-`a706e7f7...` (above); it has not been uploaded. The limits: **the size of the gain rests on DFL's out-of-play ball
-tracking and does not transfer in full to BAR-ATH, by an amount the benchmark cannot measure (T38, T39)**, and the
-predicted `D` share on our match (36.0%) is 8.6 points below the benchmark's; the choice is on the grid's lower edge in
-switch_team and min_possession and by the protocol none is extended; the coarse truth prefers the opposite end of both
-axes (switch_team 16, min_possession 100: 0.5049 coarse, 0.3532 raw), so the possession length is not settled (T33);
-the `controlled_touch` confidence is a measurement on the seven matches the grid is scored on; and the public window is
-a correctness check only (valid, deterministic, 18 possessions against 17, alive agreement 86.6%).
+`pipeline/models/dead_ball_hgb.json` at weight 1.0 and the hmm (4, 32, 25, 25)) is P04 and P05's chosen config**, by
+the pre-declared rule over the 72 configs, and is written to `pipeline/configs/p45_hmm.toml`. It meets the bar under
+both truths (raw +0.2199 over `nearest_w50`, p 0.0156, 7 wins in 7; coarse +0.2330 over `nearest_w125`, p 0.0156, 7
+wins in 7), the leave-one-match-out estimates agree (+0.2217 and +0.2341, 7 wins in 7 each), the `context` profile is
+above both yardsticks by a wide margin (+0.2130, +0.2211), at the chosen decoder each source is needed (without P04
+the coarse half of the bar fails, +0.0198, p 0.1406; without P05 it fails, -0.0056, p 0.1094; alone, at R007's
+decoder, each clears both halves, R008 and R009), and the label-free check on BAR-ATH passes (`D` 36.0%, no `X` in a
+graded block, the same sha256 twice). **`main.toml` is switched**, and then produced sha256 `a706e7f7...` (above; R011
+and R012 have changed it since); it has not been uploaded. The limits: **the size of the gain rests on DFL's
+out-of-play ball tracking and does not transfer in full to BAR-ATH, by an amount the benchmark cannot measure (T38,
+T39)**, and the predicted `D` share on our match (36.0%) is 8.6 points below the benchmark's; the choice is on the
+grid's lower edge in switch_team and min_possession and by the protocol none is extended; the coarse truth prefers the
+opposite end of both axes (switch_team 16, min_possession 100: 0.5049 coarse, 0.3532 raw), so the possession length is
+not settled (T33); the `controlled_touch` confidence is a measurement on the seven matches the grid is scored on; and
+the public window is a correctness check only (valid, deterministic, 18 possessions against 17, alive agreement
+86.6%).
+
+### R011 — P07's shape-possession evidence: the model's held-out scores, then the 12-config grid (2026-10-25, Tian)
+Proposal: P07 · Commit: `dd362bf` (the code the model was trained at: the trainer, `pipeline/benchmark/train_shape.py`,
+merged) and `7151e7a` (the trained model, `pipeline/models/shape_possession_hgb.json`, committed); the grid's 12 configs
+`pipeline/benchmark/configs/p07/p07_*.toml` and its runner are those of `5245490`, from a detached checkout of which the
+four grid processes were run (the runner's header says `52454905e0a3`; its tree is `5c2b37d`'s, which part 2 builds on);
+the label-free checks, the public window and the new `main.toml` were run at `5c2b37d` with `p07_shape.toml` and the new
+`main.toml` not yet committed (the manifest says `+dirty`), and the commit that holds this entry adds both · Command:
+part 1: `python pipeline/benchmark/train_shape.py` (writes the model; EXIT=0), `python
+pipeline/benchmark/train_shape.py --verify` (retrains and compares with the committed file: exit 0, "is what the code
+trains") and `python pipeline/benchmark/train_shape.py --report` (the held-out scores below; EXIT=0), all with the
+defaults `--profile tracking --seeds 3 --stride 5`. Part 2: four processes, one per profile and truth, each
+`python pipeline/benchmark/run.py pipeline/configs/main.toml pipeline/benchmark/configs/nearest_w50.toml
+pipeline/benchmark/configs/nearest_w125.toml pipeline/benchmark/configs/p07/*.toml --profile tracking --seeds 3 --truth
+raw`, and the same with `--profile context`; under `--truth coarse` the two yardsticks come in the order `nearest_w125`,
+`nearest_w50`. The label-free gate and figures on BAR-ATH are the two commands in the section on that check below.
+Public window and determinism: `python pipeline/run.py pipeline/configs/p07_shape.toml --score`, then the same without
+`--score`; `python pipeline/run.py pipeline/configs/main.toml` twice after the switch.
+
+Part 1 (the model and what it scores held out) was written before any config of the grid had run; part 2 (the grid, the
+choice, the bar, the veto, the gate and the verdict) after the four grid logs ended `EXIT=0`. Both apply the rules
+declared in part 1, as written.
+
+Public (a correctness check only, T01): macroF1 0.7151 · spellF1 0.4000 · alive/dead F1 0.9218 · 20 possessions against
+the truth's 17, mean 14.1 s against its 14.2 s. The file is valid (199,319 rows), sha256
+`8810afce254e94fe159769f3b55e8eef65f41a25c84f4550034e2afbc20e8487`, the same twice. Over the graded frames of the
+match it labels H 37.6%, A 26.6% and D 35.8% (X 0.0%) and finds 439 possessions (mean 9.3 s). `--score` reports
+`controlled_touch` agreeing with the public GT on home on 87.2% of 5,489 frames and `dead_ball_model` on alive on 86.6%
+of 7,500 frames (both as in R010: neither source changed), and `shape_possession` agreeing on home on 90.9% of 6,031
+frames (the judged frames where it has an opinion), with an opinion on home on 100.0% of the graded frames and none on
+alive. Against R010's `main.toml` on the same window (0.6996, 0.4686, 0.9222, 18 possessions) macroF1 is 0.0155 higher
+and spellF1 0.0686 lower; that is about one possession's worth on this window (T01: one possession moves spellF1 about
+0.06 here), with two more possessions than R010's 18, and it says nothing either way. No bootstrap was run, because no
+public-window gap is claimed, and no constant of the config comes from that window: the weight and the scope come from
+the grid, `min_prob` was fixed beforehand, and the trees were trained on the DFL matches.
+Validation (P01 benchmark): 7 DFL matches x 3 degradation seeds (0, 1, 2), 668.4 graded minutes per seed. The chosen
+config, `p07_w200_all` (R010's `main.toml` plus `shape_possession` at weight 0.2, scope `all`, `min_prob` 0.02; each
+benchmark match scored by the fold model that never saw it): on `tracking` v3 pooled spellF1 0.5159 raw (mean per match
+0.5179 [0.4877, 0.5481]) and 0.5591 coarse (0.5602 [0.5355, 0.5850]); macroF1 0.8861 raw and 0.8892 coarse; alive/dead
+F1 0.9729; 3.17 possessions per graded minute; `D` share 44.5% (the truth's 44.8%). On `context` (sensitivity only,
+T38) 0.5153 raw (0.5176 [0.4869, 0.5482]) and 0.5544 coarse (0.5550 [0.5360, 0.5739]).
+
+| profile | truth | against | pooled Δ | mean per match Δ [90% t] | p | wins |
+|---|---|---|---|---|---|---|
+| `tracking` | raw | `main` (R010): the bar's | +0.0942 | +0.0940 [+0.0775, +0.1105] | 0.0156 | 7 |
+| `tracking` | coarse | `main`: a warning if negative (T33) | +0.1035 | +0.1033 [+0.0869, +0.1197] | 0.0156 | 7 |
+| `context` | raw | `main`: the veto's | +0.0831 | +0.0835 [+0.0737, +0.0932] | 0.0156 | 7 |
+| `context` | coarse | `main`: a warning if negative | +0.0890 | +0.0890 [+0.0834, +0.0945] | 0.0156 | 7 |
+
+Changed vs the previous best: the previous best is R010's `main.toml` (`p45c_t004_d032_mp025_md025`): 0.4217 raw and
+0.4556 coarse on `tracking` v3, 0.4323 and 0.4654 on `context`; public 0.6996 macroF1, 0.4686 spellF1, 18 possessions;
+sha256 `a706e7f711b2d3faacc2f071b6e28963ed8e2f2326a7880e6d0776cce4295f1f`. The chosen config is +0.0942 raw and +0.1035
+coarse above it on `tracking` (pooled), +0.0586 raw macroF1 (0.8275 to 0.8861) and +0.0003 alive/dead F1; on BAR-ATH
+it relabels 5.30% of the graded frames (below).
+Verdict: **P07's chosen config is weight 0.2, scope `all` (`p07_w200_all`)**, by the pre-declared rule: it is the only
+config of the 12 within 0.005 of the best raw score. **The bar is met** (`tracking` raw Δ +0.0942 over `main.toml`, p
+0.0156, 7 wins in 7), **the `context` veto does not fire** (raw Δ +0.0831), the coarse cells agree and so does the
+leave-one-match-out estimate, and the label-free checks on BAR-ATH pass (`touch_agreement` 0.8251 against the gate's
+0.7486, predicted `D` 35.8% against R010's 36.0%, 4.1452 possessions per graded minute against R010's 4.2491, no `X`
+in a graded block, the same sha256 twice). **`main.toml` is switched**, and then produced sha256 `8810afce...` (not
+uploaded; R012 has since added the shift). The limits are below: the shape model was trained on other teams' matches,
+the benchmark's size of the gain is not a forecast for BAR-ATH (the P05 caveat of R010 still holds), and the public
+window is a correctness check only.
+
+**The model.** A classifier of which team has the ball from the 26 `shape_features` of a frame (feature version 1: per
+team the present slots, the mean and the 10th and 90th percentile of how far up the pitch the team is, its width, its
+velocity along the attack and its mean speed, its shares in the attacking and the defending third, the change of its
+mean advance over 1 s and 2 s and its velocity over a 1 s window; plus the gap between the two teams' advance and in
+their present slots). No column reads the ball, so the model can be asked about the frames where the ball is missing,
+which is 41% of the graded frames of our match. It is scikit-learn's `HistGradientBoostingClassifier` with P05's
+settings (`train_dead_ball.HGB_SETTINGS`: learning rate 0.05, 300 iterations, 15 leaves, `min_samples_leaf` 1000, L2
+1.0, no early stopping, `random_state` 0), fixed beforehand and never tuned (T26). The training rows are every 5th
+alive graded frame (truth H or A) of the seven DFL matches, degraded as `tracking` v3, seeds 0 to 2: 331,881 rows
+(41,016 to 51,213 a match, home 43.9% to 62.9% of a match's rows). Each row is added again as its team-swapped mirror
+with the label flipped, so the classes balance exactly (`prior_home` 0.5) and `full` is fitted on 663,762 rows. There is
+one fold model per held-out match, fitted on the other six, and `full`, fitted on all seven; the file is 3,668,856
+bytes. `pipeline/evidence/shape_possession.py` runs the trees with numpy alone, symmetrises the output (the logit is
+half of r(x) minus r(swap(x))) and clips `home` to [0.02, 0.98]. A benchmark match is scored by its own fold and BAR-ATH
+by `full`.
+
+**Held out.** Profile `tracking` version 3, 7 DFL matches x 3 degradation seeds (0, 1, 2), the seeds pooled by frames.
+Each fold model on its own match, served as the pipeline serves it (`shape_possession` with scope `all` and the
+default `min_prob` 0.02), against the raw truth (`D` where `BallStatus` is dead, else the team in `BallPossession`) on
+the alive frames (truth H or A) of all the graded frames, not only the training stride; `home` >= 0.5 is the
+accuracy's call. "Ball missing" is the alive frames where the served (degraded) ball has no position. The source had
+an opinion on every alive frame of every match (0 silent: it is silent only where nobody is present). `touch
+agreement` is the label-free cross-check described below. The pooled row sums the frames, and is not a mean of the
+matches.
+
+| match | alive frames | log-loss | accuracy | ball missing: frames | log-loss | accuracy | touch frames | touch agreement |
+|---|---|---|---|---|---|---|---|---|
+| J03WMX | 256,107 | 0.3759 | 0.8474 | 98,966 | 0.3928 | 0.8304 | 89,144 | 0.8546 |
+| J03WN1 | 205,131 | 0.4739 | 0.7809 | 87,035 | 0.4612 | 0.7912 | 82,958 | **0.7486** |
+| J03WOH | 215,835 | 0.3603 | 0.8430 | 90,369 | 0.3711 | 0.8373 | 80,249 | 0.8170 |
+| J03WOY | 228,858 | 0.3676 | 0.8429 | 95,561 | 0.3624 | 0.8440 | 76,411 | 0.8476 |
+| J03WPY | 244,380 | 0.3382 | 0.8496 | 101,397 | 0.3574 | 0.8389 | 85,679 | 0.8462 |
+| J03WQQ | 253,056 | 0.3354 | 0.8530 | 108,130 | 0.3481 | 0.8475 | 89,155 | 0.8159 |
+| J03WR9 | 255,948 | 0.3120 | 0.8669 | 96,442 | 0.3500 | 0.8495 | 100,223 | 0.8654 |
+| **pooled** | 1,659,315 | 0.3633 | 0.8422 | 677,900 | **0.3759** | 0.8349 | 603,819 | 0.8290 |
+
+`ln 2` = 0.6931 is the log-loss of saying 0.5 on every frame. The pooled alive-frame log-loss is 0.3633 and the pooled
+log-loss with the ball missing is 0.3759 (those frames are 40.9% of the alive frames, close to our own match's 41% of
+the graded ones): the frames the source is for are slightly harder than the rest, and still 0.3172 nats below chance.
+J03WN1 is the hardest match on every column (log-loss 0.4739, 0.4612 with the ball missing; accuracy 0.7809 and 0.7912;
+touch agreement 0.7486), J03WR9 the easiest by accuracy (0.8669, 0.8495 with the ball missing) and J03WQQ by the
+ball-missing log-loss (0.3481).
+
+**The stop rule does not fire.** P07's design declared that the pooled held-out log-loss on the alive frames with the
+ball missing must be below ln 2 - 0.01 = 0.6831, or P07 stops here and the negative result is recorded. It is **0.3759
+< 0.6831**, by 0.3072, and the worst match (J03WN1, 0.4612) is also 0.2219 under it. P07 goes on to the grid.
+
+**What the numbers do not say.**
+- They are frame-level scores of a probability. They show that the shape of the teams carries information about who has
+  the ball where the ball is missing; they do not show what it adds to possession spellF1 where `controlled_touch` and
+  the decoder already hold a view. That is the grid's question. Neighbouring frames are nearly the same frame, so no
+  interval is given and 0.84 accuracy is not 84% of possessions.
+- They are scores on DFL's degraded tracking under DFL's flag, which is fine-grained (437 possessions a match, A06).
+  Seven matches from two competitions, five of them Fortuna Düsseldorf home games, are not seven independent draws (as
+  in R010), and a fold that holds one of those out trains on four others. BAR-ATH is a LaLiga match with neither team in
+  the training set. The held-out figures are not a forecast for it; the transfer gate below is the label-free look.
+
+**`touch_agreement`, and the transfer gate.** The share of the frames inside kept `controlled_touch` episodes
+(`conventions.TOUCH`: 2.0 m, 6.0 m/s, 3 frames, confidence 0.99 so that `home` is a number on exactly the kept frames,
+hold off) where the shape source's `home` (scope `all`, >= 0.5) names the episode's team. It needs no truth, so it can
+be asked of BAR-ATH with `full`. It is a proxy and not an accuracy: the episode's team is itself right on about 92% of
+its frames (91.9% pooled over the seven matches, the source of `controlled_touch`'s 0.91 in `main.toml`). The pooled
+value is 0.8290 over 603,819 frames; per match 0.8546, 0.7486, 0.8170, 0.8476, 0.8462, 0.8159 and 0.8654 (table). **The
+lowest per match is 0.7486, J03WN1.** That is the threshold of the transfer gate declared below, and it is read from
+this table and fixed here.
+
+**Declared before the grid runs** (P07's design, 2026-10-25; part 2 applies it as written). The weights, the scopes and
+the rules below are fixed before any config of the grid has run, and none is chosen from a grid score:
+- *Selection:* the objective is the pooled spellF1 on `tracking`, raw truth, over the 12 configs; the tie band is 0.005;
+  ties go to the best `tracking` coarse score, then the smaller weight, then `gaps` over `all`.
+- *Bar,* against `main.toml` (R010): `tracking` raw Δ > 0 with sign-flip p <= 0.05; `context` raw Δ > 0, a veto and
+  never a validation (T38); the coarse cells are reported as warnings (T33).
+- *Label-free transfer gate:* on BAR-ATH, `touch_agreement` with the `full` model and scope `all` must be at least
+  **0.7486**, the lowest per-match value above.
+- *The rest:* no `X` in the graded blocks and the same sha256 twice; the `D` share and the possessions per graded
+  minute are reported against R010's (36.0% and 4.2491, which is 450 possessions over the graded frames). *Note:* this
+  bullet first counted possessions over the graded frames, and after the grid had run its wording was aligned to P07's
+  design, which says per graded minute (the same information: 450 possessions in 105.9 minutes). It only names what is
+  reported, and no choice depended on it.
+- If adopted, `main.toml` becomes the chosen config. `pipeline/configs/p07_shape.toml` is written either way.
+
+**The grid.** 12 configs `pipeline/benchmark/configs/p07/p07_w{WWW}_{gaps,all}.toml`: the weight w of `shape_possession`
+in {0.01, 0.02, 0.05, 0.1, 0.2, 0.5} (`WWW` is 1000 w, zero-padded: 010, 020, 050, 100, 200, 500) x scope `gaps` (home
+only where the ball is missing) or `all` (every graded frame). Each is `main.toml`'s evidence and decoder verbatim
+(`controlled_touch` 2.0 m / 6.0 m/s / 3 frames / hold 0.55 at confidence 0.91, `dead_ball_model` with the `hgb` file at
+weight 1.0, hmm (4, 32, 25, 25) decoded per half, seed 0) plus `shape_possession` with the committed model and
+`min_prob` 0.02. The weight is an exponent on the source's likelihood, and `min_prob` caps a frame at 3.9 nats before
+it. The runs (part 2): `main.toml`, `nearest_w50`, `nearest_w125` and the 12 configs, each on `tracking` v3 and on
+`context` (a sensitivity check and the veto only, T38), under the raw and the coarse truth, 3 seeds.
+
+**Part 2: the grid.** Four processes, one per profile and truth, each over `main.toml`, the two yardsticks and the 12
+configs (7 matches x 3 seeds; 668.4 graded minutes per seed). `main.toml` is R010's (this is before the switch) and is
+the reference of every Δ; the yardsticks are the references of R004c and R005 and are not candidates. The first table
+is `tracking` v3, the profile of the selection (the same `alive/dead F1`, possessions per minute and `D` share under
+both truths: the predicted labels do not depend on the truth); the second is `context`, sensitivity only (T38). The
+truth has 4.58 possessions per graded minute raw and 2.48 coarse, and `D` on 44.8% of the graded frames. The bold row
+is the chosen config.
+
+`tracking` v3:
+
+| config | raw spellF1 | coarse spellF1 | raw macroF1 | coarse macroF1 | alive/dead F1 | possessions / min | D share |
+|---|---|---|---|---|---|---|---|
+| `main` | 0.4217 | 0.4556 | 0.8275 | 0.8288 | 0.9726 | 2.74 | 44.6% |
+| `nearest_w50` | 0.2018 | 0.1842 | 0.4592 | 0.4602 | 0.6094 | 4.30 | 33.4% |
+| `nearest_w125` | 0.1665 | 0.2226 | 0.4407 | 0.4509 | 0.6428 | 3.05 | 23.3% |
+| `p07_w010_all` | 0.4537 | 0.4993 | 0.8636 | 0.8668 | 0.9726 | 2.80 | 44.6% |
+| `p07_w010_gaps` | 0.4528 | 0.4988 | 0.8634 | 0.8665 | 0.9726 | 2.81 | 44.6% |
+| `p07_w020_all` | 0.4694 | 0.5186 | 0.8711 | 0.8753 | 0.9726 | 2.88 | 44.6% |
+| `p07_w020_gaps` | 0.4673 | 0.5161 | 0.8706 | 0.8748 | 0.9726 | 2.89 | 44.6% |
+| `p07_w050_all` | 0.4923 | 0.5426 | 0.8791 | 0.8830 | 0.9726 | 2.98 | 44.6% |
+| `p07_w050_gaps` | 0.4866 | 0.5319 | 0.8768 | 0.8804 | 0.9726 | 3.06 | 44.6% |
+| `p07_w100_all` | 0.5057 | 0.5531 | 0.8829 | 0.8864 | 0.9727 | 3.05 | 44.6% |
+| `p07_w100_gaps` | 0.4961 | 0.5335 | 0.8788 | 0.8813 | 0.9727 | 3.18 | 44.6% |
+| **`p07_w200_all`** | 0.5159 | 0.5591 | 0.8861 | 0.8892 | 0.9729 | 3.17 | 44.5% |
+| `p07_w200_gaps` | 0.5046 | 0.5262 | 0.8799 | 0.8806 | 0.9729 | 3.33 | 44.5% |
+| `p07_w500_all` | 0.5051 | 0.5406 | 0.8839 | 0.8867 | 0.9727 | 3.35 | 44.3% |
+| `p07_w500_gaps` | 0.5032 | 0.5057 | 0.8789 | 0.8783 | 0.9727 | 3.56 | 44.3% |
+
+`context` v1 (sensitivity only):
+
+| config | raw spellF1 | coarse spellF1 | raw macroF1 | coarse macroF1 | alive/dead F1 | possessions / min | D share |
+|---|---|---|---|---|---|---|---|
+| `main` | 0.4323 | 0.4654 | 0.8353 | 0.8361 | 0.9700 | 2.81 | 44.8% |
+| `nearest_w50` | 0.2193 | 0.2057 | 0.5144 | 0.5160 | 0.6575 | 4.37 | 34.2% |
+| `nearest_w125` | 0.1774 | 0.2443 | 0.4770 | 0.4877 | 0.6711 | 3.07 | 23.1% |
+| `p07_w010_all` | 0.4626 | 0.5080 | 0.8660 | 0.8697 | 0.9700 | 2.86 | 44.8% |
+| `p07_w010_gaps` | 0.4613 | 0.5071 | 0.8657 | 0.8693 | 0.9700 | 2.86 | 44.8% |
+| `p07_w020_all` | 0.4737 | 0.5223 | 0.8718 | 0.8756 | 0.9700 | 2.91 | 44.8% |
+| `p07_w020_gaps` | 0.4721 | 0.5206 | 0.8713 | 0.8752 | 0.9700 | 2.92 | 44.8% |
+| `p07_w050_all` | 0.4969 | 0.5430 | 0.8790 | 0.8823 | 0.9699 | 3.01 | 44.8% |
+| `p07_w050_gaps` | 0.4902 | 0.5332 | 0.8770 | 0.8803 | 0.9699 | 3.08 | 44.8% |
+| `p07_w100_all` | 0.5082 | 0.5501 | 0.8825 | 0.8855 | 0.9699 | 3.07 | 44.8% |
+| `p07_w100_gaps` | 0.4987 | 0.5323 | 0.8786 | 0.8809 | 0.9699 | 3.19 | 44.8% |
+| **`p07_w200_all`** | 0.5153 | 0.5544 | 0.8847 | 0.8872 | 0.9699 | 3.15 | 44.7% |
+| `p07_w200_gaps` | 0.5053 | 0.5251 | 0.8792 | 0.8802 | 0.9699 | 3.31 | 44.7% |
+| `p07_w500_all` | 0.5088 | 0.5401 | 0.8831 | 0.8853 | 0.9697 | 3.33 | 44.4% |
+| `p07_w500_gaps` | 0.5095 | 0.5104 | 0.8793 | 0.8787 | 0.9697 | 3.49 | 44.4% |
+
+Paired against `main.toml` (the first config of each log; Δ = config minus `main`, so positive means the config is
+better; pooled Δ, then the mean per-match Δ with its 90% t-interval, the exact sign-flip p over the 2^7 sign patterns,
+and the wins in 7 matches; the yardsticks have 0 wins and 7 losses). With 7 matches the smallest p there can be is
+0.0156, so neither it nor an interval makes a gap real.
+
+`tracking` v3, raw truth (the bar's cell):
+
+| config | pooled spellF1 | pooled Δ | mean per match Δ [90% t] | p | wins in 7 | macroF1 Δ |
+|---|---|---|---|---|---|---|
+| `nearest_w50` | 0.2018 | -0.2199 | -0.2217 [-0.2415, -0.2019] | 0.0156 | 0 | -0.3683 |
+| `nearest_w125` | 0.1665 | -0.2552 | -0.2564 [-0.2732, -0.2396] | 0.0156 | 0 | -0.3868 |
+| `p07_w010_all` | 0.4537 | +0.0320 | +0.0321 [+0.0266, +0.0375] | 0.0156 | 7 | +0.0361 |
+| `p07_w010_gaps` | 0.4528 | +0.0311 | +0.0312 [+0.0259, +0.0366] | 0.0156 | 7 | +0.0358 |
+| `p07_w020_all` | 0.4694 | +0.0477 | +0.0480 [+0.0404, +0.0555] | 0.0156 | 7 | +0.0436 |
+| `p07_w020_gaps` | 0.4673 | +0.0456 | +0.0458 [+0.0381, +0.0536] | 0.0156 | 7 | +0.0430 |
+| `p07_w050_all` | 0.4923 | +0.0706 | +0.0709 [+0.0609, +0.0809] | 0.0156 | 7 | +0.0516 |
+| `p07_w050_gaps` | 0.4866 | +0.0650 | +0.0651 [+0.0564, +0.0737] | 0.0156 | 7 | +0.0492 |
+| `p07_w100_all` | 0.5057 | +0.0840 | +0.0841 [+0.0695, +0.0986] | 0.0156 | 7 | +0.0554 |
+| `p07_w100_gaps` | 0.4961 | +0.0745 | +0.0743 [+0.0642, +0.0844] | 0.0156 | 7 | +0.0512 |
+| **`p07_w200_all`** | 0.5159 | +0.0942 | +0.0940 [+0.0775, +0.1105] | 0.0156 | 7 | +0.0586 |
+| `p07_w200_gaps` | 0.5046 | +0.0830 | +0.0827 [+0.0719, +0.0935] | 0.0156 | 7 | +0.0524 |
+| `p07_w500_all` | 0.5051 | +0.0835 | +0.0830 [+0.0685, +0.0975] | 0.0156 | 7 | +0.0564 |
+| `p07_w500_gaps` | 0.5032 | +0.0815 | +0.0810 [+0.0694, +0.0927] | 0.0156 | 7 | +0.0514 |
+
+`tracking` v3, coarse truth (a warning, T33):
+
+| config | pooled spellF1 | pooled Δ | mean per match Δ [90% t] | p | wins in 7 | macroF1 Δ |
+|---|---|---|---|---|---|---|
+| `nearest_w50` | 0.1842 | -0.2714 | -0.2724 [-0.2910, -0.2537] | 0.0156 | 0 | -0.3686 |
+| `nearest_w125` | 0.2226 | -0.2330 | -0.2341 [-0.2480, -0.2202] | 0.0156 | 0 | -0.3779 |
+| `p07_w010_all` | 0.4993 | +0.0437 | +0.0437 [+0.0342, +0.0532] | 0.0156 | 7 | +0.0380 |
+| `p07_w010_gaps` | 0.4988 | +0.0432 | +0.0432 [+0.0342, +0.0522] | 0.0156 | 7 | +0.0377 |
+| `p07_w020_all` | 0.5186 | +0.0630 | +0.0631 [+0.0525, +0.0738] | 0.0156 | 7 | +0.0465 |
+| `p07_w020_gaps` | 0.5161 | +0.0605 | +0.0605 [+0.0504, +0.0706] | 0.0156 | 7 | +0.0459 |
+| `p07_w050_all` | 0.5426 | +0.0870 | +0.0870 [+0.0712, +0.1027] | 0.0156 | 7 | +0.0541 |
+| `p07_w050_gaps` | 0.5319 | +0.0762 | +0.0759 [+0.0628, +0.0891] | 0.0156 | 7 | +0.0515 |
+| `p07_w100_all` | 0.5531 | +0.0974 | +0.0973 [+0.0805, +0.1141] | 0.0156 | 7 | +0.0576 |
+| `p07_w100_gaps` | 0.5335 | +0.0779 | +0.0774 [+0.0652, +0.0897] | 0.0156 | 7 | +0.0525 |
+| **`p07_w200_all`** | 0.5591 | +0.1035 | +0.1033 [+0.0869, +0.1197] | 0.0156 | 7 | +0.0604 |
+| `p07_w200_gaps` | 0.5262 | +0.0706 | +0.0703 [+0.0582, +0.0824] | 0.0156 | 7 | +0.0518 |
+| `p07_w500_all` | 0.5406 | +0.0850 | +0.0844 [+0.0702, +0.0986] | 0.0156 | 7 | +0.0578 |
+| `p07_w500_gaps` | 0.5057 | +0.0501 | +0.0497 [+0.0400, +0.0594] | 0.0156 | 7 | +0.0494 |
+
+`context` v1, raw truth (the veto's cell, T38):
+
+| config | pooled spellF1 | pooled Δ | mean per match Δ [90% t] | p | wins in 7 | macroF1 Δ |
+|---|---|---|---|---|---|---|
+| `nearest_w50` | 0.2193 | -0.2130 | -0.2144 [-0.2324, -0.1963] | 0.0156 | 0 | -0.3209 |
+| `nearest_w125` | 0.1774 | -0.2549 | -0.2555 [-0.2741, -0.2368] | 0.0156 | 0 | -0.3583 |
+| `p07_w010_all` | 0.4626 | +0.0303 | +0.0305 [+0.0271, +0.0339] | 0.0156 | 7 | +0.0307 |
+| `p07_w010_gaps` | 0.4613 | +0.0290 | +0.0292 [+0.0251, +0.0332] | 0.0156 | 7 | +0.0304 |
+| `p07_w020_all` | 0.4737 | +0.0414 | +0.0417 [+0.0380, +0.0454] | 0.0156 | 7 | +0.0365 |
+| `p07_w020_gaps` | 0.4721 | +0.0398 | +0.0401 [+0.0355, +0.0446] | 0.0156 | 7 | +0.0361 |
+| `p07_w050_all` | 0.4969 | +0.0646 | +0.0650 [+0.0579, +0.0721] | 0.0156 | 7 | +0.0437 |
+| `p07_w050_gaps` | 0.4902 | +0.0579 | +0.0580 [+0.0509, +0.0652] | 0.0156 | 7 | +0.0417 |
+| `p07_w100_all` | 0.5082 | +0.0760 | +0.0764 [+0.0691, +0.0837] | 0.0156 | 7 | +0.0472 |
+| `p07_w100_gaps` | 0.4987 | +0.0664 | +0.0665 [+0.0610, +0.0721] | 0.0156 | 7 | +0.0433 |
+| **`p07_w200_all`** | 0.5153 | +0.0831 | +0.0835 [+0.0737, +0.0932] | 0.0156 | 7 | +0.0494 |
+| `p07_w200_gaps` | 0.5053 | +0.0730 | +0.0731 [+0.0672, +0.0789] | 0.0156 | 7 | +0.0439 |
+| `p07_w500_all` | 0.5088 | +0.0766 | +0.0765 [+0.0655, +0.0875] | 0.0156 | 7 | +0.0479 |
+| `p07_w500_gaps` | 0.5095 | +0.0772 | +0.0772 [+0.0690, +0.0853] | 0.0156 | 7 | +0.0440 |
+
+`context` v1, coarse truth (a warning):
+
+| config | pooled spellF1 | pooled Δ | mean per match Δ [90% t] | p | wins in 7 | macroF1 Δ |
+|---|---|---|---|---|---|---|
+| `nearest_w50` | 0.2057 | -0.2597 | -0.2601 [-0.2746, -0.2456] | 0.0156 | 0 | -0.3201 |
+| `nearest_w125` | 0.2443 | -0.2211 | -0.2213 [-0.2367, -0.2059] | 0.0156 | 0 | -0.3485 |
+| `p07_w010_all` | 0.5080 | +0.0426 | +0.0427 [+0.0400, +0.0453] | 0.0156 | 7 | +0.0336 |
+| `p07_w010_gaps` | 0.5071 | +0.0418 | +0.0417 [+0.0392, +0.0442] | 0.0156 | 7 | +0.0332 |
+| `p07_w020_all` | 0.5223 | +0.0570 | +0.0571 [+0.0525, +0.0617] | 0.0156 | 7 | +0.0395 |
+| `p07_w020_gaps` | 0.5206 | +0.0553 | +0.0553 [+0.0519, +0.0586] | 0.0156 | 7 | +0.0391 |
+| `p07_w050_all` | 0.5430 | +0.0776 | +0.0778 [+0.0693, +0.0863] | 0.0156 | 7 | +0.0462 |
+| `p07_w050_gaps` | 0.5332 | +0.0678 | +0.0677 [+0.0624, +0.0730] | 0.0156 | 7 | +0.0442 |
+| `p07_w100_all` | 0.5501 | +0.0848 | +0.0849 [+0.0757, +0.0940] | 0.0156 | 7 | +0.0494 |
+| `p07_w100_gaps` | 0.5323 | +0.0669 | +0.0668 [+0.0624, +0.0711] | 0.0156 | 7 | +0.0448 |
+| **`p07_w200_all`** | 0.5544 | +0.0890 | +0.0890 [+0.0834, +0.0945] | 0.0156 | 7 | +0.0511 |
+| `p07_w200_gaps` | 0.5251 | +0.0597 | +0.0596 [+0.0574, +0.0617] | 0.0156 | 7 | +0.0441 |
+| `p07_w500_all` | 0.5401 | +0.0747 | +0.0746 [+0.0645, +0.0847] | 0.0156 | 7 | +0.0492 |
+| `p07_w500_gaps` | 0.5104 | +0.0450 | +0.0447 [+0.0389, +0.0506] | 0.0156 | 7 | +0.0426 |
+
+**The choice, by the pre-declared rule.** Objective: pooled spellF1 under the raw truth on `tracking`, over the 12
+configs. The best is `p07_w200_all`, 0.5159. The tie band is 0.005, so the tied set is raw >= 0.5109, and it holds that
+one config: the next, `p07_w100_all`, is at 0.5057 (0.0102 below), then `p07_w500_all` at 0.5051 (0.0108) and
+`p07_w200_gaps` at 0.5046 (0.0113). There is no tie, so the tie order (best coarse, then the smaller weight, then `gaps`
+over `all`) is not reached. **Chosen: `p07_w200_all`**, weight 0.2, scope `all`, which is also the raw best.
+- **No plateau, a peak.** Along the weight, with scope `all`, raw spellF1 rises 0.4537, 0.4694, 0.4923, 0.5057, 0.5159
+  (weights 0.01 to 0.2) and falls to 0.5051 at 0.5; with `gaps` it is 0.4528, 0.4673, 0.4866, 0.4961, 0.5046, 0.5032.
+  The winner is inside the grid in weight, not on an edge: with `all` the steps are +0.0157, +0.0229, +0.0134 and
+  +0.0102, then -0.0108 at 0.5, and the peak is at 0.2 for `all` in all four cells.
+- **Scope.** `all` is above `gaps` at every weight under `tracking` raw (by 0.0009, 0.0021, 0.0057, 0.0096, 0.0113 and
+  0.0019 for weights 0.01 to 0.5) and under `tracking` coarse (0.0005 to 0.0349); on `context` it is above at all six
+  under the coarse truth and at five of six under the raw one (weight 0.5: `gaps` by 0.0007). So the shape source helps
+  on the frames where `controlled_touch` also speaks, and not only where the ball is missing, which is where it was
+  designed to be used; at the chosen weight the difference is 0.0113 raw and 0.0329 coarse.
+- **The truths agree.** The raw winner on `tracking` is also the coarse winner (0.5591), and `p07_w200_all` is the best
+  config of both `context` cells too (0.5153 raw, 0.5544 coarse). There is no T33 disagreement to read: four cells, one
+  winner. The possessions per graded minute it predicts, 3.17 on `tracking`, are 0.43 above `main`'s 2.74 and sit
+  between the two truths' (2.48 coarse, 4.58 raw), as `main`'s do.
+- **Every config beats `main`.** The smallest Δ of the 48 (12 configs x 4 cells) is +0.0290 (`p07_w010_gaps` on
+  `context` raw), the smallest on `tracking` raw +0.0311, and each has p 0.0156 and 7 wins in 7. With scope `all` the
+  gain grows with the weight up to 0.2 in all four cells, so it is not a threshold effect of the first small weight,
+  and the rule's choice is the largest gain, not the only one.
+- **At the edges.** The chosen config is inside the weight axis and `all` is one of the two scopes. **Per the protocol
+  nothing is added after the results**: a weight between 0.1 and 0.5, or above 0.5, was not tried, and the entry does
+  not claim it would not score higher, nor that it would be sound.
+
+**Leave-one-match-out estimate of the selection.** As R008 to R010 did, from the per-match spellF1 the runner prints
+(four decimals): for each match, the selection is repeated on the other six matches and the chosen config's score on
+the held-out match is compared with `main.toml`'s on it; the seven differences give the mean Δ with its 90%
+t-interval, the exact sign-flip p and the wins. Two rules over the 12 configs: the raw objective alone (the highest
+mean per-match `tracking` raw spellF1 on the six, no tie band) and the whole rule (the configs within 0.005 of the
+best six-match raw mean, then the best six-match coarse mean among them, then the smaller weight, then `gaps` over
+`all`). **Both pick `p07_w200_all` in all seven folds**, so the held-out estimate is the chosen config's own, computed
+from the rounded printed scores (the last digit can differ from the runner's by 0.0001):
+- `tracking` raw: mean Δ +0.0940 [+0.0775, +0.1105], p 0.0156, 7 wins and 0 losses (per match +0.0730, +0.0805,
+  +0.1009, +0.1388, +0.0983, +0.0901, +0.0764, in the order of the table above);
+- `tracking` coarse: +0.1033 [+0.0869, +0.1197], p 0.0156, 7 wins (+0.1119, +0.0788, +0.1242, +0.1317, +0.1136,
+  +0.0846, +0.0782);
+- `context` raw +0.0835 [+0.0737, +0.0933] and coarse +0.0890 [+0.0834, +0.0945], each p 0.0156 and 7 wins.
+
+The selection is stable (one config in every fold under each rule), so the choice is not what produces the gap. The
+estimate does not cover the model's training, which holds a match out only through `folds` (each fold model never saw
+the match it scores), and seven matches from two competitions, five of them Fortuna Düsseldorf home games, are not
+seven independent draws. By competition the raw Δ is +0.0767 on DFL-COM-000001 and +0.1009 on DFL-COM-000002.
+
+**The bar, the veto and the warnings** (declared in part 1, applied as written).
+- *Bar,* `tracking` raw, against `main.toml`: Δ +0.0942 > 0, sign-flip p 0.0156 <= 0.05, 7 wins in 7. **Met.**
+- *Veto,* `context` raw: Δ +0.0831 > 0. **It does not fire.** It is a veto and never a validation (T38): `context`
+  keeps DFL's out-of-play ball tracking and shares the caveats below.
+- *Warnings,* the coarse cells (T33): `tracking` +0.1035 and `context` +0.0890, both positive, p 0.0156, 7 wins in 7.
+  There is no warning to write.
+
+**The transfer gate and the label-free check on BAR-ATH.** The benchmark cannot show that the file is not degenerate on
+our match, and the shape model was trained on seven other matches and has never seen a frame of it, so these checks are
+required in addition to the bar. They were declared in part 1, before any config of the grid had run. They need no
+ground truth, and print aggregates only. The gate (the model `full`, since BAR-ATH is no fold):
+
+```
+python -c "from pipeline.inputs import Inputs; from pipeline.benchmark import train_shape; r = train_shape.touch_agreement(Inputs(), model='pipeline/models/shape_possession_hgb.json'); print('frames {:,}  agreement {:.4f}  gate >= 0.7486  {}'.format(r['frames'], r['agreement'], 'PASS' if r['agreement'] >= 0.7486 else 'FAIL'))"
+```
+
+It prints `frames 41,052  agreement 0.8251  gate >= 0.7486  PASS`. The figures from a written file, over the graded
+blocks of BAR-ATH (`games.half_video_blocks`, 158,857 frames, 105.90 minutes), run on
+`evaluation/results/p07_shape.csv` and again on `main.csv` after the switch (the same output, the same file), and on
+R010's file before it:
+
+```
+python -c "import sys; sys.path[:0]=['.', 'evaluation']
+import numpy as np, games, possession_metrics as pm
+c = pm.label_codes(pm.read_label_csv(sys.argv[1]))
+runs = [(a, b + 1) for _, a, b in games.half_video_blocks(games.GAME)]
+m = np.zeros(len(c), bool)
+for a, b in runs: m[a:b] = True
+g = c[m]
+s = pm.possession_spells(pm.fill_abstentions(c, runs), runs)
+print({l: round(float((g == i).mean()), 4) for i, l in enumerate(pm.LABELS)}, 'X frames', int((g == 3).sum()))
+print('possessions', len(s), 'per graded minute', round(len(s) / (m.sum() / 25 / 60), 4))" evaluation/results/p07_shape.csv
+```
+
+| | R010's `main.toml` (`a706e7f7`) | the chosen config (`8810afce`) | declared rule |
+|---|---|---|---|
+| gate: `touch_agreement`, `full`, scope `all` | n/a | **0.8251** on 41,052 frames | at least 0.7486 |
+| `D` share of the graded frames | 36.0% | 35.8% | reported |
+| H, A of the graded frames | 37.5%, 26.5% | 37.6%, 26.6% | reported |
+| `X` frames inside the graded blocks | 0 | 0 | none |
+| possessions | 450 | 439 | reported |
+| possessions per graded minute | 4.2491 | 4.1452 | reported |
+| mean possession | 9.0 s | 9.3 s | reported |
+| the same sha256 twice | yes | yes | yes |
+
+- **The gate passes**: 0.8251 against 0.7486, by 0.0765, and 0.0039 under the benchmark's pooled held-out value
+  (0.8290). It is a proxy and not an accuracy (the episode's team is right on about 92% of its frames, part 1). BAR-ATH
+  has 41,052 frames in kept episodes in one pass, against 25,470 to 33,408 per seed on the DFL matches (the held-out
+  table's frames over 3 seeds), so the statistic is read on a larger sample.
+- **The `D` share** moves by 0.2 points, 35.8% against R010's 36.0%, and stays inside the band R010 declared
+  ([30%, 62%], from DFL's 40.7% to 51.7% widened by 10 points). The alive/dead decision is P05's and the shape source
+  has no opinion on `alive`; the labels' alive/dead status differs on 0.22% of the graded frames between the two files.
+- **The possessions** are 439 against R010's 450 (4.1452 per graded minute against 4.2491, 2.4% fewer, and the mean
+  one 0.25 s longer). **The benchmark predicts the opposite direction**: on `tracking` v3 the chosen config has 3.17
+  per graded minute against `main`'s 2.74 (about 16% more). The two are different matches, with different ball
+  coverage and a count of 4.15 per minute where the benchmark has 3.17 for this config (R010's config: 4.25 against
+  2.74), and nobody here knows what our match's true count is; the entry reports the difference and does not explain
+  it.
+- **How much of the file it changes**: the chosen config's labels differ from R010's on 5.30% of the graded frames, 0.22
+  points of them a change of alive/dead and 5.08 points a change of team (7.94% of the frames that are alive in both
+  files).
+- **No `X`, and the same sha256 twice**: `pipeline/run.py pipeline/configs/p07_shape.toml` gave
+  `8810afce254e94fe159769f3b55e8eef65f41a25c84f4550034e2afbc20e8487` twice (once with `--score`), and
+  `pipeline/configs/main.toml`, switched, gave the same sha256 twice, which is the sha256 of `p07_shape.toml`'s file.
+
+It cannot say the labels are right; it says the file is not degenerate on our match and that the shape source agrees
+with the touch episodes on it about as often as on the held-out matches (82.5% of their frames, against 74.9% to
+86.5% for the seven folds).
+
+**Adoption.** The bar is met, the veto does not fire, and the gate and the checks pass, so `pipeline/configs/main.toml`
+takes this config's evidence and decoder, under a header that says what it is now. `pipeline/run.py
+pipeline/configs/main.toml` writes `evaluation/results/main.csv` with sha256
+`8810afce254e94fe159769f3b55e8eef65f41a25c84f4550034e2afbc20e8487`, the same as `p07_shape.toml`'s (the two configs have
+the same evidence, decoder, seed and scope), and the file passes `evaluation/validate_submission.py` (199,319 rows).
+`pipeline/selftest.py --data` passes (153 of 153 checks; it runs `main.toml` twice and compares the bytes, and rebuilds
+the four baselines byte for byte) and `pipeline/benchmark/selftest.py` passes (369 checks). `p07_shape.toml` is written,
+and writes the same labels file under another name, as `p45_hmm.toml` does for R010's.
+
+**Checks on the runs.** All four logs end `EXIT=0`. Each lists `main`, the two yardsticks (raw: `nearest_w50` then
+`nearest_w125`; coarse the reverse) and the 12 configs, none missing or repeated. The `main` rows are R010's to the
+last digit in all four cells (0.4217 raw and 0.4556 coarse on `tracking`, 0.4323 and 0.4654 on `context`), and the
+yardsticks are R004c's and R005's (`nearest_w50` 0.2018 raw and `nearest_w125` 0.2226 coarse on `tracking`, 0.2193 and
+0.2443 on `context`). The runner's check on the yardsticks' order prints Kendall tau +1.0000 under the raw truth and
+-1.0000 under the coarse one on both profiles, as for the same two configs in R004c and R005 (the truth reorders them;
+a check of the profile, not a goal). Runtime, the runner's `seconds`: the first config of each process (`main`, with
+the one-off kinematics and features pass) took 144.9 and 143.3 s on `tracking` (raw, coarse) and 130.9 and 130.7 s on
+`context`; the first `p07` config 156.1 and 155.7 s (the shape logits are walked once and the memo serves the rest)
+and 141.8 and 140.9 s; the other 11 took 25.6 to 27.5 s on `tracking` and 23.4 to 25.1 s on `context`; a yardstick
+took 5.7 to 6.5 s.
+
+**The limits, and what the numbers do not say.**
+- **The model never saw our teams.** It was trained on seven matches of two competitions, five of them Fortuna
+  Düsseldorf home games, and BAR-ATH is a LaLiga match with neither team among them. The gate is the one look at
+  transfer, and a proxy: 0.8251 says the shape agrees with the touch episodes about as often as on the held-out matches,
+  not that its team is right that often where the ball is missing.
+- **The gain is the benchmark's.** The benchmark overstates P05 for BAR-ATH (T38, T39, R010), and the size of the
+  combined gain over R010 rests on that source as well; this entry's Δ is a gain over a `main.toml` that already
+  has it. The model's own held-out accuracy (part 1) is 0.8422 on the alive frames and 0.8349 with the ball missing,
+  both against DFL's fine-grained flag (A06).
+- **The count of possessions does not transfer.** The benchmark moves it up (2.74 to 3.17 a minute) and BAR-ATH moves
+  down (4.25 to 4.15 a minute), by 2.4%. The truth's count on our match is unknown.
+- **The public window** is a correctness check only: valid, deterministic, 20 possessions against 17, agreement of the
+  shape source on home 90.9% of 6,031 frames; its spellF1 is lower than R010's (0.4000 against 0.4686) by about one
+  possession's worth. It was not used to choose anything.
+- **Nothing was added after the results**: the weight axis is inside its grid and the scope is binary; neither a weight
+  between the grid's points nor above 0.5 was tried, and `min_prob` was fixed beforehand (T26).
+- **Seven matches from two competitions** are not seven independent draws; p 0.0156 is the smallest an exact test over
+  7 matches can give, and every one of the 48 cells has it.
+
+### R012 — P02's edge shift: the pipeline's own lag, the gap to our convention, and the rule's total (2026-10-25, Tian)
+Proposal: P02 · Commit: `1ccaeb5` (the latency tables, the shift table and the first run of `main.toml`, all on R011's
+`main.toml`, whose sha256 is `8810afce...`), `f104a0a` (the guard's config and its four runs) and the commit that
+holds this entry (it adds `pipeline/configs/p02_shift.toml`, switches `main.toml` and logs the runs after the rule) ·
+Command: `python pipeline/run.py pipeline/configs/main.toml` (at `1ccaeb5`), `python pipeline/benchmark/conventions.py
+latency pipeline/configs/main.toml public`, `... latency pipeline/configs/main.toml dfl` (profile `tracking`, truth
+raw, seeds 0, 1, 2) and `... dfl --truth coarse`, `... shift --config pipeline/configs/main.toml`; the guard, four
+processes, each `python pipeline/benchmark/run.py pipeline/configs/main.toml
+pipeline/benchmark/configs/p02/p02_sb.toml --profile tracking --seeds 3 --truth raw`, and the same with `--truth
+coarse`, with `--profile context --truth raw` and with `--profile context --truth coarse`; after the rule, `python
+pipeline/run.py pipeline/configs/p02_shift.toml --score` and again without `--score`, `python
+evaluation/run_evaluation.py --results <a folder outside the repository holding three files: the in-sample file, the
+out-of-fold file and R011's `main.csv`> --no-detail` (they are scored side by side), and `python pipeline/run.py
+pipeline/configs/main.toml` twice, after the switch. Every log ends `EXIT=0`.
+
+A later change of the tooling (the final review of P07 and P02): the latency files that these commands wrote are for
+R011's `main.toml`, which is now `p07_shape.toml`, and `main.toml` itself carries the shift. A latency file records a
+sha256 of the config's content (scope, seed, evidence, decoder and refine), and `conventions.py shift` refuses a file
+of another content, or one written before the files carried it, with the `latency` command to run again. So R012's own
+files are refused as they stand, and the rule can be reproduced with `--config pipeline/configs/p07_shape.toml` (its
+commands are in the technical document, section 7).
+
+The rule was declared before any of these runs and is applied as written. For each type of change, s_b is minus the
+rounded median lag of the current `main.toml` on DFL (`tracking`, raw truth), and 0 below 30 matched changes. The
+benchmark guard keeps it only if `main.toml` plus `shift_edges(s_b)` beats `main.toml` on `tracking` with the raw truth
+(Δ > 0) and no cell of {`tracking`, `context`} x {raw, coarse} is below -0.005; one config holds all three values, so
+they are kept or dropped together. Then g, the gap to our truth's convention, is minus the rounded median of the public
+latencies after s_b, for a type only if that median is at least 3 frames in absolute value, its 90% bootstrap interval
+(2,000 draws) excludes 0 and every leave-one-out median has its sign; the shift is s_b + g. Nothing in it is tuned.
+
+Public (a correctness check only, T01), `p02_shift.toml` in sample (every boundary moved by the shift): macroF1 0.7159
+· spellF1 0.4000 · alive/dead F1 0.9221 · transF1 0.1463 · lat_f +5.0 · 20 possessions against the truth's 17, mean
+14.1 s. The same file out of fold (T27: a matched boundary moves by s_b plus the g that the other changes of its type
+give, an unmatched one by the shift; sha256 `1078b527d4eae9dda5d4bcb2da77c249a699fb3d62928cb815a7a524f3193d7e`, scored
+by the official scorer): macroF1 0.7125 · spellF1 0.4000 · transF1 0.1463 · lat_f +5.0 · 20 possessions, mean 14.1 s.
+R011's `main.toml` on the same window: macroF1 0.7151 · spellF1 0.4000 · alive/dead F1 0.9218 · transF1 0.1463 · lat_f
++5.3 · 20 possessions. The three have the same spellF1: one possession moves it about 0.06 here (T01), and these are
+the same 20. `p02_shift.toml` is valid (199,319 rows), sha256
+`3fd06da011bde39f771ddd22f00da2bcbcf5205720d60f87662ab6fc0f76a702`, the same on two runs, and `main.toml` after the
+switch writes the same file. No bootstrap was run, because no public-window gap is claimed. The in-sample and the
+out-of-fold scores differ (macroF1 0.7159 and 0.7125), so leaving out one public change gives, for some type, a g
+other than 0, though the full set does not: that is T27's reason to read a shift out of fold, and one more reason not
+to trust a g from this window.
+Validation (P01 benchmark): 7 DFL matches x 3 degradation seeds (0, 1, 2), `p02_sb` (`main.toml` plus `shift_edges`
+team +1, into_dead -2, out_of_dead 0) against `main.toml`, pooled spellF1, in four cells:
+
+| profile | truth | `main` | `p02_sb` | pooled Δ | mean per match Δ [90% t] | p | wins / losses |
+|---|---|---|---|---|---|---|---|
+| `tracking` | raw: the guard's | 0.5159 | 0.5164 | +0.0005 | +0.0004 [-0.0007, +0.0015] | 0.5000 | 4 / 3 |
+| `tracking` | coarse | 0.5591 | 0.5592 | +0.0000 | +0.0000 [-0.0004, +0.0004] | 1.0000 | 3 / 2 |
+| `context` | raw: sensitivity only | 0.5153 | 0.5162 | +0.0009 | +0.0008 [-0.0004, +0.0021] | 0.2500 | 4 / 3 |
+| `context` | coarse: sensitivity only | 0.5544 | 0.5544 | +0.0001 | +0.0001 [-0.0007, +0.0008] | 0.9531 | 4 / 3 |
+
+Pooled macroF1 is +0.0004, +0.0003, +0.0004 and +0.0003 in the same four cells (the 90% interval is above 0 in each,
+with 7, 6, 7 and 6 wins in 7 matches) and pooled alive/dead F1 goes from 0.9729 to 0.9730 on `tracking` and from
+0.9699 to 0.9700 on `context`. The shift moves a team flip by 1 frame and a change into `D` by 2: the per-frame metric
+sees that and the ranking metric (possessions matched at IoU 0.3 to 0.7) hardly does. The predicted `D` share goes
+from 44.5% to 44.6% on `tracking` and from 44.7% to 44.9% on `context` (the truth's 44.8%); possessions per graded
+minute do not change (3.17 and 3.15). The `main` rows are R011's to the last digit in all four cells (0.5159 and
+0.5591 on `tracking`, 0.5153 and 0.5544 on `context`).
+Changed vs the previous best: the previous best is R011's `main.toml`: 0.5159 raw and 0.5591 coarse on `tracking` v3,
+0.5153 and 0.5544 on `context`; public 0.7151 macroF1, 0.4000 spellF1, 20 possessions; sha256
+`8810afce254e94fe159769f3b55e8eef65f41a25c84f4550034e2afbc20e8487`. The shifted config is +0.0005 raw and +0.0000
+coarse above it on `tracking` (pooled), +0.0004 raw macroF1, and on BAR-ATH it relabels 0.34% of the graded frames
+(below).
+Verdict: **the rule's total is team +1, into `D` -2, out of `D` 0 frames, which is s_b alone, and it is adopted**, by
+the declared rule and not because it is shown to help: the guard keeps s_b (the `tracking` raw Δ is +0.0005 > 0 and no
+cell is below -0.005), g is 0 for every type, and the label-free checks pass. **`main.toml` now carries `[[refine]] kind
+= "shift_edges"` with team 1, into_dead -2, out_of_dead 0**, and writes sha256
+`3fd06da011bde39f771ddd22f00da2bcbcf5205720d60f87662ab6fc0f76a702` (R011's was `8810afce...`). It has NOT been
+uploaded.
+
+**The latency of the pipeline on DFL** (`conventions.py latency`; `main.toml` as of R011; profile `tracking` v3, the
+raw truth in the first three rows and the coarse one beneath; pooled over 7 matches and 3 seeds; a predicted change
+matches a true one of the same pair of labels within 50 frames; predicted - true in frames, positive = our label
+changed late; 25 frames = 1 s):
+
+| truth | type | true changes | matched | median | p25 | p75 | median, s |
+|---|---|---|---|---|---|---|---|
+| raw | team | 7,053 | 43% | -1.0 | -10.0 | +20.0 | -0.04 |
+| raw | into `D` | 2,130 | 50% | +2.0 | +0.0 | +2.0 | +0.08 |
+| raw | out of `D` | 2,097 | 79% | +0.0 | -3.0 | +0.0 | +0.00 |
+| coarse (reported only) | team | 2,847 | 58% | +0.0 | -10.0 | +22.0 | +0.00 |
+| coarse | into `D` | 2,130 | 50% | +2.0 | +0.0 | +2.0 | +0.08 |
+| coarse | out of `D` | 2,097 | 79% | +0.0 | -3.0 | +0.0 | +0.00 |
+
+Per match, the median lag in frames (matches in the order J03WMX, J03WN1, J03WOH, J03WOY, J03WPY, J03WQQ, J03WR9).
+Raw: team -1, -1, -1, -1, +2, -1, -1; into `D` +2, +1, +2, +2, +1, +2, +1; out of `D` 0, 0, -2, 0, 0, -3, 0. Coarse:
+team -1, -1, 0, -1, +3, 0, 0, and the two `D` rows are the raw ones. The matched changes behind each raw median are
+3,011 (team), 1,069 (into `D`) and 1,657 (out of `D`), all above the rule's 30. A team flip's lag is wide (an
+interquartile range of 30 frames, and only 43% of the flips find a partner within 50 frames), so its median (-1) is
+the middle of a spread-out lag, and the shift of +1 that undoes it moves the middle and not the spread; the `D` edges
+are tight (our `D` begins 2 frames, 0.08 s, after DFL's flag, and ends on it).
+
+**On the public window** (`conventions.py latency ... public`; the 20 changes of the public truth; with fewer than 5
+matched, n and the median only, no quartile): team 12 changes, 33% matched (4), median +22.0 frames; into `D` 4 changes,
+25% matched (1), +16.0; out of `D` 4 changes, 25% matched (1), -12.0. These are the pipeline's lags against our truth at
+4, 1 and 1 matched changes, where DFL's are -1, +2 and 0.
+
+**The rule's table** (`conventions.py shift`; L' = the public latency after s_b):
+
+| type | DFL matched | DFL median | s_b | public matched | median L' | interval excludes 0 | size / interval / leave-one-out | g | shift |
+|---|---|---|---|---|---|---|---|---|---|
+| team | 3,011 | -1.0 | +1 | 4 | +23.0 | no | yes / no / yes | 0 | +1 |
+| into `D` | 1,069 | +2.0 | -2 | 1 | +14.0 | yes | yes / yes / no | 0 | -2 |
+| out of `D` | 1,657 | +0.0 | 0 | 1 | -12.0 | yes | yes / yes / no | 0 | 0 |
+
+Under the coarse truth, beside the raw one and never used, s_b would be team 0, into `D` -2, out of `D` 0: the one place
+the two truths disagree is the team flip, +1 against 0 (T33). For the two `D` types the interval "excludes 0" is the
+bootstrap of a single lag and says nothing, and the leave-one-out condition fails there (one change has no leave-one-out
+median); for the team flip the interval includes 0. **g is 0 for every type**: no type of change has enough public
+transitions behind it for the rule to move a boundary on the public window's evidence.
+
+**Label-free checks on BAR-ATH** (`main.toml` after the switch, `--score` on `p02_shift.toml`): no `X` in a graded
+block (X 0.0%; H 37.5%, A 26.6%, D 36.0%, against R011's 37.6%, 26.6%, 35.8%), the same sha256 on two runs, and 439
+possessions in 105.905 graded minutes (4.1452 per graded minute, mean 9.3 s), as R011's `main.toml` (439; 4.1452). The
+labels differ from R011's on 545 of the 158,857 graded frames (0.34%), exactly the moved boundaries (333 team changes
+by 1 frame and 106 changes into `D` by 2 frames; 333 + 212 = 545); the graded halves still hold 333, 106 and 105 such
+changes, so no boundary crossed another. `controlled_touch` agrees with the public GT on home on 87.2% of 5,489
+frames, `dead_ball_model` on alive on 86.6% of 7,500 and `shape_possession` on home on 90.9% of 6,031, as in R011:
+neither source changed. `pipeline/selftest.py --data` passes (153 of 153 checks, `main.toml` run twice and compared
+byte for byte, the four baselines rebuilt byte for byte) and `pipeline/benchmark/selftest.py` passes (369 checks);
+`evaluation/validate_submission.py` accepts `evaluation/results/main.csv`.
+
+**Be plain about the size.** The shift is 1 to 2 frames at 439 boundaries (333 team flips and 106 changes into `D`) of
+a match of about 106 graded minutes, and its benchmark gains are +0.0000 to +0.0009 pooled spellF1 (on `tracking` and
+`context`, raw and coarse truth), with every 90% interval including 0 and the raw `tracking` cell's sign-flip p at
+0.5000 (4 wins and 3 losses in 7 matches): inside the noise (0.04 on a full match, and the paired intervals here are
+0.0008 to 0.0025 wide). It is adopted because the declared rule says so (a positive raw Δ on `tracking`, no cell under
+-0.005), not because it is shown to help. The only consistent effect is on the per-frame metrics, +0.0003 to +0.0004
+macroF1 in all four cells, and macroF1 breaks ties; it does not rank. Dropping the `[[refine]]` entry returns R011's
+file (sha256 `8810afce...`).
+
+**The limits, and what the numbers do not say.**
+- **s_b is DFL's lag, not ours.** It measures the pipeline on a degraded copy of DFL's tracking against DFL's flag, and
+  it says our `D` onset is 2 frames late there and our team flip 1 frame early. Our own truth's convention is what g was
+  for, and the public window cannot say it (A11, T40).
+- **The public lags are large and unused.** Against our truth the pipeline is 22 frames late at a team flip (4 matched
+  changes), 16 late into `D` (1) and 12 early out of `D` (1). At 4, 1 and 1 changes the rule cannot tell a convention
+  from chance, and it is right not to. A larger gap needs more transitions (P16's sample games) or a person watching the
+  20 changes (A11), and not a looser rule.
+- **The team shift depends on the truth.** +1 on the raw truth, 0 on the coarse one (T33), and the guard's two truths
+  agree on it only in being within noise.
+- **One integer per type.** The shift is not a function of anything (the ball's visibility, the stoppage type), and it
+  does not narrow the lag's spread (an interquartile range of 30 frames at a team flip).
+- **The public window is a correctness check only.** It chose nothing here: s_b comes from DFL and g is 0 everywhere.
+  Its spellF1 is R011's (0.4000) in sample and out of fold.
 
 ## Submission log
 
@@ -3887,9 +4704,20 @@ The form keeps only the last response before the deadline, so log every upload.
 | date | file | sha256 | commit | command | notes |
 |---|---|---|---|---|---|
 
-`main.toml` was rewritten by R010 (2026-10-25): it now produces sha256
+`main.toml` was rewritten by R010 (2026-10-25): it then produced sha256
 `a706e7f711b2d3faacc2f071b6e28963ed8e2f2326a7880e6d0776cce4295f1f` (P04 `controlled_touch` + P05
-`dead_ball_model` hgb + the `hmm` (4, 32, 25, 25)), identical to `p45_hmm.toml`'s file. It has NOT been uploaded.
+`dead_ball_model` hgb + the `hmm` (4, 32, 25, 25)), identical to `p45_hmm.toml`'s file. It was NOT uploaded.
+
+`main.toml` was rewritten again by R011 (2026-10-25): it then produced sha256
+`8810afce254e94fe159769f3b55e8eef65f41a25c84f4550034e2afbc20e8487` (P04 `controlled_touch` + P05
+`dead_ball_model` hgb + P07 `shape_possession` at weight 0.2, scope `all` + the `hmm` (4, 32, 25, 25)), identical
+to `p07_shape.toml`'s file; R010's file is still what `p45_hmm.toml` writes. It was NOT uploaded.
+
+`main.toml` was rewritten a third time by R012 (2026-10-25): it now produces sha256
+`3fd06da011bde39f771ddd22f00da2bcbcf5205720d60f87662ab6fc0f76a702` (P04 `controlled_touch` + P05
+`dead_ball_model` hgb + P07 `shape_possession` at weight 0.2, scope `all` + the `hmm` (4, 32, 25, 25) + P02
+`shift_edges` team +1, into_dead -2, out_of_dead 0), identical to `p02_shift.toml`'s file; R011's file is still what
+`p07_shape.toml` writes. It has NOT been uploaded.
 
 Before each upload:
 1. Regenerate the file from a clean clone, ideally on a second machine, and compare the sha256 ([T21](traps.md)).

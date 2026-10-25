@@ -1,0 +1,48 @@
+# P07 on top of P04 + P05: shape_possession for `home` on every graded frame, beside controlled_touch (R011).
+#
+#   python pipeline/run.py pipeline/configs/p07_shape.toml --score    # -> evaluation/results/p07_shape.csv
+#
+# This is R011's choice, and R011 adopted it: main.toml took this evidence and decoder, and R012 has since added the
+# edge shift after the decoder (p02_shift.toml, which is main.toml's file). main.toml decides what we upload, and R011
+# has the verdict (the bar, the veto, the label-free checks).
+#
+# Where the numbers come from. The evidence and the decoder are R010's `main.toml` verbatim (controlled_touch,
+# the hgb dead_ball_model, the hmm 4 / 32 / 25 / 25); P07 adds one source. The weight and the scope were chosen from a
+# declared grid of 12 on the benchmark (the seven DFL matches degraded as `tracking` v3, three seeds, raw truth, pooled
+# spellF1; configs within 0.005 of the best count as tied, then the best coarse score, then the smaller weight, then
+# `gaps` over `all`), never on the public window (docs/traps.md T01):
+#   weight = 0.2, scope = "all" (R011: 0.5159 raw, the best of the 12 and 0.0102 above the next, no tie).
+# shape_possession reads pipeline/models/shape_possession_hgb.json, trained on the seven DFL matches with the ball
+# hidden (pipeline/benchmark/train_shape.py); BAR-ATH is scored by its `full` model, which the benchmark never did.
+# min_prob 0.02 was fixed beforehand and not tuned.
+
+description = "P07 candidate (R011): controlled_touch 2.0 m / 6.0 m/s / 3 frames / hold 0.55 (confidence 0.91) + dead_ball_model (hgb, pipeline/models/dead_ball_hgb.json) at weight 1.0 + shape_possession (hgb, pipeline/models/shape_possession_hgb.json) at weight 0.2, scope all, min_prob 0.02, hmm 4/32/25/25, decoded per half. Not the submission config unless main.toml says so."
+seed = 0
+scope = "halves"
+
+[[evidence]]
+kind = "controlled_touch"
+radius = 2.0                                  # metres: the nearest player must be this close
+max_rel_speed = 6.0                           # m/s: and move with the ball
+min_frames = 3                                # an episode shorter than this is dropped
+confidence = 0.91                             # touch_stats.py: floor of the pooled agreement to a hundredth (91.9%)
+hold = 0.55                                   # the weak vote of the last team between episodes; 0.5 = off
+
+[[evidence]]
+kind = "dead_ball_model"
+weight = 1.0
+model = "pipeline/models/dead_ball_hgb.json"  # relative to the repo root
+
+[[evidence]]
+kind = "shape_possession"
+weight = 0.2                                          # an exponent on the source's likelihood (R011's choice)
+model = "pipeline/models/shape_possession_hgb.json"   # relative to the repo root; BAR-ATH has no fold, so `full`
+scope = "all"                                         # "gaps": ball missing only; "all": every graded frame
+min_prob = 0.02                                       # home is clipped to [0.02, 0.98]
+
+[decoder]
+kind = "hmm"
+switch_team = 4                               # nats a change of team (H <-> A) costs
+switch_dead = 32                              # nats a change into or out of D costs
+min_possession = 25                           # frames: no run of H or A shorter than this (1 is no minimum)
+min_dead = 25                                 # frames: no run of D shorter than this (1 is no minimum)

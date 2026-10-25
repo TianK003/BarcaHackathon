@@ -6,14 +6,24 @@
 # name), change it, run it, and log the run in docs/results.md. When an experiment wins on validation, its changes
 # come back here.
 #
-# Today this is P04 + P05 together: controlled_touch for `home` (P04), the hgb dead_ball_model for `alive` (P05) and
-# the hmm decoder re-tuned to them (switch_team 4, switch_dead 32, min_possession 25, min_dead 25). It was chosen in
-# R010 on the P01 benchmark (the seven DFL matches degraded as `tracking` v3, three seeds) and adopted by R010's rule:
-# the bar (a gain over each yardstick under its truth, sign-flip p <= 0.05) was met, and so was a label-free check on
-# BAR-ATH. Its evidence and decoder are those of p45_hmm.toml. The benchmark overstates P05 for BAR-ATH by an amount
-# it cannot measure (docs/traps.md T38, T39): read R010 before trusting the size of the gain.
+# Today this is P04 + P05 + P07 + P02 together: controlled_touch for `home` (P04), the hgb dead_ball_model for `alive`
+# (P05), shape_possession for `home` on every graded frame (P07, weight 0.2), the hmm decoder tuned to the first two
+# (switch_team 4, switch_dead 32, min_possession 25, min_dead 25) and, after the decoder, shift_edges at the pipeline's
+# own lag (P02: a change of team 1 frame later, a change into D 2 frames earlier, a change out of D unmoved). P04 + P05
+# and the decoder were chosen in R010, P07's weight and scope in R011, both on the P01 benchmark (the seven DFL matches
+# degraded as `tracking` v3, three seeds). R011 adopted P07 by its rule: the bar (a gain over R010's main.toml on
+# `tracking`, raw truth, sign-flip p <= 0.05) was met and the `context` veto (a gain on `context`, raw truth) did not
+# fire, and the label-free checks on BAR-ATH passed too (the shape source agrees with the touch episodes at least as
+# often as on the worst held-out match, no X in a block, the same sha256 twice). Its evidence and decoder are those of
+# p07_shape.toml; R010's earlier main.toml is p45_hmm.toml. R012 adopted the shift by its declared rule: s_b is minus
+# the median lag of this pipeline on DFL, and the benchmark guard kept it (a gain of +0.0005 on `tracking` raw, no cell
+# of `tracking` and `context` under either truth below -0.005); the gap to our truth's convention, g, read from the
+# public window, is 0 for every type. The shift is 1 to 2 frames and its gains are inside noise: it is here because
+# the rule said so, not because it is shown to help. Its file is p02_shift.toml. The benchmark overstates P05 for
+# BAR-ATH by an amount it cannot measure (docs/traps.md T38, T39), and the shape model was trained on other teams'
+# matches: read R010, R011 and R012 before trusting the size of any gain.
 
-description = "P04 + P05 (R010): controlled_touch 2.0 m / 6.0 m/s / 3 frames / hold 0.55 (confidence 0.91) + dead_ball_model (hgb, pipeline/models/dead_ball_hgb.json) at weight 1.0, hmm 4/32/25/25, decoded per half."
+description = "P04 + P05 + P07 + P02 (R012): controlled_touch 2.0 m / 6.0 m/s / 3 frames / hold 0.55 (confidence 0.91) + dead_ball_model (hgb, pipeline/models/dead_ball_hgb.json) at weight 1.0 + shape_possession (hgb, pipeline/models/shape_possession_hgb.json) at weight 0.2, scope all, min_prob 0.02, hmm 4/32/25/25, decoded per half, then shift_edges team +1 / into_dead -2 / out_of_dead 0 frames."
 seed = 0
 scope = "halves"
 
@@ -33,6 +43,13 @@ kind = "dead_ball_model"
 weight = 1.0
 model = "pipeline/models/dead_ball_hgb.json"  # relative to the repo root
 
+[[evidence]]
+kind = "shape_possession"
+weight = 0.2                                          # an exponent on the source's likelihood (R011's choice)
+model = "pipeline/models/shape_possession_hgb.json"   # relative to the repo root; BAR-ATH has no fold, so `full`
+scope = "all"                                         # "gaps": ball missing only; "all": every graded frame
+min_prob = 0.02                                       # home is clipped to [0.02, 0.98]
+
 # Exactly one decoder (pipeline/decode/). Every key but kind is a keyword argument.
 [decoder]
 kind = "hmm"
@@ -41,6 +58,10 @@ switch_dead = 32                              # nats a change into or out of D c
 min_possession = 25                           # frames: no run of H or A shorter than this (1 is no minimum)
 min_dead = 25                                 # frames: no run of D shorter than this (1 is no minimum)
 
-# Zero or more refiners (pipeline/refine/), applied in order after the decoder:
-# [[refine]]
-# kind = "..."
+# Zero or more refiners (pipeline/refine/), applied in order after the decoder. R012's shift: a positive value moves the
+# new label later, in frames; a change of label next to an X or at a kick-off never moves.
+[[refine]]
+kind = "shift_edges"
+team = 1                                      # frames: s_b, the pipeline's own lag on DFL (g = 0)
+into_dead = -2
+out_of_dead = 0

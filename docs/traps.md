@@ -53,6 +53,29 @@ raw DFL truth and under the coarse one (`truth.coarse_codes`, `COARSE_MIN_S` = 5
 disagreement as a warning. The coarse truth is a sensitivity check, not a correction. Pick hyperparameters on the
 benchmark, never on the public window (T01).
 
+**T40 — Our ground truth's dead-ball edges and team flips need not follow DFL's flag, so a component tuned on the
+benchmark may carry DFL's timing.** The benchmark's truth is DFL's flag, and P04's back-dating, P05's model and P06's
+decoder were chosen against it. A11 timed the changes of our public truth against label-free events on our tracking and
+set them beside DFL's (profile `tracking` v3, on its degraded copy; the numbers are the raw truth's, and the coarse
+truth's are given where they differ). Our `D` begins about 1.5 s before the ball is seen beyond a line (DFL's flag, both
+truths: 0.12 s after), and our `D` ends 0.36 s before the restart's first controlled touch and about 1.5 s after the
+model's alive crosses 0.5 (DFL's flag: 1.40 s before the touch, 1.48 s coarse, and at the crossing under both). Our team
+changes come 0.96 s before the new team's first controlled touch (DFL's: 0.04 s after it, and on it under the coarse
+truth). Three of those gaps have a 90% interval that excludes 0 under both truths (`line_out`, `touch_start` after a
+restart and `model_alive`); `model_dead`'s and the team gap's do not. But each rests on 2 to 4 public changes found (the
+team cell on 10 of 12), and the detectors run on our real tracking against a degraded copy of DFL's. Convention is one
+reading; tracker coverage predicts all four `D`-edge signs by itself (our tracker loses the ball near the lines, T39,
+and the copy's ball gaps are blind to the play, R003), and so does chance at this n. A11 does not separate them. It is a
+lead and not a measurement. What to do:
+- do not read a timing parameter off DFL as ours (a back-dating, a `D` onset, a threshold on the model's alive): the
+  model and DFL's flag agree to a frame out of fold (+1 and 0 frames), and that says nothing about our truth;
+- before shifting any edge, or adding a feature that places one, read A11 for where our truth looks different and R012
+  for what our pipeline's own latency is (on DFL and at those 20 changes) and which shift the rule adopted (the
+  pipeline's own lag, 1 to 2 frames, and no gap to our convention), and shift only by the rule declared for
+  `shift_edges`;
+- a person can watch the 20 changes on the tactical video (`conventions.py public`, A11's "How a person can extend
+  it") to see whether `D` begins at the line, the whistle or the stoppage, and what the flip of a team change is.
+
 ## Alignment
 
 **T08 — Off by one.** ATD `frame_id` runs 1…199,319, while submission rows, homography `frame` and video frames all
