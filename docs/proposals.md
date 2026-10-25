@@ -250,9 +250,11 @@ bundle's rules. Cite it in the technical document.
 **Status: doing (Tian): automated part in
 [A11](results.md#a11--our-ground-truths-timing-against-dfls-from-tracking-events-2026-10-25-tian).** The instrument,
 [`pipeline/benchmark/conventions.py`](../pipeline/benchmark/conventions.py), times each of the 20 public changes
-against label-free events on our tracking and sets them beside DFL's. A11 reads it as a lead and not a measurement
-(2 to 4 changes behind each `D` cell): our `D` looks 2.5 to 3 s longer than DFL's flag would draw it, and our team flips
-look about a second before the new team's first controlled touch, which DFL's flag does not (the interval holds 0).
+against label-free events on our tracking and sets them beside DFL's (its `tracking` v3 copy, raw and coarse truth).
+A11 reads it as a lead and not a measurement (2 to 4 changes behind each `D` cell): the events our tracking sees put our
+`D` 2.5 to 3 s longer than DFL's flag would be, and our team flips about a second before the new team's first
+controlled touch, where DFL's flag flips at it (the interval holds 0). Each is our truth's convention, or chance, or our
+tracker's coverage (it loses the ball near the lines), and A11 does not separate them.
 What is left needs a person who may watch the video: the restart type and whether `D` begins at the line, the whistle or
 the stoppage. The pipeline's own latency and the `shift_edges` values are a separate step (R012). The person's command,
 which regenerates the file to watch, is

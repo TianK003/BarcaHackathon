@@ -381,8 +381,10 @@ measurement looks only at the frames the truth calls alive.
   pitch over the seven matches; J03WQQ goes furthest).
 - Our match has no counterpart yet: it needs BAR-ATH's ball against the public GT's `D` onsets, which is P02.
   *Later:* A11 has one, from 2 of the 4 public stoppages (the other 2 have no first sighting of the ball beyond a line
-  within 5 s): our tracking sees it a median 37 frames (1.48 s) after our `D` begins, where on DFL the flag turns 3
-  frames after the ball is seen. A lead, not a measurement.
+  within 5 s): our tracking sees it a median 37 frames (1.48 s) after our `D` begins, where on DFL's `tracking` v3 copy
+  (raw and coarse truth alike) the flag turns 3 frames after the ball is seen, beside the 4 frames above, measured on
+  DFL's own positions. A lead, not a measurement: our truth's convention, or our tracker's loss of the ball near the
+  lines (T39).
 
 **The nearest player against the truth** (A01: 77.8% of 5,640 alive ball-visible frames on the public window). Brute
 force, in metres, present players only:
@@ -464,8 +466,9 @@ rate is at or below the literature's upper bound, 220 possessions a match, which
   different grain from noise. The 175–220 of the literature is what a control-based provider gives; whether ours is
   one is not shown here.
 - **D timing against ours is unmeasured.** DFL's counterpart needs BAR-ATH's ball, which is P02. *Later:* A11 measured
-  it on the public window's 4 stoppages and 12 team changes, weakly: our `D` looks 2.5 to 3 s longer than DFL's flag
-  would draw it.
+  it on the public window's 4 stoppages and 12 team changes, weakly: against DFL's flag on the `tracking` v3 copy (raw
+  and coarse truth), the events our tracking sees put our `D` 2.5 to 3 s longer. That is our truth's convention, chance
+  or our tracker's coverage, and A11 does not separate them.
 - **Use:** hyperparameters are picked on the benchmark, never on the public window (CLAUDE.md, T01). Where a choice
   depends on how long a possession is (smoothing, a switch penalty λ, duration priors), rank it under the raw truth and
   under the coarse one side by side, and treat a disagreement between them as a warning, not as a licence to pick the
@@ -1060,28 +1063,30 @@ have no gap.
   with a spread (42 frames between the quartiles, against DFL's 20) wider than the gap itself. A flip at the moment the
   ball is won, before the controlled touch is confirmed on our tracking, would give this; so would a later start of
   controlled episodes on our tracker than on the copy. Nothing here separates them.
-- **`D` starts early: the ball is seen beyond a line about 1.5 s after our truth turns to `D`, where DFL's flag turns
-  just after it.** `line_out` is +37 frames (1.48 s) on the 2 of 4 stoppages where our tracking sees the ball beyond a
-  line within 5 s, against -3 (-0.12 s) on DFL, and the model's alive crosses 0.5 downward 39 frames (1.56 s) after our
-  `D` begins on 3 of 4, against +1 frame on DFL, out of fold. The gaps are +40 and +38 frames, the same under both
-  truths. They are on 2 and 3 changes, and one interval excludes 0 where the other does not, which is what 2 and 3
-  observations do and not a difference between the detectors. `ball_lost` agrees with DFL (+30 against +28 raw, gap +2
-  and +7) and carries nothing: the copy's ball gaps are our masks transplanted with their pattern and not their clock
-  (R003), so where they fall is not placed by the stoppage.
-- **`D` ends late: the restart's first controlled touch comes 9 frames after our truth turns alive, where DFL's comes
-  35 to 37 after its flag.** On all 4 public restarts the first controlled touch follows our flip by a median 9 frames
-  (0.36 s); on DFL's copy it follows the flag by 35 (raw) or 37 (coarse) frames (1.40 s, 1.48 s), a gap of -26 and -28
-  frames. The model's alive crosses 0.5 upward 36.5 frames (1.46 s) before our truth turns alive on 2 of 4, against 0
-  frames on DFL (a gap of -36.5). Both detectors say our `D` ends later than DFL's flag would, by 1.0 to 1.5 s, and both
-  intervals exclude 0 under both truths, on 4 and 2 changes. `ball_moves` finds nothing on any of the 4 (on DFL its
-  flag turns alive a constant 3 frames after the ball starts to move: p25 = p75 = -3.0, and every match's median is
-  -3.0), so the sharper question, whether our `D` ends at the kick, is not answered. Why our tracking shows no ball that
-  is still for 25 frames and then moves near these restarts is not explained here (a ball that is not visible, or not
-  still).
-- **Taken together, our stoppages look longer than DFL's flag would draw them.** Relative to DFL, `D` starts 1.5 s
-  earlier and ends 1.0 to 1.5 s later on the same tracking events: about 2.5 to 3 s a stoppage (the sum of the gaps
-  above, 64 to 76.5 frames). The signs differ between the start and the end, so one constant offset between our
-  tracking and the truth's frames (T08, T29) cannot be all of it: it would move every gap the same way.
+- **`D` starts early, or our tracker sees the stoppage late: the ball is seen beyond a line about 1.5 s after our truth
+  turns to `D`, where DFL's flag turns just after it.** `line_out` is +37 frames (1.48 s) on the 2 of 4 stoppages where
+  our tracking sees the ball beyond a line within 5 s, against -3 (-0.12 s) on DFL, and the model's alive crosses 0.5
+  downward 39 frames (1.56 s) after our `D` begins on 3 of 4, against +1 frame on DFL, out of fold. The gaps are +40 and
+  +38 frames, the same under both truths. They are on 2 and 3 changes, and one interval excludes 0 where the other does
+  not, which is what 2 and 3 observations do and not a difference between the detectors. `ball_lost` agrees with DFL
+  (+30 against +28 raw, gap +2 and +7) and carries nothing: the copy's ball gaps are our masks transplanted with their
+  pattern and not their clock (R003), so where they fall is not placed by the stoppage.
+- **`D` ends late, or the two trackings' cues differ: the restart's first controlled touch comes 9 frames after our
+  truth turns alive, where DFL's comes 35 to 37 after its flag.** A first controlled touch is found at all 4 restarts, a
+  median 9 frames (0.36 s) after our flip; on DFL's copy it follows the flag by 35 (raw) or 37 (coarse) frames (1.40 s,
+  1.48 s), a gap of -26 and -28 frames. The model's alive crosses 0.5 upward 36.5 frames (1.46 s) before our truth turns
+  alive on 2 of 4, against 0 frames on DFL (a gap of -36.5). Both detectors put our `D`'s end later than DFL's flag
+  would be on the same events, by 1.0 to 1.5 s, and both intervals exclude 0 under both truths, on 4 and 2 changes.
+  `ball_moves` finds nothing on any of the 4 (on DFL its flag turns alive a constant 3 frames after the ball starts to
+  move: p25 = p75 = -3.0, and every match's median is -3.0), so the sharper question, whether our `D` ends at the kick,
+  is not answered. Why our tracking shows no ball that is still for 25 frames and then moves near these restarts is not
+  explained here (a ball that is not visible, or not still).
+- **Taken together, the four `D`-edge gaps put our stoppages longer than DFL's flag would draw them.** Relative to
+  DFL, on the same kind of tracking events, `D` starts 1.5 s earlier and ends 1.0 to 1.5 s later: about 2.5 to 3 s a
+  stoppage (the sum of the gaps above, 64 to 76.5 frames, both truths). The signs differ between the start and the end,
+  so one constant offset between our tracking and the truth's frames (T08, T29) cannot be all of it, since it would
+  move every gap the same way. That does not leave a difference in convention as the explanation: tracker coverage
+  also gives opposite signs at the two ends (see "How strong", below).
 - **Smart Tagging says nothing yet.** `tag_start` finds no `SET PIECES` interval within 5 s of any of the 4 stoppages
   and `tag_end` one of 4 (+19 frames, 0.76 s, a single change). A tag marks a window of a few seconds around an event
   (T17), so it is not an instant, and it is absent from most of these edges.
@@ -1089,10 +1094,21 @@ have no gap.
 How strong: only the team cell has more than 4 changes, and its interval holds 0. The `D` findings rest on 2 to 4
 changes each. The four `D`-edge gaps that carry anything (`line_out` +40 and `model_dead` +38 at the start,
 `touch_start` after a restart -26 and `model_alive` -36.5 at the end, raw truth) all point to a longer `D`, and three of
-them exclude 0. That is what a real difference in convention would show, and also what four stoppages of one lively
-stretch could show by chance, so they are **a lead and not a measurement**. The model-based pair mixes our truth's
-convention with the model's transfer to our tracking (below); the model-free pair (`line_out`, `touch_start` after a
-restart) is the better evidence, and rests on 2 and 4 changes.
+them exclude 0. Three explanations fit, and these data do not separate them:
+- **A difference in convention**: our truth turns `D` on earlier and off later than DFL's flag does.
+- **Chance**: four stoppages, found on 2 to 4 changes each, from one lively stretch of the match.
+- **Tracker coverage**, which predicts all four signs by itself. Our tracker loses the ball near the lines (T39: beyond
+  a line on 4.07% of our at-risk rows against DFL's 17.68%), so on ours `line_out` and `model_dead`, which lean on the
+  ball beyond a line, fire late (a positive gap at the start of `D`). With fewer cues that the ball is dead on ours, the
+  model's alive rises early (a negative `model_alive` gap at the end). And the copy's ball gaps are our masks placed
+  blind to the play (R003), which can delay the copy's first visible touch after a restart and inflate DFL's +35 (a
+  negative `touch_start` gap at the end). It gives no sizes, so how much of 2.5 to 3 s it could carry is not known.
+
+So they are **a lead and not a measurement**. The model-based pair mixes our truth's convention with the model's
+transfer to our tracking (below); the model-free pair (`line_out`, `touch_start` after a restart) avoids the model's
+transfer but not the coverage difference, since they are the two detectors most exposed to it, and rests on 2 and 4
+changes. What would separate convention from coverage is a person's check on the video of where `D` begins and ends
+against the ball and the whistle (below).
 
 **Caveats.**
 - **Four changes into `D`, four out of it, 12 of team.** Several `D` cells rest on 1 to 3 found changes (`line_out` and
