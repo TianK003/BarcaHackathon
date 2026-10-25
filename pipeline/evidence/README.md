@@ -51,6 +51,12 @@ public window's share of in-play, ball-visible frames on which the nearest playe
 matches give 71–82%). It is a measurement fixed once, never tuned; it moves no frame's side, so a majority vote reads it
 the same as the hard values bar float rounding in an exact tie.
 
+**Constants from the public window (since 23 Oct 2026, `f8f2629`).** `confidence` 0.78 above and `ball_presence`'s
+`missing` 0.2 and `seen` 0.585 below were derived from the public window's statistics (A01). The organisers' rule says
+that window is for checking the pipeline and is "not training data and not a tuning set", so those values are not to be
+used in a submission config unless re-derived from other games (DFL's matches give 71 to 82% for the nearest player,
+A06). Neither is in `main.toml`; they stay in P06's research configs (R006 to R009, `p06_hmm.toml`).
+
 **`ball_presence`** gives the decoder its only evidence for `D`. Its two values come from A01 by rule: the ball is
 missing on 33.6% of dead-ball frames and 6.5% of in-play ones in the public window, a ratio of 5.2 that is rounded down
 to 4 because that window is the best-covered block of the match (`missing = 0.2`); and it is seen on 66.4% against
@@ -187,9 +193,9 @@ one that is not shape_features', fails on load with the trainer's command.
 
 ## Rules of thumb
 
-- **Probabilities, not labels.** Calibrate them: a source that is right 78% of the time should say about 0.78, not
-  1.0. A probabilistic decoder clips to [ε, 1 − ε] (see the decode README), so a hard 0 or 1 is survivable, but it
-  shouts down every other source.
+- **Probabilities, not labels.** Calibrate them (on other games, never on the public window): a source that is right
+  78% of the time should say about 0.78, not 1.0. A probabilistic decoder clips to [ε, 1 − ε] (see the decode README),
+  so a hard 0 or 1 is survivable, but it shouts down every other source.
 - **NaN is not 0.5.** NaN means "I can't see this frame"; 0.5 means "I looked and it's a coin flip". Both are
   legitimate, but they are different claims.
 - **`weight`** (config) is how much the decoder trusts a source. For a probabilistic decoder (P06) it is meant as an
@@ -202,8 +208,9 @@ one that is not shape_features', fails on load with the trainer's command.
 - **Randomness from the seed:** `np.random.default_rng([run.seed, 1234])`, with a constant of your own, so adding a
   source never shifts another's random stream ([T22](../../docs/traps.md)).
 - **No ground truth as input**, and nothing about this fixture from outside the bundle
-  ([T26](../../docs/traps.md)). No hand labels on this match; train on other matches (P01, P13), and a model
-  trained on the public GT must predict the public window out of fold ([T27](../../docs/traps.md)).
+  ([T26](../../docs/traps.md)). No hand labels on this match, and no hand-corrected tracking; train on other matches
+  (P01, P13). The public window is for checking that the pipeline is correct: nothing is trained, fitted or chosen on
+  it, out of fold or not (RULES.md, `f8f2629`, [T27](../../docs/traps.md)).
 - **Never print rows.** Aggregates only, in logs, notebooks committed to git, and docs.
 
 ## Planned extensions (build them when the first source needs them)

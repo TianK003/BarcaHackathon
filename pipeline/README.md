@@ -128,7 +128,7 @@ half_width = 50
 | [`p07_shape.toml`](configs/p07_shape.toml) | R011's choice, written when it was chosen: R010's config plus `shape_possession`; it writes the file `main.toml` wrote before R012 added the shift |
 | [`p45_hmm.toml`](configs/p45_hmm.toml) | R010's chosen config, written when it was chosen: `controlled_touch`, `dead_ball_model` and the `hmm`; it writes the file `main.toml` wrote before R011 |
 | [`smooth50_repro.toml`](configs/smooth50_repro.toml) | a regression check: it must rebuild `evaluation/results/baseline_smooth50.csv` byte for byte |
-| [`p06_hmm.toml`](configs/p06_hmm.toml) | P06's candidate: the `hmm` decoder with the parameters the benchmark chose (R006, R007), `nearest_player` at `confidence` 0.78 and `ball_presence`. It does not clear P06's bar and is not the submission config |
+| [`p06_hmm.toml`](configs/p06_hmm.toml) | P06's candidate: the `hmm` decoder with the parameters the benchmark chose (R006, R007), `nearest_player` at `confidence` 0.78 and `ball_presence`. It does not clear P06's bar and is not the submission config; those constants came from the public window (A01), so since the 23 Oct rule it must not become one unless they are re-derived from other games |
 
 Configs are checked strictly before any data loads. An unknown key, an unknown component, a duplicate source name or
 a parameter the function doesn't accept (`half_widht = 50`) stops the run with a sentence that says what to change.
@@ -159,18 +159,21 @@ Each stage's README has a template, its rules and the traps that apply. After an
 | the file | `python evaluation/validate_submission.py <csv>` | the organisers' own format check (the pipeline already runs the same functions) |
 | the scores | `python pipeline/run.py <config> --score` | public-window scores plus each source's agreement with the GT. For `main.toml` (R012) `controlled_touch` agrees on `home` on 87.2% of 5,489 frames, `dead_ball_model` on `alive` on 86.6% of 7,500 and `shape_possession` on `home` on 90.9% of 6,031 (a correctness check, T01); `nearest_player` agrees on 77.8% of 5,640 frames, exactly [A01](../docs/results.md) |
 
-The public window is for correctness only. It holds 17 possessions and ranks the baselines the wrong way round
-([T01](../docs/traps.md)). Choose between versions on P01's benchmark of other matches, as the next section says. Hand
-labels on this match are not allowed, not even for validation ([T27](../docs/traps.md)).
+The public window is for correctness only, by the organisers' rule since 23 Oct 2026 (`f8f2629`): it is "not training
+data and not a tuning set". It holds 17 possessions and ranks the baselines the wrong way round
+([T01](../docs/traps.md)). Never train, fit or choose on it. Choose between versions on P01's benchmark of other
+matches, as the next section says. Hand labels on this match are not allowed, not even for validation, and neither is
+correcting its tracking by hand ([T27](../docs/traps.md)).
 
 ## Validation
 
 Every choice between two versions of the pipeline (a decoder, a smoothing width, an evidence weight, a threshold) is
 made on **P01's benchmark**, never on the public window. The window checks that a run is correct (alignment, the file,
-each source's agreement) and is where we learn this ground truth's timing conventions (P02); it cannot rank versions
-([T01](../docs/traps.md)). With no hand labels allowed on this match, the labels come from other matches: the seven open
-DFL/IDSSE matches (two Bundesliga, five 2. Bundesliga; CC BY 4.0), whose tracking is degraded to look like ours, run
-through the pipeline's own components and scored by the organisers' scorer half by half.
+each source's agreement) and can be inspected to understand this ground truth's timing conventions (P02), but no
+constant is set from it; it cannot rank versions ([T01](../docs/traps.md)). With no hand labels allowed on this match,
+the labels come from other matches: the seven open DFL/IDSSE matches (two Bundesliga, five 2. Bundesliga; CC BY 4.0),
+whose tracking is degraded to look like ours, run through the pipeline's own components and scored by the organisers'
+scorer half by half.
 
 ```bash
 pip install -r requirements-benchmark.txt && python pipeline/benchmark/sources.py     # once: the 7 matches, md5-checked
@@ -223,8 +226,9 @@ needs the video's homography or the Smart Tagging stops the run and names the as
 - **Timing.** `python pipeline/benchmark/conventions.py public|dfl|compare|latency|shift` times when our truth's
   label changes against events that our tracking shows (A11), measures the pipeline's own lag on the DFL matches and
   applies P02's declared rule for `shift_edges` ([R012](../docs/results.md), the
-  [benchmark README](benchmark/README.md#conventions-when-our-truth-flips-and-the-edge-shift)). `public` writes a file
-  of the public truth's changes under `data/runs/conventions/` for a person to watch the video by; no LLM reads it.
+  [benchmark README](benchmark/README.md#conventions-when-our-truth-flips-and-the-edge-shift)); the rule's public half,
+  g, is retired since 23 Oct 2026, so only the DFL lag is applied. `public` writes a file of the public truth's changes
+  under `data/runs/conventions/` for a person to watch the video by, to understand and never to fit; no LLM reads it.
 - **The default profile cannot value evidence about the ball's gaps.** Its gaps are our masks transplanted blind to
   the play, so a source or a parameter that depends on where the gaps fall (`ball_presence`, `switch_dead`, P05's and
   P07's features) is also read on `context`, under both truths ([T38](../docs/traps.md)).
@@ -248,10 +252,12 @@ scores 0.3 to 2.2 points of spellF1 higher on `context` (R005). `run.py --profil
 profile, and every report names its profile and version.
 
 What it cannot test: whatever uses the homography, the Smart Tagging, the camera or the audio (DFL has no video), and
-the conventions of our ground truth beyond what the public window shows. Check those on the public window. The details
-(profiles, gates and WARN bands, the report, limitations) are in [`benchmark/README.md`](benchmark/README.md), and what
-was measured is in [`docs/results.md`](../docs/results.md) (A05 to A09, R002 to R005; R004c is the default's; R006,
-R007 and A10 are P06's runs on it, R008 to R010 are P04's and P05's, R011 is P07's, and A11 and R012 are P02's).
+the conventions of our ground truth beyond what the public window shows. The window may be inspected for those, to
+understand them, and read as a correctness check; it is no tuning set, so a constant that depends on them is declared
+and argued, never fitted to it. The details (profiles, gates and WARN bands, the report, limitations) are in
+[`benchmark/README.md`](benchmark/README.md), and what was measured is in [`docs/results.md`](../docs/results.md) (A05
+to A09, R002 to R005; R004c is the default's; R006, R007 and A10 are P06's runs on it, R008 to R010 are P04's and P05's,
+R011 is P07's, and A11 and R012 are P02's).
 
 ## Rules that the code enforces, and ones it can't
 
@@ -264,6 +270,10 @@ R007 and A10 are P06's runs on it, R008 to R010 are P04's and P05's, R011 is P07
   ([T20–T22](../docs/traps.md)).
 - **One index everywhere.** Row *i* = tactical video frame *i*. Only stage 1 converts indices ([T08](../docs/traps.md)).
 - **Labels come from an algorithm.** No component may edit particular frames by hand (RULES.md).
+- **Nothing is fitted on the public window or on a hand label of this match.** The runner cannot tell a constant that
+  came from the public 5 minutes from one that came from DFL, so every constant of a submission config is traced to its
+  entry in `docs/results.md` (the audit in the technical document, section 5), and `--score` prints the window's
+  agreement as an output and never as an input (RULES.md rules 1 and 2, `f8f2629`, [T27](../docs/traps.md)).
 - **Per-frame arrays in reprs (a note for the team).** `Evidence` and `Decoded` (in `contracts.py`) and `RunResult` (a
   dataclass in `run.py`, not in `contracts.py`) print their per-frame arrays in their default reprs, so a
   `print(decoded)` in a notebook shows values of this match. On a benchmark match a printed `Evidence` would show part

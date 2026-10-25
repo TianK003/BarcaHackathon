@@ -59,7 +59,8 @@ before it ([T06](../../docs/traps.md)). `validate_submission.py` counts differen
 so compare like with like.
 
 With `--score` (the public window by default, or `--score path/to/labels.csv` for any other `frame,label` file of
-this match, such as another run's output; there are no hand labels of this match, [T27](../../docs/traps.md)):
+this match, such as another run's output; there are no hand labels of this match and the window is for checking only,
+[T27](../../docs/traps.md)):
 
 ```
 score     evaluation/gt/BAR-ATH_possession_gt_public.csv: macroF1 0.7159  spellF1 0.4000  ...  possessions 20 (truth 17)
@@ -70,7 +71,7 @@ results   | R0xx | 2026-10-25 | `main` @ <commit> | 0.7159 | 0.4000 | 20 / 14.1 
 ```
 
 The public window checks correctness. It cannot rank versions: it prefers `smooth125` to `smooth50`, the reverse of
-the full match ([T01](../../docs/traps.md)).
+the full match, and since 23 Oct 2026 it is no tuning set ([T01](../../docs/traps.md)).
 
 ## The run manifest
 

@@ -394,7 +394,9 @@ anything was measured and never tuned towards:
   minute (+-25%) and its D share (+-0.05), against what the yardsticks output on ours (over our graded halves, as the
   published baselines are: an accepted offset of at most 1% of the frames). A WARN is printed and discussed in
   `results.md`; the degradation is not adjusted towards it, because some misses are the truth's conventions and not the
-  degradation's (A06).
+  degradation's (A06). The first two set the copy beside statistics of the public window's labels, as a check on the
+  copy and nothing more (the window is "not a tuning set", RULES.md, 23 Oct 2026): no profile constant is fitted to
+  them.
 
 The report also lists the benchmark's other statistics next to ours (tracklets, wrong-team frames, NaN speeds,
 jitter...), which `gaps` does not model, so that what a later profile has to fix is on the page, and the degrader's
@@ -703,7 +705,8 @@ report, and `touch_agreement` on a hand-built scene.
 
 P02's instrument, `pipeline/benchmark/conventions.py`, measures when the label of a truth changes (A11) and when the
 pipeline's own label does (R012). No LLM may see the match, so the timing is measured against events that the tracking
-shows without any label.
+shows without any label. Since the organisers' rule of 23 Oct 2026 (`f8f2629`) the public window is inspected with it,
+to understand how our truth flips, and never tuned on: it is "not training data and not a tuning set".
 
 ```
 .venv/Scripts/python pipeline/benchmark/conventions.py public  [--gt PATH] [--data-dir D]
@@ -724,11 +727,12 @@ shows without any label.
   the neighbouring changes, and none in that range is "not found".
 - **`public`** times the 20 changes of the public truth on our real tracking. It writes `public_lags.json` (read by
   `compare`) and `public_transitions.csv` under `data/runs/conventions/`: one row per change, with its frame and every
-  detector's lag, for a person who may watch the video at exactly those moments. No LLM reads that file and the code
-  prints no row of it. **`dfl`** runs the same code on each DFL match as the pipeline sees it under a profile, with the
-  truth read beside the inputs only to find the changes; DFL is pooled over matches and seeds by the lags themselves.
-  **`compare`** prints the public median beside DFL's, with the gap's 90% bootstrap interval (2,000 draws of the public
-  lags, seeded per cell, DFL's median taken as it is). A11 has the figures.
+  detector's lag, for a person who may watch the video at exactly those moments, to understand them and not to fit a
+  constant. No LLM reads that file and the code prints no row of it. **`dfl`** runs the same code on each DFL match as
+  the pipeline sees it under a profile, with the truth read beside the inputs only to find the changes; DFL is pooled
+  over matches and seeds by the lags themselves. **`compare`** prints the public median beside DFL's, with the gap's 90%
+  bootstrap interval (2,000 draws of the public lags, seeded per cell, DFL's median taken as it is). A11 has the
+  figures.
 - **What a printout of BAR-ATH may show.** A cell with fewer than `MIN_SHOWN` = 5 changes found prints n, the share
   found and the median only, and of an interval only whether it excludes 0, since the quartiles of two to four values
   fix every one of them. DFL's printouts are in full, and the JSON files keep every value.
@@ -743,13 +747,17 @@ shows without any label.
   is reported beside it, T33), and 0 below 30 matched changes. A guard on the benchmark confirms or rejects s_b as a
   whole (`--s-b-rejected` names the types whose guard failed): `configs/p02/p02_sb.toml` against R011's config on
   `tracking` and `context`, raw and coarse, kept only if the `tracking` raw gain is above 0 and no cell is below
-  -0.005. What the public window shows beyond that is g, minus the rounded median of the public latencies after s_b,
+  -0.005. The rule R012 declared had a second term, g: minus the rounded median of the public latencies after s_b,
   taken only where that median is at least 3 frames in absolute value, its 90% bootstrap interval excludes 0 and every
-  leave-one-out median has its sign; a single public change never sets a shift. The shift is s_b + g, and
-  `shift_edges` applies it. The public score of the shifted prediction is read in sample and out of fold (a boundary
-  matched to change i moves by the shift learned without i, T27), as a check and never as a choice.
+  leave-one-out median has its sign; a single public change never sets a shift. **g is retired since the organisers'
+  rule of 23 Oct 2026 (`f8f2629`)**: reading it off the public window is a tuning use of a window that is "not a tuning
+  set", so it must stay 0. The code is unchanged and still computes and prints g, for reference only, and the shift to
+  adopt is s_b alone, from the DFL matches (other games); any future shift comes from other games only (P16).
+  `shift_edges` applies the shift. The public score of the shifted prediction is read in sample and out of fold (a
+  boundary matched to change i moves by the shift learned without i), as a correctness check and never as a choice.
 
-R012 applied the rule: s_b is team +1, into_dead -2, out_of_dead 0, g is 0 for every type, and `main.toml` carries it.
+R012 applied the rule: s_b is team +1, into_dead -2, out_of_dead 0, g is 0 for every type (and is now retired), and
+`main.toml` carries it.
 The checks are in `checks/conventions.py` (synthetic): the window rule against a plain loop, the detectors on hand-built
 tracking, that the DFL mode reads the truth beside its inputs, that no transition frame is printed, the bootstrap, the
 typed matching at the tolerance, each condition of the rule on a list that fails it, the out-of-fold prediction

@@ -31,11 +31,20 @@ Floor to beat: `baseline_smooth50`, full-match **spellF1 0.2433**.
   video); the submission repo must be public. `.gitignore` covers `data/*`, `*.mp4` and `evaluation/results/*.csv`
   (except `baseline_*.csv`) — keep it that way.
 - **Submitted labels must come from an algorithm.** Hand-labelling or hand-correcting the output disqualifies.
-- **No hand labels on this match at all**, not even to train, validate or calibrate. This comes from the organisers'
-  clarification of 22 Oct 2026 (upstream `c073f29`, RULES.md). Hand-labelled data from *other* matches is fine, in
-  any amount, so validation comes from other matches (`docs/proposals.md` P01). The published public GT may be used;
-  a model trained on it must predict the public window out of fold (`docs/traps.md` T27).
-- **No private ground truth**, or anything derived from it, beyond the public 5 minutes.
+- **No hand labels on this match at all**, in any amount and for any purpose: not to train, validate or calibrate, and
+  no correcting its tracking by hand (corrections must come out of code). The organisers' clarifications of 22 and
+  23 Oct 2026 (upstream `c073f29`, `f8f2629`; RULES.md rule 1, "Training and validation data"). Hand-labelled data from
+  *other* games is fine, in any amount, so validation comes from other games (`docs/proposals.md` P01), and the
+  technical document must list every labelled dataset: its source, who labelled it, how much, none of it from this
+  match. Still fine on this match: learning without human labels (unsupervised or self-supervised, or pseudo-labels an
+  algorithm made), and watching the video and inspecting the data to understand them, debug the pipeline and design
+  features. Not fine: turning what was seen into labels, corrections, or rules and constants tied to specific frames
+  (`docs/traps.md` T27).
+- **No private ground truth**, or anything derived from it, **and no human-produced data about this match from any
+  source** (event data, corrected tracking, possession data, annotations; RULES.md rule 2, `f8f2629`). External data
+  must be about *other* games. The public 5 minutes are for **checking that the pipeline is correct**, "not training
+  data and not a tuning set": never train, fit, calibrate or choose a constant on them, out of fold or not
+  (`docs/traps.md` T01, T27).
 - **The repo must regenerate the submitted CSV exactly** — the same file, not approximately. Seed all randomness,
   pin dependencies, keep one command that goes from `data/` to the CSV.
 - **Don't modify `evaluation/`.** It is the official scorer; local edits only make our numbers drift from the
@@ -76,7 +85,7 @@ python pipeline/benchmark/run.py CONFIG [CONFIG ...]    # configs on the benchma
 python pipeline/benchmark/run.py CONFIG ... --truth coarse   # the same under the coarse truth; read both together
 python pipeline/benchmark/fidelity.py --profile tracking --seeds 3   # gates + WARNs: the copy against our match
 python pipeline/benchmark/train_shape.py [--verify|--report]   # P07: train the shape model as JSON; --verify, --report
-python pipeline/benchmark/conventions.py public|dfl|compare|latency|shift ...   # P02: when our truth flips, the shift
+python pipeline/benchmark/conventions.py public|dfl|compare|latency|shift ...   # P02: timing, inspected; DFL-lag shift
 python pipeline/benchmark/selftest.py [--dfl] [--data]  # benchmark checks (seconds); --dfl: the 7 matches, --data: ours
 
 python evaluation/validate_submission.py path/to.csv            # official scorer's checks; run on the exact upload
@@ -179,9 +188,10 @@ frames are all `D`. The public GT labels only 11,185–18,684 (5 minutes, 17 pos
   metric; abstaining across a hand-over drags the old label over it — at transitions, guess.
 - Noise: full-match `spellF1` gaps below ~0.04 (`macroF1`: ~0.01) are not real. On the public window one missed
   possession moves `spellF1` ~0.06, and it ranks `smooth125` above `smooth50` — the reverse of the full match. Use it
-  to check correctness, never to pick hyperparameters; pick those on P01's benchmark of other matches. The public
-  window stays the only place to learn this GT's *timing* conventions (P02), because other providers flip their
-  flags at different moments.
+  to check correctness, never to pick or tune anything (a rule since `f8f2629`, not just advice); pick hyperparameters
+  on P01's benchmark of other matches. This GT's *timing* conventions (P02) may be inspected on the public window to
+  understand them, but no constant is set from it: other providers flip their flags at different moments, and any
+  shift comes from other games alone (P16), never from the window.
 
 ### Data facts that bite
 

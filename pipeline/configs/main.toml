@@ -18,9 +18,11 @@
 # p07_shape.toml; R010's earlier main.toml is p45_hmm.toml. R012 adopted the shift by its declared rule: s_b is minus
 # the median lag of this pipeline on DFL, and the benchmark guard kept it (a gain of +0.0005 on `tracking` raw, no cell
 # of `tracking` and `context` under either truth below -0.005); the gap to our truth's convention, g, read from the
-# public window, is 0 for every type. The shift is 1 to 2 frames and its gains are inside noise: it is here because
-# the rule said so, not because it is shown to help. Its file is p02_shift.toml. The benchmark overstates P05 for
-# BAR-ATH by an amount it cannot measure (docs/traps.md T38, T39), and the shape model was trained on other teams'
+# public window, was 0 for every type, and is retired since the organisers' rule of 23 Oct 2026 (that window is no
+# tuning set), so every constant here comes from DFL, the benchmark, a fixed rule or the documented kick-offs (the audit
+# in docs/technical_document.md, section 5). The shift is 1 to 2 frames and its gains are inside noise: it is here
+# because the rule said so, not because it is shown to help. Its file is p02_shift.toml. The benchmark overstates P05
+# for BAR-ATH by an amount it cannot measure (docs/traps.md T38, T39), and the shape model was trained on other teams'
 # matches: read R010, R011 and R012 before trusting the size of any gain.
 
 description = "P04 + P05 + P07 + P02 (R012): controlled_touch 2.0 m / 6.0 m/s / 3 frames / hold 0.55 (confidence 0.91) + dead_ball_model (hgb, pipeline/models/dead_ball_hgb.json) at weight 1.0 + shape_possession (hgb, pipeline/models/shape_possession_hgb.json) at weight 0.2, scope all, min_prob 0.02, hmm 4/32/25/25, decoded per half, then shift_edges team +1 / into_dead -2 / out_of_dead 0 frames."
