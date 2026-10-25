@@ -771,11 +771,11 @@ def test_kinematics_memo_is_per_object():
     other = kinematics_random_inputs(seed=2)            # other tracking, a new object: recomputed, not served stale
     assert kinematics.ball_track(other) is not ball and kinematics.player_track(other) is not players
     assert not np.array_equal(kinematics.ball_track(other).xy_m, ball.xy_m, equal_nan=True)
-    held = len(kinematics._BALL_MEMO)
+    held, held_players = len(kinematics._BALL_MEMO), len(kinematics._PLAYER_MEMO)
     del first, other, ball, players
     gc.collect()
     assert len(kinematics._BALL_MEMO) == held - 2, "the memo kept an object"
-    assert len(kinematics._PLAYER_MEMO) == held - 2, "the memo kept an object"
+    assert len(kinematics._PLAYER_MEMO) == held_players - 2, "the memo kept an object"
 
 
 # -- controlled_touch -------------------------------------------------------------------------------------------------
@@ -2253,6 +2253,61 @@ def test_dead_ball_model_pre_kickoff_is_dead():
         assert np.allclose(alive[20:80], expected) and np.allclose(alive[120:180], expected)
 
 
+DEAD_BALL_TRIAL_CONFIG = """
+[[evidence]]
+kind = "controlled_touch"
+radius = 200.0
+duel_radius = 0.001
+max_rel_speed = inf
+min_frames = 1
+confidence = 0.9
+hold = 0.6
+
+[[evidence]]
+{source}
+
+[decoder]
+kind = "hmm"
+switch_team = 1
+switch_dead = 20
+min_possession = 1
+min_dead = 1
+"""
+
+
+def test_run_end_to_end_synthetic_dead_ball():
+    """Each P05 source, through config -> registry -> evidence -> hmm: the frames before a kick-off come out D."""
+    from pipeline import output
+    from pipeline.config import load_config
+    from pipeline.contracts import CODES, X
+    from pipeline.run import run
+    with tempfile.TemporaryDirectory() as root:
+        make_synthetic_bundle(root)
+        model = write_model(root)
+        lines = ["kind = \"dead_ball_rules\""] + ["{} = {}".format(k, v) for k, v in RULE_VALUES.items()]
+        sources = {"dead_ball_rules": "\n".join(lines),
+                   "dead_ball_model": "kind = \"dead_ball_model\"\nmodel = {}".format(json_string(model))}
+        for name, source in sources.items():
+            inputs = synthetic_inputs(root, graded=[(1, 50, 280), (2, 320, 560)])
+            inputs.kickoffs = {1: 100, 2: 420}
+            config = load_config(write_text(root, name + ".toml", DEAD_BALL_TRIAL_CONFIG.format(source=source)))
+            out_path = os.path.join(root, name + ".csv")
+            result = run(config, inputs, out_path, log=quiet)
+            before = np.zeros(SYNTHETIC_FRAMES, dtype=bool)
+            before[50:100] = before[320:420] = True
+            outside = np.ones(SYNTHETIC_FRAMES, dtype=bool)
+            outside[50:280] = outside[320:560] = False
+            assert (result.codes[before] == CODES["D"]).all(), "{}: frames before a kick-off are not D".format(name)
+            assert (result.codes[outside] == X).all(), name
+            assert (result.codes[~outside] != X).all(), "{}: no X inside a block".format(name)
+            output.validate(out_path, SYNTHETIC_FRAMES, result.codes)
+
+
+def json_string(text):
+    import json
+    return json.dumps(text)
+
+
 def test_dead_ball_model_imports_numpy_only():
     import ast
     import subprocess
@@ -2676,7 +2731,8 @@ def test_data_main_config_deterministic():
     inputs = Inputs()
     with tempfile.TemporaryDirectory() as folder:
         first = run(config, inputs, os.path.join(folder, "first.csv"), log=quiet)
-        second = run(config, inputs, os.path.join(folder, "second.csv"), log=quiet)
+        # a fresh Inputs: the evidence memos live on the object, and a shared one would hide the evidence stage
+        second = run(config, Inputs(), os.path.join(folder, "second.csv"), log=quiet)
         assert first.sha256 == second.sha256, "two runs of the same config wrote different files (docs/traps.md T22)"
         output.validate(os.path.join(folder, "first.csv"), inputs.n_frames, first.codes)
         scores, _ = output.score(first.codes)

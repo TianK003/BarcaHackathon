@@ -498,3 +498,16 @@ def test_export_refuses_what_it_cannot_read():
     odd = trainer.hgb_estimator(X, y, NAMES)
     odd._predictors = [[types.SimpleNamespace(nodes=np.zeros(3, dtype=[("value", "f8")]))]]
     expect_error(ValueError, lambda: trainer.export_hgb(odd), "export_hgb", "is_categorical")
+
+
+def test_committed_models_hold_a_fold_for_each_benchmark_match():
+    """A missing or renamed fold would fall back to `full`, which saw every match, and score it in sample silently."""
+    from pipeline.benchmark import sources
+    for kind in ("hgb", "logistic"):
+        path = trainer.default_path(kind)
+        with open(path, encoding="utf-8") as handle:
+            artifact = json.load(handle)
+        name = os.path.basename(path)
+        assert sorted(artifact["folds"]) == sorted(sources.MATCH_IDS), (
+            "{}: folds {} are not the seven benchmark matches".format(name, sorted(artifact["folds"])))
+        assert "full" in artifact, "{}: no `full` model".format(name)

@@ -543,8 +543,8 @@ than in the pooled number alone. Nothing here is a config to submit. The checks 
 ## P04's control rule: the measurement and Stage A's configs
 
 `controlled_touch` (P04, `pipeline/evidence/controlled_touch.py`) speaks only inside control episodes, and its
-`confidence` is a measurement of the benchmark, not a tuning (Stage A of the plan's protocol, R008). `touch_stats.py`
-makes it:
+`confidence` is a measurement of the benchmark, not a tuning (Stage A's protocol, as R008 describes it).
+`touch_stats.py` makes it:
 
 ```
 .venv/Scripts/python pipeline/benchmark/touch_stats.py [--profile P] [--seeds N] [--matches ID ...] [--data-dir D]
@@ -572,7 +572,7 @@ The truth is read inside `measure`, from the match, to count; the source is call
 degraded tracking and no flag, with confidence 0.99 and no hold, and the result holds counts and shares only. The CLI
 prints a table of aggregates and nothing frame-level.
 
-Stage A's configs (P45) are named `pipeline/benchmark/configs/p45/p45a_r{RR}_v{V}_k{KK}_h{HH}.toml`: `RR` the radius
+Stage A's configs are named `pipeline/benchmark/configs/p45/p45a_r{RR}_v{V}_k{KK}_h{HH}.toml`: `RR` the radius
 in tenths of a metre (`10`, `15`, `20`), `V` the `max_rel_speed` in m/s (`3`, `6`), `KK` the `min_frames` (`03`, `08`),
 `HH` the hold in hundredths (`50` is off, i.e. 0.5, and `55` is 0.55); `RR`, `KK` and `HH` are zero-padded to two digits
 and `V` is one digit, e.g. `p45a_r10_v3_k03_h50.toml`. The 24 files each hold `controlled_touch` with the measured
@@ -581,8 +581,13 @@ chosen config on `context`. The checks are in `checks/touch.py` (synthetic): `te
 `test_touch_stats_confidence_rule`, `test_touch_stats_default_grid`, `test_touch_stats_never_passes_truth` and
 `test_touch_stats_refuses_what_it_cannot_measure`.
 
+Stage B's configs (R009) are `p45b_{src}_w{WWW}_bp{B}.toml`: `src` is `hgb`, `logit` or `rules`, `WWW` the weight in
+thousandths (`010` to `100`) and `B` is 1 with `ball_presence` at its defaults, 0 without; each holds `nearest_player`
+at 0.78 and `hmm` at (8, 32, 75, 1) (24 files).
+
 Stage C's configs (R010) are `p45c_t{TTT}_d{DDD}_mp{MMM}_md{NNN}.toml`: the chosen `controlled_touch` and
-`dead_ball_model` alone, with `hmm` at switch_team T, switch_dead D, min_possession MMM and min_dead NNN (72 files).
+`dead_ball_model` alone, with `hmm` at `switch_team` TTT, `switch_dead` DDD, `min_possession` MMM and `min_dead` NNN
+(72 files).
 
 ## Dead-ball model
 
@@ -620,6 +625,8 @@ trees with numpy alone, so the submission pipeline's pins stay numpy and pandas.
   commit, which would change with every later commit. **`--verify`** retrains and compares with the committed file
   everything but those three hashes: a different hash is a note (a comment edited after training is not a different
   model), anything else exits 1 (`test_verify_ignores_only_source_hashes`).
+  The comparison is exact, and the features' BLAS products can differ in the last bit on another CPU family, so
+  `--verify` is a same-machine check.
 - **What it prints**, per held-out match on its out-of-fold predictions: log-loss, Brier score and AUC, and a pooled
   10-bin reliability table, counts and means only.
 - **`--rules`** measures `dead_ball_rules`' five parameters: for each trigger and for "no trigger", on all graded
@@ -630,8 +637,7 @@ trees with numpy alone, so the submission pipeline's pins stay numpy and pandas.
 
 The source takes the file's model for `inputs.game` or else `full`, and gives the decoder a likelihood, not a
 posterior: `logit(alive) = logit(p) - logit(prior_alive)`, clipped to `[min_prob, 1 - min_prob]`; the decoder sets the
-prior, and DFL's class balance does not leak into it. Nothing here has been trained yet: the artifacts and their
-scores are R009's.
+prior, and DFL's class balance does not leak into it. The artefacts and their scores are R009's.
 
 ## The checks
 
@@ -641,7 +647,7 @@ scores are R009's.
 .venv/Scripts/python pipeline/benchmark/selftest.py --data   # + our own match (aggregates only; minutes)
 ```
 
-The synthetic run is 311 checks (P06's added 16 to the 272 of A05, then P04's touch_stats 5 and P05's trainer 18). Its
+The synthetic run is 312 checks (P06's added 16 to the 272 of A05, then P04's touch_stats 5 and P05's trainer 19). Its
 time, 49 to 115 s, is as of A05 and not measured again. `--dfl` and `--data` are as of A05 (2026-10-23, `fdc5eae`),
 when the synthetic run was 272 checks: `--dfl` added 16 and `--data` 7, and all of them (295 checks then) took 949 s
 (15 min 49 s) with the seven DFL caches and the Calibration rebuilt after an edit to `dfl.py` and `calibration.py`.
