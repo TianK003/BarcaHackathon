@@ -581,6 +581,9 @@ chosen config on `context`. The checks are in `checks/touch.py` (synthetic): `te
 `test_touch_stats_confidence_rule`, `test_touch_stats_default_grid`, `test_touch_stats_never_passes_truth` and
 `test_touch_stats_refuses_what_it_cannot_measure`.
 
+Stage C's configs (R010) are `p45c_t{TTT}_d{DDD}_mp{MMM}_md{NNN}.toml`: the chosen `controlled_touch` and
+`dead_ball_model` alone, with `hmm` at switch_team T, switch_dead D, min_possession MMM and min_dead NNN (72 files).
+
 ## Dead-ball model
 
 P05's classifier is trained here, on the benchmark's matches, and run by the pipeline from a file (`pipeline/models/`,
