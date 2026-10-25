@@ -28,6 +28,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R007 | 2026-10-25 | the `hmm` decoder's second grid on `tracking` v3 (P06): the minimum run lengths (`min_possession` 1 to 150 frames, `min_dead` 1 and 25) around Stage 1's choice, a one-step edge extension (Stage 2b), and the choice over the three stages; the chosen `pipeline/configs/p06_hmm.toml` is not the submission config | 0.6393 | 0.3500 | 23 / 11.4 s | 0.2053 raw and 0.1967 coarse for the chosen `p06s2b_t008_d032_mp075_md001` (the best of 123 configs: 0.2083 raw, `p06s2b_t004_d016_mp075_md001`, and 0.2310 coarse, `p06s2b_t008_d032_mp150_md001`), against `nearest_w50` 0.2018 raw and `nearest_w125` 0.2226 coarse | **(switch_team, switch_dead, min_possession, min_dead) = (8, 32, 75, 1)** by the pre-declared rule over the set Stage 2b's ruling extended (6 configs within 0.005 of the best raw score, and the best coarse score among them is 8 / 32 / 75, by 0.0007; over Stage 1 and Stage 2 alone the rule picks `p06s2_t016_d064_mp050_md025`, 0.0012 under `nearest_w50` raw); **the bar is not met under either truth** (the chosen config's raw pooled Δ against `nearest_w50` is +0.0036, p 0.2500; its coarse pooled Δ against `nearest_w125` is -0.0259, p 0.0156) and no config of the three stages meets it; the truths disagree on the minimum run (raw 75 frames, coarse 150 or more, the grid's upper edge); the winner is on an edge of Stage 2b's grid in t and d and is not extended; alive/dead F1 0.5676, below both yardsticks (0.6094, 0.6428); the public window is a correctness check only (valid, deterministic; in-sample for the three evidence values A01 measured on it); controls (diagnostics, none a candidate): `seen` off costs 0.0063 raw on `tracking` (0 wins in 7) and moves nothing coarse; `margin` 50 is above the chosen config in all four profile and truth cells (two of them on `context`, sensitivity only; +0.0023 to +0.0071) and clears the raw half of the bar on `tracking` (+0.0107 over `nearest_w50`, p 0.0312, 6 wins in 7) but not the coarse half (-0.0236 against `nearest_w125`), so a `margin` sweep by its own protocol is the follow-up; `switch_dead` on `context` (sensitivity only) is flat under the raw truth (a span of 0.0035 over 8 to 128) and the coarse truth wants more; the headroom is A10 |
 | R008 | 2026-10-25 | P04's controlled-touch evidence on `tracking` v3: the 12 rule settings (radius, `max_rel_speed`, `min_frames`, each `confidence` measured on all seven matches) x `hold` off or 0.55, 24 configs with `ball_presence` and the `hmm` (8, 32, 75, 1); the chosen `p45a_r20_v6_k03_h55` (not the submission config) | 0.6532 | 0.3889 | 19 / 13.9 s | 0.2345 raw and 0.2433 coarse for the chosen `p45a_r20_v6_k03_h55` (the best raw is `r15_v6_k03_h55` 0.2348; the best coarse is the chosen one), against `nearest_w50` 0.2018 raw and `nearest_w125` 0.2226 coarse, and R007's 0.2053 raw and 0.1967 coarse at the same decoder | **Stage A's choice is radius 2.0 m, `max_rel_speed` 6.0 m/s, `min_frames` 3, `hold` 0.55** (2 configs within 0.005 of the best raw, the best coarse among them is the chosen one by 0.0023); alone it clears both halves of P06's bar (raw Δ +0.0328 over `nearest_w50`, p 0.0156, 7 wins in 7; coarse Δ +0.0206 over `nearest_w125`, p 0.0156, 7 wins in 7) and the leave-one-match-out estimates agree (raw objective alone +0.0316 raw and +0.0176 coarse, the whole rule +0.0334 and +0.0209, 7 wins in 7 each); the winner is on the grid's edge in radius, speed, minimum frames and hold and nothing is added; with the hold off no config beats either yardstick; alive/dead F1 0.5731, no better than R007's 0.5676 by more than 0.006; the public window is a correctness check only; controls (diagnostics): adding `nearest_player` 0.78 costs 0.0161 raw and 0.0352 coarse (`p45actl_nearest`, 0.2184 and 0.2081), and on `context` (sensitivity only) the chosen config is +0.0568 raw over `nearest_w50` and +0.0534 coarse over `nearest_w125`, 7 wins in 7 each, so the four profile and truth cells agree; the combined bar is Stage C's |
 | R009 | 2026-10-25 | P05's dead-ball evidence on `tracking` v3: source (`rules`, `logit`, `hgb`) x weight (0.1 to 1.0) x `ball_presence` off or on, 24 configs with `nearest_player` 0.78 and the `hmm` (8, 32, 75, 1); the chosen `p45b_hgb_w100_bp0` (not the submission config) | 0.6482 | 0.3024 | 24 / 11.8 s | 0.3503 raw and 0.4150 coarse for the chosen `p45b_hgb_w100_bp0` (the best raw is `hgb_w100_bp1` 0.3529; the best coarse is the chosen one), against `nearest_w50` 0.2018 raw and `nearest_w125` 0.2226 coarse, and R007's 0.2053 raw and 0.1967 coarse at the same decoder | **Stage B's choice is the boosted trees at weight 1.0 without `ball_presence`** (2 configs within 0.005 of the best raw, the best coarse among them is the chosen one by 0.0029); alone it clears both halves of P06's bar (raw Δ +0.1486 over `nearest_w50`, p 0.0156, 7 wins in 7; coarse Δ +0.1924 over `nearest_w125`, p 0.0156, 7 wins in 7) and the leave-one-match-out estimates agree (+0.1498 and +0.1926 for the whole rule, 7 wins in 7 each); Stage B2 does not run (`hgb` leads `logit` by 0.0274 raw, and has the lower out-of-fold log-loss on 7 of 7 matches); alive/dead F1 0.9725 against 0.6094 and 0.6428; **the benchmark overstates P05 for BAR-ATH** (DFL tracks the ball out of play; our tracker loses the ball near the lines: beyond a line on 4.07% of our at-risk rows against DFL's 17.68%), by an amount it cannot measure, and the public window's alive agreement is 86.6% of 7,500 frames; the winner is on the grid's upper edge in weight and nothing is added; no evidence that `ball_presence` helps (costs up to 0.0917 raw below weight 1.0); the `context` control (sensitivity only) is +0.1359 raw and +0.1695 coarse over the yardsticks, 7 wins in 7 each, so the four profile and truth cells agree; the combined bar is Stage C's |
+| R010 | 2026-10-25 | P04 and P05 together on `tracking` v3: `controlled_touch` (R008) for `home` and the `hgb` `dead_ball_model` (R009) for `alive`, the `hmm` re-tuned over switch_team {4, 8, 16} x switch_dead {16, 32, 64} x `min_possession` {25, 50, 75, 100} x `min_dead` {1, 25}, 72 configs; the chosen `p45c_t004_d032_mp025_md025` is `pipeline/configs/p45_hmm.toml` and now `main.toml` | 0.6996 | 0.4686 | 18 / 15.7 s | 0.4217 raw and 0.4556 coarse for the chosen `p45c_t004_d032_mp025_md025` (the best raw; the best coarse is `p45c_t016_d032_mp100_md025` 0.5049, raw 0.3532), against `nearest_w50` 0.2018 raw and `nearest_w125` 0.2226 coarse, and R009's 0.3503 raw and 0.4150 coarse (P05 alone, R007's decoder) | **Chosen (switch_team, switch_dead, min_possession, min_dead) = (4, 32, 25, 25)** by the pre-declared rule (6 configs within 0.005 of the best raw score, all at switch_team 4 and min_possession 25, and the best coarse among them is the chosen one by 0.0002); **the bar is met under both truths** (raw Δ +0.2199 over `nearest_w50`, p 0.0156, 7 wins in 7; coarse Δ +0.2330 over `nearest_w125`, p 0.0156, 7 wins in 7) and the leave-one-match-out estimates agree (+0.2217 and +0.2341, 7 wins in 7 each); each source is needed (without `controlled_touch` the coarse Δ over `nearest_w125` is +0.0198, p 0.1406; without `dead_ball_model` it is -0.0056, p 0.1094; raw both hold); the truths disagree on the decoder (coarse prefers switch_team 16 and min_possession 100, T33) and the winner is on the grid's lower edge in switch_team and min_possession, nothing added; alive/dead F1 0.9726; the `context` control (sensitivity only) is +0.2130 raw and +0.2211 coarse over the yardsticks, 7 wins in 7 each; **the benchmark overstates P05 for BAR-ATH** (T38), by an amount it cannot measure; the label-free check on our match passes (predicted `D` 36.0% of the graded frames, no `X` in a graded block, the same sha256 twice), so **`main.toml` is switched** (sha256 `a706e7f7...`, not uploaded); the public window is a correctness check only |
 
 ### The four yardsticks on every profile, in one table
 
@@ -3577,12 +3578,307 @@ there is no evidence that `ball_presence` helps (it costs up to 0.0917 raw below
 evidence is the P05 source alone; and the public window is a correctness check only (valid, deterministic with the same
 sha256 twice, 24 possessions against 17, alive agreement 86.6%).
 
+### R010 — P04 and P05 together: the 72-config grid, the choice and the bar (2026-10-25, Tian)
+Proposal: P04, P05 · Commit: `7cc99f3` (Stage C's code and its 72 configs `pipeline/benchmark/configs/p45/p45c_*.toml`;
+the grid was run from a detached checkout of it, the runner's header says `7cc99f3db152`); the controls were run from
+a detached checkout of `15580c1` (the chosen config and the two ablations; header `15580c15235b`); the public window and
+`main.toml` were run at `f276ae7` · Command: six processes at once, three shares of 24 configs (the t = 4, 8 and 16
+rows of the grid), each share run once per truth, all with `--profile tracking --seeds 3 --no-write`:
+`python -u pipeline/benchmark/run.py pipeline/benchmark/configs/nearest_w50.toml pipeline/benchmark/configs/nearest_w125.toml <24 configs> --profile tracking --seeds 3 --truth raw --no-write`
+and the same with `nearest_w125.toml` first, `nearest_w50.toml` second and `--truth coarse`. The controls are the same
+two yardsticks, the chosen config and the two ablations with `--profile tracking` (both truths), and the two yardsticks
+and the chosen config with `--profile context` (both truths). Public window:
+`python pipeline/run.py pipeline/configs/p45_hmm.toml --score`
+Public (a correctness check only, T01): macroF1 0.6996 · spellF1 0.4686 · alive/dead F1 0.9222 · 18 possessions against
+the truth's 17, mean 15.7 s against its 14.2 s. The file is valid (199,319 rows), sha256
+`a706e7f711b2d3faacc2f071b6e28963ed8e2f2326a7880e6d0776cce4295f1f`. Over all the graded frames of the match it labels H
+37.5%, A 26.5% and D 36.0% (X 0.0%) and finds 450 possessions (mean 9.0 s). Run twice, it gives the same sha256 both
+times. `--score` reports `controlled_touch` agreeing with the public GT on home on 87.2% of 5,489 frames (the judged
+frames where it has an opinion; the same figure as R008's, for the same rule and frames) and `dead_ball_model` agreeing
+on alive on 86.6% of 7,500 frames (the same as R009's, for the same model). `controlled_touch` has an opinion on home on
+59.2% of the graded frames and none on alive; `dead_ball_model` has an opinion on alive on all of them and none on
+home. No bootstrap was run, because no public-window gap is claimed. The two agreement lines are measurements on the
+public window, and they are not inputs: no constant of the chosen config comes from that window (the `controlled_touch`
+confidence 0.91 is touch_stats.py's floor over the seven benchmark matches, the trees were trained on those matches, and
+the decoder was chosen on them; this config has no `nearest_player`, and so none of A01's 0.78). Against R009's chosen
+config on the same window (0.6482, 0.3024, 24 possessions), R008's (0.6532, 0.3889, 19) and `baseline_smooth50`
+(0.6207, 0.3256, 26 possessions) every figure is higher, which says nothing either way (T01: one possession moves
+spellF1 about 0.06 here, and the window ranks `smooth125` above `smooth50`, the reverse of the full match).
+Validation (P01 benchmark): 7 DFL matches x 3 degradation seeds (0, 1, 2), profile `tracking` version 3, 668.4 graded
+minutes per seed. The chosen config, `p45c_t004_d032_mp025_md025` (`controlled_touch` 2.0 m / 6.0 m/s / 3 frames / hold
+0.55 at confidence 0.91 and `dead_ball_model` with the `hgb` artifact at weight 1.0, no `nearest_player`, no
+`ball_presence`, hmm 4 / 32 / 25 / 25): pooled spellF1 0.4217 raw (mean per match 0.4240 [0.3991, 0.4488]) and 0.4556
+coarse (0.4569 [0.4337, 0.4802]); macroF1 0.8275 raw and 0.8288 coarse; alive/dead F1 0.9726; 2.74 possessions per
+graded minute; `D` share 44.6% (the truth's 44.8%).
+
+| truth | against | pooled Δ | mean per match Δ [90% t] | p | wins |
+|---|---|---|---|---|---|
+| raw | `nearest_w50` (the bar's) | +0.2199 | +0.2217 [+0.2019, +0.2415] | 0.0156 | 7 |
+| raw | `nearest_w125` | +0.2552 | +0.2564 [+0.2396, +0.2732] | 0.0156 | 7 |
+| coarse | `nearest_w125` (the bar's) | +0.2330 | +0.2341 [+0.2202, +0.2480] | 0.0156 | 7 |
+| coarse | `nearest_w50` | +0.2714 | +0.2724 [+0.2537, +0.2910] | 0.0156 | 7 |
+
+**The bar is met under both truths, by a wide margin.** The label-free check on BAR-ATH (below) also passes, so
+`main.toml` is switched.
+
+**Read this before the numbers: the benchmark overstates P05 for BAR-ATH (T38), and with it the combined gain.** R009
+gives the reason and the measurements: DFL tracks the ball out of play and our tracker loses it near the lines (beyond a
+line on 4.07% of our at-risk rows against DFL's 17.68%), so the trees see the dead ball far more often on the benchmark
+than they will on our match, by an amount the benchmark cannot measure. Everything here that rests on the alive/dead
+F1 (0.9726 on the benchmark) inherits that, and so does the size of the Δs above; the sign of the raw one does not rest
+on it, since the config without P05 still beats `nearest_w50` raw (+0.0539, below). The public window's alive agreement
+(86.6% of 7,500 frames) and the predicted `D` share over the graded frames of our match, **36.0%** against 44.6% on the
+benchmark, are the two looks at our match. The share is the same as R009's alone (35.7%) and below R007's 42.3% and
+R008's 41.8%, but not off the scale of what a football match has (DFL's seven matches have 40.7% to 51.7%).
+
+**The grid.** switch_team t in {4, 8, 16} x switch_dead d in {16, 32, 64} x `min_possession` in {25, 50, 75, 100}
+frames x `min_dead` in {1, 25} frames: 72 configs `p45c_t{TTT}_d{DDD}_mp{MMM}_md{NNN}`. The evidence is fixed and the
+union of the two stages' choices: `controlled_touch` (R008) for `home` and the `hgb` `dead_ball_model` (R009) for
+`alive`; no `nearest_player`, no `ball_presence`. The table gives pooled spellF1 and macroF1 under each truth,
+alive/dead F1 (the same under both: the predicted labels do not depend on the truth), the predicted possessions per
+graded minute (the truth has 4.58 raw and 2.48 coarse) and the predicted `D` share (the truth's is 44.8%). The bold row
+is the chosen config; the two references come first.
+
+| config | raw spellF1 | coarse spellF1 | raw macroF1 | coarse macroF1 | alive/dead F1 | possessions / min | D share |
+|---|---|---|---|---|---|---|---|
+| `nearest_w50` | 0.2018 | 0.1842 | 0.4592 | 0.4602 | 0.6094 | 4.30 | 33.4% |
+| `nearest_w125` | 0.1665 | 0.2226 | 0.4407 | 0.4509 | 0.6428 | 3.05 | 23.3% |
+| `p45c_t004_d016_mp025_md001` | 0.4208 | 0.4534 | 0.8275 | 0.8288 | 0.9722 | 2.78 | 44.7% |
+| `p45c_t004_d016_mp025_md025` | 0.4210 | 0.4536 | 0.8274 | 0.8288 | 0.9722 | 2.78 | 44.7% |
+| `p45c_t004_d016_mp050_md001` | 0.4085 | 0.4735 | 0.8264 | 0.8280 | 0.9722 | 2.44 | 44.6% |
+| `p45c_t004_d016_mp050_md025` | 0.4087 | 0.4737 | 0.8264 | 0.8280 | 0.9722 | 2.44 | 44.6% |
+| `p45c_t004_d016_mp075_md001` | 0.3904 | 0.4878 | 0.8241 | 0.8260 | 0.9721 | 2.21 | 44.6% |
+| `p45c_t004_d016_mp075_md025` | 0.3905 | 0.4880 | 0.8241 | 0.8260 | 0.9721 | 2.21 | 44.6% |
+| `p45c_t004_d016_mp100_md001` | 0.3712 | 0.4956 | 0.8222 | 0.8256 | 0.9718 | 2.05 | 44.6% |
+| `p45c_t004_d016_mp100_md025` | 0.3713 | 0.4958 | 0.8222 | 0.8256 | 0.9718 | 2.05 | 44.6% |
+| `p45c_t004_d032_mp025_md001` | 0.4215 | 0.4554 | 0.8275 | 0.8288 | 0.9726 | 2.74 | 44.6% |
+| **`p45c_t004_d032_mp025_md025`** | 0.4217 | 0.4556 | 0.8275 | 0.8288 | 0.9726 | 2.74 | 44.6% |
+| `p45c_t004_d032_mp050_md001` | 0.4092 | 0.4759 | 0.8266 | 0.8282 | 0.9726 | 2.40 | 44.6% |
+| `p45c_t004_d032_mp050_md025` | 0.4093 | 0.4761 | 0.8266 | 0.8282 | 0.9726 | 2.40 | 44.6% |
+| `p45c_t004_d032_mp075_md001` | 0.3909 | 0.4904 | 0.8244 | 0.8262 | 0.9725 | 2.17 | 44.6% |
+| `p45c_t004_d032_mp075_md025` | 0.3910 | 0.4906 | 0.8244 | 0.8263 | 0.9725 | 2.17 | 44.6% |
+| `p45c_t004_d032_mp100_md001` | 0.3709 | 0.4965 | 0.8223 | 0.8257 | 0.9721 | 2.02 | 44.6% |
+| `p45c_t004_d032_mp100_md025` | 0.3710 | 0.4966 | 0.8223 | 0.8257 | 0.9721 | 2.02 | 44.6% |
+| `p45c_t004_d064_mp025_md001` | 0.4190 | 0.4535 | 0.8278 | 0.8288 | 0.9726 | 2.69 | 44.6% |
+| `p45c_t004_d064_mp025_md025` | 0.4190 | 0.4535 | 0.8278 | 0.8288 | 0.9726 | 2.69 | 44.6% |
+| `p45c_t004_d064_mp050_md001` | 0.4063 | 0.4737 | 0.8268 | 0.8281 | 0.9726 | 2.36 | 44.5% |
+| `p45c_t004_d064_mp050_md025` | 0.4063 | 0.4737 | 0.8268 | 0.8281 | 0.9726 | 2.36 | 44.5% |
+| `p45c_t004_d064_mp075_md001` | 0.3879 | 0.4879 | 0.8245 | 0.8262 | 0.9725 | 2.13 | 44.5% |
+| `p45c_t004_d064_mp075_md025` | 0.3879 | 0.4879 | 0.8245 | 0.8262 | 0.9725 | 2.13 | 44.5% |
+| `p45c_t004_d064_mp100_md001` | 0.3682 | 0.4945 | 0.8225 | 0.8257 | 0.9720 | 1.98 | 44.5% |
+| `p45c_t004_d064_mp100_md025` | 0.3682 | 0.4945 | 0.8225 | 0.8257 | 0.9720 | 1.98 | 44.5% |
+| `p45c_t008_d016_mp025_md001` | 0.4138 | 0.4691 | 0.8284 | 0.8302 | 0.9721 | 2.57 | 44.7% |
+| `p45c_t008_d016_mp025_md025` | 0.4140 | 0.4694 | 0.8284 | 0.8302 | 0.9721 | 2.57 | 44.7% |
+| `p45c_t008_d016_mp050_md001` | 0.4023 | 0.4828 | 0.8272 | 0.8290 | 0.9721 | 2.34 | 44.7% |
+| `p45c_t008_d016_mp050_md025` | 0.4025 | 0.4830 | 0.8272 | 0.8290 | 0.9721 | 2.34 | 44.7% |
+| `p45c_t008_d016_mp075_md001` | 0.3865 | 0.4946 | 0.8254 | 0.8279 | 0.9721 | 2.15 | 44.6% |
+| `p45c_t008_d016_mp075_md025` | 0.3867 | 0.4946 | 0.8254 | 0.8279 | 0.9721 | 2.15 | 44.6% |
+| `p45c_t008_d016_mp100_md001` | 0.3692 | 0.5008 | 0.8235 | 0.8274 | 0.9717 | 2.00 | 44.6% |
+| `p45c_t008_d016_mp100_md025` | 0.3693 | 0.5010 | 0.8235 | 0.8274 | 0.9717 | 2.00 | 44.6% |
+| `p45c_t008_d032_mp025_md001` | 0.4145 | 0.4717 | 0.8288 | 0.8305 | 0.9726 | 2.53 | 44.6% |
+| `p45c_t008_d032_mp025_md025` | 0.4146 | 0.4719 | 0.8288 | 0.8306 | 0.9726 | 2.53 | 44.6% |
+| `p45c_t008_d032_mp050_md001` | 0.4030 | 0.4854 | 0.8276 | 0.8294 | 0.9726 | 2.30 | 44.6% |
+| `p45c_t008_d032_mp050_md025` | 0.4031 | 0.4856 | 0.8276 | 0.8294 | 0.9726 | 2.30 | 44.6% |
+| `p45c_t008_d032_mp075_md001` | 0.3873 | 0.4973 | 0.8259 | 0.8283 | 0.9725 | 2.11 | 44.6% |
+| `p45c_t008_d032_mp075_md025` | 0.3874 | 0.4974 | 0.8259 | 0.8283 | 0.9725 | 2.11 | 44.6% |
+| `p45c_t008_d032_mp100_md001` | 0.3691 | 0.5020 | 0.8239 | 0.8277 | 0.9721 | 1.97 | 44.6% |
+| `p45c_t008_d032_mp100_md025` | 0.3692 | 0.5021 | 0.8239 | 0.8277 | 0.9721 | 1.97 | 44.6% |
+| `p45c_t008_d064_mp025_md001` | 0.4120 | 0.4697 | 0.8288 | 0.8303 | 0.9726 | 2.48 | 44.6% |
+| `p45c_t008_d064_mp025_md025` | 0.4120 | 0.4697 | 0.8288 | 0.8303 | 0.9726 | 2.48 | 44.6% |
+| `p45c_t008_d064_mp050_md001` | 0.4001 | 0.4830 | 0.8276 | 0.8291 | 0.9726 | 2.25 | 44.5% |
+| `p45c_t008_d064_mp050_md025` | 0.4001 | 0.4830 | 0.8276 | 0.8291 | 0.9726 | 2.25 | 44.5% |
+| `p45c_t008_d064_mp075_md001` | 0.3843 | 0.4945 | 0.8258 | 0.8280 | 0.9725 | 2.07 | 44.5% |
+| `p45c_t008_d064_mp075_md025` | 0.3843 | 0.4945 | 0.8258 | 0.8280 | 0.9725 | 2.07 | 44.5% |
+| `p45c_t008_d064_mp100_md001` | 0.3661 | 0.4997 | 0.8238 | 0.8274 | 0.9720 | 1.92 | 44.5% |
+| `p45c_t008_d064_mp100_md025` | 0.3661 | 0.4997 | 0.8238 | 0.8274 | 0.9720 | 1.92 | 44.5% |
+| `p45c_t016_d016_mp025_md001` | 0.3872 | 0.4963 | 0.8265 | 0.8314 | 0.9721 | 2.20 | 44.7% |
+| `p45c_t016_d016_mp025_md025` | 0.3874 | 0.4966 | 0.8265 | 0.8314 | 0.9721 | 2.20 | 44.7% |
+| `p45c_t016_d016_mp050_md001` | 0.3791 | 0.5008 | 0.8254 | 0.8305 | 0.9721 | 2.11 | 44.7% |
+| `p45c_t016_d016_mp050_md025` | 0.3792 | 0.5011 | 0.8254 | 0.8305 | 0.9721 | 2.11 | 44.7% |
+| `p45c_t016_d016_mp075_md001` | 0.3688 | 0.4998 | 0.8234 | 0.8283 | 0.9720 | 2.01 | 44.6% |
+| `p45c_t016_d016_mp075_md025` | 0.3688 | 0.5001 | 0.8234 | 0.8283 | 0.9721 | 2.01 | 44.6% |
+| `p45c_t016_d016_mp100_md001` | 0.3534 | 0.5038 | 0.8218 | 0.8277 | 0.9717 | 1.89 | 44.6% |
+| `p45c_t016_d016_mp100_md025` | 0.3535 | 0.5040 | 0.8218 | 0.8277 | 0.9717 | 1.88 | 44.6% |
+| `p45c_t016_d032_mp025_md001` | 0.3877 | 0.4992 | 0.8270 | 0.8320 | 0.9726 | 2.16 | 44.6% |
+| `p45c_t016_d032_mp025_md025` | 0.3878 | 0.4994 | 0.8270 | 0.8320 | 0.9726 | 2.16 | 44.6% |
+| `p45c_t016_d032_mp050_md001` | 0.3797 | 0.5039 | 0.8261 | 0.8312 | 0.9726 | 2.07 | 44.6% |
+| `p45c_t016_d032_mp050_md025` | 0.3799 | 0.5041 | 0.8262 | 0.8312 | 0.9726 | 2.07 | 44.6% |
+| `p45c_t016_d032_mp075_md001` | 0.3693 | 0.5031 | 0.8242 | 0.8290 | 0.9725 | 1.97 | 44.6% |
+| `p45c_t016_d032_mp075_md025` | 0.3694 | 0.5032 | 0.8242 | 0.8290 | 0.9725 | 1.97 | 44.6% |
+| `p45c_t016_d032_mp100_md001` | 0.3532 | 0.5047 | 0.8224 | 0.8282 | 0.9721 | 1.85 | 44.6% |
+| `p45c_t016_d032_mp100_md025` | 0.3532 | 0.5049 | 0.8224 | 0.8282 | 0.9721 | 1.85 | 44.6% |
+| `p45c_t016_d064_mp025_md001` | 0.3843 | 0.4975 | 0.8272 | 0.8320 | 0.9726 | 2.11 | 44.6% |
+| `p45c_t016_d064_mp025_md025` | 0.3843 | 0.4975 | 0.8272 | 0.8320 | 0.9726 | 2.11 | 44.6% |
+| `p45c_t016_d064_mp050_md001` | 0.3761 | 0.5015 | 0.8262 | 0.8310 | 0.9726 | 2.02 | 44.6% |
+| `p45c_t016_d064_mp050_md025` | 0.3761 | 0.5015 | 0.8262 | 0.8310 | 0.9726 | 2.02 | 44.6% |
+| `p45c_t016_d064_mp075_md001` | 0.3654 | 0.5001 | 0.8242 | 0.8288 | 0.9724 | 1.92 | 44.5% |
+| `p45c_t016_d064_mp075_md025` | 0.3654 | 0.5001 | 0.8242 | 0.8288 | 0.9724 | 1.92 | 44.5% |
+| `p45c_t016_d064_mp100_md001` | 0.3496 | 0.5028 | 0.8225 | 0.8281 | 0.9720 | 1.81 | 44.5% |
+| `p45c_t016_d064_mp100_md025` | 0.3496 | 0.5028 | 0.8225 | 0.8281 | 0.9720 | 1.81 | 44.5% |
+
+**The choice, by the pre-declared rule.** Objective: pooled spellF1 under the raw truth. The best raw config is the
+chosen one itself, `p45c_t004_d032_mp025_md025`, at 0.4217. The tie band is 0.005, so the tied set is raw >= 0.4167.
+Six configs are in it, all at switch_team 4 and min_possession 25 (switch_dead 16, 32 and 64, min_dead 1 and 25):
+
+| config | raw spellF1 | coarse spellF1 |
+|---|---|---|
+| `p45c_t004_d032_mp025_md025` | 0.4217 | 0.4556 |
+| `p45c_t004_d032_mp025_md001` | 0.4215 | 0.4554 |
+| `p45c_t004_d016_mp025_md025` | 0.4210 | 0.4536 |
+| `p45c_t004_d064_mp025_md001` | 0.4190 | 0.4535 |
+| `p45c_t004_d064_mp025_md025` | 0.4190 | 0.4535 |
+| `p45c_t004_d016_mp025_md001` | 0.4208 | 0.4534 |
+
+The next config, `t008_d032_mp025_md025`, is at 0.4146, 0.0071 below the best. Among the tied, the best coarse score is
+`p45c_t004_d032_mp025_md025` (0.4556, against 0.4554 for its `md001` twin, by 0.0002), so the tie order (larger
+switch_team, then min_possession, then switch_dead, then min_dead) is not reached. **Chosen:
+`p45c_t004_d032_mp025_md025`**, which is also the raw best.
+- **The plateau** (within 0.005 of the best raw): those six configs. It is flat along switch_dead (0.4190 to 0.4217
+  across 16, 32 and 64) and along min_dead (the two values differ by at most 0.0002 raw and 0.0003 coarse in every one
+  of the 36 pairs), but narrow along the other two axes: switch_team 8 is 0.0071 below, and min_possession 50 is 0.0124
+  below.
+- **The raw-only winner** is the chosen config (0.4217); **the coarse-only winner** is `p45c_t016_d032_mp100_md025`
+  (0.5049 coarse, 0.3532 raw). The truths disagree, as in R007 (T33): raw wants the shortest minimum possession and the
+  smallest switch penalty of the grid, coarse the longest and the largest. By axis, the best raw and coarse scores at
+  each value are: switch_team 4 (0.4217, 0.4966), 8 (0.4146, 0.5021), 16 (0.3878, 0.5049); min_possession 25 (0.4217,
+  0.4994), 50 (0.4093, 0.5041), 75 (0.3910, 0.5032), 100 (0.3713, 0.5049). Picking by the coarse truth would cost 0.0685
+  raw (0.3532 against 0.4217), and the rule's choice costs 0.0493 coarse (0.4556 against 0.5049). The raw truth is the
+  objective and the coarse truth the warning: the possession length is not known (A06). The chosen config predicts 2.74
+  possessions per graded minute against 4.58 under the raw truth and 2.48 under the coarse one; the coarse-only winner
+  predicts 1.85.
+- **At the edges.** The chosen config is at the grid's lower edge in switch_team (4) and in min_possession (25), at its
+  upper edge in min_dead (25, where it makes no difference), and inside it in switch_dead (32). Raw spellF1 falls
+  monotonically with both switch_team and min_possession from the edge. **Per the protocol nothing is added after the
+  results**: a switch_team below 4 or a minimum possession below 25 frames (1 s) was not tried, and the entry does not
+  claim it would not score higher on the raw truth, nor that it would be sound on the coarse one.
+
+**Δ for the other leaders.** The coarse-only winner's raw Δ over `nearest_w50` is +0.1514 (0.3532 against 0.2018), so
+it too clears the bar's raw half. No config of the 72 fails either half: the lowest pooled raw score is 0.3496 and the
+lowest coarse 0.4534, against the yardsticks' 0.2018 and 0.2226.
+
+**Controls: what each source adds at the chosen decoder** (hmm 4 / 32 / 25 / 25; `tracking` v3, 3 seeds; run from
+`15580c1`; both logs end `EXIT=0`; the chosen config and the references score as in the grid, to the last digit, and per
+match too). Each ablation changes one source: `p45cctl_no_p04` replaces `controlled_touch` by `nearest_player` at
+confidence 0.78, and `p45cctl_no_p05` replaces `dead_ball_model` by `ball_presence` at its defaults (R007's `alive`
+evidence).
+
+| config | raw spellF1 | coarse spellF1 | raw macroF1 | alive/dead F1 | possessions / min | D share |
+|---|---|---|---|---|---|---|
+| chosen | 0.4217 | 0.4556 | 0.8275 | 0.9726 | 2.74 | 44.6% |
+| `p45cctl_no_p04` | 0.2796 | 0.2424 | 0.7796 | 0.9726 | 5.09 | 44.6% |
+| `p45cctl_no_p05` | 0.2556 | 0.2170 | 0.4851 | 0.5749 | 3.05 | 43.0% |
+
+Paired against the chosen config (chosen minus the ablation; mean per match [90% t], exact sign-flip p, wins in 7):
+- **What P04 adds** (chosen vs `no_p04`): +0.1421 pooled raw, mean +0.1441 [+0.1150, +0.1732], p 0.0156, 7 wins;
+  +0.2132 pooled coarse, mean +0.2142 [+0.1876, +0.2408], p 0.0156, 7 wins.
+- **What P05 adds** (chosen vs `no_p05`): +0.1661 pooled raw, mean +0.1670 [+0.1571, +0.1770], p 0.0156, 7 wins;
+  +0.2386 pooled coarse, mean +0.2393 [+0.2275, +0.2511], p 0.0156, 7 wins.
+- **Each is needed.** Neither ablation clears the bar. Against `nearest_w50` raw, `no_p04` is +0.0778 (p 0.0156, 7
+  wins; its predicted possessions are 5.09 per minute, `nearest_player`'s flicker) and `no_p05` +0.0539 (p 0.0156, 7
+  wins). Against `nearest_w125` coarse, `no_p04` is +0.0198 (mean interval [-0.0026, +0.0425], p 0.1406, 5 wins and 2
+  losses) and `no_p05` is -0.0056 (mean interval [-0.0105, +0.0001], p 0.1094, 1 win and 6 losses). So the raw half of
+  the bar holds without either source and the coarse half fails without either: at this decoder each source alone is
+  worth little under the coarse truth, and the two together a lot.
+
+**Comparison with the earlier entries** (pooled spellF1, raw and coarse). The combined config scores 0.4217 and 0.4556.
+- **R009, P05 alone** (R007's decoder): 0.3503 and 0.4150. The combined config is +0.0714 raw and +0.0406 coarse above.
+- **R008, P04 alone** (the same decoder): 0.2345 and 0.2433: +0.1872 and +0.2123 above.
+- **R007's chosen config** (`nearest_player` and `ball_presence`, the same decoder): 0.2053 and 0.1967: +0.2164 and
+  +0.2589 above.
+- **The sum of the two gains.** At R007's decoder P04 gains +0.0292 raw and +0.0466 coarse, and P05 +0.1450 and +0.2183;
+  the sum, +0.1742 and +0.2649, would give 0.3795 and 0.4616, and the combined config at the same decoder (the grid's
+  `p45c_t008_d032_mp075_md001`) scores 0.3873 and 0.4973. So the two gains add, and a little more (+0.0078 raw, +0.0357
+  coarse). The re-tuned decoder then adds +0.0344 raw (0.4217 against 0.3873) and costs 0.0417 coarse (0.4556 against
+  0.4973): the re-tuning follows the raw objective, which is what T33 is about.
+- **A10's ceilings** (at R007's decoder, with `nearest_player` for the team): a perfect `D` would reach 0.3678 raw and
+  0.4417 coarse, and both parts perfect everywhere 0.7627 and 0.9226. The chosen config is +0.0539 raw and +0.0139
+  coarse above the first (its team evidence is better than `nearest_player`, and its decoder is tuned to it), and is
+  55.3% raw and 49.4% coarse of the second.
+
+**Leave-one-match-out estimate of the selection.** As R008 and R009 did, from the per-match spellF1 the runner prints
+(four decimals): for each match, the selection is repeated on the other six matches and the chosen config's score on the
+held-out match is compared with the yardstick's on it (`nearest_w50` raw, `nearest_w125` coarse); the seven differences
+give the mean Δ with its 90% t-interval, the exact sign-flip p over the 2^7 sign patterns, and the wins. The references
+are not candidates.
+- **The raw objective alone** (the config of the 72 with the highest mean per-match raw spellF1 on the six, no tie
+  band): `p45c_t004_d032_mp025_md025` is picked for all seven matches. Scored under the raw truth against `nearest_w50`:
+  mean Δ +0.2217 [+0.2019, +0.2415], p 0.0156, 7 wins and 0 losses (per match +0.1956, +0.1847, +0.2297, +0.2375,
+  +0.2032, +0.2499, +0.2512). Scored under the coarse truth against `nearest_w125`: mean Δ +0.2341 [+0.2202, +0.2480],
+  p 0.0156, 7 wins and 0 losses (+0.2112, +0.2115, +0.2280, +0.2340, +0.2576, +0.2562, +0.2403).
+- **The whole rule** (on each fold: the configs within 0.005 of the best six-match raw mean, then the best six-match
+  coarse mean among them, then the tie order): the same config is picked in all seven folds, so the held-out estimate
+  is the chosen config's own, the figures above, p 0.0156, 7 wins and 0 losses under each truth.
+
+The selection is stable (one config in every fold under each rule), so the choice is not what produces the gap. The
+estimate does not cover the rule values (`controlled_touch`'s confidence, measured on all seven matches) nor the
+trees' training, which holds out the scored match only through `folds`, and seven matches from two competitions (five
+of them Fortuna Düsseldorf home games) are not seven independent draws.
+
+**Controls on `context`** (sensitivity only, T38; `context` v1 fails two gates, R005; run from `15580c1`,
+`--profile context`, `--seeds 3 --no-write`; both logs end `EXIT=0`, the references score on `context` exactly as in R005
+and R009).
+- **The chosen config.** Pooled spellF1 0.4323 raw (mean per match 0.4341 [0.4116, 0.4565]) and 0.4654 coarse (0.4660
+  [0.4466, 0.4854]); macroF1 0.8353 raw and 0.8361 coarse; alive/dead F1 0.9700; 2.81 possessions per graded minute; `D`
+  share 44.8%. Against `nearest_w50` raw: pooled Δ +0.2130, mean +0.2144 [+0.1963, +0.2324], p 0.0156, 7 wins in 7.
+  Against `nearest_w125` coarse: pooled Δ +0.2211, mean +0.2213 [+0.2059, +0.2367], p 0.0156, 7 wins in 7.
+- **The four profile x truth cells agree.** The chosen config is above its truth's strongest yardstick in all four, 7
+  matches of 7 each, p 0.0156: `tracking` raw +0.2199, `tracking` coarse +0.2330, `context` raw +0.2130, `context`
+  coarse +0.2211. There is no warning to write (T38). The agreement is not evidence that the gain transfers: `context`
+  keeps DFL's out-of-play ball tracking, so it shares the caveat above.
+
+**The label-free check on our match.** The benchmark cannot show that the file is not degenerate on BAR-ATH, so this
+check is required in addition to the bar. It is computed over the graded blocks of BAR-ATH (`games.half_video_blocks`,
+158,857 frames) of `evaluation/results/p45_hmm.csv`, with no ground truth:
+- **(a) The predicted `D` share** is 36.0%, inside [30%, 62%] (DFL's seven matches have 40.7% to 51.7% dead, widened by
+  10 points each way). It passes.
+- **(b) The `X` labels inside the graded blocks:** 0. It passes.
+- **(c) Determinism:** two runs of `pipeline/run.py pipeline/configs/p45_hmm.toml --score` give the same sha256
+  (`a706e7f7...`), and the file is valid. It passes.
+It cannot say the labels are right; it says the file is not degenerate on our match.
+
+**Adoption.** The bar (the chosen config's raw Δ over `nearest_w50` and coarse Δ over `nearest_w125` both above 0 with
+sign-flip p <= 0.05, on `tracking` v3 with 3 seeds) is met, and the check passes, so `pipeline/configs/main.toml` takes
+this config's evidence and decoder, under its own header. `pipeline/run.py pipeline/configs/main.toml` writes
+`evaluation/results/main.csv` with sha256 `a706e7f711b2d3faacc2f071b6e28963ed8e2f2326a7880e6d0776cce4295f1f`, the same
+as `p45_hmm.toml`'s (the two configs have the same evidence, decoder, seed and scope), and the file passes
+`evaluation/validate_submission.py` (199,319 rows). `pipeline/selftest.py --data` passes (114 of 114 checks).
+
+**Checks on the runs.** All six grid logs and all four control logs end `EXIT=0`. Each grid log lists the two
+references first (raw: `nearest_w50`, then `nearest_w125`; coarse the reverse) and 24 of the 72 configs; the three
+shares are disjoint and together are the 72, none missing or repeated, and the references are the same in all six logs
+to the last printed digit (`seconds` aside) and are R004c's: `nearest_w50` 0.2018 raw and `nearest_w125` 0.2226
+coarse. The chosen config scores 0.4217 raw and 0.4556 coarse in the grid and in the control, with the same per-match
+scores. Runtime: the runner's `seconds` for a grid config are 24.5 to 26.6 s and for a yardstick 7.6 to 8.8 s; the first
+config of each process took 157.6 to 164.0 s (the one-off kinematics and features pass; the memo serves the rest of the
+process). In the controls the first config took 135.5 s and 135.6 s on `tracking` (raw, coarse) and 136.8 s and 136.9 s
+on `context`; the ablations took 20.8 s and 22.5 s (raw) and 20.8 s and 22.7 s (coarse).
+
+Verdict: **`p45c_t004_d032_mp025_md025` (`controlled_touch` and `dead_ball_model` with
+`pipeline/models/dead_ball_hgb.json` at weight 1.0 and the hmm (4, 32, 25, 25)) is P04 and P05's chosen config**, by the
+pre-declared rule over the 72 configs, and is written to `pipeline/configs/p45_hmm.toml`. It meets the bar under both
+truths (raw +0.2199 over `nearest_w50`, p 0.0156, 7 wins in 7; coarse +0.2330 over `nearest_w125`, p 0.0156, 7 wins in
+7), the leave-one-match-out estimates agree (+0.2217 and +0.2341, 7 wins in 7 each), the `context` profile is above
+both yardsticks by a wide margin (+0.2130, +0.2211), each source is needed (without P04 the coarse half of the bar
+fails, +0.0198, p 0.1406; without P05 it fails, -0.0056, p 0.1094), and the label-free check on BAR-ATH passes (`D`
+36.0%, no `X` in a graded block, the same sha256 twice). **`main.toml` is switched**, and now produces sha256
+`a706e7f7...` (above); it has not been uploaded. The limits: **the size of the gain rests on DFL's out-of-play ball
+tracking and does not transfer in full to BAR-ATH, by an amount the benchmark cannot measure (T38)**, and the
+predicted `D` share on our match (36.0%) is 8.6 points below the benchmark's; the choice is on the grid's lower edge in
+switch_team and min_possession and by the protocol none is extended; the coarse truth prefers the opposite end of both
+axes (switch_team 16, min_possession 100: 0.5049 coarse, 0.3532 raw), so the possession length is not settled (T33);
+the `controlled_touch` confidence is a measurement on the seven matches the grid is scored on; and the public window is
+a correctness check only (valid, deterministic, 18 possessions against 17, alive agreement 86.6%).
+
 ## Submission log
 
 The form keeps only the last response before the deadline, so log every upload.
 
 | date | file | sha256 | commit | command | notes |
 |---|---|---|---|---|---|
+
+`main.toml` was rewritten by R010 (2026-10-25): it now produces sha256
+`a706e7f711b2d3faacc2f071b6e28963ed8e2f2326a7880e6d0776cce4295f1f` (P04 `controlled_touch` + P05
+`dead_ball_model` hgb + the `hmm` (4, 32, 25, 25)), identical to `p45_hmm.toml`'s file. It has NOT been uploaded.
 
 Before each upload:
 1. Regenerate the file from a clean clone, ideally on a second machine, and compare the sha256 ([T21](traps.md)).

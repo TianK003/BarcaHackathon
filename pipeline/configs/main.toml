@@ -6,11 +6,14 @@
 # name), change it, run it, and log the run in docs/results.md. When an experiment wins on validation, its changes
 # come back here.
 #
-# Today this is the organisers' baseline_smooth50 in substance -- nearest player plus a +/-2 s majority vote -- only
-# decoded per half and with X outside the graded frames. Its dead-ball class is "the tracking lost the ball", which
-# is wrong on 66% of dead-ball frames (docs/traps.md T12). P04-P06 replace each part.
+# Today this is P04 + P05 together: controlled_touch for `home` (P04), the hgb dead_ball_model for `alive` (P05) and
+# the hmm decoder re-tuned to them (switch_team 4, switch_dead 32, min_possession 25, min_dead 25). It was chosen in
+# R010 on the P01 benchmark (the seven DFL matches degraded as `tracking` v3, three seeds) and adopted by R010's rule:
+# the bar (a gain over each yardstick under its truth, sign-flip p <= 0.05) was met, and so was a label-free check on
+# BAR-ATH. Its evidence and decoder are those of p45_hmm.toml. The benchmark overstates P05 for BAR-ATH by an amount
+# it cannot measure (docs/traps.md T38): read R010 before trusting the size of the gain.
 
-description = "Nearest player + 50-frame majority vote, per half. The baseline in substance until P04-P06 land."
+description = "P04 + P05 (R010): controlled_touch 2.0 m / 6.0 m/s / 3 frames / hold 0.55 (confidence 0.91) + dead_ball_model (hgb, pipeline/models/dead_ball_hgb.json) at weight 1.0, hmm 4/32/25/25, decoded per half."
 seed = 0
 scope = "halves"
 
@@ -18,13 +21,25 @@ scope = "halves"
 # name = "..." (default: kind; must be unique) and weight = 1.0 (how much the decoder trusts it). Every other key is
 # passed to the source as a keyword argument.
 [[evidence]]
-kind = "nearest_player"
+kind = "controlled_touch"
+radius = 2.0          # metres: the nearest player must be this close
+max_rel_speed = 6.0   # m/s: and move with the ball
+min_frames = 3         # an episode shorter than this is dropped
+confidence = 0.91      # touch_stats.py: floor of the pooled agreement to a hundredth (91.9%)
+hold = 0.55            # the weak vote of the last team between episodes; 0.5 = off
+
+[[evidence]]
+kind = "dead_ball_model"
+weight = 1.0
+model = "pipeline/models/dead_ball_hgb.json"   # relative to the repo root
 
 # Exactly one decoder (pipeline/decode/). Every key but kind is a keyword argument.
 [decoder]
-kind = "majority_vote"
-half_width = 50          # frames each side: +/-2 s at 25 fps
-fallback = "D"           # where no source had an opinion anywhere in the window
+kind = "hmm"
+switch_team = 4      # nats a change of team (H <-> A) costs
+switch_dead = 32      # nats a change into or out of D costs
+min_possession = 25  # frames: no run of H or A shorter than this (1 is no minimum)
+min_dead = 25      # frames: no run of D shorter than this (1 is no minimum)
 
 # Zero or more refiners (pipeline/refine/), applied in order after the decoder:
 # [[refine]]
