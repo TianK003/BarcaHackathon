@@ -6,10 +6,11 @@
 # frames, per type, pooled over matches and seeds. s_b = -round(median), and 0 below 30 matched changes. It came out
 # team +1 (median -1.0 over 3,011), into_dead -2 (median +2.0 over 1,069) and out_of_dead 0 (median +0.0 over 1,657).
 #
-# The guard rule (declared before the runs, in R012): s_b is kept only if this config beats main.toml on `tracking`,
-# raw truth (Delta > 0), and no cell of {tracking, context} x {raw, coarse} loses more than 0.005 pooled spellF1. It is
-# one config with all three values, so it is kept or dropped as a whole; if it is dropped, s_b is 0 for every type.
-# The public window plays no part in it (docs/traps.md T01).
+# The guard rule (declared in P02's design before any run; `conventions.py shift` computes s_b and g and takes the
+# guard's verdict, and R012 has the outcome): s_b is kept only if this config beats main.toml on `tracking`, raw truth
+# (Delta > 0), and no cell of {tracking, context} x {raw, coarse} loses more than 0.005 pooled spellF1. It is one
+# config with all three values, so it is kept or dropped as a whole; if it is dropped, s_b is 0 for every type. The
+# public window plays no part in it (docs/traps.md T01).
 
 description = "P02 guard (R012): main.toml (controlled_touch + dead_ball_model + shape_possession 0.2 all, hmm 4/32/25/25, decoded per half) + shift_edges at the pipeline's own lag on DFL (team +1, into_dead -2, out_of_dead 0 frames)."
 seed = 0

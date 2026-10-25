@@ -40,7 +40,7 @@ every value in [0, 1] or NaN. A length of ~164k means the broadcast was indexed 
 | `controlled_touch` | NaN everywhere | `confidence` / `1 − confidence` on a kept control episode; `hold` / `1 − hold` between episodes if `hold` > 0.5; NaN elsewhere and without a ball | `radius`, `max_rel_speed` (may be `inf`), `min_frames`, `confidence` ∈ (0.5, 1], `duel_radius` default 1.0, `hold` ∈ [0.5, confidence], default 0.5 = off | P04: a player within `radius` of the ball, no opponent within `duel_radius`, moving with it, for at least `min_frames`. Silent in flight and in a duel unless `hold` > 0.5, which gives a weak vote for the last controlling team there |
 | `dead_ball_rules` | the smallest of `alive_out`, `alive_still`, `alive_slow`, `alive_kickoff` among the rules that fire, else `alive_none`; 0.001 before a half's kick-off; NaN outside the graded blocks | NaN everywhere | the five values, each ∈ [0, 1], required, no default | P05's rules on `play_features`: ball beyond a line, still at a restart spot, a collective slowdown, a kick-off formation. Thresholds fixed (laws of the game, literature), values measured (R009) |
 | `dead_ball_model` | the model's P(alive) from the 30 `play_features`, prior-corrected (logit p − logit prior_alive) and clipped to [`min_prob`, 1 − `min_prob`]; 0.001 before a half's kick-off; NaN outside the graded blocks | NaN everywhere | `model` (a path from the repo root, required), `min_prob` ∈ (0, 0.5), default 0.001 | P05's learned opinion, trained by `pipeline/benchmark/train_dead_ball.py` on the seven DFL matches degraded like ours. The model of a match is the one that never saw it (`folds[inputs.game]`); BAR-ATH and any other game use `full`. numpy only; the first call on 140,000 graded frames with 300 trees takes about 2 s with the features already computed, and its raw scores are remembered per `Inputs`, so configs that share a model walk the trees once |
-| `shape_possession` | NaN everywhere | the model's P(home has the ball) from the 26 `shape_features`, as logit = (r(x) − r(swap(x))) / 2, which is exactly antisymmetric in the teams and carries no prior, clipped to [`min_prob`, 1 − `min_prob`]; NaN outside the graded blocks, where neither team has a present slot and, with `scope = "gaps"`, wherever the ball is present | `model` (a path from the repo root, required), `scope` "gaps" (default) or "all", `min_prob` ∈ (0, 0.5), default 0.02 | P07's opinion for the 41% of frames without a ball, from the players alone. Trained by `pipeline/benchmark/train_shape.py` on the seven DFL matches with the ball hidden; the model of a match is the one that never saw it (`folds[inputs.game]`), BAR-ATH and any other game use `full`. numpy only; the first call on 140,000 graded frames with 300 trees (two walks) takes 2 to 3.5 s with the features already computed, and its logits are remembered per `Inputs` |
+| `shape_possession` | NaN everywhere | the model's P(home has the ball) from the 26 `shape_features`, as logit = (r(x) − r(swap(x))) / 2, which is exactly antisymmetric in the teams and carries no prior, clipped to [`min_prob`, 1 − `min_prob`]; NaN outside the graded blocks, where neither team has a present slot and, with `scope = "gaps"`, wherever the ball is present | `model` (a path from the repo root, required), `scope` "gaps" (default) or "all", `min_prob` ∈ (0, 0.5), default 0.02 | P07's opinion for the 41% of frames without a ball, from the players alone; `main.toml` uses it at weight 0.2 with scope "all" (R011). Trained by `pipeline/benchmark/train_shape.py` on the seven DFL matches with the ball hidden; the model of a match is the one that never saw it (`folds[inputs.game]`), BAR-ATH and any other game use `full`. numpy only; the first call on 140,000 graded frames with 300 trees (two walks) takes 2 to 3.5 s with the features already computed, and its logits are remembered per `Inputs` |
 
 The nearest player is not the possessor — wrong on 22% of ball-visible, in-play frames ([T14](../../docs/traps.md)).
 P04 is its replacement.
@@ -150,11 +150,12 @@ everywhere: the shape of two teams is no evidence on whether the ball is in play
 
 *Where it speaks.* Only on graded frames where at least one team has a present slot. With `scope = "gaps"`, the
 default, only where the ball is missing, because that is where nothing else says who has it and where ball-based
-evidence is better the rest of the time; `scope = "all"` also speaks where the ball is seen, to measure the source
-on its own. A team that is present while the other is gone still gives an opinion (the absent team's columns are NaN,
-which the trees were fitted to handle). `home` is clipped to [`min_prob`, 1 − `min_prob`], 0.02 by default, since the
-decoder reads a probability as log(p / (1 − p)) nats a frame. The trainer and the committed model are separate steps of
-P07: until a model exists, a config that names one fails on load with the trainer's command.
+evidence is better the rest of the time; `scope = "all"` also speaks where the ball is seen: R011 found it better than
+`gaps` at every weight on `tracking`, and `main.toml` uses it. A team that is present while the other is gone still
+gives an opinion (the absent team's columns are NaN, which the trees were fitted to handle). `home` is clipped to
+[`min_prob`, 1 − `min_prob`], 0.02 by default, since the decoder reads a probability as log(p / (1 − p)) nats a frame.
+The trainer and the committed model are separate steps of P07: a config that names a model file that is missing, or
+one that is not shape_features', fails on load with the trainer's command.
 
 ## Writing a source
 
@@ -206,9 +207,10 @@ P07: until a model exists, a config that names one fails on load with the traine
 
 ## Planned extensions (build them when the first source needs them)
 
-- **An evidence cache** for slow sources (a trained P07 model, video features): keyed by
+- **An evidence cache** for slow sources (video features, say): keyed by
   `(kind, canonical JSON of the parameters, ATD sha256, the source file's hash)`, stored under
-  `data/cache/evidence/`. Until then every run recomputes every source, which takes about a second today.
+  `data/cache/evidence/`. Until then every run recomputes every source: 14.9 s for `main.toml`'s three, in the run of
+  25 Oct that wrote R011's file, with the cache warm.
 - **A `next_home` channel** — P(home restarts | the ball is dead) — for P05's restart types and P08's set-piece tags.
   It will be an optional field with a default, so existing sources keep working unchanged.
 
@@ -218,7 +220,7 @@ P07: until a model exists, a config that names one fails on load with the traine
 |---|---|---|
 | P04 sticky ownership from controlled touches | `home` | supersedes `nearest_player` |
 | P05 dead-ball detector | `alive` (+ `next_home` later) | supersedes `ball_presence`; the ball is visible on 66% of dead frames ([T12](../../docs/traps.md)) |
-| P07 team shape and movement | `home` | for the 41% of frames without a ball: `shape_possession` |
+| P07 team shape and movement | `home` | for the 41% of frames without a ball: `shape_possession` (done, R011) |
 | P08 Smart Tagging | both | phases are not possessions ([T17](../../docs/traps.md)) |
 | P09 camera aim | — | a feature for P07, not a source on its own |
 | P10 referee whistle | `alive` | audio confirmed, starts at t = 0 (A04) |

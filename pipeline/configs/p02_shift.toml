@@ -12,8 +12,9 @@
 #     because this config beats main.toml on `tracking` raw and no cell of {tracking, context} x {raw, coarse} loses
 #     more than 0.005 (the gains are +0.0000 to +0.0009 pooled spellF1, inside noise).
 #   g, the gap to our truth's convention, read from the public window by the declared rule (conventions.py shift):
-#     0 for every type, because no type clears all three of its conditions (a median of 3 frames or more, a 90%
-#     interval that excludes 0, and every leave-one-out median of the same sign), on 1 to 4 matched public changes each.
+#     0 for every type, because no type clears all three of its conditions (a median of at least 3 frames in absolute
+#     value, a 90% interval that excludes 0, and every leave-one-out median of the same sign), on 1 to 4 matched public
+#     changes each.
 # So the totals are s_b alone, and this file's evidence, decoder and refiner are those of the guard's
 # pipeline/benchmark/configs/p02/p02_sb.toml. No constant comes from the public window's score (docs/traps.md T01).
 

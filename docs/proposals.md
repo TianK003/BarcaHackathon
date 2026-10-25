@@ -3,7 +3,7 @@
 What we could try, ordered by how much `spellF1` we expect per day of work. Pick one, put your name in the status,
 and log what happened in [results.md](results.md) — a dropped idea with a reason is as useful as a win.
 
-**Status:** `idea` → `doing (name)` → `done → R0xx` or `dropped → R0xx (why)`.
+**Status:** `idea` → `doing (name)` → `done → R0xx`, `partly done → R0xx (what is left)` or `dropped → R0xx (why)`.
 **Effort:** S ≤ 1 day · M 2–4 days · L ≥ 1 week. **Impact** is our guess for the full match; revise it as results
 come in.
 
@@ -31,13 +31,13 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | ID | proposal | attacks | effort | impact | status |
 |---|---|---|---|---|---|
 | [P01](#p01--a-validation-set-we-can-trust) | Validation set we can trust: other matches, degraded to look like ours | deciding anything at all | M | enabling | done → R002–R005 |
-| [P02](#p02--learn-the-ground-truths-conventions-from-the-public-window) | Learn the GT's conventions from the public window | boundary timing | S | high | doing (Tian): automated part in A11; the shift is R012 (adopted: the pipeline's own lag) |
+| [P02](#p02--learn-the-ground-truths-conventions-from-the-public-window) | Learn the GT's conventions from the public window | boundary timing | S | high; so far the pipeline's own lag, 1 to 2 frames, within noise (R012) | partly done → A11, R012 (a person can extend it) |
 | [P16](#p16--metricas-sample-games-in-our-ground-truth-providers-conventions) | Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing | boundary timing, grain | M | medium | idea |
 | [P03](#p03--one-command-deterministic-cached) | One-command, deterministic, cached pipeline | reproducibility | S–M | enabling | done → R001 |
 | [P04](#p04--sticky-ownership-from-controlled-touches) | Sticky ownership from controlled touches | facts 3, 5 | S | high: +0.1421 raw at the chosen decoder (R010) | done → R008, R010 |
 | [P05](#p05--a-real-dead-ball-detector) | Dead-ball detector | fact 4 | M | high: +0.1661 raw at the chosen decoder, on a benchmark that overstates it (R010, T38, T39) | done → R009, R010 |
 | [P06](#p06--global-decoding-per-half-hmm--hidden-semi-markov) | Global decoder (HMM / semi-Markov) per half | fact 5 | M | high | done → R006–R007, A10 |
-| [P07](#p07--possession-without-the-ball-team-shape-and-movement) | Possession without the ball: team shape | fact 1 | M | high, but only after P05: ~0 to this decoder without it at `margin` 0 (A10) | idea |
+| [P07](#p07--possession-without-the-ball-team-shape-and-movement) | Possession without the ball: team shape | fact 1 | M | high: +0.0942 raw at the chosen decoder, on a benchmark whose gain is not a forecast for our match (R011) | done → R011 |
 | [P08](#p08--smart-tagging-as-soft-evidence) | Smart Tagging as soft evidence | facts 1, 4 | S | medium | idea |
 | [P09](#p09--camera-aim-as-a-coarse-ball-zone-prior) | Camera aim as a coarse ball-zone prior | fact 1 | S | low–medium | idea |
 | [P10](#p10--referee-whistle-from-the-audio-track) | Referee whistle from the audio track | fact 4 | S–M | medium (audio confirmed, A04) | idea |
@@ -53,11 +53,11 @@ One track per person; swap freely.
 
 | track | week 1 (→ Oct 27) | week 2 (→ Nov 3) | week 3 (→ Nov 10) |
 |---|---|---|---|
-| Validation | P01 (done 23 Oct, R002–R005), P02 | P12 | re-validate every candidate on P01 |
-| Pipeline and decoder | P03 | P06 (done 25 Oct, R006–R007, A10) | P06 is tuned on P01 (R007); then [After P06](#after-p06); `main.toml` is P04 + P05 (R010), then [After P04 and P05](#after-p04-and-p05) |
+| Validation | P01 (done 23 Oct, R002–R005), P02 (partly done 25 Oct, A11, R012) | P12 | re-validate every candidate on P01 |
+| Pipeline and decoder | P03 | P06 (done 25 Oct, R006–R007, A10) | P06 is tuned on P01 (R007); then [After P06](#after-p06); `main.toml` is P04 + P05 (R010), then P07 (R011) and P02's shift (R012); [After P04 and P05](#after-p04-and-p05), then [After P07 and P02](#after-p07-and-p02) |
 | Ball visible | P04 (done 25 Oct, R008, R010) | P11 | P11 |
 | Dead ball | P05 (done 25 Oct, R009, R010) | P08 | P10 |
-| Ball missing | P07 | P07, P09 | P13 or P14 spike → go / no-go |
+| Ball missing | P07 (done 25 Oct, R011) | P09 | P13 or P14 spike → go / no-go |
 
 Week 4: feature freeze **Fri 13 Nov**; regenerate the file from a clean clone on a second machine; finish the
 [technical document](technical_document.md); submit **Mon 16 Nov** and keep Tuesday as slack.
@@ -69,7 +69,9 @@ A recommendation from
 decoder run with the truth as evidence) and from the controls of [R007](results.md), written on 25 Oct. Nobody has
 started any of it. P06's decoder has not cleared its bar on the benchmark (R007), so `main.toml` is
 unchanged, and what follows is about where the next day of work goes. The A10 figures are pooled spellF1 on `tracking`,
-raw truth first and coarse second, and are upper bounds: the oracles are exact.
+raw truth first and coarse second, and are upper bounds: the oracles are exact. *Later (R008 to R012):* items 1 to 3
+were done (P05, P04, P07), item 4 is carried into [After P07 and P02](#after-p07-and-p02), and item 5 is moot, since
+P05 replaced `ball_presence` as the `alive` source.
 
 1. **Next: P05, the dead-ball detector.** The case rests on its ceiling under the coarse truth, on its gating P07, on
    `D` being the chosen config's weakest point, and on P04 running alongside it (item 2). It does not rest on a lead
@@ -117,9 +119,10 @@ raw truth first and coarse second, and are upper bounds: the oracles are exact.
 
 ### After P04 and P05
 
-A recommendation from [R010](results.md), written on 25 Oct. `main.toml` is now P04 + P05 (the bar is met under both
+A recommendation from [R010](results.md), written on 25 Oct. `main.toml` was then P04 + P05 (the bar is met under both
 truths and the label-free check passes), and the file has not been uploaded. Pooled spellF1 on `tracking`, raw truth
-first and coarse second.
+first and coarse second. *Later:* R011 did item 3 and A11 with R012 did part of item 1, and the next step is in
+[After P07 and P02](#after-p07-and-p02).
 
 1. **Learn our GT's timing on the public window (P02), with a person watching the video around the published
    transitions.** The back-dating, the 0.55 hold and the `D` onset follow DFL's flag, and nothing about them was
@@ -138,6 +141,51 @@ first and coarse second.
 5. **Before the upload, decide how much of the gain to believe.** The benchmark's alive/dead F1 of 0.9726 rests on
    DFL's ball being tracked out of play (T39). Our match's predicted `D` share is 36.0% against the benchmark's 44.6%,
    and the public window's alive agreement is 86.6% of 7,500 frames. Neither says how the full match scores.
+
+### After P07 and P02
+
+A recommendation from [R011](results.md), [R012](results.md) and
+[A11](results.md#a11--our-ground-truths-timing-against-dfls-from-tracking-events-2026-10-25-tian), written on 25 Oct.
+`main.toml` is now P04 + P05 + P07 with P02's shift, and the file has not been uploaded. On the benchmark (`tracking`
+v3, raw truth, pooled spellF1) P07 took it from 0.4217 to 0.5159 and the shift added +0.0005, inside noise. Neither
+figure is a forecast for our match: the shape model never saw our teams, DFL tracks the ball out of play, and the count
+of possessions moved the other way on BAR-ATH (R011).
+
+1. **Next: re-check the decoder's edges with the new evidence ("After P04 and P05", item 2).** The reasons are in the
+   results:
+   - R011 kept the decoder at R010's values (4, 32, 25, 25) in all 12 configs, so P07's weight was chosen against a
+     decoder tuned for the other two sources. The weight's peak is interior (0.2; 0.1 and 0.5 score 0.5057 and 0.5051
+     raw against 0.5159), which is what a weight trading off against the switch penalties could look like, and nothing
+     in R011 tells the two apart.
+   - The chosen `switch_team` 4 and `min_possession` 25 are the lowest values R010 tried, and "After P06" item 4 already
+     says to re-run the minimum-run part of the protocol after any new source. P07 is one: at weight 0.2 it can move a
+     frame by up to 0.78 nats (3.9 x 0.2, the clip and the weight), on every graded frame.
+   - The grain is live again. P07 moved the predicted possessions per graded minute from 2.74 to 3.17 on the benchmark
+     (the truth's 4.58 raw and 2.48 coarse) and from 4.25 to 4.15 on BAR-ATH, and the two truths still disagreed on the
+     decoder in R010 (T33). Read both.
+   - It needs no new data: only benchmark runs, which R011 logged at 25.6 to 27.5 s a config on `tracking` once the
+     evidence was memoised, after 143 to 156 s for the first config of each process (the runner's `seconds`). It needs
+     a protocol declared before the first run (the values, the objective, the rule), the weight as a second axis only
+     if that protocol says so, and nothing from the public window.
+2. **In parallel, and off the machine: a person on P02's transitions.** R012's rule found g = 0 for every type because 1
+   to 4 matched public changes cannot carry a gap, and A11's `D` edges (2.5 to 3 s longer than DFL's flag would draw
+   them) are a lead and not a measurement: our truth's convention, chance and our tracker's coverage all fit. A
+   person's check on the video of where `D` begins and ends (the line, the whistle, the stoppage) and of the restart
+   type is what would separate them (A11, "How a person can extend it"). It costs hours and not compute, so it can run
+   beside item 1; what comes out is aggregates and frame counts in the docs, never labels (T27).
+3. **Before any upload, decide how much of the gain to believe ("After P04 and P05", item 5).** It is a decision and
+   not a run. R011's transfer gate (0.8251 against 0.7486) is a proxy and not an accuracy, the possession count moved
+   the other way on BAR-ATH, and the public window's spellF1 fell from 0.4686 to 0.4000, about one possession (a
+   correctness check, T01). The benchmark is still the best evidence we have, with the caveats of T38, T39 and R011,
+   and it has to be settled before the freeze on 13 Nov.
+4. **The restart-team channel, after those.** R010 and R011 do not measure its worth, and A11 gives it no signal: it
+   needs the restart type, which stays with a person (item 2). If that person finds the stoppages are mostly of a few
+   types with a clear next team (a corner, a goal kick), it is a small source for `home` after a stoppage; if not, drop
+   it.
+
+What the evidence does not support is a second round on P07's weight or features or on the shift's three integers: R011
+chose by its rule and added nothing after its results, and each gain is measured on DFL alone, at a size the benchmark
+cannot carry over to our match.
 
 ---
 
@@ -247,19 +295,19 @@ bundle's rules. Cite it in the technical document.
 
 ### P02 — Learn the ground truth's conventions from the public window
 
-**Status: doing (Tian): automated part in
-[A11](results.md#a11--our-ground-truths-timing-against-dfls-from-tracking-events-2026-10-25-tian).** The instrument,
-[`pipeline/benchmark/conventions.py`](../pipeline/benchmark/conventions.py), times each of the 20 public changes
-against label-free events on our tracking and sets them beside DFL's (its `tracking` v3 copy, raw and coarse truth).
-A11 reads it as a lead and not a measurement (2 to 4 changes behind each `D` cell): the events our tracking sees put our
-`D` 2.5 to 3 s longer than DFL's flag would be, and our team flips about a second before the new team's first
-controlled touch, where DFL's flag flips at it (the interval holds 0). Each is our truth's convention, or chance, or our
-tracker's coverage (it loses the ball near the lines), and A11 does not separate them.
-What is left needs a person who may watch the video: the restart type and whether `D` begins at the line, the whistle or
-the stoppage. The pipeline's own latency and the `shift_edges` values are R012's: the rule adopted the pipeline's own
-lag on DFL (team +1, into `D` -2, out of `D` 0 frames) and no gap to our convention (g = 0, from 1 to 4 matched public
-changes per type); its gain is inside noise. The person's command,
-which regenerates the file to watch, is
+**Status: partly done → A11, R012 (a person can extend it):
+[A11](results.md#a11--our-ground-truths-timing-against-dfls-from-tracking-events-2026-10-25-tian),
+[R012](results.md).** The instrument,
+[`pipeline/benchmark/conventions.py`](../pipeline/benchmark/conventions.py), times each of the 20 public changes against
+label-free events on our tracking and sets them beside DFL's (its `tracking` v3 copy, raw and coarse truth). A11 reads
+it as a lead and not a measurement (2 to 4 changes behind each `D` cell): the events our tracking sees put our `D` 2.5
+to 3 s longer than DFL's flag would be, and our team flips about a second before the new team's first controlled touch,
+where DFL's flag flips at it (the interval holds 0). Each is our truth's convention, or chance, or our tracker's
+coverage (it loses the ball near the lines), and A11 does not separate them. The pipeline's own latency and the
+`shift_edges` values are R012's: the rule adopted the pipeline's own lag on DFL (team +1, into `D` -2, out of `D` 0
+frames) and no gap to our convention (g = 0, from 1 to 4 matched public changes per type); its gain is inside noise.
+What is left needs a person who may watch the video: the restart type, and whether `D` begins at the line, the whistle
+or the stoppage. The person's command, which regenerates the file to watch, is
 
 ```bash
 python pipeline/benchmark/conventions.py public     # writes data/runs/conventions/public_transitions.csv, gitignored
@@ -419,6 +467,21 @@ weighs the evidence against the cost of each change, over a whole half at once.
 This is the backbone that everything else plugs into.
 
 ### P07 — Possession without the ball: team shape and movement
+
+**Status: done → [R011](results.md).** The source is `shape_possession`
+([`pipeline/evidence/`](../pipeline/evidence/README.md)): boosted trees on 26 features of how the two teams stand and
+move, none of which reads the ball, trained on the seven DFL matches with the ball hidden and read symmetrically in
+the two teams (`pipeline/benchmark/train_shape.py`; the model is `pipeline/models/shape_possession_hgb.json`). Out of
+fold on the benchmark (`tracking` v3, raw truth), on the alive frames whose ball is missing it scores a log-loss of
+0.3759 and an accuracy of 0.8349 (ln 2 = 0.6931). The 12-config grid chose weight 0.2 and every graded frame: on
+`tracking` v3 it adds +0.0942 pooled spellF1 under the raw truth over P04 + P05 (7 wins in 7, p 0.0156; +0.1035 under
+the coarse one), and the label-free transfer gate on our match passes (0.8251 against 0.7486). `main.toml` carries it.
+The limits: the model never saw our teams, so the benchmark's gain is not a forecast for them; the count of
+possessions moves the other way on BAR-ATH (down 2.4%, where the benchmark's goes up 16%); and the public window's
+spellF1 fell by about one possession, 0.4686 to 0.4000 (a correctness check, T01). What was built differs from the
+plan below: the model trained on the DFL matches with the ball hidden (P13's route), not on pseudo-labels from P04 or
+on the public GT, and its features are R011's 26 (no hull area, and none near the ball zone, since none reads the
+ball). What comes next is in [After P07 and P02](#after-p07-and-p02).
 
 **Why.** Fact 1: four frames in ten have no ball, in gaps long enough to hold several possessions.
 

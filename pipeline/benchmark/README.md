@@ -7,8 +7,8 @@ We may not hand-label our own match, not even to validate (the organisers' clari
 ball's own alive/dead flag and the team in possession on every frame. A config runs on them through the pipeline's own
 functions, is scored the way the organisers' scorer scores, and is compared with another config with the uncertainty
 that seven matches allow.
-The plan is [P01](../../docs/proposals.md); what was measured is in [results.md](../../docs/results.md) (A05 to A09,
-R002 to R005).
+The plan is [P01](../../docs/proposals.md); what was measured is in [results.md](../../docs/results.md) (A05 to A11,
+R002 to R012).
 
 ```
 python pipeline/benchmark/sources.py          # data -> data/external/dfl/   (21 files, 2.6 GB, size and md5 checked)
@@ -17,6 +17,8 @@ python pipeline/benchmark/fidelity.py         # how far the degraded profile loo
 python pipeline/benchmark/headroom.py CONFIG  # a config beside five variants whose evidence is the truth itself
 python pipeline/benchmark/touch_stats.py      # P04's control rule measured: coverage, agreement, flip lags, confidence
 python pipeline/benchmark/train_dead_ball.py --model hgb   # P05: train the dead-ball model (folds + full) as JSON
+python pipeline/benchmark/train_shape.py [--verify|--report]   # P07: train the shape model (folds + full) as JSON
+python pipeline/benchmark/conventions.py public|dfl|compare|latency|shift ...   # P02: when a truth flips, the shift
 python pipeline/benchmark/selftest.py [--dfl] [--data]   # the checks
 ```
 
@@ -590,9 +592,12 @@ Stage C's configs (R010) are `p45c_t{TTT}_d{DDD}_mp{MMM}_md{NNN}.toml`: the chos
 (72 files).
 
 P07's grid (R011) is `configs/p07/p07_w{WWW}_{gaps,all}.toml`: `WWW` is the weight of `shape_possession` in
-thousandths (`010`, `020`, `050`, `100`, `200`, `500`) and `gaps` or `all` its scope; each is `main.toml`'s
-`controlled_touch`, `dead_ball_model` and `hmm` (4, 32, 25, 25) plus the source with
-`pipeline/models/shape_possession_hgb.json` (12 files).
+thousandths (`010`, `020`, `050`, `100`, `200`, `500`) and `gaps` or `all` its scope; each is R010's `main.toml` (now
+`pipeline/configs/p45_hmm.toml`: `controlled_touch`, `dead_ball_model` and `hmm` (4, 32, 25, 25)) plus the source with
+`pipeline/models/shape_possession_hgb.json` and `min_prob` 0.02 (12 files). The chosen one, `p07_w200_all`, is
+`pipeline/configs/p07_shape.toml`. P02's guard (R012) is `configs/p02/p02_sb.toml`: R011's config plus `shift_edges`
+at the pipeline's own lag on DFL (team 1, into_dead -2, out_of_dead 0), run against `p07_shape.toml` in four cells (the
+section on [conventions](#conventions-when-our-truth-flips-and-the-edge-shift) has the rule).
 
 ## Dead-ball model
 
@@ -644,6 +649,110 @@ The source takes the file's model for `inputs.game` or else `full`, and gives th
 posterior: `logit(alive) = logit(p) - logit(prior_alive)`, clipped to `[min_prob, 1 - min_prob]`; the decoder sets the
 prior, and DFL's class balance does not leak into it. The artefacts and their scores are R009's.
 
+## Shape model
+
+P07's classifier (which team has the ball, from the shape of the two teams) is trained here the same way, and run by the
+pipeline from a file: training needs scikit-learn and the seven DFL matches and lives in
+`pipeline/benchmark/train_shape.py`; `pipeline/evidence/shape_possession.py` reads the numbers back and walks the trees
+with numpy alone (`pipeline/evidence/trees.py` is the walk, shared with `dead_ball_model`).
+
+```
+.venv/Scripts/python pipeline/benchmark/train_shape.py [--profile tracking] [--seeds 3] [--stride 5] [--out PATH] \
+    [--verify] [--report] [--data-dir D]
+```
+
+- **Rows.** Every match under every seed of the profile (default `tracking`, version 3, seeds 0 to 2) is served as
+  `MatchInputs`, and `shape_features` computes the 26 features from those inputs, so no truth reaches them: the label
+  is read from `truth.truth_codes` beside them. A row is every `stride`-th frame (default 5) of a graded block from its
+  start, kept where the truth is `H` or `A` (who has the ball is not asked of a dead ball), and labelled 1 where it is
+  `H`.
+- **The mirror.** Every row is also added as `shape_features.swap(row)`, the same frame with the two teams exchanged,
+  with the label flipped. The classes then balance exactly (`prior_home` is 0.5, which the source requires) and the
+  model is taught the symmetry; the source makes its output exactly antisymmetric, `(r(x) - r(swap(x))) / 2`, so there
+  is no prior to subtract.
+- **The model.** `HistGradientBoostingClassifier` with P05's settings, imported from `train_dead_ball.HGB_SETTINGS`
+  and never tuned (T26): log-loss, learning rate 0.05, 300 rounds, 15 leaves, at least 1,000 rows a leaf, L2 1.0, 255
+  bins, `random_state` 0, no class weights and no early stopping. Unlike P05's, no monotone constraint: nothing in the
+  laws of the game says that the team with the ball must be further up the pitch or wider.
+- **Folds and the file.** For each match a model fitted on the other six (`folds`, keyed by the DFL match id, which is
+  `inputs.game` of a served match), and `full` on all seven. A benchmark match is scored by its own fold and BAR-ATH by
+  `full`. The file is `pipeline/models/shape_possession_hgb.json`, in P05's layout (`{format, kind, feature_version,
+  features, profile, seeds, stride, provenance, folds, full}`; sorted keys, LF, no NaN, under 10 MB), 3,668,856 bytes
+  (R011). The trees are exported by `train_dead_ball.export_hgb`, so the version of scikit-learn is pinned for it too.
+- **Provenance and `--verify`.** The provenance is the scikit-learn version, the Calibration's digest, the DFL files'
+  sha256 and the sha256 of the three source files the model depends on (`shape_features.py`, `trees.py` and the
+  trainer), and no git commit. `--verify` retrains and compares everything but those three hashes with the committed
+  file; a different hash is a note, anything else exits 1. It is a same-machine check, as P05's is.
+- **`--report`** scores each fold model on its own held-out match, served as the pipeline serves it (`shape_possession`
+  with scope `all`), seeds pooled per match and the matches pooled by frames: log-loss and accuracy on the alive frames
+  and on those whose served ball is missing, `ln 2`, the frames where the source is silent (counted apart), and
+  `touch_agreement`. It says whether the stop rule P07's design declared fires: the pooled held-out log-loss on the
+  alive frames with the ball missing must be below `ln 2 - 0.01` = 0.6831. A fold missing from the artefact is an error,
+  because the source would fall back to `full`, which saw the match. The numbers are R011's part 1.
+- **`touch_agreement(inputs, model)`** is the statistic that needs no truth: among the frames inside kept
+  `controlled_touch` episodes (`conventions.TOUCH`, confidence 0.99, hold off, so that `home` is a number exactly on
+  the kept frames), the share where the shape `home` (scope `all`, at least 0.5) names the episode's team. It takes any
+  `Inputs`, so it can be asked of our own match with `full`: R011's transfer gate (0.8251 on BAR-ATH against 0.7486,
+  the lowest held-out match). It is a proxy, and not an accuracy.
+
+The checks are in `checks/shape.py` (synthetic): the rows, the augmentation, the exported trees against scikit-learn's
+raw score, the same bytes on one and four threads, the folds, that no truth reaches the features, the artefact, the
+report, and `touch_agreement` on a hand-built scene.
+
+## Conventions: when our truth flips, and the edge shift
+
+P02's instrument, `pipeline/benchmark/conventions.py`, measures when the label of a truth changes (A11) and when the
+pipeline's own label does (R012). No LLM may see the match, so the timing is measured against events that the tracking
+shows without any label.
+
+```
+.venv/Scripts/python pipeline/benchmark/conventions.py public  [--gt PATH] [--data-dir D]
+.venv/Scripts/python pipeline/benchmark/conventions.py dfl     [--profile tracking] [--seeds 3] [--truth raw|coarse] \
+    [--matches ID ...] [--data-dir D]
+.venv/Scripts/python pipeline/benchmark/conventions.py compare [--profile tracking] [--truth raw] [--data-dir D]
+.venv/Scripts/python pipeline/benchmark/conventions.py latency CONFIG public|dfl [the options of public or dfl]
+.venv/Scripts/python pipeline/benchmark/conventions.py shift --config CONFIG [--s-b-rejected TYPE ...] [--gt PATH]
+```
+
+- **Changes and events.** A change of a truth is typed `team` (H to A or A to H), `into_dead` or `out_of_dead`; a change
+  into or out of `X` inside a block is refused. Eight detectors, label-free and each for the types it applies to:
+  `touch_start` (the first frame of a kept `controlled_touch` episode of the new team), `line_out` (the ball first seen
+  beyond a line), `ball_lost` (the first missing frame of a gap in the ball), `ball_moves` (the ball starting to move
+  after 25 still frames, from positions), `model_dead` and `model_alive` (where `dead_ball_model`'s alive crosses 0.5)
+  and, on BAR-ATH only, `tag_start` and `tag_end` (a Smart Tagging `SET PIECES` interval's ends). The lag is `event -
+  change` in frames, so a negative lag means the event came first; the event taken is the nearest within 5 s, bounded by
+  the neighbouring changes, and none in that range is "not found".
+- **`public`** times the 20 changes of the public truth on our real tracking. It writes `public_lags.json` (read by
+  `compare`) and `public_transitions.csv` under `data/runs/conventions/`: one row per change, with its frame and every
+  detector's lag, for a person who may watch the video at exactly those moments. No LLM reads that file and the code
+  prints no row of it. **`dfl`** runs the same code on each DFL match as the pipeline sees it under a profile, with the
+  truth read beside the inputs only to find the changes; DFL is pooled over matches and seeds by the lags themselves.
+  **`compare`** prints the public median beside DFL's, with the gap's 90% bootstrap interval (2,000 draws of the public
+  lags, seeded per cell, DFL's median taken as it is). A11 has the figures.
+- **What a printout of BAR-ATH may show.** A cell with fewer than `MIN_SHOWN` = 5 changes found prints n, the share
+  found and the median only, and of an interval only whether it excludes 0, since the quartiles of two to four values
+  fix every one of them. DFL's printouts are in full, and the JSON files keep every value.
+- **`latency CONFIG`** turns the instrument on the pipeline's own output: a predicted change matches a true one of the
+  same pair of labels within 50 frames, and the lag is predicted minus true, so positive means our label changed late.
+  `public` reads the CSV that `pipeline/run.py CONFIG` wrote against the public GT; `dfl` runs the config on every
+  benchmark match and seed. The config must decode per half.
+- **`shift --config CONFIG`** is P02's declared rule, and nothing in it is tuned. For each type, s_b is minus the
+  rounded median of DFL's latencies (profile `tracking`, raw truth, so the benchmark's own default; the coarse truth's
+  is reported beside it, T33), and 0 below 30 matched changes. A guard on the benchmark confirms or rejects s_b as a
+  whole (`--s-b-rejected` names the types whose guard failed): `configs/p02/p02_sb.toml` against R011's config on
+  `tracking` and `context`, raw and coarse, kept only if the `tracking` raw gain is above 0 and no cell is below
+  -0.005. What the public window shows beyond that is g, minus the rounded median of the public latencies after s_b,
+  taken only where that median is at least 3 frames in absolute value, its 90% bootstrap interval excludes 0 and every
+  leave-one-out median has its sign; a single public change never sets a shift. The shift is s_b + g, and
+  `shift_edges` applies it. The public score of the shifted prediction is read in sample and out of fold (a boundary
+  matched to change i moves by the shift learned without i, T27), as a check and never as a choice.
+
+R012 applied the rule: s_b is team +1, into_dead -2, out_of_dead 0, g is 0 for every type, and `main.toml` carries it.
+The checks are in `checks/conventions.py` (synthetic): the window rule against a plain loop, the detectors on hand-built
+tracking, that the DFL mode reads the truth beside its inputs, that no transition frame is printed, the bootstrap, the
+typed matching at the tolerance, each condition of the rule on a list that fails it, and the out-of-fold prediction
+against `shift_edges.apply`.
+
 ## The checks
 
 ```
@@ -652,16 +761,19 @@ prior, and DFL's class balance does not leak into it. The artefacts and their sc
 .venv/Scripts/python pipeline/benchmark/selftest.py --data   # + our own match (aggregates only; minutes)
 ```
 
-The synthetic run is 312 checks (P06's added 16 to the 272 of A05, then P04's touch_stats 5 and P05's trainer 19). Its
-time, 49 to 115 s, is as of A05 and not measured again. `--dfl` and `--data` are as of A05 (2026-10-23, `fdc5eae`),
-when the synthetic run was 272 checks: `--dfl` added 16 and `--data` 7, and all of them (295 checks then) took 949 s
-(15 min 49 s) with the seven DFL caches and the Calibration rebuilt after an edit to `dfl.py` and `calibration.py`.
-The machine's load decides, and the first run on a machine also builds the caches (A05).
+The synthetic run is 369 checks (P06's added 16 to the 272 of A05, then P04's touch_stats 5 and P05's trainer 19,
+which made 312; then P07's trainer and source 20 in `shape`, P02's instrument and rule 36 in `conventions`, and one in
+`run` that a config with `shift_edges` is scored like any other). Its time, 49 to 115 s, is as of A05 and not measured
+again. `--dfl` and `--data` are as of A05 (2026-10-23, `fdc5eae`), when the synthetic run was 272 checks: `--dfl`
+added 16 and `--data` 7, and all of them (295 checks then) took 949 s (15 min 49 s) with the seven DFL caches and the
+Calibration rebuilt after an edit to `dfl.py` and `calibration.py`. The machine's load decides, and the first run on a
+machine also builds the caches (A05).
 
 The checks live in `pipeline/benchmark/checks/`, one module per topic, listed in `checks.MODULES` (the folder's
 `__init__.py` says what each holds): `sources`, `dfl`, `truth`, `inputs`, `score`, `run`, `hazard`, `calibration`,
-`degrade`, `cap`, `tracking`, `context`, `fidelity`, `headroom` (the Headroom section's), `dead_ball` (the Dead-ball
-model section's) and `harness` (the harness itself). The profiles' are `degrade` (the transplant worked out exactly,
+`degrade`, `cap`, `tracking`, `context`, `fidelity`, `headroom` (the Headroom section's), `touch` (touch_stats's),
+`dead_ball` (the Dead-ball model section's), `conventions` (the Conventions section's), `shape` (the Shape model
+section's) and `harness` (the harness itself). The profiles' are `degrade` (the transplant worked out exactly,
 determinism, what the `gaps` profile touches and what it does not, no truth, the order of the matches), `tracking`
 (the tracklets, the episodes, the NaN-speed runs and the smoothing worked out exactly, and how it nests in `gaps`),
 `cap` (the low-count tail's cap, its shortest-piece rule and the scale of the tracked spans), `context` (what the
@@ -712,8 +824,11 @@ leaderboard's, and a ranking that holds under both truths and in both competitio
   window is alive on 80.4% of its frames, more than 96% of DFL's 5-minute windows, and against DFL's windows that lively
   it is 1.34 times slower, which DFL's own conventions can produce (A06, T33). `--truth coarse` stands in for a coarser
   grain and does not correct a measured difference, so a choice that depends on possession length (a smoothing level, a
-  switch penalty) is ranked under both truths and a disagreement is a warning. `D` timing against ours is unmeasured,
-  and the timing parameters come from the public window (P02).
+  switch penalty) is ranked under both truths and a disagreement is a warning. `D` timing against ours is measured on
+  four stoppages and read as a lead and not a measurement (A11, T40: our `D` looks 2.5 to 3 s longer than DFL's flag
+  would draw it, from our truth's convention, chance or our tracker's coverage). The pipeline's own lag on DFL is
+  shifted out (R012, 1 to 2 frames, inside noise), and a gap to our convention read from the public window came out 0
+  (P02).
 - **Seven matches, five of them Fortuna Düsseldorf's home games** (J03WOH, J03WOY, J03WPY, J03WQQ and J03WR9). The
   sample is small, so the intervals are wide, and it is not independent, so even they may be too narrow; with seven
   matches the smallest sign-flip p is 2/128 = 0.0156. A degradation seed moves a pooled spellF1 by up to about 0.015
