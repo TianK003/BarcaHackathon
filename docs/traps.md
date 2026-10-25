@@ -5,7 +5,7 @@ out: what you saw, why it happens, what to do instead. Give it the next free ID 
 
 ## Scoring
 
-**T01 — Tuning on the public window is a rule, not just a bad idea.** Since the organisers' clarification of 23 Oct
+**T01 — No tuning on the public window: a rule, not just a bad idea.** Since the organisers' clarification of 23 Oct
 2026 (upstream `f8f2629`; RULES.md rule 2, EVALUATION.md) the public 5 minutes are for checking that the pipeline is
 correct (frames aligned, file well-formed, labels meaning what you think), and they are "not training data and not a
 tuning set". Choosing between two versions on it, setting or calibrating a constant on it and training on it all break

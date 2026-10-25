@@ -16,7 +16,8 @@
 #   g, the gap to our truth's convention, read from the public window by the declared rule (conventions.py shift):
 #     0 for every type, because no type clears all three of its conditions (a median of at least 3 frames in absolute
 #     value, a 90% interval that excludes 0, and every leave-one-out median of the same sign), on 1 to 4 matched public
-#     changes each.
+#     changes each. g is RETIRED since the organisers' rule of 23 Oct 2026 (the public window is no tuning set): it
+#     stays 0 by rule, and any future shift comes from other games only.
 # So the totals are s_b alone, and this file's evidence, decoder and refiner are those of the guard's
 # pipeline/benchmark/configs/p02/p02_sb.toml. No constant comes from the public window's score (docs/traps.md T01).
 

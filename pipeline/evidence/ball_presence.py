@@ -20,6 +20,9 @@ truth). A visible ball goes the other way, weakly: 66.4% of dead frames against 
 for alive, P(alive) = 0.935 / (0.935 + 0.664) = 0.585. Both rest on a handful of stoppages (four in that window), so
 they are a first estimate, and P05 replaces this source.
 
+These defaults are public-window statistics (A01). Since the organisers' rule of 23 Oct 2026 (that window is not a
+tuning set) no submission config may use them unless they are re-derived on other games.
+
 The `seen` term is not decoration. Without it a stretch with the ball, between two stretches without, would pay for two
 changes of state out of what the home evidence earns there, about a sixth of a nat a frame for a nearest player right
 78% of the time, and a heavy switch penalty would absorb possessions of many seconds into the stoppages around them.

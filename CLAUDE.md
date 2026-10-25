@@ -32,14 +32,15 @@ Floor to beat: `baseline_smooth50`, full-match **spellF1 0.2433**.
   (except `baseline_*.csv`) — keep it that way.
 - **Submitted labels must come from an algorithm.** Hand-labelling or hand-correcting the output disqualifies.
 - **No hand labels on this match at all**, in any amount and for any purpose: not to train, validate or calibrate, and
-  no correcting its tracking by hand (corrections must come out of code). The organisers' clarifications of 22 and
-  23 Oct 2026 (upstream `c073f29`, `f8f2629`; RULES.md rule 1, "Training and validation data"). Hand-labelled data from
-  *other* games is fine, in any amount, so validation comes from other games (`docs/proposals.md` P01), and the
-  technical document must list every labelled dataset: its source, who labelled it, how much, none of it from this
-  match. Still fine on this match: learning without human labels (unsupervised or self-supervised, or pseudo-labels an
-  algorithm made), and watching the video and inspecting the data to understand them, debug the pipeline and design
-  features. Not fine: turning what was seen into labels, corrections, or rules and constants tied to specific frames
-  (`docs/traps.md` T27).
+  no correcting its tracking by hand (corrections must come out of code). This comes from the organisers'
+  clarifications of 22 and 23 Oct 2026 (upstream `c073f29`, `f8f2629`; RULES.md rule 1, "Training and validation
+  data"). Hand-labelled data from *other* games is fine, in any amount, if the organisers can access it and the
+  technical document says what was labelled, how, by whom and how much (so validation comes from other games,
+  `docs/proposals.md` P01). Still fine on this match: learning without human labels (unsupervised or self-supervised,
+  or pseudo-labels an algorithm made, provided no person decided any of them), and a person watching the video and
+  inspecting the data to understand them, debug the pipeline and design features (Claude still sees aggregates only,
+  the first rule above). Not fine: turning what was seen into labels, corrections, or rules and constants tied to
+  specific frames (`docs/traps.md` T27).
 - **No private ground truth**, or anything derived from it, **and no human-produced data about this match from any
   source** (event data, corrected tracking, possession data, annotations; RULES.md rule 2, `f8f2629`). External data
   must be about *other* games. The public 5 minutes are for **checking that the pipeline is correct**, "not training
@@ -190,8 +191,9 @@ frames are all `D`. The public GT labels only 11,185–18,684 (5 minutes, 17 pos
   possession moves `spellF1` ~0.06, and it ranks `smooth125` above `smooth50` — the reverse of the full match. Use it
   to check correctness, never to pick or tune anything (a rule since `f8f2629`, not just advice); pick hyperparameters
   on P01's benchmark of other matches. This GT's *timing* conventions (P02) may be inspected on the public window to
-  understand them, but no constant is set from it: other providers flip their flags at different moments, and any
-  shift comes from other games alone (P16), never from the window.
+  understand them, but no constant is set from it. Other providers flip their flags at different moments, so DFL cannot
+  fix our convention either: a constant for it must come from other games of our provider (P16), never from the window
+  (the pipeline's own lag on DFL, R012's s_b, is a different thing).
 
 ### Data facts that bite
 

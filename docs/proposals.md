@@ -136,13 +136,15 @@ first and coarse second. *Later:* R011 did item 3 and A11 with R012 did part of 
    running, and read both truths.
 3. **P07 for the gaps, now unlocked.** A10 found a perfect possessor inside the gaps worth +0.0008 raw until `D` was
    right and +0.1971 once it was. `D` now has a source, so P07 can be tried, but `tracking` cannot value gap features
-   (T38): read it on `context` and on the public window as well.
+   (T38): read it on `context`, and on the public window as a correctness check only.
 4. **A restart-team channel (P05's table).** After a stoppage `controlled_touch`'s hold weakly favours the team that
    controlled the ball before it, until the first new episode names the team. A source for the team that restarts
    would speak sooner. R010 does not measure its worth, so it comes after the first three.
 5. **Before the upload, decide how much of the gain to believe.** The benchmark's alive/dead F1 of 0.9726 rests on
-   DFL's ball being tracked out of play (T39). Our match's predicted `D` share is 36.0% against the benchmark's 44.6%,
-   and the public window's alive agreement is 86.6% of 7,500 frames. Neither says how the full match scores.
+   DFL's ball being tracked out of play (T39). Our match's predicted `D` share is 36.0% against the benchmark's 44.6%.
+   The decision rests on the benchmark and on label-free checks such as that share. The public window's alive agreement
+   (86.6% of 7,500 frames) checks correctness and may not weigh in (T01). Neither the benchmark nor the share says how
+   the full match scores.
 
 ### After P07 and P02
 
@@ -170,6 +172,12 @@ of possessions moved the other way on BAR-ATH (R011). *Items 2 and 4 are rewritt
      evidence was memoised, after 143 to 156 s for the first config of each process (the runner's `seconds`). It needs
      a protocol declared before the first run (the values, the objective, the rule), the weight as a second axis only
      if that protocol says so, and nothing from the public window.
+   - It is also where the choices made with window-derived values present get re-confirmed without them (the 23 Oct
+     rule). In R006 to R009 every candidate config (the yardsticks aside) carried `nearest_player` at 0.78 or
+     `ball_presence` at 0.2 / 0.585, both from the public window (A01), so R008's touch constants (radius,
+     `max_rel_speed`, `min_frames`, hold) and R009's source and weight were chosen with them present, and R010 re-chose
+     only the decoder. `main.toml` has neither source, so this protocol runs without them, and may add those constants
+     as axes if it declares so first.
 2. **In parallel, and off the machine: a person watching P02's transitions, to understand.** R012's rule found g = 0
    for every type because 1 to 4 matched public changes cannot carry a gap, and A11's `D` edges (2.5 to 3 s longer than
    DFL's flag would draw them) are a lead and not a measurement: our truth's convention, chance and our tracker's
@@ -179,15 +187,17 @@ of possessions moved the other way on BAR-ATH (R011). *Items 2 and 4 are rewritt
    changes, or a label for a stoppage, is tuning on the public window or a hand label (T27). It costs hours and not
    compute, so it can run beside item 1; what comes out of it is a note in the docs, in aggregates.
 3. **Before any upload, decide how much of the gain to believe ("After P04 and P05", item 5).** It is a decision and
-   not a run. R011's transfer gate (0.8251 against 0.7486) is a proxy and not an accuracy, the possession count moved
-   the other way on BAR-ATH, and the public window's spellF1 fell from 0.4686 to 0.4000, about one possession (a
-   correctness check, T01). The benchmark is still the best evidence we have, with the caveats of T38, T39 and R011,
-   and it has to be settled before the freeze on 13 Nov.
+   not a run. R011's transfer gate (0.8251 against 0.7486) is a proxy and not an accuracy, and the possession count
+   moved the other way on BAR-ATH. The public window's spellF1 fell from 0.4686 to 0.4000, about one possession, but it
+   is a correctness check and may not weigh in on this decision (T01): the decision rests on the benchmark, which is
+   still the best evidence we have, with the caveats of T38, T39 and R011, and on the label-free checks. It has to be
+   settled before the freeze on 13 Nov.
 4. **The restart-team channel, after those.** R010 and R011 do not measure its worth, and A11 gives it no signal: it
-   needs the restart type of each stoppage, and a person's reading of this match's stoppages would be a hand label
-   (T27), so the type has to come from code (Smart Tagging's set-piece tags, P08, which are automatic) or from other
-   games' flags (P16). If the stoppages are mostly of a few types with a clear next team (a corner, a goal kick), it is
-   a small source for `home` after a stoppage; if not, drop it.
+   needs the restart type of each stoppage. A type that a person read off this match's video for each stoppage and fed
+   to the pipeline would be a hand label (T27), so the types have to come from code (Smart Tagging's set-piece tags,
+   P08, which are automatic) or from other games' flags (P16). A person watching to judge whether the channel is worth
+   building is design, which is allowed. If the stoppages are mostly of a few types with a clear next team (a corner, a
+   goal kick), it is a small source for `home` after a stoppage; if not, drop it.
 
 What the evidence does not support is a second round on P07's features, on the shift's three integers or on P07's
 weight alone (item 1 may revisit the weight, as a second axis of the decoder's re-check, under a protocol declared
@@ -365,15 +375,17 @@ into a number for a config, is not ([T27](traps.md)).
 which is livelier than 96% of DFL's windows (A06) and, since `f8f2629`, no place to fit them. When the flags flip and
 how fine our GT's possessions are remain the two things the benchmark cannot settle ([T33](traps.md)). Metrica's three
 public sample games come from the provider of our GT, and ship with event data to derive possession from (P13 lists
-them). Whether possession derived from events follows the conventions of our GT is what P16 tests: our GT comes from
-corrected tracking flags, and labels derived from events may not follow them. If they do, they give far more transitions
-than the public window's 20.
+them). Whether possession derived from events follows the conventions of our GT is the question P16 puts: our GT comes
+from corrected tracking flags, and labels derived from events may not follow them. Whether to adopt them is decided by
+a rule declared on the sample games themselves, never by their agreement with the public window, which is no
+validation set. If they pass, they give far more transitions than the public window's 20.
 
 **What.** Do it alongside P02.
 
-- Test first whether events reproduce our GT's conventions: compare the derived grain and `D` timing with what the
-  public window shows (P02), to understand how they differ. The window is looked at and never fitted to: a constant
-  taken from P16 is fixed by a declared rule on the sample games alone.
+- Declare first, before any result, the rule that decides whether the derived labels are used, and apply it on the
+  sample games alone. A comparison of the derived grain and `D` timing with what the public window shows (P02) may be
+  read as a correctness check and to understand how they differ; it cannot gate adoption, and a constant taken from
+  P16 is fixed by the declared rule on the sample games alone.
 - Derive `H`, `A` and `D` per frame from each game's events and tracking, the way our GT is built: `D` where the ball
   is dead, otherwise the team that has it. The events tell where a possession starts and where play stops.
 - Study the switch timing as P02 does around the public transitions, but on many more of them: the lag between the

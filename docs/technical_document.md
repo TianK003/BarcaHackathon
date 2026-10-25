@@ -93,12 +93,13 @@ provided game).** One dataset is used, and it is about other games.
 
 | dataset | source | who labelled it | how much | used for |
 |---|---|---|---|---|
-| DFL/IDSSE open data: `BallStatus` (alive or dead) and `BallPossession` (the team) on every frame | Bassek et al. 2025, figshare, CC BY 4.0 (above) | the data provider (DFL), whose flags ship with the data; how it produced them, by people or by software, is not recorded in this repository, and is to be filled in from the paper before submission | 7 full matches of other games (2 Bundesliga, 5 2. Bundesliga), 25 Hz: 668.4 graded minutes (about 1.0 million frames) per degradation seed, 437 possessions a match on average and 92 to 113 stoppages a match (A06) | the benchmark's truth (validation); the dead-ball model's labels (601,602 rows: every fifth graded frame, 3 seeds); the shape model's labels (331,881 rows, 663,762 with the team-swapped mirrors); the touch rule's confidence; the pipeline's own lag |
+| DFL/IDSSE open data: `BallStatus` (alive or dead) and `BallPossession` (the team) on every frame | Bassek et al. 2025, figshare, CC BY 4.0 (above) | DFL's official data (Bassek et al. 2025). The paper defines `BallStatus` and `BallPossession` but does not say who or what sets them. It says that the positions come from TRACAB Gen5 (ChyronHego), the match information from Sportec Solutions and the events from trained human operators, and that "all data are visually controlled by live operators for plausibility and undergo a final quality check after the game". So we treat the flags as human-checked labels | 7 full matches of other games (2 Bundesliga, 5 2. Bundesliga), 25 Hz: 668.4 graded minutes (about 1.0 million frames) per degradation seed, 437 possessions a match on average and 92 to 113 stoppages a match (A06) | the benchmark's truth (validation); the dead-ball model's labels (601,602 rows: every fifth graded frame, 3 seeds); the shape model's labels (331,881 rows, 663,762 with the team-swapped mirrors); the touch rule's confidence; the pipeline's own lag |
 
-Not in the list, and why: the public 5 minutes are labelled by the organisers and are used to check only (never to
-train, fit or choose); the Smart Tagging is generated automatically by Metrica "without manual review" (FAQ.md), so
-nobody labelled it, and no source of the pipeline reads it; and we produce no pseudo-labels that a model is
-trained on (the shape model learns from DFL's flag, not from the touch rule). We labelled nothing by hand on any game.
+Not in the list, and why: the public 5 minutes are published by the organisers, derived from Metrica's corrected
+tracking, and are used to check only (never to train, fit or choose); the Smart Tagging is generated automatically by
+Metrica "without manual review" (FAQ.md), so nobody labelled it, and no source of the pipeline reads it; and we produce
+no pseudo-labels that a model is trained on (the shape model learns from DFL's flag, not from the touch rule). We
+labelled nothing by hand on any game.
 
 No frame of this match was hand-labelled, none of its tracking was corrected by hand, and no human-produced data about
 it (event data, corrected tracking, possession data, annotations) was used, for training, validation or the submission
@@ -232,9 +233,10 @@ implements.
   least `min_dead` (25 frames). The second moves nothing: the two values differ by at most 0.0003 in spellF1 (R010).
 - **Restarts, who gets the ball:** No rule. After a stoppage the hold weakly favours the team that controlled the ball
   before it, until the first new episode, which names the team, and the shape source gives a view of its own from where
-  the teams stand. A restart-team channel (a corner to the attackers, a goal kick to the defenders) is deferred, and
-  the restart type is not read off the video: a person's reading of this match's stoppages would be a hand label (A11,
-  section 6).
+  the teams stand. A restart-team channel (a corner to the attackers, a goal kick to the defenders) is deferred. Its
+  restart types would have to come from code (Smart Tagging's set-piece tags, P08, or other games' flags, P16): a type
+  that a person read off this match's video for each stoppage and fed to the pipeline would be a hand label, while a
+  person watching to judge whether such a channel is worth building is design and is allowed (A11, section 6).
 - **Abstentions (`X`):** The decoder never abstains inside a graded half, and the runner writes `X` on the ungraded
   frames, where it is free: the chosen file has none inside a graded block (R010 to R012). It can return the posterior
   of each state per frame, which shows where an `X` would be free (inside a possession), but no refiner reads it yet.
@@ -275,32 +277,49 @@ is correct (alignment, the file, determinism, each source's agreement) and is in
 truth's timing conventions (P02), never to set a constant, and we choose between versions on other matches.
 
 **What set each constant of `main.toml` (the audit for the 23 Oct rule).** Every constant was traced to its entry in
-`docs/results.md`. None came from the public window.
+`docs/results.md`. None was set from the public window; the rows and the paragraph below the table say where
+window-derived values sat in the context of a choice.
 
 | constant | value | set in | basis |
 |---|---|---|---|
-| `controlled_touch` radius | 2.0 m | R008, the 24-config grid | the seven DFL matches (`tracking` v3, 3 seeds), by the rule declared before the grid; the zone follows Vidal-Codina et al. (2022) |
-| `controlled_touch` max_rel_speed | 6.0 m/s | R008 | the same |
-| `controlled_touch` min_frames | 3 | R008 | the same |
+| `controlled_touch` radius | 2.0 m | R008, the 24-config grid | the seven DFL matches (`tracking` v3, 3 seeds), by the rule declared before the grid; the zone follows Vidal-Codina et al. (2022). Every config carried `ball_presence` at A01's window-derived 0.2 / 0.585 and R007's decoder (below) |
+| `controlled_touch` max_rel_speed | 6.0 m/s | R008 | the same, with the same window-derived context |
+| `controlled_touch` min_frames | 3 | R008 | the same, with the same window-derived context |
 | `controlled_touch` confidence | 0.91 | R008, `touch_stats.py` | the floor, to a hundredth, of the pooled agreement of the kept episodes with DFL's flag over the seven matches (91.9%): a measurement on DFL and in sample there (section 6), never on the window |
-| `controlled_touch` hold | 0.55 | R008 | the grid's only non-off value, scored on the DFL matches |
+| `controlled_touch` hold | 0.55 | R008 | the grid's only non-off value, scored on the DFL matches, with the same window-derived context in every config |
 | `controlled_touch` duel_radius | not set (default 1.0 m) | the source's default | a fixed rule (Vidal-Codina et al.'s 1 m duel zone), never varied |
-| `dead_ball_model` | `dead_ball_hgb.json`, weight 1.0 | R009, kept by R010 | trees trained on DFL's `BallStatus` (degraded; settings fixed beforehand, not tuned), the weight chosen on DFL's grid; BAR-ATH is read by the model fitted on all seven; its feature thresholds are fixed rules (the laws of the game, the literature) |
+| `dead_ball_model` | `dead_ball_hgb.json`, weight 1.0 | R009, kept by R010 | trees trained on DFL's `BallStatus` (degraded; settings fixed beforehand, not tuned), the source and the weight chosen on DFL's grid, every config of which carried `nearest_player` at A01's window-derived 0.78 (below); BAR-ATH is read by the model fitted on all seven; its feature thresholds are fixed rules (the laws of the game, the literature) |
+| `dead_ball_model` min_prob | not set (default 0.001) | the source's default | a fixed default, a clip to [0.001, 0.999] (also P(alive) before a kick-off); never varied |
 | pre-kick-off rule | `D` before a half's kick-off (P(alive) 0.001) | `play_features`, R009 | a fixed rule from the organisers' documented kick-offs (FAQ.md: the second half is graded from 110,808 and kicks off at 113,742), from no ground truth |
 | `shape_possession` model | `shape_possession_hgb.json` | R011, part 1 | trees trained on DFL's `BallPossession` with the ball hidden (settings fixed beforehand), each benchmark match read by the fold that never saw it; BAR-ATH by `full` |
 | `shape_possession` weight, scope | 0.2, `all` | R011's 12-config grid | the DFL benchmark, by the pre-declared rule (the only config within 0.005 of the best) |
 | `shape_possession` min_prob | 0.02 | R011, part 1 | fixed beforehand, a clip that caps a frame at 3.9 nats; not varied in the grid |
-| `hmm` switch_team, switch_dead, min_possession, min_dead | 4, 32, 25, 25 | R010's 72-config grid | the DFL benchmark, by the pre-declared rule. The grid was laid around R006 and R007's values, which were chosen on DFL with two sources whose constants came from the public window (below); R010's choice was made with neither present |
+| `hmm` switch_team, switch_dead, min_possession, min_dead | 4, 32, 25, 25 | R010's 72-config grid | the DFL benchmark, by the pre-declared rule, with neither window-derived source present. The grid was laid around R006's and R007's values, which were chosen with both (below), and 4 and 25 are the grid's lowest values in `switch_team` and `min_possession`, so its placement bounds them |
+| `hmm` eps | not set (default 1e-6) | the decoder's default | a fixed default, a numerical guard on the clip and not a knob |
 | `shift_edges` team, into_dead, out_of_dead | +1, -2, 0 frames | R012 | s_b alone: minus the median lag of the pipeline on DFL (`tracking` v3, raw truth, 3 seeds), kept by the benchmark guard; g, from the public window, is 0 and retired |
 | `seed`, `scope` | 0, `halves` | fixed | a seed for reproducibility; the scorer grades halves |
 
 Two sources do carry constants measured on the public window, and neither is in `main.toml`: `nearest_player`'s
-confidence 0.78 and `ball_presence`'s 0.2 and 0.585 (A01, P06; R006 to R009 and `p06_hmm.toml`). Since the 23 Oct rule
+confidence 0.78 and `ball_presence`'s 0.2 and 0.585 (A01, P06; R006 to R010 and `p06_hmm.toml`). Since the 23 Oct rule
 they may not enter a submission config unless re-derived from other games (A06 measured the nearest player's agreement
-on the DFL matches, 77.5%). Two further uses of the window are not constants: the agreement figures that `--score`
-prints (87.2%, 86.6%, 90.9%) are outputs and never inputs, and the benchmark's fidelity report sets two statistics of
-the window (the nearest player's agreement, the share of dead frames with the ball visible) beside the degraded copy as
-warnings, with no profile constant fitted to them (`pipeline/benchmark/README.md`).
+on the DFL matches, 77.5%).
+
+**Where the window-derived values sat in the choices.** In R006 to R009 every candidate config (the yardsticks aside,
+which carry neither) carried at least one of those two sources: all 24 configs of R008 held `ball_presence` at A01's
+values, with R007's decoder (8 / 32 / 75 / 1, itself chosen with both sources), and all 24 of R009 held `nearest_player`
+at 0.78. So the touch rule's radius, relative speed, minimum frames and hold (R008) and the `hgb` source and its weight
+1.0 (R009) were chosen on DFL with window-derived values present in every candidate. R010 chose the decoder again (4 /
+32 / 25 / 25) with neither source present, but R008's and R009's constants were not chosen again, and 4 and 25 sit on
+the lower edge of R010's grid, so the grid's placement bounds them. We judge this compliant: the window's labels never
+scored a candidate, and the window-derived values were part of the fixed context of selections scored on DFL's flags. We
+say it plainly because a strict reader could count that context as an influence. The decoder re-check of "After P07 and
+P02" item 1 in `docs/proposals.md`, run on `main.toml` (which has neither source), is where these choices get
+re-confirmed without the A01 sources, with R008's and R009's constants as extra axes if its protocol says so.
+
+Two further uses of the window are not constants: the agreement figures that `--score` prints (87.2%, 86.6%, 90.9%)
+are outputs and never inputs, and the benchmark's fidelity report sets two statistics of the window (the nearest
+player's agreement, the share of dead frames with the ball visible) beside the degraded copy as warnings, with no
+profile constant fitted to them (`pipeline/benchmark/README.md`).
 
 **The benchmark (P01).** The seven DFL/IDSSE matches of section 2, 668.4 graded minutes, with the truth built as ours
 is: `D` where `BallStatus` is dead, otherwise the team `BallPossession` names. Each match is served to our own
@@ -560,7 +579,8 @@ classes balance exactly and the model has no prior to subtract and no notion of 
   not independent, so even they may be too narrow; the smallest sign-flip p is 0.0156. Two matches have a team down to
   10 players, so statistics on how many players are tracked are measured at full strength only (T36).
 - **No video, audio, homography or Smart Tagging.** Whatever uses them (P08, P09, P10, P14, P15) is checked on the
-  public window only, or simulated from the benchmark's truth with noise measured on our match (A03).
+  public window for correctness only, with its strength fixed by a declared constant, or simulated from the
+  benchmark's truth with noise measured on our match (A03).
 - **Aerial projection.** A camera-based tracker projects an airborne ball onto the pitch plane, which displaces it.
   DFL's positions carry no such error and the benchmark adds none, and ours has no ball height, so the error cannot be
   measured on ours. Nor can we tell how many of our ball gaps come from airborne balls: our first plan said "crowded
@@ -662,9 +682,10 @@ unless a bullet cites another entry):
 - **The restart type is not available.** Which stoppage each of the 4 is (a throw-in, a goal kick, a corner, a free
   kick, a foul) and whether `D` begins at the line, the whistle or when play stops cannot be read by code here: the
   Smart Tagging intervals find none of the 4 starts and 1 of the 4 ends, and no LLM may see the video. A person may
-  watch the video to understand them (A11 gives the command and what to look at, `pipeline/benchmark/conventions.py
-  public`), but a restart type written down for these stoppages would be a hand label (RULES.md, T27), so no
-  restart-team channel is built on it.
+  watch the video to understand them and to judge whether a restart-team channel is worth building (A11 gives the
+  command and what to look at, `pipeline/benchmark/conventions.py public`), which is design and is allowed. A restart
+  type written down per stoppage and fed to the pipeline would be a hand label (RULES.md, T27), so any such channel
+  must take its types from code, and none is built.
 - **The shift is adopted by its rule, not shown to help.** It is 1 to 2 frames at 439 boundaries, its benchmark gains
   are +0.0000 to +0.0009 pooled spellF1 (on `tracking` and `context`, raw and coarse truth) with every interval
   including 0, it is one whole number per type of edge (not a function of the ball's visibility or of the stoppage),

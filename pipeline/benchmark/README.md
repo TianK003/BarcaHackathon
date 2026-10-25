@@ -849,8 +849,8 @@ leaderboard's, and a ranking that holds under both truths and in both competitio
   measured on full-strength frames only (81.7% of the pooled frames), and the wrong-team episodes are about half
   unobservable on 10 against 11, which lowers that share in those two matches (R004).
 - **No video, audio, homography or Smart Tagging.** DFL has none, so whatever uses the camera, the audio, the homography
-  or the tagging is checked on the public window and not here, or simulated from the benchmark's truth with noise
-  measured on our match (A03).
+  or the tagging cannot be benchmarked here. It is checked on the public window for correctness only, with its strength
+  fixed by a declared constant, or simulated from the benchmark's truth with noise measured on our match (A03).
 - **Aerial projection.** A camera-based tracker projects an airborne ball onto the pitch plane, which displaces it.
   DFL's positions carry no such error and the benchmark adds none, and our ATD has no ball height, so the error cannot
   be measured on ours. Nor can we tell how many of our ball gaps come from airborne balls: the plan said "crowded and

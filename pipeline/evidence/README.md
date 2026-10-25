@@ -55,7 +55,7 @@ the same as the hard values bar float rounding in an exact tie.
 `missing` 0.2 and `seen` 0.585 below were derived from the public window's statistics (A01). The organisers' rule says
 that window is for checking the pipeline and is "not training data and not a tuning set", so those values are not to be
 used in a submission config unless re-derived from other games (DFL's matches give 71 to 82% for the nearest player,
-A06). Neither is in `main.toml`; they stay in P06's research configs (R006 to R009, `p06_hmm.toml`).
+A06). Neither is in `main.toml`; they stay in P06's research configs (R006 to R010, `p06_hmm.toml`).
 
 **`ball_presence`** gives the decoder its only evidence for `D`. Its two values come from A01 by rule: the ball is
 missing on 33.6% of dead-ball frames and 6.5% of in-play ones in the public window, a ratio of 5.2 that is rounded down
