@@ -1,0 +1,31 @@
+# P06 control "seen = 0.5" (R007): pipeline/configs/p06_hmm.toml with ball_presence's `seen` at 0.5 instead of 0.585,
+# and nothing else changed.
+#
+# seen = 0.5 adds exactly 0 nats (log(2 * 0.5) = 0): a visible ball no longer speaks for alive, which is the control
+# "without the seen term". The design expects that a visible stretch between two D stretches then has to pay
+# 2 x switch_dead out of a gain of only about a sixth of a nat a frame, so that possessions get absorbed into the
+# stoppages around them. Run by the controller on `tracking` and on `context`, under both truths.
+#
+# A control is a diagnostic of the chosen config and never a candidate. R007's choice was made before any control
+# ran, and nothing here is selected on a score (docs/traps.md T01, T37).
+
+description = "P06 control (R007): p06_hmm with ball_presence seen = 0.5 (no evidence for alive where the ball is seen), everything else as p06_hmm."
+seed = 0
+scope = "halves"
+
+[[evidence]]
+kind = "nearest_player"
+confidence = 0.78    # the share of in-play, ball-visible frames on which the nearest player's team is right (A01)
+
+[[evidence]]
+kind = "ball_presence"
+margin = 0           # frames: every missing frame speaks
+missing = 0.2        # P(alive) where the ball is missing: a likelihood ratio of 4 for dead (A01, rounded down)
+seen = 0.5           # P(alive) where the ball is seen: 0.5 adds exactly 0 nats (the control; p06_hmm has 0.585)
+
+[decoder]
+kind = "hmm"
+switch_team = 8      # nats a change of team (H <-> A) costs
+switch_dead = 32     # nats a change into or out of D costs
+min_possession = 75  # frames: no run of H or A shorter than this (1 is no minimum)
+min_dead = 1         # frames: no run of D shorter than this (1 is no minimum)

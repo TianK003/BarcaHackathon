@@ -35,10 +35,32 @@ every value in [0, 1] or NaN. A length of ~164k means the broadcast was indexed 
 
 | kind | alive | home | parameters | notes |
 |---|---|---|---|---|
-| `nearest_player` | NaN everywhere | 1.0 / 0.0 by the team of the nearest tracked slot; NaN without a ball or a player | none | step 1 of `starter/baseline.py`, bit for bit. Opinion on 59.3% of graded frames; agrees with the public GT on 77.8% of 5,640 frames (= A01) |
+| `nearest_player` | NaN everywhere | `confidence` / `1 − confidence` by the team of the nearest tracked slot; NaN without a ball or a player | `confidence` ∈ [0.5, 1.0], default 1.0 | step 1 of `starter/baseline.py`, bit for bit at the default (hard 1.0 / 0.0). Opinion on 59.3% of graded frames; agrees with the public GT on 77.8% of 5,640 frames (= A01) |
+| `ball_presence` | `seen` with a ball; `missing` on a missing frame more than `margin` frames from one; NaN nearer | NaN everywhere | `margin` ≥ 0 frames, default 0; `missing` ∈ [0, 1], default 0.2; `seen` ∈ [0, 1], default 0.585 | the baseline's "no ball means stoppage" as evidence, for P06's decoder to weigh: exactly that only at `baseline_raw`'s half-width 0, and broader than `main`'s vote at `margin` 0 (below). P05 replaces it |
 
-The nearest player is not the possessor — wrong on 22% of ball-visible, in-play frames ([T14](../../docs/traps.md)) —
-and its hard 0/1 claims a certainty it does not have. P04 is its replacement.
+The nearest player is not the possessor — wrong on 22% of ball-visible, in-play frames ([T14](../../docs/traps.md)).
+P04 is its replacement.
+
+**`confidence`** is the number a probabilistic decoder is given in place of the hard 0/1. The default 1.0 keeps the
+baseline's claim of certainty, which is what the four baselines are rebuilt through. P06's configs use 0.78, the
+public window's share of in-play, ball-visible frames on which the nearest player's team is the right one (A01; DFL's
+matches give 71–82%). It is a measurement fixed once, never tuned; it moves no frame's side, so a majority vote reads it
+the same as the hard values bar float rounding in an exact tie.
+
+**`ball_presence`** gives the decoder its only evidence for `D`. Its two values come from A01 by rule: the ball is
+missing on 33.6% of dead-ball frames and 6.5% of in-play ones in the public window, a ratio of 5.2 that is rounded down
+to 4 because that window is the best-covered block of the match (`missing = 0.2`); and it is seen on 66.4% against
+93.5%, a ratio of 1.41 for alive (`seen = 0.585`). `seen = 0.5` adds nothing to the decoder's emissions and is the
+control "without it". A missing frame moves `D` over `H` and `A` by log(0.8 / 0.2) = 1.39 nats, four times what `seen`
+gives alive (0.34) and more than `nearest_player` at 0.78 (1.27), so across a long gap it outweighs any `switch_dead` in
+P06's grid: a gap longer than about 2 * `switch_dead` / 1.39 frames decodes to `D`, its edges included. At `margin` 0
+that is broader than the baseline's rule, not weaker: `main`'s vote (half-width 50) gives `D` only more than 50 frames
+inside a gap, so a gap of 47 to 100 frames (at `switch_dead` 32), and the first and last 50 frames of a longer one, are
+`D` here and keep their team there, and only a shorter gap (and every visible stretch) can be overruled. R007's `margin`
+50 control measures the difference: the predicted `D` share falls from 43.1% to 38.3% and raw spellF1 rises by +0.0071.
+And a missing ball is not a dead ball ([T12](../../docs/traps.md)): 41% of graded frames have no ball, in long gaps, and
+in-play gaps of 10 s or more are normal. `margin` leaves the edges of a gap to other evidence: only missing frames more
+than `margin` frames from the nearest frame with a ball speak.
 
 ## Writing a source
 
@@ -101,7 +123,7 @@ and its hard 0/1 claims a certainty it does not have. P04 is its replacement.
 | proposal | channel | note |
 |---|---|---|
 | P04 sticky ownership from controlled touches | `home` | supersedes `nearest_player` |
-| P05 dead-ball detector | `alive` (+ `next_home` later) | the ball is visible on 66% of dead frames ([T12](../../docs/traps.md)) |
+| P05 dead-ball detector | `alive` (+ `next_home` later) | supersedes `ball_presence`; the ball is visible on 66% of dead frames ([T12](../../docs/traps.md)) |
 | P07 team shape and movement | `home` | for the 41% of frames without a ball |
 | P08 Smart Tagging | both | phases are not possessions ([T17](../../docs/traps.md)) |
 | P09 camera aim | — | a feature for P07, not a source on its own |

@@ -37,6 +37,10 @@ module of its topic:
     run.py       the benchmark runner: its reports, the reference and the direction of a comparison, the same bytes in
                  another process, what it refuses, and the oracle, which must score 1.0 on every real match (synthetic,
                  and the downloaded matches with --dfl)
+    headroom.py  the headroom runner: its six configs in order, the oracles that carry the truth and nothing else, that
+                 they are in no production registry and the registry is as it was after a run (raised or not), the
+                 variants as files that read back as the config with the oracles in, the coarse truth reaching them,
+                 and that the full oracle scores exactly 1.0 (synthetic only)
     harness.py   the harness itself: what it collects, how it reports NOT RUN, the console set-up, and that no check
                  module imports another one
     common.py    what several modules share, and no checks of its own: the synthetic DFL match, the random one
@@ -62,8 +66,8 @@ what two of them share goes to common.py (test_a_check_module_imports_no_other_c
 """
 
 from pipeline.benchmark.checks import (
-    calibration, cap, context, degrade, dfl, fidelity, harness, hazard, inputs, run, score, sources, tracking,
-    truth)
+    calibration, cap, context, degrade, dfl, fidelity, harness, hazard, headroom, inputs, run, score, sources,
+    tracking, truth)
 
 MODULES = (sources, dfl, truth, inputs, score, run, hazard, calibration, degrade, cap, tracking, context, fidelity,
-           harness)
+           headroom, harness)

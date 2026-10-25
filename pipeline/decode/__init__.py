@@ -9,10 +9,11 @@ Exactly one decoder runs per config, chosen by [decoder] kind = "...". To add on
 pipeline/decode/<name>.py with a decode() function and add one line to REGISTRY below.
 """
 
-from pipeline.decode import majority_vote
+from pipeline.decode import hmm, majority_vote
 
 # Params
 # kind (as written in a config) -> decode function.
 REGISTRY = {
     "majority_vote": majority_vote.decode,
+    "hmm": hmm.decode,
 }

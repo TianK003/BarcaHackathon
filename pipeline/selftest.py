@@ -405,27 +405,135 @@ def test_cache_rebuilt_when_arrays_missing():
 # -- evidence ---------------------------------------------------------------------------------------------------------
 
 def test_nearest_player_matches_baseline():
-    from pipeline.contracts import RunContext, check_evidence
-    from pipeline.evidence import REGISTRY
+    from pipeline.contracts import check_evidence
     from starter import baseline
     with tempfile.TemporaryDirectory() as root:
-        folder = make_synthetic_bundle(root)
-        inputs = synthetic_inputs(root)
-        evidence = REGISTRY["nearest_player"](RunContext(inputs=inputs, seed=0))
-        check_evidence(evidence, SYNTHETIC_FRAMES)
+        evidence, _, codes = nearest_player_runs(root)  # asserts that the match reaches every branch
+    check_evidence(evidence, SYNTHETIC_FRAMES)
+    expected = np.where(codes == baseline.HOME, 1.0, np.where(codes == baseline.AWAY, 0.0, np.nan))
+    differ = ~((evidence.home == expected) | (np.isnan(evidence.home) & np.isnan(expected)))
+    assert not differ.any(), "{} frames differ, first at frame {}".format(
+        int(differ.sum()), int(np.flatnonzero(differ)[0]))
+    assert np.isnan(evidence.alive).all(), "nearest_player has no opinion on alive vs dead"
 
-        codes = baseline.nearest_player_labels(
-            os.path.join(folder, "BAR-ATH_tactical_atd.txt"),
-            baseline.team_of_each_track(os.path.join(folder, "BAR-ATH_tactical_atd.xml")),
-            SYNTHETIC_FRAMES, inputs.pitch)
-        # The synthetic file has to reach every branch, or agreeing with it proves little.
-        assert {int(code) for code in np.unique(codes)} == {baseline.NOBODY, baseline.HOME, baseline.AWAY}
 
-        expected = np.where(codes == baseline.HOME, 1.0, np.where(codes == baseline.AWAY, 0.0, np.nan))
-        differ = ~((evidence.home == expected) | (np.isnan(evidence.home) & np.isnan(expected)))
-        assert not differ.any(), "{} frames differ, first at frame {}".format(
-            int(differ.sum()), int(np.flatnonzero(differ)[0]))
+def nearest_player_runs(root, **parameters):
+    """(default output, output with `parameters`, the baseline's codes) on the synthetic match, which has home,
+    away and no-opinion frames."""
+    from pipeline.contracts import RunContext
+    from pipeline.evidence import REGISTRY
+    from starter import baseline
+    folder = make_synthetic_bundle(root)
+    inputs = synthetic_inputs(root)
+    run = RunContext(inputs=inputs, seed=0)
+    hard = REGISTRY["nearest_player"](run)
+    codes = baseline.nearest_player_labels(
+        os.path.join(folder, "BAR-ATH_tactical_atd.txt"),
+        baseline.team_of_each_track(os.path.join(folder, "BAR-ATH_tactical_atd.xml")),
+        SYNTHETIC_FRAMES, inputs.pitch)
+    assert {int(code) for code in np.unique(codes)} == {baseline.NOBODY, baseline.HOME, baseline.AWAY}, \
+        "the synthetic match no longer reaches every branch"
+    return hard, REGISTRY["nearest_player"](run, **parameters), codes
+
+
+def test_nearest_player_confidence_default_is_unchanged():
+    # The four committed baselines are rebuilt through this source (--data); the default must stay the hard 0 / 1.
+    from starter import baseline
+    with tempfile.TemporaryDirectory() as root:
+        hard, explicit, codes = nearest_player_runs(root, confidence=1.0)
+    expected = np.where(codes == baseline.HOME, 1.0, np.where(codes == baseline.AWAY, 0.0, np.nan))
+    for evidence in (hard, explicit):
+        assert np.array_equal(evidence.home, expected, equal_nan=True), "home differs from the baseline's"
         assert np.isnan(evidence.alive).all(), "nearest_player has no opinion on alive vs dead"
+
+
+def test_nearest_player_confidence_sets_both_values():
+    with tempfile.TemporaryDirectory() as root:
+        hard, soft, _ = nearest_player_runs(root, confidence=0.78)
+    known = ~np.isnan(soft.home)
+    assert (hard.home == 1.0).any() and (hard.home == 0.0).any(), "the synthetic match lacks home or away frames"
+    assert np.array_equal(np.isnan(soft.home), np.isnan(hard.home)), "NaN moved to other frames"
+    assert np.isin(soft.home[known], [0.78, 1 - 0.78]).all(), "a value other than 0.78 or 1 - 0.78"
+    assert (soft.home[hard.home == 1.0] == 0.78).all(), "a home frame is not exactly 0.78"
+    assert (soft.home[hard.home == 0.0] == 1 - 0.78).all(), "an away frame is not exactly 1 - 0.78"
+    assert np.isnan(soft.alive).all()
+
+
+def test_nearest_player_rejects_bad_confidence():
+    from pipeline.contracts import RunContext
+    from pipeline.evidence import REGISTRY
+    run = RunContext(inputs=None, seed=0)  # rejected before the match is touched
+    for bad in (0.4, 1.5, float("nan"), True, "0.8"):
+        expect_error(ValueError, lambda: REGISTRY["nearest_player"](run, confidence=bad), "nearest_player",
+                     "confidence")
+
+
+def ball_run(ball_present):
+    """A RunContext over a stand-in match that has only what ball_presence reads: n_frames and atd.ball_present."""
+    from types import SimpleNamespace
+    from pipeline.contracts import RunContext
+    atd = SimpleNamespace(ball_present=ball_present)
+    return RunContext(inputs=SimpleNamespace(n_frames=len(ball_present), atd=atd), seed=0)
+
+
+def test_ball_presence_values_and_margin():
+    from pipeline.contracts import check_evidence
+    from pipeline.evidence import REGISTRY
+    ball = np.ones(40, dtype=bool)
+    ball[:3] = False      # missing at the very start,
+    ball[20:30] = False   # for ten frames in the middle,
+    ball[38:] = False     # and at the very end
+    source = REGISTRY["ball_presence"]
+    seen = np.flatnonzero(ball)
+    gap = np.flatnonzero(~ball)
+    distance = np.abs(gap[:, None] - seen[None, :]).min(axis=1)  # to the nearest frame with a ball, by brute force
+
+    evidence = source(ball_run(ball))
+    assert (evidence.alive[ball] == 0.585).all() and (evidence.alive[~ball] == 0.2).all()
+    assert evidence.alive.dtype == np.float64 and evidence.home.dtype == np.float64
+    assert np.isnan(evidence.home).all()
+    check_evidence(evidence, 40)
+
+    evidence = source(ball_run(ball), margin=3)
+    assert (evidence.alive[ball] == 0.585).all()
+    assert (evidence.alive[gap[distance > 3]] == 0.2).all()
+    assert np.isnan(evidence.alive[gap[distance <= 3]]).all()
+    assert np.flatnonzero(evidence.alive == 0.2).tolist() == [23, 24, 25, 26], "the middle of the ten-frame gap"
+    check_evidence(evidence, 40)
+
+    nothing = source(ball_run(np.zeros(40, dtype=bool)), margin=3)  # no ball at all: nothing is near a ball frame
+    assert (nothing.alive == 0.2).all() and np.isnan(nothing.home).all()
+    check_evidence(nothing, 40)
+
+
+def test_ball_presence_seen_half_is_no_push():
+    from pipeline.evidence import REGISTRY
+    ball = np.arange(30) % 7 != 0
+    evidence = REGISTRY["ball_presence"](ball_run(ball), seen=0.5)
+    # log(2 * 0.5) = 0 in the decoder's emission rule: a visible ball then says nothing about alive vs dead.
+    assert (evidence.alive[ball] == 0.5).all() and (evidence.alive[~ball] == 0.2).all()
+
+
+def test_ball_presence_reads_read_only_inputs():
+    from pipeline.evidence import REGISTRY
+    ball = np.arange(30) % 7 != 0
+    ball.flags.writeable = False
+    evidence = REGISTRY["ball_presence"](ball_run(ball), margin=2)
+    assert (evidence.alive[ball] == 0.585).all()
+    assert ball.flags.writeable is False and ball.sum() == 25, "the input was touched"
+
+
+def test_ball_presence_rejects_bad_parameters():
+    from pipeline.evidence import REGISTRY
+    run = ball_run(np.ones(10, dtype=bool))
+    source = REGISTRY["ball_presence"]
+    for bad in (-1, 1.5, True):
+        expect_error(ValueError, lambda: source(run, margin=bad), "ball_presence", "margin")
+    for bad in (-0.1, 1.1, float("nan"), True, "0.2"):
+        expect_error(ValueError, lambda: source(run, missing=bad), "ball_presence", "missing")
+    for bad in (1.2, -0.5, float("nan"), True):
+        expect_error(ValueError, lambda: source(run, seen=bad), "ball_presence", "seen")
+    source(run, margin=np.int64(3), missing=np.float64(0.25), seen=1)  # numpy numbers from a sweep are fine
 
 
 # -- decode -----------------------------------------------------------------------------------------------------------
@@ -439,6 +547,26 @@ def vote_context(home, start=0, stop=None, weights=None):
     evidence = {}
     for index, (values, weight) in enumerate(zip(homes, weights)):
         source = Evidence(alive=no_opinion(len(values)), home=values, name="s{}".format(index), weight=weight)
+        evidence[source.name] = source.window(start, stop)
+    return BlockContext(run=RunContext(inputs=None, seed=0), block=Block(None, start, stop), evidence=evidence)
+
+
+def hmm_context(home, alive=None, weights=None, start=0, stop=None):
+    """A BlockContext over [start, stop) of one or more sources, the way the runner builds one.
+
+    `home` is one array or a list of them, one source each; `alive` is None (every source has no opinion on it), one
+    array for a single source, or a list of arrays and Nones beside `home`'s.
+    """
+    from pipeline.contracts import Block, BlockContext, Evidence, RunContext, no_opinion
+    homes = home if isinstance(home, list) else [home]
+    alives = alive if isinstance(alive, list) else [alive] * len(homes)
+    assert len(alives) == len(homes), "one alive channel (or None) for each source"
+    weights = weights or [1.0] * len(homes)
+    stop = len(homes[0]) if stop is None else stop
+    evidence = {}
+    for index, (values, awake, weight) in enumerate(zip(homes, alives, weights)):
+        source = Evidence(alive=no_opinion(len(values)) if awake is None else awake, home=values,
+                          name="s{}".format(index), weight=weight)
         evidence[source.name] = source.window(start, stop)
     return BlockContext(run=RunContext(inputs=None, seed=0), block=Block(None, start, stop), evidence=evidence)
 
@@ -502,6 +630,433 @@ def test_majority_vote_rejects_bad_parameters():
     expect_error(ValueError, lambda: REGISTRY["majority_vote"](ctx, half_width=True), "half_width")
     REGISTRY["majority_vote"](ctx, half_width=np.int64(5))  # a numpy integer from a notebook sweep is fine
     expect_error(ValueError, lambda: REGISTRY["majority_vote"](ctx, half_width=5, fallback="Q"), "fallback", "Q")
+
+
+# The hmm decoder (P06). Its model is pinned here from the definition and not from the code: a reference scorer and a
+# reference validity rule written out below, and the best path found by trying every path.
+
+VOTE = 0.78  # a source's confidence in the hmm checks: it moves a frame by log(0.78 / 0.22) = 1.266 nats
+
+
+def home_runs(*runs):
+    """A `home` array from consecutive (value, frames) runs; a NaN value is a stretch without an opinion."""
+    return np.concatenate([np.full(frames, value) for value, frames in runs])
+
+
+def hmm_labels(ctx, **parameters):
+    """The hmm decoder's labels on ctx, with a team switch of 4 nats and a dead switch of 100 unless told otherwise."""
+    from pipeline.decode import REGISTRY
+    parameters = dict({"switch_team": 4.0, "switch_dead": 100.0}, **parameters)
+    return REGISTRY["hmm"](ctx, **parameters).labels
+
+
+def letters(labels):
+    """The labels as a string of H, A, D, X: what a failed assertion should show."""
+    from pipeline.contracts import LETTERS
+    return "".join(LETTERS[labels])
+
+
+def hmm_path_score(emissions, path, switch_team, switch_dead):
+    """The model's score of one path: its emissions, less a penalty for each change (D is one side of the change)."""
+    from pipeline.contracts import D
+    score = sum(emissions[frame, state] for frame, state in enumerate(path))
+    for before, after in zip(path, path[1:]):
+        if before != after:
+            score -= switch_dead if D in (before, after) else switch_team
+    return score
+
+
+def hmm_path_is_valid(path, min_possession, min_dead):
+    """Every run of H or A lasts min_possession frames and every run of D min_dead, the first and last run excepted."""
+    from pipeline.contracts import D
+    runs = []
+    for state in path:
+        if runs and runs[-1][0] == state:
+            runs[-1][1] += 1
+        else:
+            runs.append([state, 1])
+    return all(length >= (min_dead if state == D else min_possession) for state, length in runs[1:-1])
+
+
+def test_hmm_matches_brute_force():
+    import itertools
+    from pipeline.decode import hmm
+    constrained = 0
+    for case in range(300):
+        rng = np.random.default_rng([6, case])
+        n_frames = int(rng.integers(1, 8))
+        emissions = rng.uniform(-3.0, 3.0, size=(n_frames, 3))
+        switch_team, switch_dead = (float(value) for value in rng.uniform(0.1, 4.0, size=2))
+        min_possession, min_dead = (int(value) for value in rng.integers(1, 5, size=2))
+        labels = hmm.viterbi(emissions, switch_team, switch_dead, min_possession, min_dead)
+        assert labels.dtype == np.int8 and labels.shape == (n_frames,), (case, labels.dtype, labels.shape)
+        path = labels.tolist()
+        assert hmm_path_is_valid(path, min_possession, min_dead), (case, path)
+        scores = {candidate: hmm_path_score(emissions, candidate, switch_team, switch_dead)
+                  for candidate in itertools.product(range(3), repeat=n_frames)}
+        best = max(score for candidate, score in scores.items()
+                   if hmm_path_is_valid(candidate, min_possession, min_dead))
+        got = hmm_path_score(emissions, path, switch_team, switch_dead)
+        assert abs(got - best) < 1e-9, "case {}: viterbi scores {!r}, the best valid path {!r}".format(case, got, best)
+        constrained += max(scores.values()) > best + 1e-9
+    # A check in which no minimum ever bound would prove nothing about the minimums.
+    assert constrained >= 30, "only {} of 300 cases had a minimum that mattered".format(constrained)
+
+
+def test_hmm_minimum_one_is_unconstrained():
+    import itertools
+    from pipeline.decode import hmm
+    for case in range(200):
+        rng = np.random.default_rng([6, 1, case])
+        n_frames = int(rng.integers(1, 8))
+        emissions = rng.uniform(-3.0, 3.0, size=(n_frames, 3))
+        switch_team, switch_dead = (float(value) for value in rng.uniform(0.1, 4.0, size=2))
+        path = hmm.viterbi(emissions, switch_team, switch_dead, 1, 1).tolist()
+        best = max(hmm_path_score(emissions, candidate, switch_team, switch_dead)
+                   for candidate in itertools.product(range(3), repeat=n_frames))
+        got = hmm_path_score(emissions, path, switch_team, switch_dead)
+        assert abs(got - best) < 1e-9, "case {}: viterbi scores {!r}, the best path {!r}".format(case, got, best)
+
+
+def test_hmm_missing_channel_adds_nothing():
+    from pipeline.contracts import D, Evidence, no_opinion
+    from pipeline.decode import hmm
+    rng = np.random.default_rng([6, 100])
+    home = np.where(rng.random(200) < 0.3, np.nan, rng.random(200))
+    alive = np.where(rng.random(200) < 0.5, np.nan, rng.random(200))
+    source = Evidence(alive=alive, home=home, name="s", weight=1.0)
+    blank = Evidence(alive=no_opinion(200), home=no_opinion(200), name="blank", weight=3.0)
+    assert np.array_equal(hmm.log_likelihoods([source], 200, 1e-6), hmm.log_likelihoods([source, blank], 200, 1e-6)), \
+        "a source with no opinion changed the emissions"
+    home_only = Evidence(alive=no_opinion(200), home=home, name="s", weight=1.0)
+    emissions = hmm.log_likelihoods([home_only], 200, 1e-6)
+    assert emissions.shape == (200, 3) and (emissions[:, D] == 0.0).all(), "home says nothing about dead"
+    assert np.isfinite(emissions).all()
+    # Nothing to go on: D, the fallback of majority_vote, whatever the minimums and even with free switches.
+    for parameters in ({}, {"min_possession": 5, "min_dead": 5}, {"switch_team": 0.0, "switch_dead": 0.0}):
+        labels = hmm_labels(hmm_context(no_opinion(100)), **parameters)
+        assert (labels == D).all(), (parameters, letters(labels))
+
+
+def test_hmm_clips_hard_probabilities():
+    """nearest_player reports a hard 0 or 1; its log would be -inf, so the emissions clip at eps and stay finite."""
+    from pipeline.contracts import A, D, H, Evidence
+    from pipeline.decode import hmm
+    eps = 1e-3
+    source = Evidence(alive=np.array([1.0, 0.0, np.nan]), home=np.array([1.0, 0.0, 1.0]), name="s", weight=1.0)
+    emissions = hmm.log_likelihoods([source], 3, eps)
+    assert np.isfinite(emissions).all()
+    near, far = np.log(2.0 * (1.0 - eps)), np.log(2.0 * eps)
+    expected = np.array([[near + near, far + near, far],       # home and alive both 1
+                         [far + far, near + far, near],        # home and alive both 0
+                         [near, far, 0.0]])                    # home 1, alive unknown
+    assert np.allclose(emissions, expected, atol=1e-12, rtol=0.0), (emissions, expected)
+    assert emissions[0, H] > emissions[0, A] > emissions[0, D] and emissions[1, D] > emissions[1, A] > emissions[1, H]
+
+
+def test_hmm_weight_is_an_exponent():
+    from pipeline.contracts import Evidence
+    from pipeline.decode import hmm
+    rng = np.random.default_rng([6, 101])
+    home = np.where(rng.random(300) < 0.3, np.nan, rng.random(300))
+    alive = np.where(rng.random(300) < 0.4, np.nan, rng.random(300))
+    other = rng.random(300)
+    once = hmm.log_likelihoods([Evidence(alive=alive, home=home, name="s", weight=1.0)], 300, 1e-6)
+    twice = hmm.log_likelihoods([Evidence(alive=alive, home=home, name="s", weight=2.0)], 300, 1e-6)
+    assert np.array_equal(twice, 2.0 * once), "weight 2 is not exactly twice the emissions of weight 1"
+    parameters = {"switch_team": 3.0, "switch_dead": 6.0, "min_possession": 4}
+    heavy = hmm_labels(hmm_context(home, alive, weights=[2.0]), **parameters)
+    given_twice = hmm_labels(hmm_context([home, home], [alive, alive]), **parameters)
+    assert np.array_equal(heavy, given_twice), "weight 2 and the source given twice disagree on {} frames".format(
+        int((heavy != given_twice).sum()))
+    removed = hmm_labels(hmm_context(home, alive), **parameters)
+    muted = hmm_labels(hmm_context([home, other], [alive, other], weights=[1.0, 0.0]), **parameters)
+    assert np.array_equal(muted, removed), "a source of weight 0 still moved the labels"
+    for bad in (np.nan, np.inf, -1.0):
+        expect_error(ValueError, lambda: hmm_labels(hmm_context(home, weights=[bad])), "weight", "hmm")
+
+
+def test_hmm_holds_through_a_gap():
+    from pipeline.contracts import H
+    home = home_runs((VOTE, 100), (np.nan, 300), (VOTE, 100))
+    for switch_team in (1.0, 10.0):
+        labels = hmm_labels(hmm_context(home), switch_team=switch_team, switch_dead=100.0)
+        assert (labels == H).all(), "switch_team {}: {}".format(switch_team, letters(labels))
+
+
+def test_hmm_tie_lands_on_the_first_frame():
+    from pipeline.contracts import D
+    # The 30 frames between the votes cost the same whichever team holds them, so the change could be anywhere in them.
+    # The tie goes to the later run: the change of team lands on the first frame without evidence.
+    home = home_runs((VOTE, 20), (np.nan, 30), (1.0 - VOTE, 20))
+    for min_possession in (1, 10):
+        labels = hmm_labels(hmm_context(home), switch_team=1.0, switch_dead=100.0, min_possession=min_possession)
+        assert letters(labels) == "H" * 20 + "A" * 50, (min_possession, letters(labels))
+    # Free switches and no evidence at all: every path scores 0, and the preference for D decides.
+    labels = hmm_labels(hmm_context(home_runs((np.nan, 40))), switch_team=0.0, switch_dead=0.0)
+    assert (labels == D).all(), letters(labels)
+
+
+def test_hmm_tie_in_a_gap_with_alive_evidence():
+    # The same tie as above, but with ball_presence's shape of evidence: every frame of the gap has `alive` and no
+    # `home`, which adds the same number to H and to A. The running sums of H and A start from different values, so
+    # without care fl(sum_H + x) and fl(sum_A + x) drift apart by ulps and the change of team lands wherever the
+    # rounding noise peaks, not on the gap's first frame (viterbi subtracts H's column to make the tie exact).
+    # The votes are long enough to beat the gap's evidence for D (1.39 nats a frame): no path pays a switch to
+    # stay all D, so a shorter vote decodes to D throughout and tests nothing. With stretches of 60 frames, before the
+    # fix the change landed on the gap's last frame (30-frame gap) and in the middle of it (50 frames).
+    for gap in (30, 50):
+        home = home_runs((VOTE, 60), (np.nan, gap), (1.0 - VOTE, 60))
+        alive = np.concatenate([np.full(60, 0.585), np.full(gap, 0.2), np.full(60, 0.585)])
+        for min_possession in (1, 10):
+            labels = hmm_labels(hmm_context(home, alive), switch_team=1.0, switch_dead=100.0,
+                                min_possession=min_possession)
+            assert letters(labels) == "H" * 60 + "A" * (gap + 60), (gap, min_possession, letters(labels))
+
+
+def test_hmm_ties_follow_the_preference_order():
+    """Equal scores, made exact with whole-number emissions: continue the run, then D, then H, then A."""
+    from pipeline.contracts import H
+    from pipeline.decode import hmm
+
+    def decode(rows, switch_team=0.5, switch_dead=0.5):
+        return letters(hmm.viterbi(np.array(rows, dtype=float), switch_team, switch_dead, 1, 1))
+
+    # Entering H from D or from A, both at the same cost and the same score: D.
+    assert decode([[-5, 0, 0]] * 3 + [[1, -5, -5]] * 3) == "DDDHHH"
+    # Entering D from H or from A: H. Entering A from D or from H: D.
+    assert decode([[0, 0, -5]] * 3 + [[-5, -5, 1]] * 3) == "HHHDDD"
+    assert decode([[0, -5, 0]] * 3 + [[-5, 1, -5]] * 3) == "DDDAAA"
+    # Ending in D or H, H or A, equally well: D, then H. (H and A tie on a frame voting 0.5 with the ball alive.)
+    assert decode([[1, 0, 1]] * 3) == "DDD" and decode([[1, 1, 0]] * 3) == "HHH"
+    # Free switches, and the frames between two votes for H cost the same in any state: the run goes on, rather than
+    # being handed to D (which is what the same rows say when they end without a vote: the final state is D then).
+    rows = [[1, 0, 0]] + [[0, 0, 0]] * 3
+    assert decode(rows + [[5, -5, -5]], switch_team=0.0, switch_dead=0.0) == "HHHHH"
+    assert decode(rows, switch_team=0.0, switch_dead=0.0) == "HDDD"
+    home = np.full(30, 0.5)
+    assert (hmm_labels(hmm_context(home, np.full(30, 0.9)), switch_team=2.0, switch_dead=2.0) == H).all(), \
+        "a dead heat between the teams goes to the home side"
+
+
+def test_hmm_blip_against_the_penalty():
+    # 5 x 1.266 = 6.3 nats of evidence for a blip does not pay two team switches of 10; 20 x 1.266 = 25.3 does.
+    for blip, expected in ((5, "H" * 105), (20, "H" * 50 + "A" * 20 + "H" * 50)):
+        home = home_runs((VOTE, 50), (1.0 - VOTE, blip), (VOTE, 50))
+        labels = hmm_labels(hmm_context(home), switch_team=10.0, switch_dead=100.0)
+        assert letters(labels) == expected, (blip, letters(labels))
+
+
+def test_hmm_minimum_possession_removes_short_runs():
+    from pipeline.contracts import A, H
+    home = home_runs((VOTE, 50), (1.0 - VOTE, 20), (VOTE, 50))
+    # The blip is worth keeping at a team switch of 1 (25.3 nats against 2), and so is a longer A run, until it has to
+    # swallow too much of the H frames around it: 40 frames hold the blip and 20 frames voting H, so 0 nats against 2.
+    labels = hmm_labels(hmm_context(home), switch_team=1.0, switch_dead=100.0, min_possession=40)
+    assert (labels == H).all(), letters(labels)
+    # At 25 frames the run still pays (the blip and 5 frames of H: 19 nats against 2), so it grows to the minimum.
+    labels = hmm_labels(hmm_context(home), switch_team=1.0, switch_dead=100.0, min_possession=25)
+    away = np.flatnonzero(labels == A)
+    assert len(away) == 25 and away[-1] - away[0] == 24 and away[0] <= 50 and away[-1] >= 69, letters(labels)
+
+    interior = 0
+    for case in range(50):
+        rng = np.random.default_rng([6, 1000 + case])
+        home = np.where(rng.random(2000) < 0.3, np.nan, rng.random(2000))
+        alive = np.where(rng.random(2000) < 0.5, np.nan, rng.random(2000))
+        switch_team, switch_dead = (float(value) for value in rng.uniform(0.2, 3.0, size=2))
+        min_possession, min_dead = (int(value) for value in rng.integers(1, 61, size=2))
+        labels = hmm_labels(hmm_context(home, alive), switch_team=switch_team, switch_dead=switch_dead,
+                            min_possession=min_possession, min_dead=min_dead)
+        assert hmm_path_is_valid(labels.tolist(), min_possession, min_dead), "case {}".format(case)
+        interior += max(0, int((np.diff(labels) != 0).sum()) + 1 - 2)  # runs, less the first and last
+    assert interior >= 200, "only {} interior runs in 50 decodes: the minimums were hardly tested".format(interior)
+
+
+def test_hmm_sees_only_its_block():
+    rng = np.random.default_rng([6, 102])
+    home, alive = rng.random(300), rng.random(300)
+    parameters = {"switch_team": 2.0, "switch_dead": 3.0, "min_possession": 5, "min_dead": 5}
+    first = hmm_labels(hmm_context(home, alive, start=100, stop=200), **parameters)
+    elsewhere_home, elsewhere_alive = home.copy(), alive.copy()
+    elsewhere_home[:100], elsewhere_home[200:] = 1.0 - home[:100], np.nan
+    elsewhere_alive[:100], elsewhere_alive[200:] = np.nan, 1.0 - alive[200:]
+    second = hmm_labels(hmm_context(elsewhere_home, elsewhere_alive, start=100, stop=200), **parameters)
+    assert len(first) == 100 and np.array_equal(first, second), "evidence outside the block moved a label"
+
+
+def test_hmm_accepts_read_only_evidence():
+    rng = np.random.default_rng([6, 103])
+    home, alive = rng.random(200), np.where(rng.random(200) < 0.5, np.nan, rng.random(200))
+    before = home.copy(), alive.copy()
+    home.flags.writeable = alive.flags.writeable = False
+    labels = hmm_labels(hmm_context(home, alive), switch_team=2.0, switch_dead=3.0, min_possession=5)
+    assert len(labels) == 200
+    assert np.array_equal(home, before[0]) and np.array_equal(alive, before[1], equal_nan=True), "evidence was written"
+
+
+def test_hmm_rejects_bad_parameters():
+    from pipeline.decode import REGISTRY
+    ctx = hmm_context(np.full(10, VOTE))
+
+    def decode(**parameters):
+        return REGISTRY["hmm"](ctx, **dict({"switch_team": 1.0, "switch_dead": 1.0}, **parameters))
+
+    for name in ("switch_team", "switch_dead"):
+        for bad in (-1.0, np.nan, np.inf, True):
+            expect_error(ValueError, lambda: decode(**{name: bad}), "hmm", name)
+    for name in ("min_possession", "min_dead"):
+        for bad in (0, 1.5, True):
+            expect_error(ValueError, lambda: decode(**{name: bad}), "hmm", name)
+    for bad in (0.0, 0.5, np.nan):
+        expect_error(ValueError, lambda: decode(eps=bad), "hmm", "eps")
+    for bad in (1, 0, "yes", None):
+        expect_error(ValueError, lambda: decode(posterior=bad), "hmm", "posterior")
+    # viterbi takes emissions directly: it names what is wrong with them, the shape or the values.
+    from pipeline.decode import hmm
+    expect_error(ValueError, lambda: hmm.viterbi(np.zeros((5, 2)), 1.0, 1.0, 1, 1), "hmm", "shape (5, 2)")
+    for bad in (np.nan, np.inf, -np.inf):
+        emissions = np.zeros((5, 3))
+        emissions[2, 1] = bad
+        expect_error(ValueError, lambda: hmm.viterbi(emissions, 1.0, 1.0, 1, 1), "hmm", "finite", "1 of 15")
+    # Whole numbers from a notebook sweep, a penalty of 0 and an integer penalty from a config are all fine.
+    decode(switch_team=10, switch_dead=np.float64(5.0), min_possession=np.int64(5), min_dead=3, eps=1e-3)
+    decode(switch_team=0, switch_dead=0)
+    assert decode(posterior=np.True_).posterior is not None  # a flag from a notebook comparison is fine too
+
+
+def test_hmm_speed():
+    """80,000 frames, two sources, minimums of 50: Viterbi must stay cheap enough for a sweep over seven matches.
+
+    The posterior, which no sweep asks for, gets a looser bound: it is O(minimum) a frame, in numpy calls.
+    """
+    from pipeline.decode import REGISTRY
+    rng = np.random.default_rng([6, 104])
+    n_frames = 80000
+    team = np.repeat(rng.integers(0, 2, n_frames // 100), 100)  # who has the ball, in stretches of 4 s
+    homes, alives = [], []
+    for noise in (0.25, 0.4):
+        votes_home = rng.random(n_frames) < np.where(team == 0, 1.0 - noise, noise)
+        home = np.where(votes_home, VOTE, 1.0 - VOTE)
+        home[np.repeat(rng.random(n_frames // 200) < 0.4, 200)] = np.nan  # ball gaps of 8 s
+        alive = rng.choice([0.2, 0.585], size=n_frames)
+        alive[np.repeat(rng.random(n_frames // 200) < 0.5, 200)] = np.nan
+        homes.append(home)
+        alives.append(alive)
+    ctx = hmm_context(homes, alives)
+    started = time.perf_counter()
+    labels = hmm_labels(ctx, switch_team=4.0, switch_dead=8.0, min_possession=50, min_dead=50)
+    seconds = time.perf_counter() - started
+    print("      hmm: {:,} frames, two sources, both minimums 50: {:.2f} s".format(n_frames, seconds))
+    assert len(labels) == n_frames and seconds < 4.0, "{:.2f} s for {:,} frames".format(seconds, n_frames)
+    started = time.perf_counter()
+    decoded = REGISTRY["hmm"](ctx, switch_team=4.0, switch_dead=8.0, min_possession=50, min_dead=50, posterior=True)
+    seconds = time.perf_counter() - started
+    print("      hmm: the same with posterior=True: {:.2f} s".format(seconds))
+    assert decoded.posterior.shape == (n_frames, 3) and seconds < 10.0, "{:.2f} s for the posterior".format(seconds)
+
+
+# The hmm decoder's posterior: P(H), P(A), P(D) per frame, the marginal over the valid paths with weight exp(score).
+
+def hmm_brute_force_marginals(emissions, switch_team, switch_dead, min_possession, min_dead):
+    """The definition of the posterior, by trying every path: (n_frames, 3) marginals and the number of valid paths."""
+    import itertools
+    paths = [path for path in itertools.product(range(3), repeat=len(emissions))
+             if hmm_path_is_valid(path, min_possession, min_dead)]
+    scores = np.array([hmm_path_score(emissions, path, switch_team, switch_dead) for path in paths])
+    weights = np.exp(scores - scores.max())
+    weights /= weights.sum()
+    marginals = np.zeros((len(emissions), 3))
+    for path, weight in zip(paths, weights):
+        for frame, state in enumerate(path):
+            marginals[frame, state] += weight
+    return marginals, len(paths)
+
+
+def test_hmm_posterior_matches_brute_force():
+    from pipeline.decode import hmm
+    constrained = shorter_than_a_minimum = 0
+    for case in range(200):
+        rng = np.random.default_rng([6, 2000 + case])
+        n_frames = int(rng.integers(1, 7))
+        emissions = rng.uniform(-3.0, 3.0, size=(n_frames, 3))
+        switch_team, switch_dead = (float(value) for value in rng.uniform(0.1, 4.0, size=2))
+        min_possession, min_dead = (int(value) for value in rng.integers(1, 5, size=2))
+        expected, valid_paths = hmm_brute_force_marginals(emissions, switch_team, switch_dead, min_possession, min_dead)
+        got = hmm.marginals(emissions, switch_team, switch_dead, min_possession, min_dead)
+        assert got.dtype == np.float64 and got.shape == (n_frames, 3), (case, got.dtype, got.shape)
+        assert np.allclose(got, expected, rtol=1e-9, atol=1e-12), (
+            "case {} ({} frames, minimums {} and {}): {!r} against the brute force {!r}".format(
+                case, n_frames, min_possession, min_dead, got, expected))
+        constrained += valid_paths < 3 ** n_frames
+        shorter_than_a_minimum += n_frames < max(min_possession, min_dead)
+    # A check where no minimum ever bound, or no block was cut short of one, would prove nothing about the exemptions.
+    assert constrained >= 30 and shorter_than_a_minimum >= 20, "{} constrained cases, {} short blocks of 200".format(
+        constrained, shorter_than_a_minimum)
+
+
+def test_hmm_posterior_rows_sum_to_one():
+    from pipeline.decode import REGISTRY, hmm
+    for case in range(12):
+        rng = np.random.default_rng([6, 3000 + case])
+        n_frames = int(rng.integers(200, 1500))
+        home = np.where(rng.random(n_frames) < 0.3, np.nan, rng.choice([0.0, 0.22, 0.78, 1.0], size=n_frames))
+        alive = np.where(rng.random(n_frames) < 0.5, np.nan, rng.random(n_frames))
+        weight = float(rng.choice([1.0, 3.0, 25.0]))  # at 25 the emissions span hundreds of nats, not tens
+        parameters = {"switch_team": float(rng.uniform(0.5, 30.0)), "switch_dead": float(rng.uniform(0.5, 30.0)),
+                      "min_possession": int(rng.integers(1, 60)), "min_dead": int(rng.integers(1, 60))}
+        posterior = REGISTRY["hmm"](hmm_context(home, alive, weights=[weight]), posterior=True, **parameters).posterior
+        assert posterior.dtype == np.float64 and posterior.shape == (n_frames, 3), (case, posterior.shape)
+        assert np.isfinite(posterior).all() and (posterior >= 0.0).all() and (posterior <= 1.0).all(), case
+        totals = posterior.sum(axis=1)
+        assert np.allclose(totals, 1.0, rtol=0.0, atol=1e-12), "case {}: rows sum to {:.15f} to {:.15f}".format(
+            case, totals.min(), totals.max())
+    # An empty block has an empty posterior, and a block without evidence is a prior over paths, not a NaN.
+    assert hmm.marginals(np.zeros((0, 3)), 1.0, 1.0, 1, 1).shape == (0, 3)
+    blank = hmm.marginals(np.zeros((40, 3)), 2.0, 5.0, 10, 10)
+    assert np.isfinite(blank).all() and np.allclose(blank.sum(axis=1), 1.0, rtol=0.0, atol=1e-12)
+
+
+def test_hmm_posterior_is_symmetric_in_time():
+    """The model has no arrow of time (penalties are symmetric, the first and last run are both exempt), so a block
+    read backwards has the reversed posterior. Brute force stops at 6 frames; this holds the long blocks, where the
+    forward and the backward pass run for thousands of frames, to the same answer from both ends."""
+    from pipeline.decode import hmm
+    for case in range(8):
+        rng = np.random.default_rng([6, 5000 + case])
+        n_frames = int(rng.integers(300, 2000))
+        emissions = rng.normal(0.0, float(rng.choice([0.3, 2.0, 30.0])), size=(n_frames, 3))
+        parameters = (float(rng.uniform(0.0, 20.0)), float(rng.uniform(0.0, 20.0)),
+                      int(rng.integers(1, 150)), int(rng.integers(1, 150)))
+        forwards = hmm.marginals(emissions, *parameters)
+        backwards = hmm.marginals(emissions[::-1], *parameters)[::-1]
+        assert np.allclose(forwards, backwards, rtol=0.0, atol=1e-10), "case {}: {:.1e} apart".format(
+            case, np.abs(forwards - backwards).max())
+
+
+def test_hmm_posterior_leaves_labels_alone():
+    from pipeline.decode import REGISTRY
+    for case in range(20):
+        rng = np.random.default_rng([6, 4000 + case])
+        n_frames = int(rng.integers(1, 800))
+        home = np.where(rng.random(n_frames) < 0.3, np.nan, rng.random(n_frames))
+        alive = np.where(rng.random(n_frames) < 0.5, np.nan, rng.random(n_frames))
+        parameters = {"switch_team": float(rng.uniform(0.0, 6.0)), "switch_dead": float(rng.uniform(0.0, 6.0)),
+                      "min_possession": int(rng.integers(1, 40)), "min_dead": int(rng.integers(1, 40))}
+        ctx = hmm_context(home, alive)
+        without = REGISTRY["hmm"](ctx, **parameters).labels
+        with_it = REGISTRY["hmm"](ctx, posterior=True, **parameters).labels
+        assert with_it.dtype == np.int8 and np.array_equal(without, with_it), "case {}: {} labels moved".format(
+            case, int((without != with_it).sum()))
+
+
+def test_hmm_posterior_off_by_default():
+    from pipeline.decode import REGISTRY
+    ctx = hmm_context(np.full(30, VOTE))
+    assert REGISTRY["hmm"](ctx, switch_team=1.0, switch_dead=1.0).posterior is None
+    assert REGISTRY["hmm"](ctx, switch_team=1.0, switch_dead=1.0, posterior=False).posterior is None
+    posterior = REGISTRY["hmm"](ctx, switch_team=1.0, switch_dead=1.0, posterior=True).posterior
+    assert posterior is not None and posterior.shape == (30, 3)
 
 
 # -- refine -----------------------------------------------------------------------------------------------------------
@@ -611,6 +1166,92 @@ def test_run_end_to_end_synthetic():
         source = result.evidence["nearest_player"]
         assert not (source.alive.flags.writeable or source.home.flags.writeable), \
             "evidence must be read-only once checked: decoders get views of it"
+
+
+HMM_TRIAL_CONFIG = """
+[[evidence]]
+kind = "nearest_player"
+
+[decoder]
+kind = "hmm"
+switch_team = 5
+switch_dead = 20
+min_possession = 5
+min_dead = 5
+"""
+
+
+def test_run_end_to_end_synthetic_hmm():
+    from pipeline import output
+    from pipeline.config import ConfigError, load_config
+    from pipeline.contracts import X
+    from pipeline.run import run
+    with tempfile.TemporaryDirectory() as root:
+        make_synthetic_bundle(root)
+        inputs = synthetic_inputs(root, graded=[(1, 50, 280), (2, 320, 560)])
+        config = load_config(write_text(root, "trial.toml", HMM_TRIAL_CONFIG))
+        assert config.decoder.kind == "hmm"
+        out_path = os.path.join(root, "trial.csv")
+        result = run(config, inputs, out_path, log=quiet)
+        outside = np.ones(SYNTHETIC_FRAMES, dtype=bool)
+        outside[50:280] = outside[320:560] = False
+        assert (result.codes[outside] == X).all(), "frames outside the graded blocks must be X"
+        assert (result.codes[~outside] != X).all(), "the hmm decoder never abstains inside a block"
+        output.validate(out_path, SYNTHETIC_FRAMES, result.codes)
+        # Both penalties are required: a config that forgets one is refused before any data loads.
+        incomplete = HMM_TRIAL_CONFIG.replace("switch_dead = 20\n", "")
+        expect_error(ConfigError, lambda: load_config(write_text(root, "incomplete.toml", incomplete)), "switch_dead")
+
+
+# The shape of every Stage-1 config of P06 (pipeline/benchmark/configs/p06/): both sources and the hmm decoder, here at
+# the grid's first point (p06s1_t001_d004). On the synthetic match's 230-frame blocks a heavier penalty decodes to D
+# throughout, which would let the check below pass without a team ever being decoded.
+P06_TRIAL_CONFIG = """
+description = "trial"
+seed = 0
+scope = "halves"
+
+[[evidence]]
+kind = "nearest_player"
+confidence = 0.78
+
+[[evidence]]
+kind = "ball_presence"
+margin = 0
+missing = 0.2
+seen = 0.585
+
+[decoder]
+kind = "hmm"
+switch_team = 1
+switch_dead = 4
+min_possession = 1
+min_dead = 1
+"""
+
+
+def test_run_end_to_end_synthetic_p06():
+    from pipeline import output
+    from pipeline.config import load_config
+    from pipeline.contracts import A, D, H, X
+    from pipeline.run import run
+    with tempfile.TemporaryDirectory() as root:
+        make_synthetic_bundle(root)
+        inputs = synthetic_inputs(root, graded=[(1, 50, 280), (2, 320, 560)])
+        config = load_config(write_text(root, "trial.toml", P06_TRIAL_CONFIG))
+        assert [source.kind for source in config.evidence] == ["nearest_player", "ball_presence"]
+        assert config.decoder.kind == "hmm"
+        out_path = os.path.join(root, "trial.csv")
+        result = run(config, inputs, out_path, log=quiet)
+        outside = np.ones(SYNTHETIC_FRAMES, dtype=bool)
+        outside[50:280] = outside[320:560] = False
+        assert (result.codes[outside] == X).all(), "frames outside the graded blocks must be X"
+        assert (result.codes[~outside] != X).all(), "the hmm decoder never abstains inside a block"
+        output.validate(out_path, SYNTHETIC_FRAMES, result.codes)
+        assert {int(code) for code in np.unique(result.codes[~outside])} == {H, A, D}, "a label never decoded"
+        assert set(result.evidence) == {"nearest_player", "ball_presence"}
+        assert np.isnan(result.evidence["ball_presence"].home).all(), "ball_presence says nothing about the team"
+        assert np.isnan(result.evidence["nearest_player"].alive).all(), "nearest_player says nothing about alive"
 
 
 def test_run_file_scope_equals_baseline_script():

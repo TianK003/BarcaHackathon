@@ -1,0 +1,37 @@
+# P06's candidate: the hmm decoder with the parameters the benchmark chose (docs/results.md R006, R007).
+#
+#   python pipeline/run.py pipeline/configs/p06_hmm.toml --score    # -> evaluation/results/p06_hmm.csv
+#
+# This is NOT the submission config: main.toml decides what we upload, and this file changes nothing there. It is
+# the decoder's current best answer from the benchmark's own protocol, kept here so that the benchmark's controls, the
+# headroom runs and the public-window check all start from one file.
+#
+# Where the numbers come from. Every one was chosen on the benchmark (the seven DFL matches degraded as `tracking`
+# v3, three seeds, raw truth, pooled spellF1; configs within 0.005 of the best count as tied, then the best coarse
+# score, then the larger switch_team, min_possession, switch_dead and min_dead), never on the public window
+# (docs/traps.md T01) and never by retuning a degradation (T37):
+#   switch_team = 8, switch_dead = 32, min_possession = 75 frames (3 s), min_dead = 1 (R007, Stages 1, 2 and 2b).
+# The two evidence sources are fixed by rule from A01 and were never tuned: nearest_player at confidence 0.78 and
+# ball_presence at 0.2 / 0.585. R007 records that this config does not clear P06's bar on the benchmark: read it
+# before trusting anything here.
+
+description = "P06 candidate (R007): hmm decoder, switch_team = 8 nats, switch_dead = 32 nats, min_possession = 75 frames, min_dead = 1 frame, nearest_player at confidence 0.78 and ball_presence at its defaults, decoded per half. Not the submission config."
+seed = 0
+scope = "halves"
+
+[[evidence]]
+kind = "nearest_player"
+confidence = 0.78    # the share of in-play, ball-visible frames on which the nearest player's team is right (A01)
+
+[[evidence]]
+kind = "ball_presence"
+margin = 0           # frames: every missing frame speaks
+missing = 0.2        # P(alive) where the ball is missing: a likelihood ratio of 4 for dead (A01, rounded down)
+seen = 0.585         # P(alive) where the ball is seen: a ratio of 1.41 for alive (A01)
+
+[decoder]
+kind = "hmm"
+switch_team = 8      # nats a change of team (H <-> A) costs
+switch_dead = 32     # nats a change into or out of D costs
+min_possession = 75  # frames: no run of H or A shorter than this (1 is no minimum)
+min_dead = 1         # frames: no run of D shorter than this (1 is no minimum)

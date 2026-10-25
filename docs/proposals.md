@@ -36,8 +36,8 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P03](#p03--one-command-deterministic-cached) | One-command, deterministic, cached pipeline | reproducibility | S–M | enabling | done → R001 |
 | [P04](#p04--sticky-ownership-from-controlled-touches) | Sticky ownership from controlled touches | facts 3, 5 | S | high | idea |
 | [P05](#p05--a-real-dead-ball-detector) | Dead-ball detector | fact 4 | M | high | idea |
-| [P06](#p06--global-decoding-per-half-hmm--hidden-semi-markov) | Global decoder (HMM / semi-Markov) per half | fact 5 | M | high | idea |
-| [P07](#p07--possession-without-the-ball-team-shape-and-movement) | Possession without the ball: team shape | fact 1 | M | high | idea |
+| [P06](#p06--global-decoding-per-half-hmm--hidden-semi-markov) | Global decoder (HMM / semi-Markov) per half | fact 5 | M | high | done → R006–R007, A10 |
+| [P07](#p07--possession-without-the-ball-team-shape-and-movement) | Possession without the ball: team shape | fact 1 | M | high, but only after P05: ~0 to this decoder without it at `margin` 0 (A10) | idea |
 | [P08](#p08--smart-tagging-as-soft-evidence) | Smart Tagging as soft evidence | facts 1, 4 | S | medium | idea |
 | [P09](#p09--camera-aim-as-a-coarse-ball-zone-prior) | Camera aim as a coarse ball-zone prior | fact 1 | S | low–medium | idea |
 | [P10](#p10--referee-whistle-from-the-audio-track) | Referee whistle from the audio track | fact 4 | S–M | medium (audio confirmed, A04) | idea |
@@ -54,13 +54,66 @@ One track per person; swap freely.
 | track | week 1 (→ Oct 27) | week 2 (→ Nov 3) | week 3 (→ Nov 10) |
 |---|---|---|---|
 | Validation | P01 (done 23 Oct, R002–R005), P02 | P12 | re-validate every candidate on P01 |
-| Pipeline and decoder | P03 | P06 | tune P06 on P01 |
+| Pipeline and decoder | P03 | P06 (done 25 Oct, R006–R007, A10) | P06 is tuned on P01 (R007); then [After P06](#after-p06) |
 | Ball visible | P04 | P11 | P11 |
 | Dead ball | P05 rules | P05 classifier, P08 | P10 |
 | Ball missing | P07 | P07, P09 | P13 or P14 spike → go / no-go |
 
 Week 4: feature freeze **Fri 13 Nov**; regenerate the file from a clean clone on a second machine; finish the
 [technical document](technical_document.md); submit **Mon 16 Nov** and keep Tuesday as slack.
+
+### After P06
+
+A recommendation from
+[A10](results.md#a10--headroom-what-perfect-evidence-would-be-worth-to-the-chosen-decoder-2026-10-25) (the chosen
+decoder run with the truth as evidence) and from the controls of [R007](results.md), written on 25 Oct. Nobody has
+started any of it. P06's decoder has not cleared its bar on the benchmark (R007), so `main.toml` is
+unchanged, and what follows is about where the next day of work goes. The A10 figures are pooled spellF1 on `tracking`,
+raw truth first and coarse second, and are upper bounds: the oracles are exact.
+
+1. **Next: P05, the dead-ball detector.** The case rests on its ceiling under the coarse truth, on its gating P07, on
+   `D` being the chosen config's weakest point, and on P04 running alongside it (item 2). It does not rest on a lead
+   over P04 under the raw truth, which A10 does not show.
+   - Its ceiling is the largest under the coarse truth and level with P04's under the raw one. A perfect dead-ball
+     source adds +0.1625 raw and +0.2450 coarse (to 0.3678 and 0.4417); a perfect possessor where the ball is seen,
+     P04's ceiling, adds +0.1533 and +0.1684. Raw: +0.0092 apart (mean per match +0.0100 [-0.0063, +0.0263], p 0.2500,
+     4 wins and 3 losses), which is no difference. Coarse: +0.0766 apart ([+0.0594, +0.0952], p 0.0156, 7 wins). The
+     `tracking` caveat below tilts the comparison towards P05, so even the coarse lead is an upper bound.
+   - It gates P07. A perfect possessor inside the gaps adds only +0.0008 and +0.0007 on top of a perfect possessor where
+     the ball is seen, and +0.1971 and +0.1810 once `D` is right: `ball_presence` calls every gap longer than about 3.7
+     s dead, whatever the team evidence says.
+   - It is where the chosen config is weakest and where it responds. Its alive/dead F1 is 0.5676 against the
+     yardsticks' 0.6094 and 0.6428, and the controls move spellF1 with it (`margin` 50: +0.0200 alive/dead F1 and
+     +0.0071 raw; `seen` off: -0.0254 and -0.0063). It is also the lever for the tiebreaker: macroF1 +0.36 against
+     +0.07 to +0.09 for the possessor.
+   - The features that need only the ATD and the pitch (the ball beyond a line or at a restart spot, a collective
+     slowdown, set-piece shapes) can be benchmarked on the DFL matches, whose `BallStatus` is their `D`. The whistle
+     (P10) and the tags (P08) cannot, and are checked on the public window only. The new source replaces
+     `ball_presence` as `alive` evidence in the same decoder.
+   - Do not expect +0.16. On `tracking` the gaps are blind to the play, so `ball_presence` carries almost no `D`
+     information there and A10 measures from almost nothing to perfect; on our match it is better than that (A01).
+     Report P05's gain on `tracking` and on `context` (sensitivity only), and rank it under both truths.
+2. **P04 alongside it, because it is S.** Its ceiling is level with P05's under the raw truth (above), and the two
+   together are worth more than apart (+0.3602 raw, against +0.3158 if they added). A real one will capture a part of
+   its ceiling and no more.
+3. **P07 only after P05.** Without a source for `D` inside the gaps it is worth nothing to this decoder (+0.0008 raw).
+   That holds at `margin` 0, where the gaps' edges are `D` too; if the `margin` sweep (item 5) raises `margin`, the
+   edges become P07's again.
+4. **After any new source, re-run the minimum-run part of P06's protocol.** With the truth as its evidence the chosen
+   config scores 0.7627 raw and 0.9226 coarse and not 1.0: its penalties and its 75-frame minimum, chosen under noisy
+   evidence, cap it at DFL's fine grain.
+5. **A separate, small item: a sweep of `ball_presence`'s `margin`.** R007's diagnostic (`margin` 50, `D` evidence only
+   inside the gaps' interiors) is above the chosen config in all four profile and truth cells (+0.0023 to +0.0071;
+   `context` is sensitivity only), and clears the raw half of the bar on `tracking` (+0.0107 over `nearest_w50`, p
+   0.0312, 6 wins in 7) but not the coarse half (-0.0236 against `nearest_w125`). It was one look at one value, so it
+   is not a candidate. A sweep (a few dozen runs of about 20 s) would need a protocol declared before it runs: the
+   values of `margin`, the objective (pooled raw spellF1 on `tracking`, 3 seeds, the 0.005 tie band, then the coarse
+   score), both truths side by side, and the rule that no value is adopted unless it also beats `margin` 0 on
+   `context` (sensitivity only) under both truths. `tracking` cannot value `ball_presence`: its gaps are blind to the
+   play, so its missing frames say almost nothing about `D` there, and a gain on `tracking` alone could be an artefact
+   of where the transplanted masks fall. `context` places the gaps by the play, so its direction is the check. P05
+   would replace this source, so the sweep is worth running only as a hedge in case P05 does not land before the
+   freeze on 13 Nov.
 
 ---
 
@@ -272,6 +325,24 @@ The graded stretch before the second-half kick-off (2,934 frames) must come out 
 Watch `alive_dead_f1` and the `D` row in the scorer's detail block.
 
 ### P06 — Global decoding per half: HMM / hidden semi-Markov
+
+**Status: done →
+[R006](results.md#r006--the-hmm-decoders-first-grid-on-the-benchmark-the-two-switch-penalties-2026-10-25-tian),
+[R007](results.md#r007--the-hmm-decoders-second-grid-the-minimum-run-lengths-and-the-choice-of-its-parameters-2026-10-25-tian)
+and
+[A10](results.md#a10--headroom-what-perfect-evidence-would-be-worth-to-the-chosen-decoder-2026-10-25).** The `hmm`
+decoder is in [`pipeline/decode/hmm.py`](../pipeline/decode/hmm.py), with its posterior (off by default) and the first
+`alive` evidence, `ball_presence`. Its parameters were chosen on P01's benchmark and are kept in
+[`pipeline/configs/p06_hmm.toml`](../pipeline/configs/p06_hmm.toml), which is not the submission config.
+
+**Result.** Switch penalties of 8 and 32 nats (`switch_team`, `switch_dead`) and minimum runs of 75 frames and 1 give
+pooled spellF1 0.2053 under the raw truth and 0.1967 under the coarse one, against `nearest_w50`'s 0.2018 raw and
+`nearest_w125`'s 0.2226 coarse (R007, profile `tracking`). **The bar is not met**: +0.0036 over `nearest_w50` raw
+(sign-flip p 0.2500, 5 wins in 7) and -0.0259 against `nearest_w125` coarse (0 wins in 7), so `main.toml` is
+unchanged. Its `D` is worse than the yardsticks' (alive/dead F1 0.5676 against 0.6094 and 0.6428), and A10 sizes what
+better evidence would be worth: 0.3678 raw and 0.4417 coarse with a perfect dead-ball detector, 0.3586 and 0.3651 with
+a perfect possessor where the ball is seen, 0.7627 and 0.9226 with both everywhere. The code stays because P04, P05 and
+P07 plug into it; what to do next is [After P06](#after-p06).
 
 **Why.** Majority voting is local. Possessions are intervals and spellF1 pays for every spurious split; a decoder
 weighs the evidence against the cost of each change, over a whole half at once.

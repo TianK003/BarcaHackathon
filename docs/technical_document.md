@@ -25,6 +25,20 @@ line endings and validates it with the official checks. Splitting "what the data
 should be" lets each source be measured on its own and lets one decoder weigh them all. The organisers' baseline
 runs through the same pipeline and is rebuilt byte for byte as a regression check (R001).
 
+**The decoder** (P06, `pipeline/decode/hmm.py`). A three-state hidden Markov model over `H`, `A` and `D`, decoded by
+Viterbi once per graded half. Each source adds a log-likelihood ratio to the states it speaks for, and a source with no
+opinion adds nothing (a missing `alive` is not a coin flip). A path pays `switch_team` nats for every change of team and
+`switch_dead` for every change into or out of `D`, and a run of `H` or `A` has to last `min_possession` frames. That
+makes a possession an interval whose edges have to be paid for, which the baseline's ±2 s vote (`majority_vote`) is
+not: it ignores `alive`, gives `D` only where the ball is missing, and keeps whatever survives the vote. The evidence it
+decodes is `nearest_player` (the team of the nearest tracked slot, at a confidence of 0.78: the share of in-play,
+ball-visible public frames on which it is right, A01) and `ball_presence` (`alive` from whether the tracker sees the
+ball); both are fixed by rule from A01 and were not tuned. Its four parameters were chosen on the benchmark of section 5
+by a protocol declared before the runs, plus one capped edge extension ruled after Stage 2's results and before its own
+(R006, R007). **It does not clear its bar there, so the file we upload today is still `main.toml`** (R007). It stays
+because it is the backbone the evidence sources of P04, P05 and P07 plug into, and A10 measures what each of them could
+deliver to it.
+
 ## 2. Assets used and dropped
 
 | asset | used? | how — or why it was dropped |
@@ -112,12 +126,38 @@ matter.
 
 ## 4. Possession rules implemented
 
-- **Change of possession:** <!-- what counts as controlled possession -->
-- **Loose balls and contested phases:**
-- **Touches, deflections, aerial duels:**
-- **Dead ball — when it starts and ends:**
-- **Restarts — who gets the ball:**
-- **Abstentions (`X`):**
+What the submission does today is the baseline's rule in substance (`main.toml`): the nearest tracked player's team, a
+±2 s majority vote per half, and `D` only where the ±2 s window holds no ball. The rules below are those of the `hmm`
+decoder (P06, `pipeline/configs/p06_hmm.toml`), which does not clear its bar on the benchmark (R007) and is not what we
+upload today.
+
+- **Change of possession:** A possession is a run of `H` or of `A`, and the decoder holds the team until the evidence
+  for a change pays for it. A change of team costs `switch_team` (8 nats), a blip out and back twice that, and a run
+  has to last `min_possession` (75 frames, 3 s) except where the half's edge cuts it short, so no possession is
+  shorter. The team evidence is the nearest tracked player's, at a confidence of 0.78 (A01), and there is none where
+  the ball is missing. A minimum run turned out to matter more than the penalties (the best config with one scores
+  0.2083 raw, the best that switch penalties reached at a minimum of 1 scores 0.1959) and takes the place of a large
+  `switch_team` (R007).
+- **Loose balls and contested phases:** No rule of its own. A loose ball is read as the nearest player's team, which is
+  wrong on 22% of in-play, ball-visible public frames (T14); what stops it flickering is the cost of changing and the
+  minimum run. Across a stretch without ball evidence the team changes on the stretch's first frame, by the decoder's
+  fixed tie rule (`pipeline/decode/README.md`).
+- **Touches, deflections, aerial duels:** Not modelled (P04 would).
+- **Dead ball — when it starts and ends:** From ball presence only. A frame without the ball speaks for `D` (a
+  likelihood ratio of 4) and a frame with it weakly for play (1.41 for alive), both from A01 by rule, and a change
+  into or out of `D` costs `switch_dead` (32 nats). So a gap in the ball decodes as `D`, its edges included, once it is
+  longer than about 2 × `switch_dead` / 1.39 frames (46 at 32) and nothing else speaks, while a shorter gap or a stretch
+  with the ball can still overrule it. That is broader than the baseline's `D`: `main.toml`'s vote gives it only more
+  than 2 s inside a gap, so a gap of 47 to 100 frames, and the first and last 2 s of a longer one, are `D` here and keep
+  their team there. R007's `margin` 50 diagnostic, which leaves those edges to the other evidence, measures the
+  difference (predicted `D` share 43.1% to 38.3%, raw spellF1 +0.0071). A missing ball is not a dead ball (T12), which
+  makes this the weakest part: alive/dead F1 0.5676 on the benchmark against 0.6094 for `nearest_w50` (R007). Nothing
+  else says `D` until P05.
+- **Restarts — who gets the ball:** No rule. After a stoppage the team is whichever the evidence names once the ball is
+  seen (a restart detector is part of P05).
+- **Abstentions (`X`):** The decoder never abstains inside a graded half, and the runner writes `X` on the ungraded
+  frames, where it is free. It can return the posterior of each state per frame, which shows where an `X` would be
+  free (inside a possession), but no refiner reads it yet.
 
 ## 5. Validation
 
@@ -214,6 +254,51 @@ truth. Raw gives `w50 > w25 > w125 > w0`, coarse `w125 > w50 > w25 > w0`, and ne
 levels only where the two truths agree, and absolute spellF1 on the benchmark is not our leaderboard's. What the
 benchmark cannot show is in section 6.
 
+**The P06 decoder on the benchmark** (R006, R007, A10). Its four parameters were chosen by a protocol declared before
+the first run, over Stage 1 and Stage 2: profile `tracking` v3, 3 seeds, the objective the pooled spellF1 under the raw
+truth, configs within 0.005 of the best counted as tied, then the best coarse score, then the larger `switch_team`,
+`min_possession`, `switch_dead` and `min_dead`; both truths are read side by side (T33), and the bar for calling it a
+win is recorded and not used to choose. The evidence is fixed by rule from A01 and was not tuned. Stage 1 crossed the
+two switch penalties (24 configs, R006) and Stage 2 the minimum runs (90). Stage 2b (15 configs) was one edge extension,
+capped at one, ruled after Stage 2's results and before its own, and the chosen config comes from it: the declared rule
+over Stages 1 and 2 alone picks `p06s2_t016_d064_mp050_md025`, 0.0012 under `nearest_w50` raw and 0.0290 under
+`nearest_w125` coarse (R007). In all, 123 distinct configs, 78 once the `min_dead` 25 twins are dropped (R007). The
+choice is `switch_team` 8, `switch_dead` 32, `min_possession` 75 frames and `min_dead` 1 (which moves nothing in Stage
+2). Pooled spellF1 on `tracking`, 3 seeds:
+
+| config | raw spellF1 | coarse spellF1 | alive/dead F1 | possessions per minute | `D` share |
+|---|---|---|---|---|---|
+| `nearest_w50` | 0.2018 | 0.1842 | 0.6094 | 4.30 | 33.4% |
+| `nearest_w125` | 0.1665 | 0.2226 | 0.6428 | 3.05 | 23.3% |
+| `hmm`, chosen (8, 32, 75, 1) | 0.2053 | 0.1967 | 0.5676 | 3.10 | 43.1% |
+| `hmm`, without the `seen` term (control) | 0.1990 | 0.1971 | 0.5422 | 2.73 | 46.4% |
+| `hmm`, `margin` 50 (diagnostic, not a candidate) | 0.2124 | 0.1990 | 0.5876 | 3.29 | 38.3% |
+| the truth | | | | 4.58 raw, 2.48 coarse | 44.8% |
+
+**The bar is not met under either truth.** Raw, the chosen config is +0.0036 over `nearest_w50` (+0.0041 per match
+[-0.0022, +0.0104], sign-flip p 0.2500, 5 wins in 7); coarse, it is 0.0259 below `nearest_w125` (0 wins in 7). No config
+of the three stages passes either half. A minimum run mattered more than the penalties: the best config with one scores
+0.2083 raw, the best that switch penalties reached at a minimum of 1 scores 0.1959. The HMM's predicted `D` share,
+43.1%, is near the truth's 44.8%, and its alive/dead F1 is still below both yardsticks'. The `seen` term is worth 0.0063
+raw on `tracking` (without it the chosen config loses in 7 matches of 7, p 0.0156) and nothing coarse (+0.0003). The
+`margin` 50 diagnostic, which leaves the edges of a gap to the other evidence, is above the chosen config in all four
+profile and truth cells (+0.0023 to +0.0071, two of them on `context`) and clears the raw half of the bar on `tracking`
+(+0.0107 over `nearest_w50`, p 0.0312, 6 wins in 7) and not the coarse half. It
+was one look at one value, so it is not a candidate: a sweep with its own protocol is the follow-up
+(`docs/proposals.md`, "After P06"). On `context` (sensitivity only, R005) every score is higher and the chosen config
+clears the raw half (+0.0140 over `nearest_w50`, 7 wins in 7) and not the coarse half (-0.0182, p 0.0781).
+
+**What better evidence would be worth** (A10). The chosen decoder run with the benchmark's own truth as evidence gives
+an upper bound, since the oracles are exact: a perfect dead-ball detector takes pooled spellF1 to 0.3678 raw and 0.4417
+coarse, a perfect possessor where the ball is seen to 0.3586 and 0.3651, and both everywhere to 0.7627 and 0.9226.
+Under the raw truth the first two are level (+0.0092 apart, p 0.2500); under the coarse truth the dead-ball detector is
+ahead by +0.0766 (p 0.0156). A perfect possessor inside the gaps adds +0.0008 raw until `D` is right and +0.1971 once
+it is, so the possession-without-the-ball work (P07) is worth nothing to this decoder before a dead-ball source (P05)
+exists. The full-oracle row is a cap on this config and not on the approach: 0.7627 is below 1.0 because the penalties
+and the 75-frame minimum, chosen under noisy evidence, merge the shortest of DFL's possessions (the logs cannot say how
+much each costs). Apart from A01's three evidence values, fixed before P06, the public window was used only to check
+that the pipeline is correct (the file is valid and identical across runs), never to choose (T01).
+
 ## 6. Limitations
 
 <!-- Where it fails, and what we would fix with more time. The pipeline's own limits: fill as decisions land. -->
@@ -243,7 +328,7 @@ benchmark cannot show is in section 6.
   more players around, A08). 36.0% of them start within 2 m of a line against 28.0% of ours, because DFL's ball is
   tracked out of play and so spends more time near the lines (R003, R005), and the ball is visible on 0.5684 of the
   dead frames against 0.6637 in the public window (R003). A method that depends on where the gaps fall is validated on
-  gaps that ignore the play.
+  gaps that ignore the play (T38).
 - **`context` does not fix that, and why.** It places the gaps by the play and fails two of its gates: the near-line
   one (the default has none) on every seed, 0.5586 against 0.2797 (+-0.05), and the share missing narrowly (0.4313
   against 0.4110, +-0.02). The first is the data's doing: DFL tracks the ball out of play, so 25.2% of its
@@ -260,6 +345,37 @@ benchmark cannot show is in section 6.
   it, as it does on ours. The cap's counts come from the frames of the ball's gaps and not from the same play.
 - **The halves.** A benchmark half starts at its kick-off, while our graded second half starts 117 s before it, all
   `D` (A06, T02).
+
+**Of the P06 decoder** (R006, R007, A10; it does not clear its bar and is not the submission):
+
+- **`D` comes only from ball presence until P05.** The ball is missing on 40.7% of the graded frames in long gaps, and
+  a missing ball is not a dead ball (T12). The decoder's `D` has an alive/dead F1 of 0.5676 on the benchmark against
+  0.6094 for `nearest_w50` and 0.6428 for `nearest_w125`, and the two `ball_presence` values rest on four stoppages of
+  the public window (A01). A10 puts the price at +0.1625 raw and +0.2450 coarse for a perfect detector, so this is the
+  decoder's weakest point and P05's job.
+- **The grain of our GT is unknown, and the choice rests on the raw truth.** The two truths want different decoders:
+  raw peaks at a minimum run of 75 frames and `switch_team` 16 at minimum runs of 1, coarse keeps rising to 150 frames
+  (0.2310 coarse for the coarse best, against 0.1967 for the chosen config) and to `switch_team` 64 at minimum runs of 1
+  (R006, R007). The chosen config predicts 3.10 possessions a minute, between the raw truth's 4.58 and the coarse
+  truth's 2.48. Which of them our GT resembles is not known (section 3, T33), and a decoder too fine or too coarse for
+  it would not show on the public window.
+- **Selecting from 123 configs is optimistic, and by how much is only partly known.** The leave-one-match-out check
+  chooses the config on six matches and scores it on the seventh. With the whole rule it picks the chosen config in all
+  seven folds, so its held-out estimate is the config's own, +0.0041 over `nearest_w50` (p 0.2500, 5 wins in 7). By the
+  objective alone the six-fold picks score 0.2090 held out against 0.2093 in sample for the raw best, so selecting
+  costs nothing measurable across matches. That is less than it looks: the check varies the match and not the
+  degradation draws, which the three seeds share across folds, a seed moves a pooled spellF1 by up to about 0.015, three
+  times the 0.005 band that defined the tied six, it holds the grid fixed although Stage 2 was centred, and Stage 2b
+  placed, on results from all seven matches, and it says nothing of how DFL's degraded tracking transfers to ours.
+  The chosen config is the raw fourth and the coarse 29th of 78 score profiles, and it sits on an edge of the last grid
+  in `switch_team` and `switch_dead`, where by the protocol's ruling nothing was extended further.
+- **`switch_dead` was chosen where the benchmark cannot value ball presence.** On `tracking` the gaps are transplanted
+  blind to the play, so a missing ball says almost nothing about `D` there (R005, T38), and `switch_dead`, which sets
+  how far the decoder believes it, was chosen on a profile that cannot value it and is specific to it. The check on
+  `context` (sensitivity only) shows how far under the raw truth: 8, 32 and 128 score 0.2323, 0.2332 and 0.2297, so the
+  chosen 32 holds there within noise; the coarse truth prefers more (0.2327 at 128, +0.0067 over 32, 6 wins in 7, p
+  0.0781). A10's `__alive` ceiling also overstates what a perfect detector would add on our match, since it starts from
+  almost no `D` information. Any choice about the gaps is read on `context` too (T38).
 
 ## 7. Reproduction
 
@@ -285,4 +401,9 @@ The validation benchmark of section 5 is reproduced separately and is not needed
 .venv/bin/python pipeline/benchmark/run.py pipeline/benchmark/configs/nearest_w50.toml \
     pipeline/benchmark/configs/nearest_w0.toml pipeline/benchmark/configs/nearest_w25.toml \
     pipeline/benchmark/configs/nearest_w125.toml --profile tracking --seeds 3    # R004c; again with --truth coarse
+.venv/bin/python pipeline/benchmark/run.py pipeline/benchmark/configs/nearest_w50.toml \
+    pipeline/configs/p06_hmm.toml --profile tracking --seeds 3     # P06's candidate (R007); --truth coarse too,
+                                                                    # with nearest_w125.toml first: its bar there
+.venv/bin/python pipeline/benchmark/headroom.py pipeline/configs/p06_hmm.toml \
+    --profile tracking --seeds 3                                    # A10; --truth coarse too
 ```

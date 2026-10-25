@@ -14,6 +14,7 @@ R002 to R005).
 python pipeline/benchmark/sources.py          # data -> data/external/dfl/   (21 files, 2.6 GB, size and md5 checked)
 python pipeline/benchmark/run.py CONFIG ...   # configs -> scores, intervals, comparisons, one JSON report per config
 python pipeline/benchmark/fidelity.py         # how far the degraded profile looks like our match (gates, warnings)
+python pipeline/benchmark/headroom.py CONFIG  # a config beside five variants whose evidence is the truth itself
 python pipeline/benchmark/selftest.py [--dfl] [--data]   # the checks
 ```
 
@@ -99,6 +100,14 @@ with its config, its name and kind and the asset named; it is never scored as ze
 vote of +/- w frames) **decoded per graded half**, as every config of ours is. The published files are decoded over the
 whole file at once, so these are yardsticks for the benchmark and not rebuilds of them (that is
 `pipeline/configs/smooth50_repro.toml`). A change has to beat them here before it is worth anything.
+
+P06's grid configs live in `configs/p06/`, named `p06s1_t{TTT}_d{DDD}.toml` for Stage 1: the hmm decoder with
+`switch_team` TTT and `switch_dead` DDD (zero-padded to three digits), `nearest_player` at confidence 0.78 and
+`ball_presence` at its defaults. The 24 files cross `switch_dead` d in {4, 8, 16, 32, 64, 128} with `switch_team` in
+{d/4, d/2, d, 2d} (R006). Stage 2 is `p06s2_t{TTT}_d{DDD}_mp{MMM}_md{NNN}.toml` (90 files, with `min_possession` MMM and
+`min_dead` NNN added), Stage 2b `p06s2b_t{TTT}_d{DDD}_mp{MMM}_md001.toml` (15 files) and the four controls
+`p06ctl_{seen_off,margin50,d008,d128}.toml`, each the chosen `pipeline/configs/p06_hmm.toml` with one thing changed
+(R007).
 
 ### The two truths
 
@@ -466,6 +475,69 @@ renamed over the old report; the same inputs, seed and versions give the same by
 | `halves` | the counts everything above was made from, per half: `n_gt`, `n_pred`, `tp` at each IoU, the 3x4 `confusion` of the unfilled codes |
 | `versus` | null for the reference; for the others, the comparison with it for `spell_f1_mean` and `macro_f1` (`score.compare`: deltas, interval, p, wins, losses, by competition, and whether the interval excludes 0) and the reference's name and config hash. It is the one field that depends on which other configs were run |
 
+## Headroom
+
+What would a perfect dead-ball detector, or a perfect possessor, be worth to a decoder that is already there? Before
+building P05 or P04 it is worth knowing how much of the score each could ever deliver. `headroom.py` runs a config on
+the benchmark beside five variants of it whose evidence is the truth itself:
+
+```
+.venv/Scripts/python pipeline/benchmark/headroom.py CONFIG [--profile P] [--seeds N] [--truth raw|coarse] [--matches ID ...] [--data-dir D] [--write]
+```
+
+`CONFIG` is the reference, run from its own file as it is, and needs exactly one `nearest_player` source (the home
+variants replace it). The runner's table then says, against it, what each variant gains:
+
+| config | evidence |
+|---|---|
+| `<stem>__alive` | CONFIG's own, plus `oracle_alive`: a perfect dead-ball detector |
+| `<stem>__home_visible` | `nearest_player` replaced by `oracle_home_visible`: the true possessor on the frames where the tracking has the ball, nothing where it does not |
+| `<stem>__home_all` | `nearest_player` replaced by `oracle_home_all`: the true possessor on every live frame, the ball seen or not |
+| `<stem>__alive_home_visible` | both of the above |
+| `<stem>__alive_home_all` | both, whole: the truth itself, which a decoder free to follow it reproduces (exactly 1.0 on all three scores for an hmm with switch penalties near 0 and minimums of 1) |
+
+The oracles are exact: `oracle_alive` is 1 on the truth's `H` and `A` and 0 on its `D`; the home oracles are 1 on `H`
+and 0 on `A`, the visible one only where `atd.ball_present` (as the profile degraded it, so the ball is missing where
+ours was), and every channel they do not speak on is NaN. A source that replaces `nearest_player` keeps its weight,
+takes the name of its own kind and none of its parameters; `oracle_alive` is added after the config's own sources, at
+weight 1. To the hmm decoder a perfect source is about 13.8 nats a frame at the default `eps`, so the table is a bound
+on what the evidence could give this config and its penalties, and not an estimate of what a real source will.
+
+- **The truth reaches the oracles by closure, never through the inputs.** It is `truth.truth_codes` of the match that
+  the runner itself loaded (`truth.coarse_codes` of it under `--truth coarse`), found by `run.inputs.game`, so the
+  oracle and the score agree on which truth it is. Without `matches` the runner is handed a `Mapping` that loads each
+  DFL match when asked, one at a time, and keeps none, so a headroom run needs what any other needs.
+- **Oracles exist only while a run lasts.** `registered` puts them into `pipeline.evidence.REGISTRY` for the length of
+  the call and restores the registry afterwards, a run that raises included. Importing `headroom.py` registers nothing,
+  and a config that names an oracle does not load outside it. `pipeline/decode/` and `pipeline/evidence/` know nothing
+  of it.
+- **The variants are files.** Written as TOML into `<data dir>/runs/benchmark/headroom/configs/<stem>__<variant>.toml`,
+  a fixed folder, so a config's path and text (both are in its report) and its report's bytes are the same on every
+  run. A file that already holds exactly the bytes is not written again, not even touched: the texts are the same under
+  both truths, so the raw and the coarse run can go side by side, which they could not if each replaced files that the
+  other has open (Windows refuses that). A parameter that is not a str, int, float or bool (the flat tables that
+  `Config` holds) is refused by name before any file is written, and so is a config without one `nearest_player`. What
+  only the runner knows (an unknown profile, say) is refused by it, after the variants are written.
+- **Reports** are written only with `--write`, and only for the five variants, as the runner writes them
+  (`<stem>__<variant>[.<truth>][.m-<ids>][.s<n>].json` under `<data dir>/runs/benchmark/<profile>/`). `CONFIG`'s own
+  report is `run.py`'s to write: it holds the comparison with whichever configs it was run beside, which a headroom run
+  cannot reproduce, so a headroom run never writes or replaces it.
+
+Read it as an upper bound and a loose one: no real detector is perfect, and these two do not need the ball, which a
+real one would. It says where not to spend time (a small gap is a small prize) and in which order to think about the
+work. Run it under both truths and read the two together, as for any comparison, and across the seven matches rather
+than in the pooled number alone. Nothing here is a config to submit. The checks that pin it are
+`test_headroom_variants_and_order`, `test_headroom_full_oracle_is_perfect`,
+`test_headroom_coarse_truth_reaches_the_oracles`, `test_headroom_oracles_say_what_the_truth_says`,
+`test_headroom_visible_oracle_follows_the_degraded_ball`, `test_headroom_restores_the_registry`,
+`test_headroom_never_in_production`, `test_headroom_variants_round_trip_what_config_holds`,
+`test_headroom_toml_writer_reads_back_as_written`, `test_headroom_refuses_what_it_cannot_make_variants_of`,
+`test_headroom_a_second_write_leaves_the_variants_alone`,
+`test_headroom_a_write_that_loses_a_race_for_the_same_bytes_is_not_an_error`,
+`test_headroom_loads_each_match_once_and_keeps_none`,
+`test_headroom_writes_the_variants_reports_only_when_asked_and_never_the_references` and
+`test_headroom_command_line_prints_the_table_and_the_report_lines`, all in `checks/headroom.py` and all synthetic.
+
 ## The checks
 
 ```
@@ -474,22 +546,24 @@ renamed over the old report; the same inputs, seed and versions give the same by
 .venv/Scripts/python pipeline/benchmark/selftest.py --data   # + our own match (aggregates only; minutes)
 ```
 
-The synthetic run is 272 checks and took 49 to 115 s; `--dfl --data` is 295 (16 with `--dfl`, 7 with `--data`) and took
-949 s (15 min 49 s) with the seven DFL caches and the Calibration rebuilt after an edit to `dfl.py` and `calibration.py`
-(A05, 2026-10-23, `fdc5eae`). The machine's load decides, and the first run on a machine also builds the caches (A05).
+The synthetic run is 288 checks (P06's added 16 to the 272 of A05). Its time, 49 to 115 s, is as of A05 and not
+measured again. `--dfl` and `--data` are as of A05 (2026-10-23, `fdc5eae`), when the synthetic run was 272 checks:
+`--dfl` added 16 and `--data` 7, and all of them (295 checks then) took 949 s (15 min 49 s) with the seven DFL caches
+and the Calibration rebuilt after an edit to `dfl.py` and `calibration.py`. The machine's load decides, and the first
+run on a machine also builds the caches (A05).
 
 The checks live in `pipeline/benchmark/checks/`, one module per topic, listed in `checks.MODULES` (the folder's
 `__init__.py` says what each holds): `sources`, `dfl`, `truth`, `inputs`, `score`, `run`, `hazard`, `calibration`,
-`degrade`, `cap`, `tracking`, `context`, `fidelity` and `harness` (the harness itself). The profiles' are `degrade` (the
-transplant worked out exactly, determinism, what the `gaps` profile touches and what it does not, no truth, the order of
-the matches), `tracking` (the tracklets, the episodes, the NaN-speed runs and the smoothing worked out exactly, and how
-it nests in `gaps`), `cap` (the low-count tail's cap, its shortest-piece rule and the scale of the tracked spans),
-`context` (what the hazard is given, the chance, the class, third and durations read at the at-risk frame, the counts of
-its record on hand-built halves, the odds rescale and the frozen scale) and `fidelity` (every gate and check worked out
-by other code, pooling by sums, the exit code, the pending gates, the full-strength frames of the count gates and the
-gate kinds). The one that anchors the rest is `test_dfl_oracle_scores_perfectly`: an evidence source that is the truth
-itself, decoded by `majority_vote` with half-width 0, must score exactly 1.0 on spellF1, macroF1 and alive/dead F1 on
-every one of the seven matches.
+`degrade`, `cap`, `tracking`, `context`, `fidelity`, `headroom` (the Headroom section's) and `harness` (the harness
+itself). The profiles' are `degrade` (the transplant worked out exactly, determinism, what the `gaps` profile touches
+and what it does not, no truth, the order of the matches), `tracking` (the tracklets, the episodes, the NaN-speed runs
+and the smoothing worked out exactly, and how it nests in `gaps`), `cap` (the low-count tail's cap, its shortest-piece
+rule and the scale of the tracked spans), `context` (what the hazard is given, the chance, the class, third and
+durations read at the at-risk frame, the counts of its record on hand-built halves, the odds rescale and the frozen
+scale) and `fidelity` (every gate and check worked out by other code, pooling by sums, the exit code, the pending gates,
+the full-strength frames of the count gates and the gate kinds). The one that anchors the rest is
+`test_dfl_oracle_scores_perfectly`: an evidence source that is the truth itself, decoded by `majority_vote` with
+half-width 0, must score exactly 1.0 on spellF1, macroF1 and alive/dead F1 on every one of the seven matches.
 
 **What the oracle checks, and what it cannot.** It checks the chain from the *loaded match* to the score: the runner,
 `MatchInputs` and the separator rows between the halves, both halves and each one's first and last row, the decoder path

@@ -1,0 +1,34 @@
+# P06 Stage 2b, one point of the edge extension: switch_team 4, switch_dead 32, min_possession 75, min_dead 1 (R007).
+# Stage 2b: edge extension.
+#
+# The best raw config of Stage 2 (p06s2_t008_d032_mp050_md*, R007) sat on three edges of Stage 2's grid: the lowest
+# switch_team (8 of {8, 16, 32}), the lowest switch_dead (32 of {32, 64, 128}) and the highest min_possession (50 of
+# {1, 6, 12, 25, 50}). By a ruling declared before this extension's results (the analogue of Stage 1's edge rule,
+# capped at one extension), the 15 files p06s2b_t<TTT>_d<DDD>_mp<MMM>_md001.toml cross switch_team t in {4, 8} x
+# switch_dead d in {16, 32} x min_possession in {50, 75, 100, 150} frames, with min_dead 1 (in all 45 pairs of
+# Stage 2, min_dead 1 and 25 print the same numbers under both truths); (t 8, d 32, mp 50) is left out because Stage 2
+# ran it. All numbers are zero-padded to 3 digits in the names. The files differ in the description and in these three
+# numbers, and in nothing else: nearest_player at 0.78 (A01, fixed, never tuned), ball_presence at its by-rule defaults
+# (A01, fixed) and the hmm decoder. Chosen on the benchmark by P06's protocol (docs/results.md R006, R007), never on the
+# public window (docs/traps.md T01), and never by retuning a degradation (T37).
+
+description = "P06 Stage 2b (R007): hmm decoder, switch_team = 4 nats, switch_dead = 32 nats, min_possession = 75 frames, min_dead = 1 frames, nearest_player at confidence 0.78 and ball_presence at its defaults, decoded per half."
+seed = 0
+scope = "halves"
+
+[[evidence]]
+kind = "nearest_player"
+confidence = 0.78    # the share of in-play, ball-visible frames on which the nearest player's team is right (A01)
+
+[[evidence]]
+kind = "ball_presence"
+margin = 0           # frames: every missing frame speaks
+missing = 0.2        # P(alive) where the ball is missing: a likelihood ratio of 4 for dead (A01, rounded down)
+seen = 0.585         # P(alive) where the ball is seen: a ratio of 1.41 for alive (A01)
+
+[decoder]
+kind = "hmm"
+switch_team = 4      # nats a change of team (H <-> A) costs
+switch_dead = 32     # nats a change into or out of D costs
+min_possession = 75  # frames: no run of H or A shorter than this (1 is no minimum)
+min_dead = 1         # frames: no run of D shorter than this (1 is no minimum)
