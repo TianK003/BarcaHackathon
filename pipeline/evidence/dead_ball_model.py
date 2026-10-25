@@ -24,7 +24,8 @@ What it does, in order
 3. Predict. For `hgb` a row goes left where x <= threshold, or where x is NaN and `missing_left`, and stops at a leaf;
    the raw score is the baseline plus the leaf values summed in tree order, which is scikit-learn's own order, so the
    probabilities agree with `predict_proba` to rounding (the trainer's check holds them to 1e-12). The walk is
-   pipeline/evidence/trees.py's, which checks the trees on load and walks them. NaN features are
+   pipeline/evidence/trees.py's, which checks the trees on load and walks them, and which also reads the file, checks
+   its header and keeps the raw scores per Inputs for every learned source. NaN features are
    handled where the trees were fitted to handle them: the tracker's missing ball is the commonest feature value of the
    match (A01). For `logistic` it is the linear predictor on the imputed, standardised features.
 4. Correct for the prior. The classifier's p is calibrated to the training set's alive share (`prior_alive`, about 0.55
@@ -48,22 +49,17 @@ benchmark stage that share a model walk the trees once. A threshold of +inf (sci
 stored as the largest float, which is exact for finite features; an infinite feature value is therefore refused.
 """
 
-import json
 import numbers
-import os
 import weakref
 
 import numpy as np
 
-import pipeline
 from pipeline.contracts import Evidence, no_opinion
 from pipeline.evidence import play_features, trees
 
 # Params
-FORMAT = 1
 KINDS = ("hgb", "logistic")
 TRAINER = "pipeline/benchmark/train_dead_ball.py"      # path form: the benchmark-import scan reads dotted names
-MAX_MIN_PROB = 0.5                                     # min_prob must stay below this, or the clip would invert
 
 _MEMO = weakref.WeakKeyDictionary()                     # Inputs -> {(path, size, mtime, model key): raw scores}
 _CACHE = {}                                            # absolute path -> ((size, mtime_ns), parsed artifact)
@@ -71,8 +67,8 @@ _CACHE = {}                                            # absolute path -> ((size
 
 def compute(run, *, model, min_prob=0.001):
     """Evidence(alive = the model's likelihood of an alive ball, prior-corrected and clipped; home = NaN)."""
-    min_prob = _min_prob(min_prob)
-    path = _model_path(model)
+    min_prob = trees.check_min_prob(min_prob, "dead_ball_model")
+    path = trees.model_path(model, "dead_ball_model", "pipeline/models/dead_ball_hgb.json")
     artifact = load(path)
 
     inputs = run.inputs
@@ -81,7 +77,8 @@ def compute(run, *, model, min_prob=0.001):
     score = _raw_scores(inputs, path, key, chosen)               # the model's own log-odds, NaN outside the blocks
     graded = ~np.isnan(score)
     alive = np.full(len(score), np.nan)
-    alive[graded] = np.clip(_sigmoid(score[graded] - _logit(chosen["prior_alive"])), min_prob, 1.0 - min_prob)
+    alive[graded] = np.clip(trees.sigmoid(score[graded] - _logit(chosen["prior_alive"])), min_prob,
+                            1.0 - min_prob)
     alive[play_features.pre_kickoff_mask(inputs) & graded] = play_features.PRE_KICKOFF_ALIVE
     alive.flags.writeable = False
     return Evidence(alive=alive, home=no_opinion(len(score)))
@@ -96,22 +93,16 @@ def _raw_scores(inputs, path, key, model):
     are cheap, are applied after it. The memo is a WeakKeyDictionary on the Inputs object, as play_features' is, and
     dies with it; the arrays in it are read-only.
     """
-    stat = os.stat(path)
-    memo = _MEMO.setdefault(inputs, {})
-    stamp = (path, stat.st_size, stat.st_mtime_ns, key)
-    if stamp not in memo:
+    def build():
         _, X = play_features.features(inputs)
         graded = ~np.isnan(X[:, play_features.COLUMN["ball_missing"]])    # rows outside every graded block are NaN
         score = np.full(len(X), np.nan)
         if graded.any():
-            if np.isinf(X[graded]).any():
-                raise ValueError("dead_ball_model: a feature of {} is infinite; the trees are exact for finite values "
-                                 "and NaN only, and play_features gives no other".format(inputs.game))
+            trees.check_finite(X[graded], "dead_ball_model", inputs.game, "play_features")
             score[graded] = raw_score(model, X[graded])
-        score.flags.writeable = False
-        memo.clear()                      # one model at a time per Inputs: a file that changed leaves nothing behind
-        memo[stamp] = score
-    return memo[stamp]
+        return score
+
+    return trees.remember(_MEMO, inputs, path, key, build)
 
 
 def predict(model, X):
@@ -120,7 +111,7 @@ def predict(model, X):
     Numpy only. `model` is an entry of `folds` or `full`: the `hgb` ones hold `baseline` and `trees`, the `logistic`
     ones `coef` and its companions (train_dead_ball.py documents both).
     """
-    return _sigmoid(raw_score(model, X))
+    return trees.sigmoid(raw_score(model, X))
 
 
 def raw_score(model, X):
@@ -139,49 +130,19 @@ def raw_score(model, X):
 
 def load(path):
     """The parsed, checked artifact at `path`, remembered while its size and modification time are the same."""
-    try:
-        stat = os.stat(path)
-    except OSError as error:
-        raise ValueError("dead_ball_model: cannot read the model file {} ({}); train it with `python {} --model "
-                         "hgb` (or logistic), or fix `model` in the config".format(path, error.strerror, TRAINER)) \
-            from error
-    stamp = (stat.st_size, stat.st_mtime_ns)
-    cached = _CACHE.get(path)
-    if cached is not None and cached[0] == stamp:
-        return cached[1]
-    try:
-        with open(path, encoding="utf-8") as handle:
-            artifact = json.load(handle)
-    except (OSError, ValueError) as error:
-        raise ValueError("dead_ball_model: {} is not a JSON model file ({}); retrain it with `python {} --model "
-                         "hgb`".format(path, error, TRAINER)) from error
-    _check(artifact, path)
-    _CACHE[path] = (stamp, artifact)
-    return artifact
+    return trees.load_artifact(
+        path, "dead_ball_model", _check, _CACHE,
+        unreadable="train it with `python {} --model hgb` (or logistic), or fix `model` in the config".format(TRAINER),
+        not_json="retrain it with `python {} --model hgb`".format(TRAINER))
 
 
 def _check(artifact, path):
     """ValueError naming the file, what differs and the trainer command, unless it is a model of these features."""
-    retrain = "retrain it with `python {} --model hgb` (or logistic)".format(TRAINER)
-    if not isinstance(artifact, dict):
-        raise ValueError("dead_ball_model: {} holds no model object; {}".format(path, retrain))
-    if artifact.get("format") != FORMAT:
-        raise ValueError("dead_ball_model: {} has format {!r} and this reader's is {}; {}"
-                         .format(path, artifact.get("format"), FORMAT, retrain))
-    if artifact.get("feature_version") != play_features.FEATURE_VERSION:
-        raise ValueError("dead_ball_model: {} was trained on feature_version {!r} and play_features is at {}; {}"
-                         .format(path, artifact.get("feature_version"), play_features.FEATURE_VERSION, retrain))
-    if artifact.get("features") != list(play_features.FEATURE_NAMES):
-        raise ValueError("dead_ball_model: the features of {} are not play_features' ({} columns, in that order); {}"
-                         .format(path, len(play_features.FEATURE_NAMES), retrain))
-    if artifact.get("kind") not in KINDS:
-        raise ValueError("dead_ball_model: the kind of {} is {!r}, not one of {}; {}"
-                         .format(path, artifact.get("kind"), ", ".join(KINDS), retrain))
-    if not isinstance(artifact.get("folds"), dict) or "full" not in artifact:
-        raise ValueError("dead_ball_model: {} needs `folds` (a model per held-out match) and `full`; {}"
-                         .format(path, retrain))
-    for name, model in list(artifact["folds"].items()) + [("full", artifact["full"])]:
-        _check_model(artifact["kind"], model, "{} of {}".format(name, path))
+    trees.check_artifact(artifact, path, "dead_ball_model",
+                         "retrain it with `python {} --model hgb` (or logistic)".format(TRAINER),
+                         source="play_features", version=play_features.FEATURE_VERSION,
+                         names=play_features.FEATURE_NAMES, kinds=KINDS,
+                         check_model=lambda model, where: _check_model(artifact["kind"], model, where))
 
 
 def _check_model(kind, model, where):
@@ -221,27 +182,5 @@ def _logistic_score(model, X):
     return z
 
 
-def _sigmoid(z):
-    """1 / (1 + exp(-z)) without overflow: 0.5 at 0, and 0 or 1 (not NaN) far out on either side."""
-    z = np.asarray(z, dtype=np.float64)
-    e = np.exp(-np.abs(z))
-    return np.where(z >= 0, 1.0 / (1.0 + e), e / (1.0 + e))
-
-
 def _logit(p):
     return float(np.log(p / (1.0 - p)))
-
-
-def _min_prob(value):
-    if isinstance(value, bool) or not isinstance(value, numbers.Real) or not 0.0 < value < MAX_MIN_PROB:
-        raise ValueError("dead_ball_model: min_prob must be a number above 0 and below {}, got {!r}"
-                         .format(MAX_MIN_PROB, value))
-    return float(value)
-
-
-def _model_path(model):
-    """The absolute path of `model`, a string relative to the repository root (an absolute one is used as it is)."""
-    if not isinstance(model, str) or not model:
-        raise ValueError("dead_ball_model: model must be the path of a model file relative to the repository root, "
-                         "such as \"pipeline/models/dead_ball_hgb.json\", got {!r}".format(model))
-    return os.path.abspath(os.path.join(pipeline.ROOT, model))

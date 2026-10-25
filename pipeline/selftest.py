@@ -2473,6 +2473,394 @@ def test_shape_features_speed():
     assert elapsed < 6.0, "{:.2f} s for 160,000 frames x 30 slots (the budget is 6 s)".format(elapsed)
 
 
+# -- the shape possession source (P07) --------------------------------------------------------------------------------
+#
+# Hand-made artifacts whose trees are stumps on the shape features, so that every number is worked out here and not by
+# the trainer. A stump on adv_gap with the baseline 0.7 and the leaves -1.0 (gap <= 0) and 2.0 (gap > 0) is not
+# antisymmetric by itself (its sigmoid is not); the source's (r(x) - r(swap(x))) / 2 makes it so, and cancels the
+# baseline: +-1.5 where the gap has a sign, 0 where it is 0 or NaN.
+
+SHAPE_TRAINER = "pipeline/benchmark/train_shape.py"
+STUMP_LOGIT = 1.5
+
+
+def shape_model(baseline, left, right, feature="adv_gap", threshold=0.0, missing_left=0, prior=0.5):
+    return {"baseline": baseline, "prior_home": prior,
+            "trees": [stump(SHAPE_COLUMN[feature], threshold, left, right, missing_left)]}
+
+
+def write_shape_model(folder, folds=None, full=None, name="shape_hgb.json", **changes):
+    import json
+    from pipeline.evidence import shape_features
+    artifact = {"format": 1, "kind": "hgb", "feature_version": shape_features.FEATURE_VERSION,
+                "features": list(SHAPE_NAMES), "profile": "tracking", "seeds": 3, "stride": 5, "provenance": {},
+                "folds": {"FOLD1": shape_model(-0.2, 1.0, -1.0)} if folds is None else folds,
+                "full": shape_model(0.7, -1.0, 2.0) if full is None else full}
+    artifact.update(changes)
+    return write_text(folder, name, json.dumps(artifact, sort_keys=True) + "\n")
+
+
+def shape_home(inputs, path, game="BAR-ATH", **values):
+    from pipeline.contracts import RunContext, check_evidence
+    from pipeline.evidence import REGISTRY
+    inputs.game = game
+    evidence = REGISTRY["shape_possession"](RunContext(inputs=inputs, seed=0), model=path, **values)
+    check_evidence(evidence, len(inputs.atd.ball_xy))
+    assert np.isnan(evidence.alive).all(), "shape_possession has no opinion on whether the ball is alive"
+    assert not (evidence.home.flags.writeable or evidence.alive.flags.writeable), "the arrays are read-only"
+    return evidence.home
+
+
+def stump_home(X, magnitude=STUMP_LOGIT, min_prob=0.02):
+    """The home probability of a stump on adv_gap, worked out from the gap alone: sign(gap) * magnitude as a logit,
+    0 where the gap is 0 or NaN, then clipped."""
+    gap = X[:, SHAPE_COLUMN["adv_gap"]]
+    logit_home = np.where(np.isnan(gap), 0.0, np.sign(gap)) * magnitude
+    return np.clip(1.0 / (1.0 + np.exp(-logit_home)), min_prob, 1.0 - min_prob)
+
+
+def someone_present(players):
+    return (~np.isnan(players[:, :, 0])).any(axis=1)
+
+
+def block_mask(n, graded):
+    mask = np.zeros(n, dtype=bool)
+    for _, start, stop in graded:
+        mask[start:stop] = True
+    return mask
+
+
+def test_shape_possession_values():
+    # logit(home) = (r(x) - r(swap(x))) / 2: the baseline cancels, so no prior is ever corrected for
+    with tempfile.TemporaryDirectory() as root:
+        for baseline in (0.7, -3.0, 0.0):
+            path = write_shape_model(root, full=shape_model(baseline, -1.0, 2.0))
+            for seed in (0, 1, 3, 5):
+                players, teams, graded = shape_scene(seed)
+                home = shape_home(shape_inputs(players, teams, graded), path, scope="all")
+                X = shape_matrix(players, teams, graded)
+                known = ~np.isnan(home)
+                assert known.sum() > 100 and (np.abs(home[known] - 0.5) > 0.2).any()
+                assert np.allclose(home[known], stump_home(X)[known], rtol=0, atol=1e-12), (baseline, seed)
+        # a model that gives every row the same leaf has no opinion to give: exactly 0.5, whatever its baseline
+        flat = write_shape_model(root, full=shape_model(2.5, 0.8, 0.8), name="flat.json")
+        home = shape_home(shape_inputs(*shape_scene(0)), flat, scope="all")
+        assert (home[~np.isnan(home)] == 0.5).all() and (~np.isnan(home)).any()
+
+
+def test_shape_possession_is_antisymmetric():
+    from pipeline.evidence import shape_features, trees
+    with tempfile.TemporaryDirectory() as root:
+        # none of the three trees is symmetric: one reads the home block only, one the away block only, one the gap
+        lopsided = {"baseline": 0.9, "prior_home": 0.5, "trees": [
+            stump(SHAPE_COLUMN["h_adv_mean"], 50.0, -0.8, 1.7, missing_left=1),
+            stump(SHAPE_COLUMN["a_vel_adv"], 0.0, 0.6, -0.3),
+            stump(SHAPE_COLUMN["adv_gap"], 0.0, -1.0, 2.0)]}
+        path = write_shape_model(root, full=lopsided)
+        for seed in range(8):
+            players, teams, graded = shape_scene(seed)
+            home = shape_home(shape_inputs(players, teams, graded), path, scope="all")
+            relabelled = shape_home(shape_inputs(players, 1 - teams, graded), path, scope="all")
+            known = ~np.isnan(home)
+            assert known.sum() > 100 and np.array_equal(known, ~np.isnan(relabelled)), seed
+            assert np.allclose(home[known], 1.0 - relabelled[known], rtol=0, atol=1e-12), \
+                "seed {}: relabelling the teams is not 1 - home".format(seed)
+            # the check has teeth: the trees alone, run on the two labellings, are not antisymmetric
+            X = shape_matrix(players, teams, graded)[known]
+            alone = 1.0 / (1.0 + np.exp(-trees.score(lopsided, X)))
+            alone_relabelled = 1.0 / (1.0 + np.exp(-trees.score(lopsided, shape_features.swap(X))))
+            assert np.abs(alone - (1.0 - alone_relabelled)).max() > 0.05, "the model is symmetric on its own"
+
+
+def test_shape_possession_scope():
+    with tempfile.TemporaryDirectory() as root:
+        path = write_shape_model(root)
+        rng = np.random.default_rng(11)
+        for seed in (0, 2, 3, 6):
+            players, teams, graded = shape_scene(seed)
+            n = len(players)
+            players[60:70] = np.nan                         # both teams gone for ten frames of the first block
+            ball = rng.random((n, 2)) * PLAY_PITCH
+            ball[rng.random(n) < 0.4] = np.nan
+            ball[:6] = ball[130:140] = np.nan               # ungraded frames, with players and no ball
+            inputs = shape_inputs(players, teams, graded, ball)
+            graded_rows = block_mask(n, graded)
+            someone = someone_present(players)
+            seen = ~np.isnan(ball[:, 0])
+            assert (graded_rows & someone & seen).any() and (graded_rows & someone & ~seen).any()
+            assert (graded_rows & ~someone).any() and (~graded_rows & someone & ~seen).any()
+            home_all = shape_home(inputs, path, scope="all")
+            assert np.array_equal(~np.isnan(home_all), graded_rows & someone), seed
+            home_gaps = shape_home(inputs, path, scope="gaps")
+            assert np.array_equal(~np.isnan(home_gaps), graded_rows & someone & ~seen), seed
+            assert np.array_equal(shape_home(inputs, path), home_gaps, equal_nan=True), "gaps is the default"
+            both = ~np.isnan(home_gaps)
+            assert np.array_equal(home_all[both], home_gaps[both]), "the scope only chooses where to speak"
+        # a team that is absent says nothing, but the other team's presence still gives an opinion (seed 3)
+        players, teams, graded = shape_scene(3)
+        X = shape_matrix(players, teams, graded)
+        lonely = (X[:, SHAPE_COLUMN["h_n"]] == 0) & (X[:, SHAPE_COLUMN["a_n"]] > 0)
+        assert lonely.any()
+        home = shape_home(shape_inputs(players, teams, graded), path, scope="all")
+        assert not np.isnan(home[lonely]).any()
+
+
+def test_shape_possession_fold_choice():
+    with tempfile.TemporaryDirectory() as root:
+        folds = {"FOLD1": shape_model(0.0, 1.0, -1.0), "FOLD2": shape_model(0.0, 3.0, -3.0)}
+        path = write_shape_model(root, folds=folds, full=shape_model(0.0, -1.0, 1.0))
+        players, teams, graded = shape_scene(0)
+        X = shape_matrix(players, teams, graded)
+        inputs = shape_inputs(players, teams, graded)
+        values = dict(scope="all", min_prob=0.0001)
+        full = shape_home(inputs, path, **values)
+        known = ~np.isnan(full)
+        assert np.allclose(full[known], stump_home(X, 1.0, 0.0001)[known], rtol=0, atol=1e-12)
+        side = np.sign(X[:, SHAPE_COLUMN["adv_gap"]])[known]                     # +1 home ahead, -1 away, 0/NaN mute
+        assert (side == 1).any() and (side == -1).any(), "the scene must give the models something to disagree on"
+        for game, magnitude in (("FOLD1", -1.0), ("FOLD2", -3.0)):
+            fold = shape_home(inputs, path, game=game, **values)
+            assert np.array_equal(known, ~np.isnan(fold))
+            expected = 1.0 / (1.0 + np.exp(-np.where(np.isnan(side), 0.0, side) * magnitude))
+            assert np.allclose(fold[known], expected, rtol=0, atol=1e-12), "{} is the fold of its own game".format(game)
+        for game in ("BAR-ATH", "NOT-IN-FOLDS", "full"):
+            other = shape_home(inputs, path, game=game, **values)
+            assert np.array_equal(other, full, equal_nan=True), "{}: a game with no fold gets `full`".format(game)
+        # the file is read again when it changes
+        write_shape_model(root, folds=folds, full=shape_model(0.0, 5.0, -5.0))
+        changed = shape_home(inputs, path, **values)
+        expected = 1.0 / (1.0 + np.exp(5.0 * np.where(np.isnan(side), 0.0, side)))
+        assert np.allclose(changed[known], expected, rtol=0, atol=1e-12)
+
+
+def test_shape_possession_rejects_bad_artifacts():
+    import json
+    from pipeline.evidence import shape_features
+    with tempfile.TemporaryDirectory() as root:
+        inputs = shape_inputs(*shape_scene(0))
+        renamed = list(SHAPE_NAMES)
+        renamed[3] = "h_adv_p95"
+        good = shape_model(0.0, -1.0, 1.0)
+
+        def refused(path, *fragments):
+            return expect_error(ValueError, lambda: shape_home(inputs, path), "shape_possession", SHAPE_TRAINER,
+                                *fragments)
+
+        for label, changes in (("format", {"format": 2}), ("format", {"format": None}),
+                               ("feature_version", {"feature_version": 2}),
+                               ("feature_version", {"feature_version": shape_features.FEATURE_VERSION + 1}),
+                               ("features", {"features": list(SHAPE_NAMES)[::-1]}), ("features", {"features": renamed}),
+                               ("features", {"features": list(SHAPE_NAMES)[:-1]}),
+                               ("features", {"features": ["a"] * 30}),
+                               ("kind", {"kind": "logistic"}), ("kind", {"kind": None}),
+                               ("folds", {"folds": [good]}), ("folds", {"folds": "FOLD1"})):
+            refused(write_shape_model(root, name="other.json", **changes), label)
+        refused(write_text(root, "list.json", "[1, 2]"), "model object")
+        for bad in (0.6, 0.0, 1.0, -0.5, True, "0.5", None):
+            refused(write_shape_model(root, full=dict(good, prior_home=bad), name="prior.json"), "prior_home", "full")
+            refused(write_shape_model(root, folds={"FOLD1": dict(good, prior_home=bad)}, name="prior.json"),
+                    "prior_home", "FOLD1")
+        no_prior = dict(good)
+        no_prior.pop("prior_home")
+        refused(write_shape_model(root, full=no_prior, name="noprior.json"), "prior_home")
+        ragged = shape_model(0.0, -1.0, 1.0)
+        ragged["trees"][0]["left"] = [1, 0]                      # arrays of unequal lengths
+        refused(write_shape_model(root, full=ragged, name="ragged.json"), "tree 0", "full")
+        wide = shape_model(0.0, -1.0, 1.0)
+        wide["trees"][0]["feature"][0] = len(SHAPE_NAMES)        # a column the features do not have
+        refused(write_shape_model(root, folds={"FOLD1": wide}, name="wide.json"), "tree 0", "FOLD1")
+        refused(write_shape_model(root, full=dict(good, baseline=None), name="nobase.json"), "baseline")
+        no_full = json.loads(open(write_shape_model(root), encoding="utf-8").read())
+        no_full.pop("full")
+        refused(write_text(root, "nofull.json", json.dumps(no_full)), "full")
+        refused(os.path.join(root, "absent.json"), "absent.json")
+        write_text(root, "text.json", "not json at all")
+        refused(os.path.join(root, "text.json"), "text.json")
+        # dead_ball_model's file is a model of other features: it must not load here
+        refused(write_model(root, name="dead.json"), "features")
+
+
+def test_shape_possession_parameters():
+    from pipeline.contracts import RunContext
+    from pipeline.evidence import REGISTRY
+    with tempfile.TemporaryDirectory() as root:
+        path = write_shape_model(root)
+        players, teams, graded = shape_scene(3)         # the home team is gone from the second block
+        inputs = shape_inputs(players, teams, graded)
+        for bad in ("GAPS", "", "none", None, True, 1, ["gaps"]):
+            expect_error(ValueError, lambda: shape_home(inputs, path, scope=bad), "shape_possession", "scope", "gaps",
+                         "all")
+        for bad in (0.0, 0.5, 0.6, -0.1, True, False, "0.1", None, float("nan"), float("inf")):
+            expect_error(ValueError, lambda: shape_home(inputs, path, min_prob=bad), "shape_possession", "min_prob")
+        for bad in (None, 5, "", True):
+            expect_error(ValueError, lambda: shape_home(inputs, bad), "shape_possession", "model")
+        expect_error(TypeError, lambda: REGISTRY["shape_possession"](RunContext(inputs=inputs, seed=0)), "model")
+        shape_home(inputs, path, scope="all", min_prob=np.float64(0.25))        # numpy numbers from a sweep are fine
+        shape_home(inputs, path, scope="gaps", min_prob=0.001)
+        # the defaults are the design's: scope "gaps", min_prob 0.02
+        assert np.array_equal(shape_home(inputs, path), shape_home(inputs, path, scope="gaps", min_prob=0.02),
+                              equal_nan=True)
+        # the clip: a score far out is held at min_prob and 1 - min_prob, and a mute row gets 0.5
+        extreme = write_shape_model(root, full=shape_model(0.0, -40.0, 40.0), name="extreme.json")
+        gap = shape_matrix(players, teams, graded)[:, SHAPE_COLUMN["adv_gap"]]
+        assert (gap > 0).any() and (gap < 0).any() and (np.isnan(gap) & block_mask(len(gap), graded)).any()
+        for min_prob in (0.02, 0.1, 0.4):
+            home = shape_home(inputs, extreme, scope="all", min_prob=min_prob)
+            known = ~np.isnan(home)
+            assert known.any() and home[known].min() >= min_prob and home[known].max() <= 1.0 - min_prob
+            assert np.allclose(home[known & (gap > 0)], 1.0 - min_prob, rtol=0, atol=1e-12)
+            assert np.allclose(home[known & (gap < 0)], min_prob, rtol=0, atol=1e-12)
+            assert np.array_equal(home[known & ~(np.abs(gap) > 0)], np.full((known & ~(np.abs(gap) > 0)).sum(), 0.5))
+        home = shape_home(inputs, path, scope="all")
+        assert home.dtype == np.float64 and home.shape == (len(players),)
+
+
+def test_shape_possession_reads_read_only_inputs():
+    from pipeline.evidence import shape_features
+    with tempfile.TemporaryDirectory() as root:
+        path = write_shape_model(root)
+        players, teams, graded = shape_scene(5)
+        inputs = shape_inputs(players, teams, graded, np.full((len(players), 2), np.nan))
+        arrays = [inputs.atd.players_xy, inputs.atd.ball_xy, inputs.atd.slot_team]
+        saved = [array.copy() for array in arrays]
+        for array in arrays:
+            array.flags.writeable = False
+        before = shape_features.features(inputs)[1].copy()
+        first = shape_home(inputs, path)
+        for array, copy in zip(arrays, saved):
+            assert np.array_equal(array, copy, equal_nan=True), "the source must not write to the inputs"
+        assert np.array_equal(shape_features.features(inputs)[1], before, equal_nan=True), "the features were changed"
+        second = shape_home(inputs, path)
+        assert np.array_equal(first, second, equal_nan=True), "a second call on the same inputs gives other numbers"
+
+
+def test_shape_possession_remembers_its_scores_per_inputs():
+    from pipeline.evidence import trees
+    with tempfile.TemporaryDirectory() as root:
+        path = write_shape_model(root)
+        inputs = shape_inputs(*shape_scene(0))
+        calls = []
+        real = trees.score
+        trees.score = lambda model, X: calls.append(len(X)) or real(model, X)
+        try:
+            first = shape_home(inputs, path, scope="all")
+            walked = len(calls)
+            assert walked >= 1
+            second = shape_home(inputs, path, scope="all")
+            assert len(calls) == walked and np.array_equal(first, second, equal_nan=True), "walked the trees again"
+            gaps = shape_home(inputs, path, scope="gaps", min_prob=0.3)             # another scope and clip: no walk
+            assert len(calls) == walked
+            assert np.nanmin(gaps) >= 0.3 and np.nanmax(gaps) <= 0.7, "a different min_prob must re-clip the score"
+            shape_home(inputs, path, game="FOLD1", scope="all")                      # another model of the file
+            assert len(calls) == 2 * walked
+            shape_home(inputs, path, game="FOLD1", scope="all")
+            assert len(calls) == 2 * walked
+            shape_home(shape_inputs(*shape_scene(0)), path)
+            assert len(calls) == 3 * walked, "the memo is per Inputs object"
+        finally:
+            trees.score = real
+
+
+def test_shape_possession_refuses_infinite_features():
+    from pipeline.evidence import shape_features
+    with tempfile.TemporaryDirectory() as root:
+        path = write_shape_model(root)
+        inputs = shape_inputs(*shape_scene(0))
+        names, X = shape_features.features(inputs)
+        broken = X.copy()
+        broken[40, SHAPE_COLUMN["h_adv_mean"]] = np.inf
+        real = shape_features.features
+        shape_features.features = lambda given: (names, broken)
+        try:
+            expect_error(ValueError, lambda: shape_home(inputs, path), "shape_possession", "infinite")
+        finally:
+            shape_features.features = real
+
+
+def test_shape_possession_speed():
+    from pipeline.contracts import RunContext
+    from pipeline.evidence import REGISTRY, shape_features
+    rng = np.random.default_rng(12)
+    n, slots = 180_000, 46
+    players = rng.random((n, slots, 2))
+    players[rng.random((n, slots)) < 0.4] = np.nan
+    ball = rng.random((n, 2))
+    ball[rng.random(n) < 0.4] = np.nan
+    inputs = kinematics_inputs(kinematics_atd(players, ball), [(1, 5_000, 75_000), (2, 100_000, 170_000)])
+    inputs.game = "BAR-ATH"
+    inputs.atd.players_present                      # the Atd's own cached masks are not this module's cost
+    inputs.atd.ball_present
+    model = random_hgb_model(rng, prior=0.5)        # of the size the trainer writes, over the 26 shape columns
+    model.pop("prior_alive")
+    model["prior_home"] = 0.5
+    for tree in model["trees"]:
+        tree["feature"] = [feature % len(SHAPE_NAMES) if feature >= 0 else feature for feature in tree["feature"]]
+    with tempfile.TemporaryDirectory() as root:
+        path = write_shape_model(root, full=model)
+        started = time.perf_counter()
+        shape_features.features(inputs)             # warm: the features have their own check
+        features_s = time.perf_counter() - started
+        started = time.perf_counter()
+        evidence = REGISTRY["shape_possession"](RunContext(inputs=inputs, seed=0), model=path)
+        first_s = time.perf_counter() - started
+        started = time.perf_counter()
+        REGISTRY["shape_possession"](RunContext(inputs=inputs, seed=0), model=path, scope="all", min_prob=0.01)
+        again_s = time.perf_counter() - started
+        print("      shape_possession speed: 140,000 graded frames, 300 trees of 15 leaves, two walks: first inference "
+              "{:.2f} s (features {:.2f} s before it, {:.2f} s in all), a second config on the same inputs {:.2f} s"
+              .format(first_s, features_s, features_s + first_s, again_s))
+        assert np.isnan(evidence.home[:5_000]).all() and not np.isnan(evidence.home[5_000:75_000]).all()
+        assert first_s < 6.0, "{:.2f} s for 300 trees, twice, on 140,000 frames with warm features (the budget is " \
+                              "6 s)".format(first_s)
+
+
+SHAPE_TRIAL_CONFIG = """
+[[evidence]]
+kind = "nearest_player"
+
+[[evidence]]
+kind = "shape_possession"
+model = {model}
+scope = "all"
+min_prob = 0.1
+
+[decoder]
+kind = "hmm"
+switch_team = 5
+switch_dead = 20
+min_possession = 1
+min_dead = 1
+"""
+
+
+def test_run_end_to_end_synthetic_shape_possession():
+    """Config -> registry -> evidence -> hmm -> CSV: the source is found by its kind and its parameters are checked."""
+    from pipeline import output
+    from pipeline.config import ConfigError, load_config
+    from pipeline.contracts import X
+    from pipeline.run import run
+    with tempfile.TemporaryDirectory() as root:
+        make_synthetic_bundle(root)
+        text = SHAPE_TRIAL_CONFIG.format(model=json_string(write_shape_model(root)))
+        inputs = synthetic_inputs(root, graded=[(1, 50, 280), (2, 320, 560)])
+        out_path = os.path.join(root, "shape.csv")
+        result = run(load_config(write_text(root, "shape.toml", text)), inputs, out_path, log=quiet)
+        outside = np.ones(SYNTHETIC_FRAMES, dtype=bool)
+        outside[50:280] = outside[320:560] = False
+        assert (result.codes[outside] == X).all() and (result.codes[~outside] != X).all()
+        output.validate(out_path, SYNTHETIC_FRAMES, result.codes)
+        source = result.evidence["shape_possession"]
+        assert np.isnan(source.alive).all() and np.isnan(source.home[outside]).all()
+        assert (~np.isnan(source.home[~outside])).mean() > 0.5, "the source speaks on most graded frames"
+        assert np.nanmin(source.home) >= 0.1 and np.nanmax(source.home) <= 0.9
+        for old, new in (("scope = \"all\"", "scope = \"everywhere\""), ("min_prob = 0.1", "min_prob = 0.7")):
+            bad = write_text(root, "bad.toml", text.replace(old, new))
+            expect_error(ValueError, lambda: run(load_config(bad), inputs, os.path.join(root, "bad.csv"), log=quiet),
+                         "shape_possession")
+        unknown = write_text(root, "unknown.toml", text.replace("min_prob = 0.1", "min_prob = 0.1\nradius = 2"))
+        expect_error(ConfigError, lambda: load_config(unknown), "shape_possession", "radius")
+
+
 # -- the dead-ball model (P05) ----------------------------------------------------------------------------------------
 #
 # A hand-made artifact of a couple of trees, so that every number is worked out here and not by the trainer. Its one
@@ -2899,6 +3287,101 @@ def test_trees_check_names_its_caller():
     # a feature count that does not reach the column of a split is refused
     expect_error(ValueError, lambda: trees.check_trees(good, PLAY_COLUMN["ball_missing"], "x", "shape_possession"),
                  "shape_possession", "node 0")
+
+
+def test_trees_helpers_name_their_caller():
+    # what the learned sources share besides the walk: each message starts with the caller's name, so a source's own
+    # tests (dead_ball_model's, shape_possession's) check its wording and this checks that there is one
+    import json
+    import weakref
+    from pipeline.evidence import trees
+    who = "some_source"
+    for bad in (None, 5, "", True):
+        message = expect_error(ValueError, lambda: trees.model_path(bad, who, "pipeline/models/x.json"), "model",
+                               "pipeline/models/x.json")
+        assert message.startswith("some_source: "), message
+    assert trees.model_path("pipeline/models/x.json", who, "y") == os.path.abspath(
+        os.path.join(ROOT, "pipeline", "models", "x.json"))
+    assert trees.model_path(os.path.abspath(__file__), who, "y") == os.path.abspath(__file__)
+    for bad in (0.0, 0.5, 1.0, -0.1, True, "0.1", None, float("nan")):
+        assert expect_error(ValueError, lambda: trees.check_min_prob(bad, who), "min_prob").startswith("some_source: ")
+    value = trees.check_min_prob(np.float64(0.25), who)
+    assert value == 0.25 and type(value) is float
+    assert expect_error(ValueError, lambda: trees.check_finite(np.array([[0.0, np.inf]]), who, "G1", "some_features"),
+                        "G1", "infinite", "some_features").startswith("some_source: ")
+    assert trees.check_finite(np.array([[0.0, np.nan]]), who, "G1", "some_features") is None
+    with np.errstate(over="raise", invalid="raise", divide="raise"):         # no overflow, however far out
+        far = trees.sigmoid(np.array([-1e4, -40.0, 0.0, 40.0, 1e4]))
+    assert far[0] == 0.0 and far[2] == 0.5 and far[4] == 1.0 and np.all(np.diff(far) >= 0)
+    assert np.allclose(trees.sigmoid(np.array([-3.0, 2.0])), 1.0 / (1.0 + np.exp([3.0, -2.0])), rtol=0, atol=1e-15)
+
+    good = hgb_model(MODEL_BASELINE, MODEL_SEEN, MODEL_MISSING, MODEL_PRIOR)
+    artifact = {"format": 1, "kind": "hgb", "feature_version": 3, "features": ["a", "b"], "folds": {"G1": good},
+                "full": good}
+    checked = []
+
+    def check(artifact, path, **changes):
+        options = dict(source="some_features", version=3, names=("a", "b"), kinds=("hgb", "other"),
+                       check_model=lambda model, where: checked.append(where))
+        options.update(changes)
+        trees.check_artifact(artifact, path, who, "retrain it, please", **options)
+
+    check(artifact, "m.json")
+    assert checked == ["G1 of m.json", "full of m.json"], checked
+    for label, changed, options in (
+            ("holds no model object", [1], {}), ("format", dict(artifact, format=2), {}),
+            ("some_features is at 3", dict(artifact, feature_version=4), {}),
+            ("features", dict(artifact, features=["b", "a"]), {}), ("some_features", artifact, {"names": ("a", "c")}),
+            ("kind", dict(artifact, kind="forest"), {}), ("folds", dict(artifact, folds=[]), {}),
+            ("full", {key: value for key, value in artifact.items() if key != "full"}, {})):
+        message = expect_error(ValueError, lambda: check(changed, "m.json", **options), label, "m.json",
+                               "retrain it, please")
+        assert message.startswith("some_source: "), message
+
+    with tempfile.TemporaryDirectory() as root:
+        path = write_text(root, "m.json", json.dumps(artifact))
+        cache, parsed = {}, []
+
+        def load():
+            return trees.load_artifact(path, who, lambda artifact, where: parsed.append(where), cache,
+                                       unreadable="train it", not_json="retrain it")
+
+        first = load()
+        assert load() is first and parsed == [path], "a file that did not change is not read or checked again"
+        write_text(root, "m.json", json.dumps(dict(artifact, seeds=3)))
+        assert load() is not first and len(parsed) == 2
+        message = expect_error(ValueError, lambda: trees.load_artifact(
+            os.path.join(root, "absent.json"), who, None, cache, unreadable="train it", not_json="retrain it"),
+            "absent.json", "train it")
+        assert message.startswith("some_source: "), message
+        write_text(root, "text.json", "not json")
+        message = expect_error(ValueError, lambda: trees.load_artifact(
+            os.path.join(root, "text.json"), who, None, cache, unreadable="train it", not_json="retrain it"),
+            "text.json", "retrain it")
+        assert message.startswith("some_source: "), message
+        assert os.path.join(root, "text.json") not in cache, "a file that is refused is not remembered"
+
+        class Holder:                                    # weakly referenceable, like an Inputs
+            pass
+
+        memo, built, holder = weakref.WeakKeyDictionary(), [], Holder()
+
+        def build():
+            built.append(1)
+            return np.arange(3.0)
+
+        array = trees.remember(memo, holder, path, "G1", build)
+        assert not array.flags.writeable and trees.remember(memo, holder, path, "G1", build) is array
+        assert len(built) == 1
+        assert trees.remember(memo, holder, path, "full", build) is not array and len(built) == 2
+        assert len(memo[holder]) == 1, "one model at a time per Inputs"
+        write_text(root, "m.json", json.dumps(dict(artifact, seeds=44)))
+        trees.remember(memo, holder, path, "full", build)
+        assert len(built) == 3, "a file that changed is a new stamp"
+        trees.remember(memo, Holder(), path, "full", build)
+        assert len(built) == 4, "the memo is per object"
+        del holder
+        assert len(memo) == 0, "the memo dies with the Inputs"
 
 
 # -- refine -----------------------------------------------------------------------------------------------------------
