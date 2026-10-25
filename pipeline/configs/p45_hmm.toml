@@ -1,0 +1,37 @@
+# P04 + P05 together: controlled_touch for `home`, the hgb dead_ball_model for `alive`, the hmm decoder re-tuned (R010).
+#
+#   python pipeline/run.py pipeline/configs/p45_hmm.toml --score    # -> evaluation/results/p45_hmm.csv
+#
+# This is Stage C's choice. main.toml decides what we upload, and it took this file's evidence and decoder in R010,
+# because the bar was met (R010 has the verdict).
+#
+# Where the numbers come from. Chosen on the benchmark (the seven DFL matches degraded as `tracking` v3, three seeds,
+# raw truth, pooled spellF1; configs within 0.005 of the best count as tied, then the best coarse score, then the
+# larger switch_team, min_possession, switch_dead and min_dead), never on the public window (docs/traps.md T01):
+#   switch_team = 4, switch_dead = 32, min_possession = 25 frames (1 s), min_dead = 25 frames (R010, Stage C).
+# controlled_touch is Stage A's chosen setting and dead_ball_model is Stage B's (hgb, weight 1.0); there is no
+# nearest_player and no ball_presence.
+
+description = "P04 + P05 candidate (R010): controlled_touch 2.0 m / 6.0 m/s / 3 frames / hold 0.55 (confidence 0.91) + dead_ball_model (hgb, pipeline/models/dead_ball_hgb.json) at weight 1.0, hmm 4/32/25/25, decoded per half. Not the submission config unless main.toml says so."
+seed = 0
+scope = "halves"
+
+[[evidence]]
+kind = "controlled_touch"
+radius = 2.0          # metres: the nearest player must be this close
+max_rel_speed = 6.0   # m/s: and move with the ball
+min_frames = 3         # an episode shorter than this is dropped
+confidence = 0.91      # touch_stats.py: floor of the pooled agreement to a hundredth (91.9%)
+hold = 0.55            # the weak vote of the last team between episodes; 0.5 = off
+
+[[evidence]]
+kind = "dead_ball_model"
+weight = 1.0
+model = "pipeline/models/dead_ball_hgb.json"   # relative to the repo root
+
+[decoder]
+kind = "hmm"
+switch_team = 4      # nats a change of team (H <-> A) costs
+switch_dead = 32      # nats a change into or out of D costs
+min_possession = 25  # frames: no run of H or A shorter than this (1 is no minimum)
+min_dead = 25      # frames: no run of D shorter than this (1 is no minimum)

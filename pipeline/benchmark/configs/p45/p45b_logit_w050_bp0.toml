@@ -1,0 +1,23 @@
+# P45 Stage B (R009), P05: dead_ball_model (logistic reference, pipeline/models/dead_ball_logistic.json) at weight
+# 0.5, no ball_presence, nearest_player at 0.78, hmm 8/32/75/1.
+# Chosen on the benchmark by the Stage B protocol, never on the public window (docs/traps.md T01).
+
+description = "P45 Stage B (R009): nearest_player 0.78 + dead_ball_model (logistic reference, pipeline/models/dead_ball_logistic.json) at weight 0.5, no ball_presence, hmm 8/32/75/1, decoded per half."
+seed = 0
+scope = "halves"
+
+[[evidence]]
+kind = "nearest_player"
+confidence = 0.78    # the share of in-play, ball-visible frames on which the nearest player's team is right (A01)
+
+[[evidence]]
+kind = "dead_ball_model"
+weight = 0.5
+model = "pipeline/models/dead_ball_logistic.json"
+
+[decoder]
+kind = "hmm"
+switch_team = 8      # nats a change of team (H <-> A) costs
+switch_dead = 32     # nats a change into or out of D costs
+min_possession = 75  # frames: no run of H or A shorter than this (1 is no minimum)
+min_dead = 1         # frames: no run of D shorter than this (1 is no minimum)

@@ -230,6 +230,22 @@ disagreement among the four cells as a warning (as T33 does for the truths); whe
 team to decide. Say which profile each number is from. The `margin` follow-up in `proposals.md` ("After P06") proposes
 one such rule, for `margin`.
 
+**T39 — DFL tracks the ball out of play, so a dead-ball model looks near-perfect on the benchmark, and the benchmark
+cannot say how much of that transfers.** On `tracking` v3 P05's boosted trees reach an alive/dead F1 of 0.9725 (the
+yardsticks' 0.6094 and 0.6428) and 95.2% of A10's perfect-`D` ceiling under the raw truth (R009). They split first on
+where the ball is: beyond a line, next or last seen beyond a line, at a restart spot. DFL's tracker keeps the ball while
+it is out of play and ours loses it near the lines, so those features are visible during DFL's stoppages far more often
+than during ours: among the rows where a gap could begin, the ball is beyond a line on 17.68% of DFL's against 4.07% of
+ours, and within 2 m of a line on 25.23% against 9.01% (R009, A08). That is where the visible ball is, and not how often
+it is missing, which is why `context` (T38) does not remove it: it places the gaps by our hazard but keeps DFL's ball
+out of play. Reading numbers for any source that uses the ball's position near the lines (the dead ball, a restart
+spot, a throw-in):
+- call the benchmark's score an upper bound for our match, whatever the profile, and say so beside the number;
+- look at the label-free signs on our match, the predicted `D` share (36.0% against 44.6% on the benchmark, R010) and
+  the public window's alive agreement (86.6% of 7,500 frames), as aggregates and not as a score;
+- do not choose a decoder parameter that trades `D` against the team (`switch_dead`, a source's weight) from that
+  source's benchmark alive/dead score alone.
+
 ## Reproducibility and environment
 
 **T20 — Use the team venv.** It runs Python 3.11.9 in `.venv`, with numpy 2.4.6, pandas 3.0.6 and kloppy 3.18.0.

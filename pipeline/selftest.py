@@ -536,6 +536,531 @@ def test_ball_presence_rejects_bad_parameters():
     source(run, margin=np.int64(3), missing=np.float64(0.25), seen=1)  # numpy numbers from a sweep are fine
 
 
+# -- shared kinematics ------------------------------------------------------------------------------------------------
+
+def kinematics_inputs(atd, graded, fps=25, pitch=(105.3, 68.0)):
+    """A stand-in Inputs with what kinematics reads: atd, graded, fps, pitch and metres."""
+    scale = np.array(pitch)
+
+    class StandIn:   # a class, not a SimpleNamespace: the memo needs an object that can be weakly referenced
+        pass
+
+    inputs = StandIn()
+    inputs.atd, inputs.graded, inputs.fps, inputs.pitch = atd, graded, fps, pitch
+    inputs.metres = lambda xy: xy * scale
+    return inputs
+
+
+def kinematics_atd(players_xy, ball_xy, speed_fill=None, seed=0):
+    """An Atd over given positions; the speed channels are random, or all `speed_fill`."""
+    from pipeline.inputs.atd_cache import Atd
+    rng = np.random.default_rng(seed)
+    n, slots = players_xy.shape[:2]
+    players_speed = rng.random((n, slots)) * 9 if speed_fill is None else np.full((n, slots), speed_fill)
+    ball_speed = rng.random(n) * 30 if speed_fill is None else np.full(n, speed_fill)
+    return Atd(players_xy=players_xy, players_speed=players_speed, ball_xy=ball_xy, ball_speed=ball_speed,
+               slot_team=(np.arange(slots) % 2).astype(np.int8))
+
+
+def test_kinematics_derivative_is_exact_on_lines():
+    from pipeline.evidence import kinematics
+    fps = 25
+    blocks = [(0, 30), (30, 60)]
+    # (slot, start, stop): runs of 1, 2, 3, 7, 8 and 20 frames, some touching the half boundary from each side
+    pieces = [(0, 0, 20), (0, 22, 23), (0, 25, 27), (1, 3, 6), (1, 10, 17), (1, 20, 28), (2, 20, 30), (2, 30, 45),
+              (2, 50, 51), (2, 52, 60)]
+    rng = np.random.default_rng(3)
+    xy = rng.random((60, 3, 2)) * 100                    # junk on invalid frames
+    valid = np.zeros((60, 3), dtype=bool)
+    expected = np.full((60, 3, 2), np.nan)
+    for slot, start, stop in pieces:
+        slope = rng.normal(size=2) * 5                   # metres per second
+        offset = rng.random(2) * 50
+        t = np.arange(start, stop)[:, None] / fps
+        xy[start:stop, slot] = offset + slope * t
+        valid[start:stop, slot] = True
+        if stop - start >= 2:
+            expected[start:stop, slot] = slope
+    vel = kinematics.derivative(xy, valid, blocks, fps)
+    assert vel.shape == xy.shape
+    both = ~np.isnan(expected)
+    assert np.abs(vel[both] - expected[both]).max() < 1e-9
+    assert np.isnan(vel[~both]).all(), "NaN on invalid frames and on a run of one frame"
+    flat = kinematics.derivative(xy[:, 0], valid[:, 0], blocks, fps)    # the (n, 2) form agrees with the (n, K, 2) one
+    assert np.array_equal(flat, vel[:, 0], equal_nan=True)
+
+
+def test_kinematics_never_crosses_a_run_or_block():
+    from pipeline.evidence import kinematics
+    rng = np.random.default_rng(4)
+    blocks = [(5, 40), (50, 90)]
+    xy = rng.random((100, 4, 2)) * 100
+    valid = rng.random((100, 4)) < 0.8
+    valid[:, 3] = True                                    # one slot valid throughout, to meet the block edges
+    base = kinematics.derivative(xy, valid, blocks, 25)
+    junk = xy.copy()
+    junk[~valid] = rng.random(((~valid).sum(), 2)) * 1000   # positions beyond a run's ends change nothing in it
+    assert np.array_equal(kinematics.derivative(junk, valid, blocks, 25), base, equal_nan=True)
+    moved = xy.copy()
+    moved[40:] = rng.random((60, 4, 2)) * 1000              # the second block and the gap change nothing in the first
+    assert np.array_equal(kinematics.derivative(moved, valid, blocks, 25)[:40], base[:40], equal_nan=True)
+    moved = xy.copy()
+    moved[:50] = rng.random((50, 4, 2)) * 1000
+    assert np.array_equal(kinematics.derivative(moved, valid, blocks, 25)[50:], base[50:], equal_nan=True)
+    assert np.isnan(base[:5]).all() and np.isnan(base[40:50]).all() and np.isnan(base[90:]).all()
+    expect_error(ValueError, lambda: kinematics.derivative(xy, valid[:, :3], blocks, 25), "kinematics", "derivative")
+
+
+def test_kinematics_chunks_change_nothing():
+    from pipeline.evidence import kinematics
+    rng = np.random.default_rng(7)
+    xy = rng.random((200, 5, 2)) * 100
+    valid = rng.random((200, 5)) < 0.9
+    blocks = [(3, 90), (100, 199)]
+    whole = kinematics.derivative(xy, valid, blocks, 25)
+    saved = kinematics.CHUNK
+    try:
+        for chunk in (1, 4, 7, 64):
+            kinematics.CHUNK = chunk
+            assert np.array_equal(kinematics.derivative(xy, valid, blocks, 25), whole, equal_nan=True), chunk
+    finally:
+        kinematics.CHUNK = saved
+
+
+def test_kinematics_uses_metres():
+    from pipeline.evidence import kinematics
+    n, fps = 30, 25
+    t = np.arange(n)
+    ball = np.stack([0.2 + 0.01 * t, np.full(n, 0.5)], axis=1)                          # 0.01 in x per frame
+    players = np.stack([np.stack([np.full(n, 0.5), 0.1 + 0.01 * t], axis=1)], axis=1)   # and in y, for one slot
+    inputs = kinematics_inputs(kinematics_atd(players, ball), [(1, 0, n)], fps=fps, pitch=(105.3, 68.0))
+    ball_t, player_t = kinematics.ball_track(inputs), kinematics.player_track(inputs)
+    assert np.allclose(ball_t.vel[:, 0], 0.01 * 105.3 * fps, atol=1e-9) and np.allclose(ball_t.vel[:, 1], 0, atol=1e-9)
+    assert np.allclose(player_t.vel[:, 0, 1], 0.01 * 68.0 * fps, atol=1e-9)
+    assert np.allclose(ball_t.speed, 0.01 * 105.3 * fps) and np.allclose(player_t.speed[:, 0], 0.01 * 68.0 * fps)
+    assert np.allclose(ball_t.xy_m[:, 0], (0.2 + 0.01 * t) * 105.3) and ball_t.visible.all() and player_t.present.all()
+
+
+def test_kinematics_window_mean_matches_a_loop():
+    from pipeline.evidence import kinematics
+    rng = np.random.default_rng(5)
+    n = 120
+    blocks = [(5, 30), (40, 41), (50, 110)]
+    values = rng.normal(size=n)
+    values[rng.random(n) < 0.2] = np.nan
+    valid = rng.random(n) < 0.8      # some valid frames carry NaN: a track's speed on a one-frame run is such a value
+    for before in (0, 3, 25):
+        for after in (0, 3, 25):
+            reference = np.full(n, np.nan)
+            for start, stop in blocks:
+                for t in range(start, stop):
+                    low, high = max(start, t - before), min(stop, t + after + 1)
+                    window = [v for v, ok in zip(values[low:high], valid[low:high]) if ok and not np.isnan(v)]
+                    if window:
+                        reference[t] = sum(window) / len(window)
+            got = kinematics.window_mean(values, valid, blocks, before, after)
+            assert np.array_equal(np.isnan(got), np.isnan(reference)), (before, after)
+            assert np.nanmax(np.abs(got - reference)) < 1e-12, (before, after)
+    assert (valid & np.isnan(values)).any() and not np.isnan(got[60:100]).all(), "no NaN rode in on a valid frame"
+    expect_error(ValueError, lambda: kinematics.window_mean(values, valid, blocks, -1, 0), "kinematics", "before")
+
+
+def test_kinematics_runs():
+    from pipeline.evidence import kinematics
+    starts, stops = kinematics.runs(np.array([1, 1, 0, 0, 1, 0, 1, 1, 1], dtype=bool))
+    assert starts.tolist() == [0, 4, 6] and stops.tolist() == [2, 5, 9]
+    starts, stops = kinematics.runs(np.zeros(4, dtype=bool))
+    assert len(starts) == 0 and len(stops) == 0
+
+
+def test_kinematics_outside_m():
+    from pipeline.evidence import kinematics
+    pitch = (100.0, 60.0)
+    points = np.array([[50, 30], [10, 20], [0, 30], [100, 10], [30, 0], [-3, 30], [103, 20], [50, -2], [50, 64],
+                       [103, 64], [-3, -4], [np.nan, np.nan]])
+    expected = [-30, -10, 0, 0, 0, 3, 3, 2, 4, 5, 5, np.nan]
+    got = kinematics.outside_m(points, pitch)
+    assert got.shape == (12,) and np.allclose(got, expected, equal_nan=True), got
+    assert kinematics.outside_m(points.reshape(3, 4, 2), pitch).shape == (3, 4)
+
+
+def test_kinematics_ball_distances():
+    from pipeline.evidence import kinematics
+    players = np.array([[[3.0, 4.0], [np.nan, np.nan]], [[1.0, 1.0], [0.0, 2.0]]])
+    ball = np.array([[0.0, 0.0], [np.nan, np.nan]])
+    got = kinematics.ball_distances(players, ball)
+    assert got.shape == (2, 2) and got[0, 0] == 5.0 and np.isnan(got[0, 1]) and np.isnan(got[1]).all()
+
+
+def kinematics_random_inputs(n=600, slots=6, seed=0, **atd_options):
+    rng = np.random.default_rng(seed)
+    players = rng.random((n, slots, 2))
+    players[rng.random((n, slots)) < 0.3] = np.nan
+    ball = rng.random((n, 2))
+    ball[rng.random(n) < 0.3] = np.nan
+    return kinematics_inputs(kinematics_atd(players, ball, **atd_options), SYNTHETIC_GRADED)
+
+
+def test_kinematics_reads_read_only_inputs():
+    from pipeline.evidence import kinematics
+    inputs = kinematics_random_inputs()
+    for array in (inputs.atd.players_xy, inputs.atd.ball_xy):
+        array.flags.writeable = False
+    before = (inputs.atd.players_xy.copy(), inputs.atd.ball_xy.copy())
+    ball, players = kinematics.ball_track(inputs), kinematics.player_track(inputs)
+    assert np.array_equal(inputs.atd.players_xy, before[0], equal_nan=True)
+    assert np.array_equal(inputs.atd.ball_xy, before[1], equal_nan=True)
+    for track in (ball, players):
+        for name in ("xy_m", "vel", "speed"):
+            assert getattr(track, name).flags.writeable is False, name
+    assert ball.visible.flags.writeable is False and players.present.flags.writeable is False
+    assert "array(" not in repr(ball) and "array(" not in repr(players), "an array is in the repr"
+    assert np.isnan(players.xy_m[~players.present]).all() and np.isnan(ball.xy_m[~ball.visible]).all()
+    assert (players.present == inputs.atd.players_present).all()   # SYNTHETIC_GRADED covers every frame
+
+
+def test_kinematics_never_reads_speed_channels():
+    from pipeline.evidence import kinematics
+    with_values = kinematics_random_inputs(seed=1)
+    without = kinematics_random_inputs(seed=1, speed_fill=np.nan)
+    assert not np.isnan(with_values.atd.players_speed).any() and np.isnan(without.atd.players_speed).all()
+    for name in ("xy_m", "vel", "speed"):
+        assert np.array_equal(getattr(kinematics.player_track(with_values), name),
+                              getattr(kinematics.player_track(without), name), equal_nan=True), name
+        assert np.array_equal(getattr(kinematics.ball_track(with_values), name),
+                              getattr(kinematics.ball_track(without), name), equal_nan=True), name
+
+
+def test_kinematics_graded_blocks_only():
+    from pipeline.evidence import kinematics
+    inputs = kinematics_random_inputs()
+    inputs.graded = [(1, 100, 300), (2, 350, 500)]
+    ball, players = kinematics.ball_track(inputs), kinematics.player_track(inputs)
+    outside = np.ones(600, dtype=bool)
+    outside[100:300] = outside[350:500] = False
+    assert not ball.visible[outside].any() and not players.present[outside].any()
+    assert np.isnan(ball.vel[outside]).all() and np.isnan(players.vel[outside]).all()
+    assert kinematics.blocks(inputs) == [(100, 300), (350, 500)]
+
+
+def test_kinematics_speed():
+    from pipeline.evidence import kinematics
+    rng = np.random.default_rng(6)
+    n, slots = 200_000, 46
+    players = rng.random((n, slots, 2))
+    players[rng.random((n, slots)) < 0.4] = np.nan
+    ball = rng.random((n, 2))
+    ball[rng.random(n) < 0.4] = np.nan
+    inputs = kinematics_inputs(kinematics_atd(players, ball), [(1, 11_185, 90_652), (2, 110_808, 190_198)])
+    inputs.atd.players_present                      # the Atd's own cached masks are not this module's cost
+    inputs.atd.ball_present
+    started = time.perf_counter()
+    kinematics.ball_track(inputs)
+    kinematics.player_track(inputs)
+    elapsed = time.perf_counter() - started
+    print("      kinematics speed: ball_track + player_track on {} x {} in {:.2f} s".format(n, slots, elapsed))
+    assert elapsed < 2.0, "{:.2f} s for 200,000 frames x 46 slots (the budget is 2 s)".format(elapsed)
+
+
+def test_kinematics_memo_is_per_object():
+    import gc
+    from pipeline.evidence import kinematics
+    first = kinematics_random_inputs(seed=1)
+    ball, players = kinematics.ball_track(first), kinematics.player_track(first)
+    assert kinematics.ball_track(first) is ball and kinematics.player_track(first) is players
+    other = kinematics_random_inputs(seed=2)            # other tracking, a new object: recomputed, not served stale
+    assert kinematics.ball_track(other) is not ball and kinematics.player_track(other) is not players
+    assert not np.array_equal(kinematics.ball_track(other).xy_m, ball.xy_m, equal_nan=True)
+    held, held_players = len(kinematics._BALL_MEMO), len(kinematics._PLAYER_MEMO)
+    del first, other, ball, players
+    gc.collect()
+    assert len(kinematics._BALL_MEMO) == held - 2, "the memo kept an object"
+    assert len(kinematics._PLAYER_MEMO) == held_players - 2, "the memo kept an object"
+
+
+# -- controlled_touch -------------------------------------------------------------------------------------------------
+#
+# Hand-built scenes in metres: slot 0 is home, slot 1 away, slot 2 home, ... (kinematics_atd). A slot is present only
+# on the frames it is given, so "an episode of 10 frames" is a slot that is 0.5 m from a static ball for 10 frames.
+
+TOUCH = dict(radius=2.0, max_rel_speed=3.0, min_frames=5, confidence=0.9)
+
+
+def touch_scene(n, ball=None, slots=None, graded=None):
+    """A RunContext over n frames of hand-built tracking in metres. `ball` is (n, 2) (NaN = missing; default a static
+    ball at (30, 30)), `slots` a dict slot -> (n, 2) (NaN = absent), `graded` a list of (start, stop) blocks (default
+    one block over every frame)."""
+    from pipeline.contracts import RunContext
+    scale = np.array([105.3, 68.0])
+    ball = np.tile([30.0, 30.0], (n, 1)) if ball is None else np.asarray(ball, dtype=np.float64)
+    players = np.full((n, max(max(slots) + 1 if slots else 2, 2), 2), np.nan)
+    for slot, track in (slots or {}).items():
+        players[:, slot] = track
+    graded = [(1, 0, n)] if graded is None else [(index + 1, start, stop) for index, (start, stop) in enumerate(graded)]
+    inputs = kinematics_inputs(kinematics_atd(players / scale, ball / scale), graded)
+    return RunContext(inputs=inputs, seed=0)
+
+
+def beside_ball(n, frames, offset=(0.5, 0.0), ball=(30.0, 30.0)):
+    """A slot's track: `offset` metres from a static ball on `frames` (a range), absent elsewhere."""
+    track = np.full((n, 2), np.nan)
+    track[list(frames)] = np.array(ball) + np.array(offset)
+    return track
+
+
+def touch(run, **parameters):
+    from pipeline.evidence import REGISTRY
+    return REGISTRY["controlled_touch"](run, **dict(TOUCH, **parameters))
+
+
+def test_touch_dribble_is_control():
+    n = 40
+    t = np.arange(n)
+    ball = np.stack([20.0 + 0.2 * t, np.full(n, 30.0)], axis=1)       # 5 m/s along x
+    mover = np.full((n, 2), np.nan)
+    mover[10:20] = ball[10:20] + [0.5, 0.0]                           # a home slot 0.5 m ahead of it, same velocity
+    evidence = touch(touch_scene(n, ball=ball, slots={0: mover}))
+    assert np.flatnonzero(evidence.home == 0.9).tolist() == list(range(10, 20)), np.flatnonzero(evidence.home == 0.9)
+    assert np.isnan(np.delete(evidence.home, range(10, 20))).all() and np.isnan(evidence.alive).all()
+
+
+def test_touch_flight_is_no_evidence():
+    n = 40
+    t = np.arange(n)
+    ball = np.stack([15.0 + 0.6 * t, np.full(n, 30.0)], axis=1)       # 15 m/s along x
+    stationary = np.tile([24.0, 30.8], (n, 1))                        # an away slot 0.8 m from the ball's line
+    near = np.hypot(*(ball - stationary).T) <= TOUCH["radius"]
+    assert near.sum() >= 5, "the ball must pass within the radius for the check to mean something"
+    assert np.isnan(touch(touch_scene(n, ball=ball, slots={1: stationary})).home).all()
+    # Without the speed test the same frames are control: it is the relative speed that rules them out.
+    loose = touch(touch_scene(n, ball=ball, slots={1: stationary}), max_rel_speed=np.inf, min_frames=1)
+    assert (loose.home[near] == 1.0 - 0.9).all()
+
+
+def test_touch_duel_is_no_evidence():
+    n = 20
+    home, away = beside_ball(n, range(n), (0.6, 0.0)), beside_ball(n, range(n), (-0.9, 0.0))
+    assert np.isnan(touch(touch_scene(n, slots={0: home, 1: away}), duel_radius=1.0).home).all()
+    # The same pair with the away slot beyond the duel radius: home controls it.
+    away = beside_ball(n, range(n), (-1.1, 0.0))
+    assert (touch(touch_scene(n, slots={0: home, 1: away}), duel_radius=1.0).home == 0.9).all()
+    assert np.isnan(touch(touch_scene(n, slots={0: home, 1: away}), duel_radius=1.2).home).all()
+
+
+def test_touch_short_episode_dropped():
+    n = 40
+    for length, kept in ((TOUCH["min_frames"] - 1, False), (TOUCH["min_frames"], True)):
+        evidence = touch(touch_scene(n, slots={1: beside_ball(n, range(10, 10 + length))}))
+        assert np.isnan(evidence.home).all() != kept, (length, kept)
+        if kept:
+            assert np.flatnonzero(evidence.home == 1.0 - 0.9).tolist() == list(range(10, 15))
+    # A change of team ends an episode: 4 + 4 frames beside the same ball, one team and then the other, keep nothing.
+    both = touch_scene(n, slots={0: beside_ball(n, range(10, 14)), 1: beside_ball(n, range(14, 18))})
+    assert np.isnan(touch(both).home).all()
+
+
+def test_touch_is_nan_without_the_ball():
+    n = 40
+    ball = np.tile([30.0, 30.0], (n, 1))
+    ball[15:25] = np.nan
+    slots = {0: beside_ball(n, range(n))}
+    evidence = touch(touch_scene(n, ball=ball, slots=slots), min_frames=2)
+    assert np.isnan(evidence.home[15:25]).all()
+    assert (evidence.home[:15] == 0.9).all() and (evidence.home[25:] == 0.9).all()
+    held = touch(touch_scene(n, ball=ball, slots=slots), min_frames=2, hold=0.6)
+    assert np.isnan(held.home[15:25]).all(), "a hold never fills a missing ball"
+
+
+def test_touch_outside_blocks_is_nan():
+    n = 60
+    slots = {0: beside_ball(n, range(n))}
+    evidence = touch(touch_scene(n, slots=slots, graded=[(10, 30), (40, 55)]), hold=0.6)
+    assert (evidence.home[10:30] == 0.9).all() and (evidence.home[40:55] == 0.9).all()
+    outside = np.ones(n, dtype=bool)
+    outside[10:30] = outside[40:55] = False
+    assert np.isnan(evidence.home[outside]).all() and np.isnan(evidence.alive).all()
+    # An episode is cut at the block's edge: two 20-frame pieces of one touch do not add up to 25.
+    assert np.isnan(touch(touch_scene(n, slots=slots, graded=[(0, 20), (30, 50)]), min_frames=25).home).all()
+
+
+def hold_scene(graded=None):
+    """Home controls 5..14, away 35..44, on a static ball that is missing on 25..29, in a 60-frame match."""
+    n = 60
+    ball = np.tile([30.0, 30.0], (n, 1))
+    ball[25:30] = np.nan
+    slots = {0: beside_ball(n, range(5, 15)), 1: beside_ball(n, range(35, 45))}
+    return touch_scene(n, ball=ball, slots=slots, graded=graded)
+
+
+def test_touch_hold_carries_the_last_team():
+    evidence = touch(hold_scene(), hold=0.6)
+    expected = np.full(60, np.nan)
+    for span, value in ((slice(5, 15), 0.9), (slice(15, 25), 0.6), (slice(30, 35), 0.6), (slice(35, 45), 1.0 - 0.9),
+                        (slice(45, None), 1.0 - 0.6)):
+        expected[span] = value
+    assert np.array_equal(evidence.home, expected, equal_nan=True), np.flatnonzero(evidence.home != expected)
+
+
+def test_touch_hold_stays_in_its_block():
+    evidence = touch(hold_scene(graded=[(0, 30), (30, 60)]), hold=0.6)
+    expected = np.full(60, np.nan)
+    expected[5:15], expected[15:25] = 0.9, 0.6               # nothing before the block's first episode
+    expected[35:45], expected[45:] = 1.0 - 0.9, 1.0 - 0.6   # the first block's home does not reach the second
+    assert np.array_equal(evidence.home, expected, equal_nan=True), np.flatnonzero(evidence.home != expected)
+
+
+def test_touch_hold_off_is_nan():
+    evidence = touch(hold_scene(), hold=0.5)
+    expected = np.full(60, np.nan)
+    expected[5:15], expected[35:45] = 0.9, 1.0 - 0.9               # 0.5 is not written as a value: NaN is not 0.5
+    assert np.array_equal(evidence.home, expected, equal_nan=True)
+    assert np.array_equal(evidence.home, touch(hold_scene()).home, equal_nan=True), "hold defaults to off"
+
+
+def test_touch_turnover_lands_on_new_control():
+    n = 80
+    slots = {0: beside_ball(n, range(10, 30)), 1: beside_ball(n, range(50, 70))}   # home, flight 30..49, away
+    scene = touch_scene(n, slots=slots)
+    options = dict(switch_team=1.0, switch_dead=100.0, min_possession=1, min_dead=1)
+    held = hmm_labels(hmm_context(touch(scene, hold=0.55).home), **options)
+    assert letters(held)[10:] == "H" * 40 + "A" * 30, letters(held)       # the first away control frame
+    free = hmm_labels(hmm_context(touch(scene).home), **options)
+    assert letters(free)[10:] == "H" * 20 + "A" * 50, letters(free)       # the tie rule: first frame after home's last
+
+
+def touch_loop(run, radius, max_rel_speed, min_frames, confidence, duel_radius, hold):
+    """The rule, frame by frame in plain Python, as the Design states it."""
+    from pipeline.evidence import kinematics
+    ball, players = kinematics.ball_track(run.inputs), kinematics.player_track(run.inputs)
+    team = run.inputs.atd.slot_team
+    home = np.full(len(ball.visible), np.nan)
+    for start, stop in kinematics.blocks(run.inputs):
+        frame_team = {}
+        for t in range(start, stop):
+            if not ball.visible[t]:
+                continue
+            distance = {s: float(np.hypot(*(players.xy_m[t, s] - ball.xy_m[t])))
+                        for s in range(len(team)) if players.present[t, s]}
+            if not distance:
+                continue
+            nearest = min(distance, key=lambda s: (distance[s], s))
+            rivals = [d for s, d in distance.items() if team[s] != team[nearest]]
+            relative = float(np.hypot(*(ball.vel[t] - players.vel[t, nearest])))
+            if distance[nearest] <= radius and (not rivals or min(rivals) > duel_radius) and relative <= max_rel_speed:
+                frame_team[t] = int(team[nearest])
+        kept, t = {}, start
+        while t < stop:
+            if t not in frame_team:
+                t += 1
+                continue
+            end = t
+            while end + 1 < stop and frame_team.get(end + 1) == frame_team[t]:
+                end += 1
+            if end - t + 1 >= min_frames:
+                kept.update({u: frame_team[t] for u in range(t, end + 1)})
+            t = end + 1
+        last = None
+        for t in range(start, stop):
+            if t in kept:
+                last = kept[t]
+                home[t] = confidence if last == 0 else 1.0 - confidence
+            elif hold > 0.5 and last is not None and ball.visible[t]:
+                home[t] = hold if last == 0 else 1.0 - hold
+    return home
+
+
+def test_touch_matches_a_loop():
+    rng = np.random.default_rng(7)
+    seen = {"home": 0, "away": 0, "held": 0}
+
+    def walk(shape):   # a random walk from a point of a 4 m square
+        return 15.0 + rng.random(shape[1:]) * 4.0 + np.cumsum(rng.normal(0.0, 0.05, shape), axis=0)
+
+    for scene in range(200):
+        n, slots = 80, 6
+        ball = walk((n, 2))
+        players = np.stack([walk((n, 2)) for _ in range(slots)], axis=1)
+        for track, shape in ((players, (n, slots)), (ball, (n,))):
+            track[np.cumsum(rng.random(shape) < 0.04, axis=0) % 2 == 1] = np.nan   # on, off, on ... in runs
+        parameters = dict(radius=float(rng.uniform(1.0, 3.0)), duel_radius=float(rng.uniform(0.5, 2.5)),
+                          max_rel_speed=float(rng.choice([1.0, 2.0, 4.0, np.inf])),
+                          min_frames=int(rng.integers(1, 7)), confidence=float(rng.uniform(0.6, 1.0)))
+        parameters["hold"] = 0.5 if scene % 2 else float(rng.uniform(0.5, parameters["confidence"]))
+        run = touch_scene(n, ball=ball, slots={s: players[:, s] for s in range(slots)}, graded=[(5, 40), (45, 78)])
+        evidence = touch(run, **parameters)
+        expected = touch_loop(run, **parameters)
+        assert np.array_equal(evidence.home, expected, equal_nan=True), (scene, parameters)
+        seen["home"] += int((evidence.home > 0.5).sum())
+        seen["away"] += int((evidence.home < 0.5).sum())
+        if parameters["hold"] > 0.5:
+            seen["held"] += int(np.isin(evidence.home, (parameters["hold"], 1.0 - parameters["hold"])).sum())
+    assert min(seen.values()) > 100, "the random scenes no longer reach every branch: {}".format(seen)
+
+
+def test_touch_rejects_bad_parameters():
+    run = touch_scene(20)
+    for name, bads in (("radius", (0, -1.0, True, np.inf, np.nan, "2")),
+                       ("duel_radius", (0, -1.0, True, np.inf, np.nan)),
+                       ("max_rel_speed", (0, -1.0, True, np.nan)), ("min_frames", (0, 1.5, True, -2)),
+                       ("confidence", (0.5, 0.4, 1.1, True, np.nan)), ("hold", (0.4, 0.95, True, np.nan))):
+        for bad in bads:
+            expect_error(ValueError, lambda: touch(run, **{name: bad}), "controlled_touch", name)
+    touch(run, radius=np.float64(2.0), min_frames=np.int64(3), max_rel_speed=np.inf, confidence=1, hold=0.9)
+
+
+def test_touch_reads_read_only_inputs():
+    n = 40
+    run = touch_scene(n, slots={0: beside_ball(n, range(10, 25))})
+    atd = run.inputs.atd
+    for array in (atd.players_xy, atd.ball_xy, atd.slot_team):
+        array.flags.writeable = False
+    before = (atd.players_xy.copy(), atd.ball_xy.copy())
+    evidence = touch(run, hold=0.6)
+    assert np.array_equal(atd.players_xy, before[0], equal_nan=True)
+    assert np.array_equal(atd.ball_xy, before[1], equal_nan=True)
+    assert (evidence.home[10:25] == 0.9).all() and evidence.home.dtype == np.float64
+
+
+CONTROLLED_TRIAL_CONFIG = """
+[[evidence]]
+kind = "controlled_touch"
+radius = 200.0
+duel_radius = 0.001
+max_rel_speed = inf
+min_frames = 1
+confidence = 0.9
+hold = 0.6
+
+[decoder]
+kind = "hmm"
+switch_team = 1
+switch_dead = 20
+min_possession = 1
+min_dead = 1
+"""
+
+
+def test_run_end_to_end_synthetic_touch():
+    from pipeline import output
+    from pipeline.config import load_config
+    from pipeline.contracts import X
+    from pipeline.run import run
+    with tempfile.TemporaryDirectory() as root:
+        make_synthetic_bundle(root)
+        inputs = synthetic_inputs(root, graded=[(1, 50, 280), (2, 320, 560)])
+        config = load_config(write_text(root, "trial.toml", CONTROLLED_TRIAL_CONFIG))
+        out_path = os.path.join(root, "trial.csv")
+        result = run(config, inputs, out_path, log=quiet)
+        outside = np.ones(SYNTHETIC_FRAMES, dtype=bool)
+        outside[50:280] = outside[320:560] = False
+        assert (result.codes[outside] == X).all(), "frames outside the graded blocks must be X"
+        assert (result.codes[~outside] != X).all(), "the hmm decoder never abstains inside a block"
+        output.validate(out_path, SYNTHETIC_FRAMES, result.codes)
+        home = result.evidence["controlled_touch"].home
+        assert (home > 0.5).sum() > 20 and (home < 0.5).sum() > 20, "the trial must give evidence for both teams"
+        assert np.isnan(home[outside]).all()
+
+
 # -- decode -----------------------------------------------------------------------------------------------------------
 
 def vote_context(home, start=0, stop=None, weights=None):
@@ -1059,6 +1584,869 @@ def test_hmm_posterior_off_by_default():
     assert posterior is not None and posterior.shape == (30, 3)
 
 
+# -- dead ball (P05) --------------------------------------------------------------------------------------------------
+#
+# Hand-built scenes, in metres on the default 105.3 x 68.0 pitch (centre spot (52.65, 34), penalty spots (11, 34) and
+# (94.3, 34), corners at the four corners). The Atd's own speed channels are NaN in every scene: nothing here may read
+# them.
+
+PLAY_NAMES = (
+    "ball_missing", "ball_outside_m", "ball_speed", "ball_still_s", "ball_spot_m", "ball_in_goal_area", "since_seen_s",
+    "until_seen_s", "last_outside_m", "last_speed", "next_outside_m", "next_spot_m", "n_present", "speed_mean",
+    "speed_p90", "slow_share", "speed_mean_past4", "speed_mean_future4", "slow_share_c1", "slow_share_c4",
+    "slow_share_c10", "speed_mean_c10", "own_half_share", "centre_player_m", "box_crowd", "corner_player_m",
+    "outside_player_m", "goal_area_players", "team_gap_m", "spread_m")
+PLAY_PITCH = (105.3, 68.0)
+PLAY_COLUMN = {name: index for index, name in enumerate(PLAY_NAMES)}
+
+
+def play_inputs(players_m, ball_m, teams=None, graded=None, kickoffs=None, pitch=PLAY_PITCH):
+    """A stand-in Inputs over positions given in metres: players_m (n, S, 2) and ball_m (n, 2), NaN where absent."""
+    from pipeline.inputs.atd_cache import Atd
+    players_m, ball_m = np.asarray(players_m, dtype=np.float64), np.asarray(ball_m, dtype=np.float64)
+    n, slots = players_m.shape[:2]
+    scale = np.array(pitch)
+    teams = (np.arange(slots) % 2) if teams is None else np.asarray(teams)
+    atd = Atd(players_xy=players_m / scale, players_speed=np.full((n, slots), np.nan), ball_xy=ball_m / scale,
+              ball_speed=np.full(n, np.nan), slot_team=teams.astype(np.int8))
+    inputs = kinematics_inputs(atd, graded or [(1, 0, n)], pitch=pitch)
+    inputs.kickoffs = dict(kickoffs or {})
+    return inputs
+
+
+def play_columns(inputs, *names):
+    from pipeline.evidence import play_features
+    got_names, X = play_features.features(inputs)
+    assert got_names == PLAY_NAMES
+    return [X[:, PLAY_COLUMN[name]] for name in names]
+
+
+def nobody(n, slots=1):
+    return np.full((n, slots, 2), np.nan)
+
+
+def nothing(n):
+    return np.full((n, 2), np.nan)
+
+
+def walkers(n, speed, starts, direction=(1.0, 0.0), fps=25):
+    """(n, S, 2) metres: slot s starts at starts[s] and moves at `speed` m/s along the unit vector `direction`."""
+    starts = np.asarray(starts, dtype=np.float64)
+    step = speed / fps * np.asarray(direction, dtype=np.float64)
+    return starts[None, :, :] + np.arange(n)[:, None, None] * step
+
+
+def kickoff_formation(n, home_left=True, others_speed=0.0):
+    """22 slots (0-10 home, 11-21 away): home in x 12-50 and away in x 56-94 (swapped ends if not home_left), slot 0
+    on the centre line 0.45 m from the centre spot and still, the rest moving along y at `others_speed`.
+    Returns (players_m, teams)."""
+    xs_home, xs_away = np.linspace(12, 50, 10), np.linspace(56, 94, 11)
+    ys = np.linspace(12, 20, 11)
+    home = np.stack([np.concatenate(([52.2], xs_home)), np.concatenate(([34.0], ys[:10]))], axis=1)
+    away = np.stack([xs_away, ys], axis=1)
+    if not home_left:
+        home[:, 0], away[:, 0] = PLAY_PITCH[0] - home[:, 0], PLAY_PITCH[0] - away[:, 0]
+    starts = np.concatenate([home, away])
+    players = walkers(n, others_speed, starts, direction=(0.0, 1.0))
+    players[:, 0] = starts[0]
+    return players, np.array([0] * 11 + [1] * 11)
+
+
+def test_features_shape_and_names():
+    from pipeline.evidence import play_features
+    assert play_features.FEATURE_NAMES == PLAY_NAMES and len(PLAY_NAMES) == 30
+    assert play_features.FEATURE_VERSION == 1
+    rng = np.random.default_rng(1)
+    atd = kinematics_atd(rng.random((300, 4, 2)), rng.random((300, 2)))
+    inputs = kinematics_inputs(atd, [(1, 50, 120), (2, 200, 250)])
+    names, X = play_features.features(inputs)
+    assert names == PLAY_NAMES and X.shape == (300, 30) and X.dtype == np.float64
+    outside = np.ones(300, dtype=bool)
+    outside[50:120] = outside[200:250] = False
+    assert np.isnan(X[outside]).all(), "rows outside the graded blocks must be all NaN"
+    assert not np.isnan(X[~outside][:, PLAY_COLUMN["n_present"]]).any()
+    assert not np.isnan(X[~outside][:, PLAY_COLUMN["ball_missing"]]).any()
+
+
+def test_features_hand_scenes():
+    # a ball 2 m beyond the touchline
+    n = 100
+    outside, missing = play_columns(play_inputs(nobody(n), np.tile([50.0, -2.0], (n, 1))), "ball_outside_m",
+                                    "ball_missing")
+    assert np.allclose(outside, 2.0) and not missing.any()
+
+    # a ball still on the corner point: the still run grows, is capped at 30 s, and the spot is under the ball
+    n = 900
+    still, spot, speed, goal = play_columns(play_inputs(nobody(n), np.zeros((n, 2))), "ball_still_s", "ball_spot_m",
+                                            "ball_speed", "ball_in_goal_area")
+    assert np.allclose(spot, 0.0) and np.allclose(speed, 0.0)
+    assert np.isclose(still[0], 1 / 25) and np.isclose(still[74], 3.0) and np.isclose(still[749], 30.0)
+    assert np.allclose(still[750:], 30.0), "ball_still_s must be capped at 30 s"
+    assert np.allclose(goal, 0.0), "the corner point is not in a goal area"
+    moving = play_columns(play_inputs(nobody(60), np.stack([np.linspace(30, 45, 60), np.full(60, 20.0)], axis=1)),
+                          "ball_still_s")[0]
+    assert np.allclose(moving, 0.0), "a moving ball has no still run"
+
+    # a ball gap: visible 5-9 (outside, 10 m/s), missing 10-39, visible 40-59 (still, inside), missing 60-69
+    n = 70
+    ball = np.full((n, 2), np.nan)
+    ball[5:10] = np.stack([50.0 + 0.4 * np.arange(5), np.full(5, -1.0)], axis=1)
+    ball[40:60] = [10.0, 20.0]
+    cols = play_columns(play_inputs(nobody(n), ball), "ball_missing", "since_seen_s", "until_seen_s",
+                        "last_outside_m", "last_speed", "next_outside_m", "next_spot_m", "ball_in_goal_area")
+    missing, since, until, last_out, last_speed, next_out, next_spot, goal = cols
+    assert np.isnan(since[:5]).all() and np.isclose(since[5], 0.0) and np.isclose(since[25], 16 / 25)
+    assert np.isclose(until[2], 3 / 25) and np.isclose(until[25], 15 / 25) and np.isclose(until[45], 0.0)
+    assert np.isnan(until[60:]).all() and np.isclose(since[65], 6 / 25)
+    assert np.isnan(last_out[:5]).all() and np.allclose(last_out[5:40], 1.0) and np.allclose(last_out[40:], -10.0)
+    assert np.allclose(last_speed[5:40], 10.0) and np.allclose(last_speed[40:], 0.0)
+    assert np.allclose(next_out[:10], 1.0) and np.allclose(next_out[10:60], -10.0) and np.isnan(next_out[60:]).all()
+    assert np.allclose(next_spot[10:60], np.hypot(1.0, 14.0)), "the nearest spot of (10, 20) is the penalty spot"
+    assert missing[:5].all() and not missing[5:10].any() and missing[10:40].all() and missing[60:].all()
+    assert np.isnan(goal[:5]).all() and goal[5] == 0.0
+    # since_seen and until_seen are capped at 60 s
+    n = 2000
+    ball = np.full((n, 2), np.nan)
+    ball[0] = ball[n - 1] = [30.0, 30.0]
+    since, until = play_columns(play_inputs(nobody(n), ball), "since_seen_s", "until_seen_s")
+    assert np.isclose(since[1990], 60.0) and np.isclose(until[10], 60.0) and np.isclose(since[500], 20.0)
+    # the goal area is 5.5 m deep and 18.32 m wide, centred on each goal
+    ball = np.array([[3.0, 34.0], [3.0, 43.0], [3.0, 44.0], [6.0, 34.0], [100.0, 30.0], [99.0, 20.0]])
+    goal = play_columns(play_inputs(nobody(6), ball), "ball_in_goal_area")[0]
+    assert goal.tolist() == [1.0, 1.0, 0.0, 0.0, 1.0, 0.0]
+
+    # everyone walking: slow_share 1; everyone running: 0
+    n = 200
+    starts = np.stack([np.linspace(10, 90, 8), np.linspace(10, 60, 8)], axis=1)
+    walking = play_inputs(walkers(n, 1.0, starts), nothing(n))
+    slow, mean, p90, present, c1 = play_columns(walking, "slow_share", "speed_mean", "speed_p90", "n_present",
+                                                "slow_share_c1")
+    assert np.allclose(slow, 1.0) and np.allclose(mean, 1.0) and np.allclose(p90, 1.0) and np.allclose(present, 8)
+    assert np.allclose(c1, 1.0)
+    running = play_columns(play_inputs(walkers(n, 5.0, starts, direction=(0.0, 1.0)), nothing(n)), "slow_share",
+                           "speed_mean")
+    assert np.allclose(running[0], 0.0) and np.allclose(running[1], 5.0)
+
+    # a kick-off formation
+    players, teams = kickoff_formation(100)
+    own, centre, corner, gap = play_columns(play_inputs(players, nothing(100), teams=teams),
+                                            "own_half_share", "centre_player_m", "corner_player_m", "team_gap_m")
+    assert np.allclose(own, 1.0) and np.allclose(centre, 0.45), (own[0], centre[0])
+    assert np.all(gap > 20.0) and np.all(corner > 5.0)
+
+    # a crowd in a box: 7 slots in the left penalty area (2 of them in the goal area), 3 in the right one (1 in its
+    # goal area), one beyond the touchline and 2 in midfield
+    xs = [3, 4, 8, 10, 12, 14, 16, 90, 95, 101, 30, 60, 40]
+    ys = [34, 30, 20, 40, 50, 25, 34, 20, 40, 34, 34, 34, -1.5]
+    box = play_inputs(np.tile(np.stack([xs, ys], axis=1)[None].astype(float), (30, 1, 1)), nothing(30))
+    crowd, goal_players, outside_p = play_columns(box, "box_crowd", "goal_area_players", "outside_player_m")
+    assert np.allclose(crowd, 7) and np.allclose(goal_players, 3), (crowd[0], goal_players[0])
+    assert np.allclose(outside_p, 1.5)
+    nobody_there = play_columns(play_inputs(nobody(10, 3), nothing(10)), "box_crowd", "n_present", "centre_player_m",
+                                "speed_mean", "own_half_share", "team_gap_m")
+    assert np.allclose(nobody_there[0], 0.0) and np.allclose(nobody_there[1], 0.0)
+    assert all(np.isnan(column).all() for column in nobody_there[2:])
+
+
+def test_features_see_only_their_block():
+    from pipeline.evidence import play_features
+    rng = np.random.default_rng(4)
+    n, graded = 500, [(1, 0, 200), (2, 250, 450)]
+    players = rng.random((n, 6, 2)) * PLAY_PITCH
+    ball = rng.random((n, 2)) * PLAY_PITCH
+    players[rng.random((n, 6)) < 0.3] = np.nan
+    ball[rng.random(n) < 0.3] = np.nan
+    base = play_features.features(play_inputs(players, ball, graded=graded))[1]
+    players2, ball2 = players.copy(), ball.copy()
+    players2[250:450] = rng.random((200, 6, 2)) * PLAY_PITCH
+    ball2[250:450] = rng.random((200, 2)) * PLAY_PITCH
+    players2[200:250] = 7.0       # frames between the blocks change nothing either
+    ball2[200:250] = 7.0
+    changed = play_features.features(play_inputs(players2, ball2, graded=graded))[1]
+    assert np.array_equal(base[:200], changed[:200], equal_nan=True), "block 2 leaked into block 1"
+    assert np.isnan(changed[200:250]).all() and np.isnan(changed[450:]).all()
+    assert not np.array_equal(base[250:450], changed[250:450], equal_nan=True)
+    moved = players.copy()
+    moved[:200] = rng.random((200, 6, 2)) * PLAY_PITCH     # and block 1 into block 2
+    again = play_features.features(play_inputs(moved, ball, graded=graded))[1]
+    assert np.array_equal(base[250:450], again[250:450], equal_nan=True), "block 1 leaked into block 2"
+
+
+def test_own_half_follows_each_block():
+    first, teams = kickoff_formation(100, home_left=True)
+    second, _ = kickoff_formation(100, home_left=False)
+    inputs = play_inputs(np.concatenate([first, second]), nothing(200), teams=teams,
+                         graded=[(1, 0, 100), (2, 100, 200)])
+    own, centre = play_columns(inputs, "own_half_share", "centre_player_m")
+    assert np.allclose(own, 1.0), "teams that swap ends keep their own half in each block"
+    assert np.allclose(centre, 0.45)
+    # the same two stretches in ONE block: one pair of ends for the whole block, so one stretch is in the wrong half
+    one = play_inputs(np.concatenate([first, second]), nothing(200), teams=teams, graded=[(1, 0, 200)])
+    assert play_columns(one, "own_half_share")[0].min() < 0.5
+
+
+def play_reference(inputs):
+    """Every feature with plain loops, from the tracks' own positions and speeds (kinematics is checked elsewhere)."""
+    import math
+    from pipeline.evidence import kinematics
+    ball, players = kinematics.ball_track(inputs), kinematics.player_track(inputs)
+    length, width = inputs.pitch
+    fps = inputs.fps
+    team_of = [int(team) for team in inputs.atd.slot_team]
+    n, slots = players.present.shape
+    X = np.full((n, 30), np.nan)
+    spots = [(length / 2, width / 2), (11.0, width / 2), (length - 11.0, width / 2), (0.0, 0.0), (0.0, width),
+             (length, 0.0), (length, width)]
+
+    def beyond(x, y):
+        bx, by = max(-x, x - length), max(-y, y - width)
+        if bx > 0 or by > 0:
+            return math.hypot(max(bx, 0.0), max(by, 0.0))
+        return max(bx, by)
+
+    def in_goal(x, y):
+        return abs(y - width / 2) <= 9.16 and (0 <= x <= 5.5 or length - 5.5 <= x <= length)
+
+    def in_box(x, y, left):
+        return abs(y - width / 2) <= 20.16 and (0 <= x <= 16.5 if left else length - 16.5 <= x <= length)
+
+    def window(values, t, start, stop, before, after):
+        chosen = [values[u] for u in range(max(start, t - before), min(stop, t + after + 1))
+                  if not math.isnan(values[u])]
+        return sum(chosen) / len(chosen) if chosen else math.nan
+
+    for _, start, stop in inputs.graded:
+        sums, counts = [0.0, 0.0], [0, 0]
+        for t in range(start, stop):
+            for s in range(slots):
+                if players.present[t, s]:
+                    sums[team_of[s]] += players.xy_m[t, s, 0]
+                    counts[team_of[s]] += 1
+        means = [sums[k] / counts[k] if counts[k] else math.nan for k in (0, 1)]
+        if counts[0] and counts[1]:
+            home_left = means[0] < means[1]
+        elif counts[0]:
+            home_left = means[0] < length / 2
+        elif counts[1]:
+            home_left = means[1] > length / 2
+        else:
+            home_left = True
+        speed_mean = [math.nan] * n
+        slow = [math.nan] * n
+        for t in range(start, stop):
+            row = X[t]
+            seen = bool(ball.visible[t])
+            row[0] = 0.0 if seen else 1.0
+            if seen:
+                x, y = ball.xy_m[t]
+                row[1] = beyond(x, y)
+                row[2] = ball.speed[t]
+                count = 0
+                for u in range(t, start - 1, -1):
+                    if ball.visible[u] and ball.speed[u] < 1.0:
+                        count += 1
+                    else:
+                        break
+                row[3] = min(count / fps, 30.0)
+                row[4] = min(math.hypot(x - sx, y - sy) for sx, sy in spots)
+                row[5] = 1.0 if in_goal(x, y) else 0.0
+            back = [u for u in range(t, start - 1, -1) if ball.visible[u]]
+            ahead = [u for u in range(t, stop) if ball.visible[u]]
+            if back:
+                u = back[0]
+                row[6] = min((t - u) / fps, 60.0)
+                row[8] = beyond(*ball.xy_m[u])
+                row[9] = ball.speed[u]
+            if ahead:
+                u = ahead[0]
+                row[7] = min((u - t) / fps, 60.0)
+                row[10] = beyond(*ball.xy_m[u])
+                row[11] = min(math.hypot(ball.xy_m[u, 0] - sx, ball.xy_m[u, 1] - sy) for sx, sy in spots)
+            here = [s for s in range(slots) if players.present[t, s]]
+            row[12] = len(here)
+            speeds = [players.speed[t, s] for s in here if not math.isnan(players.speed[t, s])]
+            if speeds:
+                speed_mean[t] = sum(speeds) / len(speeds)
+                slow[t] = sum(1 for value in speeds if value < 2.0) / len(speeds)
+                row[13], row[14], row[15] = speed_mean[t], np.percentile(speeds, 90), slow[t]
+            if here:
+                pos = [players.xy_m[t, s] for s in here]
+                own = 0
+                for s in here:
+                    px = players.xy_m[t, s, 0]
+                    defends_left = (team_of[s] == 0) == home_left
+                    own += (px <= length / 2 + 1.0) if defends_left else (px >= length / 2 - 1.0)
+                row[22] = own / len(here)
+                row[23] = min(math.hypot(px - length / 2, py - width / 2) for px, py in pos)
+                row[24] = max(sum(1 for px, py in pos if in_box(px, py, left)) for left in (True, False))
+                row[25] = min(math.hypot(px - cx, py - cy) for px, py in pos
+                              for cx, cy in spots[3:])
+                row[26] = max(beyond(px, py) for px, py in pos)
+                row[27] = sum(1 for px, py in pos if in_goal(px, py))
+            else:
+                row[24] = row[27] = 0.0
+            centroids, spreads = [], []
+            for team in (0, 1):
+                mine = [players.xy_m[t, s] for s in here if team_of[s] == team]
+                if mine:
+                    cx = sum(p[0] for p in mine) / len(mine)
+                    cy = sum(p[1] for p in mine) / len(mine)
+                    centroids.append((cx, cy))
+                    spreads.append(math.sqrt(sum((p[0] - cx) ** 2 + (p[1] - cy) ** 2 for p in mine) / len(mine)))
+            if len(centroids) == 2:
+                row[28] = math.hypot(centroids[0][0] - centroids[1][0], centroids[0][1] - centroids[1][1])
+                row[29] = sum(spreads) / 2
+        for t in range(start, stop):
+            row = X[t]
+            row[16] = window(speed_mean, t, start, stop, 4 * fps, 0)
+            row[17] = window(speed_mean, t, start, stop, 0, 4 * fps)
+            row[18] = window(slow, t, start, stop, fps, fps)
+            row[19] = window(slow, t, start, stop, 4 * fps, 4 * fps)
+            row[20] = window(slow, t, start, stop, 10 * fps, 10 * fps)
+            row[21] = window(speed_mean, t, start, stop, 10 * fps, 10 * fps)
+    return X
+
+
+def play_random_inputs(seed):
+    """A small random scene: two blocks, random-walk players of slow and fast slots, a ball that comes and goes."""
+    rng = np.random.default_rng(seed)
+    n, slots = 160, 6
+    graded = [(1, 10, 80), (2, 90, 150)]
+
+    def toggled(shape, rate):
+        flips = rng.random(shape) < rate
+        return (np.cumsum(flips, axis=0) + rng.integers(2, size=shape[1:])) % 2 == 0
+
+    walk = rng.choice([0.0002, 0.003], size=slots)
+    players = (rng.random((1, slots, 2)) * 1.1 - 0.05 + np.cumsum(rng.normal(size=(n, slots, 2)) * walk[None, :, None],
+                                                                   axis=0)) * PLAY_PITCH
+    players[~toggled((n, slots), 0.06)] = np.nan
+    start = [(0.0, 0.0), (0.5, 0.5), (0.1, 0.5), None, None][seed % 5]
+    start = rng.random(2) * 1.1 - 0.05 if start is None else np.array(start)
+    ball = (start + np.cumsum(rng.normal(size=(n, 2)) * rng.choice([0.00005, 0.0003]), axis=0)) * PLAY_PITCH
+    ball[~toggled((n,), 0.07)] = np.nan
+    teams = np.arange(slots) % 2 if seed % 3 else rng.integers(2, size=slots)
+    return play_inputs(players, ball, teams=teams, graded=graded)
+
+
+def test_features_match_a_loop():
+    from pipeline.evidence import play_features
+    for seed in range(50):
+        inputs = play_random_inputs(seed)
+        got = play_features.features(inputs)[1]
+        want = play_reference(inputs)
+        for index, name in enumerate(PLAY_NAMES):
+            assert np.allclose(got[:, index], want[:, index], rtol=1e-9, atol=1e-9, equal_nan=True), \
+                "seed {}: column {} differs, first at frame {}".format(
+                    seed, name, int(np.flatnonzero(~np.isclose(got[:, index], want[:, index], rtol=1e-9, atol=1e-9,
+                                                              equal_nan=True))[0]))
+
+
+def test_features_chunks_change_nothing():
+    from pipeline.evidence import play_features
+    inputs = play_random_inputs(11)
+    whole = play_features.features(inputs)[1]
+    saved = play_features.CHUNK
+    try:
+        for chunk in (1, 7, 64):
+            play_features.CHUNK = chunk
+            again = play_features._build(inputs)
+            assert np.array_equal(again, whole, equal_nan=True), chunk
+    finally:
+        play_features.CHUNK = saved
+
+
+def test_features_read_only_inputs():
+    from pipeline.evidence import play_features
+    inputs = play_random_inputs(7)
+    arrays = [inputs.atd.players_xy, inputs.atd.ball_xy, inputs.atd.slot_team]
+    saved = [array.copy() for array in arrays]
+    for array in arrays:
+        array.flags.writeable = False
+    names, X = play_features.features(inputs)
+    for array, copy in zip(arrays, saved):
+        assert np.array_equal(array, copy, equal_nan=True)
+    assert not X.flags.writeable, "features must hand out read-only arrays"
+    again_names, again = play_features.features(inputs)
+    assert again is X and again_names is names, "features is remembered per Inputs object"
+    other_names, other = play_features.features(play_random_inputs(8))
+    assert other is not X and not np.array_equal(other, X, equal_nan=True)
+
+
+RULE_VALUES = dict(alive_out=0.11, alive_still=0.22, alive_slow=0.33, alive_kickoff=0.44, alive_none=0.99)
+
+
+def rule_alive(inputs, **values):
+    from pipeline.contracts import RunContext, check_evidence
+    from pipeline.evidence import REGISTRY
+    evidence = REGISTRY["dead_ball_rules"](RunContext(inputs=inputs, seed=0), **dict(RULE_VALUES, **values))
+    check_evidence(evidence, len(inputs.atd.ball_xy))
+    assert np.isnan(evidence.home).all(), "dead_ball_rules has no opinion on who has the ball"
+    return evidence.alive
+
+
+def test_dead_ball_rules_triggers():
+    n = 100
+    walking = walkers(n, 1.0, np.stack([np.linspace(10, 90, 8), np.linspace(10, 60, 8)], axis=1))
+    # out: a ball 2 m beyond the touchline, moving
+    along = np.stack([20 + 0.4 * np.arange(n), np.full(n, -2.0)], axis=1)
+    assert np.allclose(rule_alive(play_inputs(nobody(n), along)), 0.11)
+    # a ball 0.4 m beyond is not out (the threshold is 0.5 m); nor does a moving ball trigger anything else
+    near = np.stack([20 + 0.4 * np.arange(n), np.full(n, -0.4)], axis=1)
+    assert np.allclose(rule_alive(play_inputs(nobody(n), near)), 0.99)
+    # still: 2 s (50 frames) at a restart spot, or on a line, or in a goal area; not in midfield
+    for where in ([52.65, 34.0], [30.0, 0.5], [3.0, 34.0], [94.3, 35.5]):
+        alive = rule_alive(play_inputs(nobody(n), np.tile(where, (n, 1))))
+        assert np.allclose(alive[:49], 0.99) and np.allclose(alive[49:], 0.22), where
+    assert np.allclose(rule_alive(play_inputs(nobody(n), np.tile([30.0, 20.0], (n, 1)))), 0.99)
+    # a ball that is missing is not still
+    assert np.allclose(rule_alive(play_inputs(nobody(n), nothing(n))), 0.99)
+    # slow: everyone walking
+    assert np.allclose(rule_alive(play_inputs(walking, nothing(n))), 0.33)
+    # kickoff: a kick-off formation whose slot at the centre stands and whose others run
+    players, teams = kickoff_formation(n, others_speed=5.0)
+    assert np.allclose(rule_alive(play_inputs(players, nothing(n), teams=teams)), 0.44)
+    # the minimum when several fire
+    assert np.allclose(rule_alive(play_inputs(players, along, teams=teams)), 0.11)
+    assert np.allclose(rule_alive(play_inputs(players, along, teams=teams), alive_out=0.6), 0.44)
+    still_ball = np.tile([52.65, 34.0], (n, 1))
+    alive = rule_alive(play_inputs(walking, still_ball))
+    assert np.allclose(alive[:49], 0.33) and np.allclose(alive[49:], 0.22)
+    alive = rule_alive(play_inputs(walking, still_ball), alive_still=0.5)
+    assert np.allclose(alive, 0.33)
+    # no opinion outside the graded blocks
+    inputs = play_inputs(np.concatenate([walking, walking]), nothing(2 * n), graded=[(1, 20, 80), (2, 120, 180)])
+    alive = rule_alive(inputs)
+    assert np.isnan(alive[:20]).all() and np.isnan(alive[80:120]).all() and np.isnan(alive[180:]).all()
+    assert np.allclose(alive[20:80], 0.33) and np.allclose(alive[120:180], 0.33)
+
+
+def test_dead_ball_pre_kickoff_is_dead():
+    from pipeline.evidence import play_features
+    n = 200
+    walking = walkers(n, 1.0, np.stack([np.linspace(10, 90, 8), np.linspace(10, 60, 8)], axis=1))
+    inputs = play_inputs(walking, nothing(n), graded=[(1, 0, 100), (2, 100, 200)], kickoffs={1: 40, 2: 150})
+    alive = rule_alive(inputs)
+    assert play_features.PRE_KICKOFF_ALIVE == 0.001
+    assert np.allclose(alive[:40], 0.001) and np.allclose(alive[100:150], 0.001)
+    assert np.allclose(alive[40:100], 0.33) and np.allclose(alive[150:], 0.33), "from the kick-off on, the rules decide"
+    mask = play_features.pre_kickoff_mask(inputs)
+    assert mask.shape == (n,) and mask.dtype == bool
+    assert mask[:40].all() and mask[100:150].all() and not mask[40:100].any() and not mask[150:].any()
+
+
+def test_dead_ball_pre_kickoff_needs_the_kickoff_in_its_block():
+    from pipeline.evidence import play_features
+    # the default synthetic bundle grades frames 0-600 while Inputs carries BAR-ATH's kick-offs (11185, 113742): the
+    # rule must stay silent, or every synthetic frame would count as before the kick-off
+    with tempfile.TemporaryDirectory() as root:
+        make_synthetic_bundle(root)
+        inputs = synthetic_inputs(root)
+        assert inputs.kickoffs == {1: 11185, 2: 113742}
+        assert not play_features.pre_kickoff_mask(inputs).any()
+        alive = rule_alive(inputs)
+        assert not np.any(alive == 0.001) and not np.isnan(alive[:600]).any()
+    n = 100
+    nobody_scene = (nobody(n), nothing(n))
+    # a kick-off at the block's first frame leaves nothing before it; one at its stop (or past it) is not inside it
+    for kickoffs in ({1: 0}, {1: 100}, {1: 500}, {1: -5}, {}):
+        inputs = play_inputs(*nobody_scene, graded=[(1, 0, 100)], kickoffs=kickoffs)
+        assert not play_features.pre_kickoff_mask(inputs).any(), kickoffs
+        assert np.allclose(rule_alive(inputs), 0.99), kickoffs
+    inputs = play_inputs(*nobody_scene, graded=[(1, 10, 100)], kickoffs={1: 11})
+    assert play_features.pre_kickoff_mask(inputs).sum() == 1 and play_features.pre_kickoff_mask(inputs)[10]
+    # the second half's kick-off lies in the first block only by accident of numbering: each half uses its own
+    inputs = play_inputs(np.full((200, 1, 2), np.nan), nothing(200), graded=[(1, 0, 100), (2, 100, 200)],
+                         kickoffs={1: 50, 2: 50})
+    mask = play_features.pre_kickoff_mask(inputs)
+    assert mask[:50].all() and not mask[50:].any()
+
+
+def test_dead_ball_rules_rejects_bad_parameters():
+    from pipeline.contracts import RunContext
+    from pipeline.evidence import REGISTRY
+    run = RunContext(inputs=None, seed=0)       # a bad parameter is refused before the inputs are touched
+    rules = REGISTRY["dead_ball_rules"]
+    for name in RULE_VALUES:
+        incomplete = {key: value for key, value in RULE_VALUES.items() if key != name}
+        expect_error(TypeError, lambda: rules(run, **incomplete), name)
+        for bad in (-0.1, 1.5, float("nan"), True, False, "0.5", None):
+            expect_error(ValueError, lambda: rules(run, **dict(RULE_VALUES, **{name: bad})), "dead_ball_rules", name)
+    expect_error(TypeError, lambda: rules(run, RULE_VALUES), "positional")
+    for edge in (0.0, 1.0, np.float64(0.25)):
+        rules(RunContext(inputs=play_inputs(nobody(5), nothing(5)), seed=0), **dict(RULE_VALUES, alive_none=edge))
+
+
+def test_features_speed():
+    from pipeline.evidence import kinematics, play_features
+    rng = np.random.default_rng(9)
+    n, slots = 180_000, 46
+    players = rng.random((n, slots, 2))
+    players[rng.random((n, slots)) < 0.4] = np.nan
+    ball = rng.random((n, 2))
+    ball[rng.random(n) < 0.4] = np.nan
+    inputs = kinematics_inputs(kinematics_atd(players, ball), [(1, 5_000, 75_000), (2, 100_000, 170_000)])
+    inputs.kickoffs = {}
+    inputs.atd.players_present                      # the Atd's own cached masks are not this module's cost
+    inputs.atd.ball_present
+    kinematics.ball_track(inputs)                   # the tracks have their own check (test_kinematics_speed)
+    kinematics.player_track(inputs)
+    started = time.perf_counter()
+    play_features.features(inputs)
+    elapsed = time.perf_counter() - started
+    print("      features speed: 140,000 graded frames x {} slots (tracks built beforehand) in {:.2f} s".format(
+        slots, elapsed))
+    assert elapsed < 3.0, "{:.2f} s for 140,000 frames x 46 slots (the budget is 3 s)".format(elapsed)
+
+
+# -- the dead-ball model (P05) ----------------------------------------------------------------------------------------
+#
+# A hand-made artifact of a couple of trees, so that every number is worked out here and not by the trainer. Its one
+# tree splits on ball_missing (ball seen: one leaf, ball missing: another) on a baseline; the fold's tree has other
+# numbers, so that a check can tell which of the two models was used.
+
+MODEL_BASELINE, MODEL_SEEN, MODEL_MISSING, MODEL_PRIOR = 0.3, 1.0, -2.0, 0.6
+FOLD_BASELINE, FOLD_SEEN, FOLD_MISSING, FOLD_PRIOR = -0.4, 0.5, -3.0, 0.25
+
+
+def stump(feature, threshold, left, right, missing_left=0):
+    """One tree of three nodes, in the artifact's per-tree arrays: a split on `feature` and two leaves."""
+    return {"feature": [feature, -1, -1], "threshold": [threshold, 0.0, 0.0], "missing_left": [missing_left, 0, 0],
+            "left": [1, 0, 0], "right": [2, 0, 0], "leaf": [0, 1, 1], "value": [0.0, left, right]}
+
+
+def hgb_model(baseline, seen, missing, prior):
+    return {"prior_alive": prior, "baseline": baseline,
+            "trees": [stump(PLAY_COLUMN["ball_missing"], 0.5, seen, missing)]}
+
+
+def write_model(folder, folds=None, full=None, name="dead_ball_hgb.json", **changes):
+    import json
+    from pipeline.evidence import play_features
+    artifact = {"format": 1, "kind": "hgb", "feature_version": play_features.FEATURE_VERSION,
+                "features": list(PLAY_NAMES), "profile": "tracking", "seeds": 3, "stride": 5, "provenance": {},
+                "folds": {"FOLD1": hgb_model(FOLD_BASELINE, FOLD_SEEN, FOLD_MISSING, FOLD_PRIOR)} if folds is None
+                else folds,
+                "full": hgb_model(MODEL_BASELINE, MODEL_SEEN, MODEL_MISSING, MODEL_PRIOR) if full is None else full}
+    artifact.update(changes)
+    return write_text(folder, name, json.dumps(artifact, sort_keys=True) + "\n")
+
+
+def model_alive(inputs, path, game="BAR-ATH", **values):
+    from pipeline.contracts import RunContext, check_evidence
+    from pipeline.evidence import REGISTRY
+    inputs.game = game
+    evidence = REGISTRY["dead_ball_model"](RunContext(inputs=inputs, seed=0), model=path, **values)
+    check_evidence(evidence, len(inputs.atd.ball_xy))
+    assert np.isnan(evidence.home).all(), "dead_ball_model has no opinion on who has the ball"
+    return evidence.alive
+
+
+def half_seen_inputs(n=100, **kwargs):
+    """Walkers and a ball that is seen on frames 0-49 and missing on 50-99 (one block)."""
+    ball = np.full((n, 2), np.nan)
+    ball[:n // 2] = [30.0, 20.0]
+    walking = walkers(n, 1.0, np.stack([np.linspace(10, 90, 8), np.linspace(10, 60, 8)], axis=1))
+    return play_inputs(walking, ball, **kwargs)
+
+
+def logit(p):
+    return np.log(p / (1.0 - p))
+
+
+def test_dead_ball_model_prior_correction():
+    # logit(alive) = logit(p) - logit(prior_alive), with p = sigmoid(baseline + leaf) for the full model
+    with tempfile.TemporaryDirectory() as root:
+        path = write_model(root)
+        inputs = half_seen_inputs()
+        alive = model_alive(inputs, path)
+        for rows, leaf in ((slice(0, 50), MODEL_SEEN), (slice(50, 100), MODEL_MISSING)):
+            expected = 1.0 / (1.0 + np.exp(-(MODEL_BASELINE + leaf - logit(MODEL_PRIOR))))
+            assert np.allclose(alive[rows], expected, rtol=0, atol=1e-12), (alive[rows][0], expected)
+        # the clip: a score far out is held at min_prob and 1 - min_prob, and min_prob is a parameter
+        extreme = write_model(root, full=hgb_model(0.0, 40.0, -40.0, 0.5), name="extreme.json")
+        alive = model_alive(inputs, extreme)
+        assert np.allclose(alive[:50], 0.999) and np.allclose(alive[50:], 0.001)
+        alive = model_alive(inputs, extreme, min_prob=0.01)
+        assert np.allclose(alive[:50], 0.99) and np.allclose(alive[50:], 0.01)
+        # a prior of 0.5 corrects nothing
+        plain = write_model(root, full=hgb_model(0.0, 1.0, -1.0, 0.5), name="plain.json")
+        alive = model_alive(inputs, plain)
+        assert np.allclose(alive[:50], 1 / (1 + np.exp(-1.0))) and np.allclose(alive[50:], 1 / (1 + np.exp(1.0)))
+        for bad in (0.0, 0.5, -0.1, True, "0.1", None, float("nan")):
+            expect_error(ValueError, lambda: model_alive(inputs, path, min_prob=bad), "dead_ball_model", "min_prob")
+        for bad in (0.0, 1.0, 1.5, True, None):
+            broken = write_model(root, full=dict(hgb_model(0.0, 1.0, -1.0, 0.5), prior_alive=bad), name="prior.json")
+            expect_error(ValueError, lambda: model_alive(inputs, broken), "dead_ball_model", "prior_alive")
+
+
+def test_dead_ball_model_uses_the_fold_of_the_game():
+    with tempfile.TemporaryDirectory() as root:
+        path = write_model(root)
+        inputs = half_seen_inputs()
+        fold = model_alive(inputs, path, game="FOLD1")
+        for rows, leaf in ((slice(0, 50), FOLD_SEEN), (slice(50, 100), FOLD_MISSING)):
+            expected = 1.0 / (1.0 + np.exp(-(FOLD_BASELINE + leaf - logit(FOLD_PRIOR))))
+            assert np.allclose(fold[rows], expected, rtol=0, atol=1e-12)
+        full = model_alive(inputs, path, game="BAR-ATH")
+        assert not np.allclose(full, fold)
+        other = model_alive(inputs, path, game="NOT-IN-FOLDS")
+        assert np.array_equal(other, full), "a game with no fold is scored by `full`"
+        # the file is read again when it changes
+        write_model(root, full=hgb_model(5.0, 0.0, 0.0, 0.5))
+        changed = model_alive(inputs, path, game="BAR-ATH")
+        assert np.allclose(changed, 1.0 / (1.0 + np.exp(-5.0))) and not np.allclose(changed, full)
+
+
+def test_dead_ball_model_refuses_other_features():
+    import json
+    from pipeline.contracts import RunContext
+    from pipeline.evidence import REGISTRY
+    with tempfile.TemporaryDirectory() as root:
+        inputs = half_seen_inputs()
+        renamed = list(PLAY_NAMES)
+        renamed[3] = "ball_still_ms"
+        for label, changes in (("format", {"format": 2}), ("feature_version", {"feature_version": 2}),
+                               ("features", {"features": list(PLAY_NAMES)[::-1]}), ("features", {"features": renamed}),
+                               ("features", {"features": list(PLAY_NAMES)[:-1]})):
+            path = write_model(root, name="other.json", **changes)
+            expect_error(ValueError, lambda: model_alive(inputs, path), "dead_ball_model", label,
+                         "pipeline/benchmark/train_dead_ball.py")
+        expect_error(ValueError, lambda: model_alive(inputs, write_model(root, name="kind.json", kind="forest")),
+                     "dead_ball_model", "kind", "forest")
+        expect_error(ValueError, lambda: model_alive(inputs, os.path.join(root, "absent.json")),
+                     "dead_ball_model", "absent.json", "pipeline/benchmark/train_dead_ball.py")
+        write_text(root, "text.json", "not json at all")
+        expect_error(ValueError, lambda: model_alive(inputs, os.path.join(root, "text.json")), "dead_ball_model",
+                     "text.json")
+        ragged = hgb_model(0.0, 1.0, -1.0, 0.5)
+        ragged["trees"][0]["left"] = [1, 0]                    # arrays of unequal lengths
+        expect_error(ValueError, lambda: model_alive(inputs, write_model(root, full=ragged, name="ragged.json")),
+                     "dead_ball_model", "tree")
+        no_full = json.loads(open(write_model(root), encoding="utf-8").read())
+        no_full.pop("full")
+        write_text(root, "nofull.json", json.dumps(no_full))
+        expect_error(ValueError, lambda: model_alive(inputs, os.path.join(root, "nofull.json")), "dead_ball_model",
+                     "full")
+        for bad in (None, 5, "", True):
+            expect_error(ValueError, lambda: model_alive(inputs, bad), "dead_ball_model", "model")
+        expect_error(TypeError, lambda: REGISTRY["dead_ball_model"](RunContext(inputs=inputs, seed=0)), "model")
+
+
+def test_dead_ball_model_pre_kickoff_is_dead():
+    from pipeline.evidence import play_features
+    with tempfile.TemporaryDirectory() as root:
+        path = write_model(root)
+        n = 200
+        walking = walkers(n, 1.0, np.stack([np.linspace(10, 90, 8), np.linspace(10, 60, 8)], axis=1))
+        ball = np.tile([30.0, 20.0], (n, 1))
+        inputs = play_inputs(walking, ball, graded=[(1, 0, 100), (2, 100, 200)], kickoffs={1: 40, 2: 150})
+        alive = model_alive(inputs, path)
+        assert np.allclose(alive[:40], play_features.PRE_KICKOFF_ALIVE)
+        assert np.allclose(alive[100:150], play_features.PRE_KICKOFF_ALIVE)
+        expected = 1.0 / (1.0 + np.exp(-(MODEL_BASELINE + MODEL_SEEN - logit(MODEL_PRIOR))))
+        assert np.allclose(alive[40:100], expected) and np.allclose(alive[150:], expected)
+        # outside the blocks: no opinion. And a kick-off outside its block is silent, as in the rules
+        inputs = play_inputs(walking, ball, graded=[(1, 20, 80), (2, 120, 180)], kickoffs={1: 500, 2: 0})
+        alive = model_alive(inputs, path)
+        assert np.isnan(alive[:20]).all() and np.isnan(alive[80:120]).all() and np.isnan(alive[180:]).all()
+        assert np.allclose(alive[20:80], expected) and np.allclose(alive[120:180], expected)
+
+
+DEAD_BALL_TRIAL_CONFIG = """
+[[evidence]]
+kind = "controlled_touch"
+radius = 200.0
+duel_radius = 0.001
+max_rel_speed = inf
+min_frames = 1
+confidence = 0.9
+hold = 0.6
+
+[[evidence]]
+{source}
+
+[decoder]
+kind = "hmm"
+switch_team = 1
+switch_dead = 20
+min_possession = 1
+min_dead = 1
+"""
+
+
+def test_run_end_to_end_synthetic_dead_ball():
+    """Each P05 source, through config -> registry -> evidence -> hmm: the frames before a kick-off come out D."""
+    from pipeline import output
+    from pipeline.config import load_config
+    from pipeline.contracts import CODES, X
+    from pipeline.run import run
+    with tempfile.TemporaryDirectory() as root:
+        make_synthetic_bundle(root)
+        model = write_model(root)
+        lines = ["kind = \"dead_ball_rules\""] + ["{} = {}".format(k, v) for k, v in RULE_VALUES.items()]
+        sources = {"dead_ball_rules": "\n".join(lines),
+                   "dead_ball_model": "kind = \"dead_ball_model\"\nmodel = {}".format(json_string(model))}
+        for name, source in sources.items():
+            inputs = synthetic_inputs(root, graded=[(1, 50, 280), (2, 320, 560)])
+            inputs.kickoffs = {1: 100, 2: 420}
+            config = load_config(write_text(root, name + ".toml", DEAD_BALL_TRIAL_CONFIG.format(source=source)))
+            out_path = os.path.join(root, name + ".csv")
+            result = run(config, inputs, out_path, log=quiet)
+            before = np.zeros(SYNTHETIC_FRAMES, dtype=bool)
+            before[50:100] = before[320:420] = True
+            outside = np.ones(SYNTHETIC_FRAMES, dtype=bool)
+            outside[50:280] = outside[320:560] = False
+            assert (result.codes[before] == CODES["D"]).all(), "{}: frames before a kick-off are not D".format(name)
+            assert (result.codes[outside] == X).all(), name
+            assert (result.codes[~outside] != X).all(), "{}: no X inside a block".format(name)
+            output.validate(out_path, SYNTHETIC_FRAMES, result.codes)
+
+
+def json_string(text):
+    import json
+    return json.dumps(text)
+
+
+def test_dead_ball_model_imports_numpy_only():
+    import ast
+    import subprocess
+    banned = {"sklearn", "scipy", "joblib", "threadpoolctl", "pandas", "narwhals", "cloudpickle"}
+    folder = os.path.join(ROOT, "pipeline", "evidence")
+    found = []
+    for name in sorted(os.listdir(folder)):
+        if name.endswith(".py"):
+            with open(os.path.join(folder, name), encoding="utf-8") as handle:
+                for node in ast.walk(ast.parse(handle.read())):
+                    if isinstance(node, ast.Import):
+                        modules = [alias.name for alias in node.names]
+                    elif isinstance(node, ast.ImportFrom) and not node.level:
+                        modules = [node.module or ""]
+                    else:
+                        modules = []
+                    found += ["{}: {}".format(name, module) for module in modules if module.split(".")[0] in banned]
+    assert not found, "pipeline/evidence must be numpy only: {}".format(found)
+    code = ("import sys; import pipeline.evidence.dead_ball_model, pipeline.evidence; "
+            "bad = sorted(name for name in ('sklearn', 'scipy', 'joblib') if name in sys.modules); "
+            "print(','.join(bad)); sys.exit(1 if bad else 0)")
+    done = subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True)
+    assert done.returncode == 0, "importing the model source pulled in: " + done.stdout + done.stderr
+
+
+def test_dead_ball_model_read_only_inputs():
+    from pipeline.evidence import play_features
+    with tempfile.TemporaryDirectory() as root:
+        path = write_model(root)
+        inputs = play_random_inputs(5)
+        arrays = [inputs.atd.players_xy, inputs.atd.ball_xy, inputs.atd.slot_team]
+        saved = [array.copy() for array in arrays]
+        for array in arrays:
+            array.flags.writeable = False
+        before = play_features.features(inputs)[1].copy()
+        first = model_alive(inputs, path)
+        for array, copy in zip(arrays, saved):
+            assert np.array_equal(array, copy, equal_nan=True)
+        assert np.array_equal(play_features.features(inputs)[1], before, equal_nan=True), "the features were changed"
+        second = model_alive(inputs, path)
+        assert np.array_equal(first, second, equal_nan=True), "a second call on the same inputs gives other numbers"
+        assert not first.flags.writeable, "the arrays handed out are read-only"
+
+
+def random_hgb_model(rng, trees=300, leaves=15, prior=0.7):
+    """A model of the size the trainer writes: `trees` random trees of `leaves` leaves over random features."""
+    forest = []
+    for _ in range(trees):
+        feature, threshold, left, right = [-1], [0.0], [0], [0]
+        open_leaves = [0]
+        for _ in range(leaves - 1):                          # split a random open leaf in two
+            node = open_leaves.pop(int(rng.integers(len(open_leaves))))
+            child = len(feature)
+            feature[node], threshold[node] = int(rng.integers(30)), float(rng.normal())
+            feature += [-1, -1]
+            threshold += [0.0, 0.0]
+            left += [0, 0]
+            right += [0, 0]
+            left[node], right[node] = child, child + 1
+            open_leaves += [child, child + 1]
+        missing = rng.integers(2, size=len(feature)).tolist()
+        forest.append({"feature": feature, "threshold": threshold, "missing_left": missing,
+                       "left": left, "right": right, "leaf": [int(f < 0) for f in feature],
+                       "value": [float(rng.normal()) * 0.1 if f < 0 else 0.0 for f in feature]})
+    return {"prior_alive": prior, "baseline": 0.2, "trees": forest}
+
+
+def test_dead_ball_model_speed():
+    from pipeline.contracts import RunContext
+    from pipeline.evidence import REGISTRY, play_features
+    rng = np.random.default_rng(11)
+    n, slots = 180_000, 46
+    players = rng.random((n, slots, 2))
+    players[rng.random((n, slots)) < 0.4] = np.nan
+    ball = rng.random((n, 2))
+    ball[rng.random(n) < 0.4] = np.nan
+    inputs = kinematics_inputs(kinematics_atd(players, ball), [(1, 5_000, 75_000), (2, 100_000, 170_000)])
+    inputs.kickoffs, inputs.game = {}, "BAR-ATH"
+    inputs.atd.players_present                      # the Atd's own cached masks are not this module's cost
+    inputs.atd.ball_present
+    with tempfile.TemporaryDirectory() as root:
+        path = write_model(root, full=random_hgb_model(rng))
+        started = time.perf_counter()
+        play_features.features(inputs)              # warm: the features are P05's other half and have their own check
+        features_s = time.perf_counter() - started
+        started = time.perf_counter()
+        evidence = REGISTRY["dead_ball_model"](RunContext(inputs=inputs, seed=0), model=path)
+        first_s = time.perf_counter() - started
+        started = time.perf_counter()
+        REGISTRY["dead_ball_model"](RunContext(inputs=inputs, seed=0), model=path, min_prob=0.01)
+        again_s = time.perf_counter() - started
+        print("      dead_ball_model speed: 140,000 graded frames, 300 trees of 15 leaves: first inference {:.2f} s "
+              "(features {:.2f} s before it, {:.2f} s in all), a second config on the same inputs {:.2f} s".format(
+                  first_s, features_s, features_s + first_s, again_s))
+        assert not np.isnan(evidence.alive[5_000:75_000]).any() and np.isnan(evidence.alive[:5_000]).all()
+        assert first_s < 3.0, "{:.2f} s for 300 trees on 140,000 frames with warm features (the budget is 3 s)".format(
+            first_s)
+
+
+def test_dead_ball_model_remembers_its_scores_per_inputs():
+    from pipeline.contracts import RunContext
+    from pipeline.evidence import REGISTRY, dead_ball_model
+    with tempfile.TemporaryDirectory() as root:
+        path = write_model(root)
+        inputs = half_seen_inputs()
+        inputs.game = "BAR-ATH"
+        calls = []
+        real = dead_ball_model.raw_score
+        dead_ball_model.raw_score = lambda model, X: calls.append(len(X)) or real(model, X)
+        try:
+            run = RunContext(inputs=inputs, seed=0)
+            first = REGISTRY["dead_ball_model"](run, model=path).alive
+            second = REGISTRY["dead_ball_model"](run, model=path).alive
+            assert len(calls) == 1, "a second call on the same Inputs walked the trees again"
+            assert np.array_equal(first, second) and not first.flags.writeable and not second.flags.writeable
+            clipped = REGISTRY["dead_ball_model"](run, model=path, min_prob=0.4).alive
+            assert len(calls) == 1 and clipped.min() >= 0.4 and clipped.max() <= 0.6
+            assert np.allclose(clipped, np.clip(first, 0.4, 0.6)), "a different min_prob must re-clip the cached score"
+            inputs.game = "FOLD1"                                         # another model of the file: walked afresh
+            REGISTRY["dead_ball_model"](run, model=path)
+            assert len(calls) == 2
+            other = half_seen_inputs()
+            other.game = "BAR-ATH"
+            REGISTRY["dead_ball_model"](RunContext(inputs=other, seed=0), model=path)
+            assert len(calls) == 3, "the memo is per Inputs object"
+        finally:
+            dead_ball_model.raw_score = real
+
+
+def test_dead_ball_model_refuses_infinite_features():
+    from pipeline.evidence import play_features
+    with tempfile.TemporaryDirectory() as root:
+        path = write_model(root)
+        inputs = half_seen_inputs()
+        inputs.atd.ball_xy[10] = [np.inf, 20.0 / 68.0]
+        assert np.isinf(play_features.features(inputs)[1]).any(), "the scene no longer makes an infinite feature"
+        expect_error(ValueError, lambda: model_alive(inputs, path), "dead_ball_model", "infinite")
+
+
 # -- refine -----------------------------------------------------------------------------------------------------------
 
 def test_config_refiner_registry_starts_empty():
@@ -1343,7 +2731,8 @@ def test_data_main_config_deterministic():
     inputs = Inputs()
     with tempfile.TemporaryDirectory() as folder:
         first = run(config, inputs, os.path.join(folder, "first.csv"), log=quiet)
-        second = run(config, inputs, os.path.join(folder, "second.csv"), log=quiet)
+        # a fresh Inputs: the evidence memos live on the object, and a shared one would hide the evidence stage
+        second = run(config, Inputs(), os.path.join(folder, "second.csv"), log=quiet)
         assert first.sha256 == second.sha256, "two runs of the same config wrote different files (docs/traps.md T22)"
         output.validate(os.path.join(folder, "first.csv"), inputs.n_frames, first.codes)
         scores, _ = output.score(first.codes)

@@ -1,0 +1,33 @@
+# P45 Stage A's control (R008), a diagnostic and never a candidate: Stage A's chosen config, p45a_r20_v6_k03_h55, plus
+# nearest_player at confidence 0.78 (as in p06_hmm.toml). The two home sources combine, so this asks what the
+# nearest-player vote adds to, or takes from, controlled_touch with its hold. Run on `tracking`, both truths, with the
+# references, as the protocol says; never on the public window to choose anything (docs/traps.md T01).
+
+description = "P45 Stage A control (R008): p45a_r20_v6_k03_h55 plus nearest_player at confidence 0.78. A diagnostic, not a candidate."
+seed = 0
+scope = "halves"
+
+[[evidence]]
+kind = "nearest_player"
+confidence = 0.78    # the share of in-play, ball-visible frames on which the nearest player's team is right (A01)
+
+[[evidence]]
+kind = "controlled_touch"
+radius = 2.0          # metres: the nearest player must be this close
+max_rel_speed = 6.0   # m/s: and move with the ball
+min_frames = 3         # an episode shorter than this is dropped
+confidence = 0.91      # touch_stats.py: floor of the pooled agreement to a hundredth (91.9%)
+hold = 0.55            # the weak vote of the last team between episodes; 0.5 = off
+
+[[evidence]]
+kind = "ball_presence"
+margin = 0           # frames: every missing frame speaks
+missing = 0.2        # P(alive) where the ball is missing: a likelihood ratio of 4 for dead (A01, rounded down)
+seen = 0.585         # P(alive) where the ball is seen: a ratio of 1.41 for alive (A01)
+
+[decoder]
+kind = "hmm"
+switch_team = 8      # nats a change of team (H <-> A) costs
+switch_dead = 32     # nats a change into or out of D costs
+min_possession = 75  # frames: no run of H or A shorter than this (1 is no minimum)
+min_dead = 1         # frames: no run of D shorter than this (1 is no minimum)
