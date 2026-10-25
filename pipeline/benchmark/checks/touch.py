@@ -26,6 +26,7 @@ from pipeline.selftest import expect_error, quiet
 # Params
 WIDE = {"radius": 40.0, "max_rel_speed": math.inf, "min_frames": 1}   # on random tracking nearly every frame qualifies
 SHORT = {"radius": 40.0, "max_rel_speed": math.inf, "min_frames": 2}
+SPARSE = {"radius": 40.0, "max_rel_speed": math.inf, "min_frames": 3}   # most flips find no episode in their window
 LAG_SECONDS = 5
 
 
@@ -52,25 +53,33 @@ def plain_loop(match, setting, seed=0):
                 agree += int((home[i] > 0.5) == (codes[i] == 0))
     lags, changes = [], 0
     for start, stop in kinematics.blocks(inputs):
+        moves = [f for f in range(start + 1, stop) if codes[f] != codes[f - 1]]
         for c in range(start + 1, stop):
             if codes[c] in (0, 1) and codes[c - 1] in (0, 1) and codes[c] != codes[c - 1]:
                 changes += 1
-                for s in range(max(start, c - LAG_SECONDS * match.fps), min(stop, c + LAG_SECONDS * match.fps + 1)):
+                before = [f for f in moves if f < c]
+                after = [f for f in moves if f > c]
+                low = max(c - LAG_SECONDS * match.fps, before[-1] if before else start)
+                high = min(c + LAG_SECONDS * match.fps, after[0] if after else stop - 1)
+                best = None
+                for s in range(low, high + 1):
                     if np.isnan(home[s]) or (home[s] > 0.5) != (codes[c] == 0):
                         continue
                     if s > start and not np.isnan(home[s - 1]) and (home[s - 1] > 0.5) == (home[s] > 0.5):
                         continue                                  # not the first frame of its episode
-                    lags.append(s - c)
-                    break
+                    if best is None or abs(s - c) < abs(best - c):  # a tie keeps the earlier start
+                        best = s
+                if best is not None:
+                    lags.append(best - c)
     return population, kept, agree, lags, changes
 
 
 def test_touch_stats_matches_a_loop():
     """Coverage, agreement and the flip lags equal a frame-by-frame loop, per match and pooled, for two settings."""
     matches = synthetic_matches()
-    result = measured([WIDE, SHORT])
-    assert list(result["settings"]) == ["r40.0_vinf_k1", "r40.0_vinf_k2"], list(result["settings"])
-    for setting in (WIDE, SHORT):
+    result = measured([WIDE, SHORT, SPARSE])
+    assert list(result["settings"]) == ["r40.0_vinf_k1", "r40.0_vinf_k2", "r40.0_vinf_k3"], list(result["settings"])
+    for setting in (WIDE, SHORT, SPARSE):
         entry = result["settings"]["r40.0_vinf_k{}".format(setting["min_frames"])]
         total = np.zeros(3, dtype=int)
         pooled_lags, pooled_changes = [], 0
@@ -90,6 +99,8 @@ def test_touch_stats_matches_a_loop():
         assert flip["changes"] == pooled_changes and flip["found"] == len(pooled_lags), flip
         assert flip["share_found"] == len(pooled_lags) / pooled_changes, flip
         assert pooled_lags, "no flip was found, so no lag was compared"
+        if setting is SPARSE:
+            assert 0 < len(pooled_lags) < pooled_changes, "the not-found branch must occur, and not alone"
         expected = np.percentile(pooled_lags, [25, 50, 75])
         assert (flip["p25"], flip["median"], flip["p75"]) == tuple(float(v) for v in expected), flip
         assert entry["confidence"] == touch_stats.confidence_from_agreement(pooled["agreement"])

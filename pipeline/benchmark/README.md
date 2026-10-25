@@ -556,10 +556,14 @@ counts, among the alive graded frames where the served tracking has the ball:
 
 - **coverage**, the share inside a kept episode, and **agreement**, the share of those whose team is the truth's, per
   match and pooled over matches and seeds;
-- the **flip lags**: for each change of team in the truth with no `D` between, the frames from the change to the first
-  frame of the new team's first kept episode within 5 s either side, in the same half. Median, 25th and 75th percentile
-  and the share of changes with one found. It is a diagnostic of DFL's convention (a flag that turns late shows as a
-  negative lag), read beside the `hold` result, never a selector;
+- the **flip lags**: for each change of team in the truth with no `D` between, at frame c, the frames from c to the
+  start of the new team's kept episode that begins nearest to c (the earlier on a tie), among the starts in
+  [max(c - 5 s, p), min(c + 5 s, n)] of the same half, where p and n are the previous and the next change of the truth
+  code of any kind (`D` included), or the half's ends. The window never reaches past a neighbouring change, so a flip is
+  never matched to an episode of another possession; no start in it means not found. Median, 25th and 75th percentile
+  and the share of changes with one found. A negative lag means the episode began before the flag turned, so a flag
+  that turns late shows as a negative lag and an early one as a positive lag. It is a diagnostic of DFL's convention,
+  read beside the `hold` result, never a selector;
 - the **confidence**: floor(100 x pooled agreement) / 100 clipped to [0.51, 0.99] (`confidence_from_agreement`). It is
   a measurement on all seven matches, and the entry that uses it says so.
 

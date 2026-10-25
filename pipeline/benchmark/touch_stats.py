@@ -17,11 +17,14 @@ benchmark match and seed, among the alive graded frames where the served trackin
   seven matches, which the entry that reports it says.
 
 Flip lags are a diagnostic of the flags' convention and not part of the rule. For each change of team in the truth with
-no dead frame between (the frame before is alive, of the other team), the lag is the number of frames from the change to
-the first frame of the first kept episode of the new team that begins within 5 s either side of it, in the same graded
-half (negative: the episode began before the flag turned). It is reported as a median, a 25th and a 75th percentile and
-the share of changes for which an episode was found, pooled over matches and seeds. The README says what a flag that
-turns late or early would show in it.
+no dead frame between (the frame before is alive, of the other team) at frame c, the lag is the number of frames from c
+to the start of the new team's kept episode that begins nearest to c (the earlier on a tie). Only starts in
+[max(c - 5 s, p), min(c + 5 s, n)] count, in the same graded half, where p and n are the previous and the next change of
+the truth code of any kind (into or out of D included), or the half's first and last frame: the window never reaches
+past the neighbouring changes, so a flip is never matched to an episode of another possession. No start in it, and the
+change is not found. A negative lag means the episode began before the flag turned. It is reported as a median, a 25th
+and a 75th percentile and the share of changes for which an episode was found, pooled over matches and seeds. The README
+says what a flag that turns late or early would show in it.
 
 No truth reaches the source. The source is called on a MatchInputs (inputs.py), which holds the degraded tracking and no
 flag, with the confidence 0.99 and no hold, so that every kept frame is a non-NaN home value. The truth is read here,
@@ -172,21 +175,31 @@ def _checked(settings):
 
 
 def _flips(codes, graded):
-    """[(frame, block start, block stop, new team is home)]: each change of team with no dead frame between."""
+    """[(frame, lo, hi, new team is home)]: each change of team with no dead frame between, and its neighbours.
+
+    lo is the previous change of the truth code of any kind (into or out of D included) in the same graded block, else
+    the block's first frame; hi is the next such change, else the block's last frame. A change is a frame whose code
+    differs from the one before.
+    """
     flips = []
     for _, start, stop in graded:
-        for frame in range(start + 1, stop):
+        changes = [frame for frame in range(start + 1, stop) if codes[frame] != codes[frame - 1]]
+        for number, frame in enumerate(changes):
             now, before = codes[frame], codes[frame - 1]
-            if now in (pm.H, pm.A) and before in (pm.H, pm.A) and now != before:
-                flips.append((frame, start, stop, bool(now == pm.H)))
+            if now in (pm.H, pm.A) and before in (pm.H, pm.A):
+                lo = changes[number - 1] if number else start
+                hi = changes[number + 1] if number + 1 < len(changes) else stop - 1
+                flips.append((frame, lo, hi, bool(now == pm.H)))
     return flips
 
 
 def _flip_lags(home, flips, fps, block_starts):
-    """([lag, ...], number of flips): frames from each flip to the first episode start of the new team within 5 s.
+    """([lag, ...], number of flips): frames from each flip to the nearest episode start of the new team.
 
     An episode starts on a kept frame whose predecessor is not kept, or is of the other team, and always on the first
-    frame of a block; the search stays inside the flip's own block.
+    frame of a block. For a flip at frame c the start taken is the new team's nearest to c (the earlier on a tie), among
+    those in [max(c - 5 s, lo), min(c + 5 s, hi)], so the window never reaches past the truth's neighbouring changes;
+    no start in it, no lag (not found).
     """
     kept = ~np.isnan(home)
     team_home = home > 0.5
@@ -197,11 +210,13 @@ def _flip_lags(home, flips, fps, block_starts):
     starts = {True: np.flatnonzero(start_mask & team_home), False: np.flatnonzero(start_mask & ~team_home)}
     reach = LAG_SECONDS * fps
     found = []
-    for frame, start, stop, new_is_home in flips:
+    for frame, lo, hi, new_is_home in flips:
         candidates = starts[new_is_home]
-        at = np.searchsorted(candidates, max(start, frame - reach))
-        if at < len(candidates) and candidates[at] <= min(stop - 1, frame + reach):
-            found.append(int(candidates[at]) - frame)
+        first = np.searchsorted(candidates, max(frame - reach, lo), side="left")
+        last = np.searchsorted(candidates, min(frame + reach, hi), side="right")
+        if first < last:
+            inside = candidates[first:last]
+            found.append(int(inside[np.argmin(np.abs(inside - frame))]) - frame)   # argmin: the earlier on a tie
     return found, len(flips)
 
 
