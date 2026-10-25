@@ -4723,6 +4723,110 @@ the seven DFL matches (other games), kept by the benchmark guard, and g was 0 fo
 the same. The public latencies and the out-of-fold public score above stay as the record, read as an inspection and a
 check, and nothing is chosen from them. Any future shift comes from other games only (P16).
 
+### R013 — The touch rule and the decoder re-chosen without the window's values, with P07's weight (2026-10-26, Tian)
+Proposal: P04, P06, P07 · Commit: part 1 (this declaration) is committed before any run of it; the commits of the runs
+are in part 2.
+
+**Part 1, declared before any run** (2026-10-26). Nothing below was chosen from a score of this entry.
+
+**Why.** Two items of [After P07 and P02](proposals.md#after-p07-and-p02):
+- *The decoder with the new evidence* (item 1). R011 kept R010's decoder (switch_team 4, switch_dead 32,
+  min_possession 25, min_dead 25) and chose P07's weight against it, and R010's switch_team 4 and min_possession 25
+  are the lowest values it tried (raw spellF1 falls from both). P07's weight peaked inside its grid (0.2), which is
+  what a weight trading off against the switch penalties looks like, and R011 cannot tell the two apart.
+- *The touch constants without the window's values* (item 1, its last bullet, and the 23 Oct rule, `f8f2629`).
+  R008 chose `controlled_touch`'s radius, `max_rel_speed`, `min_frames` and `hold` in configs that carried
+  `ball_presence` at A01's values, which were read off the public window, and the hmm (8, 32, 75, 1). `main.toml` has no
+  such source, so this protocol re-chooses them on `main.toml`'s own evidence, where every constant comes from DFL, the
+  benchmark or a fixed rule.
+
+**What is not re-chosen, and why.**
+- *R009's source and weight* (the `hgb` `dead_ball_model` at weight 1.0; `nearest_player` at A01's 0.78 was present when
+  it was chosen). The source rests on the out-of-fold log-loss, lower for `hgb` on 7 of 7 matches, which no other
+  source enters. The weight 1.0 takes the model's probability as it is (an exponent of 1), and the benchmark overstates
+  this source for BAR-ATH (T38, T39), so a grid over its weight would lean towards a larger one for a reason that does
+  not transfer. Both stay.
+- *`switch_dead` and `min_dead`*, fixed at 32 and 25: R010 found raw spellF1 flat along both (switch_dead 16 to 64
+  within 0.0027 at switch_team 4 and min_possession 25; the two `min_dead` values within 0.0003 in all 36 pairs).
+- *Smaller things*: `controlled_touch`'s `duel_radius` (1.0 m, never tuned), `shape_possession`'s scope `all` (above
+  `gaps` at every weight on `tracking`, R011) and `min_prob` 0.02, and the trained models, all as in `main.toml`.
+- *`controlled_touch`'s `confidence`* is not an axis: for each setting it is `touch_stats.py`'s rule, the floor of the
+  pooled agreement to a hundredth on `tracking` v3, 3 seeds, all seven matches (R008), measured once before Stage A
+  runs and written into its configs. R008's setting (2.0 m, 6.0 m/s, 3 frames) should measure 0.91 again, a check.
+
+**Stage A, the touch constants.** `main.toml` verbatim (`dead_ball_model` `hgb` at 1.0, `shape_possession` at 0.2,
+scope `all`, the hmm 4 / 32 / 25 / 25, `shift_edges` team +1, into_dead -2, out_of_dead 0), with `controlled_touch`
+over radius {1.5, 2.0, 2.5, 3.0} m x `max_rel_speed` {6, 9, 12} m/s x `min_frames` {1, 2, 3, 5} x `hold` {0.52, 0.55,
+0.60, 0.70}: 192 configs `pipeline/benchmark/configs/r013/r013a_r{RR}_v{VV}_k{K}_h{HH}.toml` (RR the radius in
+decimetres, VV the speed, K the frames, HH the hold in hundredths), each at its setting's measured `confidence`. The
+values extend R008's edges: its choice sat on the upper edge in radius (2.0) and speed (6.0), on the lower edge in
+`min_frames` (3) and at the only `hold` other than off (0.55). Radius 1.5 stays (R008's raw best); the values R008 found
+worse by a margin (radius 1.0, speed 3.0, 8 frames, hold off) are not run again. A setting whose `confidence` is below a
+`hold` drops that config (the source refuses it), and the entry says so. `r013a_r20_v06_k3_h55` is `main.toml`'s own
+config and must score as `main.toml` does, to the last digit.
+
+**Stage C, the decoder and P07's weight**, run after Stage A is chosen: `main.toml` with Stage A's `controlled_touch`,
+over switch_team {1, 2, 3, 4, 6, 8} x min_possession {1, 10, 15, 25, 35, 50} frames x `shape_possession`'s weight
+{0.1, 0.2, 0.3, 0.5}: 144 configs `pipeline/benchmark/configs/r013/r013c_t{TT}_mp{MMM}_w{WWW}.toml` (WWW the weight
+in thousandths, as R011's names). Both sides of R010's lower edges are covered (switch_team below 4 and min_possession
+below 25), and the upper side too, because P07 raised the benchmark's predicted possessions (2.74 to 3.17 a minute,
+R011). The weight's axis is R011's peak and its neighbours, with 0.3 between 0.2 and 0.5.
+
+**The runs.** Profile `tracking` v3, 3 seeds, all seven matches; every config decoded once and scored under the raw and
+the coarse truth (`run.py --truth both`, added for this entry: it scores the same codes against both truths and writes
+the two reports that two runs would, which a check holds it to). Each process lists `main.toml` first (the reference of
+every Δ), then `nearest_w50` and `nearest_w125` (they and `main.toml` must score as in R004c and R012, to the last
+digit), then a share of the grid; processes run one at a time (one heavy process on this machine). The reports are
+written, and the selection is computed from them by `pipeline/benchmark/select.py` (added for this entry: the rule
+below and the leave-one-match-out estimate, from the reports alone).
+
+**The selection, the same in both stages** (R008 to R011's rule). The objective is pooled spellF1 on `tracking`, raw
+truth. The tie band is 0.005: every config within it of the best is tied, and among the tied the best pooled `tracking`
+coarse spellF1 wins. Further ties: in Stage A the larger `min_frames`, then the smaller radius, the smaller
+`max_rel_speed` and the smaller `hold`; in Stage C the larger switch_team, then the larger min_possession and the
+smaller weight. **Nothing is added after the results**: a choice on an edge of its grid is reported as one, and the
+grid is not extended in this entry.
+- *Leave-one-match-out*, per stage, as R008 to R011: for each match, the selection repeated on the other six (the raw
+  objective alone, and the whole rule on six-match means), and the chosen config's score on the held-out match against
+  `main.toml`'s; mean Δ, 90% t-interval, exact sign-flip p, wins in 7. It does not cover the confidences (measured on
+  all seven) or the two stages run in order (Stage C runs only at the full-data Stage A choice).
+
+**Stage D, a diagnostic that chooses nothing.** The five best Stage A settings by raw spellF1 are run again at Stage C's
+decoder and weight, under both truths: whether the touch choice depends on the decoder it was made at. It is reported
+and not acted on.
+
+**The shift, by R012's rule, applied to the new pipeline.** If the final config differs from `main.toml` anywhere before
+the refiner, the lag of its form without `shift_edges` is measured (`conventions.py latency <config> dfl`, `tracking`,
+raw truth, 3 seeds), s_b is minus the rounded median lag per type and 0 below 30 matched changes, and the guard keeps
+s_b only if the config with it beats the config without it on `tracking` raw (Δ > 0) and no cell of {`tracking`,
+`context`} x {raw, coarse} is below -0.005; otherwise there is no shift. g stays 0 (retired, `f8f2629`).
+
+**Adoption**, the final config (Stage C's choice with the shift that rule gives) against `main.toml` as it is now (R012,
+sha256 `3fd06da0...`):
+- *The guard* (R012's form): pooled Δ > 0 on `tracking` raw, and no cell of {`tracking`, `context`} x {raw, coarse}
+  below -0.005. `context` is a sensitivity profile and a veto here, never a validation (T38).
+- *The bar*, reported and not required: `tracking` raw Δ > 0 with sign-flip p <= 0.05 says the change is shown to help.
+  The entry re-chooses existing constants by a clean protocol, and as in R012 an adoption inside the noise is the rule's
+  and is called that.
+- *Label-free checks on BAR-ATH* (no ground truth): the predicted `D` share of the graded frames within [30%, 62%]
+  (R010's band), no `X` in a graded block, the file valid and the same sha256 twice. Reported beside them: the
+  possessions per graded minute (`main.toml`: 4.1452), the H / A / D shares, the share of graded frames relabelled and
+  `controlled_touch`'s opinion share of the graded frames (R008's rule: 59.2%).
+- If everything passes, `main.toml` becomes the final config and `pipeline/configs/r013_retune.toml` is written with it.
+  If the final config is `main.toml` itself, or the guard or a check fails, `main.toml` is unchanged, and the entry says
+  whether `main.toml`'s own values sit inside each stage's tie band, which is the re-confirmation the 23 Oct rule asks
+  for either way.
+
+**The public window** is a correctness check only (the file valid, deterministic, `--score`'s agreements). It chooses
+nothing, and it is run once, after the adoption is decided.
+
+**What the entry cannot settle.** The grain of our truth (T33: the coarse truth is the tie-break and the guard's
+warning, not a second objective); the benchmark's overstatement of P05 (T38, T39); the shape model never having seen our
+teams (R011). A gain here is the benchmark's, and none of it is a forecast for BAR-ATH.
+
+**Cost**, from R010 and R011's timings (about 25 s a config once the first config of a process has paid its one-off
+pass of about 150 s): Stage A about 85 minutes, Stage C about 65, the shift's runs and the `context` cells about 15.
+
 ## Submission log
 
 The form keeps only the last response before the deadline, so log every upload.
