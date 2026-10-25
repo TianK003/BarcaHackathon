@@ -31,7 +31,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | ID | proposal | attacks | effort | impact | status |
 |---|---|---|---|---|---|
 | [P01](#p01--a-validation-set-we-can-trust) | Validation set we can trust: other matches, degraded to look like ours | deciding anything at all | M | enabling | done → R002–R005 |
-| [P02](#p02--learn-the-ground-truths-conventions-from-the-public-window) | Learn the GT's conventions from the public window | boundary timing | S | high | idea |
+| [P02](#p02--learn-the-ground-truths-conventions-from-the-public-window) | Learn the GT's conventions from the public window | boundary timing | S | high | doing (Tian): automated part in A11 |
 | [P16](#p16--metricas-sample-games-in-our-ground-truth-providers-conventions) | Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing | boundary timing, grain | M | medium | idea |
 | [P03](#p03--one-command-deterministic-cached) | One-command, deterministic, cached pipeline | reproducibility | S–M | enabling | done → R001 |
 | [P04](#p04--sticky-ownership-from-controlled-touches) | Sticky ownership from controlled touches | facts 3, 5 | S | high: +0.1421 raw at the chosen decoder (R010) | done → R008, R010 |
@@ -246,6 +246,24 @@ label BAR-ATH. The DFL data is public and outside the competition bundle, so its
 bundle's rules. Cite it in the technical document.
 
 ### P02 — Learn the ground truth's conventions from the public window
+
+**Status: doing (Tian): automated part in
+[A11](results.md#a11--our-ground-truths-timing-against-dfls-from-tracking-events-2026-10-25-tian).** The instrument,
+[`pipeline/benchmark/conventions.py`](../pipeline/benchmark/conventions.py), times each of the 20 public changes
+against label-free events on our tracking and sets them beside DFL's. A11 reads it as a lead and not a measurement
+(2 to 4 changes behind each `D` cell): our `D` looks 2.5 to 3 s longer than DFL's flag would draw it, and our team flips
+look about a second before the new team's first controlled touch, which DFL's flag does not (the interval holds 0).
+What is left needs a person who may watch the video: the restart type and whether `D` begins at the line, the whistle or
+the stoppage. The pipeline's own latency and the `shift_edges` values are a separate step (R012). The person's command,
+which regenerates the file to watch, is
+
+```bash
+python pipeline/benchmark/conventions.py public     # writes data/runs/conventions/public_transitions.csv, gitignored
+```
+
+with one row per change (its frame in the tactical video, the label before and after, the type, and each detector's
+lag). No LLM reads that file, and nothing is written from it but aggregates and frame counts (A11, "How a person can
+extend it"; T27 allows watching and measuring around the published transitions, and never labelling the match).
 
 **Why.** The GT is mechanical: `D` where the corrected tracking says the ball is dead, otherwise the team it names.
 *When* it flips matters more than anything. Does `D` start when the ball crosses the line, or at the whistle? Does

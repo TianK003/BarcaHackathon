@@ -126,7 +126,8 @@ matter.
   alive on 80.4% of its frames, more than 96% of DFL's 5-minute windows. Against DFL's windows that lively, it is 1.34
   times slower, which DFL's own conventions can produce. EVALUATION.md's lag table does not reproduce on the public GT
   (A06, T33).
-- DFL's flag turns dead a median 0.16 s after the ball is first seen beyond a line. Ours is unmeasured (A06, P02).
+- DFL's flag turns dead a median 0.16 s after the ball is first seen beyond a line. Ours is measured on 2 stoppages
+  only, and looks earlier by about 1.5 s (A06, A11).
 - Two of the seven matches have a team down to 10 players: from minute 7.1 of the first half in one, from minute 13.4
   of the second half in the other. 18.3% of the seven matches' graded frames have 21 players, so a statistic on how
   many players are tracked is measured on the frames at full strength only (T36).
@@ -183,6 +184,18 @@ ball in play, decoded by the `hmm` per half. The rules below are those it implem
 - **Abstentions (`X`):** The decoder never abstains inside a graded half, and the runner writes `X` on the ungraded
   frames, where it is free: the chosen file has none inside a graded block (R010). It can return the posterior of each
   state per frame, which shows where an `X` would be free (inside a possession), but no refiner reads it yet.
+- **Edge timing, where each rule flips against our ground truth (A11, T40):** The back-dating, the hold and the `D`
+  onset follow DFL's flag, so we timed every change of the public truth (12 of team, 4 into `D`, 4 out of it) against
+  label-free events on our tracking, and the same events against the seven DFL matches' flags on tracking degraded to
+  look like ours. Our truth flips a median 24 frames (0.96 s) before the new team's first controlled touch, where DFL's
+  flag flips about a frame after it (10 changes found; the gap's 90% interval holds 0). Our `D` begins a median 1.5 s
+  before the ball is first seen beyond a line, where DFL's flag turns 0.12 s after. It ends 1.0 to 1.5 s later than
+  DFL's flag would, measured against the restart's first controlled touch and against the dead-ball model's alive
+  crossing 0.5, so our stoppages look 2.5 to 3 s longer than DFL's flag would draw them. Each `D` cell rests on 1 to 4
+  changes, measured on our own tracking against a degraded copy of DFL's, in an unusually lively 5 minutes (A06), so it
+  is a lead for a person to check on the video and for the `shift_edges` rule, which moves an edge only where the
+  pipeline's own latency on the public window passes its declared test. It is not a rule we apply, and nothing is
+  shifted today.
 
 ## 5. Validation
 
@@ -389,8 +402,8 @@ penalties set the prior and no frame is certain.
 - **Conventions.** DFL's flags may flip at other moments than ours do, and the grain of our ground truth is not known:
   the public window is alive on 80.4% of its frames, more than 96% of DFL's 5-minute windows, so it cannot say how far
   ours differs from DFL's 437 possessions a match (A06, T33). The coarse truth stands in for the difference and does not
-  correct it, and `D` timing against ours is unmeasured. The timing parameters would come from the public window
-  (P02).
+  correct it, and `D` timing against ours is measured on four stoppages only (A11, T40). The timing parameters would
+  come from the public window (P02).
 - **Seven matches, five of them Fortuna Düsseldorf's home games.** The sample is small, so the intervals are wide, and
   not independent, so even they may be too narrow; the smallest sign-flip p is 0.0156. Two matches have a team down to
   10 players, so statistics on how many players are tracked are measured at full strength only (T36).
