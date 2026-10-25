@@ -4107,6 +4107,113 @@ axes (switch_team 16, min_possession 100: 0.5049 coarse, 0.3532 raw), so the pos
 the `controlled_touch` confidence is a measurement on the seven matches the grid is scored on; and the public window is
 a correctness check only (valid, deterministic, 18 possessions against 17, alive agreement 86.6%).
 
+### R011 — P07's shape-possession evidence: the model's held-out scores, then the 12-config grid (2026-10-25, Tian)
+Proposal: P07 · Commit: `dd362bf` (the code the model was trained at: the trainer, `pipeline/benchmark/train_shape.py`,
+merged) and `7151e7a` (the trained model, `pipeline/models/shape_possession_hgb.json`, committed); the grid's configs
+are `pipeline/benchmark/configs/p07/p07_*.toml`, and part 2 names the commit the grid was run from · Command:
+`python pipeline/benchmark/train_shape.py` (writes the model; EXIT=0), `python pipeline/benchmark/train_shape.py
+--verify` (retrains and compares with the committed file: exit 0, "is what the code trains") and
+`python pipeline/benchmark/train_shape.py --report` (the held-out scores below; EXIT=0), all with the defaults
+`--profile tracking --seeds 3 --stride 5`.
+
+**This is part 1 of 2.** It records the model and what it scores held out, before any config of the grid has run.
+Part 2 adds the grid, the choice, the bar and the verdict: **the grid's results, the choice and the scoreboard row are
+pending (R011 part 2)**.
+
+Public (a correctness check only, T01): pending (R011 part 2).
+Validation (P01 benchmark): the model's own out-of-fold scores are below. They are of 7 DFL matches x 3 degradation
+seeds (0, 1, 2), profile `tracking` version 3, the raw truth (`D` where `BallStatus` is dead, else the team in
+`BallPossession`), each match scored by the fold model that never saw it, the seeds pooled by frames. The grid's
+spellF1 is pending (R011 part 2).
+Changed vs the previous best: pending (R011 part 2). The previous best is R010's `main.toml`, 0.4217 raw and 0.4556
+coarse pooled spellF1 on `tracking` v3.
+Verdict: pending (R011 part 2). Part 1 settles one thing, that the stop rule does not fire, so the grid runs.
+
+**The model.** A classifier of which team has the ball from the 26 `shape_features` of a frame (feature version 1: per
+team the present slots, the mean and the 10th and 90th percentile of how far up the pitch the team is, its width, its
+velocity along the attack and its mean speed, its shares in the attacking and the defending third, the change of its
+mean advance over 1 s and 2 s and its velocity over a 1 s window; plus the gap between the two teams' advance and in
+their present slots). No column reads the ball, so the model can be asked about the frames where the ball is missing,
+which is 41% of the graded frames of our match. It is scikit-learn's `HistGradientBoostingClassifier` with P05's
+settings (`train_dead_ball.HGB_SETTINGS`: learning rate 0.05, 300 iterations, 15 leaves, `min_samples_leaf` 1000, L2
+1.0, no early stopping, `random_state` 0), fixed beforehand and never tuned (T26). The training rows are every 5th
+alive graded frame (truth H or A) of the seven DFL matches, degraded as `tracking` v3, seeds 0 to 2: 331,881 rows
+(41,016 to 51,213 a match, home 43.9% to 62.9% of a match's rows). Each row is added again as its team-swapped mirror
+with the label flipped, so the classes balance exactly (`prior_home` 0.5) and `full` is fitted on 663,762 rows. There is
+one fold model per held-out match, fitted on the other six, and `full`, fitted on all seven; the file is 3,668,856
+bytes. `pipeline/evidence/shape_possession.py` runs the trees with numpy alone, symmetrises the output (the logit is
+half of r(x) minus r(swap(x))) and clips `home` to [0.02, 0.98]. A benchmark match is scored by its own fold and BAR-ATH
+by `full`.
+
+**Held out.** Each fold model on its own match, served as the pipeline serves it (`shape_possession` with scope `all`
+and the default `min_prob` 0.02), against the raw truth on the alive frames (truth H or A) of all the graded frames, not
+only the training stride; `home` >= 0.5 is the accuracy's call. "Ball missing" is the alive frames where the served
+(degraded) ball has no position. The source had an opinion on every alive frame of every match (0 silent: it is silent
+only where nobody is present). `touch agreement` is the label-free cross-check described below. The pooled row sums the
+frames, and is not a mean of the matches.
+
+| match | alive frames | log-loss | accuracy | ball missing: frames | log-loss | accuracy | touch frames | touch agreement |
+|---|---|---|---|---|---|---|---|---|
+| J03WMX | 256,107 | 0.3759 | 0.8474 | 98,966 | 0.3928 | 0.8304 | 89,144 | 0.8546 |
+| J03WN1 | 205,131 | 0.4739 | 0.7809 | 87,035 | 0.4612 | 0.7912 | 82,958 | **0.7486** |
+| J03WOH | 215,835 | 0.3603 | 0.8430 | 90,369 | 0.3711 | 0.8373 | 80,249 | 0.8170 |
+| J03WOY | 228,858 | 0.3676 | 0.8429 | 95,561 | 0.3624 | 0.8440 | 76,411 | 0.8476 |
+| J03WPY | 244,380 | 0.3382 | 0.8496 | 101,397 | 0.3574 | 0.8389 | 85,679 | 0.8462 |
+| J03WQQ | 253,056 | 0.3354 | 0.8530 | 108,130 | 0.3481 | 0.8475 | 89,155 | 0.8159 |
+| J03WR9 | 255,948 | 0.3120 | 0.8669 | 96,442 | 0.3500 | 0.8495 | 100,223 | 0.8654 |
+| **pooled** | 1,659,315 | 0.3633 | 0.8422 | 677,900 | **0.3759** | 0.8349 | 603,819 | 0.8290 |
+
+`ln 2` = 0.6931 is the log-loss of saying 0.5 on every frame. The pooled alive-frame log-loss is 0.3633 and the pooled
+log-loss with the ball missing is 0.3759 (those frames are 40.9% of the alive frames, close to our own match's 41% of
+the graded ones): the frames the source is for are slightly harder than the rest, and still 0.3172 nats below chance.
+J03WN1 is the hardest match on every column (log-loss 0.4739, 0.4612 with the ball missing; accuracy 0.7809 and 0.7912;
+touch agreement 0.7486), J03WR9 the easiest by accuracy (0.8669, 0.8495 with the ball missing) and J03WQQ by the
+ball-missing log-loss (0.3481).
+
+**The stop rule does not fire.** P07's design declared that the pooled held-out log-loss on the alive frames with the
+ball missing must be below ln 2 - 0.01 = 0.6831, or P07 stops here and the negative result is recorded. It is **0.3759
+< 0.6831**, by 0.3072, and the worst match (J03WN1, 0.4612) is also 0.2219 under it. P07 goes on to the grid.
+
+**What the numbers do not say.**
+- They are frame-level scores of a probability. They show that the shape of the teams carries information about who has
+  the ball where the ball is missing; they do not show what it adds to possession spellF1 where `controlled_touch` and
+  the decoder already hold a view. That is the grid's question. Neighbouring frames are nearly the same frame, so no
+  interval is given and 0.84 accuracy is not 84% of possessions.
+- They are scores on DFL's degraded tracking under DFL's flag, which is fine-grained (437 possessions a match, A06).
+  Seven matches from two competitions, five of them Fortuna Düsseldorf home games, are not seven independent draws (as
+  in R010), and a fold that holds one of those out trains on four others. BAR-ATH is a LaLiga match with neither team in
+  the training set. The held-out figures are not a forecast for it; the transfer gate below is the label-free look.
+
+**`touch_agreement`, and the transfer gate.** The share of the frames inside kept `controlled_touch` episodes
+(`conventions.TOUCH`: 2.0 m, 6.0 m/s, 3 frames, confidence 0.99 so that `home` is a number on exactly the kept frames,
+hold off) where the shape source's `home` (scope `all`, >= 0.5) names the episode's team. It needs no truth, so it can
+be asked of BAR-ATH with `full`. It is a proxy and not an accuracy: the episode's team is itself right on about 92% of
+its frames (91.9% pooled over the seven matches, the source of `controlled_touch`'s 0.91 in `main.toml`). The pooled
+value is 0.8290 over 603,819 frames; per match 0.8546, 0.7486, 0.8170, 0.8476, 0.8462, 0.8159 and 0.8654 (table). **The
+lowest per match is 0.7486, J03WN1.** That is the threshold of the transfer gate declared below, and it is read from
+this table and fixed here.
+
+**Declared before the grid runs** (P07's design, 2026-10-25; part 2 applies it as written). The weights, the scopes and
+the rules below are fixed before any config of the grid has run, and none is chosen from a grid score:
+- *Selection:* the objective is the pooled spellF1 on `tracking`, raw truth, over the 12 configs; the tie band is 0.005;
+  ties go to the best `tracking` coarse score, then the smaller weight, then `gaps` over `all`.
+- *Bar,* against `main.toml` (R010): `tracking` raw Δ > 0 with sign-flip p <= 0.05; `context` raw Δ > 0, a veto and
+  never a validation (T38); the coarse cells are reported as warnings (T33).
+- *Label-free transfer gate:* on BAR-ATH, `touch_agreement` with the `full` model and scope `all` must be at least
+  **0.7486**, the lowest per-match value above.
+- *The rest:* no `X` in the graded blocks and the same sha256 twice; the `D` share and the possessions over the graded
+  frames are reported against R010's (36.0% and 450).
+- If adopted, `main.toml` becomes the chosen config. `pipeline/configs/p07_shape.toml` is written either way.
+
+**The grid.** 12 configs `pipeline/benchmark/configs/p07/p07_w{WWW}_{gaps,all}.toml`: the weight w of `shape_possession`
+in {0.01, 0.02, 0.05, 0.1, 0.2, 0.5} (`WWW` is 1000 w, zero-padded: 010, 020, 050, 100, 200, 500) x scope `gaps` (home
+only where the ball is missing) or `all` (every graded frame). Each is `main.toml`'s evidence and decoder verbatim
+(`controlled_touch` 2.0 m / 6.0 m/s / 3 frames / hold 0.55 at confidence 0.91, `dead_ball_model` with the `hgb` file at
+weight 1.0, hmm (4, 32, 25, 25) decoded per half, seed 0) plus `shape_possession` with the committed model and
+`min_prob` 0.02. The weight is an exponent on the source's likelihood, and `min_prob` caps a frame at 3.9 nats before
+it. The runs, pending: `main.toml`, `nearest_w50`, `nearest_w125` and the 12 configs, each on `tracking` v3 and on
+`context` (a sensitivity check and the veto only, T38), under the raw and the coarse truth, 3 seeds.
+
 ## Submission log
 
 The form keeps only the last response before the deadline, so log every upload.

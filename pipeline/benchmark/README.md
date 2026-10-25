@@ -589,6 +589,11 @@ Stage C's configs (R010) are `p45c_t{TTT}_d{DDD}_mp{MMM}_md{NNN}.toml`: the chos
 `dead_ball_model` alone, with `hmm` at `switch_team` TTT, `switch_dead` DDD, `min_possession` MMM and `min_dead` NNN
 (72 files).
 
+P07's grid (R011) is `configs/p07/p07_w{WWW}_{gaps,all}.toml`: `WWW` is the weight of `shape_possession` in
+thousandths (`010`, `020`, `050`, `100`, `200`, `500`) and `gaps` or `all` its scope; each is `main.toml`'s
+`controlled_touch`, `dead_ball_model` and `hmm` (4, 32, 25, 25) plus the source with
+`pipeline/models/shape_possession_hgb.json` (12 files).
+
 ## Dead-ball model
 
 P05's classifier is trained here, on the benchmark's matches, and run by the pipeline from a file (`pipeline/models/`,

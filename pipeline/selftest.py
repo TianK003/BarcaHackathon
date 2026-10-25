@@ -3830,6 +3830,73 @@ def test_run_end_to_end_synthetic_p06():
         assert np.isnan(result.evidence["nearest_player"].alive).all(), "nearest_player says nothing about alive"
 
 
+# The shape of every config of P07's grid (pipeline/benchmark/configs/p07/): main.toml's evidence and decoder plus
+# `shape_possession` with the committed model, here at weight 0.1 and scope "gaps" (p07_w100_gaps). The synthetic
+# match is not a benchmark fold, so the source reads the file's `full` model (a game with a fold is scored by its own).
+P07_TRIAL_CONFIG = """
+description = "trial"
+seed = 0
+scope = "halves"
+
+[[evidence]]
+kind = "controlled_touch"
+radius = 2.0
+max_rel_speed = 6.0
+min_frames = 3
+confidence = 0.91
+hold = 0.55
+
+[[evidence]]
+kind = "dead_ball_model"
+weight = 1.0
+model = "pipeline/models/dead_ball_hgb.json"
+
+[[evidence]]
+kind = "shape_possession"
+weight = 0.1
+model = "pipeline/models/shape_possession_hgb.json"
+scope = "gaps"
+min_prob = 0.02
+
+[decoder]
+kind = "hmm"
+switch_team = 4
+switch_dead = 32
+min_possession = 25
+min_dead = 25
+"""
+
+
+def test_run_end_to_end_synthetic_p07():
+    """The committed model in main.toml's pipeline plus the shape source writes a valid file, no X in a block."""
+    from pipeline import output
+    from pipeline.config import load_config
+    from pipeline.contracts import X
+    from pipeline.run import run
+    with tempfile.TemporaryDirectory() as root:
+        make_synthetic_bundle(root)
+        inputs = synthetic_inputs(root, graded=[(1, 50, 280), (2, 320, 560)])
+        config = load_config(write_text(root, "trial.toml", P07_TRIAL_CONFIG))
+        assert [source.kind for source in config.evidence] == ["controlled_touch", "dead_ball_model",
+                                                               "shape_possession"]
+        assert config.evidence[2].weight == 0.1 and config.decoder.kind == "hmm"
+        out_path = os.path.join(root, "trial.csv")
+        result = run(config, inputs, out_path, log=quiet)
+        outside = np.ones(SYNTHETIC_FRAMES, dtype=bool)
+        outside[50:280] = outside[320:560] = False
+        assert (result.codes[outside] == X).all(), "frames outside the graded blocks must be X"
+        assert (result.codes[~outside] != X).all(), "the hmm decoder never abstains inside a block"
+        output.validate(out_path, SYNTHETIC_FRAMES, result.codes)
+        assert set(result.evidence) == {"controlled_touch", "dead_ball_model", "shape_possession"}
+        shape = result.evidence["shape_possession"]
+        assert np.isnan(shape.alive).all(), "the shape of the teams says nothing about alive"
+        speaks = ~np.isnan(shape.home)
+        assert speaks.any(), "the committed model said nothing on the synthetic match"
+        assert not speaks[outside].any() and not speaks[inputs.atd.ball_present].any(), \
+            "scope \"gaps\" speaks only inside a block, where the ball is missing"
+        assert np.nanmin(shape.home) >= 0.02 and np.nanmax(shape.home) <= 0.98, "min_prob clips home"
+
+
 SHIFT_REFINER = """
 [[refine]]
 kind = "shift_edges"
