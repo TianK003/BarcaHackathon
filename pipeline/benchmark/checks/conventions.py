@@ -20,6 +20,7 @@ the numbers printed is a figure of any match.
 
 import contextlib
 import csv
+import hashlib
 import io
 import json
 import math
@@ -1579,12 +1580,20 @@ def test_latency_main_writes_each_file_and_refuses_a_missing_one():
         assert "FAILED" in printed.getvalue() and "nope" in printed.getvalue()
 
 
-def dfl_latency_file(root, stem, cells, truth="raw", **more):
-    """A latency_<stem>_dfl_tracking_<truth>.json as `latency CONFIG dfl` writes it, with these lags per type."""
+def dfl_latency_file(root, stem, cells, truth="raw", digest="own", **more):
+    """A latency_<stem>_dfl_tracking_<truth>.json as `latency CONFIG dfl` writes it, with these lags per type.
+
+    `digest` is the config_sha256 it records: "own" (the default) that of <root>/<stem>.toml, or the string given, or
+    None for a file that records none (as those written before the files were tied to their config).
+    """
+    if digest == "own":
+        digest = conventions.config_digest(load_config(os.path.join(root, stem + ".toml")))
     document = dict({"source": "dfl", "config": stem, "profile": "tracking", "truth": truth, "seeds": [0, 1, 2],
                      "matches": ["A", "B"], "fps": 25, "tol": 50,
                      "cells": {kind: {"n": 2 * len(lags), "found": len(lags), "lags": lags}
                                for kind, lags in cells.items()}}, **more)
+    if digest is not None:
+        document["config_sha256"] = digest
     path = conventions.latency_path(root, stem, "dfl", "tracking", truth, None, 3)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as handle:
@@ -1680,3 +1689,131 @@ def test_shift_command_writes_the_table_the_rule_and_the_submission():
         with results_in(results), contextlib.redirect_stdout(io.StringIO()) as printed:
             assert conventions.main(["shift", "--config", cfg, "--gt", gt_path, "--data-dir", root]) == 1
         assert "25" in printed.getvalue()
+
+
+# -- the latency files are tied to their config's content --------------------------------------------------------------
+
+OTHER_CONTENT = hashlib.sha256(b"a file made for another content of the same config").hexdigest()
+
+
+def refused(arguments, *words):
+    """The command's printout, after asserting that it failed ("FAILED") and that every word is in what it said."""
+    with contextlib.redirect_stdout(io.StringIO()) as printed:
+        assert conventions.main(arguments) == 1, "{} was not refused".format(arguments)
+    said = printed.getvalue()
+    assert "FAILED" in said and all(word in said for word in words), said
+    return said
+
+
+def test_shift_refuses_a_dfl_latency_file_of_another_content_of_the_config():
+    """The files are tied to their config by stem, tolerance and the sha256 of what it runs: a file recorded for another
+    content (main.toml gained a shift_edges after R011's was measured), or for none, is refused with the command."""
+    gt, pred, _ = oof_scene()
+    dfl = {"team": [-4] * 40, "into_dead": [3] * 10, "out_of_dead": [0] * 30}
+    with tempfile.TemporaryDirectory(prefix="conv") as root:
+        results = os.path.join(root, "results")
+        gt_path = os.path.join(root, "gt.csv")
+        output.write_submission(gt_path, gt)
+        cfg = write_text(root, "shifty.toml", read(RAW_CONFIG))
+        shift = ["shift", "--config", cfg, "--gt", gt_path, "--data-dir", root]
+        written = (os.path.join(root, "runs", "conventions", "shift_shifty.json"),
+                   os.path.join(results, "shifty_shift_oof.csv"))
+        rerun = "write it again with `python pipeline/benchmark/conventions.py latency"
+        with results_in(results):
+            output.write_submission(output.default_out_path("shifty"), pred)
+            dfl_latency_file(root, "shifty", dfl, digest=OTHER_CONTENT)
+            said = refused(shift, "config_sha256", rerun, " dfl --profile tracking --truth raw", "shifty")
+            assert OTHER_CONTENT[:12] in said, "the file's own hash is named, so that the two can be told apart"
+            assert not any(os.path.exists(path) for path in written), "nothing is written when a file is refused"
+            dfl_latency_file(root, "shifty", dfl, digest=None)             # written before the files carried a hash
+            said = refused(shift, "config_sha256", rerun, " dfl --profile tracking --truth raw", "shifty")
+            assert "no config_sha256" in said
+            assert not any(os.path.exists(path) for path in written)
+            # the coarse file is read with the same rule, though it is only reported
+            dfl_latency_file(root, "shifty", dfl)
+            dfl_latency_file(root, "shifty", dfl, truth="coarse", digest=OTHER_CONTENT)
+            refused(shift, "config_sha256", rerun, " dfl --profile tracking --truth coarse", "shifty")
+            assert not any(os.path.exists(path) for path in written)
+            dfl_latency_file(root, "shifty", dfl, truth="coarse")
+            with contextlib.redirect_stdout(io.StringIO()):
+                assert conventions.main(shift) == 0, "both files are of this content: the shift is made"
+        with open(written[0], encoding="utf-8") as handle:
+            document = json.load(handle)
+        assert document["config_sha256"] == conventions.config_digest(load_config(cfg))
+
+
+def test_the_kinds_of_change_are_the_refiners():
+    """One definition of the three types and of which pair of labels is which: shift_edges'."""
+    assert conventions.TYPES is shift_edges.TYPES
+    assert conventions._TRANSITION_TYPE == {(H, A): "team", (A, H): "team", (H, D): "into_dead", (A, D): "into_dead",
+                                            (D, H): "out_of_dead", (D, A): "out_of_dead"}
+
+
+def test_config_digest_is_the_content_a_run_depends_on():
+    """Comments and the description do not change it; a parameter, the scope, the seed or a refiner do."""
+    text = read(RAW_CONFIG)
+    with tempfile.TemporaryDirectory(prefix="conv") as root:
+        def digest(body, name="a.toml"):
+            return conventions.config_digest(load_config(write_text(root, name, body)))
+        base = digest(text)
+        assert len(base) == 64 and int(base, 16) >= 0 and base == digest(text, "b.toml"), "not the file's name"
+        assert digest(text + "\n# a comment\n") == base
+        assert digest(re.sub(r"(?m)^description = .*$", 'description = "another words"', text)) == base
+        assert digest(text.replace("half_width = 0 ", "half_width = 5 ")) != base
+        assert digest(text.replace("seed = 0", "seed = 1")) != base
+        assert digest(text.replace('scope = "halves"', 'scope = "file"')) != base
+        assert digest(text + '\n[[refine]]\nkind = "shift_edges"\nteam = 4\n') != base
+        assert digest(text + '\n[[refine]]\nkind = "shift_edges"\nteam = 5\n') != digest(
+            text + '\n[[refine]]\nkind = "shift_edges"\nteam = 4\n')
+
+
+def test_the_public_latency_file_is_tied_to_the_csv_it_was_read_from():
+    """latency CONFIG public records the config's content and the CSV's sha256, and `shift` refuses a public file of
+    another CSV (or of none), though it works the public side out from the CSV itself."""
+    gt, pred, _ = oof_scene()
+    dfl = {"team": [-4] * 40, "into_dead": [3] * 10, "out_of_dead": [0] * 30}
+    with tempfile.TemporaryDirectory(prefix="conv") as root:
+        results = os.path.join(root, "results")
+        gt_path = os.path.join(root, "gt.csv")
+        output.write_submission(gt_path, gt)
+        cfg = write_text(root, "shifty.toml", read(RAW_CONFIG))
+        shift = ["shift", "--config", cfg, "--gt", gt_path, "--data-dir", root]
+        latency = ["latency", cfg, "public", "--gt", gt_path, "--data-dir", root]
+        public_json = os.path.join(root, "runs", "conventions", "latency_shifty_public.json")
+        rerun = "write it again with `python pipeline/benchmark/conventions.py latency"
+        with results_in(results):
+            csv_path = output.default_out_path("shifty")
+            output.write_submission(csv_path, pred)
+            dfl_latency_file(root, "shifty", dfl)
+            with contextlib.redirect_stdout(io.StringIO()):
+                assert conventions.main(latency) == 0
+            with open(public_json, encoding="utf-8") as handle:
+                public = json.load(handle)
+            with open(csv_path, "rb") as handle:
+                csv_sha256 = hashlib.sha256(handle.read()).hexdigest()
+            assert public["csv_sha256"] == csv_sha256 and public["config_sha256"] == conventions.config_digest(
+                load_config(cfg))
+            with contextlib.redirect_stdout(io.StringIO()):
+                assert conventions.main(shift) == 0, "a public file of this CSV and this config is fine"
+            with open(os.path.join(root, "runs", "conventions", "shift_shifty.json"), encoding="utf-8") as handle:
+                document = json.load(handle)
+            assert document["csv_sha256"] == csv_sha256 and document["csv"] == "shifty.csv"
+            assert document["config_sha256"] == public["config_sha256"]
+            # another CSV (the config was run again): the public file no longer describes what `shift` reads
+            other = pred.copy()
+            other[2600:2640] = D
+            output.write_submission(csv_path, other)
+            refused(shift, "csv_sha256", rerun, " public", "shifty")
+            # a public file with no hash, and one of another config content
+            output.write_submission(csv_path, pred)
+            for key in ("csv_sha256", "config_sha256"):
+                with open(public_json, "w", encoding="utf-8") as handle:
+                    json.dump({name: value for name, value in public.items() if name != key}, handle)
+                refused(shift, key, rerun, " public", "shifty")
+            with open(public_json, "w", encoding="utf-8") as handle:
+                json.dump(dict(public, config_sha256=OTHER_CONTENT), handle)
+            refused(shift, "config_sha256", rerun, " public", "shifty")
+            # no public file at all is not a refusal: the public side is worked out from the CSV
+            os.remove(public_json)
+            with contextlib.redirect_stdout(io.StringIO()):
+                assert conventions.main(shift) == 0

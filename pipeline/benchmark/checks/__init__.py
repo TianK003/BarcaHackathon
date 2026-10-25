@@ -52,8 +52,9 @@ module of its topic:
                  tracking, that the DFL mode reads the truth beside its inputs, that the public mode prints
                  aggregates and no transition frame, the bootstrap of the gap; and P02's pipeline latency and
                  declared shift rule: the typed matching at the tolerance, each condition of the rule on a list that
-                 fails it, the out-of-fold prediction against shift_edges.apply, and that nothing of BAR-ATH's is
-                 printed beyond `limited` / `shown` / `interval_text` (synthetic only)
+                 fails it, the out-of-fold prediction against shift_edges.apply, that a latency file of another
+                 content of the config (or of none) is refused, and that nothing of BAR-ATH's is printed beyond
+                 `limited` / `shown` / `interval_text` (synthetic only)
     shape.py     P07's shape-possession trainer: the rows (every stride-th alive frame, 1 for H), the augmentation that
                  balances the classes exactly and mirrors every row, P05's settings with no monotone constraint, the
                  exported trees against scikit-learn's raw score, the same bytes on 1 and 4 threads, the folds that

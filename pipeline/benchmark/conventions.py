@@ -39,10 +39,10 @@ The detectors (events). Label-free, computed from `Inputs` alone, and each only 
 number a lag gives is the number of frames between the label and the thing the tracking saw.
 
     touch_start   a `team` or `out_of_dead` change: the first frame of a kept `controlled_touch` episode (P04), the
-                  rule as main.toml has it (radius 2.0 m, max_rel_speed 6.0 m/s, min_frames 3), with confidence 0.99
-                  and hold 0.5 so that `home` is a number exactly on the kept frames. It carries the episode's team,
-                  and only an event of the new team can be the start of the new team's possession. Where the label
-                  turns at the first touch, the lag is 0.
+                  rule as P04 measured it, which main.toml had at R010 (radius 2.0 m, max_rel_speed 6.0 m/s,
+                  min_frames 3), with confidence 0.99 and hold 0.5 so that `home` is a number exactly on the kept
+                  frames. It carries the episode's team, and only an event of the new team can be the start of the
+                  new team's possession. Where the label turns at the first touch, the lag is 0.
     line_out      an `into_dead` change: the first frame of each run of frames with the ball visible and
                   `kinematics.outside_m` above 0, so a ball that is on a line is not out. A gap in the ball cuts a run
                   in two, and the second run's first frame is an event as well.
@@ -54,13 +54,13 @@ number a lag gives is the number of frames between the label and the thing the t
                   channel, T31) at or above `play_features.STILL_SPEED`, after at least 25 frames in a row below it.
                   A still ball that is then struck is a restart; a ball that was not seen to be still (a gap before it,
                   a run shorter than 25 frames) is not.
-    model_dead    an `into_dead` change: where `dead_ball_model`'s alive (the file main.toml uses) crosses 0.5
+    model_dead    an `into_dead` change: where `dead_ball_model`'s alive (P05's file, as of R010) crosses 0.5
     model_alive   downward, and an `out_of_dead` one: where it crosses 0.5 upward. The model has its own bias (a
                   window of features), and DFL's lag for it, which it is out of fold for, is the reference.
     tag_start     an `into_dead` change: the start of a Smart Tagging interval whose code, upper-cased, is `SET PIECES`;
     tag_end       an `out_of_dead` one: the end of such an interval. BAR-ATH only: a DFL match has no tagging, its
                   `smart_tagging` raises AssetUnavailable, and the detector is left out (skipped, not empty). Which set
-                  piece it is stays with a person; Smart Tagging's tag values are our vocabulary and no LLM reads them.
+                  piece it is stays with a person; Smart Tagging's tag values are match data, which no LLM may read.
 
 The window rule (lags). The lag of a detector at a change at frame c is `event - c` in frames, so a negative lag means
 the event came first. The event taken is the nearest to c, the earlier on a tie, among those in
@@ -105,6 +105,14 @@ of the true changes. A positive number is a label that changed late. `latency CO
 `pipeline/run.py CONFIG` wrote, against the public GT; `latency CONFIG dfl` runs `run.predict` on every benchmark match
 and seed (the config must decode per half) against the truth, pooled by lags as everything above is.
 
+The latency files are tied to the config they were measured for. Each records the sha256 of what the config runs
+(`config_digest`: scope, seed, evidence, decoder and refine; no comment, no description), and `shift` refuses a file of
+another content, or of none (a file written before they carried one is stale by rule), with the `latency` command to
+run again: a config that has gained a refiner since is never read against a latency measured without it (main.toml
+gained a shift_edges after R011's latency was measured). A public file also records the sha256 of the CSV it was read
+from, which `shift` checks when that file is there. The digest does not read the files that a parameter names, so a
+retrained model JSON needs the latency measured again by hand.
+
 The shift rule is P02's declared one and nothing in it is tuned. For each type, s_b = -round(median of DFL's latencies)
 (0 below MIN_DFL = 30 matched changes) is the pipeline's own lag, measured where the truth is DFL's and so owes nothing
 to our convention; the benchmark then confirms or rejects it (`--s-b-rejected`), and the DFL latencies it is taken from
@@ -130,6 +138,8 @@ only whether it excludes 0, below 5). DFL's cells print in full. The JSON files 
 
 import argparse
 import csv
+import dataclasses
+import hashlib
 import json
 import os
 import sys
@@ -159,14 +169,14 @@ from pipeline.refine import shift_edges  # noqa: E402
 import possession_metrics as pm  # noqa: E402  isort:skip
 
 # Params
-TYPES = ("team", "into_dead", "out_of_dead")
+TYPES = shift_edges.TYPES              # the one list of the kinds of change: the refiner's parameters are named by it
 DETECTORS = ("touch_start", "line_out", "ball_lost", "ball_moves", "model_dead", "model_alive", "tag_start", "tag_end")
 APPLIES = {"touch_start": ("team", "out_of_dead"), "line_out": ("into_dead",), "ball_lost": ("into_dead",),
            "ball_moves": ("out_of_dead",), "model_dead": ("into_dead",), "model_alive": ("out_of_dead",),
            "tag_start": ("into_dead",), "tag_end": ("out_of_dead",)}
 WINDOW_S = 5                        # an event is looked for this far either side of a change
-TOUCH = {"radius": 2.0, "max_rel_speed": 6.0, "min_frames": 3, "confidence": 0.99, "hold": 0.5}   # main.toml's rule
-MODEL = "pipeline/models/dead_ball_hgb.json"        # main.toml's file, relative to the repository root
+TOUCH = {"radius": 2.0, "max_rel_speed": 6.0, "min_frames": 3, "confidence": 0.99, "hold": 0.5}   # P04's rule, R010
+MODEL = "pipeline/models/dead_ball_hgb.json"        # P05's file as of R010, relative to the repository root
 ALIVE_LEVEL = 0.5                   # model_dead / model_alive: where alive crosses this
 MIN_STILL_FRAMES = 25               # ball_moves: this many frames in a row below STILL_SPEED before the first above it
 SET_PIECES = "SET PIECES"           # the Smart Tagging code of tag_start / tag_end, upper-cased
@@ -188,8 +198,20 @@ GAP_SEED = (2, 0)                   # default_rng(GAP_SEED), the design's, for t
 SHIFT_DFL = ("tracking", "raw")     # the profile and truth that s_b is read from: the benchmark's default
 SHIFT_COARSE = ("tracking", "coarse")   # reported beside it when its latency file is there, never used (T33)
 
-_TRANSITION_TYPE = {(pm.H, pm.A): "team", (pm.A, pm.H): "team", (pm.H, pm.D): "into_dead", (pm.A, pm.D): "into_dead",
-                    (pm.D, pm.H): "out_of_dead", (pm.D, pm.A): "out_of_dead"}
+
+def _typed_changes():
+    """{(from, to): type} for the changes among H, A and D, read off the refiner's own table, so that the kinds of
+    change are defined once, in shift_edges (a change into or out of X has no type and is left out)."""
+    kinds = {}
+    for before in (pm.H, pm.A, pm.D):
+        for after in (pm.H, pm.A, pm.D):
+            kind = shift_edges.KINDS[shift_edges.KIND_OF_CHANGE[before, after]]
+            if kind != shift_edges.ABSTAIN:
+                kinds[(before, after)] = kind
+    return kinds
+
+
+_TRANSITION_TYPE = _typed_changes()
 
 
 class ConventionsError(ValueError):
@@ -829,6 +851,29 @@ def shift_path(data_dir, stem):
     return os.path.join(data_dir, *FOLDER, "shift_{}.json".format(stem))
 
 
+def config_digest(config):
+    """The sha256 (hex) of what `config` runs: its scope, seed, evidence, decoder and refine, and nothing else.
+
+    The parsed settings are serialised with sorted keys, so a comment, the description, the file's name and the order
+    of its keys change nothing, and any parameter, weight, scope, seed or refiner does. A latency file records it
+    because a latency measured for one content says nothing of another (main.toml gained a shift_edges after R011's
+    was measured, and a shift read against it would have been applied twice). It does not read the files that a
+    parameter names: a retrained model JSON leaves it as it was.
+    """
+    content = {"scope": config.scope, "seed": config.seed,
+               "evidence": [dataclasses.asdict(component) for component in config.evidence],
+               "decoder": dataclasses.asdict(config.decoder),
+               "refine": [dataclasses.asdict(component) for component in config.refine]}
+    text = json.dumps(content, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _file_sha256(path):
+    """The sha256 (hex) of the bytes of the file at `path`."""
+    with open(path, "rb") as handle:
+        return hashlib.sha256(handle.read()).hexdigest()
+
+
 def _read_labels(path):
     """The frame,label table at `path`, or a ConventionsError that names the file and not what is in it."""
     try:
@@ -873,14 +918,17 @@ def latency_public(config, gt_path, data_dir, tol=TOL, log=print):
 
     `config` is a pipeline.config.Config whose CSV `pipeline/run.py` wrote (public_pair), `gt_path` the public GT. The
     document is JSON-ready and holds every lag; what is logged is a line per type with its counts and median, and
-    quartiles only for a type with MIN_SHOWN changes matched or more (render_latency, shown), never a frame.
+    quartiles only for a type with MIN_SHOWN changes matched or more (render_latency, shown), never a frame. The
+    document also records config_digest(config) and the sha256 of the CSV it was read from (`shift` checks both).
     """
     tol = _whole(tol, "tol", 0)
     gt_codes, pred_codes, runs = public_pair(config, gt_path)
     cells = latency_cells(gt_codes, pred_codes, runs, tol)
-    document = {"source": "public", "config": config.stem, "gt": os.path.basename(gt_path),
-                "csv": os.path.basename(output.default_out_path(config.stem)), "fps": pm.FPS, "tol": tol,
-                "runs": len(runs), "cells": cells, "summary": summarise(cells, pm.FPS)}
+    csv_path = output.default_out_path(config.stem)
+    document = {"source": "public", "config": config.stem, "config_sha256": config_digest(config),
+                "gt": os.path.basename(gt_path), "csv": os.path.basename(csv_path),
+                "csv_sha256": _file_sha256(csv_path), "fps": pm.FPS, "tol": tol, "runs": len(runs), "cells": cells,
+                "summary": summarise(cells, pm.FPS)}
     path = latency_path(data_dir, config.stem, "public")
     run.write_json(path, document)
     for line in render_latency(document):
@@ -896,10 +944,10 @@ def measure_latency(config, *, profile=DEFAULT_PROFILE, seeds=None, truth="raw",
     Each match is loaded (dfl.load_match, or taken from `matches`, {id: DflMatch}), its truth read beside the inputs
     (raw, or coarse), and for every seed the config is run on the match as the pipeline would see it
     (train_dead_ball.served_inputs: the degraded tracking and no flag) through run.predict, its codes matched to the
-    truth. Returns {"config", "profile", "truth", "seeds", "matches", "fps", "tol", "cells", "per_match"}: `cells` is
-    the pooled {type: {"n", "found", "lags"}} and `per_match` {id: cells}. The runner's BenchmarkError for a config that
-    decodes across half time, a profile, seeds, truth or match it refuses (before a match is loaded), or an asset a
-    benchmark match does not have.
+    truth. Returns {"config", "config_sha256", "profile", "truth", "seeds", "matches", "fps", "tol", "cells",
+    "per_match"}: `config_sha256` is config_digest(config), `cells` the pooled {type: {"n", "found", "lags"}} and
+    `per_match` {id: cells}. The runner's BenchmarkError for a config that decodes across half time, a profile, seeds,
+    truth or match it refuses (before a match is loaded), or an asset a benchmark match does not have.
     """
     run.check_scope(config)
     tol = _whole(tol, "tol", 0)
@@ -921,16 +969,17 @@ def measure_latency(config, *, profile=DEFAULT_PROFILE, seeds=None, truth="raw",
     if any(rate != rates[0] for rate in rates):
         raise run.BenchmarkError("the matches have different frame rates ({}); lags in frames cannot be pooled".format(
             ", ".join(str(rate) for rate in rates)))
-    return {"config": config.stem, "profile": profile, "truth": truth, "seeds": seed_list, "matches": sorted(ids),
-            "fps": rates[0], "tol": tol, "cells": pool([per_match[match_id] for match_id in ids]),
-            "per_match": per_match}
+    return {"config": config.stem, "config_sha256": config_digest(config), "profile": profile, "truth": truth,
+            "seeds": seed_list, "matches": sorted(ids), "fps": rates[0], "tol": tol,
+            "cells": pool([per_match[match_id] for match_id in ids]), "per_match": per_match}
 
 
 def latency_dfl_document(result):
     """The JSON-ready document of measure_latency's result: pooled cells with their lags, and summaries."""
     fps = result["fps"]
-    return {"source": "dfl", "config": result["config"], "profile": result["profile"], "truth": result["truth"],
-            "seeds": result["seeds"], "matches": result["matches"], "fps": fps, "tol": result["tol"],
+    return {"source": "dfl", "config": result["config"], "config_sha256": result["config_sha256"],
+            "profile": result["profile"], "truth": result["truth"], "seeds": result["seeds"],
+            "matches": result["matches"], "fps": fps, "tol": result["tol"],
             "cells": result["cells"], "summary": summarise(result["cells"], fps),
             "per_match": {match_id: summarise(cells, fps) for match_id, cells in sorted(result["per_match"].items())}}
 
@@ -1163,12 +1212,39 @@ def render_shift(rule, coarse_s_b=None):
     return lines
 
 
-def _check_latency_file(document, stem, tol, path, command):
-    """`document` itself, or a ConventionsError: a latency file of this config, at this tolerance, with every type."""
+def _check_recorded(document, key, expected, path, command, because):
+    """Nothing if `document` records `expected` under `key`, else a ConventionsError naming the command to run again.
+
+    A document that records none (a file written before the latency files carried it) is refused as one of another
+    content is. Only the first 12 characters of a hash are named, so that the two can be told apart.
+    """
+    recorded = document.get(key)
+    if recorded == expected:
+        return
+    if not isinstance(recorded, str) or not recorded:
+        said = "records no {}, so it cannot be told to belong to this one".format(key)
+    else:
+        said = "has {} {} and this one is {}: {}".format(key, recorded[:12], expected[:12], because)
+    raise ConventionsError("conventions: {} {}; write it again with `python pipeline/benchmark/conventions.py {}`"
+                           .format(os.path.basename(path), said, command))
+
+
+def _check_latency_file(document, stem, tol, path, command, digest, csv_sha256=None):
+    """`document` itself, or a ConventionsError: a latency file of this config's content, at this tolerance, with
+    every type (and, for the public side, read from the CSV with this sha256).
+
+    `digest` is config_digest of the config in hand and `csv_sha256` that of the CSV it wrote: a file that records
+    another one, or none, is refused with the `latency` command (`command`) that writes it again.
+    """
     if document.get("config") != stem:
         raise ConventionsError("conventions: {} was made for the config {!r}, not {!r}; write it again with `python "
                                "pipeline/benchmark/conventions.py {}`".format(os.path.basename(path),
                                                                               document.get("config"), stem, command))
+    _check_recorded(document, "config_sha256", digest, path, command,
+                    "an evidence, decoder, refine, scope or seed setting is not what it was measured for")
+    if csv_sha256 is not None:
+        _check_recorded(document, "csv_sha256", csv_sha256, path, command,
+                        "the config was run again since, and this is not the CSV it was read from")
     if document.get("tol") != tol:
         raise ConventionsError("conventions: {} matched changes within {} frames and the public side within {}; write "
                                "it again with `python pipeline/benchmark/conventions.py {}`".format(
@@ -1186,11 +1262,14 @@ def run_shift(config, gt_path, data_dir, rejected=(), tol=TOL, log=print):
 
     The public side is worked out from the CSV that `pipeline/run.py CONFIG` wrote (public_pair), so it cannot disagree
     with the prediction that is shifted; DFL's is read from latency_<stem>_dfl_tracking_raw.json (SHIFT_DFL), which
-    `latency CONFIG dfl` writes, and refused if it is another config's or at another tolerance. A latency file for the
-    coarse truth (SHIFT_COARSE) is reported beside it when there is one. `rejected` names the types whose s_b the
-    benchmark rejected: it is 0 for them. Writes evaluation/results/<stem>_shift_oof.csv through the pipeline's own
-    output stage (checked path, LF, read back and validated) and logs the table, no frame and no public value that
-    `limited` would hide. Nothing is written if anything is refused.
+    `latency CONFIG dfl` writes, and refused if it is another config's content (config_digest; a file that records
+    none is refused too) or at another tolerance. A latency file for the coarse truth (SHIFT_COARSE) is reported
+    beside it when there is one and held to the same rule, and so is the public one (`latency CONFIG public`), which
+    must also have been read from this very CSV (it is not needed, and when it is absent nothing is checked).
+    `rejected` names the types whose s_b the benchmark rejected: it is 0 for them. Writes
+    evaluation/results/<stem>_shift_oof.csv through the pipeline's own output stage (checked path, LF, read back and
+    validated) and logs the table, no frame and no public value that `limited` would hide. Nothing is written if
+    anything is refused.
     """
     tol = _whole(tol, "tol", 0)
     rejected = list(rejected)
@@ -1199,19 +1278,26 @@ def run_shift(config, gt_path, data_dir, rejected=(), tol=TOL, log=print):
             raise ConventionsError("conventions: no type called {!r}; the types are {}".format(kind, ", ".join(TYPES)))
     gt_codes, pred_codes, runs = public_pair(config, gt_path)
     public = latencies(gt_codes, pred_codes, runs, tol)
+    digest, csv_path = config_digest(config), output.default_out_path(config.stem)
+    csv_sha256 = _file_sha256(csv_path)
 
     def command(truth):
         return "latency {} dfl --profile {} --truth {}".format(run.shown(config.path), SHIFT_DFL[0], truth)
 
     dfl_path = latency_path(data_dir, config.stem, "dfl", *SHIFT_DFL)
     dfl_document = _check_latency_file(_read(dfl_path, command(SHIFT_DFL[1])), config.stem, tol, dfl_path,
-                                       command(SHIFT_DFL[1]))
+                                       command(SHIFT_DFL[1]), digest)
     coarse = None
     coarse_path = latency_path(data_dir, config.stem, "dfl", *SHIFT_COARSE)
     if os.path.isfile(coarse_path):
         coarse_document = _check_latency_file(_read(coarse_path, command(SHIFT_COARSE[1])), config.stem, tol,
-                                              coarse_path, command(SHIFT_COARSE[1]))
+                                              coarse_path, command(SHIFT_COARSE[1]), digest)
         coarse = {kind: pipeline_lag(coarse_document["cells"][kind]["lags"]) for kind in TYPES}
+    public_path, public_command = latency_path(data_dir, config.stem, "public"), "latency {} public".format(
+        run.shown(config.path))
+    if os.path.isfile(public_path):
+        _check_latency_file(_read(public_path, public_command), config.stem, tol, public_path, public_command, digest,
+                            csv_sha256)
     rule = shift_rule(public, {kind: dfl_document["cells"][kind]["lags"] for kind in TYPES},
                       {kind: 0 for kind in rejected})
     codes = oof_codes(pred_codes, gt_codes, runs, rule, tol)
@@ -1220,7 +1306,8 @@ def run_shift(config, gt_path, data_dir, rejected=(), tol=TOL, log=print):
     output.check_out_path(out_path, data_dir)
     sha256 = output.write_submission(out_path, codes)
     output.validate(out_path, len(codes), codes)
-    document = {"config": config.stem, "tol": tol, "rule": rule, "s_b_rejected": rejected, "coarse_s_b": coarse,
+    document = {"config": config.stem, "config_sha256": digest, "csv": os.path.basename(csv_path),
+                "csv_sha256": csv_sha256, "tol": tol, "rule": rule, "s_b_rejected": rejected, "coarse_s_b": coarse,
                 "dfl": {"file": os.path.basename(dfl_path), "profile": dfl_document.get("profile"),
                         "truth": dfl_document.get("truth"), "seeds": dfl_document.get("seeds"),
                         "matches": dfl_document.get("matches")},

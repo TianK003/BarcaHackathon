@@ -2,9 +2,9 @@
 
     [[evidence]]
     kind = "shape_possession"
-    model = "pipeline/models/shape_hgb.json"   # relative to the repository root
-    scope = "gaps"                             # "gaps": only where the ball is missing; "all": every graded frame
-    min_prob = 0.02                            # home is clipped to [min_prob, 1 - min_prob]
+    model = "pipeline/models/shape_possession_hgb.json"   # relative to the repository root
+    scope = "gaps"                                        # "gaps": only where the ball is missing; "all": every frame
+    min_prob = 0.02                                       # home is clipped to [min_prob, 1 - min_prob]
 
 The ball is missing from our tracking on 41% of the graded frames, in long gaps (a median 10.7 s, docs/results.md A01),
 and `nearest_player` and `controlled_touch` are silent exactly there: both read the ball. A team in possession is more
@@ -86,7 +86,7 @@ def compute(run, *, model, scope="gaps", min_prob=0.02):
     """Evidence(alive = NaN; home = the model's symmetrised P(home has the ball), clipped, where `scope` says)."""
     scope = _scope(scope)
     min_prob = trees.check_min_prob(min_prob, NAME)
-    path = trees.model_path(model, NAME, "pipeline/models/shape_hgb.json")
+    path = trees.model_path(model, NAME, "pipeline/models/shape_possession_hgb.json")
     artifact = load(path)
 
     inputs = run.inputs
