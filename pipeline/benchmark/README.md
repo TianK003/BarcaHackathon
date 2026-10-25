@@ -15,6 +15,7 @@ python pipeline/benchmark/sources.py          # data -> data/external/dfl/   (21
 python pipeline/benchmark/run.py CONFIG ...   # configs -> scores, intervals, comparisons, one JSON report per config
 python pipeline/benchmark/fidelity.py         # how far the degraded profile looks like our match (gates, warnings)
 python pipeline/benchmark/headroom.py CONFIG  # a config beside five variants whose evidence is the truth itself
+python pipeline/benchmark/touch_stats.py      # P04's control rule measured: coverage, agreement, flip lags, confidence
 python pipeline/benchmark/selftest.py [--dfl] [--data]   # the checks
 ```
 
@@ -537,6 +538,42 @@ than in the pooled number alone. Nothing here is a config to submit. The checks 
 `test_headroom_loads_each_match_once_and_keeps_none`,
 `test_headroom_writes_the_variants_reports_only_when_asked_and_never_the_references` and
 `test_headroom_command_line_prints_the_table_and_the_report_lines`, all in `checks/headroom.py` and all synthetic.
+
+## P04's control rule: the measurement and Stage A's configs
+
+`controlled_touch` (P04, `pipeline/evidence/controlled_touch.py`) speaks only inside control episodes, and its
+`confidence` is a measurement of the benchmark, not a tuning (Stage A of the plan's protocol, R008). `touch_stats.py`
+makes it:
+
+```
+.venv/Scripts/python pipeline/benchmark/touch_stats.py [--profile P] [--seeds N] [--matches ID ...] [--data-dir D]
+result = touch_stats.measure(settings, profile=..., seeds=..., match_ids=None, matches=None, calibration=None)
+```
+
+For each of the 12 settings (radius 1.0, 1.5, 2.0 m x `max_rel_speed` 3.0, 6.0 m/s x `min_frames` 3, 8: `DEFAULT_GRID`)
+it runs the source once per match and seed on the degraded tracking (default profile `tracking`, seeds 0 to 2), and
+counts, among the alive graded frames where the served tracking has the ball:
+
+- **coverage**, the share inside a kept episode, and **agreement**, the share of those whose team is the truth's, per
+  match and pooled over matches and seeds;
+- the **flip lags**: for each change of team in the truth with no `D` between, the frames from the change to the first
+  frame of the new team's first kept episode within 5 s either side, in the same half. Median, 25th and 75th percentile
+  and the share of changes with one found. It is a diagnostic of DFL's convention (a flag that turns late shows as a
+  negative lag), read beside the `hold` result, never a selector;
+- the **confidence**: floor(100 x pooled agreement) / 100 clipped to [0.51, 0.99] (`confidence_from_agreement`). It is
+  a measurement on all seven matches, and the entry that uses it says so.
+
+The truth is read inside `measure`, from the match, to count; the source is called on a `MatchInputs` that holds the
+degraded tracking and no flag, with confidence 0.99 and no hold, and the result holds counts and shares only. The CLI
+prints a table of aggregates and nothing frame-level.
+
+Stage A's configs (P45) are named `pipeline/benchmark/configs/p45/p45a_r{RR}_v{V}_k{KK}_h{HH}.toml`: `RR` the radius
+in tenths of a metre (`10`, `15`, `20`), `V` the `max_rel_speed` in m/s (`3`, `6`), `KK` the `min_frames` (`03`, `08`),
+`HH` the hold in hundredths (`50` is off, `55`). The 24 files each hold `controlled_touch` with the measured
+confidence, `ball_presence` at its defaults and `hmm` at (8, 32, 75, 1). The controls are `p45actl_nearest` and the
+chosen config on `context`. The checks are in `checks/touch.py` (synthetic): `test_touch_stats_matches_a_loop`,
+`test_touch_stats_confidence_rule`, `test_touch_stats_default_grid`, `test_touch_stats_never_passes_truth` and
+`test_touch_stats_refuses_what_it_cannot_measure`.
 
 ## The checks
 
