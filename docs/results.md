@@ -380,6 +380,11 @@ measurement looks only at the frames the truth calls alive.
   tracked ball is never more than about 4 m outside a line (x from −0.022 to 1.029 and y from −0.059 to 1.046 of the
   pitch over the seven matches; J03WQQ goes furthest).
 - Our match has no counterpart yet: it needs BAR-ATH's ball against the public GT's `D` onsets, which is P02.
+  *Later:* A11 has one, from 2 of the 4 public stoppages (the other 2 have no first sighting of the ball beyond a line
+  within 5 s): our tracking sees it a median 37 frames (1.48 s) after our `D` begins, where on DFL's `tracking` v3 copy
+  (raw and coarse truth alike) the flag turns 3 frames after the ball is seen, beside the 4 frames above, measured on
+  DFL's own positions. A lead, not a measurement: our truth's convention, or our tracker's loss of the ball near the
+  lines (T39).
 
 **The nearest player against the truth** (A01: 77.8% of 5,640 alive ball-visible frames on the public window). Brute
 force, in metres, present players only:
@@ -460,7 +465,10 @@ rate is at or below the literature's upper bound, 220 possessions a match, which
   (0.54 residual sd below). That is within what DFL's conventions produce, and 17 possessions cannot separate a
   different grain from noise. The 175–220 of the literature is what a control-based provider gives; whether ours is
   one is not shown here.
-- **D timing against ours is unmeasured.** DFL's counterpart needs BAR-ATH's ball, which is P02.
+- **D timing against ours is unmeasured.** DFL's counterpart needs BAR-ATH's ball, which is P02. *Later:* A11 measured
+  it on the public window's 4 stoppages and 12 team changes, weakly: against DFL's flag on the `tracking` v3 copy (raw
+  and coarse truth), the events our tracking sees put our `D` 2.5 to 3 s longer. That is our truth's convention, chance
+  or our tracker's coverage, and A11 does not separate them.
 - **Use:** hyperparameters are picked on the benchmark, never on the public window (CLAUDE.md, T01). Where a choice
   depends on how long a possession is (smoothing, a switch penalty λ, duration priors), rank it under the raw truth and
   under the coarse one side by side, and treat a disagreement between them as a warning, not as a licence to pick the
@@ -931,6 +939,225 @@ worth +0.0008 raw to this decoder, and +0.1971 once `D` is right; and any new so
 minimum-run choice. The recommendation that follows is in [proposals.md](proposals.md#after-p06). It stands on the
 coarse-truth ceiling, on P05 gating P07, on `D` being the chosen config's weakest point and on P04 running alongside
 it, and not on a raw-truth lead over P04.
+
+### A11 — Our ground truth's timing against DFL's, from tracking events (2026-10-25, Tian)
+
+Proposal: P02 · Commit: `9f06349` (the code all five runs were made at, from a detached checkout; the entry is in the
+commit that adds it) · Commands, with the data directory at the main checkout's `data/`; the instrument is
+`pipeline/benchmark/conventions.py`:
+
+```bash
+python pipeline/benchmark/conventions.py public
+python pipeline/benchmark/conventions.py dfl --profile tracking --seeds 3 --truth raw       # and --truth coarse
+python pipeline/benchmark/conventions.py compare --profile tracking --truth raw             # and --truth coarse
+```
+
+Public: the 20 changes of the public truth (12 of team, 4 into `D`, 4 out of it), timed on our real tracking.
+Validation (P01 benchmark): 7 DFL matches x 3 degradation seeds (0, 1, 2), profile `tracking` version 3, under the raw
+and under the coarse truth, pooled over matches and seeds by the lags themselves, never as a median of medians. All
+five logs end `EXIT=0`. This is a measurement and not a score: nothing is decoded, no configuration is compared and
+nothing is tuned or shifted from it (T01). Aggregates only; every figure is on a log line, or follows from two of them
+by arithmetic said where it is made.
+
+**What was measured.** A06 measured DFL's flag against the ball leaving the pitch and left the same question on our
+match open ("D timing against ours is unmeasured"). The instrument times every change of a truth's label against the
+nearest of eight events that the tracking shows without any label, so that no LLM has to see the match. A change is
+typed `team` (H to A or A to H), `into_dead` (H or A to D) or `out_of_dead` (D to H or A); a detector speaks only for
+the types it applies to:
+
+| detector | applies to | the event |
+|---|---|---|
+| `touch_start` | `team`, `out_of_dead` | the first frame of a kept `controlled_touch` episode of the new team (`main.toml`'s rule: 2.0 m, 6.0 m/s, 3 frames) |
+| `line_out` | `into_dead` | the first frame of a run where the ball is visible and beyond a line (`outside_m` above 0) |
+| `ball_lost` | `into_dead` | the first missing frame of a ball gap that opens inside the block |
+| `ball_moves` | `out_of_dead` | the first frame at or above `STILL_SPEED` after at least 25 frames below it, from positions (T31) |
+| `model_dead` / `model_alive` | `into_dead` / `out_of_dead` | where P05's `dead_ball_model` (R009, the file `main.toml` uses) alive crosses 0.5 down / up |
+| `tag_start` / `tag_end` | `into_dead` / `out_of_dead` | the start / end of a Smart Tagging `SET PIECES` interval; BAR-ATH only |
+
+The lag is `event - change` in frames (25 per second), so **a negative lag means the event came first**, and a positive
+one that the label flipped first. The event taken is the nearest to the change, the earlier on a tie, within 5 s either
+side, bounded by the neighbouring changes of any type (or the block's edges) so that a change is never matched to
+another one's event; none in that range is "not found". The detectors run over the graded halves of each match and the
+lags are read at the changes only: on BAR-ATH they find 1,189 `touch_start` episodes, 81 `line_out`, 149 `ball_lost`, 71
+`ball_moves`, 248 `model_dead`, 247 `model_alive` and 59 `tag_start` and `tag_end` events in the graded halves, of which
+the public window's changes see only those within 5 s. On DFL the same code runs on the tracking as the pipeline sees it
+under `tracking` v3 and no flag (`MatchInputs`), and the truth is read beside it only to find the changes. `model_dead`
+and `model_alive` are scored on DFL by the model fitted without that match (out of fold, by the code's rule), and on
+BAR-ATH by the one fitted on all seven.
+
+**The public window, on our tracking.** Found is the share of the changes with an event in the window. A cell with
+fewer than 5 changes found prints no quartile and no bound (the instrument's `MIN_SHOWN`: with so few they would be the
+lags of single stoppages), so only the median is given, and for the gap only whether its interval excludes 0:
+
+| type | detector | n | found | median | quartiles |
+|---|---|---|---|---|---|
+| `team` | `touch_start` | 12 | 10 (83%) | +24.0 frames (+0.96 s) | -4.5, +37.2 |
+| `into_dead` | `line_out` | 4 | 2 (50%) | +37.0 (+1.48 s) | not shown |
+| `into_dead` | `ball_lost` | 4 | 2 (50%) | +30.0 (+1.20 s) | not shown |
+| `into_dead` | `model_dead` | 4 | 3 (75%) | +39.0 (+1.56 s) | not shown |
+| `into_dead` | `tag_start` | 4 | 0 (0%) | none | |
+| `out_of_dead` | `touch_start` | 4 | 4 (100%) | +9.0 (+0.36 s) | not shown |
+| `out_of_dead` | `ball_moves` | 4 | 0 (0%) | none | |
+| `out_of_dead` | `model_alive` | 4 | 2 (50%) | -36.5 (-1.46 s) | not shown |
+| `out_of_dead` | `tag_end` | 4 | 1 (25%) | +19.0 (+0.76 s), one change | not shown |
+
+**DFL, on the degraded copy, under each truth.** Frames, with the median in seconds. `n` counts each change once per
+seed, so it is three times the changes: the raw truth has 3,760 (2,351 team, 710 into `D`, 699 out of it) and the coarse
+one 2,358 (949 team; it absorbs short possessions and leaves `D` as it is, A06), as the per-match lines of the logs add
+up and the pooled `n` divide by 3. Raw truth:
+
+| type | detector | n | found | median | p25 | p75 | median of each match |
+|---|---|---|---|---|---|---|---|
+| `team` | `touch_start` | 7,053 | 50% | -1.0 (-0.04 s) | -8.0 | +12.0 | -2.0 to -1.0 |
+| `into_dead` | `line_out` | 2,130 | 47% | -3.0 (-0.12 s) | -5.0 | -1.0 | -4.0 to -3.0 |
+| `into_dead` | `ball_lost` | 2,130 | 18% | +28.0 (+1.12 s) | -25.0 | +70.5 | +21.0 to +38.5 |
+| `into_dead` | `model_dead` | 2,130 | 93% | +1.0 (+0.04 s) | -1.0 | +2.0 | +1.0 to +2.0 |
+| `out_of_dead` | `touch_start` | 2,097 | 44% | +35.0 (+1.40 s) | +19.0 | +51.2 | +27.0 to +38.0 |
+| `out_of_dead` | `ball_moves` | 2,097 | 56% | -3.0 (-0.12 s) | -3.0 | -3.0 | -3.0 in all seven |
+| `out_of_dead` | `model_alive` | 2,097 | 96% | 0.0 (0.00 s) | -3.0 | +2.0 | 0.0 in six, -3.0 in J03WQQ |
+
+Coarse truth (the same matches, seeds and profile):
+
+| type | detector | n | found | median | p25 | p75 | median of each match |
+|---|---|---|---|---|---|---|---|
+| `team` | `touch_start` | 2,847 | 55% | 0.0 (0.00 s) | -7.0 | +25.0 | -1.0 to 0.0 |
+| `into_dead` | `line_out` | 2,130 | 47% | -3.0 (-0.12 s) | -5.0 | -1.0 | -4.0 to -3.0 |
+| `into_dead` | `ball_lost` | 2,130 | 19% | +23.0 (+0.92 s) | -36.0 | +67.0 | +4.0 to +36.0 |
+| `into_dead` | `model_dead` | 2,130 | 93% | +1.0 (+0.04 s) | -1.0 | +2.0 | +1.0 to +2.0 |
+| `out_of_dead` | `touch_start` | 2,097 | 48% | +37.0 (+1.48 s) | +21.0 | +59.0 | +34.0 to +39.0 |
+| `out_of_dead` | `ball_moves` | 2,097 | 56% | -3.0 (-0.12 s) | -3.0 | -3.0 | -3.0 in all seven |
+| `out_of_dead` | `model_alive` | 2,097 | 96% | 0.0 (0.00 s) | -3.0 | +2.0 | 0.0 in six, -3.0 in J03WQQ |
+
+The coarse truth removes team changes (the `team` n falls from 7,053 to 2,847), so a window bounded by the neighbouring
+changes reaches further. The cells whose events sit within a few frames of the change do not move (`line_out`,
+`model_dead`, `ball_moves` and `model_alive` are the same to the digit under both truths). Those whose events sit tens
+of frames away find more of them, a share 1 to 5 points higher, and move by 1 to 5 frames (`ball_lost` 5 earlier,
+`touch_start` after a restart 2 later, `team` 1 later). A check on the copy: its `line_out` median, -3 frames, is A06's
+4 frames (DFL's flag turning 0.16 s after the ball is first seen beyond a line, measured on its own positions) to within
+a frame, so the instrument reproduces A06 on the copy.
+
+**The gap: the public median minus DFL's**, with a 90% bootstrap interval of the public lags (2,000 draws; DFL's median
+is taken as it is, so the interval carries the public side's sampling only). Where the public side has fewer than 5
+changes found only whether the interval excludes 0 is printed:
+
+| type | detector | raw truth: gap | coarse truth: gap |
+|---|---|---|---|
+| `team` | `touch_start` | +25.0 (+1.00 s), [-9.0, +40.0] | +24.0 (+0.96 s), [-10.0, +39.0] |
+| `into_dead` | `line_out` | +40.0 (+1.60 s), excludes 0: yes | +40.0 (+1.60 s), excludes 0: yes |
+| `into_dead` | `ball_lost` | +2.0 (+0.08 s), excludes 0: no | +7.0 (+0.28 s), excludes 0: no |
+| `into_dead` | `model_dead` | +38.0 (+1.52 s), excludes 0: no | +38.0 (+1.52 s), excludes 0: no |
+| `out_of_dead` | `touch_start` | -26.0 (-1.04 s), excludes 0: yes | -28.0 (-1.12 s), excludes 0: yes |
+| `out_of_dead` | `model_alive` | -36.5 (-1.46 s), excludes 0: yes | -36.5 (-1.46 s), excludes 0: yes |
+
+`tag_start` and `tag_end` have no DFL counterpart, and `ball_moves` found nothing on the public side, so those three
+have no gap.
+
+**What it says about when our GT flips** (each against DFL's flag, on the events our tracking sees):
+
+- **Team changes: ours flips about a second before the new team's first controlled touch; DFL's flips at it.** On our
+  tracking the new team's first controlled touch comes a median 24 frames (0.96 s) after our truth flips, in 10 of the
+  12 changes (quartiles -4.5 and +37.2). On DFL's copy the touch comes 1 frame before the flag flips under the raw
+  truth and on the same frame under the coarse one (quartiles -8 and +12, -7 and +25), so DFL's flag turns where
+  control begins. The gap is +25 frames [-9, +40] raw and +24 [-10, +39] coarse. Both intervals hold 0, so **a
+  difference is not shown**; it is the best-supported cell on the public side (10 changes found) and it points one way,
+  with a spread (42 frames between the quartiles, against DFL's 20) wider than the gap itself. A flip at the moment the
+  ball is won, before the controlled touch is confirmed on our tracking, would give this; so would a later start of
+  controlled episodes on our tracker than on the copy. Nothing here separates them.
+- **`D` starts early, or our tracker sees the stoppage late: the ball is seen beyond a line about 1.5 s after our truth
+  turns to `D`, where DFL's flag turns just after it.** `line_out` is +37 frames (1.48 s) on the 2 of 4 stoppages where
+  our tracking sees the ball beyond a line within 5 s, against -3 (-0.12 s) on DFL, and the model's alive crosses 0.5
+  downward 39 frames (1.56 s) after our `D` begins on 3 of 4, against +1 frame on DFL, out of fold. The gaps are +40 and
+  +38 frames, the same under both truths. They are on 2 and 3 changes, and one interval excludes 0 where the other does
+  not, which is what 2 and 3 observations do and not a difference between the detectors. `ball_lost` agrees with DFL
+  (+30 against +28 raw, gap +2 and +7) and carries nothing: the copy's ball gaps are our masks transplanted with their
+  pattern and not their clock (R003), so where they fall is not placed by the stoppage.
+- **`D` ends late, or the two trackings' cues differ: the restart's first controlled touch comes 9 frames after our
+  truth turns alive, where DFL's comes 35 to 37 after its flag.** A first controlled touch is found at all 4 restarts, a
+  median 9 frames (0.36 s) after our flip; on DFL's copy it follows the flag by 35 (raw) or 37 (coarse) frames (1.40 s,
+  1.48 s), a gap of -26 and -28 frames. The model's alive crosses 0.5 upward 36.5 frames (1.46 s) before our truth turns
+  alive on 2 of 4, against 0 frames on DFL (a gap of -36.5). Both detectors put our `D`'s end later than DFL's flag
+  would be on the same events, by 1.0 to 1.5 s, and both intervals exclude 0 under both truths, on 4 and 2 changes.
+  `ball_moves` finds nothing on any of the 4 (on DFL its flag turns alive a constant 3 frames after the ball starts to
+  move: p25 = p75 = -3.0, and every match's median is -3.0), so the sharper question, whether our `D` ends at the kick,
+  is not answered. Why our tracking shows no ball that is still for 25 frames and then moves near these restarts is not
+  explained here (a ball that is not visible, or not still).
+- **Taken together, the four `D`-edge gaps put our stoppages longer than DFL's flag would draw them.** Relative to
+  DFL, on the same kind of tracking events, `D` starts 1.5 s earlier and ends 1.0 to 1.5 s later: about 2.5 to 3 s a
+  stoppage (the sum of the gaps above, 64 to 76.5 frames, both truths). The signs differ between the start and the end,
+  so one constant offset between our tracking and the truth's frames (T08, T29) cannot be all of it, since it would
+  move every gap the same way. That does not leave a difference in convention as the explanation: tracker coverage
+  also gives opposite signs at the two ends (see "How strong", below).
+- **Smart Tagging says nothing yet.** `tag_start` finds no `SET PIECES` interval within 5 s of any of the 4 stoppages
+  and `tag_end` one of 4 (+19 frames, 0.76 s, a single change). A tag marks a window of a few seconds around an event
+  (T17), so it is not an instant, and it is absent from most of these edges.
+
+How strong: only the team cell has more than 4 changes, and its interval holds 0. The `D` findings rest on 2 to 4
+changes each. The four `D`-edge gaps that carry anything (`line_out` +40 and `model_dead` +38 at the start,
+`touch_start` after a restart -26 and `model_alive` -36.5 at the end, raw truth) all point to a longer `D`, and three of
+them exclude 0. Three explanations fit, and these data do not separate them:
+- **A difference in convention**: our truth turns `D` on earlier and off later than DFL's flag does.
+- **Chance**: four stoppages, found on 2 to 4 changes each, from one lively stretch of the match.
+- **Tracker coverage**, which predicts all four signs by itself. Our tracker loses the ball near the lines (T39: beyond
+  a line on 4.07% of our at-risk rows against DFL's 17.68%), so on ours `line_out` and `model_dead`, which lean on the
+  ball beyond a line, fire late (a positive gap at the start of `D`). With fewer cues that the ball is dead on ours, the
+  model's alive rises early (a negative `model_alive` gap at the end). And the copy's ball gaps are our masks placed
+  blind to the play (R003), which can delay the copy's first visible touch after a restart and inflate DFL's +35 (a
+  negative `touch_start` gap at the end). It gives no sizes, so how much of 2.5 to 3 s it could carry is not known.
+
+So they are **a lead and not a measurement**. The model-based pair mixes our truth's convention with the model's
+transfer to our tracking (below); the model-free pair (`line_out`, `touch_start` after a restart) avoids the model's
+transfer but not the coverage difference, since they are the two detectors most exposed to it, and rests on 2 and 4
+changes. What would separate convention from coverage is a person's check on the video of where `D` begins and ends
+against the ball and the whistle (below).
+
+**Caveats.**
+- **Four changes into `D`, four out of it, 12 of team.** Several `D` cells rest on 1 to 3 found changes (`line_out` and
+  `ball_lost` 2, `model_dead` 3, `model_alive` 2, `tag_end` 1), so a median is close to a single observation (over two
+  changes it is the midpoint of the pair), and an interval over so few says little. The quartiles of those cells and
+  every bound of their intervals are withheld on purpose.
+- **Two different trackings.** The detectors run on our real tracking for BAR-ATH and on DFL's positions degraded by
+  `tracking` v3 for the benchmark, so a gap mixes our truth's convention with any difference between our tracker and
+  the copy. For example, controlled-touch episodes may start later on our tracking than on the copy, which would show
+  as a positive team gap with no convention behind it. And the copy's ball is missing on 41.9% of the graded frames
+  (R004c's gate, 0.4189) while the public window's is missing on 11.8% (A01; 33.6% of its dead frames), so the copy's
+  first visible touch after a restart may come later than it really does, which would inflate DFL's +35 and with it the
+  negative `out_of_dead` gap. Found shares are partly that coverage (83% against 50% for team changes), and a median is
+  only over the changes found.
+- **The public window is unusually lively** (A06): alive on 80.4% of its frames, more than 96% of DFL's 5-minute
+  windows, and the best-covered stretch of the match. Its 4 stoppages and 12 team changes are not a sample of the
+  match's, and the restarts of a whole half (throw-ins, goal kicks, corners, free kicks in different shares) are not
+  represented.
+- **DFL tracks the ball out of play** (T39), which helps `line_out` and `model_dead` on the copy (the ball is beyond a
+  line on 17.68% of DFL's at-risk rows against 4.07% of ours, R009), and our tracker loses it near the lines. A late
+  `line_out` or `model_dead` on our tracking can be the tracker's, not the truth's. The model was fitted on DFL's flag,
+  and its lag there, +1 and 0 frames out of fold, shows it reproduces DFL's timing; whether it does so on ours is what
+  its found shares (75% and 50% against 93% and 96%) put in doubt (T39).
+- **`tag_start` and `tag_end` exist only on BAR-ATH**, so they have no gap; Smart Tagging's tag values are our
+  vocabulary and no LLM reads them, so no restart type is classified here (that stays with a person, below).
+- **The DFL side is pooled over three seeds**, so its `n` is three times the changes, and its medians are taken as fixed
+  numbers in the gap's interval.
+
+**How a person can extend it.** `python pipeline/benchmark/conventions.py public` regenerates
+`data/runs/conventions/public_transitions.csv` (gitignored, on our machines only): one row per change of the public
+truth, with its frame (the tactical video's frame, row i = frame i), the label before and after, its type and each
+detector's lag there, blank where the detector does not apply or found nothing. No LLM reads it, and no row of it is
+quoted anywhere. Watching the video around those frames, and measuring around the published transitions, is allowed;
+labelling frames of this match is not (T27). Things to watch at each change, and to write into the docs as aggregates
+and frame counts only:
+- at a change into `D`: whether `D` begins at the ball crossing the line, at the whistle or when play stops, and what
+  kind of stoppage it is (a throw-in, a goal kick, a corner, a free kick, a foul, a goal, an offside);
+- at a change out of `D`: the restart type, and whether `D` ends at the whistle, at the kick or at the first touch;
+- at a team change: what happens at the flip (a tackle, an interception, a deflection, the old team's last touch or the
+  new team's first), and whether the ball is visible there;
+- the four restarts where `ball_moves` found nothing, and the stoppages where `line_out` and `tag_start` found nothing.
+
+A frame-exact decode of the tactical video seeks back to a keyframe, at most 49 frames earlier (T23). More than 20
+transitions would come from P16's sample games in our truth's provider's conventions, not from the public window.
+
+**What it changes.** Nothing is adopted and no shift is derived from A11: its gaps are between detectors on two sources,
+and the pipeline's own latency at these 20 changes is what the `shift_edges` rule reads (R012, to follow). It says
+where to look first, the two `D` edges before the team flips, and in which direction (our `D` earlier at the start and
+later at the end, our team flips earlier), which is T40: a component tuned on the benchmark may carry DFL's timing.
 
 ## Experiments
 

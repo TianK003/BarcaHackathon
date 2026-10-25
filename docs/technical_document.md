@@ -126,7 +126,11 @@ matter.
   alive on 80.4% of its frames, more than 96% of DFL's 5-minute windows. Against DFL's windows that lively, it is 1.34
   times slower, which DFL's own conventions can produce. EVALUATION.md's lag table does not reproduce on the public GT
   (A06, T33).
-- DFL's flag turns dead a median 0.16 s after the ball is first seen beyond a line. Ours is unmeasured (A06, P02).
+- DFL's flag turns dead a median 0.16 s after the ball is first seen beyond a line (DFL's own positions, A06). Ours is
+  measured on 2 stoppages only: our tracking first sees the ball beyond a line a median 1.48 s after our `D` begins,
+  where DFL's `tracking` v3 copy has it 0.12 s before its flag, a gap of +40 frames (1.6 s) under the raw and the
+  coarse truth. That is our truth's convention or our tracker's loss of the ball near the lines, not separated (A11,
+  T39).
 - Two of the seven matches have a team down to 10 players: from minute 7.1 of the first half in one, from minute 13.4
   of the second half in the other. 18.3% of the seven matches' graded frames have 21 players, so a statistic on how
   many players are tracked is measured on the frames at full strength only (T36).
@@ -183,6 +187,22 @@ ball in play, decoded by the `hmm` per half. The rules below are those it implem
 - **Abstentions (`X`):** The decoder never abstains inside a graded half, and the runner writes `X` on the ungraded
   frames, where it is free: the chosen file has none inside a graded block (R010). It can return the posterior of each
   state per frame, which shows where an `X` would be free (inside a possession), but no refiner reads it yet.
+- **Edge timing, where each rule flips against our ground truth (A11, T40):** The back-dating, the hold and the `D`
+  onset follow DFL's flag, so we timed every change of the public truth (12 of team, 4 into `D`, 4 out of it) against
+  label-free events on our tracking, and the same events against the seven DFL matches' flags on `tracking` v3 (tracking
+  degraded to look like ours; each DFL figure is raw truth, and the coarse truth's is given where it differs). Our truth
+  flips a median 24 frames (0.96 s) before the new team's first controlled touch, where DFL's flag flips 1 frame after
+  it (on it under the coarse truth); 10 changes found, and the gap's 90% interval holds 0 under both truths. Our `D`
+  begins a median 1.5 s (37 frames, on 2 of 4 stoppages) before the ball is first seen beyond a line, where DFL's flag
+  on the copy turns 0.12 s after it, under both truths (A06's 0.16 s is DFL's own positions). Our `D` ends 1.0 to 1.5 s
+  later than DFL's flag would, against the restart's first controlled touch (a gap of -26 raw, -28 coarse) and against
+  the dead-ball model's alive crossing 0.5 (-36.5 under both). Taken at face value, our stoppages are 2.5 to 3 s longer
+  than DFL's flag draws them. Three explanations fit and the data do not separate them: a convention of our truth;
+  chance, at 2 to 4 changes in 4 stoppages; and tracker coverage, which predicts all four signs by itself (our tracker
+  loses the ball near the lines, T39, so `line_out` and the model fire late and the model's alive rises early on ours,
+  and the copy's ball gaps ignore the play, R003). So it is a lead for a person to check on the video and for the
+  `shift_edges` rule, which moves an edge only where the pipeline's own latency on the public window passes its declared
+  test, measured in an unusually lively 5 minutes (A06). It is not a rule we apply, and nothing is shifted today.
 
 ## 5. Validation
 
@@ -389,8 +409,8 @@ penalties set the prior and no frame is certain.
 - **Conventions.** DFL's flags may flip at other moments than ours do, and the grain of our ground truth is not known:
   the public window is alive on 80.4% of its frames, more than 96% of DFL's 5-minute windows, so it cannot say how far
   ours differs from DFL's 437 possessions a match (A06, T33). The coarse truth stands in for the difference and does not
-  correct it, and `D` timing against ours is unmeasured. The timing parameters would come from the public window
-  (P02).
+  correct it, and `D` timing against ours is measured on four stoppages only (A11, T40). The timing parameters would
+  come from the public window (P02).
 - **Seven matches, five of them Fortuna Düsseldorf's home games.** The sample is small, so the intervals are wide, and
   not independent, so even they may be too narrow; the smallest sign-flip p is 0.0156. Two matches have a team down to
   10 players, so statistics on how many players are tracked are measured at full strength only (T36).
