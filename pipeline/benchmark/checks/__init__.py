@@ -43,6 +43,10 @@ module of its topic:
                  and that the full oracle scores exactly 1.0 (synthetic only)
     touch.py     touch_stats: its figures against a plain loop over the frames, the confidence rule, the grid and its
                  labels, and that the source is never handed the truth (synthetic only)
+    dead_ball.py P05's dead-ball trainer: the exported trees against scikit-learn, the same bytes on 1 and 4
+                 threads, the folds that exclude the held-out match, no truth in the features, the JSON artifact
+                 (exact, LF, bounded), the logistic reference's bookkeeping, the rule values' rounding, and --verify
+                 (synthetic only)
     harness.py   the harness itself: what it collects, how it reports NOT RUN, the console set-up, and that no check
                  module imports another one
     common.py    what several modules share, and no checks of its own: the synthetic DFL match, the random one
@@ -68,8 +72,8 @@ what two of them share goes to common.py (test_a_check_module_imports_no_other_c
 """
 
 from pipeline.benchmark.checks import (
-    calibration, cap, context, degrade, dfl, fidelity, harness, hazard, headroom, inputs, run, score, sources,
-    tracking, touch, truth)
+    calibration, cap, context, dead_ball, degrade, dfl, fidelity, harness, hazard, headroom, inputs, run, score,
+    sources, tracking, touch, truth)
 
 MODULES = (sources, dfl, truth, inputs, score, run, hazard, calibration, degrade, cap, tracking, context, fidelity,
-           headroom, touch, harness)
+           headroom, touch, dead_ball, harness)

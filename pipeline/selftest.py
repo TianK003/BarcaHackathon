@@ -2099,6 +2099,299 @@ def test_features_speed():
     assert elapsed < 3.0, "{:.2f} s for 140,000 frames x 46 slots (the budget is 3 s)".format(elapsed)
 
 
+# -- the dead-ball model (P05) ----------------------------------------------------------------------------------------
+#
+# A hand-made artifact of a couple of trees, so that every number is worked out here and not by the trainer. Its one
+# tree splits on ball_missing (ball seen: one leaf, ball missing: another) on a baseline; the fold's tree has other
+# numbers, so that a check can tell which of the two models was used.
+
+MODEL_BASELINE, MODEL_SEEN, MODEL_MISSING, MODEL_PRIOR = 0.3, 1.0, -2.0, 0.6
+FOLD_BASELINE, FOLD_SEEN, FOLD_MISSING, FOLD_PRIOR = -0.4, 0.5, -3.0, 0.25
+
+
+def stump(feature, threshold, left, right, missing_left=0):
+    """One tree of three nodes, in the artifact's per-tree arrays: a split on `feature` and two leaves."""
+    return {"feature": [feature, -1, -1], "threshold": [threshold, 0.0, 0.0], "missing_left": [missing_left, 0, 0],
+            "left": [1, 0, 0], "right": [2, 0, 0], "leaf": [0, 1, 1], "value": [0.0, left, right]}
+
+
+def hgb_model(baseline, seen, missing, prior):
+    return {"prior_alive": prior, "baseline": baseline,
+            "trees": [stump(PLAY_COLUMN["ball_missing"], 0.5, seen, missing)]}
+
+
+def write_model(folder, folds=None, full=None, name="dead_ball_hgb.json", **changes):
+    import json
+    from pipeline.evidence import play_features
+    artifact = {"format": 1, "kind": "hgb", "feature_version": play_features.FEATURE_VERSION,
+                "features": list(PLAY_NAMES), "profile": "tracking", "seeds": 3, "stride": 5, "provenance": {},
+                "folds": {"FOLD1": hgb_model(FOLD_BASELINE, FOLD_SEEN, FOLD_MISSING, FOLD_PRIOR)} if folds is None
+                else folds,
+                "full": hgb_model(MODEL_BASELINE, MODEL_SEEN, MODEL_MISSING, MODEL_PRIOR) if full is None else full}
+    artifact.update(changes)
+    return write_text(folder, name, json.dumps(artifact, sort_keys=True) + "\n")
+
+
+def model_alive(inputs, path, game="BAR-ATH", **values):
+    from pipeline.contracts import RunContext, check_evidence
+    from pipeline.evidence import REGISTRY
+    inputs.game = game
+    evidence = REGISTRY["dead_ball_model"](RunContext(inputs=inputs, seed=0), model=path, **values)
+    check_evidence(evidence, len(inputs.atd.ball_xy))
+    assert np.isnan(evidence.home).all(), "dead_ball_model has no opinion on who has the ball"
+    return evidence.alive
+
+
+def half_seen_inputs(n=100, **kwargs):
+    """Walkers and a ball that is seen on frames 0-49 and missing on 50-99 (one block)."""
+    ball = np.full((n, 2), np.nan)
+    ball[:n // 2] = [30.0, 20.0]
+    walking = walkers(n, 1.0, np.stack([np.linspace(10, 90, 8), np.linspace(10, 60, 8)], axis=1))
+    return play_inputs(walking, ball, **kwargs)
+
+
+def logit(p):
+    return np.log(p / (1.0 - p))
+
+
+def test_dead_ball_model_prior_correction():
+    # logit(alive) = logit(p) - logit(prior_alive), with p = sigmoid(baseline + leaf) for the full model
+    with tempfile.TemporaryDirectory() as root:
+        path = write_model(root)
+        inputs = half_seen_inputs()
+        alive = model_alive(inputs, path)
+        for rows, leaf in ((slice(0, 50), MODEL_SEEN), (slice(50, 100), MODEL_MISSING)):
+            expected = 1.0 / (1.0 + np.exp(-(MODEL_BASELINE + leaf - logit(MODEL_PRIOR))))
+            assert np.allclose(alive[rows], expected, rtol=0, atol=1e-12), (alive[rows][0], expected)
+        # the clip: a score far out is held at min_prob and 1 - min_prob, and min_prob is a parameter
+        extreme = write_model(root, full=hgb_model(0.0, 40.0, -40.0, 0.5), name="extreme.json")
+        alive = model_alive(inputs, extreme)
+        assert np.allclose(alive[:50], 0.999) and np.allclose(alive[50:], 0.001)
+        alive = model_alive(inputs, extreme, min_prob=0.01)
+        assert np.allclose(alive[:50], 0.99) and np.allclose(alive[50:], 0.01)
+        # a prior of 0.5 corrects nothing
+        plain = write_model(root, full=hgb_model(0.0, 1.0, -1.0, 0.5), name="plain.json")
+        alive = model_alive(inputs, plain)
+        assert np.allclose(alive[:50], 1 / (1 + np.exp(-1.0))) and np.allclose(alive[50:], 1 / (1 + np.exp(1.0)))
+        for bad in (0.0, 0.5, -0.1, True, "0.1", None, float("nan")):
+            expect_error(ValueError, lambda: model_alive(inputs, path, min_prob=bad), "dead_ball_model", "min_prob")
+        for bad in (0.0, 1.0, 1.5, True, None):
+            broken = write_model(root, full=dict(hgb_model(0.0, 1.0, -1.0, 0.5), prior_alive=bad), name="prior.json")
+            expect_error(ValueError, lambda: model_alive(inputs, broken), "dead_ball_model", "prior_alive")
+
+
+def test_dead_ball_model_uses_the_fold_of_the_game():
+    with tempfile.TemporaryDirectory() as root:
+        path = write_model(root)
+        inputs = half_seen_inputs()
+        fold = model_alive(inputs, path, game="FOLD1")
+        for rows, leaf in ((slice(0, 50), FOLD_SEEN), (slice(50, 100), FOLD_MISSING)):
+            expected = 1.0 / (1.0 + np.exp(-(FOLD_BASELINE + leaf - logit(FOLD_PRIOR))))
+            assert np.allclose(fold[rows], expected, rtol=0, atol=1e-12)
+        full = model_alive(inputs, path, game="BAR-ATH")
+        assert not np.allclose(full, fold)
+        other = model_alive(inputs, path, game="NOT-IN-FOLDS")
+        assert np.array_equal(other, full), "a game with no fold is scored by `full`"
+        # the file is read again when it changes
+        write_model(root, full=hgb_model(5.0, 0.0, 0.0, 0.5))
+        changed = model_alive(inputs, path, game="BAR-ATH")
+        assert np.allclose(changed, 1.0 / (1.0 + np.exp(-5.0))) and not np.allclose(changed, full)
+
+
+def test_dead_ball_model_refuses_other_features():
+    import json
+    from pipeline.contracts import RunContext
+    from pipeline.evidence import REGISTRY
+    with tempfile.TemporaryDirectory() as root:
+        inputs = half_seen_inputs()
+        renamed = list(PLAY_NAMES)
+        renamed[3] = "ball_still_ms"
+        for label, changes in (("format", {"format": 2}), ("feature_version", {"feature_version": 2}),
+                               ("features", {"features": list(PLAY_NAMES)[::-1]}), ("features", {"features": renamed}),
+                               ("features", {"features": list(PLAY_NAMES)[:-1]})):
+            path = write_model(root, name="other.json", **changes)
+            expect_error(ValueError, lambda: model_alive(inputs, path), "dead_ball_model", label,
+                         "pipeline/benchmark/train_dead_ball.py")
+        expect_error(ValueError, lambda: model_alive(inputs, write_model(root, name="kind.json", kind="forest")),
+                     "dead_ball_model", "kind", "forest")
+        expect_error(ValueError, lambda: model_alive(inputs, os.path.join(root, "absent.json")),
+                     "dead_ball_model", "absent.json", "pipeline/benchmark/train_dead_ball.py")
+        write_text(root, "text.json", "not json at all")
+        expect_error(ValueError, lambda: model_alive(inputs, os.path.join(root, "text.json")), "dead_ball_model",
+                     "text.json")
+        ragged = hgb_model(0.0, 1.0, -1.0, 0.5)
+        ragged["trees"][0]["left"] = [1, 0]                    # arrays of unequal lengths
+        expect_error(ValueError, lambda: model_alive(inputs, write_model(root, full=ragged, name="ragged.json")),
+                     "dead_ball_model", "tree")
+        no_full = json.loads(open(write_model(root), encoding="utf-8").read())
+        no_full.pop("full")
+        write_text(root, "nofull.json", json.dumps(no_full))
+        expect_error(ValueError, lambda: model_alive(inputs, os.path.join(root, "nofull.json")), "dead_ball_model",
+                     "full")
+        for bad in (None, 5, "", True):
+            expect_error(ValueError, lambda: model_alive(inputs, bad), "dead_ball_model", "model")
+        expect_error(TypeError, lambda: REGISTRY["dead_ball_model"](RunContext(inputs=inputs, seed=0)), "model")
+
+
+def test_dead_ball_model_pre_kickoff_is_dead():
+    from pipeline.evidence import play_features
+    with tempfile.TemporaryDirectory() as root:
+        path = write_model(root)
+        n = 200
+        walking = walkers(n, 1.0, np.stack([np.linspace(10, 90, 8), np.linspace(10, 60, 8)], axis=1))
+        ball = np.tile([30.0, 20.0], (n, 1))
+        inputs = play_inputs(walking, ball, graded=[(1, 0, 100), (2, 100, 200)], kickoffs={1: 40, 2: 150})
+        alive = model_alive(inputs, path)
+        assert np.allclose(alive[:40], play_features.PRE_KICKOFF_ALIVE)
+        assert np.allclose(alive[100:150], play_features.PRE_KICKOFF_ALIVE)
+        expected = 1.0 / (1.0 + np.exp(-(MODEL_BASELINE + MODEL_SEEN - logit(MODEL_PRIOR))))
+        assert np.allclose(alive[40:100], expected) and np.allclose(alive[150:], expected)
+        # outside the blocks: no opinion. And a kick-off outside its block is silent, as in the rules
+        inputs = play_inputs(walking, ball, graded=[(1, 20, 80), (2, 120, 180)], kickoffs={1: 500, 2: 0})
+        alive = model_alive(inputs, path)
+        assert np.isnan(alive[:20]).all() and np.isnan(alive[80:120]).all() and np.isnan(alive[180:]).all()
+        assert np.allclose(alive[20:80], expected) and np.allclose(alive[120:180], expected)
+
+
+def test_dead_ball_model_imports_numpy_only():
+    import ast
+    import subprocess
+    banned = {"sklearn", "scipy", "joblib", "threadpoolctl", "pandas", "narwhals", "cloudpickle"}
+    folder = os.path.join(ROOT, "pipeline", "evidence")
+    found = []
+    for name in sorted(os.listdir(folder)):
+        if name.endswith(".py"):
+            with open(os.path.join(folder, name), encoding="utf-8") as handle:
+                for node in ast.walk(ast.parse(handle.read())):
+                    if isinstance(node, ast.Import):
+                        modules = [alias.name for alias in node.names]
+                    elif isinstance(node, ast.ImportFrom) and not node.level:
+                        modules = [node.module or ""]
+                    else:
+                        modules = []
+                    found += ["{}: {}".format(name, module) for module in modules if module.split(".")[0] in banned]
+    assert not found, "pipeline/evidence must be numpy only: {}".format(found)
+    code = ("import sys; import pipeline.evidence.dead_ball_model, pipeline.evidence; "
+            "bad = sorted(name for name in ('sklearn', 'scipy', 'joblib') if name in sys.modules); "
+            "print(','.join(bad)); sys.exit(1 if bad else 0)")
+    done = subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True)
+    assert done.returncode == 0, "importing the model source pulled in: " + done.stdout + done.stderr
+
+
+def test_dead_ball_model_read_only_inputs():
+    from pipeline.evidence import play_features
+    with tempfile.TemporaryDirectory() as root:
+        path = write_model(root)
+        inputs = play_random_inputs(5)
+        arrays = [inputs.atd.players_xy, inputs.atd.ball_xy, inputs.atd.slot_team]
+        saved = [array.copy() for array in arrays]
+        for array in arrays:
+            array.flags.writeable = False
+        before = play_features.features(inputs)[1].copy()
+        first = model_alive(inputs, path)
+        for array, copy in zip(arrays, saved):
+            assert np.array_equal(array, copy, equal_nan=True)
+        assert np.array_equal(play_features.features(inputs)[1], before, equal_nan=True), "the features were changed"
+        second = model_alive(inputs, path)
+        assert np.array_equal(first, second, equal_nan=True), "a second call on the same inputs gives other numbers"
+        assert not first.flags.writeable, "the arrays handed out are read-only"
+
+
+def random_hgb_model(rng, trees=300, leaves=15, prior=0.7):
+    """A model of the size the trainer writes: `trees` random trees of `leaves` leaves over random features."""
+    forest = []
+    for _ in range(trees):
+        feature, threshold, left, right = [-1], [0.0], [0], [0]
+        open_leaves = [0]
+        for _ in range(leaves - 1):                          # split a random open leaf in two
+            node = open_leaves.pop(int(rng.integers(len(open_leaves))))
+            child = len(feature)
+            feature[node], threshold[node] = int(rng.integers(30)), float(rng.normal())
+            feature += [-1, -1]
+            threshold += [0.0, 0.0]
+            left += [0, 0]
+            right += [0, 0]
+            left[node], right[node] = child, child + 1
+            open_leaves += [child, child + 1]
+        missing = rng.integers(2, size=len(feature)).tolist()
+        forest.append({"feature": feature, "threshold": threshold, "missing_left": missing,
+                       "left": left, "right": right, "leaf": [int(f < 0) for f in feature],
+                       "value": [float(rng.normal()) * 0.1 if f < 0 else 0.0 for f in feature]})
+    return {"prior_alive": prior, "baseline": 0.2, "trees": forest}
+
+
+def test_dead_ball_model_speed():
+    from pipeline.contracts import RunContext
+    from pipeline.evidence import REGISTRY, play_features
+    rng = np.random.default_rng(11)
+    n, slots = 180_000, 46
+    players = rng.random((n, slots, 2))
+    players[rng.random((n, slots)) < 0.4] = np.nan
+    ball = rng.random((n, 2))
+    ball[rng.random(n) < 0.4] = np.nan
+    inputs = kinematics_inputs(kinematics_atd(players, ball), [(1, 5_000, 75_000), (2, 100_000, 170_000)])
+    inputs.kickoffs, inputs.game = {}, "BAR-ATH"
+    inputs.atd.players_present                      # the Atd's own cached masks are not this module's cost
+    inputs.atd.ball_present
+    with tempfile.TemporaryDirectory() as root:
+        path = write_model(root, full=random_hgb_model(rng))
+        started = time.perf_counter()
+        play_features.features(inputs)              # warm: the features are P05's other half and have their own check
+        features_s = time.perf_counter() - started
+        started = time.perf_counter()
+        evidence = REGISTRY["dead_ball_model"](RunContext(inputs=inputs, seed=0), model=path)
+        first_s = time.perf_counter() - started
+        started = time.perf_counter()
+        REGISTRY["dead_ball_model"](RunContext(inputs=inputs, seed=0), model=path, min_prob=0.01)
+        again_s = time.perf_counter() - started
+        print("      dead_ball_model speed: 140,000 graded frames, 300 trees of 15 leaves: first inference {:.2f} s "
+              "(features {:.2f} s before it, {:.2f} s in all), a second config on the same inputs {:.2f} s".format(
+                  first_s, features_s, features_s + first_s, again_s))
+        assert not np.isnan(evidence.alive[5_000:75_000]).any() and np.isnan(evidence.alive[:5_000]).all()
+        assert first_s < 3.0, "{:.2f} s for 300 trees on 140,000 frames with warm features (the budget is 3 s)".format(
+            first_s)
+
+
+def test_dead_ball_model_remembers_its_scores_per_inputs():
+    from pipeline.contracts import RunContext
+    from pipeline.evidence import REGISTRY, dead_ball_model
+    with tempfile.TemporaryDirectory() as root:
+        path = write_model(root)
+        inputs = half_seen_inputs()
+        inputs.game = "BAR-ATH"
+        calls = []
+        real = dead_ball_model.raw_score
+        dead_ball_model.raw_score = lambda model, X: calls.append(len(X)) or real(model, X)
+        try:
+            run = RunContext(inputs=inputs, seed=0)
+            first = REGISTRY["dead_ball_model"](run, model=path).alive
+            second = REGISTRY["dead_ball_model"](run, model=path).alive
+            assert len(calls) == 1, "a second call on the same Inputs walked the trees again"
+            assert np.array_equal(first, second) and not first.flags.writeable and not second.flags.writeable
+            clipped = REGISTRY["dead_ball_model"](run, model=path, min_prob=0.4).alive
+            assert len(calls) == 1 and clipped.min() >= 0.4 and clipped.max() <= 0.6
+            assert np.allclose(clipped, np.clip(first, 0.4, 0.6)), "a different min_prob must re-clip the cached score"
+            inputs.game = "FOLD1"                                         # another model of the file: walked afresh
+            REGISTRY["dead_ball_model"](run, model=path)
+            assert len(calls) == 2
+            other = half_seen_inputs()
+            other.game = "BAR-ATH"
+            REGISTRY["dead_ball_model"](RunContext(inputs=other, seed=0), model=path)
+            assert len(calls) == 3, "the memo is per Inputs object"
+        finally:
+            dead_ball_model.raw_score = real
+
+
+def test_dead_ball_model_refuses_infinite_features():
+    from pipeline.evidence import play_features
+    with tempfile.TemporaryDirectory() as root:
+        path = write_model(root)
+        inputs = half_seen_inputs()
+        inputs.atd.ball_xy[10] = [np.inf, 20.0 / 68.0]
+        assert np.isinf(play_features.features(inputs)[1]).any(), "the scene no longer makes an infinite feature"
+        expect_error(ValueError, lambda: model_alive(inputs, path), "dead_ball_model", "infinite")
+
+
 # -- refine -----------------------------------------------------------------------------------------------------------
 
 def test_config_refiner_registry_starts_empty():

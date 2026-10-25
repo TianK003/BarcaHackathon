@@ -6,7 +6,17 @@
 # lxml reads the DFL XML files (the positions files are 350-420 MB each). Pin new imports here in the same commit that
 # adds them, as in requirements-pipeline.txt.
 #
+# scikit-learn trains P05's dead-ball model (pipeline/benchmark/train_dead_ball.py) and is imported nowhere else: the
+# pipeline reads the trained model as JSON with numpy alone. Its private tree structure is what the exporter reads, so
+# the version is exact, with the dependencies that pip installs beside it (test_exported_trees_match_sklearn).
+#
 # The optional kloppy cross-check of selftest.py --dfl (test_dfl_parser_agrees_with_kloppy) uses the kloppy==3.18.0
 # that requirements-starter.txt pins; it is not repeated here, and without it the check reports NOT RUN.
 -r requirements-pipeline.txt
 lxml==6.1.3
+scikit-learn==1.9.1
+scipy==1.17.1
+joblib==1.6.0
+threadpoolctl==3.7.0
+narwhals==2.27.1
+cloudpickle==3.1.2
