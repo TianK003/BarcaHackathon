@@ -57,6 +57,9 @@ module of its topic:
                  fails it, the out-of-fold prediction against shift_edges.apply, that a latency file of another
                  content of the config (or of none) is refused, and that nothing of BAR-ATH's is printed beyond
                  `limited` / `shown` / `interval_text` (synthetic only)
+    restarts.py  restarts: the restarts found on a hand-built truth, the three outcomes, the ball shares of the predicted
+                 stoppages, the pooling over matches and seeds, and that the truth never reaches the pipeline
+                 (synthetic only)
     shape.py     P07's shape-possession trainer: the rows (every stride-th alive frame, 1 for H), the augmentation that
                  balances the classes exactly and mirrors every row, P05's settings with no monotone constraint, the
                  exported trees against scikit-learn's raw score, the same bytes on 1 and 4 threads, the folds that
@@ -90,7 +93,7 @@ what two of them share goes to common.py (test_a_check_module_imports_no_other_c
 
 from pipeline.benchmark.checks import (
     calibration, cap, choose, context, conventions, dead_ball, degrade, dfl, fidelity, harness, hazard, headroom,
-    inputs, run, score, shape, sources, tracking, touch, truth)
+    inputs, restarts, run, score, shape, sources, tracking, touch, truth)
 
 MODULES = (sources, dfl, truth, inputs, score, run, choose, hazard, calibration, degrade, cap, tracking, context,
-           fidelity, headroom, touch, dead_ball, conventions, shape, harness)
+           fidelity, headroom, touch, dead_ball, conventions, restarts, shape, harness)
