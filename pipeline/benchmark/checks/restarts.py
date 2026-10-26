@@ -152,3 +152,142 @@ def test_restarts_never_pass_truth():
     assert len(seen) == len(matches) * SEEDS, "one call per match and seed"
     for inputs, match in zip(seen, [m for m in matches.values() for _ in range(SEEDS)]):
         assert leaks(inputs, match) == [], leaks(inputs, match)
+
+
+# -- stats and events (P17): the restart vote's confidence per type, measured on the benchmark ------------------------
+
+def fake_calls(run, *, model, tail, use_ball=False, setup=50, min_stoppage=25, min_prob=0.001):
+    """A stand-in for restart_team.calls: a call every 37 frames, types and teams cycling, free kicks only with the ball.
+
+    It reads only the inputs' length, so the stats' own counting is what the tests hold against a plain loop; the type
+    and team do not depend on `tail`, and `end` does, as in the real source.
+    """
+    n = run.inputs.atd.n_frames
+    restart = np.arange(20, n - 5, 37, dtype=np.int64)
+    kinds = len(restarts.restart_team.TYPES) if use_ball else len(restarts.restart_team.TYPES) - 1
+    kind = (np.arange(len(restart)) % kinds).astype(np.int8)
+    team = ((np.arange(len(restart)) // 2) % 2).astype(np.int8)
+    following = np.append(restart[1:], n)
+    return {"restart": restart, "end": np.minimum(restart + tail, following), "type": kind, "team": team}
+
+
+class FakeCalls:
+    """restarts.restart_team.calls replaced by fake_calls, recording what it was called with."""
+
+    def __init__(self):
+        self.runs, self.kwargs = [], []
+
+    def __enter__(self):
+        self.real = restarts.restart_team.calls
+
+        def spy(run, **kwargs):
+            self.runs.append(run)
+            self.kwargs.append(kwargs)
+            return fake_calls(run, **kwargs)
+        restarts.restart_team.calls = spy
+        return self
+
+    def __exit__(self, *exc):
+        restarts.restart_team.calls = self.real
+
+
+def stats_of_synthetic(settings, **more):
+    with FakeCalls() as fake:
+        result = restarts.measure_restarts(settings, model="unused.json", profile="gaps", seeds=SEEDS,
+                                           matches=synthetic_matches(), calibration=synthetic_calibration(),
+                                           log=quiet, **more)
+    return result, fake
+
+
+def test_restarts_stats_grid():
+    """Eight settings, tail within use_ball: the labels t025_b0 ... t150_b1, one entry per type."""
+    assert [restarts.label(setting) for setting in restarts.GRID] == [
+        "t{:03d}_b{}".format(tail, ball) for ball in (0, 1) for tail in (25, 50, 100, 150)]
+    assert restarts.GRID[0] == {"tail": 25, "use_ball": False} and restarts.GRID[-1] == {"tail": 150, "use_ball": True}
+    assert (restarts.MIN_AGREEMENT, restarts.MIN_STOPPAGES_PER_SEED, restarts.COVERAGE_WINDOW) == (0.60, 30, 50)
+    result, _ = stats_of_synthetic(restarts.GRID)
+    assert list(result["settings"]) == [restarts.label(setting) for setting in restarts.GRID]
+    for name, entry in result["settings"].items():
+        assert list(entry["types"]) == list(restarts.restart_team.TYPES), name
+        assert entry["setting"] in [dict(setting) for setting in restarts.GRID]
+    # the tail is the vote's length, so a longer tail votes on at least as many frames
+    short, long = result["settings"]["t025_b0"]["types"], result["settings"]["t150_b0"]["types"]
+    assert all(long[kind]["frames"] >= short[kind]["frames"] for kind in short)
+    assert any(long[kind]["frames"] > short[kind]["frames"] for kind in short)
+
+
+def test_restarts_stats_matches_a_loop():
+    """Frames, agreement, stoppages per seed and coverage equal a plain-loop recount over matches and seeds."""
+    settings = [{"tail": 50, "use_ball": False}, {"tail": 100, "use_ball": True}]
+    result, _ = stats_of_synthetic(settings)
+    calibration = synthetic_calibration()
+    types = restarts.restart_team.TYPES
+    for setting in settings:
+        frames, agree, stoppages = [0] * len(types), [0] * len(types), [0] * len(types)
+        covered, owed = [0] * len(types), 0
+        for match in synthetic_matches().values():
+            codes, _ = truth.truth_codes(match)
+            found = restarts.true_restarts(codes, match.graded)
+            for seed in range(SEEDS):
+                atd = benchmark_run.make_atd(match, "gaps", seed, calibration)
+                inputs = match_inputs.MatchInputs(match, atd, profile="gaps", seed=seed)
+                made = fake_calls(restarts.RunContext(inputs=inputs, seed=0), model="x", **setting)
+                for number in range(len(made["restart"])):
+                    kind, team = int(made["type"][number]), int(made["team"][number])
+                    stoppages[kind] += 1
+                    for frame in range(int(made["restart"][number]), int(made["end"][number])):
+                        if int(codes[frame]) in (H, A):
+                            frames[kind] += 1
+                            agree[kind] += int(int(codes[frame]) == (H if team == 0 else A))
+                for restart in found["restart"].tolist():
+                    owed += 1
+                    for kind in range(len(types)):
+                        covered[kind] += int(any(
+                            int(made["type"][number]) == kind and abs(int(made["restart"][number]) - restart) <= 50
+                            for number in range(len(made["restart"]))))
+        entry = result["settings"][restarts.label(setting)]
+        assert owed > 0
+        for kind, name in enumerate(types):
+            row = entry["types"][name]
+            assert row["frames"] == frames[kind] and row["agree"] == agree[kind], (setting, name, row)
+            assert row["stoppages_per_seed"] == stoppages[kind] / SEEDS, (setting, name, row)
+            assert row["coverage"] == covered[kind] / owed, (setting, name, row)
+            assert row["agreement"] == (agree[kind] / frames[kind] if frames[kind] else None), (setting, name, row)
+        assert 0.0 <= entry["coverage_all"] <= 1.0
+        assert (entry["types"]["free_kick"]["stoppages_per_seed"] == 0) == (not setting["use_ball"])
+
+
+def test_restarts_stats_drop_rule():
+    """Agreement under 0.60, or under 30 stoppages per seed, drops the type; otherwise the floored agreement."""
+    assert restarts.confidence_of(0.59, 100.0) is None
+    assert restarts.confidence_of(0.60, 100.0) == 0.60
+    assert restarts.confidence_of(0.60, 30.0) == 0.60
+    assert restarts.confidence_of(0.97, 29.0) is None
+    assert restarts.confidence_of(0.9999, 40.0) == 0.99
+    assert restarts.confidence_of(None, 40.0) is None
+
+
+def test_restarts_stats_never_passes_truth():
+    """The source is called on inputs that hold neither the match nor its truth, however deep leaks() looks."""
+    matches = synthetic_matches()
+    _, fake = stats_of_synthetic([{"tail": 50, "use_ball": False}])
+    assert len(fake.runs) == len(matches) * SEEDS, "one call per match, seed and setting"
+    for run_context, match in zip(fake.runs, [m for m in matches.values() for _ in range(SEEDS)]):
+        assert leaks(run_context.inputs, match) == [], leaks(run_context.inputs, match)
+    assert all(set(kwargs) <= {"model", "tail", "use_ball"} for kwargs in fake.kwargs), fake.kwargs
+
+
+def test_restarts_events_recall_and_confusion():
+    """Recall per DFL kind and the call-type by event-kind table, worked out on a hand-built scene."""
+    calls = {"restart": np.array([100, 300, 500], dtype=np.int64), "end": np.array([150, 350, 550], dtype=np.int64),
+             "type": np.array([1, 3, 0], dtype=np.int8), "team": np.zeros(3, dtype=np.int8)}
+    events = {"row": np.array([95, 360, 460, 505, 900], dtype=np.int64),
+              "kind": np.array(["CornerKick", "ThrowIn", "GoalKick", "KickOff", "FreeKick"]),
+              "team": np.zeros(5, dtype=np.int8), "outside": 0}
+    table = restarts.event_table(calls, events, window=50)
+    # 95 -> call 100 (corner); 360 is 60 from 300: no call; 460 -> 500 (kick_off, 40); 505 -> 500 (kick_off); 900: none
+    assert table["events"] == {"KickOff": 1, "ThrowIn": 1, "CornerKick": 1, "GoalKick": 1, "FreeKick": 1, "Penalty": 0}
+    assert table["matched"] == {"KickOff": 1, "ThrowIn": 0, "CornerKick": 1, "GoalKick": 1, "FreeKick": 0, "Penalty": 0}
+    assert table["confusion"]["corner"]["CornerKick"] == 1
+    assert table["confusion"]["kick_off"]["GoalKick"] == 1 and table["confusion"]["kick_off"]["KickOff"] == 1
+    assert sum(sum(row.values()) for row in table["confusion"].values()) == 3

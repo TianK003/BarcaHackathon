@@ -3,6 +3,10 @@
     python pipeline/benchmark/restarts.py anatomy CONFIG [--profile P] [--seeds N] [--truth raw|coarse]
                                                          [--matches ID ...] [--data-dir D] [--out PATH]
     python pipeline/benchmark/restarts.py bar-ath CONFIG [--data-dir D] [--out PATH]
+    python pipeline/benchmark/restarts.py stats [--model M] [--profile P] [--seeds N] [--matches ID ...]
+                                                [--data-dir D] [--out PATH]
+    python pipeline/benchmark/restarts.py events [--model M] [--tail T] [--use-ball] [--profile P] [--seeds N]
+                                                 [--matches ID ...] [--data-dir D] [--out PATH]
 
     result = anatomy("pipeline/configs/main.toml", profile="tracking", seeds=3, truth="raw")
 
@@ -39,6 +43,29 @@ last or first position around a restart can only work where the ball is seen the
 profile the ball gaps are a transplant of ours, and these shares are the match against which that profile can be held.
 Only counts and shares leave bar_ath: no frame, no label sequence. A stoppage that opens its block has no frames before it
 and is left out of no_ball_before's denominator, and one that is followed by nothing in its block is no stoppage here.
+
+Stats (P17's confidence per type, measured on the benchmark). pipeline/evidence/restart_team.py names, after each
+predicted stoppage, the type of restart and the team that takes it, and votes `home` for that team on [restart, end). How
+much a vote of a type is worth cannot be known by the source: it is measured here, as touch_stats measures
+controlled_touch's, on the degraded tracking of every benchmark match and seed, for each setting of the grid (GRID: the
+vote's `tail` and `use_ball`). Per type, pooled over matches and seeds by sums:
+
+* frames: the voted frames, those of [restart, end) of every call of the type, whose truth code is H or A (a D frame in
+  the span is not counted); agree: those whose truth is the team the call names; agreement = agree / frames;
+* stoppages_per_seed: the calls of the type, summed over matches and seeds, over the number of seeds;
+* coverage: the share of the truth's restarts (true_restarts, pooled) that have a call of this type with its restart
+  within COVERAGE_WINDOW frames of the true one (coverage_all: of any type);
+* confidence: None (the type does not vote) if agreement < MIN_AGREEMENT or stoppages_per_seed < MIN_STOPPAGES_PER_SEED,
+  declared in the design before any measurement; otherwise touch_stats.confidence_from_agreement(agreement), the rate
+  rounded down to a hundredth. Nothing is tuned: the grid is read, and the rule is applied.
+
+The truth reaches only the counting here, as in anatomy, never the source, which is called on a MatchInputs; the result
+holds counts and shares of DFL matches, nothing of BAR-ATH. Task 10 reads settings[label]["types"][type]["confidence"].
+
+Events (a diagnostic; it chooses nothing). For one setting, each DFL restart event (dfl_events.load_restarts: KickOff,
+ThrowIn, CornerKick, GoalKick, FreeKick, Penalty) is matched to the nearest call whose restart is within EVENT_WINDOW
+frames (the earlier on a tie): recall per kind is the share of its events with a call of any type, and the confusion
+table counts the matched pairs by the call's type and the event's kind. Pooled over matches and seeds.
 """
 
 import argparse
@@ -58,8 +85,10 @@ from pipeline.benchmark import calibration as calibration_module  # noqa: E402
 from pipeline.benchmark import dfl, run  # noqa: E402
 from pipeline.benchmark import inputs as match_inputs  # noqa: E402
 from pipeline.benchmark import truth as truths  # noqa: E402
+from pipeline.benchmark import dfl_events, touch_stats  # noqa: E402
 from pipeline.config import ConfigError, load_config  # noqa: E402
-from pipeline.evidence import kinematics  # noqa: E402
+from pipeline.contracts import RunContext  # noqa: E402
+from pipeline.evidence import kinematics, restart_team  # noqa: E402
 
 import possession_metrics as pm  # noqa: E402  isort:skip
 
@@ -69,6 +98,13 @@ BALL_WINDOW = 50            # frames before and after a predicted stoppage in wh
 RIGHT, WRONG, STILL_D = 0, 1, 2     # the outcomes of a restart
 OUTCOME_NAMES = ("right", "wrong", "still_d")
 DEFAULT_PROFILE = run.DEFAULT_PROFILE
+# stats: the settings measured, and the rule that drops a type (declared in the design, before any measurement)
+GRID = tuple({"tail": tail, "use_ball": ball} for ball in (False, True) for tail in (25, 50, 100, 150))
+MIN_AGREEMENT = 0.60                # a type whose votes agree with the truth less often than this does not vote
+MIN_STOPPAGES_PER_SEED = 30         # nor one with fewer calls than this per seed (mean over the seeds)
+COVERAGE_WINDOW = 50                # a call covers a true restart if its restart is this close (2 s)
+EVENT_WINDOW = 50                   # events: an event is matched to a call whose restart is this close
+DEFAULT_MODEL = "pipeline/models/dead_ball_hgb.json"   # as main.toml writes it
 
 
 def _stoppages(codes, graded):
@@ -219,6 +255,190 @@ def bar_ath(config_path, data_dir=None):
     return stoppage_ball_shares(codes, kinematics.ball_track(inputs).visible, inputs.graded)
 
 
+# -- stats: the confidence of each type's vote ------------------------------------------------------------------------
+
+def label(setting):
+    """A stable name for a setting: t050_b0 (tail, use_ball as 0 or 1)."""
+    return "t{:03d}_b{}".format(int(setting["tail"]), int(bool(setting["use_ball"])))
+
+
+def confidence_of(agreement, stoppages_per_seed):
+    """The type's confidence under the drop rule: None under MIN_AGREEMENT or MIN_STOPPAGES_PER_SEED, else the floor."""
+    if agreement is None or agreement < MIN_AGREEMENT or stoppages_per_seed < MIN_STOPPAGES_PER_SEED:
+        return None
+    return touch_stats.confidence_from_agreement(agreement)
+
+
+def _checked_settings(settings):
+    settings = [dict(setting) for setting in settings]
+    if not settings:
+        raise ValueError("restarts: no setting to measure; give at least one of tail, use_ball")
+    names = set()
+    for setting in settings:
+        if set(setting) != {"tail", "use_ball"}:
+            raise ValueError("restarts: a setting needs exactly the keys tail and use_ball, got {!r}".format(setting))
+        if label(setting) in names:
+            raise ValueError("restarts: setting {} is given twice".format(label(setting)))
+        names.add(label(setting))
+    return settings
+
+
+def _seed_list(profile, seeds):
+    run._check_profile(profile)
+    seeds = run.DEFAULT_SEEDS if seeds is None else seeds
+    if isinstance(seeds, bool) or not isinstance(seeds, int) or seeds < 1:
+        raise run.BenchmarkError("seeds must be a whole number of at least 1, got {!r}".format(seeds))
+    return [0] if profile == run.CLEAN else list(range(seeds))
+
+
+def _span_counts(codes, calls, n_types):
+    """(frames, agree) per type: the voted frames of each call whose truth is H or A, and those it names right."""
+    frames, agree = np.zeros(n_types, dtype=np.int64), np.zeros(n_types, dtype=np.int64)
+    for restart, end, kind, team in zip(calls["restart"].tolist(), calls["end"].tolist(), calls["type"].tolist(),
+                                        calls["team"].tolist()):
+        span = np.asarray(codes[restart:end])
+        frames[kind] += int(((span == pm.H) | (span == pm.A)).sum())
+        agree[kind] += int((span == (pm.H if team == 0 else pm.A)).sum())
+    return frames, agree
+
+
+def _covered(restart, calls, n_types, window=COVERAGE_WINDOW):
+    """(per type, any): the true restarts with a call of that type, or of any, within `window` frames."""
+    per_type, anyone = np.zeros(n_types, dtype=np.int64), 0
+    called = np.asarray(calls["restart"])
+    for frame in np.asarray(restart).tolist():
+        near = np.abs(called - frame) <= window
+        anyone += int(near.any())
+        per_type += np.isin(np.arange(n_types), np.asarray(calls["type"])[near]).astype(np.int64)
+    return per_type, anyone
+
+
+def measure_restarts(settings, *, model, profile=DEFAULT_PROFILE, seeds=None, match_ids=None, matches=None,
+                     calibration=None, data_dir=None, log=print):
+    """Agreement, coverage and confidence per type of restart_team's calls, for each of `settings`, on the benchmark.
+
+    `settings` is a list of {tail, use_ball} (GRID is the design's); `model` the dead-ball model the source reads. The
+    other arguments are touch_stats.measure's. Returns {"profile", "seeds", "matches", "settings"}; "settings" maps
+    label(setting) to {"setting", "coverage_all", "types": {type: {frames, agree, agreement, stoppages_per_seed,
+    coverage, confidence}}}, pooled over matches and seeds by sums (agreement and coverage are None where nothing
+    was voted or no restart exists). Counts and shares of the benchmark only. The source is called once per match, seed
+    and setting, on a MatchInputs with no flag of the truth (the dead-ball model's P(alive) is memoised per MatchInputs,
+    so the trees are walked once per match and seed).
+    """
+    settings = _checked_settings(settings)
+    seed_list = _seed_list(profile, seeds)
+    ids = run.resolve_match_ids(match_ids, matches)
+    if profile != run.CLEAN and calibration is None:
+        calibration = calibration_module.load(data_dir=data_dir)
+    names, n_types = [label(setting) for setting in settings], len(restart_team.TYPES)
+    frames = {name: np.zeros(n_types, dtype=np.int64) for name in names}
+    agree = {name: np.zeros(n_types, dtype=np.int64) for name in names}
+    stops = {name: np.zeros(n_types, dtype=np.int64) for name in names}
+    covered = {name: np.zeros(n_types, dtype=np.int64) for name in names}
+    covered_any = dict.fromkeys(names, 0)
+    owed = 0
+    for match_id in ids:
+        match = matches[match_id] if matches is not None else dfl.load_match(match_id, data_dir=data_dir)
+        codes, _ = truths.truth_codes(match)                 # read here, to count; never handed to the source
+        found = true_restarts(codes, match.graded)
+        owed += len(found["restart"]) * len(seed_list)
+        for seed in seed_list:
+            atd = run.make_atd(match, profile, seed, calibration)
+            inputs = match_inputs.MatchInputs(match, atd, profile=profile, seed=seed, data_dir=data_dir)
+            context = RunContext(inputs=inputs, seed=0)
+            for setting, name in zip(settings, names):
+                made = restart_team.calls(context, model=model, tail=setting["tail"], use_ball=setting["use_ball"])
+                here_frames, here_agree = _span_counts(codes, made, n_types)
+                frames[name] += here_frames
+                agree[name] += here_agree
+                stops[name] += np.bincount(np.asarray(made["type"], dtype=np.int64), minlength=n_types)
+                here_covered, here_any = _covered(found["restart"], made, n_types)
+                covered[name] += here_covered
+                covered_any[name] += here_any
+            del atd, inputs, context
+        log("match     {}   {} settings x {} seeds".format(match_id, len(settings), len(seed_list)))
+        del match, codes, found
+
+    out = {}
+    for setting, name in zip(settings, names):
+        types = {}
+        for code, kind in enumerate(restart_team.TYPES):
+            n, a = int(frames[name][code]), int(agree[name][code])
+            agreement = a / n if n else None
+            per_seed = int(stops[name][code]) / len(seed_list)
+            types[kind] = {"frames": n, "agree": a, "agreement": agreement, "stoppages_per_seed": per_seed,
+                           "coverage": int(covered[name][code]) / owed if owed else None,
+                           "confidence": confidence_of(agreement, per_seed)}
+        out[name] = {"setting": dict(setting), "coverage_all": covered_any[name] / owed if owed else None,
+                     "types": types}
+    return {"profile": profile, "seeds": seed_list, "matches": sorted(ids), "settings": out}
+
+
+# -- events: the calls against DFL's own restart events (a diagnostic) ----------------------------------------------------
+
+def event_table(calls, events, window=EVENT_WINDOW):
+    """{"events", "matched", "confusion"} of one match and seed: each event matched to the nearest call within `window`.
+
+    `events` is dfl_events.load_restarts' dict (row, kind). events and matched map each kind of dfl_events.KINDS to a
+    count (the events, and those with a call within `window` of their row, the earlier on a tie); confusion maps each
+    call type to {kind: pairs}. The calls are in time order, as restart_team.calls gives them.
+    """
+    kinds, types = dfl_events.KINDS, restart_team.TYPES
+    table = {"events": dict.fromkeys(kinds, 0), "matched": dict.fromkeys(kinds, 0),
+             "confusion": {kind: dict.fromkeys(kinds, 0) for kind in types}}
+    called = np.asarray(calls["restart"])
+    for row, kind in zip(np.asarray(events["row"]).tolist(), np.asarray(events["kind"]).tolist()):
+        table["events"][kind] += 1
+        if not len(called):
+            continue
+        nearest = int(np.argmin(np.abs(called - row)))          # argmin: the earlier call on a tie
+        if abs(int(called[nearest]) - row) <= window:
+            table["matched"][kind] += 1
+            table["confusion"][types[int(calls["type"][nearest])]][kind] += 1
+    return table
+
+
+def events_diagnostic(*, model, tail=50, use_ball=False, profile=DEFAULT_PROFILE, seeds=None, match_ids=None,
+                      matches=None, events=None, calibration=None, data_dir=None, log=print):
+    """Per DFL kind the recall of the calls (events within EVENT_WINDOW of a call) and the call-type by kind confusion.
+
+    `events` ({id: dfl_events.load_restarts' dict}) is used instead of loading when given. Returns {"profile", "seeds",
+    "matches", "setting", "kinds": {kind: {events, matched, recall}}, "confusion"}, pooled over matches and seeds by
+    sums. It chooses nothing: no constant is read from it.
+    """
+    setting = _checked_settings([{"tail": tail, "use_ball": use_ball}])[0]
+    seed_list = _seed_list(profile, seeds)
+    ids = run.resolve_match_ids(match_ids, matches)
+    if profile != run.CLEAN and calibration is None:
+        calibration = calibration_module.load(data_dir=data_dir)
+    kinds, types = dfl_events.KINDS, restart_team.TYPES
+    total = {"events": dict.fromkeys(kinds, 0), "matched": dict.fromkeys(kinds, 0),
+             "confusion": {kind: dict.fromkeys(kinds, 0) for kind in types}}
+    for match_id in ids:
+        match = matches[match_id] if matches is not None else dfl.load_match(match_id, data_dir=data_dir)
+        here = events[match_id] if events is not None else dfl_events.load_restarts(match_id, data_dir=data_dir)
+        for seed in seed_list:
+            atd = run.make_atd(match, profile, seed, calibration)
+            inputs = match_inputs.MatchInputs(match, atd, profile=profile, seed=seed, data_dir=data_dir)
+            made = restart_team.calls(RunContext(inputs=inputs, seed=0), model=model, tail=setting["tail"],
+                                      use_ball=setting["use_ball"])
+            one = event_table(made, here)
+            for part in ("events", "matched"):
+                for kind in kinds:
+                    total[part][kind] += one[part][kind]
+            for kind in types:
+                for event_kind in kinds:
+                    total["confusion"][kind][event_kind] += one["confusion"][kind][event_kind]
+            del atd, inputs
+        log("match     {}   {} events x {} seeds".format(match_id, len(here["row"]), len(seed_list)))
+        del match, here
+    return {"profile": profile, "seeds": seed_list, "matches": sorted(ids), "setting": setting,
+            "kinds": {kind: {"events": total["events"][kind], "matched": total["matched"][kind],
+                             "recall": (total["matched"][kind] / total["events"][kind]) if total["events"][kind]
+                             else None} for kind in kinds},
+            "confusion": total["confusion"]}
+
+
 # -- the table --------------------------------------------------------------------------------------------------------
 
 def render(result):
@@ -250,6 +470,39 @@ def render_bar_ath(shares):
                 _pct(shares["no_ball_after"]), BALL_WINDOW)]
 
 
+def render_stats(result):
+    """One block per setting: a line per type with its calls per seed, coverage, agreement and confidence."""
+    lines = []
+    for name, entry in result["settings"].items():
+        lines.append("{}   (coverage of all true restarts {})".format(name, _pct(entry["coverage_all"])))
+        lines.append("  {:<10}{:>12}{:>10}{:>11}{:>12}".format("type", "calls/seed", "coverage", "agreement",
+                                                               "confidence"))
+        for kind, row in entry["types"].items():
+            lines.append("  {:<10}{:>12.1f}{:>10}{:>11}{:>12}".format(
+                kind, row["stoppages_per_seed"], _pct(row["coverage"]), _pct(row["agreement"]),
+                "dropped" if row["confidence"] is None else "{:.2f}".format(row["confidence"])))
+    lines.append("agreement: voted frames whose truth is the called team (H/A only); coverage: true restarts with a call "
+                 "of the type within {} frames; dropped: agreement < {} or fewer than {} calls per seed; matches {}, "
+                 "seeds {}".format(COVERAGE_WINDOW, MIN_AGREEMENT, MIN_STOPPAGES_PER_SEED, ",".join(result["matches"]),
+                                   result["seeds"]))
+    return lines
+
+
+def render_events(result):
+    kinds = list(result["kinds"])
+    lines = ["{:<12}{:>9}{:>9}{:>9}".format("kind", "events", "matched", "recall")]
+    for kind, row in result["kinds"].items():
+        lines.append("{:<12}{:>9}{:>9}{:>9}".format(kind, row["events"], row["matched"], _pct(row["recall"])))
+    lines.append("")
+    lines.append("{:<12}".format("call/event") + "".join("{:>11}".format(kind) for kind in kinds))
+    for call, row in result["confusion"].items():
+        lines.append("{:<12}".format(call) + "".join("{:>11}".format(row[kind]) for kind in kinds))
+    lines.append("setting {}; an event is matched to the nearest call whose restart is within {} frames; matches {}, "
+                 "seeds {}".format(label(result["setting"]), EVENT_WINDOW, ",".join(result["matches"]),
+                                   result["seeds"]))
+    return lines
+
+
 def _pct(value):
     return "n/a" if value is None else "{:.1f}%".format(100.0 * value)
 
@@ -267,7 +520,18 @@ def main(argv=None):
     one.add_argument("--matches", nargs="+", metavar="ID", help="the matches to run, in this order (default: all 7)")
     two = commands.add_parser("bar-ath", help="our match: the ball around the predicted stoppages, no truth")
     two.add_argument("config", metavar="CONFIG", help="a pipeline config")
-    for command in (one, two):
+    three = commands.add_parser("stats", help="the benchmark: the confidence of each restart type's vote, per setting")
+    four = commands.add_parser("events", help="the benchmark: the calls against DFL's restart events (diagnostic)")
+    for command in (three, four):
+        command.add_argument("--model", default=DEFAULT_MODEL, help="the dead-ball model (default {})".format(
+            DEFAULT_MODEL))
+        command.add_argument("--profile", default=DEFAULT_PROFILE, help=run.profile_help())
+        command.add_argument("--seeds", type=int, help="degradation seeds per match (default {})".format(
+            run.DEFAULT_SEEDS))
+        command.add_argument("--matches", nargs="+", metavar="ID", help="the matches to run (default: all 7)")
+    four.add_argument("--tail", type=int, default=50, help="the setting's tail (default 50)")
+    four.add_argument("--use-ball", action="store_true", help="read the ball in the arrangement (default: no)")
+    for command in (one, two, three, four):
         command.add_argument("--data-dir", help="the data bundle (default: data/, or $MTAH_DATA_DIR)")
         command.add_argument("--out", help="also write the result as JSON here (counts and shares; folders are made)")
     args = parser.parse_args(argv)
@@ -276,6 +540,15 @@ def main(argv=None):
             result = anatomy(args.config, profile=args.profile, seeds=args.seeds, truth=args.truth,
                              match_ids=args.matches, data_dir=args.data_dir)
             lines = render(result)
+        elif args.command == "stats":
+            result = measure_restarts(GRID, model=args.model, profile=args.profile, seeds=args.seeds,
+                                      match_ids=args.matches, data_dir=args.data_dir)
+            lines = render_stats(result)
+        elif args.command == "events":
+            result = events_diagnostic(model=args.model, tail=args.tail, use_ball=args.use_ball,
+                                       profile=args.profile, seeds=args.seeds, match_ids=args.matches,
+                                       data_dir=args.data_dir)
+            lines = render_events(result)
         else:
             result = bar_ath(args.config, data_dir=args.data_dir)
             lines = render_bar_ath(result)
