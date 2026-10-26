@@ -127,6 +127,16 @@ def test_touch_stats_default_grid():
     assert touch_stats.label(WIDE) == "r40.0_vinf_k1"
 
 
+def test_touch_stats_r013_grid():
+    """R013's 48 settings, in DEFAULT_GRID's order, each once; --grid names both grids."""
+    grid = touch_stats.R013_GRID
+    assert len(grid) == 48 and len({tuple(sorted(s.items())) for s in grid}) == 48
+    assert [(s["radius"], s["max_rel_speed"], s["min_frames"]) for s in grid] == [
+        (r, v, k) for r in (1.5, 2.0, 2.5, 3.0) for v in (6.0, 9.0, 12.0) for k in (1, 2, 3, 5)]
+    assert touch_stats.label(grid[0]) == "r1.5_v6.0_k1" and touch_stats.label(grid[-1]) == "r3.0_v12.0_k5"
+    assert touch_stats.GRIDS == {"stage_a": touch_stats.DEFAULT_GRID, "r013": grid}
+
+
 def test_touch_stats_never_passes_truth():
     """The inputs the source is called on hold neither the match nor its truth, however deep leaks() looks."""
     matches = synthetic_matches()

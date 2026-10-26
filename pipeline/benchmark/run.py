@@ -4,6 +4,7 @@
 
     codes, sources = predict(config, inputs)         # one config on one match: the codes, and the evidence behind them
     result = evaluate_configs([path, path, ...])     # every config on every match, scored, compared, with its reports
+    results = evaluate_truths([path, ...])           # {"raw": result, "coarse": result}, one decode for both
     write_reports(result)                            # <data dir>/runs/benchmark/<profile>/<stem>[...].json, each
 
 Prediction
@@ -39,7 +40,9 @@ evaluate_configs() is what the team chooses between methods with, so it is built
   once per seed, every config run on that, and only the HalfScores kept before the next match is loaded.
 * The truth is the DFL flags' (truth.py): "raw", or "coarse", the raw truth with its short sandwiched possessions
   absorbed (truth.coarse_codes), because DFL's grain is about twice ours (A06). The two are meant to be run side by
-  side; a ranking that differs between them is a warning, not something to fix.
+  side; a ranking that differs between them is a warning, not something to fix. evaluate_truths (`--truth both`)
+  scores each config's codes against both from one decode and gives exactly what two runs would: the decoder, not the
+  scoring, is what a grid's time goes on.
 * Nothing in a report depends on the machine's speed, the order of a set or the clock: no timings are written (they are
   printed), floats are rounded to 9 decimals (BLAS summation order differs between machines), keys are sorted and the
   file is LF with an atomic rename. The same inputs, seed and versions give the same bytes, in any process
@@ -118,6 +121,7 @@ DEFAULT_SEEDS = 3                  # degradation seeds per match; the clean prof
 # smooth125 0.2242 > smooth25 0.1996 > raw 0.0486), best first: what a profile's order is read against (rank_agreement).
 PUBLISHED_ORDER = ("nearest_w50", "nearest_w125", "nearest_w25", "nearest_w0")
 TRUTHS = ("raw", "coarse")
+BOTH = "both"                      # --truth both: every truth of TRUTHS from one decode (evaluate_truths)
 REPORT_FOLDER = ("runs", "benchmark")        # <data dir>/runs/benchmark/<profile>/<stem>[.<truth>][.m-..][.s<n>].json
 DECIMALS = 9                       # floats in a report are rounded to this: BLAS summation order varies by machine
 LEVEL = score.INTERVAL_LEVEL       # the coverage of the t intervals (the printout names it, checks tie T_95 to it)
@@ -221,10 +225,28 @@ def evaluate_configs(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_id
     was made from and `seconds` the time spent on the config (printed, never written). "rank" is rank_agreement of the
     configs, None unless at least two of them are among PUBLISHED_ORDER.
     """
-    configs = _load_configs(config_paths)
-    _check_profile(profile)
     if truth not in TRUTHS:
         raise BenchmarkError("truth {!r} is not one of: {}".format(truth, ", ".join(TRUTHS)))
+    return evaluate_truths(config_paths, profile=profile, seeds=seeds, match_ids=match_ids, matches=matches,
+                           calibration=calibration, truth_names=(truth,), data_dir=data_dir, log=log)[truth]
+
+
+def evaluate_truths(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_ids=None, matches=None,
+                    calibration=None, truth_names=TRUTHS, data_dir=None, log=print):
+    """{truth: result}: evaluate_configs under each of `truth_names`, every config decoded once per match and seed.
+
+    Each config's codes on a match and seed are scored against each truth in turn, so a result is exactly what
+    evaluate_configs gives under that truth alone (the same report, byte for byte once written, and the same printed
+    table), and the decoding, nearly all of a config's time, is done once. A match's progress line names the truths
+    joined by "+", and the tables are logged after the last match, in the order of `truth_names`. `truth_names` is one
+    or more of TRUTHS, none repeated, and BenchmarkError otherwise, before anything is loaded. The other arguments are
+    evaluate_configs'.
+    """
+    truth_names = tuple(truth_names) if isinstance(truth_names, (list, tuple)) else (truth_names,)
+    if not truth_names or any(name not in TRUTHS for name in truth_names) or len(set(truth_names)) < len(truth_names):
+        raise BenchmarkError("truths {!r}: name one or more of {}, each once".format(truth_names, ", ".join(TRUTHS)))
+    configs = _load_configs(config_paths)
+    _check_profile(profile)
     asked_for_seeds = seeds is not None
     seeds = DEFAULT_SEEDS if seeds is None else seeds
     if isinstance(seeds, bool) or not isinstance(seeds, int) or seeds < 1:
@@ -243,7 +265,7 @@ def evaluate_configs(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_id
     if profile == CLEAN and asked_for_seeds and seeds != 1:
         log("note      profile {} has nothing random to repeat: seeds ignored, seed 0 only".format(CLEAN))
 
-    scores = {config.stem: [] for config in configs}
+    scores = {name: {config.stem: [] for config in configs} for name in truth_names}
     seconds = {config.stem: 0.0 for config in configs}
     records = []
     for match_id in ids:
@@ -251,9 +273,9 @@ def evaluate_configs(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_id
         if match.match_id != match_id:
             raise BenchmarkError("the match given as {} says it is {}; its scores would be filed under the wrong id"
                                  .format(match_id, match.match_id))
-        codes_true, carried = truths.truth_codes(match)
-        if truth == "coarse":
-            codes_true = truths.coarse_codes(codes_true, match.graded, match.fps)
+        codes_raw, carried = truths.truth_codes(match)
+        codes_true = {name: truths.coarse_codes(codes_raw, match.graded, match.fps) if name == "coarse" else codes_raw
+                      for name in truth_names}
         record = {"id": match.match_id, "frames": int(match.n_frames),
                   "graded_frames": int(sum(stop - start for _, start, stop in match.graded)), "fps": int(match.fps),
                   "carried_frames": int(carried["carried_possession_frames"] + carried["carried_status_frames"])}
@@ -266,26 +288,42 @@ def evaluate_configs(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_id
             for config in configs:
                 started = time.perf_counter()
                 codes = _codes(config, inputs)
-                scores[config.stem] += score.score_halves(codes_true, codes, match.graded, match.match_id, seed)
+                for name in truth_names:
+                    scores[name][config.stem] += score.score_halves(codes_true[name], codes, match.graded,
+                                                                    match.match_id, seed)
                 seconds[config.stem] += time.perf_counter() - started
             del atd, inputs, codes
         records.append(record)
         log("match     {}   {:,} rows, {:,} graded   truth {}".format(
-            record["id"], record["frames"], record["graded_frames"], truth))
-        del match, codes_true                    # the next match is loaded only when this one is gone
+            record["id"], record["frames"], record["graded_frames"], "+".join(truth_names)))
+        del match, codes_raw, codes_true         # the next match is loaded only when this one is gone
 
     # The matches ran in the order asked for, and a report is a function of the matches and not of that order: its
     # records and halves are in match-id order (a stable sort, so a match's seeds and halves stay as they were run).
     records.sort(key=lambda record: record["id"])
-    for stem in scores:
-        scores[stem].sort(key=lambda half: half.match_id)
+    for by_stem in scores.values():
+        for stem in by_stem:
+            by_stem[stem].sort(key=lambda half: half.match_id)
 
     git = pipeline_run.git_state()
     environment = _environment()
     profile_info = degrade.profile_record(profile)       # name, version and, for context, tracking's version
     calibration_info = None if profile == CLEAN else {"sha256": calibration_module.digest(calibration),
                                                       "version": calibration_module.CALIBRATION_VERSION}
-    truth_info = {"name": truth, "min_s": truths.COARSE_MIN_S if truth == "coarse" else None}
+    results = {}
+    for name in truth_names:
+        truth_info = {"name": name, "min_s": truths.COARSE_MIN_S if name == "coarse" else None}
+        results[name] = _result(configs, scores[name], seconds, records, seed_list, profile_info, truth_info, git,
+                                environment, calibration_info, data_dir_used)
+    for name in truth_names:
+        for line in render(results[name]):
+            log(line)
+    return results
+
+
+def _result(configs, scores, seconds, records, seed_list, profile_info, truth_info, git, environment,
+            calibration_info, data_dir_used):
+    """One truth's result, as evaluate_configs returns it: a report per config, each against the first."""
     reference = configs[0]
     entries = []
     for config in configs:
@@ -294,14 +332,11 @@ def evaluate_configs(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_id
                          versus, calibration_info)
         entries.append({"stem": config.stem, "report": report, "scores": scores[config.stem],
                         "seconds": seconds[config.stem]})
-    result = {"profile": profile_info, "seeds": seed_list, "truth": truth_info, "matches": records, "git": git,
-              "data_dir": data_dir_used, "reference": reference.stem, "configs": entries,
-              "calibration": calibration_info,
-              "rank": rank_agreement({config.stem: score.pooled(scores[config.stem])["spell_f1_mean"]
-                                      for config in configs})}
-    for line in render(result):
-        log(line)
-    return result
+    return {"profile": profile_info, "seeds": seed_list, "truth": truth_info, "matches": records, "git": git,
+            "data_dir": data_dir_used, "reference": reference.stem, "configs": entries,
+            "calibration": calibration_info,
+            "rank": rank_agreement({config.stem: score.pooled(scores[config.stem])["spell_f1_mean"]
+                                    for config in configs})}
 
 
 def _load_configs(config_paths):
@@ -701,16 +736,17 @@ def main(argv=None):
                         help="degradation seeds per match (default {}; the clean profile has just one, and says so "
                              "if you ask for more)".format(DEFAULT_SEEDS))
     parser.add_argument("--matches", nargs="+", metavar="ID", help="the matches to run, in this order (default: all 7)")
-    parser.add_argument("--truth", choices=TRUTHS, default="raw",
-                        help="the truth to score against: raw, or coarse (short sandwiched possessions absorbed)")
+    parser.add_argument("--truth", choices=TRUTHS + (BOTH,), default="raw",
+                        help="the truth to score against: raw, or coarse (short sandwiched possessions absorbed), or "
+                             "both from one decode (the reports and tables of the two runs)")
     parser.add_argument("--data-dir", help="the data bundle (default: data/, or $MTAH_DATA_DIR)")
     parser.add_argument("--no-write", action="store_true", help="print only; write no report")
     args = parser.parse_args(argv)
 
     try:
-        result = evaluate_configs(args.configs, profile=args.profile, seeds=args.seeds, match_ids=args.matches,
-                                  truth=args.truth, data_dir=args.data_dir)
-        paths = [] if args.no_write else write_reports(result)
+        results = evaluate_truths(args.configs, profile=args.profile, seeds=args.seeds, match_ids=args.matches,
+                                  truth_names=TRUTHS if args.truth == BOTH else (args.truth,), data_dir=args.data_dir)
+        paths = [] if args.no_write else [path for result in results.values() for path in write_reports(result)]
     except (ConfigError, BenchmarkError, OSError) as error:
         # The expected failures get a sentence: a config to fix, a profile or match that does not exist, a source that
         # needs the video, data not downloaded yet. Anything else is a bug and keeps its traceback.

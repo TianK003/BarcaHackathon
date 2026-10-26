@@ -1,0 +1,44 @@
+# R013 Stage A (docs/results.md): main.toml's evidence, decoder and shift (R012), with controlled_touch at radius 2.0 m,
+# max_rel_speed 9.0 m/s, min_frames 2 and hold 0.55, at the confidence touch_stats.py measured for the setting.
+#
+# The grid is radius {1.5, 2.0, 2.5, 3.0} m x max_rel_speed {6, 9, 12} m/s x min_frames {1, 2, 3, 5} x hold {0.52,
+# 0.55, 0.60, 0.70}, 192 files. Each confidence is the floor of the setting's pooled agreement to a hundredth
+# (`touch_stats.py --grid r013`, tracking v3, 3 seeds, all seven matches): a measurement, never a score. The choice is
+# made on the benchmark by the rule R013 declared before any run, never on the public window (docs/traps.md T01).
+
+description = "R013 Stage A r013a_r20_v09_k2_h55: controlled_touch 2.0 m / 9.0 m/s / 2 frames / hold 0.55 (confidence 0.9) + dead_ball_model (hgb, pipeline/models/dead_ball_hgb.json) at weight 1.0 + shape_possession (hgb, pipeline/models/shape_possession_hgb.json) at weight 0.2, scope all, min_prob 0.02, hmm 4/32/25/25, decoded per half, then shift_edges team +1 / into_dead -2 / out_of_dead 0 frames."
+seed = 0
+scope = "halves"
+
+[[evidence]]
+kind = "controlled_touch"
+radius = 2.0                                  # metres: the nearest player must be this close
+max_rel_speed = 9.0                           # m/s: and move with the ball
+min_frames = 2                                # an episode shorter than this is dropped
+confidence = 0.9                              # touch_stats.py --grid r013: floor of the pooled agreement (90.4%)
+hold = 0.55                                   # the weak vote of the last team between episodes; 0.5 = off
+
+[[evidence]]
+kind = "dead_ball_model"
+weight = 1.0
+model = "pipeline/models/dead_ball_hgb.json"  # relative to the repo root
+
+[[evidence]]
+kind = "shape_possession"
+weight = 0.2                                          # an exponent on the source's likelihood
+model = "pipeline/models/shape_possession_hgb.json"   # relative to the repo root; a match with a fold gets it
+scope = "all"                                         # "gaps": ball missing only; "all": every graded frame
+min_prob = 0.02                                       # home is clipped to [0.02, 0.98]
+
+[decoder]
+kind = "hmm"
+switch_team = 4                               # nats a change of team (H <-> A) costs
+switch_dead = 32                              # nats a change into or out of D costs
+min_possession = 25                           # frames: no run of H or A shorter than this (1 is no minimum)
+min_dead = 25                                 # frames: no run of D shorter than this (1 is no minimum)
+
+[[refine]]
+kind = "shift_edges"
+team = 1                                      # frames: R012's s_b, the pipeline's own lag on DFL
+into_dead = -2
+out_of_dead = 0

@@ -87,8 +87,8 @@ what two of them share goes to common.py (test_a_check_module_imports_no_other_c
 """
 
 from pipeline.benchmark.checks import (
-    calibration, cap, context, conventions, dead_ball, degrade, dfl, fidelity, harness, hazard, headroom, inputs, run,
-    score, shape, sources, tracking, touch, truth)
+    calibration, cap, choose, context, conventions, dead_ball, degrade, dfl, fidelity, harness, hazard, headroom,
+    inputs, run, score, shape, sources, tracking, touch, truth)
 
-MODULES = (sources, dfl, truth, inputs, score, run, hazard, calibration, degrade, cap, tracking, context, fidelity,
-           headroom, touch, dead_ball, conventions, shape, harness)
+MODULES = (sources, dfl, truth, inputs, score, run, choose, hazard, calibration, degrade, cap, tracking, context,
+           fidelity, headroom, touch, dead_ball, conventions, shape, harness)

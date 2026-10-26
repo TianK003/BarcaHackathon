@@ -1,6 +1,7 @@
 """touch_stats: how much of the game P04's control rule speaks about, how often it is right, the confidence it earns.
 
-    python pipeline/benchmark/touch_stats.py [--profile P] [--seeds N] [--matches ID ...] [--data-dir D]
+    python pipeline/benchmark/touch_stats.py [--grid stage_a|r013] [--profile P] [--seeds N] [--matches ID ...]
+                                             [--data-dir D] [--out PATH]
 
     result = measure(DEFAULT_GRID, profile="tracking", seeds=3)      # {"settings": {label: {...}}, ...}
 
@@ -63,6 +64,10 @@ import possession_metrics as pm  # noqa: E402  isort:skip
 # Stage A's twelve settings: radius (m) outermost, then max_rel_speed (m/s), then min_frames, as the protocol does.
 DEFAULT_GRID = tuple({"radius": radius, "max_rel_speed": speed, "min_frames": frames}
                      for radius in (1.0, 1.5, 2.0) for speed in (3.0, 6.0) for frames in (3, 8))
+# R013's Stage A (docs/results.md): R008's edges extended, in the same order.
+R013_GRID = tuple({"radius": radius, "max_rel_speed": speed, "min_frames": frames}
+                  for radius in (1.5, 2.0, 2.5, 3.0) for speed in (6.0, 9.0, 12.0) for frames in (1, 2, 3, 5))
+GRIDS = {"stage_a": DEFAULT_GRID, "r013": R013_GRID}    # what --grid names; stage_a is the default
 KEYS = ("radius", "max_rel_speed", "min_frames")
 MEASURED_CONFIDENCE = 0.99          # what the source is called with: any value in (0.5, 1], only the sign is read
 LAG_SECONDS = 5                     # a flip is looked for this far either side of the change
@@ -265,23 +270,29 @@ def _frames(value):
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Measure P04's control rule on the benchmark: coverage, agreement with the truth, flip lags, and "
-                    "the confidence each of Stage A's 12 settings earns (floor of the pooled agreement to a "
-                    "hundredth).")
+                    "the confidence each setting of a grid earns (floor of the pooled agreement to a hundredth).")
+    parser.add_argument("--grid", choices=sorted(GRIDS), default="stage_a",
+                        help="the settings: stage_a, R008's 12 (default), or r013, R013's 48")
     parser.add_argument("--profile", default=DEFAULT_PROFILE, help=run.profile_help())
     parser.add_argument("--seeds", type=int,
                         help="degradation seeds per match (default {})".format(run.DEFAULT_SEEDS))
     parser.add_argument("--matches", nargs="+", metavar="ID", help="the matches to run, in this order (default: all 7)")
     parser.add_argument("--data-dir", help="the data bundle (default: data/, or $MTAH_DATA_DIR)")
+    parser.add_argument("--out", help="also write the result as JSON here (counts and shares, no frame)")
     args = parser.parse_args(argv)
     try:
-        result = measure(DEFAULT_GRID, profile=args.profile, seeds=args.seeds, match_ids=args.matches,
+        result = measure(GRIDS[args.grid], profile=args.profile, seeds=args.seeds, match_ids=args.matches,
                          data_dir=args.data_dir)
+        if args.out:
+            run.write_json(args.out, run.plain(result))
     except (ConfigError, run.BenchmarkError, OSError) as error:
         print("FAILED    {}".format(error))
         return 1
     print("")
     for line in render(result):
         print(line)
+    if args.out:
+        print("written   {}".format(run.shown(args.out)))
     return 0
 
 
