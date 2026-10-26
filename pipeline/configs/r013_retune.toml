@@ -1,0 +1,62 @@
+# R013: the touch rule and the decoder re-chosen on the P01 benchmark without the window's values, with P07's weight.
+#
+#   python pipeline/run.py pipeline/configs/r013_retune.toml --score    # -> evaluation/results/r013_retune.csv
+#
+# This is R013's final config. Whether main.toml carries it is R013's adoption guard (docs/results.md); main.toml
+# decides what we upload.
+#
+# Where the numbers come from, all on the seven DFL matches degraded as `tracking` v3 (3 seeds), by rules R013 declared
+# before any run:
+#   controlled_touch radius 1.5 m, max_rel_speed 6.0 m/s, min_frames 1, hold 0.60: Stage A, 192 configs on main.toml as
+#     of R012 (no nearest_player, no ball_presence, so none of A01's window-derived values in any candidate); the best
+#     raw spellF1, the coarse score breaking the tie band. The confidence 0.93 is touch_stats.py's floor of the
+#     setting's pooled agreement (93.1%), a measurement and not a score.
+#   hmm switch_team 4, min_possession 35 and shape_possession's weight 0.2: Stage C, 144 configs at Stage A's choice,
+#     the same rule; switch_dead 32 and min_dead 25 stay R010's (flat there).
+#   shift_edges team +1, into_dead -2, out_of_dead 0: R012's rule applied again, s_b being minus the median lag of this
+#     pipeline (without the refiner) on DFL; it came out as R012's, and g stays 0 (retired since 23 Oct 2026).
+# The dead_ball_model, the shape model and their clips are main.toml's. No constant comes from the public window
+# (docs/traps.md T01, T27).
+
+description = "R013: controlled_touch 1.5 m / 6.0 m/s / 1 frame / hold 0.60 (confidence 0.93) + dead_ball_model (hgb, pipeline/models/dead_ball_hgb.json) at weight 1.0 + shape_possession (hgb, pipeline/models/shape_possession_hgb.json) at weight 0.2, scope all, min_prob 0.02, hmm 4/32/35/25, decoded per half, then shift_edges team +1 / into_dead -2 / out_of_dead 0 frames (the pipeline's own lag on DFL, g = 0)."
+seed = 0
+scope = "halves"
+
+# Each [[evidence]] entry is one source: kind is its key in pipeline/evidence/__init__.py REGISTRY. Optional:
+# name = "..." (default: kind; must be unique) and weight = 1.0 (how much the decoder trusts it). Every other key is
+# passed to the source as a keyword argument.
+[[evidence]]
+kind = "controlled_touch"
+radius = 1.5                                  # metres: the nearest player must be this close
+max_rel_speed = 6.0                           # m/s: and move with the ball
+min_frames = 1                                # an episode shorter than this is dropped
+confidence = 0.93                             # touch_stats.py --grid r013: floor of the pooled agreement (93.1%)
+hold = 0.6                                    # the weak vote of the last team between episodes; 0.5 = off
+
+[[evidence]]
+kind = "dead_ball_model"
+weight = 1.0
+model = "pipeline/models/dead_ball_hgb.json"  # relative to the repo root
+
+[[evidence]]
+kind = "shape_possession"
+weight = 0.2                                          # an exponent on the source's likelihood (R011, kept by R013)
+model = "pipeline/models/shape_possession_hgb.json"   # relative to the repo root; BAR-ATH has no fold, so `full`
+scope = "all"                                         # "gaps": ball missing only; "all": every graded frame
+min_prob = 0.02                                       # home is clipped to [0.02, 0.98]
+
+# Exactly one decoder (pipeline/decode/). Every key but kind is a keyword argument.
+[decoder]
+kind = "hmm"
+switch_team = 4                               # nats a change of team (H <-> A) costs
+switch_dead = 32                              # nats a change into or out of D costs
+min_possession = 35                           # frames: no run of H or A shorter than this (1 is no minimum)
+min_dead = 25                                 # frames: no run of D shorter than this (1 is no minimum)
+
+# Zero or more refiners (pipeline/refine/), applied in order after the decoder. A positive value moves the new label
+# later, in frames; a change of label next to an X or at a kick-off never moves.
+[[refine]]
+kind = "shift_edges"
+team = 1                                      # frames: s_b, the pipeline's own lag on DFL (g = 0)
+into_dead = -2
+out_of_dead = 0

@@ -314,6 +314,20 @@ that is rebuilt, not a `BadZipFile` (`test_calibration_cache_is_keyed_and_unread
 cut short under an `.npy` name raises instead of rebuilding (nothing makes such a file; a note for whoever next edits
 it).
 
+**T41 — Hours of benchmark runs can take a machine down, and a grid's process writes its reports only at the end.**
+During R013 one team machine (Windows, 12 logical cores, 15.3 GB) crashed with bugcheck 0x133 (DPC_WATCHDOG_VIOLATION,
+a driver stalling) after about two hours of grids, losing a process 20 minutes in; the same bugcheck at the same code
+offset was logged on 13 Oct, before the benchmark existed, so the load exposed the fault and did not create it. Claude
+Code's memory-pressure reaper had also stopped the shell that chained the processes (the Python child survived). What
+to do on a long run:
+- one heavy process at a time, in chunks of about 24 configs, so that a crash costs minutes and not the grid
+  (`run.py` writes nothing until its last config is scored);
+- `OPENBLAS_NUM_THREADS=1` (and `OMP_`, `MKL_`): `play_features` multiplies matrices, which OpenBLAS spreads over every
+  core; one thread gives byte-identical reports and the same `main.csv` (R013 checked both);
+- below-normal priority for the venv's `python.exe` *and* its child, the real interpreter (the venv's is a launcher);
+  a free-memory check before each process and a pause between them;
+- check after a restart which logs end `EXIT=` and rerun only the processes that did not finish.
+
 ## Rules and data handling
 
 **T25 — Data must never leave our machines the wrong way.**

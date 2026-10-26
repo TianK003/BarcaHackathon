@@ -32,15 +32,17 @@ opinion adds nothing (a missing `alive` is not a coin flip). A path pays `switch
 makes a possession an interval whose edges have to be paid for, which the baseline's ±2 s vote (`majority_vote`) is
 not: it ignores `alive`, gives `D` only where the ball is missing, and keeps whatever survives the vote.
 
-Its four parameters were chosen on the benchmark of section 5 by a protocol declared before the runs: `switch_team`
-4, `switch_dead` 32, `min_possession` 25 and `min_dead` 25 for the first two sources below (R010). The first choice, 8,
-32, 75 and 1 for `nearest_player` and `ball_presence`, did not clear its bar (R006, R007), and the retune is the one
-change to the decoder. P07's source was added with the decoder as it was (R011); whether the new evidence wants other
-values is open (`docs/proposals.md`, "After P07 and P02").
+Its four parameters were chosen on the benchmark of section 5 by protocols declared before the runs. The first
+choice, 8, 32, 75 and 1 for `nearest_player` and `ball_presence`, did not clear its bar (R006, R007). R010 chose 4, 32,
+25 and 25 for the first two sources below, and R011 added P07's source with the decoder as it was. R013 chose
+`switch_team` and `min_possession` again with all three sources and the touch rule it re-chose first: `switch_team` 4,
+`switch_dead` 32, `min_possession` 35 and `min_dead` 25 (the last two kept from R010, where the score was flat along
+them).
 
 **The evidence** (P04, P05 and P07, `pipeline/evidence/`). Three sources. `controlled_touch` (P04) gives `home`: it
-votes for a team at 0.91 inside the episodes where that team controls the ball, and weakly (0.55) for the last
-controlling team on the other frames where the ball is visible. It says nothing where the ball is missing, and so a
+votes for a team at 0.93 inside the episodes where that team controls the ball, and weakly (0.60) for the last
+controlling team on the other frames where the ball is visible (the rule's constants are R013's, re-chosen on the
+benchmark with none of the window-derived values in any candidate). It says nothing where the ball is missing, and so a
 pass in flight or a duel keeps the last team and does not flip it. `dead_ball_model` (P05) gives `alive`: a
 gradient-boosted tree model on 30 features of the play (where the ball is against the lines and the restart spots, how
 the players move, the set-piece shapes), trained on the seven benchmark matches degraded to look like ours. It reads
@@ -50,9 +52,9 @@ wide, its velocity along its attack, its shares in the two end thirds), none of 
 seven benchmark matches with the ball hidden and read symmetrically in the two teams. It is the only source of `home`
 where the ball is missing (40.7% of the graded frames), and at weight 0.2 it speaks on every graded frame (R011).
 `nearest_player` (the baselines' team source) and `ball_presence` (P06's first `alive` source) stay in the pipeline and
-are not in the submission. **`main.toml` is these three sources, the decoder and the shift below** (R010 to R012): P04
-and P05 together, and P07 on top of them, each meet the benchmark's bar, and section 6 says what that does and does not
-show. The file has not been uploaded.
+are not in the submission. **`main.toml` is these three sources, the decoder and the shift below** (R010 to R013): P04
+and P05 together, P07 on top of them, and R013's re-chosen touch rule and decoder each meet the benchmark's bar, and
+section 6 says what that does and does not show. The file has not been uploaded.
 
 **The shift** (P02, `pipeline/refine/shift_edges.py`). After the decoder, each kind of edge of a half is moved by a
 whole number of frames: a change of team 1 frame later, a change into `D` 2 frames earlier, a change out of `D` not at
@@ -178,45 +180,53 @@ matter.
 
 ## 4. Possession rules implemented
 
-What the submission does today is `main.toml` (R012): `controlled_touch` and `shape_possession` for the team,
+What the submission does today is `main.toml` (R013): `controlled_touch` and `shape_possession` for the team,
 `dead_ball_model` for the ball in play, decoded by the `hmm` per half, then `shift_edges`. The rules below are those it
 implements.
 
-- **Control, who has the ball:** A team controls the ball when the nearest tracked player, of either team, is one of
-  its own and within 2.0 m of the ball, no opponent is within 1.0 m, and the two move together, a relative speed of at
-  most 6 m/s, for at least 3 consecutive frames (0.12 s). Both speeds come from successive positions, never from the
-  ATD's speed channel (T31). The zones are Vidal-Codina et al.'s (2022, *Sports Engineering*): a zone around a player,
-  and a 1 m duel zone around the ball where two opponents make a contested ball. Link and Hoernig (2017, *PLOS ONE*)
-  likewise start an individual possession from the nearest player within a distance, and end it when the ball has left
-  for a time. A run of control frames of one team is an episode, and it votes for that team at 0.91, a measurement:
+- **Control, who has the ball:** A team controls the ball when the nearest tracked player, of either team, is one of its
+  own and within 1.5 m of the ball, no opponent is within 1.0 m, and the two move together, a relative speed of at most
+  6 m/s, on a frame (R013's rule; R008's was 2.0 m and 3 frames). Both speeds come from successive positions, never from
+  the ATD's speed channel (T31). The zones are Vidal-Codina et al.'s (2022, *Sports Engineering*): a zone around a
+  player, and a 1 m duel zone around the ball where two opponents make a contested ball. Link and Hoernig (2017, *PLOS
+  ONE*) likewise start an individual possession from the nearest player within a distance, and end it when the ball has
+  left for a time. A run of control frames of one team is an episode, and it votes for that team at 0.93, a measurement:
   the share of episode frames on which the team is the truth's, floored to a hundredth, on the seven benchmark matches
-  (R008).
-- **Back-dating:** The vote starts on the episode's first frame, not when its third has been seen, so a change of team
-  lands where control began and confirmation costs no latency (T03).
+  (93.1%, R013).
+- **Back-dating:** The vote starts on the episode's first frame, not when a minimum of it has been seen, so a change
+  of team lands where control began and confirmation costs no latency (T03). With R013's minimum of one frame there is
+  nothing left to confirm; the decoder's minimum run is what asks for persistence (below).
 - **Loose balls and contested phases:** In flight and in a duel no episode holds, and the source gives a weak hold
-  instead: on every frame with the ball visible outside an episode, after the half's first episode, it votes 0.55 for
-  the last controlling team, against the episodes' 0.91. The last team is never reset, so the hold also carries it
+  instead: on every frame with the ball visible outside an episode, after the half's first episode, it votes 0.60 for
+  the last controlling team, against the episodes' 0.93. The last team is never reset, so the hold also carries it
   through a stoppage. Where the ball is missing, and before the half's first episode, the source says nothing and the
   decoder keeps its state. R008 reads DFL's flag as turning at the new team's control and not at the old team's last
   touch (a reading and not a test: only 49.7% of its changes have an episode of the new team in the window). Without
   the hold the change lands on the first frame after the old team's last control frame (the decoder's tie rule), and
-  with it on the new team's first. Without the hold no config of R008's grid beats either yardstick.
+  with it on the new team's first. Without the hold no config of R008's grid beats either yardstick, and R013 found
+  0.60 better than 0.55 under the raw truth and worse under the coarse one (T33).
 - **Possession where the ball is missing (P07):** `controlled_touch` is silent without the ball, so on its own the
   decoder would keep the last team through a gap, and the median gap lasts 10.7 s (section 3). `shape_possession` gives
   `home` there from where the two teams stand and how they move: how far up the pitch each is, how wide, its velocity
   along its attack and its shares in the two end thirds, over the frame and over the second or two around it. It is a
   learned probability and not a rule, read symmetrically in the two teams so that nothing in it says which one is home,
-  clipped to [0.02, 0.98] and weighted 0.2. That weight lets it move the decoder by at most 0.78 nats a frame (3.9 x
-  0.2), more than the hold's 0.20 and less than an episode's 2.31 (arithmetic from those constants, not a measurement),
+  clipped to [0.02, 0.98] and weighted 0.2 (R011's weight, which R013 chose again). That weight lets it move the
+  decoder by at most 0.78 nats a frame (3.9 x 0.2), more than the hold's 0.41 and less than an episode's 2.59
+  (arithmetic from those constants, not a measurement),
   so it can turn a held team over a gap and cannot outvote a control episode frame for frame. It also speaks where the
   ball is visible, which R011 found better than speaking only in the gaps (+0.0113 pooled spellF1 raw at the chosen
   weight, `tracking` v3).
-- **Touches, deflections, aerial duels:** An episode under 3 frames is dropped, so a one-touch deflection is no
-  possession. An aerial duel has two teams within 1 m of the ball and so no vote. Neither is modelled further.
+- **Touches, deflections, aerial duels:** Since R013 a single control frame is an episode, so what keeps a deflection
+  from being a possession is the decoder: an episode of the other team earns 2.59 nats a frame, a change of team costs
+  4 nats each way, and the new team's run must last 35 frames, so a touch of a frame or two does not turn the
+  possession unless the evidence around it agrees. The 1.5 m radius and the 6 m/s relative speed keep a ball that only
+  passes a player out of the episode. An aerial duel has two teams within 1 m of the ball and so no vote. Neither is
+  modelled further.
 - **Change of possession:** A possession is a run of `H` or of `A`. The decoder holds the team until the evidence
-  for a change pays for it: a change of team costs `switch_team` (4 nats) and a run lasts at least `min_possession` (25
-  frames, 1 s) except where the half's edge cuts it short. Raw spellF1 falls with both from this edge of the grid and
-  the coarse truth prefers the opposite end (R010, section 6, T33).
+  for a change pays for it: a change of team costs `switch_team` (4 nats) and a run lasts at least `min_possession` (35
+  frames, 1.4 s) except where the half's edge cuts it short. Both are inside R013's grid: raw spellF1 peaks at
+  `switch_team` 3 to 4 and `min_possession` 25, the coarse truth prefers fewer possessions, and the tie-break between
+  the two set the minimum at 35 (R013, section 6, T33).
 - **Dead ball, what the detector sees:** Thirty features: the ball beyond a touchline or goal line, now, next and when
   last seen; the ball still at a restart spot (the centre spot, a corner, a penalty spot, a goal area); a collective
   slowdown of the players over windows before and after the frame; the kick-off shape (every player in their own half,
@@ -238,7 +248,7 @@ implements.
   that a person read off this match's video for each stoppage and fed to the pipeline would be a hand label, while a
   person watching to judge whether such a channel is worth building is design and is allowed (A11, section 6).
 - **Abstentions (`X`):** The decoder never abstains inside a graded half, and the runner writes `X` on the ungraded
-  frames, where it is free: the chosen file has none inside a graded block (R010 to R012). It can return the posterior
+  frames, where it is free: the chosen file has none inside a graded block (R010 to R013). It can return the posterior
   of each state per frame, which shows where an `X` would be free (inside a possession), but no refiner reads it yet.
 - **Edge timing, where each rule flips against our ground truth, and the shift (A11, R012, T40):** The back-dating,
   the hold and the `D` onset follow DFL's flag, so we timed every change of the public truth (12 of team, 4 into `D`, 4
@@ -255,7 +265,8 @@ implements.
   signs by itself (our tracker loses the ball near the lines, T39, so `line_out` and the model fire late and the model's
   alive rises early on ours, and the copy's ball gaps ignore the play, R003). So it is a lead, to understand and not to
   fit: a person may watch the video to see which it is, and what is seen shapes a feature and sets no constant (T27).
-  The `shift_edges` rule is declared and was applied once (R012). The shift of a type of edge is s_b, the pipeline's own
+  The `shift_edges` rule is declared, was applied in R012 and was applied again in R013 to the re-chosen pipeline,
+  whose lag on DFL came out the same. The shift of a type of edge is s_b, the pipeline's own
   lag on the seven DFL matches (the median of predicted minus true over the changes it matches within 50 frames,
   negated; team +1, into `D` -2, out of `D` 0 frames; kept by a guard on the benchmark), plus g, a gap to our truth's
   convention read from the public window under conditions declared beforehand (a median lag of at least 3 frames in
@@ -282,21 +293,21 @@ window-derived values sat in the context of a choice.
 
 | constant | value | set in | basis |
 |---|---|---|---|
-| `controlled_touch` radius | 2.0 m | R008, the 24-config grid | the seven DFL matches (`tracking` v3, 3 seeds), by the rule declared before the grid; the zone follows Vidal-Codina et al. (2022). Every config carried `ball_presence` at A01's window-derived 0.2 / 0.585 and R007's decoder (below) |
-| `controlled_touch` max_rel_speed | 6.0 m/s | R008 | the same, with the same window-derived context |
-| `controlled_touch` min_frames | 3 | R008 | the same, with the same window-derived context |
-| `controlled_touch` confidence | 0.91 | R008, `touch_stats.py` | the floor, to a hundredth, of the pooled agreement of the kept episodes with DFL's flag over the seven matches (91.9%): a measurement on DFL and in sample there (section 6), never on the window |
-| `controlled_touch` hold | 0.55 | R008 | the grid's only non-off value, scored on the DFL matches, with the same window-derived context in every config |
+| `controlled_touch` radius | 1.5 m | R013 Stage A, the 192-config grid | the seven DFL matches (`tracking` v3, 3 seeds), by the rule declared before the grid, every config being R012's `main.toml` with the touch rule changed, so no window-derived value in any candidate; the zone follows Vidal-Codina et al. (2022). R008's choice, 2.0 m, had been made with `ball_presence` at A01's window-derived values in every config |
+| `controlled_touch` max_rel_speed | 6.0 m/s | R013 Stage A | the same |
+| `controlled_touch` min_frames | 1 | R013 Stage A | the same |
+| `controlled_touch` confidence | 0.93 | R013, `touch_stats.py --grid r013` | the floor, to a hundredth, of the pooled agreement of the kept episodes with DFL's flag over the seven matches (93.1%): a measurement on DFL and in sample there (section 6), never on the window |
+| `controlled_touch` hold | 0.60 | R013 Stage A | the grid's {0.52, 0.55, 0.60, 0.70}, scored on the DFL matches with no window-derived value in any config |
 | `controlled_touch` duel_radius | not set (default 1.0 m) | the source's default | a fixed rule (Vidal-Codina et al.'s 1 m duel zone), never varied |
-| `dead_ball_model` | `dead_ball_hgb.json`, weight 1.0 | R009, kept by R010 | trees trained on DFL's `BallStatus` (degraded; settings fixed beforehand, not tuned), the source and the weight chosen on DFL's grid, every config of which carried `nearest_player` at A01's window-derived 0.78 (below); BAR-ATH is read by the model fitted on all seven; its feature thresholds are fixed rules (the laws of the game, the literature) |
+| `dead_ball_model` | `dead_ball_hgb.json`, weight 1.0 | R009, kept by R010 and R013 | trees trained on DFL's `BallStatus` (degraded; settings fixed beforehand, not tuned), the source and the weight chosen on DFL's grid, every config of which carried `nearest_player` at A01's window-derived 0.78 (below); R013 declared why it does not choose them again: the source rests on the out-of-fold log-loss (lower for boosting on 7 of 7 matches), which no other source enters, and the weight 1.0 takes the model's probability as it is; BAR-ATH is read by the model fitted on all seven; its feature thresholds are fixed rules (the laws of the game, the literature) |
 | `dead_ball_model` min_prob | not set (default 0.001) | the source's default | a fixed default, a clip to [0.001, 0.999] (also P(alive) before a kick-off); never varied |
 | pre-kick-off rule | `D` before a half's kick-off (P(alive) 0.001) | `play_features`, R009 | a fixed rule from the organisers' documented kick-offs (FAQ.md: the second half is graded from 110,808 and kicks off at 113,742), from no ground truth |
 | `shape_possession` model | `shape_possession_hgb.json` | R011, part 1 | trees trained on DFL's `BallPossession` with the ball hidden (settings fixed beforehand), each benchmark match read by the fold that never saw it; BAR-ATH by `full` |
-| `shape_possession` weight, scope | 0.2, `all` | R011's 12-config grid | the DFL benchmark, by the pre-declared rule (the only config within 0.005 of the best) |
+| `shape_possession` weight, scope | 0.2, `all` | R011's 12-config grid; the weight chosen again in R013 Stage C | the DFL benchmark, by the pre-declared rule (R011: the only config within 0.005 of the best; R013: the weight axis {0.1, 0.2, 0.3, 0.5} crossed with the decoder) |
 | `shape_possession` min_prob | 0.02 | R011, part 1 | fixed beforehand, a clip that caps a frame at 3.9 nats; not varied in the grid |
-| `hmm` switch_team, switch_dead, min_possession, min_dead | 4, 32, 25, 25 | R010's 72-config grid | the DFL benchmark, by the pre-declared rule, with neither window-derived source present. The grid was laid around R006's and R007's values, which were chosen with both (below), and 4 and 25 are the grid's lowest values in `switch_team` and `min_possession`, so its placement bounds them |
+| `hmm` switch_team, switch_dead, min_possession, min_dead | 4, 32, 35, 25 | R013 Stage C (switch_team, min_possession), R010 (switch_dead, min_dead) | the DFL benchmark, by the pre-declared rules, with neither window-derived source present. R013's 144-config grid spans `switch_team` 1 to 8 and `min_possession` 1 to 50 around R010's lower edge, and the choice is inside it on both axes; `switch_dead` and `min_dead` are R010's, along which its score was flat |
 | `hmm` eps | not set (default 1e-6) | the decoder's default | a fixed default, a numerical guard on the clip and not a knob |
-| `shift_edges` team, into_dead, out_of_dead | +1, -2, 0 frames | R012 | s_b alone: minus the median lag of the pipeline on DFL (`tracking` v3, raw truth, 3 seeds), kept by the benchmark guard; g, from the public window, is 0 and retired |
+| `shift_edges` team, into_dead, out_of_dead | +1, -2, 0 frames | R012, re-derived in R013 | s_b alone: minus the median lag of the pipeline on DFL (`tracking` v3, raw truth, 3 seeds), kept by the benchmark guard; R013 measured the re-chosen pipeline's lag and got the same three values; g, from the public window, is 0 and retired |
 | `seed`, `scope` | 0, `halves` | fixed | a seed for reproducibility; the scorer grades halves |
 
 Two sources do carry constants measured on the public window, and neither is in `main.toml`: `nearest_player`'s
@@ -309,12 +320,14 @@ which carry neither) carried at least one of those two sources: all 24 configs o
 values, with R007's decoder (8 / 32 / 75 / 1, itself chosen with both sources), and all 24 of R009 held `nearest_player`
 at 0.78. So the touch rule's radius, relative speed, minimum frames and hold (R008) and the `hgb` source and its weight
 1.0 (R009) were chosen on DFL with window-derived values present in every candidate. R010 chose the decoder again (4 /
-32 / 25 / 25) with neither source present, but R008's and R009's constants were not chosen again, and 4 and 25 sit on
-the lower edge of R010's grid, so the grid's placement bounds them. We judge this compliant: the window's labels never
-scored a candidate, and the window-derived values were part of the fixed context of selections scored on DFL's flags. We
-say it plainly because a strict reader could count that context as an influence. The decoder re-check of "After P07 and
-P02" item 1 in `docs/proposals.md`, run on `main.toml` (which has neither source), is where these choices get
-re-confirmed without the A01 sources, with R008's and R009's constants as extra axes if its protocol says so.
+32 / 25 / 25) with neither source present, but R008's and R009's constants were not chosen again, and 4 and 25 sat on
+the lower edge of R010's grid. We judged this compliant: the window's labels never scored a candidate, and the
+window-derived values were part of the fixed context of selections scored on DFL's flags. **R013 removed the question
+for the touch rule and the decoder**: it chose the touch rule again (192 configs) and then `switch_team`,
+`min_possession` and P07's weight (144 configs) on `main.toml`'s own evidence, which has neither source, by rules
+declared before its runs. The touch rule moved (R008's setting ranked 83rd of 192 under the raw truth), and the decoder
+moved by one value (`min_possession` 25 to 35). R009's source and weight were not chosen again, for the reasons R013
+declared (the table above); they are the one choice left whose candidates carried a window-derived value.
 
 Two further uses of the window are not constants: the agreement figures that `--score` prints (87.2%, 86.6%, 90.9%)
 are outputs and never inputs, and the benchmark's fidelity report sets two statistics of the window (the nearest
@@ -546,6 +559,32 @@ sample and out of fold and without it (the same 20 possessions), and macroF1 0.7
 0.7151 without. On our match the shift moves the labels of 0.34% of the graded frames, exactly the shifted boundaries,
 and leaves 439 possessions.
 
+**The touch rule and the decoder chosen again** (R013). A protocol declared before any run re-chose, in two stages on
+`tracking` v3 (3 seeds, both truths from one decode, the same rule as R008 to R011: the best pooled raw spellF1, a 0.005
+tie band, then the best coarse), the constants that had been chosen with the window-derived sources present or
+against an older decoder. Stage A crossed the touch rule's radius {1.5, 2.0, 2.5, 3.0} m, relative speed {6, 9, 12}
+m/s, minimum episode {1, 2, 3, 5} frames and hold {0.52, 0.55, 0.60, 0.70} on R012's `main.toml` (192 configs, each at
+its measured confidence); Stage C crossed `switch_team` {1, 2, 3, 4, 6, 8}, `min_possession` {1, 10, 15, 25, 35, 50}
+and P07's weight {0.1, 0.2, 0.3, 0.5} at Stage A's choice (144 configs). The shift was then re-derived by R012's rule
+(the same +1, -2, 0) and the result guarded against R012's `main.toml`. Pooled spellF1:
+
+| config | `tracking` raw | `tracking` coarse | `context` raw | `context` coarse | possessions per minute |
+|---|---|---|---|---|---|
+| R012's `main.toml` | 0.5164 | 0.5592 | 0.5162 | 0.5544 | 3.17 |
+| Stage A's choice (1.5 m, 6 m/s, 1 frame, hold 0.60; decoder 4 / 32 / 25 / 25) | 0.5473 | 0.5485 | | | 3.27 |
+| R013's final config (the same touch rule; decoder 4 / 32 / 35 / 25; P07 at 0.2) | 0.5430 | 0.5593 | 0.5489 | 0.5642 | 3.13 |
+| the truth | | | | | 4.58 raw, 2.48 coarse |
+
+The final config is +0.0267 raw over R012's on `tracking` (mean per match +0.0264 [+0.0191, +0.0338], sign-flip p
+0.0156, 7 wins in 7) and level coarse (+0.0001, 4 wins and 3 losses), and on `context` (sensitivity only) +0.0327 raw
+and +0.0097 coarse. The guard (a raw gain on `tracking`, no cell below -0.005) passes and the bar is met, and the
+leave-one-match-out estimates agree (+0.0306 raw for Stage A's rule, +0.0263 for Stage C's, 7 wins in 7 each). The
+truths disagreed again (T33): Stage A's touch rule alone gained 0.0310 raw and lost 0.0107 coarse (0 wins in 7), and the
+longer minimum possession that Stage C's tie-break chose won the coarse cell back. On our match the label-free checks
+pass: `D` 35.9% of the graded frames, no `X` in a graded block, the same sha256 twice (and under one BLAS thread), 410
+possessions against 439, 2.4% of the graded frames relabelled. On the public window, a correctness check only (T01),
+spellF1 is 0.4649 and macroF1 0.7152 with 20 possessions (R012's file: 0.4000, 0.7159, 20).
+
 **Why these choices.** Lang et al. (2022, *Scientific Reports*) predict the in-play status from tracking and find
 boosting the best of four classical families (92.0% frame accuracy, against 86.7% for logistic regression), from the
 players alone and so in the regime of our frames without a ball. Their features are shifted values of the players'
@@ -628,13 +667,23 @@ unless a bullet cites another entry):
 - **The two truths disagree on the decoder (T33).** The raw truth chose the shortest minimum possession and smallest
   switch penalty of the grid and the coarse truth the longest and the largest (`switch_team` 16, `min_possession` 100:
   0.5049 coarse and 0.3532 raw, against R010's choice at 0.4556 coarse and 0.4217 raw). R010's config predicted 2.74
-  possessions a minute (3.17 with P07, R011), between the raw truth's 4.58 and the coarse truth's 2.48. Which grain our
-  GT has is not known.
-- **The chosen decoder sits on edges.** `switch_team` 4 and `min_possession` 25 are the lowest values tried, and raw
-  spellF1 falls from them in both. P04's choice sits on the upper edge in radius and relative speed and the lower in
-  `min_frames`, and its hold of 0.55 is the only value tried besides off, with no config beating either yardstick
-  without it (R008). P05's sits on the upper edge in weight. By the protocol none was extended after the results.
-- **Some measured values are in sample.** The touch confidence (0.91), the fixed rules' values and the selection of the
+  possessions a minute (3.17 with P07, R011), between the raw truth's 4.58 and the coarse truth's 2.48. R013 met the
+  same split: the raw truth wanted a stronger hold and more possessions, the coarse truth fewer (its best Stage C config
+  predicts 2.79 a minute), and the final config is +0.0267 raw and level coarse against R012's. If our truth is as fine
+  as DFL's, R013 helps; if it is coarse, it is no better. Which grain our GT has is not known.
+- **R013 selected from 336 configs on seven matches.** The leave-one-match-out estimates agree with the in-sample
+  gains, but Stage C's coarse tie-break picked the final config in five folds of seven, and the two stages ran in order
+  (Stage C only at the full-data Stage A choice).
+- **The touch rule sits on edges.** R013's decoder (4 / 32 / 35 / 25) and P07's weight are inside their grid, but its
+  touch rule is on the lower edge in radius (1.5 m), relative speed (6 m/s) and minimum episode (1 frame), the last
+  being the smallest there is; R008 found 1.0 m and 3 m/s worse in its context, and neither was run again. P05's
+  weight sits on the upper edge of R009's grid. By the protocol none was extended after the results.
+- **The tighter touch rule transfers less well, by an amount nobody can measure.** On BAR-ATH it finds control
+  episodes on 36.9% of the ball-visible graded frames, against 43.6% for R008's rule; on the benchmark the two cover
+  43.4% and 47.6% of the alive ball-visible frames, so the 1.5 m radius loses more of its episodes on our match (a ratio
+  of 0.85 to the benchmark's, against 0.92). The two figures are not quite the same statistic (ours counts the dead
+  frames with the ball visible too), and what it costs in spellF1 is not measured (R013).
+- **Some measured values are in sample.** The touch confidence (0.93), the fixed rules' values and the selection of the
   configs use the seven matches the grids are scored on. They were never tuned towards a score, but they are not out
   of sample, and the leave-one-match-out check does not remove that. The trees are different: each benchmark match is
   scored by the model fitted without it. Seven matches, five from one club's home games, are not seven independent
@@ -736,11 +785,11 @@ python3.11 -m venv .venv                     # Windows: py -3.11 -m venv .venv
 .venv/bin/python evaluation/validate_submission.py evaluation/results/main.csv
 ```
 
-Expected sha256 of `main.csv` (R012): `3fd06da011bde39f771ddd22f00da2bcbcf5205720d60f87662ab6fc0f76a702` (the run
-prints it). The first run parses the tracking into `data/cache/` once. Every run then computes the play features
-and the shape features and walks the trees: about 17 s in all with the cache warm (the run of 25 Oct that wrote
-R011's file: 0.5 s for the inputs, 14.9 s for the evidence, 0.9 s for the decoder and 0.8 s for the output), on
-[hardware].
+Expected sha256 of `main.csv` (R013): `0ebdfbeca72ae2d09eb7aaa377037415696a5dacb95e29003741e0f57d5dbc5d` (the run prints
+it; the same with `OPENBLAS_NUM_THREADS=1`). The first run parses the tracking into `data/cache/` once. Every run then
+computes the play features and the shape features and walks the trees: about 17 s in all with the cache warm (the run of
+25 Oct that wrote R011's file: 0.5 s for the inputs, 14.9 s for the evidence, 0.9 s for the decoder and 0.8 s for the
+output), on [hardware].
 
 The two trained models that `main.toml` reads, `dead_ball_hgb.json` and `shape_possession_hgb.json`, are committed as
 JSON under `pipeline/models/` and read with numpy only, so the CSV needs no scikit-learn. Two commands in
@@ -781,6 +830,22 @@ The validation benchmark of section 5 is reproduced separately and is not needed
 .venv/bin/python pipeline/benchmark/conventions.py latency pipeline/configs/p07_shape.toml dfl   # R012: the lag; also
                                                                                 # `public`, and with --truth coarse
 .venv/bin/python pipeline/benchmark/conventions.py shift --config pipeline/configs/p07_shape.toml  # R012's rule
+```
+
+R013's grids and runs (each process lists `pipeline/configs/main.toml` first, as R012's `main.toml` when they ran; to
+rerun them now, use `pipeline/configs/p02_shift.toml` as the reference, which writes R012's file):
+
+```bash
+.venv/bin/python pipeline/benchmark/touch_stats.py --grid r013 --profile tracking --seeds 3 \
+    --out data/runs/r013/touch_stats_r013.json                                   # Stage A's 48 confidences
+.venv/bin/python pipeline/benchmark/run.py pipeline/configs/p02_shift.toml \
+    pipeline/benchmark/configs/r013/r013a_*.toml --profile tracking --seeds 3 --truth both   # Stage A (in shares)
+.venv/bin/python pipeline/benchmark/run.py pipeline/configs/p02_shift.toml \
+    pipeline/benchmark/configs/r013/r013c_*.toml --profile tracking --seeds 3 --truth both   # Stage C (in shares)
+.venv/bin/python pipeline/benchmark/choose.py --reference p02_shift <the stems in the declared tie order>   # each stage
+.venv/bin/python pipeline/benchmark/conventions.py latency pipeline/benchmark/configs/r013/r013_preshift.toml dfl
+.venv/bin/python pipeline/benchmark/run.py pipeline/configs/p02_shift.toml pipeline/configs/r013_retune.toml \
+    pipeline/benchmark/configs/r013/r013_preshift.toml --profile context --seeds 3 --truth both   # the guard's cells
 ```
 
 `shift` reads the CSV of the config it is given and that config's latency files, and refuses a latency file made for
