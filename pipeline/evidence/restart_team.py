@@ -1,10 +1,10 @@
-"""P17 -- who restarts after a stoppage: home evidence on the first frames after each predicted restart (or on the
-stoppage's last frame, for the decoder's restart states), NaN elsewhere.
+"""P17 -- who restarts after a stoppage: home evidence on the first frames after each predicted restart (or over the
+stoppage itself, for the decoder's restart states), NaN elsewhere.
 
     [[evidence]]
     kind = "restart_team"
     model = "pipeline/models/dead_ball_hgb.json"   # the dead-ball model main.toml uses: it says where the stoppages are
-    span = "after"         # optional: "after" (the default) votes from the restart on, "stoppage_end" on frame r - 1
+    span = "after"         # optional: "after" (the default) votes from the restart on, "stoppage_end" over the stoppage
     tail = 50              # frames voted from the restart on: required with span "after", refused with "stoppage_end"
     use_ball = false       # optional: read the ball where the setup window sees it (free kicks need it)
     setup = 50             # optional: the stoppage's last frames read for the arrangement (2 s)
@@ -37,11 +37,13 @@ What it does, per graded block (kinematics.blocks; nothing is read or voted acro
    below that fires, in TYPES's order (`frame_calls`). The stoppage takes the (type, team) called on the most frames of
    the window, if that is at least MIN_WINDOW_SHARE of the window's own length, and nothing otherwise; a tie goes to
    the lower type code, then to home (`arrangement`).
-3. The vote. `home` = c (home restarts) or 1 - c (away), with c the type's confidence. With span "after", on
+3. The vote, with c the type's confidence. With span "after", `home` = c (home restarts) or 1 - c (away) on
    [restart, end), end = min(restart + tail, the next stoppage's first frame, the block's end). The next stoppage counts
    whether or not it has a restart of its own: a vote never runs into a stretch the dead-ball model calls dead. With
-   span "stoppage_end", on the stoppage's last frame, restart - 1, only. A type with no confidence says nothing; every
-   other frame is NaN, and so is `alive`, everywhere (`votes`).
+   span "stoppage_end", over the stoppage that ends at the restart, [first, restart) with n = restart - first frames:
+   `home` = sigmoid(logit(c) / n) (home restarts) or 1 - that (away) on each, so that their log-odds add up to logit(c),
+   one observation in all. A type with no confidence says nothing; every other frame is NaN, and so is `alive`,
+   everywhere (`votes`).
 
 The rules, in metres, x along the pitch (0..L), y across it (0..W). Each team's defended end is decided per block by
 play_features.own_half_is_left (the teams swap ends at half time, T16).
@@ -90,24 +92,35 @@ call (and P02's), and it stops at the next stoppage. It does not stop at the fir
 controlled_touch's 0.93 an episode out-votes any restart confidence below it anyway, and stopping there would tie this
 source to that one's parameters.
 
-The span "stoppage_end" (P17, Phase 2b). R014 found the vote after the restart worth +0.004 spellF1, short of its bar:
-a vote of fixed length keeps pushing after the restarting team's first possession has ended, and it starts at this
-source's restart, not where the decoder ends D. The decoder's restart states (hmm's restart_source, see
-pipeline/decode/hmm.py) take the restart team as a property of the stoppage instead: they read this source's `home` on
-the dead states only, as D_H ("dead, home restarts") against D_A, and carry it to wherever the decoder ends D. For them
-the vote is written on one frame, the stoppage's last (restart - 1), at the type's confidence. One frame is one
-observation of who restarts, so c stays a likelihood: written on every frame of a 20 s stoppage it would count 500
-times and saturate. `tail` is then not read, and given, it is refused. A three-state decoder would read that frame as
-an ordinary `home` vote on a dead frame, weighing on where D ends, so "stoppage_end" is meant for the restart states.
+The span "stoppage_end": the stoppage that ends at the restart (P17, Phase 2b). R014 found the vote after the restart
+worth +0.004 spellF1, short of its bar: a vote of fixed length keeps pushing after the restarting team's first
+possession has ended, and it starts at this source's restart, not where the decoder ends D. The decoder's restart
+states (hmm's restart_source, see pipeline/decode/hmm.py) take the restart team as a property of the stoppage instead:
+they read this source's `home` on the dead states only, as D_H ("dead, home restarts") against D_A, and carry it to
+wherever the decoder ends D. For them the source writes one observation of who restarts per called stoppage, at the
+type's confidence c, and spreads it evenly over the stoppage's own frames [first, restart): each gets
+sigmoid(logit(c) / n), and the decoder, which adds logit(h) per frame between D_H and D_A, sums them back to logit(c).
+* One observation, not n: written as c on every frame of a 20 s stoppage it would count 500 times and saturate, and c
+  would no longer be a likelihood.
+* Spread, not on one frame: the stoppage's last frame, r - 1, is its most marginal (P(alive) just under 0.5). A decoder
+  that ends D one frame earlier would put that frame in H or A, where the vote adds nothing, and lose the restart team.
+  Spread, a D run that covers part of the stoppage keeps that part of the observation (k / n of logit(c) for k of its
+  n frames), and a vote on any frame of the run counts for all of it.
+* Thin: a frame of an n-frame stoppage raises the better dead state against H and A by about logit(c) / 2n nats (0.011
+  at c = 0.9 over 4 s), so where D ends stays the `alive` evidence's call.
+The name says which stoppage, the one that ends at the restart, not where on it the vote goes. `tail` is not read, and
+given, it is refused. A three-state decoder would read these frames as ordinary `home` votes on dead frames, so
+"stoppage_end" is meant for the restart states.
 
 The confidences are measured per type and per (tail, use_ball) on the benchmark (restarts.py stats, P17), never tuned.
-`frame_calls`, `stoppages`, `arrangement`, `calls_from_alive`, `calls` and `votes` are public: the tests drive them
-directly, and restarts.py reads `calls`.
+`frame_calls`, `stoppages`, `arrangement`, `calls_from_alive`, `calls`, `votes` and `spread` are public: the tests
+drive them directly, and restarts.py reads `calls`.
 
 Speed. frame_calls takes the (frames, slots, slots) distances a CHUNK of frames at a time, so its memory is bounded for
 any window; the source calls it once per stoppage on at most `setup` frames of it.
 """
 
+import math
 import numbers
 
 import numpy as np
@@ -135,14 +148,16 @@ FREE_KICK_CLEARANCE_M = 4.5          # half Law 13's 9.15 m: no opponent of the 
 KICK_OFF_BALL_M = 2.0                # with the ball: a kick-off's ball is this close to the centre spot
 GOAL_AREA_BALL_TOLERANCE_M = 1.0     # with the ball: a goal kick's ball is in the goal area grown by this much
 CHUNK = 256                          # frames per step of frame_calls: a (CHUNK, 46, 46) float64 array is 4.3 MB
-SPANS = ("after", "stoppage_end")    # where a call votes: from its restart on, or on its stoppage's last frame
+SPANS = ("after", "stoppage_end")    # where a call votes: from its restart on, or over the stoppage ending there
 STOPPAGE_END_TAIL = 1                # the tail `calls` is given under span "stoppage_end": only the restarts are read
 
 
 def compute(run, *, model, span="after", tail=None, use_ball=False, setup=50, min_stoppage=25, min_prob=0.001,
             kick_off=None, corner=None, goal_kick=None, throw_in=None, free_kick=None):
-    """Evidence(home = the restarting team's vote, on [restart, end) of every called stoppage whose type has a
-    confidence (span "after") or on its last frame, restart - 1 (span "stoppage_end"); NaN elsewhere; alive = NaN)."""
+    """Evidence(home = the restarting team's vote for every called stoppage whose type has a confidence c: c or 1 - c
+    on [restart, end) (span "after"), or one observation at c spread over the stoppage that ends at the restart,
+    [first, restart), as sigmoid(logit(c) / n) a frame or 1 - that (span "stoppage_end"); NaN elsewhere; alive = NaN).
+    """
     given = (kick_off, corner, goal_kick, throw_in, free_kick)          # in TYPES's order
     confidences = {code: _confidence(TYPES[code], value) for code, value in enumerate(given) if value is not None}
     span, tail = _span_tail(span, tail)
@@ -170,8 +185,9 @@ def calls(run, *, model, tail, use_ball=False, setup=50, min_stoppage=25, min_pr
 
 def calls_from_alive(inputs, alive, *, tail, use_ball, setup, min_stoppage):
     """One call per stoppage with an arrangement, from any (n,) P(alive): a dict of read-only arrays in time order,
-    `restart` and `end` (int64: the vote's [restart, end)), `type` (int8, a code of TYPES) and `team` (int8, 0 home,
-    1 away). The arrangement is read on the stoppage's last `setup` frames, [max(first, restart - setup), restart)."""
+    `first` (int64: the stoppage's first frame, inside the block), `restart` and `end` (int64: the vote's [restart,
+    end) for span "after"), `type` (int8, a code of TYPES) and `team` (int8, 0 home, 1 away). The arrangement is read
+    on the stoppage's last `setup` frames, [max(first, restart - setup), restart)."""
     tail, use_ball, setup, min_stoppage = _settings(tail, use_ball, setup, min_stoppage)
     n_frames = inputs.atd.n_frames
     alive = np.asarray(alive, dtype=np.float64)
@@ -180,7 +196,7 @@ def calls_from_alive(inputs, alive, *, tail, use_ball, setup, min_stoppage):
             n_frames, alive.shape))
     players, ball = kinematics.player_track(inputs), kinematics.ball_track(inputs)
     teams = np.asarray(inputs.atd.slot_team)
-    found = {"restart": [], "end": [], "type": [], "team": []}
+    found = {"first": [], "restart": [], "end": [], "type": [], "team": []}
     for start, stop in kinematics.blocks(inputs):
         if stop <= start:
             continue
@@ -196,18 +212,20 @@ def calls_from_alive(inputs, alive, *, tail, use_ball, setup, min_stoppage):
             if pair is None:
                 continue
             following = runs[index + 1][0] if index + 1 < len(runs) else stop   # the next stoppage, restart or not
+            found["first"].append(first)
             found["restart"].append(restart)
             found["end"].append(min(restart + tail, following, stop))
             found["type"].append(pair[0])
             found["team"].append(pair[1])
-    dtypes = {"restart": np.int64, "end": np.int64, "type": np.int8, "team": np.int8}
+    dtypes = {"first": np.int64, "restart": np.int64, "end": np.int64, "type": np.int8, "team": np.int8}
     return {key: _frozen(np.array(values, dtype=dtypes[key])) for key, values in found.items()}
 
 
 def votes(calls, n_frames, confidences, span="after"):
-    """(n_frames,) float64 home: c (home restarts) or 1 - c, with c = confidences[the call's type code], on each call's
-    [restart, end) (span "after") or on its stoppage's last frame, restart - 1, only (span "stoppage_end"); NaN on every
-    other frame and for a type with no confidence."""
+    """(n_frames,) float64 home, with c = confidences[the call's type code]: c (home restarts) or 1 - c on each call's
+    [restart, end) (span "after"), or on each frame of its stoppage [first, restart), n frames, sigmoid(logit(c) / n)
+    or 1 - that, one observation in all (span "stoppage_end", which needs calls["first"]); NaN on every other frame and
+    for a type with no confidence."""
     span = _span(span)
     checked = {}
     for code, value in dict(confidences).items():
@@ -215,20 +233,36 @@ def votes(calls, n_frames, confidences, span="after"):
             raise ValueError("restart_team: confidences maps a type code (0 to {}, in TYPES's order) to a confidence, "
                              "got the key {!r}".format(len(TYPES) - 1, code))
         checked[int(code)] = _confidence("the confidence of " + TYPES[int(code)], value)
+    restarts = calls["restart"].tolist()
+    if span == "after":
+        firsts = [None] * len(restarts)
+    elif "first" in calls:
+        firsts = calls["first"].tolist()
+    else:
+        raise ValueError("restart_team: span \"stoppage_end\" votes over each call's stoppage, [first, restart), and "
+                         "these calls have no \"first\"")
     home = no_opinion(n_frames)
-    for restart, end, kind, team in zip(calls["restart"].tolist(), calls["end"].tolist(), calls["type"].tolist(),
-                                        calls["team"].tolist()):
+    for first, restart, end, kind, team in zip(firsts, restarts, calls["end"].tolist(), calls["type"].tolist(),
+                                               calls["team"].tolist()):
         if kind not in checked:
             continue
-        vote = checked[kind] if team == 0 else 1.0 - checked[kind]
         if span == "after":
-            home[restart:end] = vote
-        elif restart >= 1:              # always, for calls_from_alive's: a restart follows at least one dead frame
-            home[restart - 1] = vote
-        else:
-            raise ValueError("restart_team: a call restarting at frame {} has no stoppage frame before it for span "
-                             "\"stoppage_end\" to vote on".format(restart))
+            home[restart:end] = checked[kind] if team == 0 else 1.0 - checked[kind]
+            continue
+        if not 0 <= first < restart:     # always, for calls_from_alive's: a stoppage has at least one frame
+            raise ValueError("restart_team: a call's stoppage [first, restart) must hold a frame for span "
+                             "\"stoppage_end\" to vote on, got [{}, {})".format(first, restart))
+        share = spread(checked[kind], restart - first)
+        home[first:restart] = share if team == 0 else 1.0 - share
     return home
+
+
+def spread(confidence, frames):
+    """sigmoid(logit(confidence) / frames): the per-frame probability whose log-odds, summed over `frames` frames, are
+    logit(confidence), one observation spread evenly. A confidence of 1 stays 1 (logit(1) is infinite)."""
+    if confidence == 1.0:
+        return 1.0
+    return 1.0 / (1.0 + math.exp(-math.log(confidence / (1.0 - confidence)) / frames))
 
 
 def stoppages(alive, start, stop, min_stoppage):
@@ -407,12 +441,12 @@ def _span(span):
 
 def _span_tail(span, tail):
     """(span, the tail `calls` is given): tail is required with span "after" and refused with "stoppage_end", which
-    votes on one frame and gives `calls` STOPPAGE_END_TAIL (the calls' ends are not read)."""
+    votes over the stoppage and gives `calls` STOPPAGE_END_TAIL (the calls' ends are not read)."""
     span = _span(span)
     if span == "stoppage_end":
         if tail is not None:
-            raise ValueError("restart_team: tail is not read with span = \"stoppage_end\", which votes on the "
-                             "stoppage's last frame only; leave tail out, got tail = {!r}".format(tail))
+            raise ValueError("restart_team: tail is not read with span = \"stoppage_end\", which votes over the "
+                             "stoppage that ends at the restart; leave tail out, got tail = {!r}".format(tail))
         return span, STOPPAGE_END_TAIL
     if tail is None:
         raise ValueError("restart_team: tail must be given with span = \"after\" (frames voted from the restart on)")
