@@ -1285,8 +1285,8 @@ def test_restart_team_stoppages_and_restart_frame():
 def test_restart_team_votes_only_after_the_restart():
     from pipeline.evidence import restart_team
     calls = restart_calls(restart_scene(CORNER_SCENE), tail=30)
-    assert set(calls) == {"restart", "end", "type", "team"}
-    assert calls["restart"].tolist() == [150] and calls["end"].tolist() == [180]
+    assert set(calls) == {"first", "restart", "end", "type", "team"}
+    assert calls["first"].tolist() == [50] and calls["restart"].tolist() == [150] and calls["end"].tolist() == [180]
     home = restart_team.votes(calls, RESTART_FRAMES, {1: 0.9})
     expected = np.full(RESTART_FRAMES, np.nan)
     expected[150:180] = 0.9
@@ -1786,45 +1786,71 @@ def test_restart_team_in_registry_and_config():
         expect_error(ConfigError, lambda: load_config(typo), "throwin", "restart_team")
 
 
+def stoppage_share(confidence, frames):
+    """sigmoid(logit(c) / n), written out from P17's Phase 2b ruling: the per-frame `home` of one observation at c
+    spread over a stoppage of n frames."""
+    logit = np.log(confidence) - np.log1p(-confidence)
+    return 1.0 / (1.0 + np.exp(-logit / frames))
+
+
 def test_restart_team_stoppage_end_span():
-    """span = "stoppage_end" (P17, Phase 2b): one vote per called stoppage, on its last frame r - 1 only, at the type's
-    confidence. tail is refused there, and required with span = "after" (the default)."""
+    """span = "stoppage_end" (P17, Phase 2b): one observation per called stoppage at the type's confidence c, spread
+    evenly over the stoppage that ends at the restart, [first, r): sigmoid(logit(c) / n) on each of its n frames (1 -
+    that for an away taker), so that their log-odds add up to logit(c). tail is refused there, and required with
+    span = "after" (the default)."""
     from pipeline.contracts import check_evidence
     from pipeline.evidence import REGISTRY, restart_team
     assert restart_team.SPANS == ("after", "stoppage_end")
+    logit = float(np.log(0.9 / 0.1))
     scene = restart_scene(CORNER_SCENE)
     calls = restart_calls(scene, alive=restart_alive((50, 150), (165, 195)), tail=30)
-    assert calls["restart"].tolist() == [150, 195]
-    expected = np.full(RESTART_FRAMES, np.nan)
-    expected[149] = expected[194] = 0.9
+    assert calls["first"].tolist() == [50, 165] and calls["restart"].tolist() == [150, 195]
+    assert calls["first"].dtype == np.int64 and not calls["first"].flags.writeable
     got = restart_team.votes(calls, RESTART_FRAMES, {1: 0.9}, span="stoppage_end")
-    assert got.dtype == np.float64 and np.array_equal(got, expected, equal_nan=True), np.flatnonzero(~np.isnan(got))
+    expected = np.full(RESTART_FRAMES, np.nan)
+    expected[50:150], expected[165:195] = stoppage_share(0.9, 100), stoppage_share(0.9, 30)
+    assert got.dtype == np.float64 and np.array_equal(np.isnan(got), np.isnan(expected)), np.flatnonzero(~np.isnan(got))
+    assert np.allclose(got, expected, rtol=0.0, atol=1e-15, equal_nan=True)
+    for first, restart in ((50, 150), (165, 195)):
+        values = got[first:restart]
+        assert (values == values[0]).all() and 0.5 < values[0] < 0.9, "evenly, and each frame weaker than c"
+        total = float(np.log(values / (1.0 - values)).sum())
+        assert abs(total - logit) < 1e-12, "the stoppage's log-odds add up to {!r}, not logit(c)".format(total)
     assert np.array_equal(restart_team.votes(calls, RESTART_FRAMES, {1: 0.9}),
                           restart_team.votes(calls, RESTART_FRAMES, {1: 0.9}, span="after"), equal_nan=True)
-    away = restart_calls(restart_scene(CORNER_SCENE, teams=[1, 0]))
-    expected = np.full(RESTART_FRAMES, np.nan)
-    expected[149] = 1.0 - 0.9
-    assert np.array_equal(restart_team.votes(away, RESTART_FRAMES, {1: 0.9}, span="stoppage_end"), expected,
-                          equal_nan=True)
+    # an away taker: the complement, so the log-odds add up to -logit(c)
+    away = restart_team.votes(restart_calls(restart_scene(CORNER_SCENE, teams=[1, 0])), RESTART_FRAMES, {1: 0.9},
+                              span="stoppage_end")
+    assert np.isnan(away[:50]).all() and np.isnan(away[150:]).all()
+    assert np.allclose(away[50:150], 1.0 - stoppage_share(0.9, 100), rtol=0.0, atol=1e-15)
+    assert abs(float(np.log(away[50:150] / (1.0 - away[50:150])).sum()) + logit) < 1e-12
+    # spread itself: one frame is the confidence, and a certain call stays certain on every frame
+    assert abs(restart_team.spread(0.9, 1) - 0.9) < 1e-15 and restart_team.spread(1.0, 100) == 1.0
+    certain = restart_team.votes(calls, RESTART_FRAMES, {1: 1.0}, span="stoppage_end")
+    assert (certain[50:150] == 1.0).all() and (certain[165:195] == 1.0).all()
     assert np.isnan(restart_team.votes(calls, RESTART_FRAMES, {3: 0.9}, span="stoppage_end")).all(), \
         "a type without a confidence is silent with either span"
     for bad in ("before", "", None, 1, True, "Stoppage_End"):
         expect_error(ValueError, lambda: restart_team.votes(calls, RESTART_FRAMES, {1: 0.9}, span=bad),
                      "restart_team", "span")
-    # a hand-made call restarting at frame 0 has no stoppage frame to vote on (calls_from_alive never makes one)
-    first = {"restart": np.array([0]), "end": np.array([5]), "type": np.array([1], dtype=np.int8),
-             "team": np.array([0], dtype=np.int8)}
-    expect_error(ValueError, lambda: restart_team.votes(first, 10, {1: 0.9}, span="stoppage_end"), "restart_team",
-                 "stoppage_end")
+    # hand-made calls: without their stoppages' first frames, or with an empty stoppage, there is nothing to spread over
+    bare = {key: calls[key] for key in ("restart", "end", "type", "team")}
+    expect_error(ValueError, lambda: restart_team.votes(bare, RESTART_FRAMES, {1: 0.9}, span="stoppage_end"),
+                 "restart_team", "stoppage_end", "first")
+    assert np.array_equal(restart_team.votes(bare, RESTART_FRAMES, {1: 0.9}),
+                          restart_team.votes(calls, RESTART_FRAMES, {1: 0.9}), equal_nan=True)
+    empty = dict(bare, first=np.array([50, 195]))
+    expect_error(ValueError, lambda: restart_team.votes(empty, RESTART_FRAMES, {1: 0.9}, span="stoppage_end"),
+                 "restart_team", "stoppage_end", "[195, 195)")
     with tempfile.TemporaryDirectory() as root:
         path = write_model(root)
         run = restart_model_scene(CORNER_SCENE)
         source = REGISTRY["restart_team"]
         evidence = source(run, model=path, span="stoppage_end", corner=0.8)
         check_evidence(evidence, RESTART_FRAMES)
-        expected = np.full(RESTART_FRAMES, np.nan)
-        expected[149] = 0.8
-        assert np.array_equal(evidence.home, expected, equal_nan=True) and np.isnan(evidence.alive).all()
+        assert np.isnan(evidence.home[:50]).all() and np.isnan(evidence.home[150:]).all()
+        assert np.allclose(evidence.home[50:150], stoppage_share(0.8, 100), rtol=0.0, atol=1e-15)
+        assert np.isnan(evidence.alive).all()
         after = source(run, model=path, tail=30, corner=0.8)
         assert (after.home[150:180] == 0.8).all() and np.isnan(np.delete(after.home, range(150, 180))).all()
         assert np.array_equal(source(run, model=path, span="after", tail=30, corner=0.8).home, after.home,
@@ -1842,6 +1868,35 @@ def test_restart_team_stoppage_end_span():
         expect_error(ValueError, lambda: source(run, model=path, span="stoppage_end"), "restart_team", "confidence")
         expect_error(ValueError, lambda: source(run, model=path, span="stoppage_end", free_kick=0.8), "restart_team",
                      "free_kick", "use_ball")
+
+
+def test_restart_team_stoppage_vote_survives_a_shorter_dead_run():
+    """The source's stoppage is [50, 150) and its corner call is home's; the decoder's own `alive` evidence makes D
+    shorter, [60, 140). Before the stoppage away has the ball, after it 46 frames of weak hold for away (0.45) come
+    before a home episode, so the decoder alone carries away across the stoppage (by 1.23 nats). Spread, the vote gives
+    the D run 80 of its 100 frames' log-odds (1.76 of logit(0.9) = 2.20 nats), and the first team after it is home's.
+    Written on the single frame r - 1 = 149, an H/A frame for this decoder, the same vote would be lost."""
+    from pipeline.contracts import no_opinion
+    from pipeline.evidence import REGISTRY
+    home = home_runs((1.0 - VOTE, 60), (np.nan, 80), (0.45, 46), (VOTE, 14))
+    alive = np.concatenate([np.full(60, 0.9), np.full(80, 0.05), np.full(60, 0.9)])
+    costs = {"switch_team": 8.0, "switch_dead": 16.0, "min_possession": 25, "min_dead": 25}
+    carried, restarted = "A" * 60 + "D" * 80 + "A" * 46 + "H" * 14, "A" * 60 + "D" * 80 + "H" * 60
+    with tempfile.TemporaryDirectory() as root:
+        source = REGISTRY["restart_team"](restart_model_scene(CORNER_SCENE), model=write_model(root),
+                                          span="stoppage_end", corner=0.9)
+    assert np.flatnonzero(~np.isnan(source.home)).tolist() == list(range(50, 150)), "the source's stoppage moved"
+    assert (source.home[50:150] > 0.5).all(), "the corner is home's"
+    assert letters(hmm_labels(hmm_context([home, no_opinion(200)], [alive, None]), restart_source="s1",
+                              **costs)) == carried
+    for switch_restart in (np.inf, 8.0):
+        labels = hmm_labels(hmm_context([home, source.home], [alive, None]), restart_source="s1",
+                            switch_restart=switch_restart, **costs)
+        assert letters(labels) == restarted, (switch_restart, letters(labels))
+    last_frame = no_opinion(200)
+    last_frame[149] = 0.9
+    assert letters(hmm_labels(hmm_context([home, last_frame], [alive, None]), restart_source="s1",
+                              **costs)) == carried
 
 
 RESTART_STATES_TRIAL_CONFIG = """
@@ -1871,7 +1926,8 @@ switch_restart = inf
 
 def test_hmm_restart_states_run_end_to_end():
     """A config with restart_team's "stoppage_end" span and the decoder's restart states loads (no tail, TOML's inf)
-    and runs through the pipeline: votes only on the frames before the restarts, a valid file, X outside the blocks."""
+    and runs through the pipeline: votes only over the stoppages that end at the restarts, a valid file, X outside
+    the blocks."""
     from pipeline import output
     from pipeline.config import load_config
     from pipeline.contracts import RunContext, X
@@ -1897,7 +1953,8 @@ def test_hmm_restart_states_run_end_to_end():
         expected = restart_team.votes(calls, SYNTHETIC_FRAMES, {0: 0.95, 1: 0.9, 2: 0.8, 3: 0.7}, span="stoppage_end")
         home = result.evidence["restart_team"].home
         assert np.array_equal(home, expected, equal_nan=True)
-        assert np.array_equal(np.flatnonzero(~np.isnan(home)), calls["restart"] - 1)
+        spans = [np.arange(first, restart) for first, restart in zip(calls["first"], calls["restart"])]
+        assert np.array_equal(np.flatnonzero(~np.isnan(home)), np.concatenate(spans))
 
 
 # -- decode -----------------------------------------------------------------------------------------------------------

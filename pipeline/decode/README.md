@@ -115,10 +115,11 @@ then from `H`, then from `A`; the block ends in `D`, then `H`, then `A`. So a bl
 change of team across a stretch without evidence lands on the stretch's first frame. With restart states the order is
 `D_H`, `D_A`, `H`, `A`.
 
-**Cost.** About 2 µs a frame (80,000 frames with both minimums at 50 take 0.15 s): a plain-Python recursion over run
-starts with a running maximum, where the textbook chain with one substate per run length would cost O(minimum) a frame.
-The recursion is written once over any number of states (a matrix of change costs in which `inf` forbids a change, a
-minimum per state, a tie order); the four restart states take about 1.4 times the three's time.
+**Cost.** About 4 µs a frame (80,000 frames with both minimums at 50 take 0.33 s, best of three on an otherwise idle
+machine, 26 Oct 2026): a plain-Python recursion over run starts with a running maximum, where the textbook chain with
+one substate per run length would cost O(minimum) a frame. The recursion is written once over any number of states (a
+matrix of change costs in which `inf` forbids a change, a minimum per state, a tie order); the four restart states take
+0.40 to 0.45 s on the same frames.
 
 ### The posterior
 
@@ -158,7 +159,7 @@ paths. Each row sums to 1.
 [[evidence]]
 kind = "restart_team"
 model = "pipeline/models/dead_ball_hgb.json"
-span = "stoppage_end"  # one vote per stoppage, on its last frame (no tail)
+span = "stoppage_end"  # one vote per stoppage, spread over its frames (no tail)
 corner = 0.9           # a confidence per type that votes, measured by restarts.py stats
 
 [decoder]
@@ -192,12 +193,16 @@ and decides only the first team after it. Later evidence ends that possession as
 
 - **Minimums and labels.** `min_possession` covers `H` and `A`, `min_dead` covers `D_H` and `D_A`, and both dead states
   are written `D`.
-- **One frame of evidence.** `restart_team`'s span `"stoppage_end"` writes its vote on the stoppage's last frame only,
-  at the type's confidence. That is one observation of who restarts, so the confidence stays a likelihood: written on
-  every frame of a 20 s stoppage it would count 500 times. A vote on any frame of a `D` run counts for all of it.
-- **The `D` edges hardly move.** The named source says nothing about `H` against `A`. On its one frame it raises the
-  better dead state by at most `w log 2c` (0.61 nats at 0.92), where a vote after the restart raised the alive states
-  by as much on every frame of its span.
+- **One observation, spread over the stoppage.** `restart_team`'s span `"stoppage_end"` (the stoppage that ends at the
+  restart) gives each called stoppage one observation at the type's confidence c, spread evenly over its n frames:
+  `sigmoid(logit(c) / n)` each, so that the log-odds the decoder adds between `D_H` and `D_A` (`logit(h)` a frame) sum
+  to `logit(c)`. Written as c on every frame of a 20 s stoppage it would count 500 times. Written on the stoppage's
+  last frame alone, its most marginal (P(alive) just under 0.5), it would be lost whenever the decoder ends `D` a frame
+  earlier; spread, a `D` run that covers part of the stoppage keeps that part of it. A vote on any frame of a `D` run
+  counts for all of it.
+- **The `D` edges hardly move.** The named source says nothing about `H` against `A`. It raises the better dead state
+  by about `w logit(c) / 2n` a frame (0.011 nats at c = 0.9 over 4 s), where a vote after the restart raised the alive
+  states by up to `w log 2c` on every frame of its span.
 - **Without restart evidence it is the three-state decoder.** If the named source's `home` is `NaN` everywhere, or its
   weight is 0, `D_H` and `D_A` are the same state twice over: every three-state path has a four-state twin of the same
   score, and the tie order `D_H`, `D_A`, `H`, `A` picks the twin of the three-state choice. The checks hold that on

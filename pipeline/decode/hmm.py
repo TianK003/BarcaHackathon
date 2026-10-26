@@ -53,11 +53,13 @@ Why. The Laws of the Game decide who restarts after a stoppage, and the first te
 for it in `home` on a fixed span after the source's own restart estimate and gained +0.004 spellF1: a fixed span keeps
 pushing after the restarting team's first possession has ended, and it starts where the source thinks play resumed,
 not where the decoder ends D. As a state, the restart team is read inside the stoppage (restart_team's span
-"stoppage_end": one frame, the stoppage's last, at the type's measured confidence), carried by the decoder to whichever
-frame it ends D on, and decides only the first team after it: later evidence ends that possession as it ends any
-other. The vote hardly touches where D ends: it says nothing of H against A, and on its one frame it raises the better
-dead state by at most w log 2c (0.61 nats at c = 0.92), where the span after the restart raised the alive states by as
-much on every frame of it.
+"stoppage_end": one observation at the type's measured confidence c, spread over the stoppage's n frames as
+sigmoid(logit(c) / n) each, so that the log-odds between D_H and D_A add up to logit(c)), carried by the decoder to
+whichever frame it ends D on, and decides only the first team after it: later evidence ends that possession as it ends
+any other. Spread, the vote survives a D run that covers only part of the stoppage, with that part of its log-odds; on
+the stoppage's last frame alone it would be lost whenever the decoder ends D a frame early. And it hardly touches where
+D ends: it says nothing of H against A, and raises the better dead state by about w logit(c) / 2n a frame (0.011 nats
+at c = 0.9 over 4 s), where the span after the restart raised the alive states by up to w log 2c on every frame of it.
 
 D_H and D_A cannot follow one another, so a stoppage has one restart team, and a vote on any of its frames counts for
 all of it. switch_restart prices a restart by the team the vote did not name: inf is the model in which the first team
@@ -117,8 +119,8 @@ needs none). The maximum is kept with a strict comparison, so the earlier start 
 
 The recursion is written once (`_best_path`) over any number of states, a matrix of change costs in which inf forbids a
 change (a forbidden change is no way in at all), a minimum per state and a tie order. `viterbi` gives it H, A and D,
-`restart_viterbi` H, A, D_H and D_A. The four states take about 1.4 times the three's time (0.45 s against 0.33 s for
-test_hmm_speed's 80,000 frames, measured side by side on 26 Oct 2026).
+`restart_viterbi` H, A, D_H and D_A. test_hmm_speed's 80,000 frames with both minimums at 50 take 0.33 s with three
+states and 0.40 to 0.45 s with four (best of three, the machine otherwise idle, 26 Oct 2026).
 
 The posterior
 -------------
