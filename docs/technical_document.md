@@ -91,7 +91,8 @@ committed) and accepts a file only if its size and md5 equal the pinned values; 
 pinned to one commit and checked the same way, is the fallback. Five of the seven matches are one club's home games.
 
 **Labelled data (SUBMISSION.md: every labelled dataset, its source, who labelled it and how much; none of it from the
-provided game).** Two kinds of label are used, both from DFL's open data and both about other games: the ball flags in the first row, the restart events in the second.
+provided game).** Two kinds of label are used, both from DFL's open data and both about other games: the ball flags in the first row, the restart events in the
+second.
 
 | dataset | source | who labelled it | how much | used for |
 |---|---|---|---|---|
@@ -242,12 +243,13 @@ implements.
   the 2,934 graded frames before the second half's kick-off `D` (T02).
 - **Dead ball, the decoder:** A change into or out of `D` costs `switch_dead` (32 nats), and a run of `D` lasts at
   least `min_dead` (25 frames). The second moves nothing: the two values differ by at most 0.0003 in spellF1 (R010).
-- **Restarts (P17, being chosen in R014):** `restart_team` is a label-free source for who takes the restart after a
-  stoppage. It finds the stoppages from the dead-ball model (a run of P(alive) below the alive level of at least 25
-  frames, its restart the frame after it), reads the players' arrangement on the stoppage's last 50 frames before the
-  estimated restart (clipped to the stoppage), takes the type called on most of them, and votes for the team that type
-  names. The Laws of the Game decide who restarts and how the players stand while it is set up; Vidal-Codina et al.
-  (2022) detect set pieces from that configuration. The five rules, in order, each needing both teams on the frame; the
+- **Restarts (P17, not in the submission):** `restart_team` is a label-free source for who takes the restart after a
+  stoppage. It was built and measured, and it does not clear the benchmark's bar, so `main.toml` does not use it. It
+  finds the stoppages from the dead-ball model (a run of P(alive) below the alive level of at least 25 frames, its
+  restart the frame after it), reads the players' arrangement on the stoppage's last 50 frames before the estimated
+  restart (clipped to the stoppage), takes the type called on most of them, and votes for the team that type names.
+  The Laws of the Game decide who restarts and how the players stand while it is set up; Vidal-Codina et al. (2022)
+  detect set pieces from that configuration. The five rules, in order, each needing both teams on the frame; the
   opponents' clearance is **half** the law's, because players encroach:
 
   | type | where | who restarts | the law | opponent clearance used |
@@ -258,21 +260,29 @@ implements.
   | throw-in | a player within 1.5 m of a touchline or beyond | his team | Law 15: 2 m | 1.0 m |
   | free kick | with the ball only: the ball still, a player at it | his team | Law 13: 9.15 m | 4.5 m |
 
-  It reads the players only, never the ball, unless `use_ball` (which only free kicks need, and which then restricts each
-  rule to the ball's place). It votes only from the estimated restart on, for the tail of 25 to 150 frames, never into
-  the next stoppage, so where `D` ends stays the dead-ball model's call; and only for the types whose measured confidence
-  passes the declared floor (agreement of at least 0.60 and at least 30 calls a seed). On the seven DFL matches the
-  confidences (agreement floored to a hundredth) are, players only, at the 1 s and the 2 s tail: throw-in 0.92 and 0.88,
-  corner 0.93 and 0.81, goal kick 0.72 and 0.72; kick-offs and free kicks are called too rarely and do not vote. The
+  It reads the players only, never the ball, unless `use_ball` (which only free kicks need, and which then restricts
+  each rule to the ball's place). On the seven DFL matches the confidences (agreement floored to a hundredth) are,
+  players only, at the 1 s and the 2 s tail: throw-in 0.92 and 0.88, corner 0.93 and 0.81, goal kick 0.72 and 0.72;
+  kick-offs and free kicks are called too rarely and do not vote (a floor of 0.60 agreement and 30 calls a seed). The
   goal-kick rule is not specific (a keeper stands in his goal area in most stoppages: 134 of 608 matched throw-ins were
-  called goal kicks), and its rules were not revised after that measurement (A12 part 2). **It is not in `main.toml`
-  unless R014 adopts it, and R014 has not run yet.**
-- **Restarts, who gets the ball (`main.toml` today):** No rule. After a stoppage the hold weakly favours the team that controlled the ball
-  before it, until the first new episode, which names the team, and the shape source gives a view of its own from where
-  the teams stand. A restart-team channel (a corner to the attackers, a goal kick to the defenders) is the Restarts bullet above, not in `main.toml` yet. Its
-  restart types would have to come from code (Smart Tagging's set-piece tags, P08, or other games' flags, P16): a type
-  that a person read off this match's video for each stoppage and fed to the pipeline would be a hand label, while a
-  person watching to judge whether such a channel is worth building is design and is allowed (A11, section 6).
+  called goal kicks), and its rules were not revised after that measurement (A12 part 2).
+
+  A perfect 2 s vote was worth +0.0198 raw spellF1 to `main.toml` on the benchmark (A12), and two declared tests of
+  the real source were run against a bar of +0.005 raw with a sign-flip p of at most 0.05, and neither met it:
+  - **R014**, a vote for a fixed tail after the restart (25 to 150 frames, 8 configs): the best, 25 frames and players
+    only, was +0.0040 raw (p 0.0938, 6 wins in 7) and -0.0029 coarse; every longer tail scored lower, down to -0.0187.
+  - **R014b**, restart states in the `hmm` decoder (`restart_source`, off by default; the observation spread over the
+    stoppage, 8 configs): +0.0003 raw (p 0.8125) and -0.0004 coarse. The four `switch_restart` values gave identical
+    labels: one observation is about 2.4 nats, too weak against the episodes that follow.
+
+  The source and the decoder's restart states stay in the code, off by default, and `main.toml` is unchanged.
+- **Restarts, who gets the ball (`main.toml` today):** No rule. After a stoppage the hold weakly favours the team that
+  controlled the ball before it, until the first new episode, which names the team, and the shape source gives a view of
+  its own from where the teams stand. The restart-team channel above (a corner to the attackers, a goal kick to the
+  defenders) is not in `main.toml`. Its restart types would have to come from code (Smart Tagging's set-piece tags, P08,
+  or other games' flags, P16): a type that a person read off this match's video for each stoppage and fed to the
+  pipeline would be a hand label, while a person watching to judge whether such a channel is worth building is design
+  and is allowed (A11, section 6).
 - **Abstentions (`X`):** The decoder never abstains inside a graded half, and the runner writes `X` on the ungraded
   frames, where it is free: the chosen file has none inside a graded block (R010 to R013). It can return the posterior
   of each state per frame, which shows where an `X` would be free (inside a possession), but no refiner reads it yet.
@@ -611,6 +621,14 @@ pass: `D` 35.9% of the graded frames, no `X` in a graded block, the same sha256 
 possessions against 439, 2.4% of the graded frames relabelled. On the public window, a correctness check only (T01),
 spellF1 is 0.4649 and macroF1 0.7152 with 20 possessions (R012's file: 0.4000, 0.7159, 20).
 
+**The restart team, tested and dropped** (R014, R014b). A12 measured what a perfect 2 s vote for the restarting team
+would add to `main.toml` (+0.0198 raw, 7 wins in 7), and two protocols declared before their runs tested the label-free
+source against a bar of +0.005 raw with a sign-flip p of at most 0.05, on `tracking` v3 with both truths. R014 voted for
+a fixed tail after the restart (8 configs): the best, 25 frames, was +0.0040 raw (p 0.0938, 6 wins in 7) and -0.0029
+coarse, and every longer tail scored lower. R014b put the call into the decoder as restart states (8 configs, all within
+0.0005 of each other): +0.0003 raw (p 0.8125). Neither met the bar, nothing was adopted, and the oracle's gap was
+mostly information a fixed-length vote does not have: it stopped where the truth next changed (T43).
+
 **Why these choices.** Lang et al. (2022, *Scientific Reports*) predict the in-play status from tracking and find
 boosting the best of four classical families (92.0% frame accuracy, against 86.7% for logistic regression), from the
 players alone and so in the regime of our frames without a ball. Their features are shifted values of the players'
@@ -718,9 +736,10 @@ unless a bullet cites another entry):
   the new team's control and a median 0.16 s after the ball is first seen beyond a line. Our GT's timing may be
   inspected on the public window (P02) and cannot be fitted to it (RULES.md, 23 Oct 2026), so the one shift made is the
   pipeline's own lag on DFL; the only way to learn our provider's conventions is other games (P16).
-- **The restart team is deferred.** After a stoppage the hold weakly favours the team that controlled the ball before
-  it, until the first new episode names the team, so the team after a stoppage is not decided by who restarts. Which
-  restart it is cannot come from a person's reading of this match (below).
+- **The restart team is not modelled beyond the hold.** After a stoppage the hold weakly favours the team that
+  controlled the ball before it, until the first new episode names the team, so the team after a stoppage is not decided
+  by who restarts. A label-free restart source exists and was measured (R014, R014b), but it did not clear the
+  benchmark's bar. Which restart it is cannot come from a person's reading of this match (below).
 - **`tracking` cannot value the gap features (T38).** The trees' features about the ball's last and next position
   around a gap are validated on gaps that ignore the play, so what they are worth on our match is unmeasured.
 
