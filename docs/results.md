@@ -1299,6 +1299,108 @@ So:
   read than on our match.
 - **No scoreboard row**: A12 is an analysis, and nothing is submitted from it. The scoreboard lists experiments.
 
+**Part 2: the restart vote's measured confidences, and the DFL restart events (2026-10-26)**
+
+Proposal: P17 · Code: `restart_team.py` at `319580e` (the setup window clipped to the stoppage), `restarts.py stats` at
+`c89555d`, `restarts.py events` and `dfl_events.py` at `404d980` · Commands, from the repo root, one process at a time on
+one BLAS thread at below-normal priority:
+
+```bash
+python pipeline/benchmark/restarts.py stats --model pipeline/models/dead_ball_hgb.json --out data/runs/benchmark/restarts/stats.json
+python pipeline/benchmark/restarts.py events --out data/runs/benchmark/restarts/events.json
+```
+
+Validation (P01 benchmark): all 7 DFL matches, profile `tracking` version 3, degradation seeds 0, 1 and 2. Both logs end
+`EXIT=0`. The first `events` run failed on a half-edited `restarts.py` and was run again; nothing of it was used (T42).
+Aggregates only: the benchmark is public DFL data. Nothing is adopted here, and this part has no scoreboard row.
+
+**What was measured.**
+
+1. **Agreement and confidence** (`restarts.py stats`). The source `restart_team` calls a type of restart and a team after
+   each predicted stoppage and votes `home` for that team on `[restart, end)`. For each type and each (tail, `use_ball`)
+   setting, the **agreement** is the number of voted frames inside `[restart, end)` whose truth is `H` or `A` and equals
+   the called team, over the voted frames whose truth is `H` or `A`, pooled over matches and seeds. The **confidence** is
+   that rate floored to a hundredth (`touch_stats.confidence_from_agreement`, as for `controlled_touch`).
+2. **The drop rule**, declared in the design before any measurement: a type does not vote if its agreement is below 0.60
+   or it has fewer than 30 calls per seed.
+3. **Coverage**: the true restarts with a call of the type within 50 frames of them, over all true restarts.
+4. **DFL's restart events against the calls** (`restarts.py events`, setting `t050_b0`; a diagnostic that chooses
+   nothing). DFL's own event files name the restarts (kick-off, throw-in, corner, goal kick, free kick, penalty); the
+   events are placed on the benchmark's timeline by `dfl_events.py` (681 restart events over the 7 matches: KickOff 22,
+   ThrowIn 308, CornerKick 57, GoalKick 119, FreeKick 172, Penalty 3; 476 of the 681, 69.9%, fall within 2 s of a true
+   `D` to `H`/`A` change; 10 events outside the graded halves were dropped). Each event is matched to the nearest call
+   within 50 frames. The counts pool the 3 seeds. The events are human-collected data about other matches (CC BY 4.0), and
+   no constant comes from them.
+
+**The confidences, players only** (`use_ball` false). Coverage of all true restarts, with a call of any type: 73.2% in
+every tail. The cell is the agreement and its confidence; "dropped" is the rule's:
+
+| type | calls / seed | coverage | tail 25 | tail 50 | tail 100 | tail 150 |
+|---|---|---|---|---|---|---|
+| kick_off | 5.7 | 0.8% | 94.1% dropped | 94.1% dropped | 94.1% dropped | 93.6% dropped |
+| corner | 35.3 | 4.9% | 93.0% -> 0.93 | 81.1% -> 0.81 | 60.3% -> 0.60 | 61.2% -> 0.61 |
+| goal_kick | 224.3 | 26.7% | 72.3% -> 0.72 | 72.5% -> 0.72 | 71.1% -> 0.71 | 69.2% -> 0.69 |
+| throw_in | 333.3 | 40.8% | 92.0% -> 0.92 | 88.5% -> 0.88 | 80.0% -> 0.79 | 76.9% -> 0.76 |
+| free_kick | 0.0 | 0.0% | n/a dropped | n/a | n/a | n/a |
+
+`kick_off` is dropped by the 30-calls-per-seed floor: it is called about once a match outside the halves' starts.
+
+**The confidences, with the ball** (`use_ball` true). Coverage of all true restarts: 39.5% in every tail.
+
+| type | calls / seed | coverage | tail 25 | tail 50 | tail 100 | tail 150 |
+|---|---|---|---|---|---|---|
+| kick_off | 1.7 | 0.2% | 79.7% dropped | 79.8% dropped | 79.9% dropped | 79.9% dropped |
+| corner | 18.3 | 2.5% | 92.6% dropped | 79.7% dropped | 62.2% dropped | 62.9% dropped |
+| goal_kick | 104.0 | 9.5% | 72.2% -> 0.72 | 71.7% -> 0.71 | 68.4% -> 0.68 | 66.9% -> 0.66 |
+| throw_in | 222.7 | 25.2% | 90.8% -> 0.90 | 87.7% -> 0.87 | 79.2% -> 0.79 | 75.5% -> 0.75 |
+| free_kick | 17.3 | 2.1% | 84.3% dropped | 84.0% dropped | 82.7% dropped | 80.3% dropped |
+
+`corner` and `free_kick` are dropped by the 30-calls-per-seed floor when the ball is used. Free kicks are only called with
+the ball, and then too rarely to vote.
+
+**The events, recall** (setting `t050_b0`; matched = a call of any type within 50 frames; the 3 seeds pooled):
+
+| DFL kind | events | matched | recall |
+|---|---|---|---|
+| KickOff | 66 | 11 | 16.7% |
+| ThrowIn | 924 | 608 | 65.8% |
+| CornerKick | 171 | 88 | 51.5% |
+| GoalKick | 357 | 209 | 58.5% |
+| FreeKick | 516 | 153 | 29.7% |
+| Penalty | 9 | 5 | 55.6% |
+
+**The events, confusion** (rows: the call's type; columns: the event's kind; matched pairs):
+
+| call \ event | KickOff | ThrowIn | CornerKick | GoalKick | FreeKick | Penalty |
+|---|---|---|---|---|---|---|
+| kick_off | 3 | 0 | 0 | 0 | 0 | 0 |
+| corner | 0 | 0 | 45 | 0 | 3 | 2 |
+| goal_kick | 8 | 134 | 2 | 205 | 53 | 3 |
+| throw_in | 0 | 474 | 41 | 4 | 97 | 0 |
+| free_kick | 0 | 0 | 0 | 0 | 0 | 0 |
+
+So:
+
+- **Throw-ins are the source's backbone.** They are the most calls (333 a seed), at 92% agreement on a 1 s vote (tail 25),
+  falling to 77% on a 6 s vote (tail 150) as the restarting team's first possession ends.
+- **Corners are precise when called, and few.** 45 of the 50 matched corner calls are corners, and agreement is 93% at
+  1 s, but there are 35 calls a seed and 4.9% coverage.
+- **The goal-kick rule is not specific, and its measured 72% prices that in.** The keeper stands in his goal area in most
+  stoppages and the rule comes before the throw-in in the laws' priority, so 134 of the 608 matched throw-ins were called
+  goal kicks. **The rules were not revised after this measurement**: they were declared in the design from the Laws of the
+  Game before any run, and a revision made after seeing these tables would be tuning on what was seen (T26, T37). The
+  goal-kick rule's specificity is a follow-up.
+- **Agreement falls with the tail for every type**, as the design expected, because the first possession after a restart
+  ends. That is why the confidence is measured per setting and not once.
+- **Using the ball halves the coverage** (73.2% to 39.5%) and drops corners and free kicks under the floor: the ball is
+  missing often on our match (A12), and a rule that leans on it is helped by the benchmark's tracked ball out of play
+  (T39).
+- **Kick-offs are called rarely and dropped by the floor**; the halves' kick-offs are known anyway, and goals are rare.
+- **Recall is partial and is not a score.** 69.9% of the events fall within 2 s of a true change, so the events and the
+  truth's flag agree on most restarts and not all; the events' recall (66% of throw-ins, 52% of corners, 59% of goal
+  kicks, 30% of free kicks) says what the source sees, and the free kicks' 30% says why they are the weakest type.
+  Nothing is chosen from this table.
+
 ## Experiments
 
 Copy this template for each run, and add a scoreboard row for anything worth comparing.

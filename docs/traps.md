@@ -328,6 +328,15 @@ to do on a long run:
   a free-memory check before each process and a pause between them;
 - check after a restart which logs end `EXIT=` and rerun only the processes that did not finish.
 
+**T42 — A measurement run on a working tree that another agent is editing reads a half-written module.** The first
+`restarts.py events` run of P17 failed with a `SyntaxError`: an implementer was in the middle of editing `restarts.py` in
+the same working tree, and the run imported the file as it stood. Parallel agents share one working tree, so a run
+started while one of them is editing reads whatever is on disk at that second (a run that does not crash may instead
+measure code that was never committed). Launch measurement runs only at a committed, clean state of the files they
+import, and record that commit in the entry; or run them from a separate worktree (`git worktree add`, with its own
+`MTAH_DATA_DIR` if `dfl.py` differs, as the benchmark README says). The failed run's output was discarded and the
+command run again.
+
 ## Rules and data handling
 
 **T25 — Data must never leave our machines the wrong way.**
