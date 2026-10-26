@@ -445,25 +445,55 @@ def events_diagnostic(*, model, tail=50, use_ball=False, profile=DEFAULT_PROFILE
 
 # -- configs: R014's candidates, main.toml plus the measured restart vote ---------------------------------------------
 
-def _config_block(setting, types, model, eol):
+def _config_block(setting, types, model, eol, span="after"):
     """The [[evidence]] block of one setting: the source, its model and setting, and one key per voting type."""
-    lines = ["# R014 (P17): who restarts after a stoppage, tail {}, use_ball {}, the measured confidences (restarts.py "
-             "stats)".format(setting["tail"], "true" if setting["use_ball"] else "false"),
-             "[[evidence]]", 'kind = "restart_team"', 'model = "{}"'.format(model), "tail = {}".format(setting["tail"]),
-             "use_ball = {}".format("true" if setting["use_ball"] else "false")]
+    use_ball = "true" if setting["use_ball"] else "false"
+    if span == "after":
+        lines = ["# R014 (P17): who restarts after a stoppage, tail {}, use_ball {}, the measured confidences (restarts.py "
+                 "stats)".format(setting["tail"], use_ball),
+                 "[[evidence]]", 'kind = "restart_team"', 'model = "{}"'.format(model),
+                 "tail = {}".format(setting["tail"]), "use_ball = {}".format(use_ball)]
+    else:
+        lines = ["# R014b (P17): who restarts, read on the stoppage's last frame (span {}), use_ball {}, the confidences "
+                 "measured at tail {} (restarts.py stats)".format(span, use_ball, setting["tail"]),
+                 "[[evidence]]", 'kind = "restart_team"', 'model = "{}"'.format(model), 'span = "{}"'.format(span),
+                 "use_ball = {}".format(use_ball)]
     lines += ["{} = {!r}".format(name, float(types[name]["confidence"])) for name in restart_team.TYPES
               if types.get(name, {}).get("confidence") is not None]
     return eol.join(lines) + eol + eol
 
 
-def write_configs(stats, main_path, folder, model=DEFAULT_MODEL, log=print):
+def _toml_float(value):
+    return "inf" if value == float("inf") else repr(float(value))
+
+
+def _switch_name(value):
+    return "in" if value == float("inf") else "{:02d}".format(int(value))
+
+
+def write_configs(stats, main_path, folder, model=DEFAULT_MODEL, log=print, span="after", switch_restart=None,
+                  label_from=None):
     """One config per measured setting: main.toml's text, a restart_team block before [decoder], the description amended.
 
     `stats` is the JSON of `stats --out` (settings[label]: "setting" and "types", each type's "confidence" a float, or
     None when it does not vote). The text is copied verbatim; the block goes immediately before [decoder] (and before the
     comment lines that head it), and the description gains the source and the setting. A setting with no confidence at
     all would add a source that never votes: it is skipped and reported. Returns the paths written, in label order.
+
+    span "after" (default) is R014: one file `r014_<label>.toml` per setting, the block carrying its `tail`. span
+    "stoppage_end" is R014b: the block carries `span = "stoppage_end"` and no tail, and the confidences of each use_ball
+    come from the label `t<label_from:03d>_b<use_ball>` (label_from, required, an int tail such as 25). With
+    `switch_restart` (a list of floats, inf allowed; stoppage_end only), the [decoder] table also gains
+    `restart_source = "restart_team"` and `switch_restart = X`, right after its last key line, and one file
+    `r014b_s<SS>_b<0|1>.toml` is written per (switch_restart, use_ball), SS being 04, 08, 16 or `in` for inf.
+    Without switch_restart, stoppage_end writes `r014b_b<0|1>.toml`.
     """
+    if span not in ("after", "stoppage_end"):
+        raise ValueError("restarts: span must be 'after' or 'stoppage_end', not {!r}".format(span))
+    if span == "after" and (switch_restart or label_from is not None):
+        raise ValueError("restarts: switch_restart and label_from belong to span 'stoppage_end'")
+    if span == "stoppage_end" and label_from is None:
+        raise ValueError("restarts: span 'stoppage_end' needs label_from, the tail whose confidences it reuses")
     with open(main_path, newline="") as handle:
         lines = handle.read().splitlines(keepends=True)
     decoders = [i for i, line in enumerate(lines) if line.strip() == "[decoder]"]
@@ -477,26 +507,62 @@ def write_configs(stats, main_path, folder, model=DEFAULT_MODEL, log=print):
     at = decoders[0]
     while at > 0 and lines[at - 1].startswith("#"):
         at -= 1
+    last_key = None                                      # the decoder's last key line, for the restart keys
+    for i in range(decoders[0] + 1, len(lines)):
+        text = lines[i].strip()
+        if not text or text.startswith("["):
+            break
+        if not text.startswith("#"):
+            last_key = i
+    if switch_restart and last_key is None:
+        raise ValueError("restarts: {} has no key line in [decoder]".format(main_path))
     cut = descriptions[0]
     body = lines[cut].rstrip("\r\n")
     if not body.endswith('"'):
         raise ValueError("restarts: the description line of {} does not end with a quote".format(main_path))
     os.makedirs(folder, exist_ok=True)
-    written = []
-    for name in sorted(stats["settings"]):
-        entry = stats["settings"][name]
-        setting, types = entry["setting"], entry["types"]
-        if all(types.get(kind, {}).get("confidence") is None for kind in restart_team.TYPES):
-            log("skipped   {}: no type has a confidence, so the source would never vote".format(name))
-            continue
+    def make(entry, file_name, note, switch=None):
         amended = list(lines)
-        amended[cut] = body[:-1] + ' + restart_team (tail {}, use_ball {}, measured confidences)"'.format(
-            setting["tail"], "true" if setting["use_ball"] else "false") + lines[cut][len(body):]
-        amended.insert(at, _config_block(setting, types, model, eol))
-        path = os.path.join(folder, "r014_{}.toml".format(name))
+        amended[cut] = body[:-1] + ' + restart_team ({}, measured confidences)"'.format(note) + lines[cut][len(body):]
+        if switch is not None:
+            if not lines[last_key].endswith(("\n", "\r")):
+                raise ValueError("restarts: the last [decoder] line of {} has no line ending".format(main_path))
+            amended[last_key] += eol.join(('restart_source = "restart_team"',
+                                           "switch_restart = {}".format(_toml_float(switch)))) + eol
+        amended.insert(at, _config_block(entry["setting"], entry["types"], model, eol, span))
+        path = os.path.join(folder, file_name)
         with open(path, "w", newline="") as handle:
             handle.write("".join(amended))
-        written.append(path)
+        return path
+
+    def silent(entry):
+        return all(entry["types"].get(kind, {}).get("confidence") is None for kind in restart_team.TYPES)
+
+    written = []
+    if span == "after":
+        for name in sorted(stats["settings"]):
+            entry = stats["settings"][name]
+            if silent(entry):
+                log("skipped   {}: no type has a confidence, so the source would never vote".format(name))
+                continue
+            note = "tail {}, use_ball {}".format(entry["setting"]["tail"],
+                                                 "true" if entry["setting"]["use_ball"] else "false")
+            written.append(make(entry, "r014_{}.toml".format(name), note))
+        return written
+    for switch in (switch_restart or [None]):
+        for use_ball in (0, 1):
+            name = "t{:03d}_b{}".format(label_from, use_ball)
+            entry = stats["settings"][name]
+            if silent(entry):
+                log("skipped   {}: no type has a confidence, so the source would never vote".format(name))
+                continue
+            note = "span stoppage_end, use_ball {}".format("true" if use_ball else "false")
+            if switch is None:
+                file_name = "r014b_b{}.toml".format(use_ball)
+            else:
+                note += ", switch_restart {}".format(_toml_float(switch))
+                file_name = "r014b_s{}_b{}.toml".format(_switch_name(switch), use_ball)
+            written.append(make(entry, file_name, note, switch))
     return written
 
 
@@ -584,6 +650,12 @@ def main(argv=None):
     five = commands.add_parser("configs", help="R014's configs: main.toml plus the measured restart vote, per setting")
     five.add_argument("stats", metavar="STATS_JSON", help="the JSON of `stats --out`")
     five.add_argument("--out-dir", required=True, help="where the r014_t*_b*.toml files go (folders are made)")
+    five.add_argument("--span", choices=("after", "stoppage_end"), default="after",
+                      help="after (R014, default) or stoppage_end (R014b: no tail, the vote on the last stoppage frame)")
+    five.add_argument("--from-tail", type=int, metavar="TAIL",
+                      help="stoppage_end: the tail whose settings t<TAIL>_b0 and _b1 supply the confidences")
+    five.add_argument("--switch-restart", nargs="+", type=float, metavar="X",
+                      help="stoppage_end: add restart_source and switch_restart X (inf allowed) to [decoder]")
     five.add_argument("--main", default=os.path.join(ROOT, "pipeline", "configs", "main.toml"),
                       help="the config to copy (default pipeline/configs/main.toml)")
     for command in (three, four):
@@ -603,7 +675,8 @@ def main(argv=None):
         try:
             with open(args.stats) as handle:
                 stats = json.load(handle)
-            written = write_configs(stats, args.main, args.out_dir)
+            written = write_configs(stats, args.main, args.out_dir, span=args.span,
+                                    switch_restart=args.switch_restart, label_from=args.from_tail)
         except (ValueError, KeyError, OSError) as error:
             print("FAILED    {}".format(error))
             return 1
