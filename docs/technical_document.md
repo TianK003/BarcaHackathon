@@ -77,7 +77,7 @@ coarse truth), inside the noise (section 5).
 | Broadcast video, ATD, homography | not used | The broadcast runs on its own 164,488-frame timeline (cuts, replays) and no mapping to the tactical frames is provided (T09), so the pipeline loads none of it. A04 read its structure only: the mp4 is one frame shorter than its ATD, and 34.2% of its homography rows are NaN. Aligning it is P15, an idea |
 | Public 5-minute ground truth | only to check the pipeline, and to inspect | RULES.md rule 2 (23 Oct 2026): "not training data and not a tuning set". It checks every file (valid, deterministic, each source's agreement; the score is not used to choose, T01) and it supplies the 20 changes (12 of team, 4 into `D`, 4 out of it) that A11 inspects, to understand how our truth flips against label-free events. Nothing is trained, calibrated or chosen on it, and no constant of the submission config comes from it (the audit in section 5). The one place the pipeline read it as an input was R012's g, which came out 0 for every type and is now retired, so the shift is s_b alone, from DFL. Nothing of this match was hand-labelled |
 | Labelled tracking of other matches: the DFL/IDSSE open data, 7 matches (P01) | yes, to validate, to train P05's dead-ball model and P07's shape model, and to measure P02's lag | Bassek et al. 2025 (reference below), CC BY 4.0. We use the 25 Hz positions of players and ball, the ball's alive/dead flag and the team in possession on every frame (they give the truth: `D` where dead, otherwise the team), and the match information (teams, roles, pitch, halves). The tracking is degraded to look like ours and run through our pipeline. The ball's alive/dead flag trains the dead-ball model (every fifth graded frame of the degraded matches, and each benchmark match is read by the model that never saw it). The team in possession trains the shape model of P07 (every fifth alive graded frame, each also as its team-swapped mirror, from 26 features that do not read the ball, and again each benchmark match is read by the model fitted without it); it is also used for validation and to measure the touch rule's confidence. For P02 the same matches give the pipeline's own latency against DFL's flag (R012) and DFL's flag timed against the same label-free events (A11). Nothing else is trained on it (P13 is an idea) |
-| The DFL/IDSSE event files; kloppy's DFL loader and download | dropped | The raw events, one of the three files of a match, are never read. kloppy's loader drops every dead-ball frame by default and its download fails (T30), so our own parser (`pipeline/benchmark/dfl.py`) reads the positions, and kloppy only cross-checks it: 0 disagreements (A05) |
+| The DFL/IDSSE event files (the restart events); kloppy's DFL loader and download | the restart events only, as a diagnostic (P17); the loader and the download dropped | The raw events, one of the three files of a match, are read for the restart events only (below, and the labelled-data list), never by the pipeline and never to choose or fit anything. kloppy's loader drops every dead-ball frame by default and its download fails (T30), so our own parser (`pipeline/benchmark/dfl.py`) reads the positions, and kloppy only cross-checks it: 0 disagreements (A05) |
 | Other external datasets or pretrained models | no | Nothing beyond the DFL/IDSSE matches above is used: P13 (more labelled tracking, such as SkillCorner's open data) and P14 (a pretrained soccer-ball detector) are ideas, not done |
 
 **The DFL/IDSSE data: sources, citation, licence.** Seven full matches, two Bundesliga and five 2. Bundesliga, 25 Hz.
@@ -91,11 +91,12 @@ committed) and accepts a file only if its size and md5 equal the pinned values; 
 pinned to one commit and checked the same way, is the fallback. Five of the seven matches are one club's home games.
 
 **Labelled data (SUBMISSION.md: every labelled dataset, its source, who labelled it and how much; none of it from the
-provided game).** One dataset is used, and it is about other games.
+provided game).** Two kinds of label are used, both from DFL's open data and both about other games: the ball flags in the first row, the restart events in the second.
 
 | dataset | source | who labelled it | how much | used for |
 |---|---|---|---|---|
 | DFL/IDSSE open data: `BallStatus` (alive or dead) and `BallPossession` (the team) on every frame | Bassek et al. 2025, figshare, CC BY 4.0 (above) | DFL's official data (Bassek et al. 2025). The paper defines `BallStatus` and `BallPossession` but does not say who or what sets them. It says that the positions come from TRACAB Gen5 (ChyronHego), the match information from Sportec Solutions and the events from trained human operators, and that "all data are visually controlled by live operators for plausibility and undergo a final quality check after the game". So we treat the flags as human-checked labels | 7 full matches of other games (2 Bundesliga, 5 2. Bundesliga), 25 Hz: 668.4 graded minutes (about 1.0 million frames) per degradation seed, 437 possessions a match on average and 92 to 113 stoppages a match (A06) | the benchmark's truth (validation); the dead-ball model's labels (601,602 rows: every fifth graded frame, 3 seeds); the shape model's labels (331,881 rows, 663,762 with the team-swapped mirrors); the touch rule's confidence; the pipeline's own lag |
+| DFL/IDSSE open data: the restart events (kick-off, throw-in, corner, goal kick, free kick, penalty, with the team that takes each) | DFL's raw event files, Bassek et al. 2025, figshare, CC BY 4.0 (above) | DFL's data collectors: the paper says the events come from trained human operators and that all data are visually controlled by live operators and pass a final quality check | 681 restart events over the 7 matches of other games (KickOff 22, ThrowIn 308, CornerKick 57, GoalKick 119, FreeKick 172, Penalty 3), placed on the benchmark's timeline by the position file's frame clock (`pipeline/benchmark/dfl_events.py`) | a diagnostic of the restart source's typing only (A12 part 2: recall per kind, a confusion of the called type against the event's kind); nothing is trained, fitted or chosen from it |
 
 Not in the list, and why: the public 5 minutes are published by the organisers, derived from Metrica's corrected
 tracking, and are used to check only (never to train, fit or choose); the Smart Tagging is generated automatically by
@@ -241,9 +242,34 @@ implements.
   the 2,934 graded frames before the second half's kick-off `D` (T02).
 - **Dead ball, the decoder:** A change into or out of `D` costs `switch_dead` (32 nats), and a run of `D` lasts at
   least `min_dead` (25 frames). The second moves nothing: the two values differ by at most 0.0003 in spellF1 (R010).
-- **Restarts, who gets the ball:** No rule. After a stoppage the hold weakly favours the team that controlled the ball
+- **Restarts (P17, being chosen in R014):** `restart_team` is a label-free source for who takes the restart after a
+  stoppage. It finds the stoppages from the dead-ball model (a run of P(alive) below the alive level of at least 25
+  frames, its restart the frame after it), reads the players' arrangement on the stoppage's last 50 frames before the
+  estimated restart (clipped to the stoppage), takes the type called on most of them, and votes for the team that type
+  names. The Laws of the Game decide who restarts and how the players stand while it is set up; Vidal-Codina et al.
+  (2022) detect set pieces from that configuration. The five rules, in order, each needing both teams on the frame; the
+  opponents' clearance is **half** the law's, because players encroach:
+
+  | type | where | who restarts | the law | opponent clearance used |
+  |---|---|---|---|---|
+  | kick-off | everyone in their own half, one team in the centre circle | that team | Law 8: 9.15 m | the other team outside it |
+  | corner | a player within 3 m of a corner point | his team | Law 17: 9.15 m | 4.5 m |
+  | goal kick | a player of the defending team in his goal area, at most one opponent in the penalty area | the defending team | Law 16: opponents outside the penalty area | one opponent may still be in the penalty area |
+  | throw-in | a player within 1.5 m of a touchline or beyond | his team | Law 15: 2 m | 1.0 m |
+  | free kick | with the ball only: the ball still, a player at it | his team | Law 13: 9.15 m | 4.5 m |
+
+  It reads the players only, never the ball, unless `use_ball` (which only free kicks need, and which then restricts each
+  rule to the ball's place). It votes only from the estimated restart on, for the tail of 25 to 150 frames, never into
+  the next stoppage, so where `D` ends stays the dead-ball model's call; and only for the types whose measured confidence
+  passes the declared floor (agreement of at least 0.60 and at least 30 calls a seed). On the seven DFL matches the
+  confidences (agreement floored to a hundredth) are, players only, at the 1 s and the 2 s tail: throw-in 0.92 and 0.88,
+  corner 0.93 and 0.81, goal kick 0.72 and 0.72; kick-offs and free kicks are called too rarely and do not vote. The
+  goal-kick rule is not specific (a keeper stands in his goal area in most stoppages: 134 of 608 matched throw-ins were
+  called goal kicks), and its rules were not revised after that measurement (A12 part 2). **It is not in `main.toml`
+  unless R014 adopts it, and R014 has not run yet.**
+- **Restarts, who gets the ball (`main.toml` today):** No rule. After a stoppage the hold weakly favours the team that controlled the ball
   before it, until the first new episode, which names the team, and the shape source gives a view of its own from where
-  the teams stand. A restart-team channel (a corner to the attackers, a goal kick to the defenders) is deferred. Its
+  the teams stand. A restart-team channel (a corner to the attackers, a goal kick to the defenders) is the Restarts bullet above, not in `main.toml` yet. Its
   restart types would have to come from code (Smart Tagging's set-piece tags, P08, or other games' flags, P16): a type
   that a person read off this match's video for each stoppage and fed to the pipeline would be a hand label, while a
   person watching to judge whether such a channel is worth building is design and is allowed (A11, section 6).

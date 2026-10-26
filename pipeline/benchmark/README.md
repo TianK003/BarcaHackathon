@@ -71,6 +71,16 @@ What to know about the files (A05; `dfl.py` has the details and refuses what it 
 - The ball is tracked on every frame of every half, and both flags are present on every frame, so the truth carries
   nothing and guesses nothing (A05, A06).
 
+**The restart events (`dfl_events.py`, P17's diagnostics).** The second of a match's three files, the raw events, names
+every restart: KickOff, ThrowIn, CornerKick, GoalKick, FreeKick and Penalty, each with the team that takes it. They are
+human-collected event data of these public matches (Bassek et al. 2025, CC BY 4.0: the paper says trained human operators
+record them), about other games, and they are used for one diagnostic only, `restarts.py events` (nothing is trained,
+fitted or chosen from them; the technical document's section 2 lists them with the labelled data). `dfl_events.load_restarts`
+puts them on the rows of `dfl.py`'s timeline through the position file's own frame clock (a row is the half's start plus
+the time since the half's first ball frame, in 40 ms steps, rounded), and refuses a file whose clock is not regular; a
+restart outside the graded rows is dropped and counted. No pipeline component, decoder or choice reads it, and it does
+not touch `dfl.py`, so the caches are not rebuilt.
+
 ## Running a config
 
 ```
@@ -568,12 +578,15 @@ than in the pooled number alone. Nothing here is a config to submit. The checks 
 
 `restarts.py` (P17) says how big the thing a restart-team channel would fix is, and how much of it the pipeline already
 gets. After a ball out of play, a foul or a goal the other team often restarts, and a decoder that carries the team
-across a stoppage is then wrong at the start of the next possession. It has two modes and prints and writes aggregates
-only:
+across a stoppage is then wrong at the start of the next possession. It has five modes and prints and writes aggregates
+only (the first two are the anatomy of A12 part 1, the last three belong to the source `restart_team` and A12 part 2):
 
 ```
 .venv/Scripts/python pipeline/benchmark/restarts.py anatomy CONFIG [--profile P] [--seeds N] [--truth raw|coarse] [--matches ID ...] [--data-dir D] [--out PATH]
 .venv/Scripts/python pipeline/benchmark/restarts.py bar-ath CONFIG [--data-dir D] [--out PATH]
+.venv/Scripts/python pipeline/benchmark/restarts.py stats [--model M] [--profile P] [--seeds N] [--matches ID ...] [--data-dir D] [--out PATH]
+.venv/Scripts/python pipeline/benchmark/restarts.py events [--model M] [--tail T] [--use-ball] [--profile P] [--seeds N] [--matches ID ...] [--data-dir D] [--out PATH]
+.venv/Scripts/python pipeline/benchmark/restarts.py configs STATS_JSON --out-dir DIR [--main pipeline/configs/main.toml]
 ```
 
 - **`anatomy`** runs on the benchmark (default profile `tracking`, 3 seeds). The pipeline's labels are made as the runner
@@ -591,8 +604,23 @@ only:
   the share against which the benchmark's ball gaps, a transplant of ours, can be held. Only counts and shares leave it,
   never a frame or a label sequence.
 
+- **`stats`** measures what a vote of each restart type is worth, on the benchmark (the source `restart_team` run on the
+  degraded tracking of every match and seed, for each setting of a grid of `tail` {25, 50, 100, 150} x `use_ball`). Per
+  type, pooled by sums over matches and seeds: the **agreement** (voted frames whose truth is `H` or `A` and equals the
+  called team, over voted frames whose truth is `H` or `A`), the calls per seed, the **coverage** (true restarts with a
+  call of the type within 50 frames) and the **confidence**: the agreement floored to a hundredth, or none (the type does
+  not vote) if the agreement is below 0.60 or there are fewer than 30 calls per seed (the rule, declared in the design
+  before any measurement). Nothing is tuned: the grid is read and the rule applied. The truth only does the counting.
+- **`events`** is a diagnostic that chooses nothing. For one setting (`--tail`, `--use-ball`), each DFL restart event
+  (kick-off, throw-in, corner, goal kick, free kick, penalty) is matched to the nearest call within 50 frames, and it
+  reports the recall per kind and the confusion of the call's type against the event's kind. The events are DFL's own
+  human-collected event data of the seven matches (below), and no constant comes from them.
+- **`configs`** reads the JSON of `stats --out` and writes one config per setting, `r014_t{TTT}_b{0|1}.toml`: `main.toml`
+  as it is plus a `restart_team` source with that setting's measured confidences (a type without one does not vote).
+  These are R014's eight configs, in `pipeline/benchmark/configs/r014/`.
+
 Reports go to the paths of `--out`, by convention `data/runs/benchmark/restarts/anatomy.<truth>.json` and
-`data/runs/restarts/bar_ath.json` (both under the gitignored `data/`). Its results are A12's.
+`data/runs/restarts/bar_ath.json` (both under the gitignored `data/`). Its results are A12's (the first two modes, part 1; `stats` and `events`, part 2).
 
 ## P04's control rule: the measurement and Stage A's configs
 
