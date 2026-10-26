@@ -13,6 +13,7 @@ The matches are the synthetic ones of checks/common.py (random flags and trackin
 gaps profile and the synthetic Calibration.
 """
 
+import math
 import os
 import tempfile
 
@@ -294,6 +295,69 @@ def test_restarts_events_recall_and_confusion():
     assert table["confusion"]["corner"]["CornerKick"] == 1
     assert table["confusion"]["kick_off"]["GoalKick"] == 1 and table["confusion"]["kick_off"]["KickOff"] == 1
     assert sum(sum(row.values()) for row in table["confusion"].values()) == 3
+
+
+def test_restarts_configs_stoppage_end_and_restart_states():
+    """R014b's configs: the span block without a tail, the t025 confidences, and the decoder's two restart keys."""
+    main_path = os.path.join(restarts.ROOT, "pipeline", "configs", "main.toml")
+    with open(main_path, newline="") as handle:
+        main_text = handle.read()
+    main = load_config(main_path)
+    eol = "\r\n" if "\r\n" in main_text else "\n"
+    types = ("kick_off", "corner", "goal_kick", "throw_in", "free_kick")
+    t25 = {0: {"kick_off": 0.91, "corner": 0.7, "throw_in": 0.8}, 1: {"corner": 0.66, "free_kick": 0.7}}
+
+    def setting(tail, use_ball, confidences):
+        return {"setting": {"tail": tail, "use_ball": use_ball},
+                "types": {name: {"confidence": confidences.get(name)} for name in types}}
+
+    stats = {"settings": {"t025_b0": setting(25, False, t25[0]), "t025_b1": setting(25, True, t25[1]),
+                          "t050_b0": setting(50, False, {"corner": 0.5}), "t050_b1": setting(50, True, {"corner": 0.5})}}
+    with tempfile.TemporaryDirectory() as root:
+        written = restarts.write_configs(stats, main_path, root, log=quiet, span="stoppage_end",
+                                         switch_restart=[4, float("inf")], label_from=25)
+        names = sorted(os.path.basename(path) for path in written)
+        assert names == ["r014b_s04_b0.toml", "r014b_s04_b1.toml", "r014b_sin_b0.toml", "r014b_sin_b1.toml"], names
+        for path in written:
+            name = os.path.basename(path)
+            use_ball = name.endswith("_b1.toml")
+            switch = float("inf") if "_sin_" in name else 4.0
+            config = load_config(path)
+            assert config.evidence[:-1] == main.evidence and len(config.evidence) == len(main.evidence) + 1
+            added = config.evidence[-1]
+            expected = {"model": "pipeline/models/dead_ball_hgb.json", "span": "stoppage_end", "use_ball": use_ball}
+            expected.update(t25[int(use_ball)])
+            assert added.kind == "restart_team" and added.weight == 1.0 and added.params == expected, added
+            assert "tail" not in added.params
+            assert config.decoder.params == dict(main.decoder.params, restart_source="restart_team",
+                                                 switch_restart=switch), config.decoder
+            assert math.isinf(config.decoder.params["switch_restart"]) == (switch == float("inf"))
+            assert config.refine == main.refine and config.seed == main.seed
+            assert "stoppage_end" in config.description and "switch_restart" in config.description
+            with open(path, newline="") as handle:
+                text = handle.read()
+            start = text.index("# R014b")
+            stop = text.index(eol + eol, start) + 2 * len(eol)
+            restored = text[:start] + text[stop:]
+            restored = restored.replace(config.description, main.description)
+            keys = ['restart_source = "restart_team"' + eol,
+                    "switch_restart = {}".format("inf" if switch == float("inf") else "4.0") + eol]
+            for key in keys:
+                assert restored.count(key) == 1
+                restored = restored.replace(key, "")
+            assert restored == main_text
+        # without switch_restart: the evidence only, the decoder untouched
+        plain = restarts.write_configs(stats, main_path, os.path.join(root, "plain"), log=quiet, span="stoppage_end",
+                                       label_from=25)
+        assert sorted(os.path.basename(path) for path in plain) == ["r014b_b0.toml", "r014b_b1.toml"]
+        assert load_config(plain[0]).decoder == main.decoder
+        for kwargs in ({"span": "stoppage_end"}, {"span": "after", "switch_restart": [4]}, {"span": "middle"}):
+            try:
+                restarts.write_configs(stats, main_path, root, log=quiet, **kwargs)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError("{} must be refused".format(kwargs))
 
 
 def test_restarts_configs_insert_one_block():
