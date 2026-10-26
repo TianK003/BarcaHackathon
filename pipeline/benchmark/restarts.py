@@ -454,8 +454,9 @@ def _config_block(setting, types, model, eol, span="after"):
                  "[[evidence]]", 'kind = "restart_team"', 'model = "{}"'.format(model),
                  "tail = {}".format(setting["tail"]), "use_ball = {}".format(use_ball)]
     else:
-        lines = ["# R014b (P17): who restarts, read on the stoppage's last frame (span {}), use_ball {}, the confidences "
-                 "measured at tail {} (restarts.py stats)".format(span, use_ball, setting["tail"]),
+        lines = ["# R014b (P17): who restarts, one observation spread over the stoppage that ends at the restart "
+                 "(span {}), use_ball {},".format(span, use_ball),
+                 "# the confidences measured at tail {} (restarts.py stats)".format(setting["tail"]),
                  "[[evidence]]", 'kind = "restart_team"', 'model = "{}"'.format(model), 'span = "{}"'.format(span),
                  "use_ball = {}".format(use_ball)]
     lines += ["{} = {!r}".format(name, float(types[name]["confidence"])) for name in restart_team.TYPES
