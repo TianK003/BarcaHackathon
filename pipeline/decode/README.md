@@ -61,7 +61,8 @@ What it cannot do, and why `hmm` replaces it:
 ## `hmm`: the global decoder (P06)
 
 A three-state hidden Markov model over `H`, `A` and `D`, decoded by Viterbi once per block, so a possession is an
-interval whose edges have to be paid for. Its module docstring ([`hmm.py`](hmm.py)) is the specification; the checks in
+interval whose edges have to be paid for; with `restart_source`, `D` splits into two restart states
+([below](#restart-states-p17)). Its module docstring ([`hmm.py`](hmm.py)) is the specification; the checks in
 `pipeline/selftest.py` pin it against a brute force over every path.
 
 ```toml
@@ -98,20 +99,27 @@ first and last run, which its edges may have cut short. The decoder returns a va
 | `min_dead` | 1 | the shortest run of `D` |
 | `eps` | 1e-6 | the clip; a numerical guard, not a knob |
 | `posterior` | `false` | `true` also returns `Decoded.posterior`, the probability of `H`, `A` and `D` per frame ([below](#the-posterior)); the labels are the same either way |
+| `restart_source` | none | the name of the evidence source whose `home` says who restarts after a stoppage: turns on the restart states ([below](#restart-states-p17)) |
+| `switch_restart` | `inf` | with `restart_source`: nats a restart by the team the vote did not name costs on top of `switch_dead`; `inf` forbids it |
 
 All four numbers are validated (no bool, no NaN or infinity, minimums are whole numbers of frames >= 1) and named in the
-error. Tune them on P01's benchmark, never on the public window, which since 23 Oct 2026 is a rule and not only advice
-([T01](../../docs/traps.md)). The benchmark's choice is
+error, and so are the restart states' two: `switch_restart` must be > 0 or `inf`, and is refused when finite without a
+`restart_source`, which must name one of the block's sources. Tune the numbers on P01's benchmark, never on the public
+window, which since 23 Oct 2026 is a rule and not only advice ([T01](../../docs/traps.md)). The benchmark's choice is
 `switch_team` 8, `switch_dead` 32, `min_possession` 75 and `min_dead` 1 ([R006 and R007](../../docs/results.md), kept in
 [`configs/p06_hmm.toml`](../configs/p06_hmm.toml)); that config does not clear P06's bar and is not the submission
 config.
 
 **Ties.** Equal scores are decided the same way every time: a path extends its current run first, then comes from `D`,
 then from `H`, then from `A`; the block ends in `D`, then `H`, then `A`. So a block without evidence is all `D`, and a
-change of team across a stretch without evidence lands on the stretch's first frame.
+change of team across a stretch without evidence lands on the stretch's first frame. With restart states the order is
+`D_H`, `D_A`, `H`, `A`.
 
-**Cost.** About 2 µs a frame (80,000 frames with both minimums at 50 take 0.15 s): a plain-Python recursion over run
-starts with a running maximum, where the textbook chain with one substate per run length would cost O(minimum) a frame.
+**Cost.** About 4 µs a frame (80,000 frames with both minimums at 50 take 0.33 s, best of three on an otherwise idle
+machine, 26 Oct 2026): a plain-Python recursion over run starts with a running maximum, where the textbook chain with
+one substate per run length would cost O(minimum) a frame. The recursion is written once over any number of states (a
+matrix of change costs in which `inf` forbids a change, a minimum per state, a tie order); the four restart states take
+0.40 to 0.45 s on the same frames.
 
 ### The posterior
 
@@ -143,11 +151,76 @@ paths. Each row sums to 1.
 - **Cost.** It is O(`min_possession` + `min_dead`) a frame and holds `n_frames * (2 * min_possession + min_dead) * 8`
   bytes (96 MB for 80,000 frames with both minimums at 50), so it is off by default and no benchmark grid asks for it.
   80,000 frames with both minimums at 50 take about 2 s.
+- **Three states only.** `posterior = true` with `restart_source` is refused.
+
+### Restart states (P17)
+
+```toml
+[[evidence]]
+kind = "restart_team"
+model = "pipeline/models/dead_ball_hgb.json"
+span = "stoppage_end"  # one vote per stoppage, spread over its frames (no tail)
+corner = 0.9           # a confidence per type that votes, measured by restarts.py stats
+
+[decoder]
+kind = "hmm"
+switch_team = 8
+switch_dead = 16
+restart_source = "restart_team"   # the source's name: its `home` says who restarts
+switch_restart = inf               # default inf: the first team after a stoppage is its restart team
+```
+
+The Laws of the Game decide who restarts after a stoppage, and that team has the first possession after it.
+`restart_team` reads who it is from the players' arrangement during the stoppage. As a plain `home` vote on a fixed span
+after the restart it gained +0.004 spellF1 ([R014](../../docs/results.md)): a fixed span keeps pushing after the first
+possession has ended, and it starts at the source's own restart estimate, not at the decoder's `D` edge. With
+`restart_source`, the decoder carries the restart team itself: `D` splits into `D_H` ("dead, home restarts") and `D_A`
+("dead, away restarts"), so the team is read inside the stoppage, carried to whichever frame the decoder ends `D` on,
+and decides only the first team after it. Later evidence ends that possession as it ends any other.
+
+| | `H` | `A` | `D_H` | `D_A` |
+|---|---|---|---|---|
+| any source's `alive = a` | `log 2a` | `log 2a` | `log 2(1 - a)` | `log 2(1 - a)` |
+| any other source's `home = h` | `log 2h` | `log 2(1 - h)` | 0 | 0 |
+| the named source's `home = h` | 0 | 0 | `log 2h` | `log 2(1 - h)` |
+
+| change | cost |
+|---|---|
+| `H` or `A` to `D_H` or `D_A` | `switch_dead` |
+| `D_H` to `H`, `D_A` to `A` | `switch_dead` |
+| `D_H` to `A`, `D_A` to `H` | `switch_dead + switch_restart` (`inf`: forbidden) |
+| `D_H` to `D_A`, and back | forbidden: a stoppage has one restart team |
+
+- **Minimums and labels.** `min_possession` covers `H` and `A`, `min_dead` covers `D_H` and `D_A`, and both dead states
+  are written `D`.
+- **The source must speak on dead frames only.** `restart_source` expects `restart_team` with span `"stoppage_end"`. A
+  source that votes on live frames (span `"after"`) would raise the dead states there by up to `w log 2c` a frame and
+  pull `D` into the restart.
+- **One observation, spread over the stoppage.** `restart_team`'s span `"stoppage_end"` (the stoppage that ends at the
+  restart) gives each called stoppage one observation at the type's confidence c, spread evenly over its n frames:
+  `sigmoid(logit(c) / n)` each, so that the log-odds the decoder adds between `D_H` and `D_A` (`logit(h)` a frame) sum
+  to `logit(c)`. Written as c on every frame of a 20 s stoppage it would count 500 times. Written on the stoppage's
+  last frame alone, its most marginal (P(alive) just under 0.5), it would be lost whenever the decoder ends `D` a frame
+  earlier; spread, a `D` run that covers part of the stoppage keeps that part of it. A vote on any frame of a `D` run
+  counts for all of it.
+- **The `D` edges hardly move.** The named source says nothing about `H` against `A`. It raises the better dead state
+  by about `w logit(c) / 2n` a frame (0.011 nats at c = 0.9 over 4 s), where a vote after the restart raised the alive
+  states by up to `w log 2c` on every frame of its span.
+- **Without restart evidence it is the three-state decoder.** If the named source's `home` is `NaN` everywhere, or its
+  weight is 0, `D_H` and `D_A` are the same state twice over: every three-state path has a four-state twin of the same
+  score, and the tie order `D_H`, `D_A`, `H`, `A` picks the twin of the three-state choice. The checks hold that on
+  random blocks for any `switch_restart`, and the four-state decoder against every path of blocks of up to 8 frames.
+- **Without `restart_source`** the decoder runs the three-state code path, to the label: a copy of the routine as it was
+  before the restart states pins it.
+- **Refused:** `posterior = true` with it, a `restart_source` that names none of the block's sources (the error lists
+  them), and a finite `switch_restart` without one, which nothing would read.
 
 **What it does not do yet.**
 
 - **No duration priors beyond the minimums:** once a run is long enough it is as likely to last two minutes as five
   seconds. A semi-Markov version would take a prior over run lengths where the minimum is a hard step.
+- **The restart states know who restarts, nothing more:** not how long that team keeps the ball, and nothing about a
+  stoppage the `alive` evidence does not decode (no `D` run, no restart team). They have no posterior.
 - **`D` is only as good as its `alive` evidence.** `nearest_player` says nothing about it, so with that alone the
   decoder chooses `D` rarely, and only in gaps: `H`, `D`, `A` beats `H`, `A` across a gap when `switch_team` is more
   than twice `switch_dead` and the gap is at least `min_dead` frames, and with `switch_dead = 0` a trailing stretch

@@ -41,6 +41,7 @@ every value in [0, 1] or NaN. A length of ~164k means the broadcast was indexed 
 | `dead_ball_rules` | the smallest of `alive_out`, `alive_still`, `alive_slow`, `alive_kickoff` among the rules that fire, else `alive_none`; 0.001 before a half's kick-off; NaN outside the graded blocks | NaN everywhere | the five values, each ∈ [0, 1], required, no default | P05's rules on `play_features`: ball beyond a line, still at a restart spot, a collective slowdown, a kick-off formation. Thresholds fixed (laws of the game, literature), values measured (R009) |
 | `dead_ball_model` | the model's P(alive) from the 30 `play_features`, prior-corrected (logit p − logit prior_alive) and clipped to [`min_prob`, 1 − `min_prob`]; 0.001 before a half's kick-off; NaN outside the graded blocks | NaN everywhere | `model` (a path from the repo root, required), `min_prob` ∈ (0, 0.5), default 0.001 | P05's learned opinion, trained by `pipeline/benchmark/train_dead_ball.py` on the seven DFL matches degraded like ours. The model of a match is the one that never saw it (`folds[inputs.game]`); BAR-ATH and any other game use `full`. numpy only; the first call on 140,000 graded frames with 300 trees takes about 2 s with the features already computed, and its raw scores are remembered per `Inputs`, so configs that share a model walk the trees once |
 | `shape_possession` | NaN everywhere | the model's P(home has the ball) from the 26 `shape_features`, as logit = (r(x) − r(swap(x))) / 2, which is exactly antisymmetric in the teams and carries no prior, clipped to [`min_prob`, 1 − `min_prob`]; NaN outside the graded blocks, where neither team has a present slot and, with `scope = "gaps"`, wherever the ball is present | `model` (a path from the repo root, required), `scope` "gaps" (default) or "all", `min_prob` ∈ (0, 0.5), default 0.02 | P07's opinion for the 41% of frames without a ball, from the players alone; `main.toml` uses it at weight 0.2 with scope "all" (R011). Trained by `pipeline/benchmark/train_shape.py` on the seven DFL matches with the ball hidden; the model of a match is the one that never saw it (`folds[inputs.game]`), BAR-ATH and any other game use `full`. numpy only; the first call on 140,000 graded frames with 300 trees (two walks) takes 2 to 3.5 s with the features already computed, and its logits are remembered per `Inputs` |
+| `restart_team` | NaN everywhere | per called stoppage whose type has a confidence c: c (home restarts) or 1 − c, with `span` "after" on [restart, min(restart + `tail`, the next stoppage, the block's end)), with `span` "stoppage_end" over the stoppage that ends at the restart, [first, restart) of n frames, sigmoid(logit(c)/n) a frame (1 − that for away): one observation in all; NaN everywhere else | `model` (the dead-ball model's file, required), `span` "after" (default) or "stoppage_end", `tail` frames ≥ 1 (required with "after", refused with "stoppage_end"), `use_ball` default false, `setup` default 50 frames, `min_stoppage` default 25 frames, `min_prob` default 0.001, and a confidence ∈ (0.5, 1] for each type that votes, at least one: `kick_off`, `corner`, `goal_kick`, `throw_in`, `free_kick` (only with `use_ball`) | P17: who restarts after a stoppage, from the players' arrangement in the stoppage's last `setup` frames before the dead-ball model's restart and the Laws of the Game. With "after" it votes only from the restart on, so where `D` ends stays the dead-ball model's call; "stoppage_end" is for the decoder's restart states (`hmm`'s `restart_source`). The confidences are measured on the benchmark (`restarts.py stats`), never tuned |
 
 The nearest player is not the possessor — wrong on 22% of ball-visible, in-play frames ([T14](../../docs/traps.md)).
 P04 is its replacement.
@@ -164,6 +165,81 @@ as log(p / (1 − p)) nats a frame.
 The trainer and the committed model are separate steps of P07: a config that names a model file that is missing, or
 one that is not shape_features', fails on load with the trainer's command.
 
+## P17: who restarts after a stoppage
+
+[`restart_team.py`](restart_team.py) (numpy only) names the team that restarts play after each predicted stoppage and
+votes for it on the first frames of play. The decoder otherwise carries the team it had across the stoppage until the
+first control episode names one, and seven stoppages in ten hand the ball to the other team (A12). A perfect 2 s vote
+is worth +0.0198 pooled raw spellF1 to `main.toml` (A12's ceiling); this is the label-free estimate of that vote.
+
+*Where the stoppages are.* `dead_ball_model`'s P(alive), with its pre-kick-off rule, from the `model` and `min_prob`
+given. With the config's own dead-ball source's (`main.toml`'s file and clip) the two agree on where the ball is dead,
+and the model's scores are remembered per `Inputs`, so the trees are walked once. A stoppage is a run of
+P(alive) < 0.5 of at least `min_stoppage` frames; its restart is the frame after it. A run that reaches the block's
+end, or is ended by a NaN, has no restart.
+
+*Who restarts.* On the stoppage's last `setup` frames, [max(first, restart − `setup`), restart), each frame calls at
+most one (type, team), by the first of these rules that fires; the stoppage takes the pair called on the most frames,
+if that is at least a quarter of the window. The window never reaches back into play: a stoppage shorter than `setup`
+is read whole and no further, since the live frames before it hold arrangements of their own (a winger at the
+touchline makes a throw-in). The opponents' distances are half the law's, because players encroach; the zones allow
+for tracking error. All are declared, none tuned. This is Vidal-Codina et al. (2022)'s approach: set pieces read
+deterministically from the players' configuration during the dead ball.
+
+| type | fires when | team | law |
+|---|---|---|---|
+| kick-off | every present slot within 1 m of its own half, both teams present, exactly one team with a slot in the centre circle (9.15 m) | the team in the circle | 8 |
+| corner | a slot within 3 m of a corner point, no opponent within 4.5 m of him | his | 17 |
+| goal kick | at an end, a slot of the team defending it inside its goal area (5.5 × 18.32 m), at most 1 opponent inside that penalty area (16.5 × 40.32 m) | the defending team | 16 |
+| throw-in | a slot within 1.5 m of a touchline or beyond it, no opponent within 1 m of him | his | 15 |
+| free kick (`use_ball` only) | the ball visible and still (< 1 m/s), its nearest slot within 2 m, no opponent of his within 4.5 m of the ball | his | 13 |
+
+Each team's defended end is decided per block (`play_features.own_half_is_left`, now public; the old private name is
+an alias). Several slots meeting one rule: the nearest its line or spot wins (touchline, corner point, own goal line,
+centre spot), then the lowest slot. Every rule needs both teams on the frame (an opponent clearance with nobody there is
+vacuous), and slots are read with the team the metadata gives them, however many a team shows (T15, T32).
+
+*The ball* (`use_ball`) says where, never what. On a frame of the window where it is visible, each rule runs only at
+its place nearest the ball (kick-off: ball within 2 m of the centre spot; corner: within 3 m of the nearest corner
+point; goal kick: in that end's goal area grown by 1 m; throw-in: within 1.5 m of a touchline or beyond), with the slot
+nearest the ball, within 2 m, as its player. The free kick is the one type with no players-only rule. Frames without
+the ball use the players-only rules. DFL tracks the ball out of play and we do not (T39), so `use_ball` is a grid axis
+of R014, not a default.
+
+*The vote* (`span = "after"`, the default). `home` = c (home restarts) or 1 − c on [restart, min(restart + `tail`, the
+next stoppage's first frame, the block's end)), for a type with a confidence; NaN elsewhere, and `alive` NaN everywhere.
+It starts at the restart, never on the stoppage: a `home` vote raises the alive states against `D` by up to w·log(2c)
+nats a frame, so a vote of that strength on the stoppage would move the dead-ball edges (the stoppage span below spreads
+one observation so thin that it does not). It does not stop at the first control episode: at `controlled_touch`'s 0.93
+the episode out-votes it anyway, and stopping there would couple the two sources.
+
+*The vote over the stoppage* (`span = "stoppage_end"`: the stoppage that ends at the restart; P17's Phase 2b). The vote
+after the restart gained +0.004 spellF1 (R014, short of its bar): a span of fixed length keeps pushing after the
+restarting team's first possession has ended, and it starts at this source's restart, not at the decoder's `D` edge.
+The decoder's restart states (`hmm`'s `restart_source`, [decode README](../decode/README.md#restart-states-p17)) carry
+the restart team themselves: they read this source's `home` on the dead states only, `D_H` ("dead, home restarts")
+against `D_A`, and hand it to whichever frame the decoder ends `D` on. For them the source writes one observation of who
+restarts per called stoppage, at the type's confidence c, spread evenly over the stoppage's own frames [first,
+restart): each of its n frames gets sigmoid(logit(c) / n), 1 − that for an away taker, and the decoder, which adds
+logit(h) a frame between `D_H` and `D_A`, sums them back to logit(c).
+
+- *One observation, not n:* c on every frame of a 20 s stoppage would count 500 times, and c would stop being a
+  likelihood.
+- *Spread, not on one frame:* the stoppage's last frame, restart − 1, is its most marginal (P(alive) just under 0.5). A
+  decoder that ends `D` one frame earlier puts it in `H` or `A`, where the vote adds nothing, and the restart team is
+  lost. Spread, a `D` run that covers k of the stoppage's n frames keeps k / n of the observation.
+- *Thin:* about logit(c) / 2n nats a frame for the better dead state against `H` and `A` (0.011 at c = 0.9 over 4 s),
+  so where `D` ends stays the dead-ball evidence's call.
+
+`tail` is not read then, and a config that gives one is refused (one with `span = "after"` and no `tail` is refused
+too). Read by a decoder without restart states, the frames would be ordinary `home` votes on dead frames, so
+`"stoppage_end"` belongs with `restart_source`.
+
+`frame_calls`, `stoppages`, `arrangement`, `calls_from_alive`, `calls` and `votes` are public: the checks drive them
+directly (`test_restart_team_*`, including a plain-loop reference of the rules), and `restarts.py stats` reads `calls`
+to measure each type's agreement on the benchmark. About 2 ms a stoppage, with the tracks and the model's scores
+already built.
+
 ## Writing a source
 
 1. Create `pipeline/evidence/<your_source>.py`:
@@ -220,7 +296,9 @@ one that is not shape_features', fails on load with the trainer's command.
   `data/cache/evidence/`. Until then every run recomputes every source: 14.9 s for `main.toml`'s three, in the run of
   25 Oct that wrote R011's file, with the cache warm.
 - **A `next_home` channel** — P(home restarts | the ball is dead) — for P05's restart types and P08's set-piece tags.
-  It will be an optional field with a default, so existing sources keep working unchanged.
+  It will be an optional field with a default, so existing sources keep working unchanged. P17 does without it:
+  `restart_team` votes in `home`, from the restart on or (`span = "stoppage_end"`) over the stoppage, where `hmm`'s
+  `restart_source` reads that one source's `home` as who restarts, so the contract is unchanged.
 
 ## Proposals that land here
 
@@ -233,3 +311,4 @@ one that is not shape_features', fails on load with the trainer's command.
 | P09 camera aim | — | a feature for P07, not a source on its own |
 | P10 referee whistle | `alive` | audio confirmed, starts at t = 0 (A04) |
 | P13 / P14 / P15 | via better inputs or pre-trained models | |
+| P17 restart-team channel | `home`, from each restart on, or over each stoppage for the decoder's restart states | `restart_team` (built; its confidences and adoption are R014's, the restart states' R014b's) |

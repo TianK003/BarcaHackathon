@@ -281,6 +281,23 @@ spot, a throw-in):
 - do not choose a decoder parameter that trades `D` against the team (`switch_dead`, a source's weight) from that
   source's benchmark alive/dead score alone.
 
+**T43 — An oracle that stops where the truth changes measures more than a source can deliver.** A12 sized P17's
+prize with a perfect 2 s vote for the restarting team (+0.0198 raw spellF1), and that vote stopped at the truth's next
+change of team. A real vote has a fixed length and cannot know that change: it keeps pushing after the restarting team's
+first possession has ended, and DFL's possessions are short (median 3.7 s). R014 delivered +0.0040 of the +0.0198 (and
+raw spellF1 fell with every longer tail, to -0.0187 at 150 frames). Before taking an oracle's gap as a prize:
+- build the oracle with the real source's footprint (a fixed span, no truncation at the truth's changes, no knowledge of
+  where the truth's next possession ends), and read that gap as the ceiling;
+- keep a perfect-information oracle as an upper bound only, and say in the protocol how far below it a source is
+  expected to land.
+
+**T44 — A transition price binds only below the largest evidence it competes with.** R014b's `switch_restart` grid
+{4, 8, 16, inf} could not differ: the restart evidence per stoppage is one observation, at most logit(0.93), about 2.6
+nats (a throw-in 2.44), so choosing `D_H` or `D_A` for a `D` run moves its score by at most that, while a cross
+transition costs `switch_restart` on top. Any value above about 2.6 decodes like `inf`; the identical labels across the
+grid were guaranteed by the grid, not observed. Before declaring a penalty grid, compute the largest evidence the
+penalty competes with and put the grid's values on both sides of it; a value above it is a duplicate of `inf`.
+
 ## Reproducibility and environment
 
 **T20 — Use the team venv.** It runs Python 3.11.9 in `.venv`, with numpy 2.4.6, pandas 3.0.6 and kloppy 3.18.0.
@@ -327,6 +344,15 @@ to do on a long run:
 - below-normal priority for the venv's `python.exe` *and* its child, the real interpreter (the venv's is a launcher);
   a free-memory check before each process and a pause between them;
 - check after a restart which logs end `EXIT=` and rerun only the processes that did not finish.
+
+**T42 — A measurement run on a working tree that another agent is editing reads a half-written module.** The first
+`restarts.py events` run of P17 failed with a `SyntaxError`: an implementer was in the middle of editing `restarts.py` in
+the same working tree, and the run imported the file as it stood. Parallel agents share one working tree, so a run
+started while one of them is editing reads whatever is on disk at that second (a run that does not crash may instead
+measure code that was never committed). Launch measurement runs only at a committed, clean state of the files they
+import, and record that commit in the entry; or run them from a separate worktree (`git worktree add`, with its own
+`MTAH_DATA_DIR` if `dfl.py` differs). The failed run's output was discarded and the
+command run again.
 
 ## Rules and data handling
 
