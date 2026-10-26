@@ -61,8 +61,9 @@ module of its topic:
                  content of the config (or of none) is refused, and that nothing of BAR-ATH's is printed beyond
                  `limited` / `shown` / `interval_text` (synthetic only)
     restarts.py  restarts: the restarts found on a hand-built truth, the three outcomes, the ball shares of the predicted
-                 stoppages, the pooling over matches and seeds, and that the truth never reaches the pipeline
-                 (synthetic only)
+                 stoppages, the pooling over matches and seeds, and that the truth never reaches the pipeline;
+                 also `stats` (the confidences), `events` (the calls against DFL's restart events) and `configs`
+                 (R014's and R014b's generated configs) (synthetic only)
     shape.py     P07's shape-possession trainer: the rows (every stride-th alive frame, 1 for H), the augmentation that
                  balances the classes exactly and mirrors every row, P05's settings with no monotone constraint, the
                  exported trees against scikit-learn's raw score, the same bytes on 1 and 4 threads, the folds that

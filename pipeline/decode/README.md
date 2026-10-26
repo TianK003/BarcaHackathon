@@ -193,6 +193,9 @@ and decides only the first team after it. Later evidence ends that possession as
 
 - **Minimums and labels.** `min_possession` covers `H` and `A`, `min_dead` covers `D_H` and `D_A`, and both dead states
   are written `D`.
+- **The source must speak on dead frames only.** `restart_source` expects `restart_team` with span `"stoppage_end"`. A
+  source that votes on live frames (span `"after"`) would raise the dead states there by up to `w log 2c` a frame and
+  pull `D` into the restart.
 - **One observation, spread over the stoppage.** `restart_team`'s span `"stoppage_end"` (the stoppage that ends at the
   restart) gives each called stoppage one observation at the type's confidence c, spread evenly over its n frames:
   `sigmoid(logit(c) / n)` each, so that the log-odds the decoder adds between `D_H` and `D_A` (`logit(h)` a frame) sum

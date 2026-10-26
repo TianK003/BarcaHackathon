@@ -291,6 +291,13 @@ raw spellF1 fell with every longer tail, to -0.0187 at 150 frames). Before takin
 - keep a perfect-information oracle as an upper bound only, and say in the protocol how far below it a source is
   expected to land.
 
+**T44 — A transition price binds only below the largest evidence it competes with.** R014b's `switch_restart` grid
+{4, 8, 16, inf} could not differ: the restart evidence per stoppage is one observation, at most logit(0.93), about 2.6
+nats (a throw-in 2.44), so choosing `D_H` or `D_A` for a `D` run moves its score by at most that, while a cross
+transition costs `switch_restart` on top. Any value above about 2.6 decodes like `inf`; the identical labels across the
+grid were guaranteed by the grid, not observed. Before declaring a penalty grid, compute the largest evidence the
+penalty competes with and put the grid's values on both sides of it; a value above it is a duplicate of `inf`.
+
 ## Reproducibility and environment
 
 **T20 — Use the team venv.** It runs Python 3.11.9 in `.venv`, with numpy 2.4.6, pandas 3.0.6 and kloppy 3.18.0.

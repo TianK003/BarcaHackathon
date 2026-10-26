@@ -586,7 +586,7 @@ only (the first two are the anatomy of A12 part 1, the last three belong to the 
 .venv/Scripts/python pipeline/benchmark/restarts.py bar-ath CONFIG [--data-dir D] [--out PATH]
 .venv/Scripts/python pipeline/benchmark/restarts.py stats [--model M] [--profile P] [--seeds N] [--matches ID ...] [--data-dir D] [--out PATH]
 .venv/Scripts/python pipeline/benchmark/restarts.py events [--model M] [--tail T] [--use-ball] [--profile P] [--seeds N] [--matches ID ...] [--data-dir D] [--out PATH]
-.venv/Scripts/python pipeline/benchmark/restarts.py configs STATS_JSON --out-dir DIR [--main pipeline/configs/main.toml]
+.venv/Scripts/python pipeline/benchmark/restarts.py configs STATS_JSON --out-dir DIR [--main pipeline/configs/main.toml] [--span after|stoppage_end] [--from-tail TAIL] [--switch-restart X ...]
 ```
 
 - **`anatomy`** runs on the benchmark (default profile `tracking`, 3 seeds). The pipeline's labels are made as the runner
@@ -617,7 +617,11 @@ only (the first two are the anatomy of A12 part 1, the last three belong to the 
   human-collected event data of the seven matches (below), and no constant comes from them.
 - **`configs`** reads the JSON of `stats --out` and writes one config per setting, `r014_t{TTT}_b{0|1}.toml`: `main.toml`
   as it is plus a `restart_team` source with that setting's measured confidences (a type without one does not vote).
-  These are R014's eight configs, in `pipeline/benchmark/configs/r014/`.
+  These are R014's eight configs, in `pipeline/benchmark/configs/r014/`. With `--span stoppage_end --from-tail TAIL`
+  the source has no tail and votes one observation spread over the stoppage that ends at the restart, at the
+  confidences of the tail's `t{TAIL}_b0` and `_b1` settings; `--switch-restart X ...` (inf allowed) also writes the
+  decoder's `restart_source` and `switch_restart`, one config per value: R014b's eight, `r014b_s{XX}_b{0|1}.toml`, in
+  `pipeline/benchmark/configs/r014b/`.
 
 Reports go to the paths of `--out`, by convention `data/runs/benchmark/restarts/anatomy.<truth>.json` and
 `data/runs/restarts/bar_ath.json` (both under the gitignored `data/`). Its results are A12's (the first two modes, part 1; `stats` and `events`, part 2).

@@ -49,6 +49,10 @@ restart_source naming one of the block's evidence sources, D splits in two, D_H 
     minimums    min_possession for H and A, min_dead for D_H and D_A
     labels      D_H and D_A are both written D
 
+restart_source expects a source that speaks on dead frames only, restart_team's span "stoppage_end". A source that
+votes on live frames (span "after") would raise the dead states there by up to w log 2c a frame (a term on D_H or
+D_A, whichever it names, and none on H and A) and pull D into the restart.
+
 Why. The Laws of the Game decide who restarts after a stoppage, and the first team after it is that team. R014 voted
 for it in `home` on a fixed span after the source's own restart estimate and gained +0.004 spellF1: a fixed span keeps
 pushing after the restarting team's first possession has ended, and it starts where the source thinks play resumed,

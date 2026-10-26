@@ -146,7 +146,7 @@ def scan_ball_times(path):
 
 
 def _restart_of(event_element, path, club_team):
-    """(kind, team, EventTime text) of an <Event> that holds a restart, or None."""
+    """(kind, team, EventTime text, label) of an <Event> that holds a restart, or None."""
     for child in event_element:
         if child.tag not in KINDS:
             continue
@@ -245,12 +245,13 @@ def _times_of(match_id, positions_path, data_dir):
     return times
 
 
-def load_restarts(match_id, data_dir=None):
+def load_restarts(match_id, data_dir=None, graded=None):
     """The restarts of one of the seven DFL matches as {"row", "kind", "team", "outside"} (see build_restarts).
 
     The rows are those of dfl.load_match(match_id)'s timeline. The first call reads the positions file's clock (about a
     minute) and caches it; later calls take a second or two. ValueError for an id outside sources.MATCH_IDS;
-    whatever dfl and build_restarts raise otherwise.
+    whatever dfl and build_restarts raise otherwise. `graded` is DflMatch.graded of that match when the caller already
+    holds it (default None: the match is loaded here); it saves loading the match a second time.
     """
     if match_id not in sources.MATCH_IDS:
         raise ValueError("{!r} is not one of the DFL benchmark matches ({})".format(match_id, ", ".join(sources.MATCH_IDS)))
@@ -258,7 +259,8 @@ def load_restarts(match_id, data_dir=None):
     for kind, path in paths.items():
         if not os.path.isfile(path):
             raise FileNotFoundError("{}: no such file; {}".format(path, dfl.FETCH_ADVICE))
-    match = dfl.load_match(match_id, data_dir)
+    if graded is None:
+        graded = dfl.load_match(match_id, data_dir).graded
     info = dfl.parse_match_information(paths["information"])
     times = _times_of(match_id, paths["positions"], data_dir)
-    return place_restarts(paths["events"], info, match.graded, times)
+    return place_restarts(paths["events"], info, graded, times)

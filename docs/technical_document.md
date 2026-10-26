@@ -273,7 +273,9 @@ implements.
     only, was +0.0040 raw (p 0.0938, 6 wins in 7) and -0.0029 coarse; every longer tail scored lower, down to -0.0187.
   - **R014b**, restart states in the `hmm` decoder (`restart_source`, off by default; the observation spread over the
     stoppage, 8 configs): +0.0003 raw (p 0.8125) and -0.0004 coarse. The four `switch_restart` values gave identical
-    labels: one observation is about 2.4 nats, too weak against the episodes that follow.
+    labels by construction: one stoppage's observation is at most about 2.6 nats (logit 0.93; a throw-in 2.44), and a
+    cross transition costs `switch_restart`, so any value above about 2.6 decodes like `inf` (T44). Only the +0.0003
+    says the observation is weak against the episodes that follow.
 
   The source and the decoder's restart states stay in the code, off by default, and `main.toml` is unchanged.
 - **Restarts, who gets the ball (`main.toml` today):** No rule. After a stoppage the hold weakly favours the team that
@@ -626,8 +628,11 @@ would add to `main.toml` (+0.0198 raw, 7 wins in 7), and two protocols declared 
 source against a bar of +0.005 raw with a sign-flip p of at most 0.05, on `tracking` v3 with both truths. R014 voted for
 a fixed tail after the restart (8 configs): the best, 25 frames, was +0.0040 raw (p 0.0938, 6 wins in 7) and -0.0029
 coarse, and every longer tail scored lower. R014b put the call into the decoder as restart states (8 configs, all within
-0.0005 of each other): +0.0003 raw (p 0.8125). Neither met the bar, nothing was adopted, and the oracle's gap was
-mostly information a fixed-length vote does not have: it stopped where the truth next changed (T43).
+0.0005 of each other, identical labels by construction, T44): +0.0003 raw (p 0.8125). Neither met the bar, nothing was
+adopted, and the oracle's gap was partly information a fixed-length vote does not have (it stopped where the truth next
+changed, T43) and partly the rest of the distance to a real source: coverage (73.2% of true restarts called),
+agreement (72 to 93% by type), the error in the estimated restart frame, and the vote's strength (the oracle's about
+13.8 nats a frame against about 2.4 for a 0.92 vote).
 
 **Why these choices.** Lang et al. (2022, *Scientific Reports*) predict the in-play status from tracking and find
 boosting the best of four classical families (92.0% frame accuracy, against 86.7% for logistic regression), from the

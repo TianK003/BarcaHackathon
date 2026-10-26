@@ -244,13 +244,18 @@ by default. None of the four has been started, and each needs its own protocol d
 1. **A shorter vote.** R014's choice sat on its grid's lower edge (25 frames), every longer tail scored lower, and the
    leave-one-match-out picked it in 7 of 7 folds (+0.0040, p 0.0938). The cheapest next test is a declared grid below it,
    for example 5, 10, 15 and 25 frames, with the confidences measured at each tail and the same bar. It is a second look
-   at the same benchmark, so the bar must be the same and declared before it runs.
+   at the same benchmark, so the bar must be the same and declared before it runs. Two cautions: the chosen `t025_b0`
+   was negative under the coarse truth everywhere (pooled -0.0029, 2 wins in 7; leave-one-match-out, whole rule,
+   -0.0039, p 0.0312, 1 in 7; context coarse -0.0042), a raw/coarse disagreement that T33 and CLAUDE.md treat as a
+   warning; and this would be the third declared test of P17 on the same seven matches, not the second.
 2. **The goal-kick rule's specificity.** In A12 part 2, 134 of 608 matched throw-ins were called goal kicks, because the
    keeper stands in his goal area in most stoppages. A rule that tells the two apart would raise a type's confidence,
    and the goal kick is the weakest (0.72).
-3. **The observation's weight as a declared axis in the restart states.** One observation is about 2.4 nats, and R014b
-   shows that is too weak to matter: the four `switch_restart` values gave identical labels. Run this only if item 1
-   does not settle it.
+3. **The observation's weight as a declared axis in the restart states.** One observation is at most about 2.6 nats,
+   and R014b's +0.0003 says that is too weak to matter; its identical labels across `switch_restart` {4, 8, 16, inf}
+   were by construction (T44), not evidence. A weight axis w brings `switch_restart` into play only where w * logit(c)
+   exceeds it, so the two must be declared together, with `switch_restart` values on both sides of the largest w *
+   logit(c), or the next grid repeats the problem. Run this only if item 1 does not settle it.
 4. **Smart Tagging's set-piece tags as a type hint (P08).** Left out of P17 on purpose. They are automatic, but P01's
    matches have no Smart Tagging, so there is no benchmark to choose their weight on.
 
@@ -636,8 +641,9 @@ is missing at 39.8% of the predicted stoppages' ends and 20.2% of their restarts
 - The players' arrangement in the 2 s before the restart says the type and the team: kick-off, corner, goal kick,
   throw-in and, when the ball is visible, free kick. Five rules from the Laws of the Game (8, 13, 15, 16, 17), with the
   opponent distances halved because real players encroach, declared and not tuned.
-- A vote only from the restart onwards, for a tail of frames, never into the stoppage (the dead-ball edges are not
-  the source's job) and never across a block edge.
+- A vote only from the restart onwards, for a tail of frames, never into the stoppage for span "after" (the dead-ball
+  edges are not the source's job; R014b's span "stoppage_end" later spread one observation over the stoppage instead)
+  and never across a block edge.
 - The confidence of each type is measured on DFL, as `controlled_touch`'s is, and a type that cannot be measured does not
   vote.
 - R014 chooses the tail and whether the ball is read, and adopts or drops the source by a rule declared before the run,

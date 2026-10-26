@@ -241,6 +241,12 @@ def votes(calls, n_frames, confidences, span="after"):
     else:
         raise ValueError("restart_team: span \"stoppage_end\" votes over each call's stoppage, [first, restart), and "
                          "these calls have no \"first\"")
+    if span == "stoppage_end":
+        for code, value in checked.items():
+            if value == 1.0:
+                raise ValueError("restart_team: span \"stoppage_end\" cannot take a confidence of 1.0 for {} (one "
+                                 "observation of infinite log-odds spread over the stoppage is n observations of "
+                                 "about 13.8 nats, not one); use a confidence below 1".format(TYPES[code]))
     home = no_opinion(n_frames)
     for first, restart, end, kind, team in zip(firsts, restarts, calls["end"].tolist(), calls["type"].tolist(),
                                                calls["team"].tolist()):

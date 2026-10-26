@@ -6,6 +6,8 @@
     python pipeline/benchmark/restarts.py stats [--model M] [--profile P] [--seeds N] [--matches ID ...]
                                                 [--data-dir D] [--out PATH]
     python pipeline/benchmark/restarts.py configs STATS_JSON --out-dir DIR [--main pipeline/configs/main.toml]
+                                                  [--span after|stoppage_end] [--from-tail TAIL]
+                                                  [--switch-restart X ...]
     python pipeline/benchmark/restarts.py events [--model M] [--tail T] [--use-ball] [--profile P] [--seeds N]
                                                  [--matches ID ...] [--data-dir D] [--out PATH]
 
@@ -418,7 +420,8 @@ def events_diagnostic(*, model, tail=50, use_ball=False, profile=DEFAULT_PROFILE
              "confusion": {kind: dict.fromkeys(kinds, 0) for kind in types}}
     for match_id in ids:
         match = matches[match_id] if matches is not None else dfl.load_match(match_id, data_dir=data_dir)
-        here = events[match_id] if events is not None else dfl_events.load_restarts(match_id, data_dir=data_dir)
+        here = events[match_id] if events is not None else dfl_events.load_restarts(
+            match_id, data_dir=data_dir, graded=match.graded)
         for seed in seed_list:
             atd = run.make_atd(match, profile, seed, calibration)
             inputs = match_inputs.MatchInputs(match, atd, profile=profile, seed=seed, data_dir=data_dir)
@@ -440,8 +443,6 @@ def events_diagnostic(*, model, tail=50, use_ball=False, profile=DEFAULT_PROFILE
                              else None} for kind in kinds},
             "confusion": total["confusion"]}
 
-
-# -- the table --------------------------------------------------------------------------------------------------------
 
 # -- configs: R014's candidates, main.toml plus the measured restart vote ---------------------------------------------
 
@@ -652,7 +653,8 @@ def main(argv=None):
     five.add_argument("stats", metavar="STATS_JSON", help="the JSON of `stats --out`")
     five.add_argument("--out-dir", required=True, help="where the r014_t*_b*.toml files go (folders are made)")
     five.add_argument("--span", choices=("after", "stoppage_end"), default="after",
-                      help="after (R014, default) or stoppage_end (R014b: no tail, the vote on the last stoppage frame)")
+                      help="after (R014, default) or stoppage_end (R014b: no tail, one observation spread over the stoppage that "
+                           "ends at the restart)")
     five.add_argument("--from-tail", type=int, metavar="TAIL",
                       help="stoppage_end: the tail whose settings t<TAIL>_b0 and _b1 supply the confidences")
     five.add_argument("--switch-restart", nargs="+", type=float, metavar="X",

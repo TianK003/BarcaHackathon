@@ -1826,8 +1826,14 @@ def test_restart_team_stoppage_end_span():
     assert abs(float(np.log(away[50:150] / (1.0 - away[50:150])).sum()) + logit) < 1e-12
     # spread itself: one frame is the confidence, and a certain call stays certain on every frame
     assert abs(restart_team.spread(0.9, 1) - 0.9) < 1e-15 and restart_team.spread(1.0, 100) == 1.0
-    certain = restart_team.votes(calls, RESTART_FRAMES, {1: 1.0}, span="stoppage_end")
-    assert (certain[50:150] == 1.0).all() and (certain[165:195] == 1.0).all()
+    # a certain call would be n observations of ~13.8 nats, not one: refused here, by type, and still fine for "after"
+    try:
+        restart_team.votes(calls, RESTART_FRAMES, {1: 1.0}, span="stoppage_end")
+    except ValueError as error:
+        assert restart_team.TYPES[1] in str(error) and "1.0" in str(error), str(error)
+    else:
+        raise AssertionError("a confidence of 1.0 must be refused for span stoppage_end")
+    assert (restart_team.votes(calls, RESTART_FRAMES, {1: 1.0}, span="after") == 1.0).any()
     assert np.isnan(restart_team.votes(calls, RESTART_FRAMES, {3: 0.9}, span="stoppage_end")).all(), \
         "a type without a confidence is silent with either span"
     for bad in ("before", "", None, 1, True, "Stoppage_End"):
@@ -2486,7 +2492,7 @@ def test_hmm_posterior_off_by_default():
 # other where there is no restart evidence.
 
 def hmm_viterbi_before_restart_states(emissions, switch_team, switch_dead, min_possession, min_dead):
-    """hmm.viterbi as it was at f11e93d, before the restart states, verbatim but for its argument checks: the pin that
+    """hmm.viterbi as it was at 58fc542, before the restart states, verbatim but for its argument checks: the pin that
     the three-state path has not moved by one label."""
     import math
     from pipeline.contracts import A, D, H

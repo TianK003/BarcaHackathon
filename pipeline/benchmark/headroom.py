@@ -562,7 +562,7 @@ def main(argv=None):
                     "CONFIG is the reference of the comparisons; the home variants need it to have one nearest_player "
                     "source.")
     parser.add_argument("config", metavar="CONFIG",
-                        help="a TOML config with one nearest_player source, e.g. "
+                        help="a TOML config (a nearest_player source is needed only for the classic variants), e.g. "
                              "pipeline/benchmark/configs/nearest_w50.toml")
     parser.add_argument("--profile", default=DEFAULT_PROFILE, help=run.profile_help())
     parser.add_argument("--seeds", type=int,
