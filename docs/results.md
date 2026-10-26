@@ -1276,7 +1276,7 @@ So:
   Phase 1 (the source `restart_team`, from the players' arrangement) goes ahead.
 - **The hold points the wrong way after most stoppages.** Seven in ten stoppages hand the ball to a different team than
   the one that had it (70.3%, from 56.7% to 90.1% a match), so a decoder that carries the team across a stoppage is
-  wrong at the start of the next possession by construction. That is the "clear next team" condition that "After P07 and
+  wrong at the start of the next possession whenever the team flips. That is the "clear next team" condition that "After P07 and
   P02" item 4 asked for, and it holds in the sense that matters.
 - **The pipeline already names the restarting team on most restarts, which is why the ceiling is +0.02 and not more.**
   On the 50 frames after a true restart `main.toml` is right on 78.7%, wrong on 14.1% and still in `D` on 7.2%, because
@@ -1291,9 +1291,10 @@ So:
   where a ball-free rule has to carry the vote (the arrangement of the players, not the ball's position): the source's
   design reads players only unless `use_ball`, for free kicks.
 - **This is an upper bound, and a loose one.** The oracle knows the true restart frame and the true team, with no error
-  in either, at full weight (a perfect source is about 13.8 nats a frame to the hmm). The real source estimates the
+  in either, at full weight (an exact 1.0 or 0.0 reads as about 13.8 nats a frame to the hmm at `eps` 1e-6, `headroom.py`'s
+  documented reading of an oracle, not a measurement). The real source estimates the
   restart from the dead-ball model and the team from the players' arrangement, and says nothing for the types it cannot
-  read, so less than +0.0198 is what to expect, and the bar for adopting it is set by R014's declared rule, not by
+  read, so a real source cannot be expected to exceed +0.0198, and the bar for adopting it is set by R014's declared rule, not by
   this figure. The benchmark also tracks the ball out of play (T39), which leaves the stoppages' anatomy there easier to
   read than on our match.
 - **No scoreboard row**: A12 is an analysis, and nothing is submitted from it. The scoreboard lists experiments.
