@@ -5,7 +5,7 @@
     model = "pipeline/models/dead_ball_hgb.json"   # the dead-ball model main.toml uses: it says where the stoppages are
     tail = 50              # frames voted from the restart on
     use_ball = false       # optional: read the ball where the setup window sees it (free kicks need it)
-    setup = 50             # optional: frames before the restart read for the arrangement (2 s)
+    setup = 50             # optional: the stoppage's last frames read for the arrangement (2 s)
     min_stoppage = 25      # optional: the shortest predicted stoppage, in frames (the decoder's min_dead)
     min_prob = 0.001       # optional: dead_ball_model's clip, as main.toml leaves it
     corner = 0.9           # one confidence in (0.5, 1.0] per type that votes; a type left out does not vote. The
@@ -28,10 +28,13 @@ What it does, per graded block (kinematics.blocks; nothing is read or voted acro
    and its restart is the frame after it, which must be >= ALIVE_LEVEL. A run that reaches the block's end has no
    restart, nor has one ended by a NaN (nobody knows when play resumed). A run from the block's first frame (the frames
    before the second half's kick-off on BAR-ATH) is a stoppage like any other.
-2. The arrangement on [max(block start, restart - setup), restart). Each frame calls at most one (type, team): the first
-   rule below that fires, in TYPES's order (`frame_calls`). The stoppage takes the (type, team) called on the most
-   frames of the window, if that is at least MIN_WINDOW_SHARE of the window, and nothing otherwise; a tie goes to the
-   lower type code, then to home (`arrangement`).
+2. The arrangement on [max(first, restart - setup), restart), `first` being the stoppage's first frame: the end of the
+   stoppage, and never the play before it. A stoppage shorter than `setup` is read whole and no further, because the
+   live frames before it hold arrangements of their own (a winger at the touchline makes a throw-in), and a stoppage
+   never starts before its block, so neither does its window. Each frame calls at most one (type, team): the first rule
+   below that fires, in TYPES's order (`frame_calls`). The stoppage takes the (type, team) called on the most frames of
+   the window, if that is at least MIN_WINDOW_SHARE of the window's own length, and nothing otherwise; a tie goes to
+   the lower type code, then to home (`arrangement`).
 3. The vote. `home` = c (home restarts) or 1 - c (away) on [restart, end), with c the type's confidence and end =
    min(restart + tail, the next stoppage's first frame, the block's end). The next stoppage counts whether or not it has
    a restart of its own: a vote never runs into a stretch the dead-ball model calls dead. A type with no confidence
@@ -88,7 +91,7 @@ The confidences are measured per type and per (tail, use_ball) on the benchmark 
 directly, and restarts.py reads `calls`.
 
 Speed. frame_calls takes the (frames, slots, slots) distances a CHUNK of frames at a time, so its memory is bounded for
-any window; the source calls it once per stoppage on at most `setup` frames.
+any window; the source calls it once per stoppage on at most `setup` frames of it.
 """
 
 import numbers
@@ -103,7 +106,7 @@ TYPES = ("kick_off", "corner", "goal_kick", "throw_in", "free_kick")   # priorit
 KICK_OFF, CORNER, GOAL_KICK, THROW_IN, FREE_KICK = range(len(TYPES))
 NO_CALL = -1                         # frame_calls' type and team on a frame where no rule fires
 ALIVE_LEVEL = 0.5                    # P(alive) below this is a dead frame (the decoder's own reading of a probability)
-MIN_WINDOW_SHARE = 0.25              # a stoppage's (type, team) must be called on this share of its setup window
+MIN_WINDOW_SHARE = 0.25              # a stoppage's (type, team) must be called on this share of its window
 CENTRE_CIRCLE_M = 9.15               # Law 1's centre circle, Law 8's distance at a kick-off
 OWN_HALF_TOLERANCE_M = 1.0           # past the halfway line a slot still counts as in its own half (play_features')
 CORNER_ZONE_M = 3.0                  # a corner taker is this close to the corner point (the arc is 1 m; tracking error)
@@ -151,7 +154,7 @@ def calls(run, *, model, tail, use_ball=False, setup=50, min_stoppage=25, min_pr
 def calls_from_alive(inputs, alive, *, tail, use_ball, setup, min_stoppage):
     """One call per stoppage with an arrangement, from any (n,) P(alive): a dict of read-only arrays in time order,
     `restart` and `end` (int64: the vote's [restart, end)), `type` (int8, a code of TYPES) and `team` (int8, 0 home,
-    1 away)."""
+    1 away). The arrangement is read on the stoppage's last `setup` frames, [max(first, restart - setup), restart)."""
     tail, use_ball, setup, min_stoppage = _settings(tail, use_ball, setup, min_stoppage)
     n_frames = inputs.atd.n_frames
     alive = np.asarray(alive, dtype=np.float64)
@@ -169,7 +172,7 @@ def calls_from_alive(inputs, alive, *, tail, use_ball, setup, min_stoppage):
         for index, (first, restart) in enumerate(runs):
             if restart is None:
                 continue
-            window = slice(max(start, restart - setup), restart)
+            window = slice(max(first, restart - setup), restart)          # inside the stoppage, so inside the block
             types, named = frame_calls(players.xy_m[window], players.present[window], teams, ball.xy_m[window],
                                        ball.visible[window], ball.speed[window], inputs.pitch, home_left, use_ball)
             pair = arrangement(types, named, MIN_WINDOW_SHARE)
@@ -370,7 +373,7 @@ def _beyond(value, low, high):
 
 def _settings(tail, use_ball, setup, min_stoppage):
     tail = _whole("tail", tail, "frames voted from the restart on")
-    setup = _whole("setup", setup, "frames before the restart read for the arrangement")
+    setup = _whole("setup", setup, "the stoppage's last frames read for the arrangement")
     min_stoppage = _whole("min_stoppage", min_stoppage, "frames: the shortest stoppage")
     if not isinstance(use_ball, (bool, np.bool_)):
         raise ValueError("restart_team: use_ball must be true or false, got {!r}".format(use_ball))

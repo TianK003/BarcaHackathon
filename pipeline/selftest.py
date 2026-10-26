@@ -1376,12 +1376,37 @@ def test_restart_team_block_edges():
     alive[90:110] = np.nan
     calls = restart_calls(restart_scene(CORNER_SCENE, graded=[(0, 90), (110, 200)]), alive, tail=50)
     assert calls["restart"].tolist() == [80] and calls["end"].tolist() == [90]
-    # the window is clipped to the block: 8 corner frames make a quarter of the 30 frames [100, 130), not of 50
+    # the window never crosses the block's start: 8 corner frames make a quarter of the 30 frames [100, 130), not of
+    # 50, also when the frames before the block's start are dead too (the stoppage is cut at the block's edge)
     taker = np.full((RESTART_FRAMES, 2), np.nan)
     taker[100:108] = (0.5, 0.5)
     clipped = restart_scene({0: taker, 1: (0.5, 6.5)}, graded=graded)
     assert restart_pairs(clipped, alive=restart_alive((100, 130))) == [(1, 0)]
-    assert restart_pairs(restart_scene({0: taker, 1: (0.5, 6.5)}), alive=restart_alive((100, 130))) == []
+    assert restart_pairs(clipped, alive=restart_alive((60, 130))) == [(1, 0)]
+    lead = np.full((RESTART_FRAMES, 2), np.nan)
+    lead[80:100] = (0.5, 0.5)       # an away corner on the first block's last 20 (dead) frames: it would win [80, 130)
+    edge = restart_scene({0: taker, 1: (0.5, 6.5), 2: (40.0, 60.0), 3: lead}, graded=graded)
+    assert restart_pairs(edge, alive=restart_alive((60, 130))) == [(1, 0)]
+
+
+def test_restart_team_reads_only_the_stoppage():
+    """The arrangement is read on the stoppage's last `setup` frames, [max(first, restart - setup), restart): a stoppage
+    shorter than `setup` is read whole and no further, so the play before it never counts."""
+    # a 30-frame stoppage [120, 150): 8 corner frames make a quarter of its 30 frames (not of 50)
+    taker = np.full((RESTART_FRAMES, 2), np.nan)
+    taker[120:128] = (0.5, 0.5)
+    short = restart_scene({0: taker, 1: (0.5, 6.5), 2: (40.0, 60.0)})
+    assert restart_pairs(short, alive=restart_alive((120, 150))) == [(1, 0)]
+    # an away thrower at the touchline on the 20 live frames before it: a throw-in on 20 of [100, 150)'s 50 frames
+    # would win, but those frames are play, and the corner of the stoppage itself stands
+    thrower = np.full((RESTART_FRAMES, 2), np.nan)
+    thrower[100:120] = (40.0, 67.8)
+    live = restart_scene({0: taker, 1: (0.5, 6.5), 2: (40.0, 60.0), 3: thrower})
+    assert restart_pairs(live, alive=restart_alive((120, 150))) == [(1, 0)]
+    # the same thrower inside a long stoppage [50, 150) is read (window [100, 150)): the throw-in, 20 frames of 50
+    assert restart_pairs(live, alive=restart_alive((50, 150))) == [(3, 1)]
+    # a stoppage of exactly `setup` frames and one longer read the same last 50 frames
+    assert restart_pairs(short, alive=restart_alive((100, 150))) == restart_pairs(short) == []
 
 
 def test_restart_team_absent_team_gives_no_call():
@@ -1600,6 +1625,36 @@ def test_restart_team_matches_a_loop():
             if code >= 0:
                 seen[(code, mode)] += 1
     assert min(seen.values()) >= 10, "the random scenes no longer reach every rule in both modes: {}".format(seen)
+
+
+def test_restart_team_frame_calls_across_a_chunk():
+    """frame_calls on more frames than one CHUNK: the same calls as restart_loop, and as the frames called in pieces."""
+    from pipeline.evidence import restart_team
+    n, slots = 300, 14
+    assert n > restart_team.CHUNK, "the check must span two chunks"
+    rng = np.random.default_rng(29)
+    length, width = PLAY_PITCH
+    anchors = np.array([(1.0, 1.0), (3.0, width / 2), (40.0, 0.5), (length / 2, width / 2), (70.0, width - 0.5),
+                        (length - 1.0, 1.0), (60.0, 30.0)])
+    start = anchors[rng.integers(0, len(anchors), slots)] + rng.normal(0.0, 2.0, (slots, 2))
+    xy = start[None] + np.cumsum(rng.normal(0.0, 0.15, (n, slots, 2)), axis=0)     # slots wandering near the spots
+    teams = np.arange(slots) % 2
+    present = rng.random((n, slots)) < 0.9
+    ball = xy[np.arange(n), rng.integers(0, slots, n)] + rng.normal(0.0, 0.8, (n, 2))
+    visible = rng.random(n) < 0.7
+    speed = np.where(rng.random(n) < 0.6, 0.5, 3.0)
+    for use_ball in (False, True):
+        rest = (PLAY_PITCH, True, use_ball)
+        types, named = restart_team.frame_calls(xy, present, teams, ball, visible, speed, *rest)
+        expected = restart_loop(xy, present, teams, ball, visible, speed, *rest)
+        assert list(zip(types.tolist(), named.tolist())) == expected, use_ball
+        pieces = [restart_team.frame_calls(xy[a:b], present[a:b], teams, ball[a:b], visible[a:b], speed[a:b], *rest)
+                  for a, b in ((0, 137), (137, n))]
+        assert np.array_equal(types, np.concatenate([piece[0] for piece in pieces])), use_ball
+        assert np.array_equal(named, np.concatenate([piece[1] for piece in pieces])), use_ball
+        chunk = restart_team.CHUNK
+        assert (types[:chunk] >= 0).sum() >= 20 and (types[chunk:] >= 0).sum() >= 10, "too few calls to compare"
+        assert len(set(types[types >= 0].tolist())) >= 2, "the scene calls a single type"
 
 
 def test_restart_team_rejects_bad_parameters():
