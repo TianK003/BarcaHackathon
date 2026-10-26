@@ -33,6 +33,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P01](#p01--a-validation-set-we-can-trust) | Validation set we can trust: other matches, degraded to look like ours | deciding anything at all | M | enabling | done → R002–R005 |
 | [P02](#p02--inspect-the-ground-truths-conventions-on-the-public-window-to-understand-and-never-to-tune) | Inspect the GT's conventions on the public window, to understand and never to tune | boundary timing | S | bounded since the 23 Oct rule: understanding only; so far the pipeline's own lag on DFL, 1 to 2 frames, within noise (R012) | partly done → A11, R012 (inspection only; a person may watch to understand) |
 | [P16](#p16--metricas-sample-games-in-our-ground-truth-providers-conventions) | Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing | boundary timing, grain | M | medium | idea |
+| [P17](#p17--the-restart-team-channel) | Restart-team channel: who restarts after a stoppage, from the players' arrangement | facts 3, 5 (the hold points at the old team after most stoppages) | S–M | ceiling +0.0198 raw, +0.0197 coarse (A12) | doing (Tian, Claude) → A12 |
 | [P03](#p03--one-command-deterministic-cached) | One-command, deterministic, cached pipeline | reproducibility | S–M | enabling | done → R001 |
 | [P04](#p04--sticky-ownership-from-controlled-touches) | Sticky ownership from controlled touches | facts 3, 5 | S | high: +0.1421 raw at the chosen decoder (R010) | done → R008, R010; rule re-chosen → R013 |
 | [P05](#p05--a-real-dead-ball-detector) | Dead-ball detector | fact 4 | M | high: +0.1661 raw at the chosen decoder, on a benchmark that overstates it (R010, T38, T39) | done → R009, R010 |
@@ -204,7 +205,8 @@ of possessions moved the other way on BAR-ATH (R011). *Items 2 and 4 are rewritt
    to the pipeline would be a hand label (T27), so the types have to come from code (Smart Tagging's set-piece tags,
    P08, which are automatic) or from other games' flags (P16). A person watching to judge whether the channel is worth
    building is design, which is allowed. If the stoppages are mostly of a few types with a clear next team (a corner, a
-   goal kick), it is a small source for `home` after a stoppage; if not, drop it.
+   goal kick), it is a small source for `home` after a stoppage; if not, drop it. *Started 26 Oct as P17 (A12: a
+   perfect 2 s restart vote is worth +0.0198 raw and +0.0197 coarse, 7 wins in 7).*
 
 What the evidence does not support is a second round on P07's features, on the shift's three integers or on P07's
 weight alone (item 1 may revisit the weight, as a second axis of the decoder's re-check, under a protocol declared
@@ -230,7 +232,7 @@ except R009's dead-ball source and weight, which R013 declared out of scope.
    R008 found 1.0 m and 3 m/s worse, the minimum episode cannot go below one frame, and the coverage on BAR-ATH already
    argues against tightening it further on DFL's evidence alone. A grid there would be tuning to DFL's fine grain.
 4. **In parallel, as before:** a person watching P02's transitions to understand ("After P07 and P02", item 2), and the
-   restart-team channel from code (item 4). R013 changes neither.
+   restart-team channel from code (item 4). R013 changes neither. *Later (26 Oct):* the channel is P17, started.
 
 ---
 
@@ -591,6 +593,41 @@ P06 as features. P01's matches have no Smart Tagging, so there is no benchmark f
 constant argued from what the tags mean, and the public window only checks that the votes are read the right way round
 (a correctness check, never a tuning set, `f8f2629`). Never copy intervals across as labels. Map `Barcelona` → H,
 `Atletic Club` → A and `N/A` → no vote. Tag windows are seconds wide, and phases are not possessions ([T17](traps.md)).
+
+### P17 — The restart-team channel
+
+**Status: doing (Tian, Claude) → [A12](results.md).** Phase 0 is done and the decision is GO: a perfect 2 s vote for the
+restarting team is worth +0.0198 pooled raw spellF1 to `main.toml` (+0.0197 coarse, 7 wins in 7 under both), against a
+bar of +0.01 declared in the design before any run. The source, the measured confidences of the real source (A12 part 2)
+and R014, which chooses and adopts by a declared rule, are next.
+
+**Why.** Facts 3 and 5. After a stoppage `controlled_touch`'s hold weakly favours the team that controlled the ball
+before it, until the first new episode names the team ("After P04 and P05" item 4, "After P07 and P02" item 4, "After
+R013" item 4, and P05's restart table, which no source built). A12 sizes it: the restarting team differs from the
+previous one after 70.3% of the benchmark's stoppages, `main.toml` names the restarting team right on 78.7% of the 50
+frames after a restart, wrong on 14.1% and still `D` on 7.2%, and the ceiling is the +0.0198 above. On our match the ball
+is missing at 39.8% of the predicted stoppages' ends and 20.2% of their restarts, so the rule has to lean on the players.
+
+**What.** A label-free source, `restart_team`, returning only `home`:
+- The stoppages come from the dead-ball model, the same runs the decoder sees (P(alive) below 0.5 for at least 25
+  frames), and the restart is the first frame after one.
+- The players' arrangement in the 2 s before the restart says the type and the team: kick-off, corner, goal kick,
+  throw-in and, when the ball is visible, free kick. Five rules from the Laws of the Game (8, 13, 15, 16, 17), with the
+  opponent distances halved because real players encroach, declared and not tuned.
+- A vote only from the restart onwards, for a tail of frames, never into the stoppage (the dead-ball edges are not
+  the source's job) and never across a block edge.
+- The confidence of each type is measured on DFL, as `controlled_touch`'s is, and a type that cannot be measured does not
+  vote.
+- R014 chooses the tail and whether the ball is read, and adopts or drops the source by a rule declared before the run,
+  reading both truths.
+
+**What it cannot settle.**
+- The ceiling is an upper bound: the oracle knows the true restart frame and team. The real source estimates both.
+- The benchmark's ball is tracked out of play (T39), so anything that reads the ball looks better on DFL than on ours:
+  the rules are players-only, and free kicks, which need a visible ball, are the part that may not transfer.
+- Our match has no restart types to measure against: a type read off its video by a person would be a hand label (T27).
+- Smart Tagging's set-piece tags are left out on purpose: they would be a P08 follow-up, with no benchmark to choose
+  their weight on.
 
 ## Cheap signals worth checking
 

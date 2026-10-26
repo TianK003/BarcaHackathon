@@ -1183,6 +1183,121 @@ constant: no back-dating, `D` onset or shift is to be tuned to them. "How a pers
 understand: a person may watch those 20 changes to see how our truth flips and what kind of stoppage each is, and
 nothing seen may become a label, a restart type or a number written down for those frames.
 
+### A12 — What knowing who restarts is worth to main.toml, and how stoppages end (2026-10-26, Tian)
+
+Proposal: P17 · Commit: `736c2c0` (the code all five runs were made at, on branch `p17-restart-team`; the oracles in
+`headroom.py` are from `1e277e2`, `restarts.py` from `736c2c0`; the entry is in the commit that adds it) · Commands,
+from the repo root, one process at a time on one BLAS thread at below-normal priority:
+
+```bash
+python pipeline/benchmark/headroom.py pipeline/configs/main.toml --variants restart restart_run --truth raw --write
+python pipeline/benchmark/headroom.py pipeline/configs/main.toml --variants restart restart_run --truth coarse --write
+python pipeline/benchmark/restarts.py anatomy pipeline/configs/main.toml --truth raw --out data/runs/benchmark/restarts/anatomy.raw.json
+python pipeline/benchmark/restarts.py anatomy pipeline/configs/main.toml --truth coarse --out data/runs/benchmark/restarts/anatomy.coarse.json
+python pipeline/benchmark/restarts.py bar-ath pipeline/configs/main.toml --out data/runs/restarts/bar_ath.json
+```
+
+Validation (P01 benchmark): 7 DFL matches x 3 degradation seeds (0, 1, 2), profile `tracking` version 3, under the raw
+and the coarse truth. All five logs end `EXIT=0`. Before them a one-thread check (`run.py main.toml --truth both
+--no-write`) reproduced R013 exactly (0.5430 raw, 0.5593 coarse, alive/dead F1 0.9731), so the throttled runner changes
+nothing. Part 1 of two: the ceiling and the anatomy. Part 2, the measured confidences of the real source, comes with it
+(Phase 1b). Aggregates only: the benchmark is public DFL data, and the one number from our match is a count or a share of
+`main.toml`'s own output (no truth for it exists). This is a measurement of a bound and nothing is adopted.
+
+**What was measured.** P05's table and "After R013" item 4 say that after a stoppage `controlled_touch`'s hold favours
+the team that had the ball before it, until the first new control episode names the team, and that a source for the
+restarting team "would speak sooner". Nothing sized that. Two questions, before any source is built:
+
+1. **The ceiling.** `headroom.py` gained `--variants` and two oracles that read the truth by closure (as the others do,
+   registered only inside a run). A restart is every true `D` run in a graded half followed by `H` or `A` in the same
+   half, `e` its first live frame and T the truth's team at `e`.
+   - `oracle_restart` (variant `restart`, `main__restart`) is `main.toml` plus a source of `home` = 1 (T = H) or 0 (T =
+     A) on `[e, min(e + 50, the truth's next change, the block's end))`, at weight 1, and NaN everywhere else, `alive`
+     included: a perfect "which team restarts" vote for 2 s. It is the go/no-go number.
+   - `oracle_restart_run` (variant `restart_run`) is the same to the truth's next change, which is the whole possession.
+     Context only: it also hands the decoder where the first possession ends, which is not "who restarts".
+2. **The anatomy** (`restarts.py anatomy`). The same restarts, with `main.toml`'s decoded labels on the benchmark's
+   degraded copy. The **flip** is the share of restarts whose team differs from the truth's team on the frame before the
+   stoppage (restarts with no team before it excluded). The **outcome** is read on the 50 frames after the true restart:
+   *right* if `main.toml` labels more of them with the restarting team than with the other, *wrong* otherwise but with some
+   `H`/`A` (a tie is wrong), *still D* if it labels none. On BAR-ATH (`restarts.py bar-ath`) it counts `main.toml`'s own
+   predicted stoppages (a `D` run followed by `H` or `A` in a graded half) and whether the ball is missing on more than
+   half of the 50 frames before and after.
+
+**The ceiling**, pooled spellF1 on `tracking`, with the deltas against `main` (the interval is a 90% t-interval over
+the 7 matches):
+
+| config | raw spellF1 | coarse spellF1 | raw macroF1 | alive/dead F1 | possessions / min (raw) |
+|---|---|---|---|---|---|
+| main | 0.5430 | 0.5593 | 0.8895 | 0.9731 | 3.13 |
+| main__restart | 0.5628 | 0.5790 | 0.8962 | 0.9742 | 3.19 |
+| main__restart_run | 0.5839 | 0.6950 | 0.9037 | 0.9749 | 3.05 |
+
+| delta against main | raw | coarse |
+|---|---|---|
+| `restart`, pooled | **+0.0198** | +0.0197 |
+| `restart`, mean per match | +0.0196 | +0.0197 |
+| `restart`, 90% t interval | [+0.0161, +0.0230] | [+0.0156, +0.0238] |
+| `restart`, sign-flip p, wins-losses | 0.0156, 7-0 | 0.0156, 7-0 |
+| `restart`, macroF1 | +0.0066 | +0.0074 |
+| `restart_run`, pooled (context) | +0.0409 [+0.0356, +0.0461], 7-0 | +0.1357 [+0.1197, +0.1505], 7-0 |
+
+Per match under the raw truth, `restart`: J03WMX +0.0235, J03WN1 +0.0255, J03WOH +0.0151, J03WOY +0.0182, J03WPY
++0.0241, J03WQQ +0.0161, J03WR9 +0.0143; by competition DFL-COM-000001 +0.0245, DFL-COM-000002 +0.0176.
+
+**The anatomy**, raw truth (the coarse truth gave the same figures to the last digit: it absorbs short possessions and
+leaves the runs next to `D` alone, A06). `restarts` counts each restart once per seed, so it is three times the
+distinct ones (101, 105, 100, 111, 95, 97 and 90 per match, in the table's order). Right, wrong and still D are shares
+of all restarts, then of the flips and of the non-flips:
+
+| match | restarts | median stoppage (s) | flip | right | wrong | still D | right / flip | wrong / flip | right / same | wrong / same |
+|---|---|---|---|---|---|---|---|---|---|---|
+| J03WMX | 303 | 16.0 | 90.1% | 78.2% | 14.2% | 7.6% | 76.6% | 15.0% | 93.3% | 6.7% |
+| J03WN1 | 315 | 24.5 | 70.2% | 69.2% | 19.7% | 11.1% | 68.5% | 21.0% | 69.9% | 17.2% |
+| J03WOH | 300 | 18.9 | 65.7% | 81.3% | 11.7% | 7.0% | 83.1% | 11.3% | 77.5% | 12.7% |
+| J03WOY | 333 | 19.5 | 65.5% | 85.0% | 9.9% | 5.1% | 81.9% | 11.6% | 90.4% | 7.0% |
+| J03WPY | 285 | 22.8 | 68.4% | 75.1% | 16.8% | 8.1% | 69.7% | 20.0% | 86.7% | 10.0% |
+| J03WQQ | 291 | 20.0 | 56.7% | 82.1% | 12.7% | 5.2% | 84.2% | 10.9% | 79.4% | 15.1% |
+| J03WR9 | 270 | 20.0 | 75.6% | 79.6% | 13.7% | 6.7% | 78.9% | 14.2% | 81.8% | 12.1% |
+| pooled | 2,097 | 19.8 | 70.3% | 78.7% | 14.1% | 7.2% | 77.3% | 15.0% | 81.6% | 12.1% |
+
+**BAR-ATH, label-free.** `main.toml`'s output has 104 predicted stoppages followed by `H` or `A` (44 in the first half,
+60 in the second). The ball is missing on more than half of the 50 frames before the restart for 39.8% of them, and on
+more than half of the first 50 frames after it for 20.2%.
+
+So:
+
+- **The ceiling clears the declared bar.** A perfect 2 s vote for the restarting team is worth +0.0198 pooled raw
+  spellF1 to `main.toml` (90% interval [+0.0161, +0.0230], 7 wins in 7, sign-flip p 0.0156, every match between +0.0143
+  and +0.0255) and +0.0197 under the coarse truth (7 in 7), so the two truths agree, which they did not for R010's and
+  R013's re-tunes. It also lifts macroF1 (+0.0066, +0.0074) and alive/dead F1 (0.9731 to 0.9742).
+- **Go/no-go: GO.** The rule was declared in the design before any run, Tian's: stop if `main__restart`'s pooled raw
+  delta is below +0.01, with the coarse figure reported beside it and not deciding. It is +0.0198, twice the bar, so
+  Phase 1 (the source `restart_team`, from the players' arrangement) goes ahead.
+- **The hold points the wrong way after most stoppages.** Seven in ten stoppages hand the ball to a different team than
+  the one that had it (70.3%, from 56.7% to 90.1% a match), so a decoder that carries the team across a stoppage is
+  wrong at the start of the next possession by construction. That is the "clear next team" condition that "After P07 and
+  P02" item 4 asked for, and it holds in the sense that matters.
+- **The pipeline already names the restarting team on most restarts, which is why the ceiling is +0.02 and not more.**
+  On the 50 frames after a true restart `main.toml` is right on 78.7%, wrong on 14.1% and still in `D` on 7.2%, because
+  the first control episode speaks quickly. The mistakes sit a little more on the flips (15.0% wrong against 12.1%
+  without a flip), so the carried team is only part of them, and the stoppages' ends that `D` has not left are another.
+  What a vote can earn is therefore the wrong 14.1% and some of the late 7.2%.
+- **The 2 s oracle is the honest ceiling and `restart_run` is not.** To the next change it adds +0.0409 raw and +0.1357
+  coarse, but it hands the decoder where the first possession ends. Under the coarse truth, whose possessions are
+  longer, that is worth more than three times as much as under the raw one, so the difference between the two figures is a statement
+  about the possession's end and not about who restarts. It is context only and decides nothing.
+- **On our match the ball is missing at 39.8% of the predicted stoppages' ends and 20.2% of their restarts**, which is
+  where a ball-free rule has to carry the vote (the arrangement of the players, not the ball's position): the source's
+  design reads players only unless `use_ball`, for free kicks.
+- **This is an upper bound, and a loose one.** The oracle knows the true restart frame and the true team, with no error
+  in either, at full weight (a perfect source is about 13.8 nats a frame to the hmm). The real source estimates the
+  restart from the dead-ball model and the team from the players' arrangement, and says nothing for the types it cannot
+  read, so less than +0.0198 is what to expect, and the bar for adopting it is set by R014's declared rule, not by
+  this figure. The benchmark also tracks the ball out of play (T39), which leaves the stoppages' anatomy there easier to
+  read than on our match.
+- **No scoreboard row**: A12 is an analysis, and nothing is submitted from it. The scoreboard lists experiments.
+
 ## Experiments
 
 Copy this template for each run, and add a scoreboard row for anything worth comparing.

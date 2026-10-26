@@ -531,6 +531,24 @@ on what the evidence could give this config and its penalties, and not an estima
   report is `run.py`'s to write: it holds the comparison with whichever configs it was run beside, which a headroom run
   cannot reproduce, so a headroom run never writes or replaces it.
 
+**`--variants` (P17).** `--variants NAME ...` picks the variants to run, by suffix, from the five above and two more:
+`restart` and `restart_run`. Without it the five run, as always. The two restart variants replace nothing, so they need
+no `nearest_player` (`main.toml` has none), and the others are refused for a config without one, by name. Each adds an
+oracle to CONFIG's own evidence at weight 1, and both read the truth by closure like the rest:
+
+- `oracle_restart` (`main__restart`) is a perfect "which team restarts" for 2 s. After each true `D` run followed by `H`
+  or `A` in the same graded half, `home` is the restarting team (1 for `H`, 0 for `A`) from the first live frame for
+  `RESTART_TAIL` = 50 frames, cut short where the truth next changes and at the block's end. A `D` run that opens a block
+  (the kick-off) counts; one followed by `X`, or running to the block's end, restarts nothing. Everything else is NaN,
+  `alive` included. It is the go/no-go number of P17 (A12).
+- `oracle_restart_run` (`main__restart_run`) is the same held until the possession ends, the next frame whose code
+  differs. Context only: it also gives the decoder where the first possession ends, which is not "who restarts", so it
+  overstates what a restart source could do.
+
+```
+.venv/Scripts/python pipeline/benchmark/headroom.py pipeline/configs/main.toml --variants restart restart_run --truth raw --write
+```
+
 Read it as an upper bound and a loose one: no real detector is perfect, and these two do not need the ball, which a
 real one would. It says where not to spend time (a small gap is a small prize) and in which order to think about the
 work. Run it under both truths and read the two together, as for any comparison, and across the seven matches rather
@@ -545,6 +563,36 @@ than in the pooled number alone. Nothing here is a config to submit. The checks 
 `test_headroom_loads_each_match_once_and_keeps_none`,
 `test_headroom_writes_the_variants_reports_only_when_asked_and_never_the_references` and
 `test_headroom_command_line_prints_the_table_and_the_report_lines`, all in `checks/headroom.py` and all synthetic.
+
+## Restarts: how the stoppages end
+
+`restarts.py` (P17) says how big the thing a restart-team channel would fix is, and how much of it the pipeline already
+gets. After a ball out of play, a foul or a goal the other team often restarts, and a decoder that carries the team
+across a stoppage is then wrong at the start of the next possession. It has two modes and prints and writes aggregates
+only:
+
+```
+.venv/Scripts/python pipeline/benchmark/restarts.py anatomy CONFIG [--profile P] [--seeds N] [--truth raw|coarse] [--matches ID ...] [--data-dir D] [--out PATH]
+.venv/Scripts/python pipeline/benchmark/restarts.py bar-ath CONFIG [--data-dir D] [--out PATH]
+```
+
+- **`anatomy`** runs on the benchmark (default profile `tracking`, 3 seeds). The pipeline's labels are made as the runner
+  makes them (the degraded copy, `MatchInputs` with no flag, `run.predict`), and the truth is read only to find the
+  restarts, a restart being a maximal `D` run inside a graded block followed by `H` or `A`. For each match and pooled,
+  by sums over matches and seeds (a restart is counted once per seed), it reports the number of restarts and the
+  median stoppage in seconds; the **flip share**, the restarts whose team differs from the truth's team on the frame
+  before the stoppage (those with no team before it left out), which is the part a carried team gets wrong by
+  construction; and the **outcome** on the 50 frames after the restart, *right* (more frames of the restarting team than
+  of the other), *wrong* (some `H`/`A` and not right; a tie is wrong) or *still D* (none), as shares of all restarts and
+  split by flip and no flip. The coarse truth gave the same figures to the last digit on `main.toml` (A12).
+- **`bar-ath`** is label-free and has no truth: it counts `CONFIG`'s own predicted stoppages on our match (a `D` run
+  followed by `H` or `A`, per half) and for each whether the ball is missing on more than half of the 50 frames before it
+  and after it. It says how much of the time a rule that reads the ball around a restart would have no ball, which is
+  the share against which the benchmark's ball gaps, a transplant of ours, can be held. Only counts and shares leave it,
+  never a frame or a label sequence.
+
+Reports go to the paths of `--out`, by convention `data/runs/benchmark/restarts/anatomy.<truth>.json` and
+`data/runs/restarts/bar_ath.json` (both under the gitignored `data/`). Its results are A12's.
 
 ## P04's control rule: the measurement and Stage A's configs
 
