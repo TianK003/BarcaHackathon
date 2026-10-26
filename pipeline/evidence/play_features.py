@@ -156,10 +156,12 @@ def _nearest_m(xy, spots):
     return np.where(np.isnan(xy[:, 0]), np.nan, nearest)
 
 
-def _own_half_is_left(players, teams, start, stop, length):
+def own_half_is_left(players, teams, start, stop, length):
     """Whether the home team (slot team 0) defends x < L/2 in this block: its present slots have the smaller mean x.
     A block where only one team is present compares that team's mean with the halfway line, and one with nobody
-    present says True (every column that depends on it is NaN there anyway)."""
+    present says True (every column that depends on it is NaN there anyway).
+
+    Public because shape_features and restart_team decide each block's direction the same way."""
     x = players.xy_m[start:stop, :, 0]
     present = players.present[start:stop]
     means = []
@@ -175,11 +177,14 @@ def _own_half_is_left(players, teams, start, stop, length):
     return True
 
 
+_own_half_is_left = own_half_is_left    # the old private name, kept so that a caller of it keeps working
+
+
 def _player_columns(out, players, slot_team, start, stop, pitch):
     """Columns 13-16 and 23-30 of one block, from the present slots of each frame, a chunk of frames at a time."""
     length, width = pitch
     teams = np.asarray(slot_team)
-    home_left = _own_half_is_left(players, teams, start, stop, length)
+    home_left = own_half_is_left(players, teams, start, stop, length)
     defends_left = (teams == 0) == home_left                                       # (S,) per slot
     centre = restart_spots(pitch)[0]
     team_masks = [(teams == team).astype(np.float64) for team in (0, 1)]
