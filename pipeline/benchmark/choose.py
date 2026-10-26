@@ -229,6 +229,9 @@ def main(argv=None):
     parser.add_argument("--data-dir", help="the data bundle (default: data/, or $MTAH_DATA_DIR)")
     parser.add_argument("--out", help="also write the selection as JSON here")
     args = parser.parse_args(argv)
+    reconfigure = getattr(sys.stdout, "reconfigure", None)      # the table says Δ, which a Windows console's code page
+    if reconfigure is not None:                                 # cannot print; a replaced stdout may not have it
+        reconfigure(encoding="utf-8")
     try:
         choice = choose(args.stems, args.reference, profile=args.profile, band=args.band, data_dir=args.data_dir)
     except (ChooseError, ValueError, OSError) as error:

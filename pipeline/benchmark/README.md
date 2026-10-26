@@ -13,6 +13,7 @@ R002 to R012).
 ```
 python pipeline/benchmark/sources.py          # data -> data/external/dfl/   (21 files, 2.6 GB, size and md5 checked)
 python pipeline/benchmark/run.py CONFIG ...   # configs -> scores, intervals, comparisons, one JSON report per config
+python pipeline/benchmark/choose.py --reference main STEM ...   # a grid's declared rule applied to its reports, + LOMO
 python pipeline/benchmark/fidelity.py         # how far the degraded profile looks like our match (gates, warnings)
 python pipeline/benchmark/headroom.py CONFIG  # a config beside five variants whose evidence is the truth itself
 python pipeline/benchmark/touch_stats.py      # P04's control rule measured: coverage, agreement, flip lags, confidence
@@ -77,6 +78,7 @@ What to know about the files (A05; `dfl.py` has the details and refuses what it 
     pipeline/benchmark/configs/nearest_w50.toml pipeline/benchmark/configs/nearest_w25.toml \
     pipeline/benchmark/configs/nearest_w125.toml pipeline/benchmark/configs/nearest_w0.toml
 .venv/Scripts/python pipeline/benchmark/run.py <the same configs> --truth coarse
+.venv/Scripts/python pipeline/benchmark/run.py <the same configs> --truth both     # the two runs, from one decode
 ```
 
 | option | meaning |
@@ -85,7 +87,7 @@ What to know about the files (A05; `dfl.py` has the details and refuses what it 
 | `--profile P` | how the tracking is made (below): `tracking` (the default), `context` (a sensitivity check only: it fails two of its gates, R005, and the help, the printout and the report say so), `gaps` or `clean`. |
 | `--seeds N` | degradation seeds per match (default 3: seeds 0, 1 and 2). The clean profile has nothing random to repeat, so it always runs seed 0 only; if you pass `--seeds` with more than 1 it says that it ignored it, and says nothing when you pass none. |
 | `--matches ID ...` | the matches to run, in this order (default: all seven). Fewer than seven are filed under a name that says which (see the report, below). |
-| `--truth raw\|coarse` | the truth to score against (below). Default `raw`. |
+| `--truth raw\|coarse\|both` | the truth to score against (below). Default `raw`. `both` decodes each config once and scores the codes against each truth (`evaluate_truths`): the two reports and tables are exactly those of a raw and a coarse run (`test_runner_scores_both_truths_from_one_decode`), in about half the time, because the decoder and not the scoring is what a config's time goes on (R013). |
 | `--data-dir D` | the data bundle (default `data/`, or `$MTAH_DATA_DIR`). |
 | `--no-write` | print only. |
 
@@ -551,12 +553,14 @@ than in the pooled number alone. Nothing here is a config to submit. The checks 
 `touch_stats.py` makes it:
 
 ```
-.venv/Scripts/python pipeline/benchmark/touch_stats.py [--profile P] [--seeds N] [--matches ID ...] [--data-dir D]
+.venv/Scripts/python pipeline/benchmark/touch_stats.py [--grid stage_a|r013] [--profile P] [--seeds N] [--matches ID ...]
+                                                       [--data-dir D] [--out PATH]
 result = touch_stats.measure(settings, profile=..., seeds=..., match_ids=None, matches=None, calibration=None)
 ```
 
-For each of the 12 settings (radius 1.0, 1.5, 2.0 m x `max_rel_speed` 3.0, 6.0 m/s x `min_frames` 3, 8: `DEFAULT_GRID`)
-it runs the source once per match and seed on the degraded tracking (default profile `tracking`, seeds 0 to 2), and
+For each of the 12 settings (radius 1.0, 1.5, 2.0 m x `max_rel_speed` 3.0, 6.0 m/s x `min_frames` 3, 8: `DEFAULT_GRID`,
+`--grid stage_a`, the default), or of R013's 48 (radius 1.5 to 3.0 m x 6, 9, 12 m/s x 1, 2, 3, 5 frames: `R013_GRID`,
+`--grid r013`), it runs the source once per match and seed on the degraded tracking (default profile `tracking`, seeds 0 to 2), and
 counts, among the alive graded frames where the served tracking has the ball:
 
 - **coverage**, the share inside a kept episode, and **agreement**, the share of those whose team is the truth's, per
@@ -574,7 +578,8 @@ counts, among the alive graded frames where the served tracking has the ball:
 
 The truth is read inside `measure`, from the match, to count; the source is called on a `MatchInputs` that holds the
 degraded tracking and no flag, with confidence 0.99 and no hold, and the result holds counts and shares only. The CLI
-prints a table of aggregates and nothing frame-level.
+prints a table of aggregates and nothing frame-level, and `--out` also writes the result as JSON (R013's configs read
+their confidences from it).
 
 Stage A's configs are named `pipeline/benchmark/configs/p45/p45a_r{RR}_v{V}_k{KK}_h{HH}.toml`: `RR` the radius
 in tenths of a metre (`10`, `15`, `20`), `V` the `max_rel_speed` in m/s (`3`, `6`), `KK` the `min_frames` (`03`, `08`),
@@ -582,8 +587,8 @@ in tenths of a metre (`10`, `15`, `20`), `V` the `max_rel_speed` in m/s (`3`, `6
 and `V` is one digit, e.g. `p45a_r10_v3_k03_h50.toml`. The 24 files each hold `controlled_touch` with the measured
 confidence, `ball_presence` at its defaults and `hmm` at (8, 32, 75, 1). The controls are `p45actl_nearest` and the
 chosen config on `context`. The checks are in `checks/touch.py` (synthetic): `test_touch_stats_matches_a_loop`,
-`test_touch_stats_confidence_rule`, `test_touch_stats_default_grid`, `test_touch_stats_never_passes_truth` and
-`test_touch_stats_refuses_what_it_cannot_measure`.
+`test_touch_stats_confidence_rule`, `test_touch_stats_default_grid`, `test_touch_stats_r013_grid`,
+`test_touch_stats_never_passes_truth` and `test_touch_stats_refuses_what_it_cannot_measure`.
 
 Stage B's configs (R009) are `p45b_{src}_w{WWW}_bp{B}.toml`: `src` is `hgb`, `logit` or `rules`, `WWW` the weight in
 thousandths (`010` to `100`) and `B` is 1 with `ball_presence` at its defaults, 0 without; each holds `nearest_player`
@@ -600,6 +605,34 @@ thousandths (`010`, `020`, `050`, `100`, `200`, `500`) and `gaps` or `all` its s
 `pipeline/configs/p07_shape.toml`. P02's guard (R012) is `configs/p02/p02_sb.toml`: R011's config plus `shift_edges`
 at the pipeline's own lag on DFL (team 1, into_dead -2, out_of_dead 0), run against `p07_shape.toml` in four cells (the
 section on [conventions](#conventions-when-our-truth-flips-and-the-edge-shift) has the rule).
+
+R013's grids are in `configs/r013/`, each `main.toml` as of R012 with one part changed. Stage A,
+`r013a_r{RR}_v{VV}_k{K}_h{HH}.toml`, varies `controlled_touch`: `RR` the radius in tenths of a metre (`15` to `30`),
+`VV` the `max_rel_speed` in m/s (`06`, `09`, `12`), `K` the `min_frames` (`1`, `2`, `3`, `5`) and `HH` the hold in
+hundredths (`52`, `55`, `60`, `70`), each at the confidence `touch_stats.py --grid r013` measured (192 files;
+`r013a_r20_v06_k3_h55` is `main.toml`'s own setting). Stage C, `r013c_t{TT}_mp{MMM}_w{WWW}.toml`, keeps Stage A's
+choice and varies the `hmm`'s `switch_team` `TT` and `min_possession` `MMM` and `shape_possession`'s weight `WWW` in
+thousandths (144 files).
+
+## Choosing from a grid
+
+```
+.venv/Scripts/python pipeline/benchmark/choose.py --reference main STEM [STEM ...] [--profile P] [--band 0.005]
+                                                  [--top N] [--data-dir D] [--out PATH]
+choice = choose.choose(stems, reference="main")
+```
+
+`choose.py` applies the selection rule that R008 to R013 declare to the reports `run.py` wrote (both truths, so run the
+grid with `--truth both`): the best pooled raw spellF1, every config within the tie band (0.005) of it tied, the best
+pooled coarse spellF1 among the tied, and a tie that is left to the stem named first, so the stems are given in the
+declared tie order. It prints the table (every config, or the `--top` best by raw score) with each config's pooled Δ,
+sign-flip p and wins against the reference under both truths, the choice and its Δs, and the leave-one-match-out
+estimate that R008 to R011 worked out by hand: for each match, the selection repeated on the other six (the raw
+objective alone, and the whole rule on six-match means) and the chosen config's score on the held-out match against
+the reference's. Every number is computed from the reports' halves with `score.py`, so it is the runner's. A report is
+refused if its config file has changed since it was written, and reports of different runs (matches, seeds, profile or
+Calibration) are refused together. The checks are `test_choose_applies_the_rule_and_matches_the_runner` and
+`test_choose_refuses_missing_stale_and_mixed_reports` (`checks/choose.py`, synthetic).
 
 ## Dead-ball model
 
@@ -771,17 +804,18 @@ against `shift_edges.apply`, and that a latency file of another content of the c
 .venv/Scripts/python pipeline/benchmark/selftest.py --data   # + our own match (aggregates only; minutes)
 ```
 
-The synthetic run is 373 checks (P06's added 16 to the 272 of A05, then P04's touch_stats 5 and P05's trainer 19,
+The synthetic run is 377 checks (P06's added 16 to the 272 of A05, then P04's touch_stats 5 and P05's trainer 19,
 which made 312; then P07's trainer and source 20 in `shape`, P02's instrument and rule 40 in `conventions`, and one in
-`run` that a config with `shift_edges` is scored like any other). Its time, 49 to 115 s, is as of A05 and not measured
+`run` that a config with `shift_edges` is scored like any other, 373; then R013's four: both truths from one decode,
+R013's touch grid and the two of `choose`). Its time, 49 to 115 s, is as of A05 and not measured
 again. `--dfl` and `--data` are as of A05 (2026-10-23, `fdc5eae`), when the synthetic run was 272 checks: `--dfl`
 added 16 and `--data` 7, and all of them (295 checks then) took 949 s (15 min 49 s) with the seven DFL caches and the
 Calibration rebuilt after an edit to `dfl.py` and `calibration.py`. The machine's load decides, and the first run on a
 machine also builds the caches (A05).
 
 The checks live in `pipeline/benchmark/checks/`, one module per topic, listed in `checks.MODULES` (the folder's
-`__init__.py` says what each holds): `sources`, `dfl`, `truth`, `inputs`, `score`, `run`, `hazard`, `calibration`,
-`degrade`, `cap`, `tracking`, `context`, `fidelity`, `headroom` (the Headroom section's), `touch` (touch_stats's),
+`__init__.py` says what each holds): `sources`, `dfl`, `truth`, `inputs`, `score`, `run`, `choose` (choose.py's), `hazard`,
+`calibration`, `degrade`, `cap`, `tracking`, `context`, `fidelity`, `headroom` (the Headroom section's), `touch` (touch_stats's),
 `dead_ball` (the Dead-ball model section's), `conventions` (the Conventions section's), `shape` (the Shape model
 section's) and `harness` (the harness itself). The profiles' are `degrade` (the transplant worked out exactly,
 determinism, what the `gaps` profile touches and what it does not, no truth, the order of the matches), `tracking`
