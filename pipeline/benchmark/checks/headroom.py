@@ -103,6 +103,23 @@ kind = "hmm"
 switch_team = 8
 switch_dead = 16
 """
+# A config as main.toml is: no nearest_player, a source that is not one, so that only the restart variants can be made.
+NO_NEAREST = """
+description = "ball presence and nothing that names a possessor"
+seed = 0
+scope = "halves"
+
+[[evidence]]
+kind = "ball_presence"
+
+[decoder]
+kind = "hmm"
+switch_team = 0.01
+switch_dead = 0.01
+min_possession = 1
+min_dead = 1
+"""
+RESTART_STEMS = ("restart", "restart_run")
 FAILS_MID_RUN = HMM.replace("switch_team = 0.01", "switch_team = -1")
 
 
@@ -278,6 +295,86 @@ def test_headroom_refuses_what_it_cannot_make_variants_of():
             write_text(root, "nope.toml", HMM), root, profile="nope"), "nope", "profile")
 
 
+# -- the restart oracle (P17) -----------------------------------------------------------------------------------------
+
+def test_headroom_restart_oracle_marks_each_restart():
+    codes = np.array([H] * 10 + [D] * 10 + [A] * 30 + [D] * 5 + [H] * 5, dtype=np.int8)   # one block [0, 60)
+    home = headroom.restart_home(codes, [(1, 0, 60)], 4)
+    expect = np.full(60, np.nan)
+    expect[20:24] = 0.0
+    expect[55:59] = 1.0
+    assert np.array_equal(home, expect, equal_nan=True)
+    whole = headroom.restart_home(codes, [(1, 0, 60)], None)
+    expect = np.full(60, np.nan)
+    expect[20:50] = 0.0
+    expect[55:60] = 1.0
+    assert np.array_equal(whole, expect, equal_nan=True)
+    assert not home.flags.writeable and home.dtype == np.float64 and headroom.RESTART_TAIL == 50
+
+
+def test_headroom_restart_oracle_stops_at_the_next_change_and_the_block():
+    codes = np.array([D] * 5 + [A] * 3 + [H] * 12 + [D] * 4 + [A] * 6, dtype=np.int8)     # blocks [0, 20), [20, 30)
+    home = headroom.restart_home(codes, [(1, 0, 20), (2, 20, 30)], 50)
+    expect = np.full(30, np.nan)
+    expect[5:8] = 0.0
+    expect[24:30] = 0.0
+    assert np.array_equal(home, expect, equal_nan=True)     # the leading D run (a kick-off) counts
+    expect_error(ValueError, lambda: headroom.restart_home(codes, [(1, 0, 30)], 0), "restart", "tail")
+
+
+def test_headroom_restart_oracle_needs_a_team_after_the_stoppage():
+    codes = np.array([H] * 5 + [D] * 5 + [X] * 2 + [H] * 3 + [D] * 5, dtype=np.int8)
+    assert np.isnan(headroom.restart_home(codes, [(1, 0, 20)], 50)).all()   # D->X and D to the block's end: nothing
+
+
+def test_headroom_restart_variants_need_no_home_source():
+    # a config with ball_presence and no nearest_player, as main.toml is (it has controlled_touch)
+    with tempfile.TemporaryDirectory() as root:
+        config = load_config(write_text(root, "no_nearest.toml", NO_NEAREST))
+        texts = headroom.variant_texts(config, variants=("restart", "restart_run"))
+        assert [stem for stem, _ in texts] == [config.stem + "__restart", config.stem + "__restart_run"]
+        with oracles_registered():
+            for (stem, text), kind in zip(texts, ("oracle_restart", "oracle_restart_run")):
+                variant = load_config(write_text(root, stem + ".toml", text))
+                assert list(variant.evidence) == list(config.evidence) + [
+                    Component(kind=kind, name=kind, weight=1.0, params={})], variant.evidence
+        expect_error(benchmark_run.BenchmarkError, lambda: headroom.check_config(config), "nearest_player")
+        headroom.check_config(config, variants=("restart",))        # a restart variant replaces nothing
+        expect_error(benchmark_run.BenchmarkError, lambda: headroom.check_config(config, variants=("restart", "alive_home_all")),
+                     "nearest_player")
+        expect_error(benchmark_run.BenchmarkError, lambda: headroom.check_config(config, variants=("restart", "restart")),
+                     "restart", "twice")
+        expect_error(benchmark_run.BenchmarkError, lambda: headroom.variant_texts(config, variants=("nope",)), "nope")
+        # a config that has a nearest_player keeps it: the oracle is appended to its evidence
+        base = load_config(write_text(root, "hmm_free.toml", HMM))
+        (_, text), = headroom.variant_texts(base, variants=("restart",))
+        with oracles_registered():
+            kinds = [c.kind for c in load_config(write_text(root, "hmm_free__restart.toml", text)).evidence]
+        assert kinds == ["nearest_player", "oracle_restart"], kinds
+
+
+def test_headroom_restart_variants_run_end_to_end():
+    with tempfile.TemporaryDirectory() as root:
+        path = write_text(root, "no_nearest.toml", NO_NEAREST)
+        result = on_gaps(path, root, variants=RESTART_STEMS)
+        stems = [entry["stem"] for entry in result["configs"]]
+        assert stems == ["no_nearest"] + ["no_nearest__" + name for name in RESTART_STEMS], stems
+        assert sorted(os.listdir(variants_folder(root))) == sorted(stem + ".toml" for stem in stems[1:])
+        result = on_gaps(write_text(root, "hmm_free.toml", HMM), root, variants=("restart",))
+        assert [entry["stem"] for entry in result["configs"]] == ["hmm_free", "hmm_free__restart"]
+    # the command line takes the same names, and refuses others
+    with tempfile.TemporaryDirectory() as root:
+        shown = io.StringIO()
+        try:
+            with contextlib.redirect_stderr(shown):
+                headroom.main([write_text(root, "x.toml", HMM), "--variants", "nope"])
+        except SystemExit as stop:
+            assert stop.code == 2, stop.code
+        else:
+            raise AssertionError("--variants nope was accepted")
+        assert headroom.VARIANT_NAMES == STEMS + RESTART_STEMS, headroom.VARIANT_NAMES
+
+
 # -- the file the variants are written as -----------------------------------------------------------------------------
 
 def test_headroom_variants_round_trip_what_config_holds():
@@ -355,7 +452,8 @@ def test_headroom_oracles_say_what_the_truth_says():
     codes = truth.truth_codes(match)[0]
     run_context = RunContext(inputs=inputs, seed=0)
     made = headroom.oracles({"RND001": codes})
-    assert sorted(made) == ["oracle_alive", "oracle_home_all", "oracle_home_visible"], sorted(made)
+    assert sorted(made) == ["oracle_alive", "oracle_home_all", "oracle_home_visible", "oracle_restart",
+                            "oracle_restart_run"], sorted(made)
     live, home = (codes == H) | (codes == A), codes == H
     seen = inputs.atd.ball_present
     assert 0 < (live & seen).sum() < live.sum(), "the check needs live frames with the ball seen and not seen"
@@ -401,7 +499,8 @@ def test_headroom_restores_the_registry():
             on_gaps(write_text(root, "again.toml", HMM), root)
         finally:
             benchmark_run.evaluate_configs = real
-        assert seen_inside == [["oracle_alive", "oracle_home_all", "oracle_home_visible"]], seen_inside
+        assert seen_inside == [["oracle_alive", "oracle_home_all", "oracle_home_visible", "oracle_restart",
+                                "oracle_restart_run"]], seen_inside
 
         expect_error(ValueError, lambda: on_gaps(write_text(root, "fails.toml", FAILS_MID_RUN), root),
                      "hmm", "switch_team")
