@@ -27,6 +27,9 @@ module of its topic:
                  on the 7 matches; with --data our real Calibration on a downloaded DFL match)
     fidelity.py  the fidelity report: every gate and check worked out by other code on a synthetic Calibration, the
                  pooling by sums, the file and the exit code (synthetic only)
+    dfl_events.py
+                 the DFL restart events on the timeline: the frame-clock mapping, the kick-off's team, what falls
+                 outside the halves, what is refused (synthetic, and the seven matches with --dfl)
     truth.py     the benchmark's truth from the DFL flags: codes, summary, line timing, nearest team, the coarse
                  truth and the cost of a lag (synthetic, and the downloaded matches with --dfl)
     inputs.py    a DFL match served to the pipeline as MatchInputs and clean_atd: contract, no truth (synthetic, and
@@ -92,8 +95,8 @@ what two of them share goes to common.py (test_a_check_module_imports_no_other_c
 """
 
 from pipeline.benchmark.checks import (
-    calibration, cap, choose, context, conventions, dead_ball, degrade, dfl, fidelity, harness, hazard, headroom,
+    calibration, cap, choose, context, conventions, dead_ball, degrade, dfl, dfl_events, fidelity, harness, hazard, headroom,
     inputs, restarts, run, score, shape, sources, tracking, touch, truth)
 
-MODULES = (sources, dfl, truth, inputs, score, run, choose, hazard, calibration, degrade, cap, tracking, context,
+MODULES = (sources, dfl, dfl_events, truth, inputs, score, run, choose, hazard, calibration, degrade, cap, tracking, context,
            fidelity, headroom, touch, dead_ball, conventions, restarts, shape, harness)
