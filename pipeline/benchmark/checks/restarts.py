@@ -13,6 +13,9 @@ The matches are the synthetic ones of checks/common.py (random flags and trackin
 gaps profile and the synthetic Calibration.
 """
 
+import os
+import tempfile
+
 import numpy as np
 
 from pipeline.benchmark import restarts, truth
@@ -291,3 +294,56 @@ def test_restarts_events_recall_and_confusion():
     assert table["confusion"]["corner"]["CornerKick"] == 1
     assert table["confusion"]["kick_off"]["GoalKick"] == 1 and table["confusion"]["kick_off"]["KickOff"] == 1
     assert sum(sum(row.values()) for row in table["confusion"].values()) == 3
+
+
+def test_restarts_configs_insert_one_block():
+    """R014's configs are main.toml's text plus one restart_team block and an amended description, and nothing else."""
+    main_path = os.path.join(restarts.ROOT, "pipeline", "configs", "main.toml")
+    with open(main_path, newline="") as handle:
+        main_text = handle.read()
+    main = load_config(main_path)
+    eol = "\r\n" if "\r\n" in main_text else "\n"
+    types = ("kick_off", "corner", "goal_kick", "throw_in", "free_kick")
+
+    def setting(tail, use_ball, confidences):
+        return {"setting": {"tail": tail, "use_ball": use_ball},
+                "types": {name: {"confidence": confidences.get(name)} for name in types}}
+
+    some = {"kick_off": 0.9, "corner": 0.75, "goal_kick": None, "throw_in": 0.8, "free_kick": 0.7}
+    stats = {"settings": {"t050_b0": setting(50, False, some), "t025_b1": setting(25, True, {"corner": 0.66}),
+                          "t100_b1": setting(100, True, {})}}
+    with tempfile.TemporaryDirectory() as root:
+        folder = os.path.join(root, "made", "here")
+        written = restarts.write_configs(stats, main_path, folder, log=quiet)
+        assert sorted(os.path.basename(path) for path in written) == ["r014_t025_b1.toml", "r014_t050_b0.toml"], written
+        for path, tail, use_ball, confidences in ((os.path.join(folder, "r014_t050_b0.toml"), 50, False, some),
+                                                  (os.path.join(folder, "r014_t025_b1.toml"), 25, True,
+                                                   {"corner": 0.66})):
+            assert path in written
+            config = load_config(path)
+            assert config.evidence[:-1] == main.evidence and len(config.evidence) == len(main.evidence) + 1
+            added = config.evidence[-1]
+            expected = {"model": "pipeline/models/dead_ball_hgb.json", "tail": tail, "use_ball": use_ball}
+            expected.update({name: value for name, value in confidences.items() if value is not None})
+            assert added.kind == "restart_team" and added.weight == 1.0 and added.params == expected, added
+            assert config.decoder == main.decoder and config.refine == main.refine and config.seed == main.seed
+            assert config.description.startswith(main.description[:-1]) and "restart_team" in config.description
+            assert "tail {}".format(tail) in config.description
+            with open(path, newline="") as handle:
+                text = handle.read()
+            start = text.index("# R014")
+            stop = text.index(eol + eol, start) + 2 * len(eol)   # the block ends at its blank line
+            assert text.count("[[evidence]]") == main_text.count("[[evidence]]") + 1
+            restored = text[:start] + text[stop:]
+            restored = restored.replace(config.description, main.description)
+            assert restored == main_text
+        for bad in ("[decoder]", "description = "):
+            broken = os.path.join(root, "broken.toml")
+            with open(broken, "w", newline="") as handle:
+                handle.write(main_text.replace(bad, "#"))
+            try:
+                restarts.write_configs(stats, broken, folder, log=quiet)
+            except ValueError as error:
+                assert "broken.toml" in str(error)
+            else:
+                raise AssertionError("a main.toml without {!r} must be refused".format(bad))
