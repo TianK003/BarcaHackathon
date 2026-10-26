@@ -1,4 +1,5 @@
-"""P06's decoder: a three-state hidden Markov model over H, A and D, decoded by Viterbi, once per block.
+"""P06's decoder: a three-state hidden Markov model over H, A and D, decoded by Viterbi, once per block; with
+restart_source (P17), D splits into two restart states.
 
     [decoder]
     kind = "hmm"
@@ -8,6 +9,8 @@
     min_dead = 25          # frames: the shortest run of D (default 1)
     eps = 1e-6             # probabilities are clipped to [eps, 1 - eps] before the log (default 1e-6)
     posterior = false      # true: also return P(H), P(A), P(D) per frame (default false: Decoded.posterior is None)
+    restart_source = "restart_team"   # optional: the evidence source whose `home` says who restarts (default: none)
+    switch_restart = inf   # nats a restart by the other team costs on top of switch_dead (default inf: forbidden)
 
 The model
 ---------
@@ -30,6 +33,44 @@ min_possession frames and every run of D at least min_dead -- except the block's
 of the block may have cut short. They may be the same run, and a block shorter than a minimum is still decodable: it
 is its two edge runs, however short.
 
+Restart states (P17)
+--------------------
+Without restart_source, everything above is the model, by the same code path and to the same label. With
+restart_source naming one of the block's evidence sources, D splits in two, D_H ("dead, home restarts") and D_A
+("dead, away restarts"), and the decoder runs four states, H, A, D_H and D_A:
+
+    emissions   H and A as above, from every source except the named one's `home`
+                D_H and D_A both take D's emission: the `alive` terms of every source, the named one's included
+                the named source's `home` = h adds  w log 2h  to D_H  and  w log 2(1 - h)  to D_A, nothing to H or A
+    changes     H or A  -> D_H or D_A       switch_dead
+                D_H -> H,  D_A -> A         switch_dead
+                D_H -> A,  D_A -> H         switch_dead + switch_restart (inf, the default: forbidden)
+                D_H <-> D_A                 forbidden
+    minimums    min_possession for H and A, min_dead for D_H and D_A
+    labels      D_H and D_A are both written D
+
+Why. The Laws of the Game decide who restarts after a stoppage, and the first team after it is that team. R014 voted
+for it in `home` on a fixed span after the source's own restart estimate and gained +0.004 spellF1: a fixed span keeps
+pushing after the restarting team's first possession has ended, and it starts where the source thinks play resumed,
+not where the decoder ends D. As a state, the restart team is read inside the stoppage (restart_team's span
+"stoppage_end": one frame, the stoppage's last, at the type's measured confidence), carried by the decoder to whichever
+frame it ends D on, and decides only the first team after it: later evidence ends that possession as it ends any
+other. The vote hardly touches where D ends: it says nothing of H against A, and on its one frame it raises the better
+dead state by at most w log 2c (0.61 nats at c = 0.92), where the span after the restart raised the alive states by as
+much on every frame of it.
+
+D_H and D_A cannot follow one another, so a stoppage has one restart team, and a vote on any of its frames counts for
+all of it. switch_restart prices a restart by the team the vote did not name: inf is the model in which the first team
+after a stoppage is always its restart team (true of the ground truth by its definition), a finite one lets strong
+contrary evidence overrule the vote.
+
+Without restart evidence (the named source NaN in `home` everywhere, or of weight 0), the four states give the
+three-state labels, for any switch_restart: D_H and D_A then have the same emissions and the same changes in and out,
+so every three-state path has a four-state twin of the same score (each D run takes the state of the team after it,
+D_H at the block's end), no four-state path scores more than the three-state path it maps to, and the tie order below
+picks the twin of the three-state choice. pipeline/selftest.py checks that on random blocks, and the four-state
+decoder against every path of tiny blocks.
+
 Why each parameter exists
 -------------------------
 * switch_team is how many nats of evidence a change of team has to beat. Two changes (out and back) cost twice that,
@@ -45,17 +86,21 @@ Why each parameter exists
   a 25-frame run if that still pays), and removes it only where it does not.
 * eps keeps the log of a hard 0 or 1 finite. nearest_player reports exactly those, and a frame at eps would count
   log(2e-6) = -13 nats against a state, more than most switch penalties: it is a numerical guard, not a knob.
+* restart_source and switch_restart are the restart states' (above). switch_restart must be a number > 0 or inf, and
+  is refused when given finite without restart_source, where nothing would read it.
 
 Ties
 ----
 Exactly equal scores are common (a stretch without evidence costs the same whoever holds it) and are decided the same
 way every time, in the order the recursion meets its choices: a path prefers to extend its current run (and, between two
 ways of doing so, the longer one); failing that to come from D, then from H, then from A; at the end of the block the
-final state is D, then H, then A, the longer final run first. Two consequences hold the tie rule in place:
+final state is D, then H, then A, the longer final run first. With restart states the order is D_H, then D_A, then H,
+then A, in both places. Three consequences hold the tie rule in place:
 
 * a block with no evidence at all decodes to all D, like majority_vote's fallback;
 * a change of team across a stretch without evidence lands on the stretch's first frame: the run that ends the
-  stretch has the earlier start, because it extends the longer.
+  stretch has the earlier start, because it extends the longer;
+* without restart evidence, D_H's choices are D's: it comes first, so the four states pick the three states' path.
 
 How it is solved
 ----------------
@@ -69,6 +114,11 @@ E[a] - cum[a-1] + cum[t]: so the best way to have a mature run at t is cum[t] pl
 a <= t - m + 1, of Q[a] = E[a] - cum[a-1]. Both edge exemptions are written in: L[s][0] is "mature" (the first run
 needs no length), and the final answer also looks at runs that began fewer than m frames before the end (the last run
 needs none). The maximum is kept with a strict comparison, so the earlier start survives a tie.
+
+The recursion is written once (`_best_path`) over any number of states, a matrix of change costs in which inf forbids a
+change (a forbidden change is no way in at all), a minimum per state and a tie order. `viterbi` gives it H, A and D,
+`restart_viterbi` H, A, D_H and D_A. The four states take about 1.4 times the three's time (0.45 s against 0.33 s for
+test_hmm_speed's 80,000 frames, measured side by side on 26 Oct 2026).
 
 The posterior
 -------------
@@ -85,10 +135,14 @@ but not for a probability of 1e-12. The chain costs O(min_possession + min_dead)
 (2 * min_possession + min_dead) * 8 bytes, so it is off by default: the benchmark never asks for it. 80,000 frames with
 both minimums at 50 take about 2 s.
 
+The posterior is the three states' only: posterior = true with restart_source is refused.
+
 What it does not do yet
 -----------------------
 * No duration priors beyond the minimums: a run is as likely to last 2 minutes as 5 seconds, once it is long enough.
   A semi-Markov decoder would take a log-prior over run lengths where the minimum is a hard step.
+* The restart states know who restarts, nothing about how long that team keeps the ball, and nothing about a stoppage
+  the `alive` evidence does not decode: no D run, no restart team. They have no posterior (`marginals` is three-state).
 * D is only as good as its `alive` evidence. With nearest_player alone nothing speaks for D, so the decoder chooses it
   rarely and only in gaps: H -> D -> A beats H -> A when switch_team > 2 * switch_dead and the gap is at least min_dead
   frames, and with switch_dead = 0 a trailing stretch without evidence ends in D by the tie preference. A dead-ball
@@ -108,24 +162,43 @@ EPS = 1e-6                    # default clip of a probability away from 0 and 1
 PRIOR_CHANCE = 2.0            # 1 / 0.5: log(x / prior) = log(2x) for a prior of one half
 PREFERENCE = (D, H, A)        # on a tie between two predecessors, the first one listed wins
 STATES = (H, A, D)            # also the columns of the emissions
+D_H, D_A = 2, 3               # the restart states, "dead, home restarts" and "dead, away restarts": columns, not codes
+RESTART_STATES = (H, A, D_H, D_A)                      # the columns of the four-state emissions and path
+RESTART_PREFERENCE = (D_H, D_A, H, A)                  # the tie order with restart states
+RESTART_LABELS = np.array([H, A, D, D], dtype=np.int8)  # four-state column -> label code: both dead states are D
+RESTART_LABELS.flags.writeable = False
 CHUNK = 4096                  # frames per step of the posterior's final normalisation: bounds its temporary arrays
 
 
-def decode(ctx, *, switch_team, switch_dead, min_possession=1, min_dead=1, eps=EPS, posterior=False):
+def decode(ctx, *, switch_team, switch_dead, min_possession=1, min_dead=1, eps=EPS, posterior=False,
+           restart_source=None, switch_restart=math.inf):
     """Decoded(labels) for ctx.block: the best valid path through the block's emissions.
 
     With posterior=True, Decoded.posterior is also the (len(block), 3) marginal probability of H, A and D per frame
     under the same model (`marginals`); the labels are the same either way. Otherwise posterior is None.
+
+    With restart_source, the name of one of ctx.evidence's sources, the four states of the module docstring: that
+    source's `home` says who restarts, switch_restart prices a restart by the other team, and D_H and D_A are written
+    D. There is no posterior then.
     """
     _check_costs(switch_team, switch_dead, min_possession, min_dead)
     _check_eps(eps)
     if not isinstance(posterior, (bool, np.bool_)):
         raise ValueError("hmm: posterior must be True or False, got {!r}".format(posterior))
-    emissions = log_likelihoods(ctx.evidence.values(), len(ctx.block), eps)
-    labels = viterbi(emissions, switch_team, switch_dead, min_possession, min_dead)
-    if not posterior:
-        return Decoded(labels=labels)
-    return Decoded(labels=labels, posterior=marginals(emissions, switch_team, switch_dead, min_possession, min_dead))
+    _check_restart(restart_source, switch_restart)
+    if restart_source is None:
+        emissions = log_likelihoods(ctx.evidence.values(), len(ctx.block), eps)
+        labels = viterbi(emissions, switch_team, switch_dead, min_possession, min_dead)
+        if not posterior:
+            return Decoded(labels=labels)
+        return Decoded(labels=labels, posterior=marginals(emissions, switch_team, switch_dead, min_possession,
+                                                          min_dead))
+    if posterior:
+        raise ValueError("hmm: posterior = true is the three states' only, and restart_source {!r} asks for the four "
+                         "restart states; leave one of them out".format(restart_source))
+    emissions = restart_log_likelihoods(ctx.evidence, restart_source, len(ctx.block), eps)
+    path = restart_viterbi(emissions, switch_team, switch_dead, min_possession, min_dead, switch_restart)
+    return Decoded(labels=RESTART_LABELS[path])
 
 
 def log_likelihoods(sources, n_frames, eps):
@@ -138,26 +211,61 @@ def log_likelihoods(sources, n_frames, eps):
     _check_eps(eps)
     emissions = np.zeros((n_frames, 3))
     for source in sources:
-        weight = source.weight
-        if isinstance(weight, bool) or not isinstance(weight, numbers.Real) or not math.isfinite(weight) or weight < 0:
-            raise ValueError("hmm: evidence {!r} has weight {!r}; a weight is an exponent on its likelihood and must "
-                             "be a finite number >= 0".format(source.name, weight))
-        if len(source.home) != n_frames or len(source.alive) != n_frames:
-            raise ValueError("hmm: evidence {!r} has {} and {} frames (home, alive), the block has {}".format(
-                source.name, len(source.home), len(source.alive), n_frames))
+        _add_source(emissions, source, n_frames, eps)
+    return emissions
+
+
+def restart_log_likelihoods(evidence, restart_source, n_frames, eps):
+    """(n_frames, 4) float64 emissions in nats, columns H, A, D_H, D_A (RESTART_STATES): the restart states' rule.
+
+    `evidence` maps source names to Evidence (ctx.evidence), and `restart_source` names the one whose `home` says who
+    restarts: it goes to D_H and D_A, and nothing else's does. Everything else is log_likelihoods', with D's column in
+    both dead states. Reads the evidence, never writes it.
+    """
+    _check_eps(eps)
+    if not isinstance(restart_source, str) or restart_source not in evidence:
+        raise ValueError("hmm: restart_source {!r} names no evidence source of this block; its sources are {}".format(
+            restart_source, ", ".join(repr(name) for name in evidence) or "none"))
+    three = np.zeros((n_frames, 3))
+    for name, source in evidence.items():
+        _add_source(three, source, n_frames, eps, home=name != restart_source)
+    emissions = np.empty((n_frames, len(RESTART_STATES)))
+    emissions[:, H] = three[:, H]
+    emissions[:, A] = three[:, A]
+    emissions[:, D_H] = three[:, D]
+    emissions[:, D_A] = three[:, D]
+    named = evidence[restart_source]
+    known = ~np.isnan(named.home)
+    if known.any():
+        home = np.clip(named.home[known], eps, 1.0 - eps)
+        emissions[known, D_H] += named.weight * np.log(PRIOR_CHANCE * home)
+        emissions[known, D_A] += named.weight * np.log(PRIOR_CHANCE * (1.0 - home))
+    return emissions
+
+
+def _add_source(emissions, source, n_frames, eps, home=True):
+    """Add one source's terms to the (n_frames, 3) `emissions` in place, by the rule in the docstring: its `home` to H
+    and A (unless home is False), its `alive` to H, A and D. ValueError on a bad weight or length."""
+    weight = source.weight
+    if isinstance(weight, bool) or not isinstance(weight, numbers.Real) or not math.isfinite(weight) or weight < 0:
+        raise ValueError("hmm: evidence {!r} has weight {!r}; a weight is an exponent on its likelihood and must "
+                         "be a finite number >= 0".format(source.name, weight))
+    if len(source.home) != n_frames or len(source.alive) != n_frames:
+        raise ValueError("hmm: evidence {!r} has {} and {} frames (home, alive), the block has {}".format(
+            source.name, len(source.home), len(source.alive), n_frames))
+    if home:
         known = ~np.isnan(source.home)
         if known.any():
-            home = np.clip(source.home[known], eps, 1.0 - eps)
-            emissions[known, H] += weight * np.log(PRIOR_CHANCE * home)
-            emissions[known, A] += weight * np.log(PRIOR_CHANCE * (1.0 - home))
-        known = ~np.isnan(source.alive)
-        if known.any():
-            alive = np.clip(source.alive[known], eps, 1.0 - eps)
-            in_play = weight * np.log(PRIOR_CHANCE * alive)
-            emissions[known, H] += in_play
-            emissions[known, A] += in_play
-            emissions[known, D] += weight * np.log(PRIOR_CHANCE * (1.0 - alive))
-    return emissions
+            values = np.clip(source.home[known], eps, 1.0 - eps)
+            emissions[known, H] += weight * np.log(PRIOR_CHANCE * values)
+            emissions[known, A] += weight * np.log(PRIOR_CHANCE * (1.0 - values))
+    known = ~np.isnan(source.alive)
+    if known.any():
+        alive = np.clip(source.alive[known], eps, 1.0 - eps)
+        in_play = weight * np.log(PRIOR_CHANCE * alive)
+        emissions[known, H] += in_play
+        emissions[known, A] += in_play
+        emissions[known, D] += weight * np.log(PRIOR_CHANCE * (1.0 - alive))
 
 
 def viterbi(emissions, switch_team, switch_dead, min_possession, min_dead):
@@ -167,7 +275,7 @@ def viterbi(emissions, switch_team, switch_dead, min_possession, min_dead):
     """
     switch_team, switch_dead, min_possession, min_dead = _check_costs(
         switch_team, switch_dead, min_possession, min_dead)
-    emissions = _check_emissions(emissions)
+    emissions = _check_emissions(emissions, len(STATES))
     # Every path takes one state per frame, so subtracting a frame's H score from all three states moves every path's
     # score by the same constant: in exact arithmetic that changes no decision. In floats it changes which of several
     # exactly tied paths wins, and that is its purpose: it makes the tie inside a ball gap exact, so that the module
@@ -176,48 +284,78 @@ def viterbi(emissions, switch_team, switch_dead, min_possession, min_dead):
     # would put the change of team where the rounding noise peaks, not on the gap's first frame). A new array: the
     # input is never written.
     emissions = emissions - emissions[:, H:H + 1]
-    n_frames = len(emissions)
-    labels = np.empty(n_frames, dtype=np.int8)
-    if n_frames == 0:
-        return labels
+    penalty = ((0.0, switch_team, switch_dead),          # from H, to H, A, D
+               (switch_team, 0.0, switch_dead),          # from A
+               (switch_dead, switch_dead, 0.0))          # from D
+    # The columns are the label codes, so the path is the labels.
+    return _best_path(emissions, penalty, (min_possession, min_possession, min_dead), PREFERENCE)
 
-    minimum = (min_possession, min_possession, min_dead)  # by state code
-    penalty = ((0.0, switch_team, switch_dead),
-               (switch_team, 0.0, switch_dead),
-               (switch_dead, switch_dead, 0.0))
-    # The states that can be left for s, in the order a tie between them is decided.
-    predecessors = tuple(tuple(other for other in PREFERENCE if other != state) for state in STATES)
+
+def restart_viterbi(emissions, switch_team, switch_dead, min_possession, min_dead, switch_restart):
+    """int8 four-state path, columns H, A, D_H, D_A (RESTART_STATES), of a valid path of maximal score through
+    `emissions` ((n_frames, 4)): the restart states' changes, minimums and ties (module docstring). RESTART_LABELS[path]
+    are its labels. n_frames = 0 gives an empty path.
+    """
+    switch_team, switch_dead, min_possession, min_dead = _check_costs(
+        switch_team, switch_dead, min_possession, min_dead)
+    switch_restart = _check_switch_restart(switch_restart)
+    emissions = _check_emissions(emissions, len(RESTART_STATES))
+    emissions = emissions - emissions[:, H:H + 1]        # viterbi's exact ties, for the same reason
+    cross = switch_dead + switch_restart                 # a restart by the team the vote did not name
+    penalty = ((0.0, switch_team, switch_dead, switch_dead),     # from H, to H, A, D_H, D_A
+               (switch_team, 0.0, switch_dead, switch_dead),     # from A
+               (switch_dead, cross, 0.0, math.inf),              # from D_H: D_A never follows it
+               (cross, switch_dead, math.inf, 0.0))              # from D_A: nor D_H this
+    minimum = (min_possession, min_possession, min_dead, min_dead)
+    return _best_path(emissions, penalty, minimum, RESTART_PREFERENCE)
+
+
+def _best_path(emissions, penalty, minimum, preference):
+    """int8 column indices of a valid path of maximal score through `emissions` ((n_frames, k), finite): the recursion
+    over run starts of the module docstring, over any k states. penalty[r][s] is what a change from r to s costs (inf:
+    forbidden; the diagonal is not read), minimum[s] the shortest run of s, and `preference` the k states in the order a
+    tie is decided. n_frames = 0 gives an empty path.
+    """
+    n_frames, n_states = emissions.shape
+    path = np.empty(n_frames, dtype=np.int8)
+    if n_frames == 0:
+        return path
+    states = range(n_states)
+    # The states that can be left for s, with what the change costs, in the order a tie between them is decided; a
+    # forbidden change is no way in at all.
+    predecessors = tuple(tuple((other, penalty[other][state]) for other in preference
+                               if other != state and penalty[other][state] != math.inf) for state in states)
     # cumulative[s][k]: the emissions of s over the first k frames. The run that began at frame a scores
     # entry + cumulative[s][t + 1] - cumulative[s][a] at frame t.
-    cumulative = [[0.0] + np.cumsum(emissions[:, state]).tolist() for state in STATES]
+    cumulative = [[0.0] + np.cumsum(emissions[:, state]).tolist() for state in states]
 
     # best[s]: max of Q over the starts that make a mature run at the frame being decoded, and start[s] the start it
     # came from; 0.0 and frame 0 are the first run, mature from its first frame. entry[s][a] is Q, origin[s][a] the
     # state the run was entered from, and started[s][t] the start that best[s] had at frame t.
-    best = [0.0, 0.0, 0.0]
-    start = [0, 0, 0]
-    entry = [[0.0] * n_frames for _ in STATES]
-    origin = [[0] * n_frames for _ in STATES]
-    started = [[0] * n_frames for _ in STATES]
+    best = [0.0] * n_states
+    start = [0] * n_states
+    entry = [[0.0] * n_frames for _ in states]
+    origin = [[0] * n_frames for _ in states]
+    started = [[0] * n_frames for _ in states]
     for frame in range(1, n_frames):
-        mature = [cumulative[state][frame] + best[state] for state in STATES]  # L[state][frame - 1]
-        for state in STATES:
-            value, source = -math.inf, D
-            for other in predecessors[state]:
-                candidate = mature[other] - penalty[other][state]
+        mature = [cumulative[state][frame] + best[state] for state in states]  # L[state][frame - 1]
+        for state in states:
+            value, source = -math.inf, preference[0]
+            for other, cost in predecessors[state]:
+                candidate = mature[other] - cost
                 if candidate > value:
                     value, source = candidate, other
             entry[state][frame] = value - cumulative[state][frame]
             origin[state][frame] = source
-        for state in STATES:
+        for state in states:
             first = frame - minimum[state] + 1  # the latest start that has reached the minimum by this frame
             if first >= 1 and entry[state][first] > best[state]:
                 best[state], start[state] = entry[state][first], first
             started[state][frame] = start[state]
 
     # The block's last run needs no minimum, so a run that began fewer than m frames ago may end the path as well.
-    final_score, final_state, final_start = -math.inf, D, 0
-    for state in PREFERENCE:
+    final_score, final_state, final_start = -math.inf, preference[0], 0
+    for state in preference:
         value, begun = best[state], start[state]
         for first in range(max(1, n_frames - minimum[state] + 1), n_frames):
             if entry[state][first] > value:
@@ -227,9 +365,9 @@ def viterbi(emissions, switch_team, switch_dead, min_possession, min_dead):
 
     stop, state, begun = n_frames, final_state, final_start
     while True:
-        labels[begun:stop] = state
+        path[begun:stop] = state
         if begun == 0:
-            return labels
+            return path
         stop, state = begun, origin[state][begun]
         begun = started[state][stop - 1]
 
@@ -314,11 +452,12 @@ def marginals(emissions, switch_team, switch_dead, min_possession, min_dead):
     return posterior
 
 
-def _check_emissions(emissions):
-    """`emissions` as an (n_frames, 3) float64 array; ValueError naming what is wrong with its shape or values."""
+def _check_emissions(emissions, columns=3):
+    """`emissions` as an (n_frames, columns) float64 array; ValueError naming what is wrong with its shape or values."""
     emissions = np.asarray(emissions, dtype=np.float64)
-    if emissions.ndim != 2 or emissions.shape[1] != 3:
-        raise ValueError("hmm: emissions must be an (n_frames, 3) array, got shape {}".format(emissions.shape))
+    if emissions.ndim != 2 or emissions.shape[1] != columns:
+        raise ValueError("hmm: emissions must be an (n_frames, {}) array, got shape {}".format(columns,
+                                                                                            emissions.shape))
     if not np.isfinite(emissions).all():
         raise ValueError("hmm: emissions must be finite, but {} of {} values are NaN or infinite".format(
             int((~np.isfinite(emissions)).sum()), emissions.size))
@@ -335,6 +474,26 @@ def _check_costs(switch_team, switch_dead, min_possession, min_dead):
         if isinstance(value, bool) or not isinstance(value, numbers.Integral) or value < 1:
             raise ValueError("hmm: {} must be a whole number of frames >= 1, got {!r}".format(name, value))
     return float(switch_team), float(switch_dead), int(min_possession), int(min_dead)
+
+
+def _check_restart(restart_source, switch_restart):
+    """ValueError naming restart_source or switch_restart, whichever is wrong; a finite switch_restart needs a source.
+    Whether the source is one of the block's is restart_log_likelihoods' check."""
+    if restart_source is not None and (not isinstance(restart_source, str) or not restart_source):
+        raise ValueError("hmm: restart_source must be the name of an evidence source (a non-empty string), or left "
+                         "out, got {!r}".format(restart_source))
+    if _check_switch_restart(switch_restart) != math.inf and restart_source is None:
+        raise ValueError("hmm: switch_restart = {!r} is read only with restart_source, and none is given; name the "
+                         "evidence source that says who restarts, or leave switch_restart out".format(switch_restart))
+
+
+def _check_switch_restart(switch_restart):
+    """switch_restart as a float > 0 (inf allowed); ValueError otherwise, NaN and bool included."""
+    if (isinstance(switch_restart, (bool, np.bool_)) or not isinstance(switch_restart, numbers.Real)
+            or not switch_restart > 0):
+        raise ValueError("hmm: switch_restart must be a number of nats > 0, or inf (a restart by the team the vote did "
+                         "not name is then forbidden), got {!r}".format(switch_restart))
+    return float(switch_restart)
 
 
 def _check_eps(eps):

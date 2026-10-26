@@ -1786,6 +1786,120 @@ def test_restart_team_in_registry_and_config():
         expect_error(ConfigError, lambda: load_config(typo), "throwin", "restart_team")
 
 
+def test_restart_team_stoppage_end_span():
+    """span = "stoppage_end" (P17, Phase 2b): one vote per called stoppage, on its last frame r - 1 only, at the type's
+    confidence. tail is refused there, and required with span = "after" (the default)."""
+    from pipeline.contracts import check_evidence
+    from pipeline.evidence import REGISTRY, restart_team
+    assert restart_team.SPANS == ("after", "stoppage_end")
+    scene = restart_scene(CORNER_SCENE)
+    calls = restart_calls(scene, alive=restart_alive((50, 150), (165, 195)), tail=30)
+    assert calls["restart"].tolist() == [150, 195]
+    expected = np.full(RESTART_FRAMES, np.nan)
+    expected[149] = expected[194] = 0.9
+    got = restart_team.votes(calls, RESTART_FRAMES, {1: 0.9}, span="stoppage_end")
+    assert got.dtype == np.float64 and np.array_equal(got, expected, equal_nan=True), np.flatnonzero(~np.isnan(got))
+    assert np.array_equal(restart_team.votes(calls, RESTART_FRAMES, {1: 0.9}),
+                          restart_team.votes(calls, RESTART_FRAMES, {1: 0.9}, span="after"), equal_nan=True)
+    away = restart_calls(restart_scene(CORNER_SCENE, teams=[1, 0]))
+    expected = np.full(RESTART_FRAMES, np.nan)
+    expected[149] = 1.0 - 0.9
+    assert np.array_equal(restart_team.votes(away, RESTART_FRAMES, {1: 0.9}, span="stoppage_end"), expected,
+                          equal_nan=True)
+    assert np.isnan(restart_team.votes(calls, RESTART_FRAMES, {3: 0.9}, span="stoppage_end")).all(), \
+        "a type without a confidence is silent with either span"
+    for bad in ("before", "", None, 1, True, "Stoppage_End"):
+        expect_error(ValueError, lambda: restart_team.votes(calls, RESTART_FRAMES, {1: 0.9}, span=bad),
+                     "restart_team", "span")
+    # a hand-made call restarting at frame 0 has no stoppage frame to vote on (calls_from_alive never makes one)
+    first = {"restart": np.array([0]), "end": np.array([5]), "type": np.array([1], dtype=np.int8),
+             "team": np.array([0], dtype=np.int8)}
+    expect_error(ValueError, lambda: restart_team.votes(first, 10, {1: 0.9}, span="stoppage_end"), "restart_team",
+                 "stoppage_end")
+    with tempfile.TemporaryDirectory() as root:
+        path = write_model(root)
+        run = restart_model_scene(CORNER_SCENE)
+        source = REGISTRY["restart_team"]
+        evidence = source(run, model=path, span="stoppage_end", corner=0.8)
+        check_evidence(evidence, RESTART_FRAMES)
+        expected = np.full(RESTART_FRAMES, np.nan)
+        expected[149] = 0.8
+        assert np.array_equal(evidence.home, expected, equal_nan=True) and np.isnan(evidence.alive).all()
+        after = source(run, model=path, tail=30, corner=0.8)
+        assert (after.home[150:180] == 0.8).all() and np.isnan(np.delete(after.home, range(150, 180))).all()
+        assert np.array_equal(source(run, model=path, span="after", tail=30, corner=0.8).home, after.home,
+                              equal_nan=True)
+        # a tail with "stoppage_end" is refused, whatever its value; none with "after" is refused too
+        for tail in (30, 1, 0, -1, 1.5):
+            expect_error(ValueError, lambda: source(run, model=path, span="stoppage_end", tail=tail, corner=0.8),
+                         "restart_team", "tail", "stoppage_end")
+        for given in ({}, {"span": "after"}):
+            expect_error(ValueError, lambda: source(run, model=path, corner=0.8, **given), "restart_team", "tail",
+                         "after")
+        for bad in ("before", "", None, 1, True):
+            expect_error(ValueError, lambda: source(run, model=path, span=bad, corner=0.8), "restart_team", "span")
+        # the other checks still apply with "stoppage_end"
+        expect_error(ValueError, lambda: source(run, model=path, span="stoppage_end"), "restart_team", "confidence")
+        expect_error(ValueError, lambda: source(run, model=path, span="stoppage_end", free_kick=0.8), "restart_team",
+                     "free_kick", "use_ball")
+
+
+RESTART_STATES_TRIAL_CONFIG = """
+[[evidence]]
+kind = "dead_ball_model"
+model = {model}
+
+[[evidence]]
+kind = "restart_team"
+model = {model}
+span = "stoppage_end"
+kick_off = 0.95
+corner = 0.9
+goal_kick = 0.8
+throw_in = 0.7
+
+[decoder]
+kind = "hmm"
+switch_team = 1
+switch_dead = 20
+min_possession = 1
+min_dead = 1
+restart_source = "restart_team"
+switch_restart = inf
+"""
+
+
+def test_hmm_restart_states_run_end_to_end():
+    """A config with restart_team's "stoppage_end" span and the decoder's restart states loads (no tail, TOML's inf)
+    and runs through the pipeline: votes only on the frames before the restarts, a valid file, X outside the blocks."""
+    from pipeline import output
+    from pipeline.config import load_config
+    from pipeline.contracts import RunContext, X
+    from pipeline.evidence import restart_team
+    from pipeline.run import run
+    with tempfile.TemporaryDirectory() as root:
+        make_synthetic_bundle(root)
+        model = write_model(root)
+        inputs = synthetic_inputs(root, graded=[(1, 50, 280), (2, 320, 560)])
+        inputs.kickoffs = {1: 100, 2: 420}
+        text = RESTART_STATES_TRIAL_CONFIG.format(model=json_string(model))
+        config = load_config(write_text(root, "trial.toml", text))
+        params = config.decoder.params
+        assert params["restart_source"] == "restart_team" and params["switch_restart"] == np.inf, params
+        out_path = os.path.join(root, "trial.csv")
+        result = run(config, inputs, out_path, log=quiet)
+        output.validate(out_path, SYNTHETIC_FRAMES, result.codes)
+        outside = np.ones(SYNTHETIC_FRAMES, dtype=bool)
+        outside[50:280] = outside[320:560] = False
+        assert (result.codes[outside] == X).all() and (result.codes[~outside] != X).all()
+        calls = restart_team.calls(RunContext(inputs=inputs, seed=0), model=model, tail=1)
+        assert len(calls["restart"]) >= 1, "the synthetic match no longer gives a call"
+        expected = restart_team.votes(calls, SYNTHETIC_FRAMES, {0: 0.95, 1: 0.9, 2: 0.8, 3: 0.7}, span="stoppage_end")
+        home = result.evidence["restart_team"].home
+        assert np.array_equal(home, expected, equal_nan=True)
+        assert np.array_equal(np.flatnonzero(~np.isnan(home)), calls["restart"] - 1)
+
+
 # -- decode -----------------------------------------------------------------------------------------------------------
 
 def vote_context(home, start=0, stop=None, weights=None):
@@ -2307,6 +2421,393 @@ def test_hmm_posterior_off_by_default():
     assert REGISTRY["hmm"](ctx, switch_team=1.0, switch_dead=1.0, posterior=False).posterior is None
     posterior = REGISTRY["hmm"](ctx, switch_team=1.0, switch_dead=1.0, posterior=True).posterior
     assert posterior is not None and posterior.shape == (30, 3)
+
+
+# The hmm decoder's restart states (P17, Phase 2b). With restart_source, D splits into D_H ("dead, home restarts") and
+# D_A, columns 2 and 3 of the four-state path (H, A, D_H, D_A); the labels map both to D. The checks pin the
+# three-state path to its old code, the four-state path to a brute force over every path, and the two paths to each
+# other where there is no restart evidence.
+
+def hmm_viterbi_before_restart_states(emissions, switch_team, switch_dead, min_possession, min_dead):
+    """hmm.viterbi as it was at f11e93d, before the restart states, verbatim but for its argument checks: the pin that
+    the three-state path has not moved by one label."""
+    import math
+    from pipeline.contracts import A, D, H
+    PREFERENCE, STATES = (D, H, A), (H, A, D)
+    emissions = np.asarray(emissions, dtype=np.float64)
+    switch_team, switch_dead, min_possession, min_dead = (float(switch_team), float(switch_dead), int(min_possession),
+                                                          int(min_dead))
+    emissions = emissions - emissions[:, H:H + 1]
+    n_frames = len(emissions)
+    labels = np.empty(n_frames, dtype=np.int8)
+    if n_frames == 0:
+        return labels
+
+    minimum = (min_possession, min_possession, min_dead)  # by state code
+    penalty = ((0.0, switch_team, switch_dead),
+               (switch_team, 0.0, switch_dead),
+               (switch_dead, switch_dead, 0.0))
+    predecessors = tuple(tuple(other for other in PREFERENCE if other != state) for state in STATES)
+    cumulative = [[0.0] + np.cumsum(emissions[:, state]).tolist() for state in STATES]
+
+    best = [0.0, 0.0, 0.0]
+    start = [0, 0, 0]
+    entry = [[0.0] * n_frames for _ in STATES]
+    origin = [[0] * n_frames for _ in STATES]
+    started = [[0] * n_frames for _ in STATES]
+    for frame in range(1, n_frames):
+        mature = [cumulative[state][frame] + best[state] for state in STATES]  # L[state][frame - 1]
+        for state in STATES:
+            value, source = -math.inf, D
+            for other in predecessors[state]:
+                candidate = mature[other] - penalty[other][state]
+                if candidate > value:
+                    value, source = candidate, other
+            entry[state][frame] = value - cumulative[state][frame]
+            origin[state][frame] = source
+        for state in STATES:
+            first = frame - minimum[state] + 1  # the latest start that has reached the minimum by this frame
+            if first >= 1 and entry[state][first] > best[state]:
+                best[state], start[state] = entry[state][first], first
+            started[state][frame] = start[state]
+
+    final_score, final_state, final_start = -math.inf, D, 0
+    for state in PREFERENCE:
+        value, begun = best[state], start[state]
+        for first in range(max(1, n_frames - minimum[state] + 1), n_frames):
+            if entry[state][first] > value:
+                value, begun = entry[state][first], first
+        if cumulative[state][n_frames] + value > final_score:
+            final_score, final_state, final_start = cumulative[state][n_frames] + value, state, begun
+
+    stop, state, begun = n_frames, final_state, final_start
+    while True:
+        labels[begun:stop] = state
+        if begun == 0:
+            return labels
+        stop, state = begun, origin[state][begun]
+        begun = started[state][stop - 1]
+
+
+def hmm_random_scene(rng, n_frames):
+    """(homes, alives, weights) of one to three random sources over n_frames: hard and soft votes, exact ties (0.5),
+    ball_presence's two values, NaN, and one stretch where no source says who has the ball."""
+    homes, alives = [], []
+    for _ in range(int(rng.integers(1, 4))):
+        home = np.where(rng.random(n_frames) < 0.5, rng.choice([0.0, 0.22, 0.5, 0.78, 1.0], n_frames),
+                        rng.random(n_frames))
+        home[rng.random(n_frames) < 0.3] = np.nan
+        alive = np.where(rng.random(n_frames) < 0.5, rng.choice([0.2, 0.585], n_frames), rng.random(n_frames))
+        alive[rng.random(n_frames) < 0.4] = np.nan
+        homes.append(home)
+        alives.append(alive)
+    gap, length = int(rng.integers(0, n_frames)), int(rng.integers(0, 300))
+    for home in homes:
+        home[gap:gap + length] = np.nan
+    return homes, alives, [float(weight) for weight in rng.choice([0.5, 1.0, 2.0], size=len(homes))]
+
+
+def hmm_random_costs(rng, longest=60):
+    """switch_team, switch_dead, min_possession and min_dead for a random decode, free switches among them."""
+    return {"switch_team": float(rng.choice([0.0, 1.0, rng.uniform(0.0, 20.0)])),
+            "switch_dead": float(rng.choice([0.0, 2.0, rng.uniform(0.0, 20.0)])),
+            "min_possession": int(rng.integers(1, longest)), "min_dead": int(rng.integers(1, longest))}
+
+
+def test_hmm_restart_states_off_is_unchanged():
+    from pipeline.decode import REGISTRY, hmm
+    for case in range(40):
+        rng = np.random.default_rng([6, 6000 + case])
+        n_frames = int(rng.integers(1, 1500))
+        homes, alives, weights = hmm_random_scene(rng, n_frames)
+        costs = hmm_random_costs(rng)
+        ctx = hmm_context(homes, alives, weights=weights)
+        expected = hmm_viterbi_before_restart_states(hmm.log_likelihoods(ctx.evidence.values(), n_frames, hmm.EPS),
+                                                     **costs)
+        for extra in ({}, {"restart_source": None}, {"restart_source": None, "switch_restart": np.inf}):
+            labels = REGISTRY["hmm"](ctx, **costs, **extra).labels
+            assert labels.dtype == np.int8 and np.array_equal(labels, expected), "case {} {}: {} labels moved".format(
+                case, extra, int((labels != expected).sum()))
+    # Whole-number emissions, where exact ties are everywhere and only the tie rule decides.
+    for case in range(300):
+        rng = np.random.default_rng([6, 6100 + case])
+        n_frames = int(rng.integers(1, 60))
+        emissions = rng.integers(-2, 3, size=(n_frames, 3)).astype(np.float64)
+        costs = (float(rng.choice([0.0, 0.5, 1.0, 2.0])), float(rng.choice([0.0, 0.5, 1.0, 2.0])),
+                 int(rng.integers(1, 6)), int(rng.integers(1, 6)))
+        labels, expected = hmm.viterbi(emissions, *costs), hmm_viterbi_before_restart_states(emissions, *costs)
+        assert labels.dtype == np.int8 and np.array_equal(labels, expected), (case, letters(labels), letters(expected))
+
+
+def test_hmm_restart_states_without_evidence_match_three_states():
+    """A restart source with no `home` anywhere leaves D_H and D_A the same state twice over: every three-state path
+    has a four-state twin of the same score (each D run takes the state of the team after it), and the tie order
+    D_H, D_A, H, A picks the twin of the three-state choice, whatever switch_restart is."""
+    from pipeline.contracts import A, D, H, no_opinion
+    from pipeline.decode import REGISTRY, hmm
+    from pipeline.decode.hmm import D_A, D_H
+    crossings = 0
+    for case in range(40):
+        rng = np.random.default_rng([6, 6200 + case])
+        n_frames = int(rng.integers(1, 1500))
+        homes, alives, weights = hmm_random_scene(rng, n_frames)
+        costs = hmm_random_costs(rng)
+        # the named source says nothing, or speaks on `alive` only, which is read as every other source's is
+        silent_alive = None if case % 2 == 0 else np.where(rng.random(n_frames) < 0.5, np.nan, rng.random(n_frames))
+        ctx = hmm_context(homes + [no_opinion(n_frames)], alives + [silent_alive], weights=weights + [1.0])
+        name = "s{}".format(len(homes))
+        three = REGISTRY["hmm"](ctx, **costs).labels
+        for switch_restart in (np.inf, float(rng.uniform(0.01, 10.0)), 1e-9):
+            four = REGISTRY["hmm"](ctx, restart_source=name, switch_restart=switch_restart, **costs).labels
+            assert four.dtype == np.int8 and np.array_equal(four, three), "case {}, switch_restart {}: {} differ" \
+                .format(case, switch_restart, int((four != three).sum()))
+        changes = np.flatnonzero(np.diff(three) != 0) + 1
+        crossings += int(sum(three[change - 1] == D and three[change] != D for change in changes))
+    assert crossings >= 50, "only {} restarts in 40 decodes: the twins were hardly tested".format(crossings)
+    # Whole-number emissions, D's column given to both dead states: exact ties everywhere, and only the tie order
+    # D_H, D_A, H, A makes the four states choose the three states' path.
+    for case in range(300):
+        rng = np.random.default_rng([6, 6250 + case])
+        n_frames = int(rng.integers(1, 40))
+        emissions = rng.integers(-2, 3, size=(n_frames, 3)).astype(np.float64)
+        costs = (float(rng.choice([0.0, 0.5, 1.0, 2.0])), float(rng.choice([0.0, 0.5, 1.0, 2.0])),
+                 int(rng.integers(1, 5)), int(rng.integers(1, 5)))
+        switch_restart = float(rng.choice([np.inf, 0.5, 1.0, 2.0]))
+        path = hmm.restart_viterbi(emissions[:, [0, 1, 2, 2]], *costs, switch_restart)
+        three = hmm.viterbi(emissions, *costs)
+        assert np.array_equal(hmm.RESTART_LABELS[path], three), (case, path.tolist(), letters(three))
+    # The three-state tie cases (test_hmm_ties_follow_the_preference_order), with D_H or D_A where D was.
+    for rows, expected in (([[-5, 0, 0]] * 3 + [[1, -5, -5]] * 3, [D_H] * 3 + [H] * 3),   # into H from D_H, not A
+                           ([[0, 0, -5]] * 3 + [[-5, -5, 1]] * 3, [H] * 3 + [D_H] * 3),   # into D_x from H; D_H ends
+                           ([[0, -5, 0]] * 3 + [[-5, 1, -5]] * 3, [D_A] * 3 + [A] * 3),   # into A from D_A, not H
+                           ([[1, 0, 1]] * 3, [D_H] * 3), ([[0, 0, 0]] * 4, [D_H] * 4)):
+        path = hmm.restart_viterbi(np.array(rows, dtype=float)[:, [0, 1, 2, 2]], 0.5, 0.5, 1, 1, np.inf).tolist()
+        assert path == expected, (rows, path, expected)
+
+
+def test_hmm_restart_emissions_follow_the_rule():
+    """The four-state emissions: H and A are every source's but the named one's `home`, D_H and D_A both D's, plus the
+    named source's `home` as w log 2h and w log 2(1 - h); its `alive` is read as any source's."""
+    from dataclasses import replace
+    from pipeline.contracts import A, D, H
+    from pipeline.decode import hmm
+    from pipeline.decode.hmm import D_A, D_H
+    for case in range(10):
+        rng = np.random.default_rng([6, 6500 + case])
+        n_frames = int(rng.integers(1, 500))
+        homes, alives, weights = hmm_random_scene(rng, n_frames)
+        named = len(homes) // 2                              # first, middle or last of the config's sources
+        ctx = hmm_context(homes, alives, weights=weights)
+        name = "s{}".format(named)
+        got = hmm.restart_log_likelihoods(ctx.evidence, name, n_frames, hmm.EPS)
+        assert got.dtype == np.float64 and got.shape == (n_frames, 4)
+        source = ctx.evidence[name]
+        silenced = {key: replace(value, home=np.full(n_frames, np.nan)) if key == name else value
+                    for key, value in ctx.evidence.items()}
+        three = hmm.log_likelihoods(silenced.values(), n_frames, hmm.EPS)
+        assert np.array_equal(got[:, H], three[:, H]) and np.array_equal(got[:, A], three[:, A]), case
+        h = np.clip(source.home, hmm.EPS, 1.0 - hmm.EPS)
+        known = ~np.isnan(source.home)
+        for column, vote in ((D_H, np.log(2.0 * h)), (D_A, np.log(2.0 * (1.0 - h)))):
+            expected = three[:, D] + np.where(known, source.weight * vote, 0.0)
+            assert np.allclose(got[:, column], expected, rtol=0.0, atol=1e-12), (case, column)
+            assert np.array_equal(got[~known, column], three[~known, D]), (case, column)
+        assert known.any() and (~known).any(), "the scene no longer has frames with and without a vote"
+    # The weight is an exponent on the vote as on any source, and the vote is read where it is, alive or dead.
+    vote = np.array([np.nan, 0.92, 0.08])
+    ctx = hmm_context([vote], [np.array([0.9, 0.05, np.nan])], weights=[2.0])
+    got = hmm.restart_log_likelihoods(ctx.evidence, "s0", 3, hmm.EPS)
+    expected = np.array([[np.log(1.8) * 2, np.log(1.8) * 2, np.log(0.2) * 2, np.log(0.2) * 2],
+                         [np.log(0.1) * 2, np.log(0.1) * 2, (np.log(1.9) + np.log(1.84)) * 2,
+                          (np.log(1.9) + np.log(0.16)) * 2],
+                         [0.0, 0.0, np.log(0.16) * 2, np.log(1.84) * 2]])
+    assert np.allclose(got, expected, rtol=0.0, atol=1e-12), (got, expected)
+
+
+def test_hmm_restart_vote_picks_the_first_team():
+    """A stoppage, then 46 frames of weak hold evidence for home (0.55, the team before it), then an away control
+    episode. Without restart states the decoder carries home across the stoppage and changes team at the episode: one
+    change of team (8 nats) is cheaper than 46 frames against the hold (9.23). A vote for away at 0.92 on the
+    stoppage's last frame (+0.61 nats for D_A, -1.83 for D_H) tips it by 1.21: the first run after the stoppage is
+    away's, and the stoppage stays where it was."""
+    from pipeline.contracts import no_opinion
+    home = home_runs((VOTE, 100), (np.nan, 50), (0.55, 46), (1.0 - VOTE, 100))
+    alive = np.concatenate([np.full(100, 0.9), np.full(50, 0.05), np.full(146, 0.9)])
+    costs = {"switch_team": 8.0, "switch_dead": 16.0, "min_possession": 25, "min_dead": 25}
+    carried, restarted = "H" * 100 + "D" * 50 + "H" * 46 + "A" * 100, "H" * 100 + "D" * 50 + "A" * 146
+    vote = no_opinion(len(home))
+    ctx = hmm_context([home, vote], [alive, None])
+    assert letters(hmm_labels(ctx, **costs)) == carried
+    assert letters(hmm_labels(ctx, restart_source="s1", **costs)) == carried, "no vote: as the three states"
+    vote[149] = 1.0 - 0.92
+    ctx = hmm_context([home, vote], [alive, None])
+    for switch_restart in (np.inf, 8.0):
+        labels = hmm_labels(ctx, restart_source="s1", switch_restart=switch_restart, **costs)
+        assert letters(labels) == restarted, (switch_restart, letters(labels))
+    # read as an ordinary `home` source, the vote falls on a dead frame and moves nothing
+    assert letters(hmm_labels(ctx, **costs)) == carried
+    # a vote for home keeps home's run; the weight is an exponent on the vote as on any source
+    vote[149] = 0.92
+    assert letters(hmm_labels(hmm_context([home, vote], [alive, None]), restart_source="s1", **costs)) == carried
+    vote[149] = 1.0 - 0.92
+    muted = hmm_context([home, vote], [alive, None], weights=[1.0, 0.0])
+    assert letters(hmm_labels(muted, restart_source="s1", **costs)) == carried
+
+
+def restart_brute_force(emissions, switch_team, switch_dead, min_possession, min_dead, switch_restart, paths):
+    """Every four-state path in `paths` ((P, n) of columns H, A, D_H, D_A) scored by the design's definition, written
+    out here and not taken from the module: (scores, valid). A forbidden change scores -inf."""
+    inf = np.inf
+    cross = switch_dead + switch_restart
+    change = np.array([[0.0, switch_team, switch_dead, switch_dead],       # from H
+                       [switch_team, 0.0, switch_dead, switch_dead],       # from A
+                       [switch_dead, cross, 0.0, inf],                     # from D_H: to H, A, D_H, D_A
+                       [cross, switch_dead, inf, 0.0]])                    # from D_A
+    n_frames = paths.shape[1]
+    scores = emissions[np.arange(n_frames), paths].sum(axis=1)
+    if n_frames > 1:
+        scores = scores - change[paths[:, :-1], paths[:, 1:]].sum(axis=1)
+    return scores, restart_paths_valid(paths, min_possession, min_dead)
+
+
+def restart_paths_valid(paths, min_possession, min_dead):
+    """(P,) bool: every run of H or A lasts min_possession frames and every run of D_H or D_A min_dead, the first and
+    last run excepted."""
+    minimum = np.array([min_possession, min_possession, min_dead, min_dead])
+    valid = np.ones(len(paths), dtype=bool)
+    begun = np.zeros(len(paths), dtype=np.int64)
+    for frame in range(1, paths.shape[1]):
+        changed = paths[:, frame] != paths[:, frame - 1]
+        short = frame - begun < minimum[paths[:, frame - 1]]
+        valid &= ~(changed & (begun > 0) & short)   # the run [begun, frame) ended here: not the first, nor the last
+        begun = np.where(changed, frame, begun)
+    return valid
+
+
+def test_hmm_restart_vote_never_crosses_its_stoppage():
+    """restart_viterbi against every path of tiny blocks (n <= 8, 4^n paths): its path is valid, never changes D_H to
+    D_A or back, never restarts with the other team when switch_restart is inf, and scores the best of all."""
+    import itertools
+    from pipeline.decode import hmm
+    from pipeline.decode.hmm import D_A, D_H
+    from pipeline.contracts import A, H
+    assert (H, A, D_H, D_A) == (0, 1, 2, 3) and hmm.RESTART_PREFERENCE == (D_H, D_A, H, A)
+    every = {}
+    bound = forbidden = 0
+    for case in range(300):
+        rng = np.random.default_rng([6, 6300 + case])
+        n_frames = int(rng.integers(1, 9))
+        if n_frames not in every:
+            every[n_frames] = np.array(list(itertools.product(range(4), repeat=n_frames)), dtype=np.int64)
+        paths = every[n_frames]
+        emissions = rng.uniform(-3.0, 3.0, size=(n_frames, 4))
+        switch_team, switch_dead = (float(value) for value in rng.uniform(0.1, 4.0, size=2))
+        switch_restart = np.inf if rng.random() < 0.5 else float(rng.uniform(0.1, 4.0))
+        min_possession, min_dead = (int(value) for value in rng.integers(1, 5, size=2))
+        costs = (switch_team, switch_dead, min_possession, min_dead, switch_restart)
+        path = hmm.restart_viterbi(emissions, *costs)
+        assert path.dtype == np.int8 and path.shape == (n_frames,), (case, path.dtype, path.shape)
+        pairs = set(zip(path.tolist(), path.tolist()[1:]))
+        assert not pairs & {(D_H, D_A), (D_A, D_H)}, (case, path.tolist())
+        if switch_restart == np.inf:
+            assert not pairs & {(D_H, A), (D_A, H)}, (case, path.tolist())
+        assert restart_paths_valid(path[None].astype(np.int64), min_possession, min_dead)[0], (case, path.tolist())
+        scores, valid = restart_brute_force(emissions, *costs, paths)
+        best = scores[valid].max()
+        got = restart_brute_force(emissions, *costs, path[None].astype(np.int64))[0][0]
+        assert np.isfinite(got) and abs(got - best) < 1e-9, "case {}: {!r} against the best valid path {!r}".format(
+            case, got, best)
+        # the same paths where D_H <-> D_A and the cross restarts cost switch_dead like any other change
+        bound += restart_unconstrained_scores(emissions, paths, switch_team, switch_dead)[valid].max() > best + 1e-9
+        forbidden += switch_restart == np.inf
+    # A check in which no forbidden or priced change was ever worth taking would prove nothing about the constraint.
+    assert bound >= 30 and forbidden >= 100, "{} cases bound, {} with switch_restart inf".format(bound, forbidden)
+
+
+def restart_unconstrained_scores(emissions, paths, switch_team, switch_dead):
+    """Scores of `paths` with every change allowed, D_H <-> D_A included, each into or out of a dead state at
+    switch_dead: the model without the restart constraint, against which the constraint has to bind."""
+    change = np.array([[0.0, switch_team, switch_dead, switch_dead],
+                       [switch_team, 0.0, switch_dead, switch_dead],
+                       [switch_dead, switch_dead, 0.0, switch_dead],
+                       [switch_dead, switch_dead, switch_dead, 0.0]])
+    n_frames = paths.shape[1]
+    scores = emissions[np.arange(n_frames), paths].sum(axis=1)
+    if n_frames > 1:
+        scores = scores - change[paths[:, :-1], paths[:, 1:]].sum(axis=1)
+    return scores
+
+
+def test_hmm_restart_states_respect_minimums():
+    from pipeline.contracts import D, no_opinion
+    from pipeline.decode import REGISTRY, hmm
+    # The first-team scene with a minimum stoppage of 60 frames: the 50 dead frames grow to 60 (ten more frames of D
+    # cost about 21 nats, giving the stoppage up 147), and the run after it is away's.
+    home = home_runs((VOTE, 100), (np.nan, 50), (0.55, 46), (1.0 - VOTE, 100))
+    alive = np.concatenate([np.full(100, 0.9), np.full(50, 0.05), np.full(146, 0.9)])
+    vote = no_opinion(len(home))
+    vote[149] = 1.0 - 0.92
+    labels = hmm_labels(hmm_context([home, vote], [alive, None]), restart_source="s1", switch_team=8.0,
+                        switch_dead=16.0, min_possession=25, min_dead=60)
+    dead = np.flatnonzero(labels == D)
+    assert len(dead) == 60 and dead[-1] - dead[0] == 59 and dead[0] <= 100 and dead[-1] >= 149, letters(labels)
+    assert letters(labels[dead[-1] + 1:]) == "A" * (len(labels) - dead[-1] - 1), letters(labels)
+    # Random blocks with restart votes at random frames: the four-state path is valid with each state's minimum, and
+    # decode's labels are that path with D_H and D_A written D.
+    interior = 0
+    for case in range(30):
+        rng = np.random.default_rng([6, 6400 + case])
+        n_frames = int(rng.integers(200, 2000))
+        homes, alives, weights = hmm_random_scene(rng, n_frames)
+        votes = no_opinion(n_frames)
+        at = rng.random(n_frames) < 0.02
+        votes[at] = rng.choice([0.08, 0.2, 0.8, 0.92], int(at.sum()))
+        ctx = hmm_context(homes + [votes], alives + [None], weights=weights + [float(rng.choice([1.0, 3.0]))])
+        name = "s{}".format(len(homes))
+        costs = hmm_random_costs(rng)
+        switch_restart = np.inf if case % 2 == 0 else float(rng.uniform(0.5, 10.0))
+        emissions = hmm.restart_log_likelihoods(ctx.evidence, name, n_frames, hmm.EPS)
+        assert emissions.shape == (n_frames, 4) and np.isfinite(emissions).all()
+        path = hmm.restart_viterbi(emissions, costs["switch_team"], costs["switch_dead"], costs["min_possession"],
+                                   costs["min_dead"], switch_restart)
+        assert restart_paths_valid(path[None].astype(np.int64), costs["min_possession"], costs["min_dead"])[0], case
+        labels = REGISTRY["hmm"](ctx, restart_source=name, switch_restart=switch_restart, **costs).labels
+        assert np.array_equal(labels, hmm.RESTART_LABELS[path]), case
+        assert hmm_path_is_valid(labels.tolist(), costs["min_possession"], costs["min_dead"]), case
+        interior += max(0, int((np.diff(path) != 0).sum()) + 1 - 2)
+    assert interior >= 100, "only {} interior runs in 30 decodes: the minimums were hardly tested".format(interior)
+
+
+def test_hmm_restart_states_refuse_posterior_and_unknown_source():
+    from pipeline.contracts import no_opinion
+    from pipeline.decode import REGISTRY, hmm
+    ctx = hmm_context([np.full(10, VOTE), no_opinion(10)])
+
+    def decode(**parameters):
+        return REGISTRY["hmm"](ctx, **dict({"switch_team": 1.0, "switch_dead": 1.0}, **parameters))
+
+    expect_error(ValueError, lambda: decode(restart_source="s1", posterior=True), "hmm", "posterior", "restart_source")
+    expect_error(ValueError, lambda: decode(restart_source="restart_team"), "hmm", "restart_source", "'restart_team'",
+                 "s0", "s1")
+    for bad in ("", 3, True, ["s1"], b"s1"):
+        expect_error(ValueError, lambda: decode(restart_source=bad), "hmm", "restart_source")
+    for bad in (0, 0.0, -1.0, np.nan, -np.inf, True, np.True_, "8", None):
+        expect_error(ValueError, lambda: decode(restart_source="s1", switch_restart=bad), "hmm", "switch_restart")
+    # switch_restart is read only with restart_source: a finite one without it would be ignored, so it is refused
+    expect_error(ValueError, lambda: decode(switch_restart=8.0), "hmm", "switch_restart", "restart_source")
+    # the three-state checks still apply
+    expect_error(ValueError, lambda: decode(restart_source="s1", min_dead=0), "hmm", "min_dead")
+    # whole numbers, numpy numbers and inf are fine
+    for good in (8, np.float64(8.0), np.int64(3), 1e-6, np.inf, float("inf")):
+        assert len(decode(restart_source="s1", switch_restart=good).labels) == 10
+    assert decode(switch_restart=np.inf).posterior is None
+    # restart_viterbi and restart_log_likelihoods check their own arguments
+    expect_error(ValueError, lambda: hmm.restart_viterbi(np.zeros((5, 3)), 1.0, 1.0, 1, 1, np.inf), "hmm",
+                 "shape (5, 3)")
+    expect_error(ValueError, lambda: hmm.restart_viterbi(np.zeros((5, 4)), 1.0, 1.0, 1, 1, 0.0), "hmm",
+                 "switch_restart")
+    expect_error(ValueError, lambda: hmm.restart_log_likelihoods(ctx.evidence, "s9", 10, hmm.EPS), "hmm",
+                 "restart_source", "'s9'")
 
 
 # -- dead ball (P05) --------------------------------------------------------------------------------------------------
