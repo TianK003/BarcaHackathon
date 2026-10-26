@@ -32,6 +32,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R011 | 2026-10-25 | P07's shape-possession evidence on `tracking` v3: the held-out shape model (7 DFL matches, ball hidden, part 1) and a 12-config grid, `shape_possession` weight {0.01, 0.02, 0.05, 0.1, 0.2, 0.5} x scope {`gaps`, `all`} on top of R010's `main.toml`, the `hmm` (4, 32, 25, 25) unchanged; the chosen `p07_w200_all` is `pipeline/configs/p07_shape.toml`, and was `main.toml` from R011 to R012 | 0.7151 | 0.4000 | 20 / 14.1 s | 0.5159 raw and 0.5591 coarse for the chosen `p07_w200_all` (the best of the 12 under both truths), against R010's `main` 0.4217 raw and 0.4556 coarse (the same two sources and decoder without P07), and `nearest_w50` 0.2018 raw and `nearest_w125` 0.2226 coarse | **Chosen weight 0.2, scope `all`** by the pre-declared rule (the only config within 0.005 of the best raw score; the next is `p07_w100_all` 0.5057); **the bar is met** (`tracking` raw Δ +0.0942 over `main`, p 0.0156, 7 wins in 7) and the `context` veto does not fire (raw Δ +0.0831, 7 wins in 7); the coarse cells agree (+0.1035 on `tracking`, +0.0890 on `context`, 7 wins in 7 each), the leave-one-match-out estimate picks the same config in all seven folds (+0.0940 raw, 7 wins in 7), and all 12 configs beat `main` in all four cells (the smallest Δ +0.0290); alive/dead F1 0.9729; **the label-free checks on BAR-ATH pass** (`touch_agreement` with the `full` model 0.8251 on 41,052 frames against the gate's 0.7486, predicted `D` 35.8% against R010's 36.0%, 439 possessions = 4.1452 per graded minute against R010's 4.2491, no `X` in a graded block, the same sha256 twice), so **`main.toml` is switched** (sha256 `8810afce...`, not uploaded); the labels differ from R010's on 5.30% of the graded frames; the shape model was trained on other teams' matches, so the benchmark's gain is not a forecast for BAR-ATH, and the benchmark's count of possessions moves the other way (up 16%, BAR-ATH's down 2.4%); the public window is a correctness check only (spellF1 0.4000 against R010's 0.4686: 20 possessions against 18, one possession moves it about 0.06, T01; macroF1 0.7151 against 0.6996) |
 | R012 | 2026-10-25 | P02's edge shift on `tracking` v3: the pipeline's own lag on DFL (`conventions.py latency`, raw truth, 7 matches x 3 seeds), guarded by one config (`p02_sb`: R011's `main.toml` plus `shift_edges` team +1, into_dead -2, out_of_dead 0) in four cells, then the gap to our truth's convention read from the public window by the declared rule (g); the total is `pipeline/configs/p02_shift.toml` and now `main.toml` | 0.7159 in sample, 0.7125 out of fold | 0.4000 in sample and out of fold | 20 / 14.1 s | 0.5164 raw and 0.5592 coarse for `p02_sb`, against R011's `main` 0.5159 raw and 0.5591 coarse (pooled Δ +0.0005 raw, p 0.5000, 4 wins in 7; +0.0000 coarse); on `context` (sensitivity only) +0.0009 raw and +0.0001 coarse | **s_b is kept** by the guard (`tracking` raw Δ +0.0005 > 0, no cell below -0.005) and **g is 0 for every type** (1 to 4 matched public changes each, no type passes all three conditions), so the total is **team +1, into `D` -2, out of `D` 0 frames** and **`main.toml` is switched** (sha256 `3fd06da0...`, not uploaded); the shift is 1 to 2 frames and every benchmark gain is inside noise (all four intervals include 0, +0.0003 to +0.0004 macroF1 is the only consistent effect): adopted because the declared rule says so, not because it is shown to help; the labels differ from R011's on 0.34% of the graded frames, 439 possessions as before; the public window is a correctness check only (spellF1 0.4000 as R011's) |
 | R013 | 2026-10-26 | the touch rule and the decoder re-chosen without the window's values (P04, P06, P07): Stage A, `controlled_touch` radius x speed x frames x hold, 192 configs on R012's `main.toml`; Stage C, switch_team x min_possession x P07's weight, 144 configs at Stage A's choice; the shift re-derived by R012's rule; the final config is `pipeline/configs/r013_retune.toml` and now `main.toml` | 0.7152 | 0.4649 | 20 / 14.1 s | 0.5430 raw and 0.5593 coarse for the final config (radius 1.5 m, 6 m/s, 1 frame, hold 0.60; hmm 4/32/35/25; P07 at 0.2; shift +1/-2/0), against R012's `main` 0.5164 raw and 0.5592 coarse; on `context` (sensitivity only) 0.5489 and 0.5642 against 0.5162 and 0.5544 | **adopted by the declared rule**: the guard passes (`tracking` raw +0.0267, p 0.0156, 7 wins in 7; `tracking` coarse +0.0001; `context` +0.0327 raw, +0.0097 coarse) and the bar is met; Stage A alone was +0.0310 raw and -0.0107 coarse (T33), and Stage C's longer minimum possession (35 frames) won the coarse cell back; leave-one-match-out +0.0306 (Stage A) and +0.0263 (Stage C) raw, 7 wins in 7; the touch rule is on three edges of its grid and covers relatively fewer ball-visible frames on BAR-ATH than on DFL (36.9% against R008's rule's 43.6%); s_b re-derived as R012's; label-free checks pass (`D` 35.9%, no `X`, the same sha256 twice, 410 possessions against 439); `main.toml` writes sha256 `0ebdfbec...` (not uploaded); the public window is a correctness check only (spellF1 0.4649, 20 possessions against R012's 0.4000, 20) |
+| R014 | 2026-10-26 | the restart vote (P17) on `main.toml`: `restart_team` over tail {25, 50, 100, 150} x `use_ball` {false, true}, 8 configs at their measured confidences; declared | — | — | — | — | declared; runs pending (part 2) |
 
 ### The four yardsticks on every profile, in one table
 
@@ -5260,6 +5261,79 @@ moved, the decoder moved by one value, P07's weight and the shift stayed).
   Stage A's rule, +0.0263 for Stage C's), but Stage C's coarse tie-break picked the choice in five folds of seven, and
   the two stages ran in order (Stage C only at the full-data Stage A choice).
 - **Seven matches from two competitions**, five of them Fortuna Düsseldorf home games, are not seven independent draws.
+
+### R014 — The restart vote on main.toml: 8 configs, the choice and the bar (2026-10-26, Tian)
+Proposal: P17 · Commit: part 1 (this declaration and the 8 configs) is committed before any run of it; the commits of the
+runs are in part 2.
+
+**Part 1, declared before any run** (2026-10-26). Nothing below was chosen from a score of this entry.
+
+**Why.** A12: a perfect 2 s restart vote is worth +0.0198 raw and +0.0197 coarse to `main.toml` (7 wins in 7), above the
+declared +0.01; the label-free source `restart_team` (P17) is built and its confidences are measured (A12 part 2).
+
+**Candidates.** `main.toml` as it is (R013, sha256 `0ebdfbec...`) plus one `[[evidence]]` `restart_team` at weight 1.0 (an
+exponent of 1 takes the measured probability as it is, R013's argument for `dead_ball_model`), model
+`pipeline/models/dead_ball_hgb.json`, `setup` 50 and `min_stoppage` 25 (the design's), over `tail` {25, 50, 100, 150}
+frames x `use_ball` {false, true}: 8 configs `pipeline/benchmark/configs/r014/r014_t{TTT}_b{0|1}.toml`, generated by
+`restarts.py configs data/runs/benchmark/restarts/stats.json --out-dir pipeline/benchmark/configs/r014`, each with its own
+setting's measured confidences (A12 part 2; a type without one does not vote):
+
+| config | corner | goal_kick | throw_in |
+|---|---|---|---|
+| r014_t025_b0 | 0.93 | 0.72 | 0.92 |
+| r014_t050_b0 | 0.81 | 0.72 | 0.88 |
+| r014_t100_b0 | 0.60 | 0.71 | 0.79 |
+| r014_t150_b0 | 0.61 | 0.69 | 0.76 |
+| r014_t025_b1 | — | 0.72 | 0.90 |
+| r014_t050_b1 | — | 0.71 | 0.87 |
+| r014_t100_b1 | — | 0.68 | 0.79 |
+| r014_t150_b1 | — | 0.66 | 0.75 |
+
+(`kick_off` and `free_kick` do not vote in any config: the 30-calls-per-seed floor.)
+
+**What is not re-chosen.** Everything else in `main.toml` (the touch rule, the dead-ball model, P07's weight, the decoder
+4/32/35/25; R013 chose them); the restart rules' constants (declared in the design from the Laws of the Game, not tuned;
+the goal-kick rule's lack of specificity seen in A12 part 2 is left as measured); weight, `setup`, `min_stoppage`.
+
+**The runs.** Profile `tracking` v3, 3 seeds, all seven matches, one process:
+
+```bash
+python pipeline/benchmark/run.py pipeline/configs/main.toml pipeline/benchmark/configs/nearest_w50.toml pipeline/benchmark/configs/nearest_w125.toml pipeline/benchmark/configs/r014/r014_t025_b0.toml ... (all 8) --truth both
+```
+
+`main.toml`, `nearest_w50` and `nearest_w125` must reproduce R013's and R004c's figures to the last digit (`main` 0.5430
+raw and 0.5593 coarse; `nearest_w50` 0.2018 raw; `nearest_w125` 0.2226 coarse). Then, for the chosen config and
+`main.toml` only: the same on `--profile context` (a sensitivity check, R005).
+
+**The selection** (R008 to R013's rule, `choose.py --reference main` on the reports). The objective is pooled spellF1 on
+`tracking`, raw truth. The tie band is 0.005: every config within it of the best is tied, and among the tied the best
+pooled `tracking` coarse spellF1 wins. Further ties: the smaller tail, then `use_ball` false; so the stems are given to
+`choose.py` in that order: `r014_t025_b0 r014_t025_b1 r014_t050_b0 r014_t050_b1 r014_t100_b0 r014_t100_b1 r014_t150_b0
+r014_t150_b1`. Leave-one-match-out as `choose.py` computes it (the raw objective alone and the whole rule). **Nothing is
+added after the results**: a choice on an edge of the grid is reported as one, and the grid is not extended in this entry.
+
+**The bar.** The chosen config is adopted only if its `tracking` raw pooled delta over `main.toml` is at least +0.005 (the
+tie band) with an exact sign-flip p of at most 0.05.
+
+**The veto.** It is not adopted if any of these is below -0.005: its `tracking` coarse pooled delta over `main.toml`, its
+`context` raw delta, its `context` coarse delta, or its pooled alive/dead F1 on `tracking` (raw report) minus
+`main.toml`'s (a vote after a restart must not move the dead-ball edges).
+
+**The shift, by R012's rule.** If the chosen config passes, its form without `[[refine]]` has its lag measured as R013 did
+(`conventions.py latency`, `tracking`, 3 seeds) and R012's rule gives the shift; the total is adopted as the rule gives it.
+
+**Label-free checks on BAR-ATH, before adopting.** Two runs of the final config give the same sha256; the predicted `D`
+share is within 1 point of R013's 35.9%; no `X` in a graded block; the number of possessions and the per-type vote counts
+are reported as aggregates; `restarts.py bar-ath` on the final config. The public window is a correctness check only (T01)
+and may not weigh in.
+
+**Adoption** (Tian's standing answer of 26 Oct: like R010 to R013). If the bar is met, the veto does not fire and the
+checks pass, the final config becomes `pipeline/configs/main.toml` and is kept as `pipeline/configs/r014_restart.toml`; its
+sha256 goes to the submission log; it is not uploaded.
+
+**If the bar is not met.** A12's ceiling is at least +0.01, so the design's Phase 2b follows: restart states in the
+decoder behind a toggle (off by default, every existing config byte-identical), with its own declaration (R014b) before
+its runs, and the same bar and veto.
 
 ## Submission log
 
