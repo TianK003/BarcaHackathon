@@ -5566,8 +5566,8 @@ reproduced `main`).
   run collects: one stoppage's single observation, at most logit(0.93), about 2.59 nats (a throw-in, logit(0.92), 2.44),
   while a cross transition (a first team other than the run's restart team) costs `switch_restart` on top. So any
   `switch_restart` above about 2.6 decodes like `inf`, except for a `D` run that collects two or more same-team calls,
-  which only 4 runs could reach, and the grid {4, 8, 16, inf} could not differ. Only the +0.0003 delta says the
-  observation is weak; the identical labels say nothing about it (T44).
+  which only the value 4 could ever reach (two calls make about 5 nats), and the grid {4, 8, 16, inf} could not
+  differ. Only the +0.0003 delta says the observation is weak; the identical labels say nothing about it (T44).
 - The single observation almost never tipped the first team. For a throw-in it is logit 0.92, 2.4 nats, the size of one
   frame of a control episode. R014's 25-frame vote carried about 61 nats and moved the score more (+0.0040).
 - Restart states read the call where it belongs, inside the stoppage, but the call alone is weak evidence next to the
