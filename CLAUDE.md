@@ -84,6 +84,8 @@ python pipeline/selftest.py --data                      # + the 4 committed base
 python pipeline/benchmark/sources.py [--verify] [--data-dir D]   # P01: fetch (or only check) the 7 DFL matches, md5
 python pipeline/benchmark/run.py CONFIG [CONFIG ...]    # configs on the benchmark; the first is the reference
 python pipeline/benchmark/run.py CONFIG ... --truth coarse   # the same under the coarse truth; read both together
+python pipeline/benchmark/run.py CONFIG ... --truth both     # both truths from one decode: the two runs' reports
+python pipeline/benchmark/choose.py --reference main STEM ...   # a grid's declared rule on its reports, + LOMO
 python pipeline/benchmark/fidelity.py --profile tracking --seeds 3   # gates + WARNs: the copy against our match
 python pipeline/benchmark/train_shape.py [--verify|--report]   # P07: train the shape model as JSON; --verify, --report
 python pipeline/benchmark/conventions.py public|dfl|compare|latency|shift ...   # P02: timing, inspected; DFL-lag shift
@@ -108,7 +110,7 @@ The scorer writes `evaluation/scoreboard.csv` and `evaluation/reports/<name>.jso
 (organisers only) or a CSV path.
 
 The benchmark's `run.py` takes `--profile clean|gaps|tracking|context` (default `tracking`, version 3 as of R004c;
-`context` is a sensitivity check only, it fails two of its gates, R005) and `--truth raw|coarse`; `fidelity.py`
+`context` is a sensitivity check only, it fails two of its gates, R005) and `--truth raw|coarse|both`; `fidelity.py`
 takes `--profile gaps|tracking|context` (a profile that degrades nothing has no gates). Both take `--seeds N` (default
 3), `--matches ID ...`, `--data-dir D` and `--no-write`; `sources.py` takes `--data-dir D` too. Reports go to
 `data/runs/benchmark/`, caches to `data/cache/`, and `fidelity.py` exits 1 if a gate fails.
@@ -155,7 +157,8 @@ keeps that convention: its scripts swap their own folder on `sys.path` for the r
   measured once, cached in `data/cache/benchmark/calibration/`), `degrade` (profiles `clean`, `gaps`, `tracking` v3,
   the default as of R004c, and `context`, a sensitivity check only, R005), `fidelity` (a profile's gates and WARNs
   against our match), `score` + `run` (pooled spellF1, 90% t-intervals, sign-flip test, reports in
-  `data/runs/benchmark/`) and `checks/` (what `selftest.py` runs). Degradations are fitted once per version on
+  `data/runs/benchmark/`), `choose` (a grid's declared rule and its leave-one-match-out estimate, from the reports)
+  and `checks/` (what `selftest.py` runs). Degradations are fitted once per version on
   label-free statistics of our tracking, then frozen, never tuned towards a score (T26, T37). The Calibration and every
   degraded `Atd` hold BAR-ATH's masks and counts: print none of it, and write no CSV of BAR-ATH labels.
 

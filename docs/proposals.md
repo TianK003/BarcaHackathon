@@ -34,10 +34,10 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P02](#p02--inspect-the-ground-truths-conventions-on-the-public-window-to-understand-and-never-to-tune) | Inspect the GT's conventions on the public window, to understand and never to tune | boundary timing | S | bounded since the 23 Oct rule: understanding only; so far the pipeline's own lag on DFL, 1 to 2 frames, within noise (R012) | partly done → A11, R012 (inspection only; a person may watch to understand) |
 | [P16](#p16--metricas-sample-games-in-our-ground-truth-providers-conventions) | Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing | boundary timing, grain | M | medium | idea |
 | [P03](#p03--one-command-deterministic-cached) | One-command, deterministic, cached pipeline | reproducibility | S–M | enabling | done → R001 |
-| [P04](#p04--sticky-ownership-from-controlled-touches) | Sticky ownership from controlled touches | facts 3, 5 | S | high: +0.1421 raw at the chosen decoder (R010) | done → R008, R010 |
+| [P04](#p04--sticky-ownership-from-controlled-touches) | Sticky ownership from controlled touches | facts 3, 5 | S | high: +0.1421 raw at the chosen decoder (R010) | done → R008, R010; rule re-chosen → R013 |
 | [P05](#p05--a-real-dead-ball-detector) | Dead-ball detector | fact 4 | M | high: +0.1661 raw at the chosen decoder, on a benchmark that overstates it (R010, T38, T39) | done → R009, R010 |
-| [P06](#p06--global-decoding-per-half-hmm--hidden-semi-markov) | Global decoder (HMM / semi-Markov) per half | fact 5 | M | high | done → R006–R007, A10 |
-| [P07](#p07--possession-without-the-ball-team-shape-and-movement) | Possession without the ball: team shape | fact 1 | M | high: +0.0942 raw at the chosen decoder, on a benchmark whose gain is not a forecast for our match (R011) | done → R011 |
+| [P06](#p06--global-decoding-per-half-hmm--hidden-semi-markov) | Global decoder (HMM / semi-Markov) per half | fact 5 | M | high | done → R006–R007, A10; decoder re-chosen → R010, R013 |
+| [P07](#p07--possession-without-the-ball-team-shape-and-movement) | Possession without the ball: team shape | fact 1 | M | high: +0.0942 raw at the chosen decoder, on a benchmark whose gain is not a forecast for our match (R011) | done → R011; weight re-chosen → R013 |
 | [P08](#p08--smart-tagging-as-soft-evidence) | Smart Tagging as soft evidence | facts 1, 4 | S | medium | idea |
 | [P09](#p09--camera-aim-as-a-coarse-ball-zone-prior) | Camera aim as a coarse ball-zone prior | fact 1 | S | low–medium | idea |
 | [P10](#p10--referee-whistle-from-the-audio-track) | Referee whistle from the audio track | fact 4 | S–M | medium (audio confirmed, A04) | idea |
@@ -54,7 +54,7 @@ One track per person; swap freely.
 | track | week 1 (→ Oct 27) | week 2 (→ Nov 3) | week 3 (→ Nov 10) |
 |---|---|---|---|
 | Validation | P01 (done 23 Oct, R002–R005), P02 (partly done 25 Oct, A11, R012) | P12 | re-validate every candidate on P01 |
-| Pipeline and decoder | P03 | P06 (done 25 Oct, R006–R007, A10) | P06 is tuned on P01 (R007); then [After P06](#after-p06); `main.toml` is P04 + P05 (R010), then P07 (R011) and P02's shift (R012); [After P04 and P05](#after-p04-and-p05), then [After P07 and P02](#after-p07-and-p02) |
+| Pipeline and decoder | P03 | P06 (done 25 Oct, R006–R007, A10) | P06 is tuned on P01 (R007); then [After P06](#after-p06); `main.toml` is P04 + P05 (R010), then P07 (R011) and P02's shift (R012); [After P04 and P05](#after-p04-and-p05), then [After P07 and P02](#after-p07-and-p02); its item 1 done 26 Oct (R013: the touch rule and the decoder re-chosen); then [After R013](#after-r013) |
 | Ball visible | P04 (done 25 Oct, R008, R010) | P11 | P11 |
 | Dead ball | P05 (done 25 Oct, R009, R010) | P08 | P10 |
 | Ball missing | P07 (done 25 Oct, R011) | P09 | P13 or P14 spike → go / no-go |
@@ -155,6 +155,7 @@ v3, raw truth, pooled spellF1) P07 took it from 0.4217 to 0.5159 and the shift a
 figure is a forecast for our match: the shape model never saw our teams, DFL tracks the ball out of play, and the count
 of possessions moved the other way on BAR-ATH (R011). *Items 2 and 4 are rewritten for the organisers' 23 Oct rule
 (`f8f2629`): the public window checks the pipeline and never tunes it, and a person watches to understand.*
+*Later (R013, 26 Oct):* item 1 is done, and the next step is in [After R013](#after-r013).
 
 1. **Next: re-check the decoder's edges with the new evidence ("After P04 and P05", item 2).** The reasons are in the
    results:
@@ -178,6 +179,12 @@ of possessions moved the other way on BAR-ATH (R011). *Items 2 and 4 are rewritt
      `max_rel_speed`, `min_frames`, hold) and R009's source and weight were chosen with them present, and R010 re-chose
      only the decoder. `main.toml` has neither source, so this protocol runs without them, and may add those constants
      as axes if it declares so first.
+   - *Done (R013, 26 Oct):* the touch rule first (192 configs), then `switch_team`, `min_possession` and P07's weight
+     (144 configs), the shift re-derived by R012's rule, all on `main.toml`'s own evidence. The touch rule moved (1.5 m,
+     6 m/s, 1 frame, hold 0.60; R008's setting ranked 83rd of 192), `min_possession` went from 25 to 35, `switch_team`
+     (4), the weight (0.2) and the shift stayed. Against R012's `main.toml`: +0.0267 raw on `tracking` (p 0.0156, 7 wins
+     in 7) and +0.0001 coarse; adopted. R009's source and weight were declared out of scope (the source rests on the
+     out-of-fold log-loss, the weight 1.0 on taking the model's probability as it is).
 2. **In parallel, and off the machine: a person watching P02's transitions, to understand.** R012's rule found g = 0
    for every type because 1 to 4 matched public changes cannot carry a gap, and A11's `D` edges (2.5 to 3 s longer than
    DFL's flag would draw them) are a lead and not a measurement: our truth's convention, chance and our tracker's
@@ -203,6 +210,27 @@ What the evidence does not support is a second round on P07's features, on the s
 weight alone (item 1 may revisit the weight, as a second axis of the decoder's re-check, under a protocol declared
 first): R011 chose by its rule and added nothing after its results, and each gain is measured on DFL alone, at a size
 the benchmark cannot carry over to our match.
+
+### After R013
+
+A recommendation from [R013](results.md), written on 26 Oct. `main.toml` is now R013's final config (sha256
+`0ebdfbec...`, not uploaded): every constant of it comes from a choice whose candidates carried no window-derived value,
+except R009's dead-ball source and weight, which R013 declared out of scope.
+
+1. **The grain of our truth is now the question that decides the most (P16).** Every re-tune since R007 has split the
+   two truths: R010's decoder and R013's touch rule each gained under the raw truth and lost under the coarse one, and
+   R013's final config is +0.0267 raw and only level coarse. Which of the two our ground truth resembles is what would
+   say whether R013 helps on our match. The public window cannot answer it (A06), so it has to come from our
+   provider's conventions on other games: Metrica's sample games (P16), by a rule declared on them.
+2. **Before the upload, decide how much of the gain to believe** ("After P07 and P02", item 3, unchanged). R013 adds two
+   caveats to T38, T39 and R011's: the gain is a raw-truth gain, and the tighter touch rule covers relatively fewer
+   ball-visible frames on BAR-ATH than on DFL (36.9% against R008's rule's 43.6%, where the benchmark has 43.4% against
+   47.6%). Settle it before the freeze on 13 Nov.
+3. **Not a second round on the touch rule.** Its three edges (1.5 m, 6 m/s, 1 frame) point at a smaller zone, but
+   R008 found 1.0 m and 3 m/s worse, the minimum episode cannot go below one frame, and the coverage on BAR-ATH already
+   argues against tightening it further on DFL's evidence alone. A grid there would be tuning to DFL's fine grain.
+4. **In parallel, as before:** a person watching P02's transitions to understand ("After P07 and P02", item 2), and the
+   restart-team channel from code (item 4). R013 changes neither.
 
 ---
 
@@ -419,10 +447,12 @@ is in place, and `python pipeline/selftest.py --data` proves the four baselines 
 
 ### P04 — Sticky ownership from controlled touches
 
-**Status: done → R008, R010.** The source is `controlled_touch`
+**Status: done → R008, R010; the rule re-chosen → R013.** The source is `controlled_touch`
 ([`pipeline/evidence/`](../pipeline/evidence/README.md)). Chosen on a 24-config grid (R008): radius 2.0 m, relative
 speed 6 m/s, 3 frames, hold 0.55, confidence 0.91. Alone it clears both halves of P06's bar (+0.0328 raw, +0.0206
-coarse); in the chosen config removing it costs +0.1421 raw and +0.2132 coarse (R010).
+coarse); in the chosen config removing it costs +0.1421 raw and +0.2132 coarse (R010). R013 chose it again on
+`main.toml`'s own evidence, without the window-derived `ball_presence` that every R008 config carried: radius 1.5 m,
+6 m/s, 1 frame, hold 0.60, confidence 0.93 (192 configs; on three lower edges of its grid).
 
 **Why.** Fact 3, and the definition itself: possession changes only when the opponent gains *controlled* possession,
 and loose or contested balls stay with the last team. Nearest-player-per-frame flips on every pass in flight and
@@ -477,7 +507,9 @@ and
 [A10](results.md#a10--headroom-what-perfect-evidence-would-be-worth-to-the-chosen-decoder-2026-10-25).** The `hmm`
 decoder is in [`pipeline/decode/hmm.py`](../pipeline/decode/hmm.py), with its posterior (off by default) and the first
 `alive` evidence, `ball_presence`. Its parameters were chosen on P01's benchmark and are kept in
-[`pipeline/configs/p06_hmm.toml`](../pipeline/configs/p06_hmm.toml), which is not the submission config.
+[`pipeline/configs/p06_hmm.toml`](../pipeline/configs/p06_hmm.toml), which is not the submission config. The
+submission's decoder parameters are R010's and then R013's (`switch_team` 4, `switch_dead` 32, `min_possession` 35,
+`min_dead` 25), chosen with the sources that `main.toml` carries.
 
 **Result.** Switch penalties of 8 and 32 nats (`switch_team`, `switch_dead`) and minimum runs of 75 frames and 1 give
 pooled spellF1 0.2053 under the raw truth and 0.1967 under the coarse one, against `nearest_w50`'s 0.2018 raw and
@@ -514,7 +546,8 @@ the two teams (`pipeline/benchmark/train_shape.py`; the model is `pipeline/model
 fold on the benchmark (`tracking` v3, raw truth), on the alive frames whose ball is missing it scores a log-loss of
 0.3759 and an accuracy of 0.8349 (ln 2 = 0.6931). The 12-config grid chose weight 0.2 and every graded frame: on
 `tracking` v3 it adds +0.0942 pooled spellF1 under the raw truth over P04 + P05 (7 wins in 7, p 0.0156; +0.1035 under
-the coarse one), and the label-free transfer gate on our match passes (0.8251 against 0.7486). `main.toml` carries it.
+the coarse one), and the label-free transfer gate on our match passes (0.8251 against 0.7486). `main.toml` carries it,
+and R013 chose the weight again with the decoder (0.2 once more, 144 configs).
 The limits: the model never saw our teams, so the benchmark's gain is not a forecast for them; the count of
 possessions moves the other way on BAR-ATH (down 2.4%, where the benchmark's goes up 16%); and the public window's
 spellF1 fell by about one possession, 0.4686 to 0.4000 (a correctness check, T01). What was built differs from the

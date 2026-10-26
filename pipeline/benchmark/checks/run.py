@@ -322,6 +322,60 @@ def test_runner_scores_against_the_coarse_truth_when_asked():
             "the two reports must sit side by side, neither replacing the other")
 
 
+def test_runner_scores_both_truths_from_one_decode():
+    """evaluate_truths gives each truth exactly evaluate_configs' result, reports and table, decoding each config once
+    per match and seed; it refuses no truth, an unknown one and a repeated one; main's --truth both writes both files."""
+    matches = synthetic_matches()
+    paths = [yardstick_path(50), yardstick_path(25)]
+    with tempfile.TemporaryDirectory() as root:
+        single = {}
+        for name in benchmark_run.TRUTHS:
+            lines = []
+            single[name] = (evaluate_gaps(paths, matches=matches, truth=name, seeds=2,
+                                          calibration=synthetic_calibration(), data_dir=root, log=lines.append), lines)
+        decoded = []
+        original = benchmark_run._codes
+
+        def counting(config, inputs):
+            decoded.append(config.stem)
+            return original(config, inputs)
+
+        benchmark_run._codes = counting
+        lines = []
+        try:
+            both = benchmark_run.evaluate_truths(paths, profile="gaps", matches=matches, seeds=2,
+                                                 calibration=synthetic_calibration(), data_dir=root,
+                                                 log=lines.append)
+        finally:
+            benchmark_run._codes = original
+        assert list(both) == list(benchmark_run.TRUTHS), list(both)
+        assert len(decoded) == len(paths) * len(matches) * 2, "each config decoded once per match and seed"
+        timed = ("          seconds ", "match ")                 # the timings, and the progress lines, differ
+        printed = [line for line in lines if not line.startswith(timed)]
+        for name, (result, single_lines) in single.items():
+            assert [strict_json(json.dumps(entry["report"], sort_keys=True)) for entry in both[name]["configs"]] == [
+                strict_json(json.dumps(entry["report"], sort_keys=True)) for entry in result["configs"]], name
+            table = [line for line in single_lines if not line.startswith(timed)]
+            start = printed.index(table[1])
+            assert printed[start - 1:start - 1 + len(table)] == table, name
+        assert all(line.endswith("truth raw+coarse") for line in lines if line.startswith("match ")), lines
+        for truths, fragment in (((), "one or more"), (("fine",), "fine"), (("raw", "raw"), "each once")):
+            expect_error(benchmark_run.BenchmarkError, lambda truths=truths: benchmark_run.evaluate_truths(
+                paths, profile="clean", matches=matches, truth_names=truths, data_dir=root, log=quiet), fragment)
+
+    def serve(match_id):
+        return random_match(match_id, seed=sources.MATCH_IDS.index(match_id))
+
+    with tempfile.TemporaryDirectory() as root, loading(serve):
+        shown = io.StringIO()
+        with contextlib.redirect_stdout(shown):
+            code = benchmark_run.main(["--profile", "clean", paths[0], "--data-dir", root, "--matches", "J03WMX",
+                                       "--truth", "both"])
+        assert code == 0, shown.getvalue()
+        assert sorted(os.listdir(os.path.join(root, "runs", "benchmark", "clean"))) == [
+            "nearest_w50.coarse.m-J03WMX.json", "nearest_w50.m-J03WMX.json"], shown.getvalue()
+
+
 def test_runner_clean_runs_one_seed_and_says_so():
     """The clean profile has nothing random to repeat: --seeds is ignored, with a note, and only seed 0 is run."""
     matches = synthetic_matches()

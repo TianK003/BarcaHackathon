@@ -123,8 +123,9 @@ half_width = 50
 
 | config | what it is |
 |---|---|
-| [`main.toml`](configs/main.toml) | the team's current pipeline, i.e. the file we would submit today (not uploaded): `controlled_touch` and `shape_possession` (weight 0.2, every graded frame) for `home`, the gradient-boosted `dead_ball_model` for `alive`, the `hmm` decoder (4 / 32 / 25 / 25) and `shift_edges` (team +1, into_dead -2, out_of_dead 0). P04, P05 and the decoder were chosen in R010 and P07 in R011, on the benchmark (it overstates P05 for our match, T38, T39, and its gain from P07 is not a forecast for it, R011); the shift was adopted in R012 by its declared rule and its gain is inside noise |
-| [`p02_shift.toml`](configs/p02_shift.toml) | R012's choice, written when it was chosen: R011's config plus the shift; it writes the same CSV as `main.toml` (the same sha256) |
+| [`main.toml`](configs/main.toml) | the team's current pipeline, i.e. the file we would submit today (not uploaded): `controlled_touch` (1.5 m, 6 m/s, 1 frame, hold 0.60) and `shape_possession` (weight 0.2, every graded frame) for `home`, the gradient-boosted `dead_ball_model` for `alive`, the `hmm` decoder (4 / 32 / 35 / 25) and `shift_edges` (team +1, into_dead -2, out_of_dead 0). P05 was chosen in R009 and R010 and P07's model in R011; R013 chose the touch rule, `switch_team`, `min_possession` and P07's weight again with no window-derived value in any candidate, and re-derived the shift by R012's rule, all on the benchmark (it overstates P05 for our match, T38, T39, and its gains are not a forecast for it) |
+| [`r013_retune.toml`](configs/r013_retune.toml) | R013's final config, written when it was chosen; it writes the same CSV as `main.toml` (the same sha256) |
+| [`p02_shift.toml`](configs/p02_shift.toml) | R012's choice, written when it was chosen: R011's config plus the shift; it writes the file `main.toml` wrote before R013 |
 | [`p07_shape.toml`](configs/p07_shape.toml) | R011's choice, written when it was chosen: R010's config plus `shape_possession`; it writes the file `main.toml` wrote before R012 added the shift |
 | [`p45_hmm.toml`](configs/p45_hmm.toml) | R010's chosen config, written when it was chosen: `controlled_touch`, `dead_ball_model` and the `hmm`; it writes the file `main.toml` wrote before R011 |
 | [`smooth50_repro.toml`](configs/smooth50_repro.toml) | a regression check: it must rebuild `evaluation/results/baseline_smooth50.csv` byte for byte |
@@ -157,7 +158,7 @@ Each stage's README has a template, its rules and the traps that apply. After an
 | contracts | `python pipeline/selftest.py` | every stage rejects malformed input with a readable error; the cache parses bit-exactly; the evidence and the vote equal `starter/baseline.py` on synthetic tracking with every awkward case (ties, missing balls, empty frames); nothing risky is visible to git |
 | regression | `python pipeline/selftest.py --data` | on the real match, all four committed baselines are rebuilt byte for byte, and `main.toml` gives the same bytes twice |
 | the file | `python evaluation/validate_submission.py <csv>` | the organisers' own format check (the pipeline already runs the same functions) |
-| the scores | `python pipeline/run.py <config> --score` | public-window scores plus each source's agreement with the GT. For `main.toml` (R012) `controlled_touch` agrees on `home` on 87.2% of 5,489 frames, `dead_ball_model` on `alive` on 86.6% of 7,500 and `shape_possession` on `home` on 90.9% of 6,031 (a correctness check, T01); `nearest_player` agrees on 77.8% of 5,640 frames, exactly [A01](../docs/results.md) |
+| the scores | `python pipeline/run.py <config> --score` | public-window scores plus each source's agreement with the GT. For `main.toml` (R013) `controlled_touch` agrees on `home` on 86.8% of 5,484 frames, `dead_ball_model` on `alive` on 86.6% of 7,500 and `shape_possession` on `home` on 90.9% of 6,031 (a correctness check, T01); `nearest_player` agrees on 77.8% of 5,640 frames, exactly [A01](../docs/results.md) |
 
 The public window is for correctness only, by the organisers' rule since 23 Oct 2026 (`f8f2629`): it is "not training
 data and not a tuning set". It holds 17 possessions and ranks the baselines the wrong way round
@@ -304,7 +305,7 @@ pipeline/
 ├── selftest.py          synthetic contract checks; --data for the byte-exact regression
 ├── configs/             main.toml (current pipeline), smooth50_repro.toml (regression), p06_hmm.toml (P06),
 │                        p45_hmm.toml (P04 + P05, R010), p07_shape.toml (+ P07, R011),
-│                        p02_shift.toml (+ P02's shift, R012: main.toml's file)
+│                        p02_shift.toml (+ P02's shift, R012), r013_retune.toml (R013: main.toml's file)
 ├── inputs/              stage 1: Inputs, the ATD cache                       README.md
 ├── evidence/            stage 2: REGISTRY, nearest_player, ball_presence,    README.md
 │                        controlled_touch, dead_ball_rules, dead_ball_model,

@@ -1,0 +1,35 @@
+# R013, the shift re-derived (docs/results.md, R012's rule): Stage C's choice, r013c_t04_mp035_w200 (Stage A's
+# controlled_touch 1.5 m / 6.0 m/s / 1 frame / hold 0.60, the hmm 4/32/35/25, shape_possession at 0.2), without
+# shift_edges. `conventions.py latency` measures this pipeline's own lag on DFL; s_b is minus its rounded median per type
+# (0 below 30 matched changes), and the guard runs the config with s_b against this one.
+
+description = "R013 shift: r013c_t04_mp035_w200 without shift_edges: controlled_touch 1.5 m / 6.0 m/s / 1 frames / hold 0.6 (confidence 0.93) + dead_ball_model (hgb, pipeline/models/dead_ball_hgb.json) at weight 1.0 + shape_possession (hgb, pipeline/models/shape_possession_hgb.json) at weight 0.2, scope all, min_prob 0.02, hmm 4/32/35/25, decoded per half, no refiner."
+seed = 0
+scope = "halves"
+
+[[evidence]]
+kind = "controlled_touch"
+radius = 1.5                                  # metres: the nearest player must be this close
+max_rel_speed = 6.0                           # m/s: and move with the ball
+min_frames = 1                                # an episode shorter than this is dropped
+confidence = 0.93                             # touch_stats.py --grid r013: floor of the pooled agreement (93.1%)
+hold = 0.6                                    # the weak vote of the last team between episodes; 0.5 = off
+
+[[evidence]]
+kind = "dead_ball_model"
+weight = 1.0
+model = "pipeline/models/dead_ball_hgb.json"  # relative to the repo root
+
+[[evidence]]
+kind = "shape_possession"
+weight = 0.2                                          # an exponent on the source's likelihood
+model = "pipeline/models/shape_possession_hgb.json"   # relative to the repo root; a match with a fold gets it
+scope = "all"                                         # "gaps": ball missing only; "all": every graded frame
+min_prob = 0.02                                       # home is clipped to [0.02, 0.98]
+
+[decoder]
+kind = "hmm"
+switch_team = 4                               # nats a change of team (H <-> A) costs
+switch_dead = 32                              # nats a change into or out of D costs
+min_possession = 35                           # frames: no run of H or A shorter than this (1 is no minimum)
+min_dead = 25                                 # frames: no run of D shorter than this (1 is no minimum)

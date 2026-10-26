@@ -44,14 +44,14 @@ frame,label
 
 ## What gets printed
 
-Aggregates only, never a frame's data. For `main.toml` as of R012 (the figures change whenever `main.toml` does, and
+Aggregates only, never a frame's data. For `main.toml` as of R013 (the figures change whenever `main.toml` does, and
 [docs/results.md](../../docs/results.md) has the current ones):
 
 ```
 output    evaluation/results/main.csv   0.6 s
-          valid: 199,319 rows   sha256 3fd06da0…
-          graded frames: H 37.5%  A 26.6%  D 36.0%  X  0.0%
-          439 possessions in the graded halves, mean 9.3 s
+          valid: 199,319 rows   sha256 0ebdfbec…
+          graded frames: H 37.4%  A 26.7%  D 35.9%  X  0.0%
+          410 possessions in the graded halves, mean 9.9 s
 ```
 
 Possessions are counted the way the scorer counts them: inside the graded halves, with `X` bridged by the label
@@ -63,11 +63,11 @@ this match, such as another run's output; there are no hand labels of this match
 [T27](../../docs/traps.md)):
 
 ```
-score     evaluation/gt/BAR-ATH_possession_gt_public.csv: macroF1 0.7159  spellF1 0.4000  ...  possessions 20 (truth 17)
-          controlled_touch     home agrees on 87.2% of 5,489 frames   alive agrees on -- (no opinion ...)
+score     evaluation/gt/BAR-ATH_possession_gt_public.csv: macroF1 0.7152  spellF1 0.4649  ...  possessions 20 (truth 17)
+          controlled_touch     home agrees on 86.8% of 5,484 frames   alive agrees on -- (no opinion ...)
           dead_ball_model      home agrees on -- (no opinion ...)   alive agrees on 86.6% of 7,500 frames
           shape_possession     home agrees on 90.9% of 6,031 frames   alive agrees on -- (no opinion ...)
-results   | R0xx | 2026-10-25 | `main` @ <commit> | 0.7159 | 0.4000 | 20 / 14.1 s | | |
+results   | R0xx | 2026-10-26 | `main` @ <commit> | 0.7152 | 0.4649 | 20 / 14.1 s | | |
 ```
 
 The public window checks correctness. It cannot rank versions: it prefers `smooth125` to `smooth50`, the reverse of

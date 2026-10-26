@@ -35,8 +35,10 @@ module of its topic:
                  the yardstick configs, and the match-level statistics (t_interval, sign_flip_p, compare)
                  (synthetic, and a downloaded match with --dfl)
     run.py       the benchmark runner: its reports, the reference and the direction of a comparison, the same bytes in
-                 another process, what it refuses, and the oracle, which must score 1.0 on every real match (synthetic,
-                 and the downloaded matches with --dfl)
+                 another process, what it refuses, both truths from one decode, and the oracle, which must score 1.0
+                 on every real match (synthetic, and the downloaded matches with --dfl)
+    choose.py    choose: a grid's rule worked out by hand from the runner's results, its deltas the runner's, the
+                 leave-one-match-out picks in a plain loop, and the reports it refuses (synthetic only)
     headroom.py  the headroom runner: its six configs in order, the oracles that carry the truth and nothing else, that
                  they are in no production registry and the registry is as it was after a run (raised or not), the
                  variants as files that read back as the config with the oracles in, the coarse truth reaching them,
@@ -87,8 +89,8 @@ what two of them share goes to common.py (test_a_check_module_imports_no_other_c
 """
 
 from pipeline.benchmark.checks import (
-    calibration, cap, context, conventions, dead_ball, degrade, dfl, fidelity, harness, hazard, headroom, inputs, run,
-    score, shape, sources, tracking, touch, truth)
+    calibration, cap, choose, context, conventions, dead_ball, degrade, dfl, fidelity, harness, hazard, headroom,
+    inputs, run, score, shape, sources, tracking, touch, truth)
 
-MODULES = (sources, dfl, truth, inputs, score, run, hazard, calibration, degrade, cap, tracking, context, fidelity,
-           headroom, touch, dead_ball, conventions, shape, harness)
+MODULES = (sources, dfl, truth, inputs, score, run, choose, hazard, calibration, degrade, cap, tracking, context,
+           fidelity, headroom, touch, dead_ball, conventions, shape, harness)
