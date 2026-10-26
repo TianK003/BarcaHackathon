@@ -281,6 +281,16 @@ spot, a throw-in):
 - do not choose a decoder parameter that trades `D` against the team (`switch_dead`, a source's weight) from that
   source's benchmark alive/dead score alone.
 
+**T43 — An oracle that stops where the truth changes measures more than a source can deliver.** A12 sized P17's
+prize with a perfect 2 s vote for the restarting team (+0.0198 raw spellF1), and that vote stopped at the truth's next
+change of team. A real vote has a fixed length and cannot know that change: it keeps pushing after the restarting team's
+first possession has ended, and DFL's possessions are short (median 3.7 s). R014 delivered +0.0040 of the +0.0198 (and
+raw spellF1 fell with every longer tail, to -0.0187 at 150 frames). Before taking an oracle's gap as a prize:
+- build the oracle with the real source's footprint (a fixed span, no truncation at the truth's changes, no knowledge of
+  where the truth's next possession ends), and read that gap as the ceiling;
+- keep a perfect-information oracle as an upper bound only, and say in the protocol how far below it a source is
+  expected to land.
+
 ## Reproducibility and environment
 
 **T20 — Use the team venv.** It runs Python 3.11.9 in `.venv`, with numpy 2.4.6, pandas 3.0.6 and kloppy 3.18.0.
@@ -334,7 +344,7 @@ the same working tree, and the run imported the file as it stood. Parallel agent
 started while one of them is editing reads whatever is on disk at that second (a run that does not crash may instead
 measure code that was never committed). Launch measurement runs only at a committed, clean state of the files they
 import, and record that commit in the entry; or run them from a separate worktree (`git worktree add`, with its own
-`MTAH_DATA_DIR` if `dfl.py` differs, as the benchmark README says). The failed run's output was discarded and the
+`MTAH_DATA_DIR` if `dfl.py` differs). The failed run's output was discarded and the
 command run again.
 
 ## Rules and data handling

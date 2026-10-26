@@ -33,7 +33,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P01](#p01--a-validation-set-we-can-trust) | Validation set we can trust: other matches, degraded to look like ours | deciding anything at all | M | enabling | done → R002–R005 |
 | [P02](#p02--inspect-the-ground-truths-conventions-on-the-public-window-to-understand-and-never-to-tune) | Inspect the GT's conventions on the public window, to understand and never to tune | boundary timing | S | bounded since the 23 Oct rule: understanding only; so far the pipeline's own lag on DFL, 1 to 2 frames, within noise (R012) | partly done → A11, R012 (inspection only; a person may watch to understand) |
 | [P16](#p16--metricas-sample-games-in-our-ground-truth-providers-conventions) | Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing | boundary timing, grain | M | medium | idea |
-| [P17](#p17--the-restart-team-channel) | Restart-team channel: who restarts after a stoppage, from the players' arrangement | facts 3, 5 (the hold points at the old team after most stoppages) | S–M | ceiling +0.0198 raw, +0.0197 coarse (A12) | doing (Tian, Claude) → A12 |
+| [P17](#p17--the-restart-team-channel) | Restart-team channel: who restarts after a stoppage, from the players' arrangement | facts 3, 5 (the hold points at the old team after most stoppages) | S–M | ceiling +0.0198 raw (A12); delivered +0.0040 raw at best, bar not met (R014) | dropped → R014, R014b (the source and the decoder's restart states stay, off by default) |
 | [P03](#p03--one-command-deterministic-cached) | One-command, deterministic, cached pipeline | reproducibility | S–M | enabling | done → R001 |
 | [P04](#p04--sticky-ownership-from-controlled-touches) | Sticky ownership from controlled touches | facts 3, 5 | S | high: +0.1421 raw at the chosen decoder (R010) | done → R008, R010; rule re-chosen → R013 |
 | [P05](#p05--a-real-dead-ball-detector) | Dead-ball detector | fact 4 | M | high: +0.1661 raw at the chosen decoder, on a benchmark that overstates it (R010, T38, T39) | done → R009, R010 |
@@ -232,7 +232,27 @@ except R009's dead-ball source and weight, which R013 declared out of scope.
    R008 found 1.0 m and 3 m/s worse, the minimum episode cannot go below one frame, and the coverage on BAR-ATH already
    argues against tightening it further on DFL's evidence alone. A grid there would be tuning to DFL's fine grain.
 4. **In parallel, as before:** a person watching P02's transitions to understand ("After P07 and P02", item 2), and the
-   restart-team channel from code (item 4). R013 changes neither. *Later (26 Oct):* the channel is P17, started.
+   restart-team channel from code (item 4). R013 changes neither. *Later (26 Oct):* the channel is P17, started; it
+   closed as dropped (R014, R014b), see [After P17](#after-p17).
+
+### After P17
+
+A recommendation from [R014](results.md) and [R014b](results.md), written on 26 Oct. Neither met its bar, `main.toml`
+is unchanged (sha256 `0ebdfbec...`, not uploaded), and the source and the decoder's restart states stay in the code, off
+by default. None of the four has been started, and each needs its own protocol declared before its runs.
+
+1. **A shorter vote.** R014's choice sat on its grid's lower edge (25 frames), every longer tail scored lower, and the
+   leave-one-match-out picked it in 7 of 7 folds (+0.0040, p 0.0938). The cheapest next test is a declared grid below it,
+   for example 5, 10, 15 and 25 frames, with the confidences measured at each tail and the same bar. It is a second look
+   at the same benchmark, so the bar must be the same and declared before it runs.
+2. **The goal-kick rule's specificity.** In A12 part 2, 134 of 608 matched throw-ins were called goal kicks, because the
+   keeper stands in his goal area in most stoppages. A rule that tells the two apart would raise a type's confidence,
+   and the goal kick is the weakest (0.72).
+3. **The observation's weight as a declared axis in the restart states.** One observation is about 2.4 nats, and R014b
+   shows that is too weak to matter: the four `switch_restart` values gave identical labels. Run this only if item 1
+   does not settle it.
+4. **Smart Tagging's set-piece tags as a type hint (P08).** Left out of P17 on purpose. They are automatic, but P01's
+   matches have no Smart Tagging, so there is no benchmark to choose their weight on.
 
 ---
 
@@ -596,10 +616,12 @@ constant argued from what the tags mean, and the public window only checks that 
 
 ### P17 — The restart-team channel
 
-**Status: doing (Tian, Claude) → [A12](results.md).** Phase 0 is done and the decision is GO: a perfect 2 s vote for the
-restarting team is worth +0.0198 pooled raw spellF1 to `main.toml` (+0.0197 coarse, 7 wins in 7 under both), against a
-bar of +0.01 declared in the design before any run. The source, the measured confidences of the real source (A12 part 2)
-and R014, which chooses and adopts by a declared rule, are next.
+**Status: dropped → [R014](results.md), [R014b](results.md) (the source `restart_team` and the `hmm` decoder's restart
+states stay in the code, off by default; `main.toml` is unchanged).** Phase 0 ([A12](results.md)) measured a ceiling of
++0.0198 pooled raw spellF1 (+0.0197 coarse, 7 wins in 7), and the decision was GO against a bar of +0.01. The source was
+built and its confidences measured (A12 part 2), but neither declared test met its bar of +0.005 raw with p at most
+0.05: the vote after the restart (R014) gave +0.0040 raw (p 0.0938) and -0.0029 coarse at best, and restart states in
+the decoder (R014b) +0.0003 raw (p 0.8125). The follow-ups are in [After P17](#after-p17).
 
 **Why.** Facts 3 and 5. After a stoppage `controlled_touch`'s hold weakly favours the team that controlled the ball
 before it, until the first new episode names the team ("After P04 and P05" item 4, "After P07 and P02" item 4, "After

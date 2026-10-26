@@ -143,11 +143,13 @@ keeps that convention: its scripts swap their own folder on `sys.path` for the r
   `data/cache/atd_tactical/`) → `evidence` (per-frame `alive`/`home` probabilities, NaN = no opinion) → `decode` (one
   block per graded half) → `refine` → `output` (LF CSV, official validation, manifest in `data/runs/`). Components are
   plain functions in each stage's `REGISTRY` (`evidence` holds `nearest_player`, `ball_presence`, `controlled_touch`,
-  `dead_ball_rules`, `dead_ball_model` and `shape_possession`, the last two reading the trained JSON models in
-  `pipeline/models/`; `decode` holds `majority_vote` and `hmm`; `refine` holds `shift_edges`), chosen by TOML configs
-  in `pipeline/configs/` and checked against their signatures before any data loads. `configs/smooth50_repro.toml`
-  must rebuild `baseline_smooth50.csv` byte for byte — run `selftest.py --data` after any change upstream of the
-  decoder. Contracts live in `pipeline/contracts.py`; change them only with the team.
+  `dead_ball_rules`, `dead_ball_model`, `shape_possession` and `restart_team`, the last three reading the trained JSON
+  models in `pipeline/models/`; `restart_team` is a restart-team vote, measured but not in `main.toml`, P17; `decode`
+  holds `majority_vote` and `hmm` (which can decode restart states, `restart_source`, off by default);
+  `refine` holds `shift_edges`), chosen by TOML configs in `pipeline/configs/` and checked against their signatures
+  before any data loads. `configs/smooth50_repro.toml` must rebuild `baseline_smooth50.csv` byte for byte — run
+  `selftest.py --data` after any change upstream of the decoder. Contracts live in `pipeline/contracts.py`; change
+  them only with the team.
 - **`pipeline/benchmark/`** — P01's validation: the seven open DFL/IDSSE matches (Bassek et al. 2025, CC BY 4.0), the
   truth built as ours is (`D` where `BallStatus` is dead, else the team in `BallPossession`) and the tracking degraded
   to look like ours, run through the pipeline's own components and scored by the official scorer per half.
@@ -157,8 +159,9 @@ keeps that convention: its scripts swap their own folder on `sys.path` for the r
   measured once, cached in `data/cache/benchmark/calibration/`), `degrade` (profiles `clean`, `gaps`, `tracking` v3,
   the default as of R004c, and `context`, a sensitivity check only, R005), `fidelity` (a profile's gates and WARNs
   against our match), `score` + `run` (pooled spellF1, 90% t-intervals, sign-flip test, reports in
-  `data/runs/benchmark/`), `choose` (a grid's declared rule and its leave-one-match-out estimate, from the reports)
-  and `checks/` (what `selftest.py` runs). Degradations are fitted once per version on
+  `data/runs/benchmark/`), `choose` (a grid's declared rule and its leave-one-match-out estimate, from the reports),
+  `restarts` (the stoppages' anatomy, the restart vote's stats, its configs), `dfl_events` (the DFL restart events,
+  diagnostics) and `checks/` (what `selftest.py` runs). Degradations are fitted once per version on
   label-free statistics of our tracking, then frozen, never tuned towards a score (T26, T37). The Calibration and every
   degraded `Atd` hold BAR-ATH's masks and counts: print none of it, and write no CSV of BAR-ATH labels.
 
