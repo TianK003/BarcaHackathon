@@ -1061,6 +1061,676 @@ def test_run_end_to_end_synthetic_touch():
         assert np.isnan(home[outside]).all()
 
 
+# -- restart_team -----------------------------------------------------------------------------------------------------
+#
+# Hand-built scenes of 200 frames in metres, as touch_scene's: slot 0 is home, slot 1 away, slot 2 home, ... unless a
+# scene gives `teams`, and the ball is missing unless a scene gives one. A synthetic P(alive) of 0.05 on [50, 150) and
+# 0.95 elsewhere makes one stoppage whose restart is frame 150, so its setup window is [100, 150). Type codes are
+# restart_team.TYPES's: 0 kick-off, 1 corner, 2 goal kick, 3 throw-in, 4 free kick; teams 0 home, 1 away, -1 none.
+
+RESTART = dict(tail=50, use_ball=False, setup=50, min_stoppage=25)
+RESTART_FRAMES = 200
+CORNER_SCENE = {0: (0.5, 0.5), 1: (0.5, 6.5)}       # a home taker at a corner point, the nearest away slot 6 m off
+
+
+def restart_scene(slots=None, ball=None, graded=None, teams=None, n=RESTART_FRAMES):
+    """A RunContext over n frames of hand-built tracking in metres, built like touch_scene's. `slots` is a dict slot ->
+    a point (2,) or a track (n, 2), or an (n, S, 2) array (NaN = absent); `ball` a point or (n, 2) (default missing
+    throughout); `teams` the (S,) slot teams (default 0, 1, 0, 1, ...); `graded` a list of (start, stop) blocks (default
+    one over every frame). The inputs also carry the `game` and `kickoffs` that dead_ball_model reads."""
+    from pipeline.contracts import RunContext
+    from pipeline.inputs.atd_cache import Atd
+    scale = np.array(PLAY_PITCH)
+    if isinstance(slots, dict):
+        players = np.full((n, max(max(slots) + 1, 2), 2), np.nan)
+        for slot, track in slots.items():
+            players[:, slot] = track
+    else:
+        players = np.array(slots, dtype=np.float64)
+    ball = np.full((n, 2), np.nan) if ball is None else np.broadcast_to(np.asarray(ball, dtype=np.float64), (n, 2))
+    teams = np.arange(players.shape[1]) % 2 if teams is None else np.asarray(teams)
+    atd = Atd(players_xy=players / scale, players_speed=np.full(players.shape[:2], np.nan), ball_xy=ball / scale,
+              ball_speed=np.full(n, np.nan), slot_team=teams.astype(np.int8))
+    graded = [(1, 0, n)] if graded is None else [(index + 1, start, stop) for index, (start, stop) in enumerate(graded)]
+    inputs = kinematics_inputs(atd, graded, pitch=PLAY_PITCH)
+    inputs.game, inputs.kickoffs = "BAR-ATH", {}
+    return RunContext(inputs=inputs, seed=0)
+
+
+def restart_alive(*dips, n=RESTART_FRAMES):
+    """P(alive): 0.95, and 0.05 on every [start, stop) of `dips` (default the scenes' stoppage, [50, 150))."""
+    alive = np.full(n, 0.95)
+    for start, stop in dips or ((50, 150),):
+        alive[start:stop] = 0.05
+    return alive
+
+
+def restart_calls(run, alive=None, **settings):
+    from pipeline.evidence import restart_team
+    return restart_team.calls_from_alive(run.inputs, restart_alive() if alive is None else alive,
+                                         **dict(RESTART, **settings))
+
+
+def restart_pairs(run, alive=None, **settings):
+    """[(type, team), ...]: the calls on a scene, one per stoppage with an arrangement."""
+    calls = restart_calls(run, alive, **settings)
+    return [(int(kind), int(team)) for kind, team in zip(calls["type"], calls["team"])]
+
+
+def point_calls(points, teams=None, ball=None, use_ball=False, home_left=True, ball_speed=0.0):
+    """frame_calls on one frame: `points` a list of (x, y) metres (NaN = absent), `teams` theirs (default 0, 1, 0, ...),
+    `ball` a point or None (missing), still unless `ball_speed` says otherwise. Returns the frame's (type, team)."""
+    from pipeline.evidence import restart_team
+    xy = np.asarray(points, dtype=np.float64)[None]
+    teams = np.arange(xy.shape[1]) % 2 if teams is None else np.asarray(teams)
+    ball_xy = np.full((1, 2), np.nan) if ball is None else np.asarray(ball, dtype=np.float64)[None]
+    types, names = restart_team.frame_calls(xy, ~np.isnan(xy[..., 0]), teams, ball_xy, ~np.isnan(ball_xy[:, 0]),
+                                            np.full(1, ball_speed), PLAY_PITCH, home_left, use_ball)
+    assert types.dtype == np.int8 and names.dtype == np.int8 and types.shape == names.shape == (1,)
+    return int(types[0]), int(names[0])
+
+
+def restart_model_scene(slots, **options):
+    """restart_scene with a still ball far from everyone, missing on [50, 150): write_model's stub model then makes
+    one stoppage there, restarting at 150."""
+    ball = np.tile([90.0, 10.0], (RESTART_FRAMES, 1))
+    ball[50:150] = np.nan
+    return restart_scene(slots, ball=ball, **options)
+
+
+def restart_compute(run, path, **parameters):
+    from pipeline.contracts import check_evidence
+    from pipeline.evidence import REGISTRY
+    evidence = REGISTRY["restart_team"](run, **dict(dict(model=path, tail=30), **parameters))
+    check_evidence(evidence, len(run.inputs.atd.ball_xy))
+    assert np.isnan(evidence.alive).all(), "restart_team has no opinion on whether the ball is in play"
+    return evidence
+
+
+def test_restart_team_corner_names_the_taker():
+    from pipeline.evidence import restart_team
+    assert restart_team.TYPES == ("kick_off", "corner", "goal_kick", "throw_in", "free_kick")
+    assert restart_pairs(restart_scene(CORNER_SCENE)) == [(1, 0)]
+    assert restart_pairs(restart_scene(CORNER_SCENE, teams=[1, 0])) == [(1, 1)]
+    length, width = PLAY_PITCH
+    for cx, cy in ((0.0, 0.0), (0.0, width), (length, 0.0), (length, width)):   # every corner point
+        sx, sy = (1.0 if cx == 0 else -1.0), (1.0 if cy == 0 else -1.0)
+        taker, rival = (cx + 0.5 * sx, cy + 0.5 * sy), (cx + 0.5 * sx, cy + 6.5 * sy)
+        assert point_calls([taker, rival]) == (1, 0), (cx, cy)
+        assert point_calls([taker, rival], teams=[1, 0]) == (1, 1), (cx, cy)
+    # an opponent within 4.5 m is no corner (the taker still has the touchline to himself: a throw-in), and a player
+    # 3.5 m from the corner point is not at it
+    assert point_calls([(0.5, 0.5), (0.5, 4.5)]) == (3, 0)
+    assert point_calls([(3.0, 1.8), (20.0, 30.0)]) == (-1, -1)
+
+
+def test_restart_team_goal_kick_names_the_defender():
+    from pipeline.evidence import kinematics, play_features
+    home = [(3.0, 34.0), (25.0, 20.0), (25.0, 48.0)]            # the keeper in his goal area, two defenders
+    away = [(70.0, 20.0), (70.0, 48.0), (12.0, 34.0)]           # the last one inside home's penalty area
+    run = restart_scene(dict(enumerate(home + away)), teams=[0, 0, 0, 1, 1, 1])
+    assert play_features.own_half_is_left(kinematics.player_track(run.inputs), run.inputs.atd.slot_team, 0,
+                                          RESTART_FRAMES, PLAY_PITCH[0]), "home defends x < L/2 in this scene"
+    assert restart_pairs(run) == [(2, 0)]
+    crowded = restart_scene(dict(enumerate(home + away + [(14.0, 25.0)])), teams=[0, 0, 0, 1, 1, 1, 1])
+    assert restart_pairs(crowded) == [], "two opponents inside the penalty area"
+    # the other end is away's: its keeper there is away's goal kick, and an away slot in home's goal area is nobody's
+    assert point_calls([(30.0, 34.0), (PLAY_PITCH[0] - 3.0, 34.0)]) == (2, 1)
+    assert point_calls([(60.0, 30.0), (3.0, 34.0)]) == (-1, -1)
+    # the goal area is 5.5 m deep and 18.32 m wide: its line is in, a step past it is out
+    assert point_calls([(5.5, 43.0), (80.0, 34.0)]) == (2, 0)
+    assert point_calls([(5.6, 34.0), (80.0, 34.0)]) == (-1, -1)
+
+
+def test_restart_team_throw_in_names_the_thrower():
+    assert restart_pairs(restart_scene({0: (40.0, 65.4), 1: (40.0, 68.4)})) == [(3, 1)]   # away 0.4 m beyond the line
+    assert point_calls([(40.0, 1.4), (40.0, 4.4)]) == (3, 0)                               # the near touchline, inside
+    assert point_calls([(40.0, 1.6), (40.0, 4.6)]) == (-1, -1)                             # 1.6 m in: not at the line
+    assert point_calls([(40.0, 67.5), (40.0, 68.4)]) == (-1, -1)                           # 0.9 m apart: neither throws
+
+
+def test_restart_team_kick_off_names_the_team_in_the_circle():
+    players, teams = kickoff_formation(RESTART_FRAMES)
+    assert restart_pairs(restart_scene(players, teams=teams)) == [(0, 0)]
+    # the same formation with the labels exchanged: away is now the team at the centre spot, home defends the right
+    assert restart_pairs(restart_scene(players, teams=1 - teams)) == [(0, 1)]
+    # a home slot 0.85 m past the halfway line is still in its half (1 m of tolerance); 3.35 m past it is not
+    inside = players.copy()
+    inside[:, 5, 0] = 53.5
+    assert restart_pairs(restart_scene(inside, teams=teams)) == [(0, 0)]
+    beyond = players.copy()
+    beyond[:, 5, 0] = 56.0
+    assert restart_pairs(restart_scene(beyond, teams=teams)) == []
+    # both teams inside the centre circle: no kick-off
+    both = players.copy()
+    both[:, 11] = (58.0, 30.0)
+    assert restart_pairs(restart_scene(both, teams=teams)) == []
+
+
+def test_restart_team_free_kick_needs_the_ball():
+    slots = {0: (20.0, 34.0), 1: (75.5, 30.0), 2: (85.0, 30.0), 3: (60.0, 50.0)}
+    still = restart_scene(slots, ball=(75.0, 30.0))
+    assert restart_pairs(still) == [], "use_ball off: no free kick, and nothing else fires"
+    assert restart_pairs(still, use_ball=True) == [(4, 1)]
+    assert restart_pairs(restart_scene(slots), use_ball=True) == [], "no ball, no free kick"
+    # a rolling ball (2 m/s) with its player beside it, an opponent within 4.5 m, a taker 2.5 m off: no free kick
+    t = np.arange(RESTART_FRAMES)[:, None]
+    rolling = np.array([75.0, 30.0]) + t * np.array([0.08, 0.0])
+    moving = restart_scene({**slots, 1: rolling + [0.5, 0.0], 2: (40.0, 60.0)}, ball=rolling)   # nobody else near
+    assert restart_pairs(moving, use_ball=True) == []
+    assert restart_pairs(restart_scene({**slots, 2: (78.0, 30.0)}, ball=(75.0, 30.0)), use_ball=True) == []
+    assert restart_pairs(restart_scene({**slots, 1: (77.5, 30.0)}, ball=(75.0, 30.0)), use_ball=True) == []
+
+
+def test_restart_team_ball_only_places_the_rules():
+    centre = (PLAY_PITCH[0] / 2, PLAY_PITCH[1] / 2)
+    # a corner arrangement (home taker, away 6 m off) with the ball still at the centre spot, a home slot beside it and
+    # an away slot 3.1 m from it: without the ball, the corner
+    corner = [(0.5, 0.5), (0.5, 6.5), (53.0, 34.0), (55.0, 36.0)]
+    assert point_calls(corner) == (1, 0)
+    assert point_calls(corner, ball=centre) == (1, 0), "use_ball off: the ball is not read"
+    # with it, only the kick-off rule runs there (and fails: both teams in the circle), the corner rule is silent
+    assert point_calls(corner, ball=centre, use_ball=True) == (-1, -1)
+    assert point_calls(corner, ball=(0.2, 0.3), use_ball=True) == (1, 0), "the ball at the corner: the corner rule"
+    # a corner taker 2.2 m from the corner point, beside a ball 3.8 m from it on the touchline zone's edge: the ball
+    # places a throw-in there, not a corner
+    beside = [(2.0, 1.0), (2.0, 7.0)]
+    assert point_calls(beside) == (1, 0)
+    assert point_calls(beside, ball=(3.5, 1.5), use_ball=True) == (3, 0)
+    # a kick-off arrangement with a home slot at a corner: the ball at the centre spot is the kick-off, at the corner
+    # the corner, anywhere else (nobody beside it) nothing
+    kickoff = [(53.0, 34.0), (60.0, 20.0), (0.5, 0.5)]
+    assert point_calls(kickoff) == (0, 0)
+    assert point_calls(kickoff, ball=centre, use_ball=True) == (0, 0)
+    assert point_calls(kickoff, ball=(0.2, 0.3), use_ball=True) == (1, 0)
+    assert point_calls(kickoff, ball=(75.0, 30.0), use_ball=True) == (-1, -1)
+    # the taker is the player nearest the ball, within 2 m: 2.52 m from a corner ball is a corner without the ball only
+    assert point_calls([(2.5, 0.3), (80.0, 30.0)]) == (1, 0)
+    assert point_calls([(2.5, 0.3), (80.0, 30.0)], ball=(0.0, 0.0), use_ball=True) == (-1, -1)
+    # goal kick: the ball in the goal area grown by 1 m (0.8 m past its line) is a goal kick, 1.3 m past it is not,
+    # and the still ball with the keeper 1.8 m off is then a free kick
+    keeper = [(5.0, 34.0), (70.0, 30.0)]
+    assert point_calls(keeper, ball=(6.3, 34.0), use_ball=True) == (2, 0)
+    assert point_calls(keeper, ball=(6.8, 34.0), use_ball=True) == (4, 0)
+    # throw-in: the ball beyond the line is one, the ball 2 m inside it is not (and an opponent 3 m off stops a free
+    # kick)
+    thrower = [(40.0, 0.5), (40.0, 5.0)]
+    assert point_calls(thrower) == (3, 0)
+    assert point_calls(thrower, ball=(40.5, -0.3), use_ball=True) == (3, 0)
+    assert point_calls(thrower, ball=(40.0, 2.0), use_ball=True) == (-1, -1)
+
+
+def test_restart_team_stoppages_and_restart_frame():
+    from pipeline.evidence import restart_team
+    stoppages = restart_team.stoppages
+    assert stoppages(restart_alive(), 0, 200, 25) == [(50, 150)]
+    assert all(type(value) is int for value in stoppages(restart_alive(), 0, 200, 25)[0])
+    assert stoppages(restart_alive((50, 70)), 0, 200, 25) == [], "a 20-frame dip"
+    assert stoppages(restart_alive((50, 75)), 0, 200, 25) == [(50, 75)], "exactly min_stoppage frames"
+    assert stoppages(restart_alive((150, 200)), 0, 200, 25) == [], "a dip to the block's end has no restart"
+    assert stoppages(restart_alive((50, 150)), 0, 120, 25) == [], "nor one past the end of [start, stop)"
+    assert stoppages(restart_alive((0, 40)), 0, 200, 25) == [(0, 40)], "a run from the block's first frame"
+    assert stoppages(restart_alive((0, 40)), 20, 200, 25) == [], "only 20 of its frames are in [20, 200)"
+    assert stoppages(restart_alive((10, 40), (60, 100)), 0, 200, 25) == [(10, 40), (60, 100)]
+    exactly = restart_alive()
+    exactly[100] = 0.5                                     # 0.5 is not dead: it splits the run in two
+    assert stoppages(exactly, 0, 200, 25) == [(50, 100), (101, 150)]
+    unknown = restart_alive()
+    unknown[150:160] = np.nan                              # NaN ends a run, and is no restart
+    assert stoppages(unknown, 0, 200, 25) == []
+    unknown[100] = np.nan
+    assert stoppages(unknown, 0, 200, 25) == [], "a run ended by NaN has no restart either"
+
+
+def test_restart_team_votes_only_after_the_restart():
+    from pipeline.evidence import restart_team
+    calls = restart_calls(restart_scene(CORNER_SCENE), tail=30)
+    assert set(calls) == {"restart", "end", "type", "team"}
+    assert calls["restart"].tolist() == [150] and calls["end"].tolist() == [180]
+    home = restart_team.votes(calls, RESTART_FRAMES, {1: 0.9})
+    expected = np.full(RESTART_FRAMES, np.nan)
+    expected[150:180] = 0.9
+    assert home.dtype == np.float64 and np.array_equal(home, expected, equal_nan=True), np.flatnonzero(home == 0.9)
+    away = restart_calls(restart_scene(CORNER_SCENE, teams=[1, 0]), tail=30)
+    expected[150:180] = 1.0 - 0.9
+    assert np.array_equal(restart_team.votes(away, RESTART_FRAMES, {1: 0.9}), expected, equal_nan=True)
+    # a tail that runs past the block's end stops there
+    late = restart_calls(restart_scene(CORNER_SCENE), alive=restart_alive((100, 180)), tail=50)
+    assert late["restart"].tolist() == [180] and late["end"].tolist() == [200]
+
+
+def test_restart_team_tail_stops_at_the_next_stoppage():
+    from pipeline.evidence import restart_team
+    scene = restart_scene(CORNER_SCENE)
+    calls = restart_calls(scene, alive=restart_alive((50, 150), (165, 195)), tail=30)
+    assert calls["restart"].tolist() == [150, 195] and calls["end"].tolist() == [165, 200]
+    expected = np.full(RESTART_FRAMES, np.nan)
+    expected[150:165] = expected[195:200] = 0.9
+    assert np.array_equal(restart_team.votes(calls, RESTART_FRAMES, {1: 0.9}), expected, equal_nan=True)
+    # a next stoppage that runs to the block's end has no restart of its own, and still ends the vote
+    calls = restart_calls(scene, alive=restart_alive((50, 150), (165, 200)), tail=30)
+    assert calls["restart"].tolist() == [150] and calls["end"].tolist() == [165]
+    # a dip shorter than min_stoppage is no stoppage, and does not
+    calls = restart_calls(scene, alive=restart_alive((50, 150), (160, 170)), tail=30)
+    assert calls["end"].tolist() == [180]
+
+
+def test_restart_team_type_without_confidence_is_silent():
+    from pipeline.evidence import restart_team
+    calls = restart_calls(restart_scene(CORNER_SCENE))
+    assert calls["type"].tolist() == [1]
+    for confidences in ({}, {0: 0.9, 2: 0.9, 3: 0.9, 4: 0.9}):
+        assert np.isnan(restart_team.votes(calls, RESTART_FRAMES, confidences)).all(), confidences
+    with tempfile.TemporaryDirectory() as root:
+        path = write_model(root)
+        run = restart_model_scene(CORNER_SCENE)
+        assert np.isnan(restart_compute(run, path, kick_off=0.9, goal_kick=0.9, throw_in=0.9).home).all()
+        home = restart_compute(run, path, corner=0.8).home
+        assert (home[150:180] == 0.8).all() and np.isnan(np.delete(home, range(150, 180))).all()
+
+
+def test_restart_team_arrangement_needs_a_quarter():
+    from pipeline.evidence import restart_team
+    assert restart_team.MIN_WINDOW_SHARE == 0.25
+
+    def window(*pairs, length=50):   # (type, team, frames) in turn, the rest of the window no call
+        types, teams = np.full(length, -1, np.int8), np.full(length, -1, np.int8)
+        at = 0
+        for kind, team, frames in pairs:
+            types[at:at + frames], teams[at:at + frames] = kind, team
+            at += frames
+        return types, teams
+
+    arrangement = restart_team.arrangement
+    assert arrangement(*window((3, 1, 12)), 0.25) is None
+    assert arrangement(*window((3, 1, 13)), 0.25) == (3, 1)
+    assert all(type(value) is int for value in arrangement(*window((3, 1, 13)), 0.25))
+    assert arrangement(*window((3, 1, 13), (1, 0, 13)), 0.25) == (1, 0), "a tie goes to the lower type code"
+    assert arrangement(*window((2, 1, 13), (2, 0, 13)), 0.25) == (2, 0), "then to home"
+    assert arrangement(*window((4, 0, 14), (1, 1, 13)), 0.25) == (4, 0), "the most frames, whatever the priority"
+    assert arrangement(*window(), 0.25) is None
+    assert arrangement(*window(length=0), 0.25) is None
+    assert arrangement(*window((1, 0, 2), length=8), 0.25) == (1, 0), "a quarter of a short window is of its length"
+    assert arrangement(*window((1, 0, 1), length=8), 0.25) is None
+
+
+def test_restart_team_block_edges():
+    """Review Focus 1: a stoppage from a block's first frame, or to its last, votes nothing across the edge."""
+    from pipeline.evidence import restart_team
+    graded = [(0, 100), (100, 200)]
+    scene = restart_scene(CORNER_SCENE, graded=graded)
+    # from the second block's first frame (a pre-kick-off run): the call, and its vote inside the block
+    calls = restart_calls(scene, alive=restart_alive((100, 130)), tail=50)
+    assert calls["restart"].tolist() == [130] and calls["end"].tolist() == [180]
+    # to the first block's last frame: no restart there, so no call, and nothing in the second block
+    assert len(restart_calls(scene, alive=restart_alive((60, 100)))["restart"]) == 0
+    # across the edge: the first block's piece has no restart, the second block's is a stoppage from its first frame
+    assert restart_calls(scene, alive=restart_alive((60, 130)))["restart"].tolist() == [130]
+    # a tail that would cross the edge stops at it
+    calls = restart_calls(scene, alive=restart_alive((40, 80)), tail=50)
+    assert calls["restart"].tolist() == [80] and calls["end"].tolist() == [100]
+    home = restart_team.votes(calls, RESTART_FRAMES, {1: 0.9})
+    assert (home[80:100] == 0.9).all() and np.isnan(home[100:]).all() and np.isnan(home[:80]).all()
+    # frames between two blocks: no players, alive NaN, and the tail stops at the first block's end
+    alive = restart_alive((40, 80))
+    alive[90:110] = np.nan
+    calls = restart_calls(restart_scene(CORNER_SCENE, graded=[(0, 90), (110, 200)]), alive, tail=50)
+    assert calls["restart"].tolist() == [80] and calls["end"].tolist() == [90]
+    # the window is clipped to the block: 8 corner frames make a quarter of the 30 frames [100, 130), not of 50
+    taker = np.full((RESTART_FRAMES, 2), np.nan)
+    taker[100:108] = (0.5, 0.5)
+    clipped = restart_scene({0: taker, 1: (0.5, 6.5)}, graded=graded)
+    assert restart_pairs(clipped, alive=restart_alive((100, 130))) == [(1, 0)]
+    assert restart_pairs(restart_scene({0: taker, 1: (0.5, 6.5)}), alive=restart_alive((100, 130))) == []
+
+
+def test_restart_team_absent_team_gives_no_call():
+    """Review Focus 2: a team with no present slot, or no slot at all, gives no call; nor does the kick-off fire."""
+    assert restart_pairs(restart_scene({0: (0.5, 0.5), 2: (30.0, 30.0)})) == [], "a corner with no opponent present"
+    assert point_calls([(0.5, 0.5), (np.nan, np.nan)]) == (-1, -1)
+    players, teams = kickoff_formation(RESTART_FRAMES)
+    players[:, 11:] = np.nan                                  # the away team gone
+    assert restart_pairs(restart_scene(players, teams=teams)) == []
+    assert restart_pairs(restart_scene(nobody(RESTART_FRAMES, 4))) == []
+    assert restart_pairs(restart_scene(nobody(RESTART_FRAMES, 4), ball=(75.0, 30.0)), use_ball=True) == []
+    # a free kick needs an opponent on the frame too
+    assert restart_pairs(restart_scene({0: (75.5, 30.0), 2: (20.0, 34.0)}, ball=(75.0, 30.0)), use_ball=True) == []
+    # the away slot present on 12 of the window's 50 frames: too few; on 13, the corner
+    rival = np.full((RESTART_FRAMES, 2), np.nan)
+    rival[100:112] = (0.5, 6.5)
+    assert restart_pairs(restart_scene({0: (0.5, 0.5), 1: rival})) == []
+    rival[100:113] = (0.5, 6.5)
+    assert restart_pairs(restart_scene({0: (0.5, 0.5), 1: rival})) == [(1, 0)]
+
+
+def test_restart_team_two_takers_is_deterministic():
+    """Review Focus 3: two players qualify for one rule on a frame: the nearer the line (or spot), then the lower
+    slot."""
+    from pipeline.evidence import restart_team
+    length, width = PLAY_PITCH
+    assert point_calls([(30.0, 0.8), (60.0, 0.3)]) == (3, 1)
+    assert point_calls([(30.0, 0.3), (60.0, 0.8)]) == (3, 0)
+    assert point_calls([(30.0, 0.5), (60.0, -0.5)]) == (3, 0), "as far beyond the line as inside it: the lower slot"
+    assert point_calls([(30.0, 0.5), (60.0, width - 0.5)]) == (3, 0), "one at each touchline: the lower slot"
+    assert point_calls([(60.0, 0.5), (30.0, 0.5)], teams=[1, 0]) == (3, 1), "the lower slot, whichever its team"
+    assert point_calls([(1.0, 1.0), (length - 0.5, width - 0.5)]) == (1, 1), "the nearer its corner point"
+    assert point_calls([(0.5, 0.5), (length - 0.5, width - 0.5)]) == (1, 0)
+    assert point_calls([(3.0, 34.0), (length - 2.0, 34.0)]) == (2, 1), "both keepers: the nearer his goal line"
+    # with the ball, the taker is the one nearest the ball, not the one nearest the line
+    pair = [(40.0, 0.2), (42.0, 0.6)]
+    assert point_calls(pair) == (3, 0)
+    assert point_calls(pair, ball=(41.8, 0.0), use_ball=True) == (3, 1)
+    # and the same frames give the same calls, every frame and every time
+    run = restart_scene({0: (30.0, 0.5), 1: (60.0, 0.5)})
+    assert restart_pairs(run) == restart_pairs(run) == [(3, 0)]
+    xy = np.tile(np.array([[30.0, 0.5], [60.0, 0.5]])[None], (50, 1, 1))
+    arguments = (xy, np.ones((50, 2), bool), np.array([0, 1]), np.full((50, 2), np.nan), np.zeros(50, bool),
+                 np.full(50, np.nan), PLAY_PITCH, True, False)
+    first, second = restart_team.frame_calls(*arguments), restart_team.frame_calls(*arguments)
+    assert (first[0] == 3).all() and (first[1] == 0).all()
+    assert np.array_equal(first[0], second[0]) and np.array_equal(first[1], second[1])
+
+
+def test_restart_team_more_than_eleven_a_side():
+    """Review Focus 4: the rules read slot_team as given and never assume eleven a side."""
+    players, teams = kickoff_formation(RESTART_FRAMES)
+    extra = np.tile(np.array([[20.0, 50.0], [30.0, 55.0], [40.0, 60.0], [45.0, 45.0]])[None], (RESTART_FRAMES, 1, 1))
+    players, teams = np.concatenate([players, extra], axis=1), np.concatenate([teams, [0, 0, 0, 0]])
+    assert restart_pairs(restart_scene(players, teams=teams)) == [(0, 0)], "15 home slots and 11 away: a kick-off"
+    wrong = teams.copy()
+    wrong[5] = 1                                    # an away tracklet on a player in home's half breaks it, as given
+    assert restart_pairs(restart_scene(players, teams=wrong)) == []
+    # thirteen home slots crowd a corner, the one away slot far off: teammates are no opponents
+    crowd = [(0.5, 0.5)] + [(1.0 + 0.5 * k, 2.0) for k in range(12)] + [(30.0, 30.0)]
+    assert point_calls(crowd, teams=[0] * 13 + [1]) == (1, 0)
+    # two away slots inside home's penalty area are two intruders, whoever they are
+    keeper = [(3.0, 34.0)] + [(25.0, 20.0)] * 12 + [(12.0, 34.0), (12.0, 34.0)]
+    assert point_calls(keeper, teams=[0] * 13 + [1, 1]) == (-1, -1)
+    assert point_calls(keeper[:-1], teams=[0] * 13 + [1]) == (2, 0)
+
+
+def test_restart_team_follows_each_blocks_direction():
+    """Review Focus 5: the teams swap ends at half time, and each block's defended end comes from that block alone."""
+    from pipeline.evidence import play_features
+    assert play_features._own_half_is_left is play_features.own_half_is_left, "the old private name is an alias"
+    length = PLAY_PITCH[0]
+    first = np.array([(3.0, 34.0), (25.0, 20.0), (25.0, 48.0), (70.0, 20.0), (70.0, 48.0), (80.0, 34.0)])
+    mirrored = first.copy()
+    mirrored[:, 0] = length - mirrored[:, 0]
+    players = np.empty((RESTART_FRAMES, 6, 2))
+    players[:100], players[100:] = first, mirrored
+    teams = [0, 0, 0, 1, 1, 1]
+    alive = restart_alive((30, 80), (130, 180))
+    run = restart_scene(players, teams=teams, graded=[(0, 100), (100, 200)])
+    assert restart_pairs(run, alive=alive) == [(2, 0), (2, 0)], "home's keeper at the left end, then at the right"
+    # second half, home on the right: the keeper in the left goal area is away's, whatever the first half said
+    swapped = np.array([(80.0, 20.0), (80.0, 48.0), (70.0, 34.0), (3.0, 34.0), (25.0, 20.0), (25.0, 48.0)])
+    players[100:] = swapped
+    run = restart_scene(players, teams=teams, graded=[(0, 100), (100, 200)])
+    assert restart_pairs(run, alive=alive) == [(2, 0), (2, 1)]
+
+
+def restart_loop(xy, present, teams, ball, visible, speed, pitch, home_left, use_ball):
+    """frame_calls' rules frame by frame and slot by slot in plain Python, as the module's docstring states them."""
+    length, width = pitch
+    centre, corners = (length / 2, width / 2), ((0.0, 0.0), (0.0, width), (length, 0.0), (length, width))
+
+    def apart(a, b):
+        return float(np.hypot(a[0] - b[0], a[1] - b[1]))
+
+    calls = []
+    for t in range(len(xy)):
+        here = [s for s in range(len(teams)) if present[t, s] and np.isfinite(xy[t, s]).all()]
+        at = {s: (float(xy[t, s, 0]), float(xy[t, s, 1])) for s in here}
+        team = {s: int(teams[s]) for s in here}
+        if {team[s] for s in here} != {0, 1}:
+            calls.append((-1, -1))
+            continue
+
+        def rival(s):
+            return min([apart(at[s], at[o]) for o in here if team[o] != team[s]])
+
+        def kick_off():
+            own = all(at[s][0] <= length / 2 + 1.0 if (team[s] == 0) == home_left else at[s][0] >= length / 2 - 1.0
+                      for s in here)
+            circle = {s: apart(at[s], centre) for s in here if apart(at[s], centre) <= 9.15}
+            return circle if own and len({team[s] for s in circle}) == 1 else {}
+
+        def corner():
+            near = {s: min(apart(at[s], c) for c in corners) for s in here}
+            return {s: d for s, d in near.items() if d <= 3.0 and rival(s) > 4.5}
+
+        def goal_kick(left):
+            def depth(point):
+                return point[0] if left else length - point[0]
+            defender = 0 if left == home_left else 1
+            intruders = sum(1 for s in here if team[s] != defender and 0 <= depth(at[s]) <= 16.5
+                            and abs(at[s][1] - width / 2) <= 20.16)
+            return {s: depth(at[s]) for s in here if team[s] == defender and 0 <= depth(at[s]) <= 5.5
+                    and abs(at[s][1] - width / 2) <= 9.16 and intruders <= 1}
+
+        def throw_in():
+            return {s: min(abs(at[s][1]), abs(width - at[s][1])) for s in here
+                    if (at[s][1] <= 1.5 or at[s][1] >= width - 1.5) and rival(s) > 1.0}
+
+        call = (-1, -1)
+        if use_ball and visible[t] and np.isfinite(ball[t]).all():
+            b = (float(ball[t, 0]), float(ball[t, 1]))
+            taker = min(here, key=lambda s: (apart(at[s], b), s))
+            if apart(at[taker], b) <= 2.0:
+                def in_area(left):
+                    depth = b[0] if left else length - b[0]
+                    return np.hypot(max(-depth, depth - 5.5, 0.0), max(abs(b[1] - width / 2) - 9.16, 0.0)) <= 1.0
+                checks = (apart(b, centre) <= 2.0 and taker in kick_off(),
+                          min(apart(b, c) for c in corners) <= 3.0 and taker in corner(),
+                          any(in_area(left) and taker in goal_kick(left) for left in (True, False)),
+                          (b[1] <= 1.5 or b[1] >= width - 1.5) and taker in throw_in(),
+                          speed[t] < 1.0 and all(apart(at[s], b) > 4.5 for s in here if team[s] != team[taker]))
+                for code, fires in enumerate(checks):
+                    if fires:
+                        call = (code, team[taker])
+                        break
+        else:
+            for code, rule in enumerate((kick_off, corner, lambda: {**goal_kick(True), **goal_kick(False)}, throw_in)):
+                meets = rule()
+                if meets:
+                    call = (code, team[min(meets, key=lambda s: (meets[s], s))])
+                    break
+        calls.append(call)
+    return calls
+
+
+def test_restart_team_matches_a_loop():
+    """frame_calls, vectorised over slots and frames, against restart_loop on random scenes that reach every rule."""
+    from pipeline.evidence import play_features, restart_team
+    pinned = dict(CENTRE_CIRCLE_M=9.15, OWN_HALF_TOLERANCE_M=1.0, CORNER_ZONE_M=3.0, CORNER_CLEARANCE_M=4.5,
+                  GOAL_AREA_DEPTH_M=5.5, GOAL_AREA_WIDTH_M=18.32, PENALTY_AREA_DEPTH_M=16.5,
+                  PENALTY_AREA_WIDTH_M=40.32, GOAL_KICK_MAX_INTRUDERS=1, TOUCHLINE_ZONE_M=1.5,
+                  THROW_IN_CLEARANCE_M=1.0, TAKER_BALL_M=2.0, FREE_KICK_CLEARANCE_M=4.5, KICK_OFF_BALL_M=2.0,
+                  GOAL_AREA_BALL_TOLERANCE_M=1.0, MIN_WINDOW_SHARE=0.25, ALIVE_LEVEL=0.5)
+    assert {name: getattr(restart_team, name) for name in pinned} == pinned, "a constant of the design moved"
+    assert play_features.STILL_SPEED == 1.0
+    rng = np.random.default_rng(23)
+    length, width = PLAY_PITCH
+    # the places the rules look at, as (x, y, spread in metres)
+    spots = [(length / 2, width / 2, 6.0), (1.0, 1.0, 2.0), (length - 1.0, width - 1.0, 2.0), (3.0, width / 2, 4.0),
+             (length - 3.0, width / 2, 4.0), (30.0, 0.5, 1.5), (70.0, width - 0.5, 1.5), (12.0, width / 2, 8.0)]
+    seen = {(code, mode): 0 for code in range(5) for mode in (False, True) if code < 4 or mode}
+    for scene in range(300):
+        n, slots = 12, int(rng.integers(4, 15))
+        home_left, use_ball = bool(rng.random() < 0.5), bool(scene % 3)
+        teams = rng.integers(0, 2, slots)
+        # each slot near a spot or anywhere; in one scene of four, everyone in their own half and some at the centre
+        # spot (kick-offs). The ball beside a random slot, at a spot, or missing.
+        xy = np.empty((n, slots, 2))
+        for s in range(slots):
+            if scene % 4 == 0:
+                left = (teams[s] == 0) == home_left
+                xy[:, s] = ((0.0 if left else length / 2) + rng.random() * length / 2, rng.random() * width)
+                if rng.random() < 0.25:
+                    xy[:, s] = (length / 2, width / 2) + rng.normal(0.0, 4.0, 2)
+            elif rng.random() < 0.5:
+                sx, sy, spread = spots[rng.integers(len(spots))]
+                xy[:, s] = (sx, sy) + rng.normal(0.0, spread, 2)
+            else:
+                xy[:, s] = rng.random(2) * (length, width)
+        xy += rng.normal(0.0, 0.3, xy.shape)
+        present = rng.random((n, slots)) < 0.85
+        xy[~present & (rng.random((n, slots)) < 0.5)] = np.nan      # absent slots, with or without a position
+        xy[present & (rng.random((n, slots)) < 0.02)] = np.nan      # and a present slot without one
+        ball = xy[np.arange(n), rng.integers(0, slots, n)] + rng.normal(0.0, 1.0, (n, 2))
+        spot = rng.random(n) < 0.3
+        ball[spot] = np.array([spots[k][:2] for k in rng.integers(0, len(spots), spot.sum())]).reshape(-1, 2)
+        if scene % 4 == 0:
+            kick = rng.random(n) < 0.6
+            ball[kick] = (length / 2, width / 2) + rng.normal(0.0, 1.0, (kick.sum(), 2))
+            xy[:, 0] = ball[0] + rng.normal(0.0, 0.5, 2)                # and a slot beside it
+        visible = rng.random(n) < 0.8
+        ball[~visible & (rng.random(n) < 0.5)] = np.nan
+        ball[visible & (rng.random(n) < 0.03)] = np.nan
+        speed = np.where(rng.random(n) < 0.7, rng.random(n) * 0.9, 1.0 + rng.random(n) * 5.0)
+        speed[rng.random(n) < 0.05] = np.nan
+        types, named = restart_team.frame_calls(xy, present, teams, ball, visible, speed, PLAY_PITCH, home_left,
+                                                use_ball)
+        expected = restart_loop(xy, present, teams, ball, visible, speed, PLAY_PITCH, home_left, use_ball)
+        got = list(zip(types.tolist(), named.tolist()))
+        assert got == expected, (scene, [(t, a, b) for t, (a, b) in enumerate(zip(got, expected)) if a != b][:5])
+        ball_mode = use_ball & visible & np.isfinite(ball).all(axis=1)
+        for (code, _), mode in zip(got, ball_mode.tolist()):
+            if code >= 0:
+                seen[(code, mode)] += 1
+    assert min(seen.values()) >= 10, "the random scenes no longer reach every rule in both modes: {}".format(seen)
+
+
+def test_restart_team_rejects_bad_parameters():
+    from pipeline.evidence import REGISTRY, restart_team
+    with tempfile.TemporaryDirectory() as root:
+        path = write_model(root)
+        run = restart_model_scene(CORNER_SCENE)
+        source = REGISTRY["restart_team"]
+        good = dict(model=path, tail=30, corner=0.8)
+        for name, bads in (("tail", (0, -1, 1.5, True, "30", None, np.inf)), ("setup", (0, -5, 2.5, True)),
+                           ("min_stoppage", (0, 1.5, False)), ("use_ball", ("yes", 1, None, 0.0)),
+                           ("min_prob", (0.0, 0.5, True))):
+            for bad in bads:
+                expect_error(ValueError, lambda: source(run, **dict(good, **{name: bad})), "restart_team", name)
+        for name in restart_team.TYPES:
+            for bad in (0.5, 0.4, 1.2, True, float("nan"), "0.9"):
+                expect_error(ValueError, lambda: source(run, **dict(good, use_ball=True, **{name: bad})),
+                             "restart_team", name)
+        expect_error(ValueError, lambda: source(run, model=path, tail=30, free_kick=0.8), "restart_team", "free_kick",
+                     "use_ball")
+        expect_error(ValueError, lambda: source(run, model=path, tail=30), "restart_team", "confidence",
+                     *restart_team.TYPES)
+        # the helpers check their own arguments
+        calls = restart_calls(restart_scene(CORNER_SCENE))
+        expect_error(ValueError, lambda: restart_team.calls_from_alive(run.inputs, np.zeros(10), **RESTART),
+                     "restart_team", "alive")
+        for bad in ({7: 0.9}, {1: 0.5}, {1: True}):
+            expect_error(ValueError, lambda: restart_team.votes(calls, RESTART_FRAMES, bad), "restart_team",
+                         "confidence")
+        expect_error(ValueError, lambda: restart_team.stoppages(restart_alive(), 0, 200, 0), "restart_team",
+                     "min_stoppage")
+        # numpy numbers from a sweep are fine, and so is a confidence of exactly 1
+        source(run, model=path, tail=np.int64(30), setup=np.int64(40), min_stoppage=np.int64(25), use_ball=np.True_,
+               kick_off=1, corner=np.float64(0.8), free_kick=0.7)
+
+
+def test_restart_team_reads_read_only_inputs():
+    with tempfile.TemporaryDirectory() as root:
+        path = write_model(root)
+        run = restart_model_scene(CORNER_SCENE)
+        atd = run.inputs.atd
+        for array in (atd.players_xy, atd.ball_xy, atd.slot_team):
+            array.flags.writeable = False
+        before = (atd.players_xy.copy(), atd.ball_xy.copy())
+        evidence = restart_compute(run, path, corner=0.9)
+        assert np.array_equal(atd.players_xy, before[0], equal_nan=True)
+        assert np.array_equal(atd.ball_xy, before[1], equal_nan=True)
+        expected = np.full(RESTART_FRAMES, np.nan)
+        expected[150:180] = 0.9
+        assert evidence.home.dtype == np.float64 and np.array_equal(evidence.home, expected, equal_nan=True)
+
+
+def test_restart_team_is_deterministic():
+    from pipeline.contracts import RunContext
+    from pipeline.evidence import restart_team
+    rng = np.random.default_rng(17)
+    players = 5.0 + rng.random((RESTART_FRAMES, 22, 2)) * (np.array(PLAY_PITCH) - 10.0)
+    players += np.cumsum(rng.normal(0.0, 0.05, players.shape), axis=0)       # a random walk from random points
+    players[rng.random(players.shape[:2]) < 0.1] = np.nan
+    players[:, 0] = (0.5, 0.5)                                                 # and a corner taker
+    ball = np.tile([90.0, 10.0], (RESTART_FRAMES, 1))
+    ball[30:60] = ball[110:140] = np.nan
+    parameters = dict(tail=40, use_ball=True, kick_off=0.95, corner=0.9, goal_kick=0.8, throw_in=0.7, free_kick=0.6)
+    with tempfile.TemporaryDirectory() as root:
+        path = write_model(root)
+        runs = [restart_scene(players.copy(), ball=ball.copy()) for _ in range(2)]   # fresh Inputs: no shared memo
+        first, second = (restart_compute(run, path, **parameters) for run in runs)
+        assert np.array_equal(first.home, second.home, equal_nan=True)
+        assert not np.isnan(first.home).all(), "the random scene no longer gives a vote"
+        settings = {key: parameters[key] for key in ("tail", "use_ball")}
+        calls = [restart_team.calls(RunContext(inputs=run.inputs, seed=0), model=path, **settings) for run in runs]
+        for key in ("restart", "end", "type", "team"):
+            assert np.array_equal(calls[0][key], calls[1][key]), key
+
+
+RESTART_TRIAL_CONFIG = """
+[[evidence]]
+kind = "dead_ball_model"
+model = {model}
+
+[[evidence]]
+kind = "restart_team"
+model = {model}
+tail = 50
+kick_off = 0.95
+corner = 0.9
+goal_kick = 0.8
+throw_in = 0.7
+
+[decoder]
+kind = "hmm"
+switch_team = 1
+switch_dead = 20
+min_possession = 1
+min_dead = 1
+"""
+
+
+def test_restart_team_in_registry_and_config():
+    from pipeline import output
+    from pipeline.config import ConfigError, load_config
+    from pipeline.contracts import RunContext, X
+    from pipeline.evidence import REGISTRY, restart_team
+    from pipeline.run import run
+    assert REGISTRY["restart_team"] is restart_team.compute
+    assert list(REGISTRY) == sorted(REGISTRY), "one line per source, in alphabetical order"
+    with tempfile.TemporaryDirectory() as root:
+        make_synthetic_bundle(root)
+        model = write_model(root)
+        inputs = synthetic_inputs(root, graded=[(1, 50, 280), (2, 320, 560)])
+        inputs.kickoffs = {1: 100, 2: 420}
+        text = RESTART_TRIAL_CONFIG.format(model=json_string(model))
+        config = load_config(write_text(root, "trial.toml", text))
+        assert [source.kind for source in config.evidence] == ["dead_ball_model", "restart_team"]
+        out_path = os.path.join(root, "trial.csv")
+        result = run(config, inputs, out_path, log=quiet)
+        output.validate(out_path, SYNTHETIC_FRAMES, result.codes)
+        outside = np.ones(SYNTHETIC_FRAMES, dtype=bool)
+        outside[50:280] = outside[320:560] = False
+        assert (result.codes[outside] == X).all() and (result.codes[~outside] != X).all()
+        source = result.evidence["restart_team"]
+        assert np.isnan(source.alive).all() and np.isnan(source.home[outside]).all()
+        calls = restart_team.calls(RunContext(inputs=inputs, seed=0), model=model, tail=50)
+        assert len(calls["restart"]) >= 1, "the synthetic match no longer gives a call"
+        expected = restart_team.votes(calls, SYNTHETIC_FRAMES, {0: 0.95, 1: 0.9, 2: 0.8, 3: 0.7})
+        assert np.array_equal(source.home, expected, equal_nan=True)
+        # a misspelt type is refused when the config loads, before any data does
+        typo = write_text(root, "typo.toml", text.replace("throw_in = 0.7", "throwin = 0.7"))
+        expect_error(ConfigError, lambda: load_config(typo), "throwin", "restart_team")
+
+
 # -- decode -----------------------------------------------------------------------------------------------------------
 
 def vote_context(home, start=0, stop=None, weights=None):
@@ -2367,7 +3037,7 @@ def test_shape_features_follow_each_blocks_direction():
 
 def shape_reference(inputs):
     """Every shape feature with plain loops over the present slots, from the tracks' own positions and velocities
-    (kinematics is checked elsewhere) and each block's direction from `play_features._own_half_is_left`."""
+    (kinematics is checked elsewhere) and each block's direction from `play_features.own_half_is_left`."""
     from pipeline.evidence import kinematics, play_features
     players = kinematics.player_track(inputs)
     length, fps = inputs.pitch[0], inputs.fps
@@ -2376,7 +3046,7 @@ def shape_reference(inputs):
     X = np.full((n, 26), np.nan)
     one_second = int(round(fps))
     for _, start, stop in inputs.graded:
-        home_left = play_features._own_half_is_left(players, teams, start, stop, length)
+        home_left = play_features.own_half_is_left(players, teams, start, stop, length)
         for base, team in ((0, 0), (12, 1)):
             right = home_left if team == 0 else not home_left
             sign = 1.0 if right else -1.0

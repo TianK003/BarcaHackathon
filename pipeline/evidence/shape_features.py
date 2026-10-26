@@ -31,7 +31,7 @@ carries "home is on the left" or "home is Barcelona": the classifier cannot lear
 relabelling the teams gives the features of the same frames with the two blocks exchanged. `swap` does that exchange,
 and it is exact (the two teams' columns are computed by the same code from the same slots in the same order). It
 doubles a training set with its mirror image at no cost and makes the model's output exactly antisymmetric. Each
-block's direction comes from `play_features._own_half_is_left` (the teams swap ends at half time, T16): the team whose
+block's direction comes from `play_features.own_half_is_left` (the teams swap ends at half time, T16): the team whose
 present slots have the smaller mean x over the block defends x < L/2. The one thing `swap` cannot be exact on is a
 block where the two teams' mean x are equal to the last bit: neither side is then the one on the left, and the
 direction falls to the team labels. That does not happen with real tracking.
@@ -110,7 +110,7 @@ def _build(inputs):
     X = np.full((len(players.present), len(FEATURE_NAMES)), np.nan)
     for start, stop in blocks:
         if stop > start:
-            home_left = play_features._own_half_is_left(players, teams, start, stop, length)
+            home_left = play_features.own_half_is_left(players, teams, start, stop, length)
             for team, prefix in ((0, "h_"), (1, "a_")):
                 attacks_right = home_left if team == 0 else not home_left
                 _team_columns(X[start:stop], players, np.flatnonzero(teams == team), start, stop, prefix,
