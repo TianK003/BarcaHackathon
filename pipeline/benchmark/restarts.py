@@ -5,6 +5,7 @@
     python pipeline/benchmark/restarts.py bar-ath CONFIG [--data-dir D] [--out PATH]
     python pipeline/benchmark/restarts.py stats [--model M] [--profile P] [--seeds N] [--matches ID ...]
                                                 [--data-dir D] [--out PATH]
+    python pipeline/benchmark/restarts.py configs STATS_JSON --out-dir DIR [--main pipeline/configs/main.toml]
     python pipeline/benchmark/restarts.py events [--model M] [--tail T] [--use-ball] [--profile P] [--seeds N]
                                                  [--matches ID ...] [--data-dir D] [--out PATH]
 
@@ -69,6 +70,7 @@ table counts the matched pairs by the call's type and the event's kind. Pooled o
 """
 
 import argparse
+import json
 import os
 import sys
 
@@ -441,6 +443,63 @@ def events_diagnostic(*, model, tail=50, use_ball=False, profile=DEFAULT_PROFILE
 
 # -- the table --------------------------------------------------------------------------------------------------------
 
+# -- configs: R014's candidates, main.toml plus the measured restart vote ---------------------------------------------
+
+def _config_block(setting, types, model, eol):
+    """The [[evidence]] block of one setting: the source, its model and setting, and one key per voting type."""
+    lines = ["# R014 (P17): who restarts after a stoppage, tail {}, use_ball {}, the measured confidences (restarts.py "
+             "stats)".format(setting["tail"], "true" if setting["use_ball"] else "false"),
+             "[[evidence]]", 'kind = "restart_team"', 'model = "{}"'.format(model), "tail = {}".format(setting["tail"]),
+             "use_ball = {}".format("true" if setting["use_ball"] else "false")]
+    lines += ["{} = {!r}".format(name, float(types[name]["confidence"])) for name in restart_team.TYPES
+              if types.get(name, {}).get("confidence") is not None]
+    return eol.join(lines) + eol + eol
+
+
+def write_configs(stats, main_path, folder, model=DEFAULT_MODEL, log=print):
+    """One config per measured setting: main.toml's text, a restart_team block before [decoder], the description amended.
+
+    `stats` is the JSON of `stats --out` (settings[label]: "setting" and "types", each type's "confidence" a float, or
+    None when it does not vote). The text is copied verbatim; the block goes immediately before [decoder] (and before the
+    comment lines that head it), and the description gains the source and the setting. A setting with no confidence at
+    all would add a source that never votes: it is skipped and reported. Returns the paths written, in label order.
+    """
+    with open(main_path, newline="") as handle:
+        lines = handle.read().splitlines(keepends=True)
+    decoders = [i for i, line in enumerate(lines) if line.strip() == "[decoder]"]
+    descriptions = [i for i, line in enumerate(lines) if line.startswith("description = ")]
+    if len(decoders) != 1:
+        raise ValueError("restarts: {} has {} [decoder] lines, want exactly 1".format(main_path, len(decoders)))
+    if len(descriptions) != 1:
+        raise ValueError("restarts: {} has {} 'description = ' lines, want exactly 1".format(
+            main_path, len(descriptions)))
+    eol = "\r\n" if lines[decoders[0]].endswith("\r\n") else "\n"   # the block is written as the file is
+    at = decoders[0]
+    while at > 0 and lines[at - 1].startswith("#"):
+        at -= 1
+    cut = descriptions[0]
+    body = lines[cut].rstrip("\r\n")
+    if not body.endswith('"'):
+        raise ValueError("restarts: the description line of {} does not end with a quote".format(main_path))
+    os.makedirs(folder, exist_ok=True)
+    written = []
+    for name in sorted(stats["settings"]):
+        entry = stats["settings"][name]
+        setting, types = entry["setting"], entry["types"]
+        if all(types.get(kind, {}).get("confidence") is None for kind in restart_team.TYPES):
+            log("skipped   {}: no type has a confidence, so the source would never vote".format(name))
+            continue
+        amended = list(lines)
+        amended[cut] = body[:-1] + ' + restart_team (tail {}, use_ball {}, measured confidences)"'.format(
+            setting["tail"], "true" if setting["use_ball"] else "false") + lines[cut][len(body):]
+        amended.insert(at, _config_block(setting, types, model, eol))
+        path = os.path.join(folder, "r014_{}.toml".format(name))
+        with open(path, "w", newline="") as handle:
+            handle.write("".join(amended))
+        written.append(path)
+    return written
+
+
 def render(result):
     """The table's lines of an anatomy: one per match and the pool, aggregates only, then what the columns are."""
     head = "{:<12}{:>9}{:>9}{:>8}{:>8}{:>8}{:>8}{:>10}{:>10}{:>10}{:>10}".format(
@@ -522,6 +581,11 @@ def main(argv=None):
     two.add_argument("config", metavar="CONFIG", help="a pipeline config")
     three = commands.add_parser("stats", help="the benchmark: the confidence of each restart type's vote, per setting")
     four = commands.add_parser("events", help="the benchmark: the calls against DFL's restart events (diagnostic)")
+    five = commands.add_parser("configs", help="R014's configs: main.toml plus the measured restart vote, per setting")
+    five.add_argument("stats", metavar="STATS_JSON", help="the JSON of `stats --out`")
+    five.add_argument("--out-dir", required=True, help="where the r014_t*_b*.toml files go (folders are made)")
+    five.add_argument("--main", default=os.path.join(ROOT, "pipeline", "configs", "main.toml"),
+                      help="the config to copy (default pipeline/configs/main.toml)")
     for command in (three, four):
         command.add_argument("--model", default=DEFAULT_MODEL, help="the dead-ball model (default {})".format(
             DEFAULT_MODEL))
@@ -535,6 +599,17 @@ def main(argv=None):
         command.add_argument("--data-dir", help="the data bundle (default: data/, or $MTAH_DATA_DIR)")
         command.add_argument("--out", help="also write the result as JSON here (counts and shares; folders are made)")
     args = parser.parse_args(argv)
+    if args.command == "configs":
+        try:
+            with open(args.stats) as handle:
+                stats = json.load(handle)
+            written = write_configs(stats, args.main, args.out_dir)
+        except (ValueError, KeyError, OSError) as error:
+            print("FAILED    {}".format(error))
+            return 1
+        for path in written:
+            print("written   {}".format(run.shown(path)))
+        return 0
     try:
         if args.command == "anatomy":
             result = anatomy(args.config, profile=args.profile, seeds=args.seeds, truth=args.truth,
