@@ -27,6 +27,11 @@ The oracles
 * oracle_home_visible: home is 1 where the truth is H and 0 where it is A, on the frames where the tracking has the ball
   (run.inputs.atd.ball_present, which a degraded profile has made as it is in our match); NaN elsewhere. alive is NaN.
 * oracle_home_all: the same on every H and A frame. alive is NaN.
+* oracle_restart (P17): home is the team that restarts after each stoppage, for the RESTART_TAIL (50) frames from the
+  first live frame after a D run, cut short where the truth next changes team; 1 for H, 0 for A. A D run at a block's
+  start (the kick-off) counts; one followed by X, or running to the block's end, restarts nothing. NaN elsewhere, and
+  alive is NaN (restart_home).
+* oracle_restart_run: the same, held until the possession ends (the next frame whose code differs) instead of 50 frames.
 
 They are ordinary evidence sources of exactly 1.0 and 0.0, so a probabilistic decoder reads them as about 13.8 nats a
 frame at eps 1e-6 and weight 1: a bound on what the evidence can give, not an estimate of what a real source will. The
@@ -60,6 +65,12 @@ and a raw run and a coarse run side by side would otherwise each replace files t
 refuses. They are read by the pipeline's own loader like any config: the benchmark is only worth anything if it scores
 what the submission pipeline does. The writer handles the flat tables that a Config holds, str, int, float and bool, and
 refuses a parameter of another kind by name (toml_value) before any file is written.
+
+--variants picks others, or a subset, by suffix (VARIANT_NAMES: the five above, then restart and restart_run). The two
+restart variants replace nothing: <stem>__restart is CONFIG's evidence plus oracle_restart at weight 1.0, and
+<stem>__restart_run the same with oracle_restart_run: what a perfect "which team restarts" source would be worth
+(P17). Only a variant that replaces the home source needs one, so a config with none (main.toml) can have the
+restart variants and is refused the others, by name. Without --variants it is the classic five, as always.
 
 Reports are written only with --write (write=True), for the five variants and not for CONFIG: <stem>__<variant>.json
 under <data dir>/runs/benchmark/<profile>/, with the suffixes of the runner's own rule for a subset of matches, the
@@ -120,6 +131,17 @@ VARIANTS = (
     ("alive_home_all", True, "oracle_home_all",
      "both, whole: the truth itself, which a decoder free to follow it reproduces"),
 )
+# P17's restart oracles: (suffix of the stem, oracle added to the config's own evidence, what it measures). They replace
+# nothing, so a config with no home source (main.toml has none) can have them.
+RESTART_TAIL = 50           # frames after a restart that oracle_restart speaks on (2 s at 25 fps)
+RESTART_VARIANTS = (
+    ("restart", "oracle_restart",
+     "a perfect restart team: the team that restarts after each stoppage, for the first {} frames of its possession "
+     "(oracle_restart added)".format(RESTART_TAIL)),
+    ("restart_run", "oracle_restart_run",
+     "a perfect restart team held for the whole possession that follows (oracle_restart_run added)"),
+)
+VARIANT_NAMES = tuple(suffix for suffix, *_ in VARIANTS) + tuple(suffix for suffix, *_ in RESTART_VARIANTS)
 BARE_KEY = re.compile(r"[A-Za-z0-9_-]+\Z")               # a TOML key that needs no quotes
 ESCAPES = {"\n": "\\n", "\t": "\\t", "\r": "\\r", "\b": "\\b", "\f": "\\f", '"': '\\"', "\\": "\\\\"}
 
@@ -154,8 +176,36 @@ def answers(match, truth):
     return codes
 
 
+def restart_home(codes, graded, tail):
+    """home of the restart oracle: 1.0 / 0.0 for the team that restarts after each stoppage, NaN elsewhere.
+
+    Within each block (half, start, stop) of `graded`, take each maximal run of D, [a, e), with e < stop and codes[e]
+    H or A: the team in codes[e] restarts. Let f be the first frame after e whose code differs from codes[e] (or stop):
+    home[e:min(e + tail, f)] is 1.0 if that team is H, else 0.0. `tail` is a number of frames, at least 1, or None for
+    the whole possession, up to f. A D run at a block's start counts (it is the kick-off); one followed by X, or one
+    that reaches stop, restarts nothing. Read-only float64, of len(codes).
+    """
+    if tail is not None and (isinstance(tail, bool) or not isinstance(tail, int) or tail < 1):
+        raise ValueError("restart_home: tail must be a whole number of frames, at least 1, or None, got {!r}".format(
+            tail))
+    codes = np.asarray(codes)
+    home = no_opinion(len(codes))
+    for _, start, stop in graded:
+        dead = np.concatenate(([False], codes[start:stop] == D, [False]))
+        edges = np.flatnonzero(dead[1:] != dead[:-1])           # a D run is [edges[2k], edges[2k+1]) in the block
+        for end in edges[1::2] + start:
+            if end >= stop or codes[end] not in (H, A):
+                continue
+            team = codes[end]
+            different = np.flatnonzero(codes[end:stop] != team)
+            following = end + (int(different[0]) if len(different) else stop - end)
+            home[end:following if tail is None else min(end + tail, following)] = 1.0 if team == H else 0.0
+    home.setflags(write=False)
+    return home
+
+
 def oracles(codes_of):
-    """{kind: compute} for the three oracle sources, reading the truth from `codes_of`.
+    """{kind: compute} for the five oracle sources, reading the truth from `codes_of`.
 
     `codes_of` maps a match id to its truth codes (answers); it is read when a source is computed, by run.inputs.game,
     so it may be filled while the run goes (LoadedMatches does). A source for a match that is not in it raises
@@ -179,6 +229,12 @@ def oracles(codes_of):
         alive[codes == D] = 0.0
         return Evidence(alive=alive, home=no_opinion(len(codes)))
 
+    def restart_oracle(kind, tail):
+        def compute(run_context):
+            codes = truth_of(kind, run_context)
+            return Evidence(alive=no_opinion(len(codes)), home=restart_home(codes, run_context.inputs.graded, tail))
+        return compute
+
     def home_oracle(kind, visible):
         def compute(run_context):
             codes = truth_of(kind, run_context)
@@ -192,7 +248,9 @@ def oracles(codes_of):
 
     return {ALIVE_ORACLE: oracle_alive,
             "oracle_home_visible": home_oracle("oracle_home_visible", True),
-            "oracle_home_all": home_oracle("oracle_home_all", False)}
+            "oracle_home_all": home_oracle("oracle_home_all", False),
+            "oracle_restart": restart_oracle("oracle_restart", RESTART_TAIL),
+            "oracle_restart_run": restart_oracle("oracle_restart_run", None)}
 
 
 class LoadedMatches(collections.abc.Mapping):
@@ -229,7 +287,27 @@ class LoadedMatches(collections.abc.Mapping):
 
 # -- the variants -----------------------------------------------------------------------------------------------------
 
-def check_config(config):
+def variant_specs(variants=None):
+    """[(suffix, alive oracle, home oracle replacing the source, oracle added, meaning)] of the variants asked for.
+
+    None is the classic five, in their order; otherwise the names of VARIANT_NAMES, in the order given. BenchmarkError
+    for a name that is not one, or one given twice.
+    """
+    classic = {suffix: (suffix, alive, home, None, meaning) for suffix, alive, home, meaning in VARIANTS}
+    restart = {suffix: (suffix, False, None, kind, meaning) for suffix, kind, meaning in RESTART_VARIANTS}
+    if variants is None:
+        return list(classic.values())
+    chosen = []
+    for suffix in variants:
+        if suffix not in VARIANT_NAMES:
+            raise run.BenchmarkError("variant {!r} is not one of: {}".format(suffix, ", ".join(VARIANT_NAMES)))
+        if suffix in [name for name, *_ in chosen]:
+            raise run.BenchmarkError("variant {!r} is asked for twice".format(suffix))
+        chosen.append(classic.get(suffix) or restart[suffix])
+    return chosen
+
+
+def check_config(config, variants=None):
     """BenchmarkError unless `config` can be run by the runner and has the one home source the variants replace.
 
     The runner's own refusals come first, in its words and before anything is written (a per-file decode, a dot in the
@@ -242,7 +320,8 @@ def check_config(config):
             "{}: the file name of a config is the name of its report, and the variants' names are made from it; a dot "
             "in it would be read as one of the report's parts (<name>.coarse.m-<ids>.s<n>.json), so rename {} without "
             "a dot".format(config.stem, run.shown(config.path)))
-    home_source(config)
+    if any(home is not None for _, _, home, _, _ in variant_specs(variants)):
+        home_source(config)     # only a variant that replaces it needs one: the restart variants add to the evidence
 
 
 def home_source(config):
@@ -262,9 +341,9 @@ def home_source(config):
     return found[0]
 
 
-def variant_evidence(config, alive, home):
+def variant_evidence(config, alive, home, extra=None):
     """The evidence of a variant: `config`'s own, the home source replaced by the oracle `home` (None: it stays) in its
-    place with its weight, and ALIVE_ORACLE added after the rest if `alive`."""
+    place with its weight, ALIVE_ORACLE added after the rest if `alive`, and then the oracle `extra` if there is one."""
     entries = list(config.evidence)
     if home is not None:
         replaced = home_source(config)
@@ -272,15 +351,18 @@ def variant_evidence(config, alive, home):
         entries[at] = Component(kind=home, name=home, weight=replaced.weight, params={})
     if alive:
         entries.append(Component(kind=ALIVE_ORACLE, name=ALIVE_ORACLE, weight=1.0, params={}))
+    if extra is not None:
+        entries.append(Component(kind=extra, name=extra, weight=1.0, params={}))
     return tuple(entries)
 
 
-def variant_texts(config):
-    """[(stem, TOML text)] of the five variants of `config`, in the order they run. BenchmarkError if any cannot be made
-    (no home source, a parameter that cannot be written), so that nothing has been written when it is raised."""
+def variant_texts(config, variants=None):
+    """[(stem, TOML text)] of the variants of `config` (default the classic five), in the order they run. BenchmarkError
+    if any cannot be made (no home source, a parameter that cannot be written), so that nothing has been written when
+    it is raised."""
     source = run.shown(config.path)
     texts = []
-    for suffix, alive, home, meaning in VARIANTS:
+    for suffix, alive, home, extra, meaning in variant_specs(variants):
         stem = "{}__{}".format(config.stem, suffix)
         note = ["Written by pipeline/benchmark/headroom.py from {}, and rewritten by every run: edit that, not "
                 "this.".format(source),
@@ -289,15 +371,15 @@ def variant_texts(config):
                 "submit."]
         description = "{}Headroom variant of {}: {}.".format(config.description + " " if config.description else "",
                                                              config.stem, meaning)
-        texts.append((stem, toml_text(config, variant_evidence(config, alive, home), description, note)))
+        texts.append((stem, toml_text(config, variant_evidence(config, alive, home, extra), description, note)))
     return texts
 
 
-def write_variants(config, data_dir=None):
+def write_variants(config, data_dir=None, variants=None):
     """Write the variants of `config` into <data dir>/runs/benchmark/headroom/configs/ (data dir default
     games.DATA_DIR); [(stem, path)] in the order they run. Every text is made before the first file is written."""
     folder = os.path.join(data_dir or games.DATA_DIR, *FOLDER)
-    texts = variant_texts(config)
+    texts = variant_texts(config, variants)
     written = []
     for stem, text in texts:
         path = os.path.join(folder, stem + ".toml")
@@ -421,8 +503,9 @@ def toml_value(value, where):
 # -- the run ----------------------------------------------------------------------------------------------------------
 
 def run_headroom(config_path, *, profile=DEFAULT_PROFILE, seeds=None, truth="raw", match_ids=None, matches=None,
-                 calibration=None, data_dir=None, log=print, write=False):
-    """Run CONFIG and its five variants through evaluate_configs; its result (CONFIG is the reference).
+                 calibration=None, data_dir=None, log=print, write=False, variants=None):
+    """Run CONFIG and its variants (the classic five, or `variants`, names from VARIANT_NAMES) through evaluate_configs;
+    its result (CONFIG is the reference).
 
     The arguments are evaluate_configs' own, with `write`: True writes the report of each variant (not CONFIG's: the
     reference is the runner's to write, run.py) as run.write_reports does, and logs where. The variants are written
@@ -441,8 +524,8 @@ def run_headroom(config_path, *, profile=DEFAULT_PROFILE, seeds=None, truth="raw
     if truth not in run.TRUTHS:
         raise run.BenchmarkError("truth {!r} is not one of: {}".format(truth, ", ".join(run.TRUTHS)))
     config = load_config(config_path)
-    check_config(config)
-    written = write_variants(config, data_dir)
+    check_config(config, variants)
+    written = write_variants(config, data_dir, variants)
 
     codes_of = {}
     if matches is None:
@@ -455,7 +538,7 @@ def run_headroom(config_path, *, profile=DEFAULT_PROFILE, seeds=None, truth="raw
     log("headroom  {}: the variants carry the truth ({}) as evidence, to measure what a perfect source would be worth "
         "to this config; they are not configs to submit".format(config.stem, truth))
     width = max(len(stem) for stem, _ in written)
-    for (stem, _), (_, _, _, meaning) in zip(written, VARIANTS):
+    for (stem, _), (*_, meaning) in zip(written, variant_specs(variants)):
         log("variant   {:<{}}  {}".format(stem, width, meaning))
     with registered(evidence_stage.REGISTRY, **oracles(codes_of)):
         result = run.evaluate_configs([config.path] + [path for _, path in written], profile=profile, seeds=seeds,
@@ -476,7 +559,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Run CONFIG on the benchmark beside variants of it whose evidence is the truth (an oracle "
                     "dead-ball detector, an oracle possessor, both): what a perfect source would be worth to it. "
-                    "CONFIG is the reference of the comparisons, and has to have one nearest_player source.")
+                    "CONFIG is the reference of the comparisons; the home variants need it to have one nearest_player "
+                    "source.")
     parser.add_argument("config", metavar="CONFIG",
                         help="a TOML config with one nearest_player source, e.g. "
                              "pipeline/benchmark/configs/nearest_w50.toml")
@@ -487,12 +571,15 @@ def main(argv=None):
                         help="the truth to score against, and that the oracles carry: raw, or coarse")
     parser.add_argument("--matches", nargs="+", metavar="ID", help="the matches to run, in this order (default: all 7)")
     parser.add_argument("--data-dir", help="the data bundle (default: data/, or $MTAH_DATA_DIR)")
+    parser.add_argument("--variants", nargs="+", metavar="SUFFIX", choices=VARIANT_NAMES,
+                        help="the variants to run, of {} (default: the first five; the restart ones need no "
+                             "nearest_player)".format(", ".join(VARIANT_NAMES)))
     parser.add_argument("--write", action="store_true",
-                        help="also write the reports of the five variants, not CONFIG's (default: print only)")
+                        help="also write the reports of the variants, not CONFIG's (default: print only)")
     args = parser.parse_args(argv)
     try:
         run_headroom(args.config, profile=args.profile, seeds=args.seeds, truth=args.truth, match_ids=args.matches,
-                     data_dir=args.data_dir, write=args.write)
+                     data_dir=args.data_dir, write=args.write, variants=args.variants)
     except (ConfigError, run.BenchmarkError, OSError) as error:
         # The expected failures get a sentence (as in run.py): a config to fix, a profile or match that does not exist,
         # data not downloaded yet. Anything else is a bug and keeps its traceback.
