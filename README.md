@@ -1,5 +1,18 @@
 # More than a Hack 2027 — Phase 1: Ball Possession
 
+> **Team: start here.**
+> - **[site/rules.html](site/rules.html): the competition rules, and what each means for our work.** In short:
+>   labels must come from an algorithm. No hand labels on the provided match, for any purpose. The 5 public minutes
+>   are a correctness check, never training or tuning data. No private ground truth, and no human-produced data about
+>   this match. The match data never goes to a cloud LLM and never into this repository. The repository must
+>   regenerate the exact submitted file. Learning on the match without human labels is allowed.
+> - **[site/index.html](site/index.html): the pipeline overview.** It covers each stage, what is built, what is planned,
+>   the history and the work left.
+>
+> Open the pages from a local clone: double-click them, or run `start site/index.html` on Windows or `open` on macOS.
+> GitHub shows their source, not the rendered page. Then read [CLAUDE.md](CLAUDE.md) and [docs/](docs/README.md).
+> Below is the organisers' original README.
+
 **Organised by [Metrica Sports](https://metrica-sports.com), [FC Barcelona](https://www.fcbarcelona.com)
 and the [Mobile World Capital Barcelona](https://www.mwcbarcelona.com)**, at the Talent Arena in Barcelona.
 
