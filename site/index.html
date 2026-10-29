@@ -1,0 +1,1935 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Possession Pipeline Overview</title>
+<meta name="description" content="The team's overview of the BAR-ATH possession pipeline: what runs today, how it works, its history and the work left before the deadline.">
+<script>
+  // Apply a remembered theme before first paint. Storage can be blocked (file://, private mode), so guard it.
+  try {
+    var t = localStorage.getItem("mtah-theme");
+    if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+  } catch (e) {}
+</script>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f4f4f1;
+  --surface: #ffffff;
+  --surface-2: #f8f8f6;
+  --ink: #0b0b0b;
+  --ink-2: #47463f;
+  --muted: #66655f;
+  --line: #e3e2dc;
+  --line-2: #cfcec6;
+  --axis: #a9a8a0;
+  --grid: #ebeae4;
+  --accent: #1f6fcf;
+  --accent-soft: rgba(42, 120, 214, 0.18);
+  --focus: #1f6fcf;
+  --hover: rgba(11, 11, 11, 0.045);
+  --code-bg: #f0efea;
+  --s1: #2a78d6;
+  --s2: #eb6834;
+  --lab-h: #2a78d6;
+  --lab-a: #c93c3b;
+  --lab-d: #8d8c85;
+  --ok-bg: #e2f3e2; --ok-fg: #0b5a0b;
+  --off-bg: #e9ecf0; --off-fg: #3a4758;
+  --ref-bg: #eeeeea; --ref-fg: #45443f;
+  --bad-bg: #f7e4e2; --bad-fg: #8a2a24;
+  --plan-bg: #fbeed2; --plan-fg: #6e4700;
+  --info-bg: #e2edfb; --info-fg: #17508f;
+  --rule-bg: #ece9fb; --rule-fg: #45389e;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0f0f0e;
+    --surface: #1a1a19;
+    --surface-2: #212120;
+    --ink: #f0efec;
+    --ink-2: #c9c8be;
+    --muted: #a3a29a;
+    --line: #2e2e2b;
+    --line-2: #44443f;
+    --axis: #5d5c56;
+    --grid: #2a2a28;
+    --accent: #5d9fe9;
+    --accent-soft: rgba(57, 135, 229, 0.28);
+    --focus: #7db3ef;
+    --hover: rgba(255, 255, 255, 0.06);
+    --code-bg: #262624;
+    --s1: #3987e5;
+    --s2: #d95926;
+    --lab-h: #3987e5;
+    --lab-a: #d65a59;
+    --lab-d: #6d6c66;
+    --ok-bg: #16301a; --ok-fg: #93dc93;
+    --off-bg: #262b32; --off-fg: #b7c3d4;
+    --ref-bg: #2b2b29; --ref-fg: #c9c8be;
+    --bad-bg: #3b1e1c; --bad-fg: #f1a8a2;
+    --plan-bg: #3a2e12; --plan-fg: #f3c96c;
+    --info-bg: #162a43; --info-fg: #95c1f3;
+    --rule-bg: #2a2548; --rule-fg: #c0b7f6;
+    --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0f0f0e;
+  --surface: #1a1a19;
+  --surface-2: #212120;
+  --ink: #f0efec;
+  --ink-2: #c9c8be;
+  --muted: #a3a29a;
+  --line: #2e2e2b;
+  --line-2: #44443f;
+  --axis: #5d5c56;
+  --grid: #2a2a28;
+  --accent: #5d9fe9;
+  --accent-soft: rgba(57, 135, 229, 0.28);
+  --focus: #7db3ef;
+  --hover: rgba(255, 255, 255, 0.06);
+  --code-bg: #262624;
+  --s1: #3987e5;
+  --s2: #d95926;
+  --lab-h: #3987e5;
+  --lab-a: #d65a59;
+  --lab-d: #6d6c66;
+  --ok-bg: #16301a; --ok-fg: #93dc93;
+  --off-bg: #262b32; --off-fg: #b7c3d4;
+  --ref-bg: #2b2b29; --ref-fg: #c9c8be;
+  --bad-bg: #3b1e1c; --bad-fg: #f1a8a2;
+  --plan-bg: #3a2e12; --plan-fg: #f3c96c;
+  --info-bg: #162a43; --info-fg: #95c1f3;
+  --rule-bg: #2a2548; --rule-fg: #c0b7f6;
+  --shadow: none;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  overflow-x: hidden;
+}
+a { color: var(--accent); text-underline-offset: 2px; }
+a:hover { text-decoration-thickness: 2px; }
+code, pre, kbd {
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 0.86em;
+}
+code { background: var(--code-bg); padding: 1px 4px; border-radius: 4px; overflow-wrap: anywhere; }
+h1, h2, h3, h4 { line-height: 1.25; margin: 0; }
+h2 { font-size: 20px; font-weight: 650; }
+h3 { font-size: 16px; font-weight: 650; }
+h4 { font-size: 13px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+p { margin: 0 0 10px; }
+ul, ol { margin: 0; padding-left: 20px; }
+li { margin: 4px 0; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.wrap { max-width: 1200px; margin: 0 auto; padding: 0 16px; }
+@media (min-width: 720px) { .wrap { padding: 0 24px; } }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* Header and tabs */
+.top { background: var(--surface); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 20; }
+.top-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 12px; }
+.brand h1 { font-size: 17px; font-weight: 700; }
+.brand p { margin: 2px 0 0; font-size: 12.5px; color: var(--muted); }
+.theme-btn {
+  flex: none; border: 1px solid var(--line-2); background: var(--surface-2); border-radius: 999px;
+  padding: 5px 12px; font-size: 13px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center;
+}
+.theme-btn:hover { background: var(--hover); }
+.tabs { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; margin-top: 8px; }
+.tabs::-webkit-scrollbar { display: none; }
+.tab {
+  flex: none; border: 0; background: none; padding: 9px 12px 10px; font-size: 14px; font-weight: 600;
+  color: var(--muted); border-bottom: 2px solid transparent; cursor: pointer; border-radius: 0;
+}
+.tab:hover { color: var(--ink); }
+.tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+main { padding: 20px 0 8px; }
+.panel[hidden] { display: none; }
+.section { margin: 0 0 28px; }
+.section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.section-head p { margin: 0; color: var(--muted); font-size: 13.5px; max-width: 70ch; }
+.lead { font-size: 15.5px; color: var(--ink-2); max-width: 78ch; }
+
+/* Cards, badges */
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; box-shadow: var(--shadow); min-width: 0; }
+.cards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+.kpi-label { font-size: 13px; font-weight: 600; color: var(--ink-2); margin-bottom: 6px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.kpi-value { font-size: 30px; font-weight: 650; line-height: 1.1; letter-spacing: -0.01em; }
+.kpi-value.hero { font-size: 46px; }
+.kpi-unit { font-size: 14px; font-weight: 600; color: var(--muted); margin-left: 4px; letter-spacing: 0; }
+.kpi-second { font-size: 15px; font-weight: 600; color: var(--ink-2); margin: 4px 0 8px; }
+.kpi-text { font-size: 13.5px; color: var(--ink-2); margin: 8px 0 0; }
+.kpi-note { font-size: 13px; color: var(--ink-2); margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.flag { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; background: var(--plan-bg); color: var(--plan-fg); border-radius: 8px; padding: 8px 10px; margin-top: 10px; }
+.flag code { background: transparent; padding: 0; }
+.badge {
+  display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 650; line-height: 1.5;
+  padding: 0 8px; border-radius: 999px; white-space: nowrap; background: var(--b-bg); color: var(--b-fg);
+  vertical-align: middle;
+}
+.badge .g { font-size: 11px; }
+td .badge, .plist .badge { white-space: normal; }
+.ok { --b-bg: var(--ok-bg); --b-fg: var(--ok-fg); }
+.off { --b-bg: var(--off-bg); --b-fg: var(--off-fg); }
+.ref { --b-bg: var(--ref-bg); --b-fg: var(--ref-fg); }
+.bad { --b-bg: var(--bad-bg); --b-fg: var(--bad-fg); }
+.plan { --b-bg: var(--plan-bg); --b-fg: var(--plan-fg); }
+.info { --b-bg: var(--info-bg); --b-fg: var(--info-fg); }
+.rule { --b-bg: var(--rule-bg); --b-fg: var(--rule-fg); }
+
+/* Dates strip */
+.dates { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.date { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.date .d-label { font-size: 12.5px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.date .d-when { font-size: 22px; font-weight: 650; margin: 2px 0; }
+.date .d-date { font-size: 13px; color: var(--ink-2); }
+.date.key { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.date.past .d-when { color: var(--muted); }
+
+/* Two-column helpers */
+.two { display: grid; gap: 16px; grid-template-columns: 1fr; }
+@media (min-width: 960px) { .two { grid-template-columns: 1.15fr 1fr; } .two.even { grid-template-columns: 1fr 1fr; } .two.wide { grid-template-columns: 2fr 1fr; } }
+
+/* What runs today chain */
+.chain { display: flex; flex-direction: column; gap: 6px; margin: 12px 0 14px; }
+.chain-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+@media (max-width: 560px) {
+  .chain-row.seq { flex-direction: column; align-items: flex-start; }
+  .chain-row.seq .chain-arrow { transform: rotate(90deg); margin-left: 12px; line-height: 1; }
+}
+.link { border: 1px solid var(--line-2); border-radius: 8px; padding: 6px 10px; background: var(--surface-2); font-size: 12.5px; min-width: 0; }
+.link b { display: block; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12.5px; font-weight: 650; }
+.link span { color: var(--muted); }
+.chain-arrow { align-self: center; color: var(--axis); font-size: 18px; }
+.chan { font-size: 11.5px; font-weight: 650; padding: 0 6px; border-radius: 4px; border: 1px solid var(--line-2); color: var(--ink-2); white-space: nowrap; }
+
+/* Next steps */
+.steps { list-style: none; padding: 0; margin: 0; counter-reset: s; }
+.steps > li { position: relative; padding: 0 0 12px 34px; margin: 0; counter-increment: s; }
+.steps > li::before {
+  content: counter(s); position: absolute; left: 0; top: 0; width: 24px; height: 24px; border-radius: 50%;
+  background: var(--surface-2); border: 1px solid var(--line-2); font-size: 12px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; color: var(--ink-2);
+}
+.steps > li b { display: block; }
+.steps > li p { margin: 2px 0 0; font-size: 14px; color: var(--ink-2); }
+
+/* Charts */
+.chart-card { padding-bottom: 12px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--ink-2); margin: 6px 0 10px; }
+.legend .k { display: inline-flex; align-items: center; gap: 6px; }
+.key-rect { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.key-line { width: 18px; height: 2px; display: inline-block; border-radius: 2px; }
+.key-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; border: 2px solid var(--ink-2); }
+.key-dot.filled { background: var(--ink-2); }
+.chart { width: 100%; position: relative; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+.c-grid { stroke: var(--grid); stroke-width: 1; }
+.c-axis { stroke: var(--axis); stroke-width: 1; }
+.c-tick { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.c-label { fill: var(--ink-2); font-size: 13px; }
+.c-label-strong { fill: var(--ink); font-size: 13px; font-weight: 600; }
+.c-val { fill: var(--ink-2); font-size: 12px; font-variant-numeric: tabular-nums; }
+.c-note { fill: var(--muted); font-size: 11.5px; }
+.f1 { fill: var(--s1); }
+.f2 { fill: var(--s2); }
+.l1 { stroke: var(--s1); }
+.l2 { stroke: var(--s2); }
+.c-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.c-dot { stroke: var(--surface); stroke-width: 2; }
+.c-hollow { fill: var(--surface); stroke-width: 2; }
+.c-hit { fill: transparent; }
+.c-group:hover .c-wash, .c-group:focus .c-wash, .c-group.on .c-wash { fill: var(--hover); }
+.c-wash { fill: transparent; }
+.c-group:focus { outline: none; }
+.c-group:focus-visible .c-wash { stroke: var(--focus); stroke-width: 2; }
+.c-cross { stroke: var(--axis); stroke-width: 1; }
+.chart-cap { font-size: 13px; color: var(--muted); margin: 10px 0 0; max-width: 90ch; }
+details.table-twin { margin-top: 10px; }
+details.table-twin summary, details.fold summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.tip {
+  position: fixed; z-index: 50; pointer-events: none; background: var(--surface); color: var(--ink);
+  border: 1px solid var(--line-2); border-radius: 8px; padding: 8px 10px; font-size: 12.5px; min-width: 160px; max-width: 300px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16);
+}
+.tip[hidden] { display: none; }
+.tip .t-head { font-weight: 650; margin-bottom: 4px; }
+.tip .t-sub { color: var(--muted); margin-bottom: 6px; }
+.tip .t-row { display: flex; align-items: center; gap: 8px; margin: 2px 0; }
+.tip .t-row strong { font-variant-numeric: tabular-nums; font-size: 13px; }
+.tip .t-row span.n { color: var(--muted); }
+.tip .t-key { width: 14px; height: 2px; border-radius: 2px; flex: none; }
+
+/* Tables */
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+tbody tr:hover td { background: var(--hover); }
+th button.sort { border: 0; background: none; padding: 0; font: inherit; color: inherit; text-transform: inherit; letter-spacing: inherit; cursor: pointer; display: inline-flex; gap: 4px; align-items: center; }
+th button.sort .arr { opacity: 0.35; }
+th[aria-sort] button.sort .arr { opacity: 1; }
+@media (max-width: 680px) {
+  table.resp thead { display: none; }
+  table.resp, table.resp tbody, table.resp tr, table.resp td { display: block; width: 100%; }
+  table.resp tr { border-bottom: 1px solid var(--line); padding: 8px 0; }
+  table.resp td { border: 0; padding: 3px 0; display: grid; grid-template-columns: 96px 1fr; gap: 8px; text-align: left; }
+  table.resp td::before { content: attr(data-label); font-size: 11.5px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; padding-top: 2px; }
+  table.resp td.n { text-align: left; }
+}
+
+/* Filters */
+.filters { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-bottom: 12px; }
+.filters label { font-size: 13px; color: var(--ink-2); display: inline-flex; gap: 6px; align-items: center; }
+select, input[type="search"] {
+  font: inherit; font-size: 13.5px; color: var(--ink); background: var(--surface); border: 1px solid var(--line-2);
+  border-radius: 8px; padding: 5px 8px;
+}
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.fchip { border: 1px solid var(--line-2); background: var(--surface); border-radius: 999px; padding: 2px 10px; font-size: 13px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+.fchip[aria-pressed="true"] { background: var(--b-bg, var(--hover)); color: var(--b-fg, var(--ink)); border-color: transparent; font-weight: 600; }
+.fchip[aria-pressed="false"] { color: var(--muted); }
+.count { font-size: 13px; color: var(--muted); }
+
+/* Pipeline diagram */
+.diagram-legend { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 13px; color: var(--ink-2); margin-bottom: 14px; }
+.flow { display: grid; grid-template-columns: 1fr; row-gap: 24px; }
+.fi { position: relative; min-width: 0; }
+.fi.arrow::after { content: ""; position: absolute; left: calc(50% - 1px); bottom: -15px; width: 2px; height: 11px; background: var(--axis); }
+.fi.arrow::before { content: ""; position: absolute; left: calc(50% - 6px); bottom: -22px; border-top: 7px solid var(--axis); border-left: 6px solid transparent; border-right: 6px solid transparent; }
+.node, .static {
+  display: flex; flex-direction: column; justify-content: flex-start; align-items: stretch;
+  width: 100%; height: 100%; text-align: left; background: var(--surface); border: 1px solid var(--line-2);
+  border-radius: 10px; padding: 10px 12px; color: inherit; font: inherit; box-shadow: var(--shadow);
+}
+.node .n-open { margin-top: auto; padding-top: 6px; }
+.node { cursor: pointer; }
+.node:hover { border-color: var(--accent); }
+.node[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.static { background: var(--surface-2); }
+.n-num { font-size: 11.5px; font-weight: 700; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; display: block; }
+.n-name { font-size: 15px; font-weight: 700; display: block; }
+.n-desc { font-size: 12.5px; color: var(--ink-2); display: block; margin-top: 3px; line-height: 1.4; }
+.n-open { font-size: 12px; color: var(--accent); display: block; margin-top: 6px; font-weight: 600; }
+.n-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+.n-chips .badge { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; font-weight: 600; padding: 0 6px; }
+.assets { list-style: none; padding: 0; margin: 6px 0 0; font-size: 12.5px; }
+.assets li { margin: 3px 0; display: flex; gap: 6px; align-items: baseline; color: var(--ink-2); }
+.assets li .g { width: 12px; flex: none; text-align: center; font-size: 11px; }
+.junction { display: flex; align-items: center; justify-content: center; height: 100%; }
+.junction span {
+  display: block; text-align: center; font-size: 12px; font-weight: 600; color: var(--ink-2); background: var(--surface-2);
+  border: 1px dashed var(--line-2); border-radius: 999px; padding: 6px 10px; line-height: 1.35;
+}
+.side .node { background: var(--surface-2); border-style: dashed; }
+.side-tag { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 2px; }
+.conn { display: none; }
+@media (min-width: 1080px) {
+  .flow { grid-template-columns: 1fr 0.95fr 1.5fr 0.7fr 0.95fr 0.95fr 0.8fr 0.95fr 0.9fr; column-gap: 22px; row-gap: 0; align-items: stretch; }
+  .fi.arrow::after { left: auto; right: -14px; top: calc(50% - 1px); bottom: auto; width: 11px; height: 2px; }
+  .fi.arrow::before { left: auto; right: -21px; top: calc(50% - 6px); bottom: auto; border-top: 6px solid transparent; border-bottom: 6px solid transparent; border-left: 7px solid var(--axis); border-right: 0; }
+  .conn { display: block; grid-row: 2; position: relative; height: 30px; }
+  .conn::before { content: ""; position: absolute; left: calc(50% - 1px); top: 7px; bottom: 0; width: 2px; background: var(--axis); }
+  .conn::after { content: ""; position: absolute; left: calc(50% - 6px); top: 0; border-bottom: 7px solid var(--axis); border-left: 6px solid transparent; border-right: 6px solid transparent; }
+  .conn.c3 { grid-column: 3; } .conn.c5 { grid-column: 5; } .conn.c6 { grid-column: 6; }
+  .fi.cfg { grid-row: 3; grid-column: 3 / 7; }
+  .fi.bench { grid-row: 3; grid-column: 7 / 10; }
+  .fi.bench::after { content: ""; position: absolute; left: -14px; top: calc(50% - 1px); width: 11px; height: 2px; background: var(--axis); }
+  .fi.bench::before { content: ""; position: absolute; left: -21px; top: calc(50% - 6px); border-top: 6px solid transparent; border-bottom: 6px solid transparent; border-right: 7px solid var(--axis); }
+  .row1 { grid-row: 1; }
+}
+
+/* Stage detail panel */
+.stage-panel { margin-top: 22px; scroll-margin-top: 120px; }
+.sp-head { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: baseline; margin-bottom: 8px; }
+.sp-head h2 { font-size: 22px; }
+.sp-kicker { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.sp-built { font-size: 13px; color: var(--muted); }
+.contract { font-size: 13.5px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin: 10px 0 16px; color: var(--ink-2); }
+.contract b { color: var(--ink); }
+.sp-grid { display: grid; gap: 20px; grid-template-columns: 1fr; }
+@media (min-width: 960px) { .sp-grid { grid-template-columns: 1.35fr 1fr; } }
+.sp-col > h3 { margin: 0 0 10px; font-size: 14px; }
+.sp-col > section { margin-bottom: 20px; }
+.comp { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; background: var(--surface); }
+.comp-head { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; margin-bottom: 4px; }
+.comp-name { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-weight: 700; font-size: 13.5px; }
+.comp p { font-size: 13.5px; color: var(--ink-2); margin: 4px 0 6px; }
+.meta { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; font-size: 12.5px; margin: 0; }
+.meta dt { color: var(--muted); font-weight: 600; }
+.meta dd { margin: 0; color: var(--ink-2); min-width: 0; }
+.plist { list-style: none; padding: 0; margin: 0; }
+.plist li { border-bottom: 1px solid var(--line); padding: 8px 0; margin: 0; font-size: 13.5px; }
+.plist li:last-child { border-bottom: 0; }
+.plist .p-top { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
+.plist .p-id { font-weight: 700; font-variant-numeric: tabular-nums; }
+.plist .p-sub { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+.plist p { margin: 4px 0 0; color: var(--ink-2); }
+.traps { list-style: none; padding: 0; margin: 0; }
+.traps li { margin: 0 0 8px; font-size: 13.5px; }
+.traps .t-id { font-weight: 700; margin-right: 6px; font-variant-numeric: tabular-nums; }
+.traps .t-title { font-weight: 600; }
+.traps .t-line { color: var(--ink-2); display: block; }
+.files { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.files a { display: inline-block; font-size: 12.5px; border: 1px solid var(--line-2); border-radius: 6px; padding: 2px 8px; text-decoration: none; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.files a:hover { background: var(--hover); }
+.cmd { position: relative; margin: 0 0 8px; }
+.cmd pre {
+  margin: 0; padding: 8px 64px 8px 10px; background: var(--code-bg); border-radius: 8px; white-space: pre-wrap;
+  overflow-wrap: anywhere; font-size: 12.5px; line-height: 1.45; border: 1px solid var(--line);
+}
+.cmd .c-noteline { font-size: 12.5px; color: var(--muted); margin: 3px 0 0 2px; }
+.copy {
+  position: absolute; top: 5px; right: 5px; border: 1px solid var(--line-2); background: var(--surface); border-radius: 6px;
+  font-size: 11.5px; padding: 1px 8px; cursor: pointer;
+}
+.copy:hover { background: var(--hover); }
+
+/* How it works */
+.prose { max-width: 80ch; }
+.prose p, .prose li { font-size: 15px; }
+.how-sec { margin-bottom: 30px; }
+.how-sec > h2 { margin-bottom: 10px; }
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 20px; }
+.toc a { font-size: 13px; text-decoration: none; border: 1px solid var(--line-2); border-radius: 999px; padding: 2px 10px; background: var(--surface); }
+.facts { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.fact .kpi-value { font-size: 28px; }
+.fact .f-label { font-weight: 600; font-size: 13.5px; margin: 2px 0 6px; }
+.fact p { font-size: 13px; color: var(--ink-2); margin: 0; }
+.illus { display: grid; gap: 14px; grid-template-columns: 1fr; margin: 14px 0 4px; }
+@media (min-width: 860px) { .illus { grid-template-columns: 1fr 1fr; } }
+.strip-row { display: grid; grid-template-columns: 92px 1fr; gap: 8px; align-items: center; margin: 4px 0; }
+.strip-row .s-name { font-size: 12px; color: var(--muted); font-weight: 600; }
+.strip { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; }
+.cell { height: 22px; border-radius: 3px; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; color: #fff; }
+.cell.H { background: var(--lab-h); }
+.cell.A { background: var(--lab-a); }
+.cell.D { background: var(--lab-d); }
+.cell.X { background: transparent; border: 1px dashed var(--line-2); color: var(--muted); }
+.illus .cap { font-size: 13px; color: var(--ink-2); margin: 8px 0 0; }
+.sol-steps { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.sol-steps li { margin: 0; }
+.sol-top { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-bottom: 4px; }
+.sol-name { font-weight: 700; }
+.sol-steps p { margin: 4px 0 0; font-size: 14px; color: var(--ink-2); }
+.sol-steps .added { font-size: 13.5px; }
+.sol-steps .added b { color: var(--ink); }
+
+/* Timeline */
+.timeline { list-style: none; padding: 0; margin: 0; position: relative; }
+.timeline::before { content: ""; position: absolute; left: 7px; top: 6px; bottom: 6px; width: 2px; background: var(--line); }
+.tl { position: relative; padding: 0 0 16px 28px; margin: 0; }
+.tl::before { content: ""; position: absolute; left: 2px; top: 5px; width: 12px; height: 12px; border-radius: 50%; background: var(--surface); border: 2px solid var(--b-fg, var(--axis)); }
+.tl-top { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+.tl-date { font-size: 12.5px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tl-title { font-weight: 650; font-size: 15px; margin: 2px 0; }
+.tl-entries { font-size: 12.5px; color: var(--muted); }
+.tl p { margin: 2px 0 0; font-size: 13.5px; color: var(--ink-2); max-width: 90ch; }
+
+/* Work */
+.checklist { list-style: none; padding: 0; margin: 0; }
+.checklist > li { display: grid; grid-template-columns: 28px 1fr; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--line); margin: 0; }
+.checklist > li:last-child { border-bottom: 0; }
+.box { width: 22px; height: 22px; border-radius: 6px; border: 2px solid var(--line-2); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; margin-top: 1px; }
+.box.done { background: var(--ok-bg); border-color: var(--ok-fg); color: var(--ok-fg); }
+.box.doing { background: var(--info-bg); border-color: var(--info-fg); color: var(--info-fg); }
+.cl-top { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.cl-title { font-weight: 650; }
+.checklist p { margin: 4px 0 0; font-size: 14px; color: var(--ink-2); }
+.exp-steps { margin: 0; padding-left: 22px; }
+.exp-steps > li { margin: 0 0 12px; font-size: 14.5px; }
+.exp-steps > li p { margin: 2px 0 6px; color: var(--ink-2); font-size: 14px; }
+
+/* Reference */
+.rules { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.rules li { margin: 0; padding: 10px 12px 10px 14px; border-left: 3px solid var(--bad-fg); background: var(--surface); border-radius: 0 8px 8px 0; font-size: 14px; }
+.cmd-group { margin-bottom: 16px; }
+.cmd-group h3 { margin-bottom: 8px; font-size: 14px; }
+dl.gloss { margin: 0; }
+dl.gloss > div { padding: 8px 0; border-bottom: 1px solid var(--line); }
+dl.gloss dt { font-weight: 700; }
+dl.gloss dd { margin: 2px 0 0; color: var(--ink-2); font-size: 14px; }
+.docmap { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.docmap li { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font-size: 13.5px; }
+.docmap a { font-weight: 650; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 13px; }
+.docmap span { display: block; color: var(--ink-2); margin-top: 2px; }
+
+footer { border-top: 1px solid var(--line); margin-top: 24px; padding: 16px 0 28px; font-size: 13px; color: var(--muted); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .node, .tab, .fchip { transition: border-color 0.12s, box-shadow 0.12s, background-color 0.12s, color 0.12s; }
+}
+@media (forced-colors: active) {
+  .badge, .fchip, .node { border: 1px solid CanvasText; }
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="top-row">
+      <div class="brand">
+        <h1 id="site-title"></h1>
+        <p id="site-sub"></p>
+      </div>
+      <button type="button" class="theme-btn" id="theme-btn" aria-label="Switch theme"><span aria-hidden="true" id="theme-icon"></span><span id="theme-text"></span></button>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button class="tab" role="tab" id="tab-overview" aria-controls="panel-overview" data-tab="overview">Overview</button>
+      <button class="tab" role="tab" id="tab-pipeline" aria-controls="panel-pipeline" data-tab="pipeline">Pipeline</button>
+      <button class="tab" role="tab" id="tab-how" aria-controls="panel-how" data-tab="how">How it works</button>
+      <button class="tab" role="tab" id="tab-history" aria-controls="panel-history" data-tab="history">History</button>
+      <button class="tab" role="tab" id="tab-work" aria-controls="panel-work" data-tab="work">Work to do</button>
+      <button class="tab" role="tab" id="tab-reference" aria-controls="panel-reference" data-tab="reference">Reference</button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="panel" role="tabpanel" id="panel-overview" aria-labelledby="tab-overview" tabindex="-1"></section>
+  <section class="panel" role="tabpanel" id="panel-pipeline" aria-labelledby="tab-pipeline" tabindex="-1" hidden></section>
+  <section class="panel" role="tabpanel" id="panel-how" aria-labelledby="tab-how" tabindex="-1" hidden></section>
+  <section class="panel" role="tabpanel" id="panel-history" aria-labelledby="tab-history" tabindex="-1" hidden></section>
+  <section class="panel" role="tabpanel" id="panel-work" aria-labelledby="tab-work" tabindex="-1" hidden></section>
+  <section class="panel" role="tabpanel" id="panel-reference" aria-labelledby="tab-reference" tabindex="-1" hidden></section>
+</main>
+
+<footer>
+  <div class="wrap" id="footer"></div>
+</footer>
+
+<div class="tip" id="tip" hidden></div>
+
+<script>
+"use strict";
+
+/* ===========================================================================================================
+   DATA: every fact on this page. Update facts here, never in the markup below.
+   Check each one against docs/results.md and docs/proposals.md, bump asOf and commit, and never paste a data row.
+   Text fields understand a little markdown: `code`, **bold** and [label](relative/link).
+   =========================================================================================================== */
+const DATA = {
+  asOf: "2026-10-29",
+  commit: "7d952e2",
+  title: "Possession pipeline · team overview",
+  subtitle: "More than a Hack 2027, Phase 1 · FC Barcelona (H) vs Athletic Club (A), LaLiga 2024-25 MD2",
+  footer: "As of 2026-10-29 (main at 7d952e2). Update DATA when an entry lands; the docs are the source of truth.",
+
+  /* ---------- Overview ---------- */
+  cards: [
+    {
+      label: "main.toml on the benchmark", hero: true, value: "0.5430", unit: "raw", second: "0.5593 coarse",
+      text: "Pooled spellF1 on the P01 benchmark: 7 DFL matches degraded to look like ours (profile `tracking` v3, 3 seeds). Chosen by [R013](../docs/results.md) on 2026-10-26.",
+      note: "The organisers' smooth50 baseline on the same yardstick: **0.2018** raw (`nearest_w50`) and **0.2226** coarse (`nearest_w125`, the best yardstick under the coarse truth)."
+    },
+    {
+      label: "Full-match floor to beat", value: "0.2433", unit: "spellF1",
+      text: "`baseline_smooth50`, the organisers' published full-match score (R000c). We never see full-match scores ourselves, and benchmark scores are not our leaderboard's."
+    },
+    {
+      label: "Public window (5 min, 17 possessions)", value: "0.4649", unit: "spellF1", second: "macroF1 0.7152",
+      text: "`main.toml` predicts 20 possessions there against 17.",
+      flag: "Correctness check only, never used to choose anything (rule `f8f2629`, T01)."
+    },
+    {
+      label: "Submission", value: "Not uploaded", badge: "todo",
+      text: "The submission log in [docs/results.md](../docs/results.md) is empty. `main.toml` writes sha256 `0ebdfbec…` (R013; the same file as `r013_retune.toml`)."
+    }
+  ],
+
+  dates: [
+    { label: "Feature freeze", date: "2026-11-13" },
+    { label: "Submit", date: "2026-11-16" },
+    { label: "Deadline", date: "2026-11-17", key: true },
+    { label: "Results (before)", date: "2026-11-26" }
+  ],
+
+  today: {
+    home: [
+      { name: "controlled_touch", channel: "home", params: "1.5 m · 6 m/s · 1 frame · hold 0.60", p: "P04" },
+      { name: "shape_possession", channel: "home", params: "weight 0.2 · every graded frame", p: "P07" }
+    ],
+    alive: [
+      { name: "dead_ball_model", channel: "alive", params: "boosted trees · weight 1.0", p: "P05" }
+    ],
+    decoder: { name: "hmm", params: "4 / 32 / 35 / 25, per half", p: "P06" },
+    refine: { name: "shift_edges", params: "team +1 · into D −2 · out of D 0", p: "P02" },
+    output: { name: "main.csv", params: "sha256 0ebdfbec…" },
+    joinNote: "evidence cut into the two graded halves, each decoded on its own",
+    text: [
+      "`main.toml` is P04 + P05 + P07 + P02, as R013 left them. `controlled_touch` (radius 1.5 m, `max_rel_speed` 6 m/s, `min_frames` 1, hold 0.60, confidence 0.93) and `shape_possession` (weight 0.2 on every graded frame, `min_prob` 0.02) give `home`; the gradient-boosted `dead_ball_model` (weight 1.0) gives `alive`.",
+      "The `hmm` decodes each graded half on its own (`switch_team` 4, `switch_dead` 32, `min_possession` 35, `min_dead` 25), and `shift_edges` moves the edges (team +1, into_dead −2, out_of_dead 0 frames). Every constant was chosen on the benchmark by a rule declared before its run, or is a measurement or a fixed rule. On our match it predicts `D` on 35.9% of the graded frames and 410 possessions (R013's label-free checks)."
+    ]
+  },
+
+  nextSteps: [
+    { title: "Who has the ball where it is seen", text: "A13: a perfect team where the ball is seen adds +0.194 raw / +0.231 coarse. P04's touch rule is already chosen and needs no second round (After R013, item 3); P11 (touch and pass events) is the open route." },
+    { title: "Who has the ball in the gaps", text: "A13: +0.176 raw / +0.108 coarse. P07's shape model never saw our teams; P09's camera aim is a feature for it and P13 pre-trains on external data. Each needs its own protocol declared before its runs." },
+    { title: "The grain of our truth (P16)", text: "Every re-tune since R007 split the two truths, and R013 is +0.0267 raw but level coarse. Metrica's sample games, in our provider's conventions, are how to learn which truth ours resembles." },
+    { title: "Decide how much of the gain to believe", text: "A decision, not a run: the benchmark (with the T38, T39 and R011 caveats) and the label-free checks. Settle it before the freeze on 13 Nov." },
+    { title: "The deliverables", text: "Upload a safety CSV (`main.toml`'s file), regenerate it from a clean clone on a second machine, make the repo public as the last step, and condense the technical document. See [Work to do](#work)." }
+  ],
+
+  headroom: {
+    base: { raw: "0.5430", coarse: "0.5593" },
+    caption: "Pooled spellF1 gained by adding a perfect source to `main.toml`'s own evidence (benchmark `tracking` v3, 3 seeds; every delta has 7 wins of 7 and sign-flip p 0.0156; `context` agrees within 0.02). Upper bounds: the oracles read the truth. The dead-ball model is already near-perfect on the benchmark (alive/dead F1 0.973), partly because DFL tracks the ball out of play (T39).",
+    rows: [
+      { label: "Dead ball", variant: "alive", desc: "a perfect dead-ball detector", raw: 0.0290, coarse: 0.0390, rawCI: "[+0.0259, +0.0321]", coarseCI: "[+0.0332, +0.0446]" },
+      { label: "Team where the ball is seen", variant: "plus_home_visible", desc: "the true team on frames where the tracking has the ball", raw: 0.1942, coarse: 0.2313, rawCI: "[+0.1821, +0.2046]", coarseCI: "[+0.2132, +0.2472]" },
+      { label: "Team where the ball is missing", variant: "plus_home_gaps", desc: "the true team on live frames without the ball", raw: 0.1764, coarse: 0.1076, rawCI: "[+0.1687, +0.1835]", coarseCI: "[+0.0993, +0.1154]" },
+      { label: "Team everywhere", variant: "plus_home_all", desc: "the true team on every live frame", raw: 0.3402, coarse: 0.3546, rawCI: "[+0.3273, +0.3514]", coarseCI: "[+0.3318, +0.3751]" },
+      { label: "Everything (dead ball + team)", variant: "alive_plus_home_all", desc: "both oracles: the decoder's own ceiling", raw: 0.3748, coarse: 0.4095, rawCI: "[+0.3636, +0.3850]", coarseCI: "[+0.3847, +0.4324]" }
+    ]
+  },
+
+  /* ---------- Pipeline: stages ---------- */
+  flow: {
+    intro: "One command from `data/` to a validated CSV, byte for byte. Five stages, each a folder with its own README and a small fixed contract ([pipeline/README.md](../pipeline/README.md)).",
+    assetsKicker: "data/ · stays local",
+    cut: "cut into halves",
+    join: "join · X off the graded halves",
+    resultName: "CSV + manifest",
+    resultText: "199,319 rows, LF, validated; and the run's manifest"
+  },
+  assets: [
+    { name: "tactical ATD", status: "main", note: "used" },
+    { name: "homography", status: "off", note: "unused by main.toml" },
+    { name: "Smart Tagging", status: "off", note: "unused (P08)" },
+    { name: "broadcast", status: "dropped", note: "no mapping" }
+  ],
+
+  stages: [
+    {
+      id: "inputs", num: "1", name: "inputs", short: "align every asset to row i = frame i; ATD parsed once, cached",
+      built: "P03 · R001 · 2026-10-22",
+      summary: "Every later stage works on arrays where row i is frame i of the tactical video, the submission's own index. The data does not arrive that way (the ATD counts from 1, Smart Tagging in seconds, the broadcast on its own timeline), and one off-by-one shifts every transition, so the conversions happen once, here, and are checked. It also parses the 195 MB ATD once into `data/cache/atd_tactical/` (about 15 s, then 1–2 s a run). Everything is lazy: an asset loads the first time a source asks for it.",
+      contract: "**In:** `data/tactical/*` and `games.py`. **Out:** `Inputs`, read-only arrays of 199,319 rows; `graded` halves 11,185–90,651 and 110,808–190,197; `kickoffs` 11,185 and 113,742; pitch 105.3 × 68.0 m.",
+      planned: ["P10", "P14", "P15"],
+      traps: ["T08", "T09", "T15", "T28"],
+      files: [
+        { label: "inputs/README.md", href: "../pipeline/inputs/README.md" },
+        { label: "inputs/atd_cache.py", href: "../pipeline/inputs/atd_cache.py" },
+        { label: "inputs/__init__.py", href: "../pipeline/inputs/__init__.py" },
+        { label: "games.py", href: "../games.py" }
+      ],
+      run: [
+        { cmd: "python pipeline/run.py pipeline/configs/main.toml", note: "the first run parses the ATD into the cache (~15 s)" },
+        { cmd: "python pipeline/selftest.py", note: "contract checks; the cache parses bit-exactly" }
+      ]
+    },
+    {
+      id: "evidence", num: "2", name: "evidence", short: "each source gives an opinion on every frame, never a label",
+      built: "R001 · 2026-10-22; sources since",
+      summary: "Each source reads the whole match and gives an opinion on every frame; it never decides a label. Deciding (weighing the sources, keeping possessions as intervals, paying for every change) is the decoder's job, so a new source plugs in without touching it and a better decoder improves every source at once. `main.toml` runs three: `controlled_touch` and `shape_possession` for `home`, `dead_ball_model` for `alive`.",
+      contract: "**Out:** one `Evidence(alive, home)` per source, float64 per frame in [0, 1], NaN = no opinion. `alive` = P(ball in play); `home` = P(home has it | in play). Read together: P(H) = alive·home, P(A) = alive·(1 − home), P(D) = 1 − alive.",
+      planned: ["P08", "P09", "P10", "P11", "P13", { title: "A13 says where", text: "The team side holds the remaining score: a perfect team where the ball is seen is worth +0.194 raw and in the gaps +0.176, a perfect dead ball only +0.029." }],
+      traps: ["T12", "T14", "T38", "T39"],
+      files: [
+        { label: "evidence/README.md", href: "../pipeline/evidence/README.md" },
+        { label: "controlled_touch.py", href: "../pipeline/evidence/controlled_touch.py" },
+        { label: "dead_ball_model.py", href: "../pipeline/evidence/dead_ball_model.py" },
+        { label: "shape_possession.py", href: "../pipeline/evidence/shape_possession.py" },
+        { label: "play_features.py", href: "../pipeline/evidence/play_features.py" },
+        { label: "shape_features.py", href: "../pipeline/evidence/shape_features.py" },
+        { label: "models/", href: "../pipeline/models/" }
+      ],
+      run: [
+        { cmd: "python pipeline/run.py pipeline/configs/main.toml --score", note: "each source's agreement with the public GT: a correctness check, never an input" },
+        { cmd: "python pipeline/benchmark/train_shape.py --verify", note: "P07: retrain the shape model and compare it with the committed JSON" },
+        { cmd: "python pipeline/benchmark/train_dead_ball.py --model hgb", note: "P05: train the dead-ball model (folds + full) as JSON" }
+      ]
+    },
+    {
+      id: "decode", num: "3", name: "decode", short: "turn the opinions into one label a frame, one half at a time",
+      built: "R001 · 2026-10-22; hmm since R006",
+      summary: "Turns the opinions into a sequence that looks like football: possessions that are intervals, stoppages between them, and as few spurious changes as the evidence allows. This is where spellF1 is won or lost, since one flicker splits a possession and costs three. The runner first cuts the evidence into one block per graded half, so no decoder ever sees across halftime.",
+      contract: "**In:** one block (a graded half) and every source cut to it, in config order. **Out:** `Decoded`, one int8 label per frame (`H, A, D, X` = 0–3, the scorer's own codes) and an optional `(len, 3)` posterior.",
+      planned: [
+        { title: "Duration priors beyond the minimums (semi-Markov)", text: "Once a run is long enough it is as likely to last two minutes as five seconds; a prior over run lengths would replace the hard minimum." },
+        { title: "Re-run the minimum-run part after any new source", text: "“After P06”, item 4: the minimums were chosen under the evidence of their day, so a new source reopens them, by a declared protocol." }
+      ],
+      traps: ["T04", "T05", "T11", "T44"],
+      files: [
+        { label: "decode/README.md", href: "../pipeline/decode/README.md" },
+        { label: "hmm.py", href: "../pipeline/decode/hmm.py" },
+        { label: "majority_vote.py", href: "../pipeline/decode/majority_vote.py" }
+      ],
+      run: [
+        { cmd: "python pipeline/selftest.py", note: "pins the hmm against a brute force over every path" },
+        { cmd: "python pipeline/benchmark/run.py pipeline/configs/main.toml pipeline/configs/MINE.toml --truth both", note: "a decoder change against main.toml, both truths" }
+      ]
+    },
+    {
+      id: "refine", num: "4", name: "refine", short: "metric-aware clean-ups, each switchable and measured",
+      built: "P02 · R012 · 2026-10-25",
+      summary: "Last-mile corrections to a decoded half, aimed at how the scorer counts: each a small, separate, switchable step whose effect is measured on its own. Today there is one, `shift_edges`. Refiners run in config order after the decoder, block by block, so they cannot leak across halftime either. A refiner applies a rule to the whole match; it never edits particular frames by hand.",
+      contract: "**In:** the decoder's `BlockContext` and the block's current `Decoded`. **Out:** a new `Decoded` for exactly the same frames.",
+      planned: ["P12", "P11"],
+      traps: ["T02", "T03", "T40"],
+      files: [
+        { label: "refine/README.md", href: "../pipeline/refine/README.md" },
+        { label: "shift_edges.py", href: "../pipeline/refine/shift_edges.py" },
+        { label: "benchmark/conventions.py", href: "../pipeline/benchmark/conventions.py" }
+      ],
+      run: [
+        { cmd: "python pipeline/selftest.py", note: "checks the shift against the algorithm written as loops" },
+        { cmd: "python pipeline/run.py pipeline/configs/main.toml --score", note: "the file, its possessions and the public-window check" }
+      ]
+    },
+    {
+      id: "output", num: "5", name: "output", short: "write, validate, summarise, record the run",
+      built: "P03 · R001 · 2026-10-22",
+      summary: "The deliverable is a file our repository regenerates byte for byte, so this stage owns the bytes. After the runner joins the halves (with `X` on every ungraded frame), it writes the CSV in exactly one way, reads it back through the organisers' own checks, prints what the labels claim (aggregates only) and records what produced them.",
+      contract: "**In:** 199,319 labels. **Out:** `evaluation/results/<name>.csv` (LF, validated, sha256) and `data/runs/<name>.json`; with `--score`, public-window scores and each source's agreement (a correctness check, T01).",
+      planned: [{ title: "The deliverables", text: "Upload, clean-clone reproduction and the public repo are on the [Work to do](#work) tab." }],
+      traps: ["T21", "T24", "T25", "T06"],
+      files: [
+        { label: "output/README.md", href: "../pipeline/output/README.md" },
+        { label: "run.py", href: "../pipeline/run.py" },
+        { label: "validate_submission.py", href: "../evaluation/validate_submission.py" }
+      ],
+      run: [
+        { cmd: "python pipeline/run.py pipeline/configs/main.toml --out ../<team_name>.csv", note: "the upload file, outside the repository" },
+        { cmd: "python evaluation/validate_submission.py ../<team_name>.csv", note: "the organisers' own check, on the exact file" }
+      ]
+    },
+    {
+      id: "benchmark", num: "P01", name: "benchmark", side: true, short: "seven DFL matches degraded like ours: validates every choice the configs make",
+      built: "P01 · 2026-10-22 → 23",
+      summary: "We may not label our own match, and the public window holds 17 possessions and ranks the baselines the wrong way round, so every choice between versions is made on other matches: the seven DFL/IDSSE open matches (two Bundesliga, five 2. Bundesliga; CC BY 4.0), whose truth is built as ours is (`D` where `BallStatus` is dead, else the team in `BallPossession`). Their tracking is degraded to look like ours, run through the pipeline's own components and scored by the official scorer, half by half.",
+      contract: "**In:** a reference config and the configs to compare. **Out:** pooled spellF1, macroF1 and alive/dead F1 under the raw and the coarse truth; per-match deltas with 90% t-intervals, the exact sign-flip p and wins of seven; reports in `data/runs/benchmark/`.",
+      planned: ["P16", "P13"],
+      traps: ["T33", "T41", "T43", "T45"],
+      files: [
+        { label: "benchmark/README.md", href: "../pipeline/benchmark/README.md" },
+        { label: "run.py", href: "../pipeline/benchmark/run.py" },
+        { label: "degrade.py", href: "../pipeline/benchmark/degrade.py" },
+        { label: "fidelity.py", href: "../pipeline/benchmark/fidelity.py" },
+        { label: "headroom.py", href: "../pipeline/benchmark/headroom.py" },
+        { label: "choose.py", href: "../pipeline/benchmark/choose.py" }
+      ],
+      run: [
+        { cmd: "python pipeline/benchmark/run.py pipeline/benchmark/configs/nearest_w50.toml pipeline/configs/MINE.toml --truth both", note: "the first config is the reference; delta = other minus first" },
+        { cmd: "python pipeline/benchmark/choose.py --reference main STEM ...", note: "a grid's declared rule on its reports, plus the leave-one-match-out estimate" },
+        { cmd: "python pipeline/benchmark/fidelity.py --profile tracking --seeds 3", note: "the profile's gates and WARNs against our match; exits 1 if a gate fails" },
+        { cmd: "python pipeline/benchmark/headroom.py pipeline/configs/main.toml", note: "a config beside variants whose evidence is the truth (upper bounds)" }
+      ]
+    },
+    {
+      id: "configs", num: "TOML", name: "configs (TOML)", side: true, short: "one file per run: which components, which parameters; feeds evidence, decode and refine",
+      built: "P03 · R001 · 2026-10-22",
+      summary: "A run is one TOML file in `pipeline/configs/`, and its file name is the run's name. It lists the evidence sources (each with an optional `weight` and its parameters), exactly one decoder and zero or more refiners, and sets `seed` and `scope`. Configs are checked strictly before any data loads: an unknown key, component or parameter stops the run with a sentence that says what to change.",
+      contract: "**Rule:** every constant of a submission config traces to its entry in docs/results.md (the audit in the technical document, section 5). None may come from the public window.",
+      planned: [],
+      traps: ["T01", "T27"],
+      files: [
+        { label: "configs/main.toml", href: "../pipeline/configs/main.toml" },
+        { label: "configs/", href: "../pipeline/configs/" },
+        { label: "pipeline/README.md", href: "../pipeline/README.md" }
+      ],
+      run: [
+        { cmd: "cp pipeline/configs/main.toml pipeline/configs/my_experiment.toml", note: "start an experiment from the current pipeline" },
+        { cmd: "python pipeline/selftest.py --data", note: "after any change upstream of the decoder: the four baselines byte for byte" }
+      ]
+    }
+  ],
+
+  /* Components: one row each; the stage panels and the component-age table both read this list.
+     status: main | off | baseline | tool | dropped. built / retuned: [date, entry] or null. */
+  components: [
+    { name: "Inputs + ATD cache", stage: "inputs", status: "main", label: "in use",
+      what: "Aligns the ATD (`frame_id − 1`), homography (as is) and Smart Tagging (`round(s × 25)`) to the submission's rows and checks each; parses the ATD once into a cache, rebuilt when a source file, the cache version or the numpy/pandas versions change. The broadcast is never loaded.",
+      entries: "P03, R001", built: ["2026-10-22", "R001"], retuned: null },
+    { name: "nearest_player", stage: "evidence", status: "baseline", label: "baseline · not in main", channel: "home",
+      what: "The team of the slot nearest the ball (step 1 of the baseline); `confidence` replaces the hard 0/1. Agrees with the public GT on 77.8% of 5,640 frames (A01). Its 0.78 confidence came from the public window, so it stays out of submission configs.",
+      entries: "R001; P06's configs", built: ["2026-10-22", "R001"], retuned: null },
+    { name: "ball_presence", stage: "evidence", status: "off", label: "available · off", channel: "alive",
+      what: "Whether the tracker sees the ball, as `alive` evidence for the decoder. Its values (missing 0.2, seen 0.585) came from the public window (A01), and P05 replaced it.",
+      entries: "P06: R006, R007", built: ["2026-10-25", "R006"], retuned: null },
+    { name: "controlled_touch", stage: "evidence", status: "main", channel: "home",
+      what: "P04: a player within `radius` of the ball, no opponent within the duel radius, moving with it for at least `min_frames`, makes a control episode; its vote starts on the episode's first frame (back-dating, T03), and `hold` gives a weak vote for the last controlling team between episodes, so a pass in flight keeps the old team. Silent where the ball is missing.",
+      params: "radius 1.5 m · max_rel_speed 6.0 m/s · min_frames 1 · hold 0.60 · confidence 0.93",
+      entries: "P04: R008 (24 configs), R010; re-chosen R013 (192 configs)", built: ["2026-10-25", "R008"], retuned: ["2026-10-26", "R013"] },
+    { name: "dead_ball_rules", stage: "evidence", status: "off", label: "available · off", channel: "alive",
+      what: "P05's fixed rules on the 30 play features: the ball beyond a line, still at a restart spot, a collective slowdown, a kick-off formation. Thresholds from the laws of the game, values measured (R009); the boosted trees beat it.",
+      entries: "P05: R009", built: ["2026-10-25", "R009"], retuned: null },
+    { name: "dead_ball_model", stage: "evidence", status: "main", channel: "alive",
+      what: "P05: gradient-boosted trees on 30 play features (where the ball is against the lines and the restart spots, how the players move, the set-piece shapes), trained on the 7 DFL matches degraded as `tracking` v3; a prior-corrected P(alive), and 0.001 before a half's kick-off. Not re-tuned since R010 (R013 declared it out of scope).",
+      params: "model `dead_ball_hgb.json` · weight 1.0",
+      entries: "P05: R009 (24 configs), R010", built: ["2026-10-25", "R009"], retuned: ["2026-10-25", "R010"] },
+    { name: "shape_possession", stage: "evidence", status: "main", channel: "home",
+      what: "P07: boosted trees on 26 features of how the two teams stand and move, none reading the ball, trained on the 7 DFL matches with the ball hidden and read symmetrically in the two teams. The only `home` evidence where the ball is missing (40.7% of the graded frames).",
+      params: "model `shape_possession_hgb.json` · weight 0.2 · scope all · min_prob 0.02",
+      entries: "P07: R011 (12 configs); weight re-chosen R013", built: ["2026-10-25", "R011"], retuned: ["2026-10-26", "R013"] },
+    { name: "restart_team", stage: "evidence", status: "dropped", label: "dropped · off", channel: "home",
+      what: "P17: who restarts after a stoppage, read from the players' arrangement by five rules from the Laws of the Game. Ceiling +0.0198 raw (A12); delivered +0.0040 (R014), short of its bar. Stays in the code, off by default.",
+      entries: "P17: A12, R014, R014b", built: ["2026-10-26", "A12"], retuned: ["2026-10-26", "R014b"] },
+    { name: "majority_vote", stage: "decode", status: "baseline", label: "baseline · not in main",
+      what: "Step 2 of the baseline: a ±`half_width` vote on `home`, ties to home, `D` where nobody voted. Rebuilds the four published baselines byte for byte; it ignores `alive`, so its `D` is only “the tracking lost the ball”.",
+      entries: "R001", built: ["2026-10-22", "R001"], retuned: null },
+    { name: "hmm", stage: "decode", status: "main",
+      what: "P06: a three-state model (`H`, `A`, `D`) decoded by Viterbi once per half. Each source adds a log-likelihood ratio to the states it speaks for and a NaN adds nothing; a path pays `switch_team` for every change of team and `switch_dead` for every change into or out of `D`, and no run may be shorter than its minimum.",
+      params: "switch_team 4 · switch_dead 32 · min_possession 35 · min_dead 25",
+      entries: "P06: R006, R007, A10; re-chosen R010 (72 configs), R013 (144 configs)", built: ["2026-10-25", "R006"], retuned: ["2026-10-26", "R013"] },
+    { name: "hmm restart states", stage: "decode", status: "dropped", label: "dropped · off",
+      what: "`restart_source`: `D` split into “dead, home restarts” and “dead, away restarts”, so the decoder carries the restart team to wherever it ends `D`. +0.0003 raw (R014b, p 0.8125); off by default.",
+      entries: "P17: R014b", built: ["2026-10-26", "R014b"], retuned: null },
+    { name: "shift_edges", stage: "refine", status: "main",
+      what: "P02: moves each kind of edge by a fixed number of frames, the pipeline's own lag on DFL negated; edges at a kick-off or next to an `X` never move, and nothing is added, removed or merged. +0.0005 raw, inside noise: adopted because its declared rule said so, not because it is shown to help.",
+      params: "team +1 · into_dead −2 · out_of_dead 0",
+      entries: "P02: A11, R012; re-derived R013 (same values)", built: ["2026-10-25", "R012"], retuned: ["2026-10-26", "R013"] },
+    { name: "writer, validator, manifest", stage: "output", status: "main", label: "in use",
+      what: "Writes the CSV in binary mode with LF endings (to a temporary file, then renamed), reads it back through the official `read_label_csv` and `validate_submission`, and writes `data/runs/<name>.json` (config, commit, dirty flag, versions, source hashes, sha256). Refuses any path git could commit.",
+      entries: "P03, R001", built: ["2026-10-22", "R001"], retuned: null },
+    { name: "profile tracking v3", stage: "benchmark", status: "main", label: "default profile",
+      what: "Our own missing-ball masks transplanted (their pattern, not their clock), our tracklets in 46 slots, wrong-team slots, NaN-speed runs, 5-frame smoothing and our low-count frames. All 8 fidelity gates pass and none of the 10 checks warns.",
+      entries: "R004 (v1), R004b (v2), R004c (v3)", built: ["2026-10-23", "R004c"], retuned: null },
+    { name: "profiles clean and gaps", stage: "benchmark", status: "baseline", label: "reference",
+      what: "`clean`: DFL as it is, the benchmark's floor. `gaps`: our ball masks transplanted, players untouched. Both kept for comparison.",
+      entries: "R002, R003", built: ["2026-10-23", "R002"], retuned: null },
+    { name: "profile context", stage: "benchmark", status: "off", label: "sensitivity only",
+      what: "Places the gaps by a hazard fitted on our own tracker (A08). Fails two gates (near-line share 0.5586 against 0.2797 ±0.05; missing share 0.4313 against 0.4110 ±0.02), so it is a second look for gap-dependent choices (T38), never the default.",
+      entries: "A08, R005", built: ["2026-10-23", "R005"], retuned: null },
+    { name: "raw and coarse truths", stage: "benchmark", status: "main", label: "always both",
+      what: "Raw: DFL's flags (437 possessions a match, median 3.7 s). Coarse: every possession under 5 s between two of the other team absorbed. A choice that ranks differently under the two is a warning (T33).",
+      entries: "A06, T33", built: ["2026-10-23", "R002"], retuned: null },
+    { name: "headroom.py", stage: "benchmark", status: "tool", label: "tool",
+      what: "Runs a config beside variants whose evidence is the truth: A10 for P06's decoder, A12 for the restart vote, A13's `plus_` variants on `main.toml` itself. Upper bounds, never forecasts.",
+      entries: "A10, A12, A13", built: ["2026-10-25", "A10"], retuned: ["2026-10-29", "A13"] },
+    { name: "conventions.py", stage: "benchmark", status: "tool", label: "tool",
+      what: "Times when a truth's label changes against events our tracking shows (A11), measures the pipeline's own lag on DFL and applies P02's declared shift rule (R012).",
+      entries: "P02: A11, R012", built: ["2026-10-25", "A11"], retuned: null },
+    { name: "choose.py", stage: "benchmark", status: "tool", label: "tool",
+      what: "Applies a grid's declared rule to its reports: the best pooled raw spellF1, every config within 0.005 of it tied, the best coarse among the tied; plus the leave-one-match-out estimate.",
+      entries: "R008–R013's rule", built: null, retuned: null },
+    { name: "profile offpitch", stage: "benchmark", status: "dropped", label: "dropped · removed",
+      what: "P18: DFL's ball hidden off the pitch as ours is. v1 failed the median-gap gate (15.04 s against 10.74 s); v2 could not reach our share past a line (0.258–0.262 against 0.0407). Code removed in `7b555eb` (recoverable from `fb33b38`).",
+      entries: "P18: R015, R015b", built: ["2026-10-29", "R015"], retuned: ["2026-10-29", "R015b"] }
+  ],
+
+  configs: [
+    { name: "main.toml", status: "main", label: "the submission config", text: "The team's current pipeline, the file we would submit today (not uploaded): R013's choice." },
+    { name: "r013_retune.toml", status: "baseline", label: "record", text: "R013's final config, written when it was chosen; it writes the same CSV as `main.toml` (the same sha256)." },
+    { name: "p02_shift.toml", status: "baseline", label: "record", text: "R012's choice: R011's config plus the shift; the file `main.toml` wrote before R013." },
+    { name: "p07_shape.toml", status: "baseline", label: "record", text: "R011's choice: R010's config plus `shape_possession`." },
+    { name: "p45_hmm.toml", status: "baseline", label: "record", text: "R010's choice: `controlled_touch`, `dead_ball_model` and the `hmm`." },
+    { name: "smooth50_repro.toml", status: "tool", label: "regression check", text: "Must rebuild `evaluation/results/baseline_smooth50.csv` byte for byte (scope “file”, the one exception to per-half decoding)." },
+    { name: "p06_hmm.toml", status: "off", label: "research only", text: "P06's candidate. It did not clear its bar and its constants came from the public window, so it must not become a submission config unless they are re-derived from other games." }
+  ],
+
+  /* ---------- Proposals (docs/proposals.md, overview table and each Status) ---------- */
+  proposals: [
+    { id: "P01", anchor: "p01--a-validation-set-we-can-trust", title: "Validation set we can trust: other matches, degraded to look like ours", attacks: "deciding anything at all", effort: "M", impact: "enabling", status: "done", note: "done → R002–R005" },
+    { id: "P02", anchor: "p02--inspect-the-ground-truths-conventions-on-the-public-window-to-understand-and-never-to-tune", title: "Inspect the GT's conventions on the public window, to understand and never to tune", attacks: "boundary timing", effort: "S", impact: "bounded: understanding only; so far the pipeline's own lag on DFL, 1 to 2 frames, within noise (R012)", status: "partly", note: "partly done → A11, R012",
+      next: "Left: a person watches the video around the public transitions to understand where `D` begins and ends and what restart follows. What comes out is a note in aggregates, never a constant (T27, T40)." },
+    { id: "P03", anchor: "p03--one-command-deterministic-cached", title: "One-command, deterministic, cached pipeline", attacks: "reproducibility", effort: "S–M", impact: "enabling", status: "done", note: "done → R001" },
+    { id: "P04", anchor: "p04--sticky-ownership-from-controlled-touches", title: "Sticky ownership from controlled touches", attacks: "facts 3, 5", effort: "S", impact: "high: +0.1421 raw at the chosen decoder (R010)", status: "done", note: "done → R008, R010; rule re-chosen → R013" },
+    { id: "P05", anchor: "p05--a-real-dead-ball-detector", title: "Dead-ball detector", attacks: "fact 4", effort: "M", impact: "high: +0.1661 raw at the chosen decoder, on a benchmark that overstates it (R010, T38, T39)", status: "done", note: "done → R009, R010" },
+    { id: "P06", anchor: "p06--global-decoding-per-half-hmm--hidden-semi-markov", title: "Global decoder (HMM / semi-Markov) per half", attacks: "fact 5", effort: "M", impact: "high", status: "done", note: "done → R006–R007, A10; decoder re-chosen → R010, R013" },
+    { id: "P07", anchor: "p07--possession-without-the-ball-team-shape-and-movement", title: "Possession without the ball: team shape", attacks: "fact 1", effort: "M", impact: "high: +0.0942 raw at the chosen decoder, not a forecast for our match (R011)", status: "done", note: "done → R011; weight re-chosen → R013" },
+    { id: "P08", anchor: "p08--smart-tagging-as-soft-evidence", title: "Smart Tagging as soft evidence", attacks: "facts 1, 4", effort: "S", impact: "medium", status: "idea", stage: "evidence",
+      next: "Turn each of the 638 automatic tags into a per-frame vote fixed beforehand by what its code means (`Barcelona` → H, `Atletic Club` → A, `N/A` → no vote). DFL has no Smart Tagging, so the weight is a declared constant and the window only checks the votes read the right way round." },
+    { id: "P09", anchor: "p09--camera-aim-as-a-coarse-ball-zone-prior", title: "Camera aim as a coarse ball-zone prior", attacks: "fact 1", effort: "S", impact: "low–medium", status: "idea", stage: "evidence",
+      next: "The aim follows the ball's along-pitch position (corr 0.84) about 35 frames late, median error 12 m, nothing across the pitch (A03): features for P07 and P06, never for nearest-player logic." },
+    { id: "P10", anchor: "p10--referee-whistle-from-the-audio-track", title: "Referee whistle from the audio track", attacks: "fact 4", effort: "S–M", impact: "medium (audio confirmed, A04)", status: "idea", stage: "evidence",
+      next: "Band-pass around 2–4 kHz and detect sustained tonal peaks; frame = `round(t × 25)` with no offset (A04); feed the whistle probability to P05 and P06." },
+    { id: "P11", anchor: "p11--touch-and-pass-events-to-place-boundaries", title: "Touch and pass events to place boundaries", attacks: "fact 5", effort: "M–L", impact: "medium–high", status: "idea", stage: "evidence",
+      next: "Touch candidates from the ball's kinematics, given to the nearest player; chain them into passes, receptions and interceptions; apply CHALLENGE.md literally and snap the decoder's boundaries to the matching touch." },
+    { id: "P12", anchor: "p12--metric-aware-post-processing", title: "Metric-aware post-processing", attacks: "fact 5", effort: "S", impact: "medium", status: "partly", note: "partly done → R012 (the shift)", stage: "refine",
+      next: "Left: drop possession blips shorter than m frames and `D` blips inside possessions (validate m on P01: real 0.76 s and 1.32 s possessions exist); explicit `D`, never `X`, before kick-offs and once the ball is out (T02); `X` only inside genuinely uncertain possessions." },
+    { id: "P13", anchor: "p13--learn-from-external-labelled-tracking-data", title: "Pre-train on external labelled tracking data", attacks: "facts 1, 2", effort: "L (M on top of P01)", impact: "medium–high", status: "idea", stage: "evidence",
+      next: "DFL, Metrica's sample games and SkillCorner, degraded as P01 does; pre-train P07 or a sequence model and hold the benchmark matches out. Nothing about this fixture (T26)." },
+    { id: "P14", anchor: "p14--recover-the-ball-from-the-video", title: "Recover the ball from the video", attacks: "facts 1, 2", effort: "L", impact: "medium–high, uncertain", status: "idea", stage: "inputs",
+      next: "A pretrained ball detector on the ~65k graded ATD-gap frames, projected with the homography; fine-tune only on other matches (T27) and decode frame-exactly (T23)." },
+    { id: "P15", anchor: "p15--broadcast-tracking-as-a-second-opinion", title: "Broadcast tracking as a second opinion", attacks: "facts 1, 4", effort: "L", impact: "medium", status: "idea", stage: "inputs",
+      next: "Align the broadcast to the tactical feed by matching player configurations, a monotone time warp per shot; then fuse its ball and use “broadcast off the pitch” as stoppage evidence." },
+    { id: "P16", anchor: "p16--metricas-sample-games-in-our-ground-truth-providers-conventions", title: "Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing", attacks: "boundary timing, grain", effort: "M", impact: "medium", status: "idea", stage: "benchmark",
+      next: "Declare the adoption rule first, on the sample games alone; derive `H`, `A` and `D` from their events and tracking; measure the switch timing and the grain beside DFL's (A06). It decides whether R013's raw-truth gain helps on our match." },
+    { id: "P17", anchor: "p17--the-restart-team-channel", title: "Restart-team channel: who restarts after a stoppage, from the players' arrangement", attacks: "facts 3, 5", effort: "S–M", impact: "ceiling +0.0198 raw (A12); delivered +0.0040 raw at best, bar not met (R014)", status: "dropped", note: "dropped → R014, R014b (code stays, off)" },
+    { id: "P18", anchor: "p18--the-offpitch-profile-dfls-ball-hidden-off-the-pitch-as-ours-is-and-p05-retrained-on-it", title: "offpitch profile: DFL's ball hidden off the pitch as ours is, and P05 retrained on it", attacks: "T39", effort: "M", impact: "A13: a perfect dead-ball source adds +0.029 raw; hiding the out-of-play ball cost today's P05 0.013 alive/dead F1 (R015)", status: "dropped", note: "dropped → R015, R015b (code removed)" }
+  ],
+
+  /* ---------- Traps (docs/traps.md) ---------- */
+  traps: [
+    { id: "T01", title: "No tuning on the public window: a rule, not just a bad idea.", line: "Since 23 Oct (`f8f2629`) the public 5 minutes only check the pipeline; choosing, calibrating or training on them breaks the rules. One possession there moves spellF1 about 0.06." },
+    { id: "T02", title: "`X` means “repeat my last label”, and at a half's start “copy my first label”.", line: "The 2,934 graded frames before the 2nd-half kick-off are all `D`: an `X` there becomes a long spurious possession." },
+    { id: "T03", title: "Latency is expensive.", line: "Perfect labels 1 s late score spellF1 0.65, 8 frames late 0.89. Back-date a change to where its evidence starts." },
+    { id: "T04", title: "A blip costs three possessions.", line: "Five frames of `A` inside an `H` possession split it and add a spurious `A`; but real short possessions exist (0.76 s, 1.32 s), so minimums need validating, not guessing." },
+    { id: "T05", title: "`H H D D H H` is two possessions.", line: "Missing a stoppage merges the possessions around it; inventing one splits a possession." },
+    { id: "T06", title: "Possession counts differ between tools.", line: "`validate_submission.py` treats `X` as a gap over the whole file; the scorer bridges `X` inside the graded halves. Compare like with like." },
+    { id: "T08", title: "Off by one.", line: "ATD `frame_id` runs 1…199,319; submission rows, homography and video start at 0. Smart Tagging: `round(s × 25)`." },
+    { id: "T09", title: "~164k rows means you indexed the broadcast.", line: "The broadcast has its own timeline and no mapping to the tactical one." },
+    { id: "T11", title: "Temporal code must run per half.", line: "11,185–90,651 and 110,808–190,197 (`games.half_video_blocks`); the runner enforces it for every decoder and refiner." },
+    { id: "T12", title: "A missing ball is not a dead ball, in either direction.", line: "The ball is visible on 66% of dead-ball frames in the public window, and in-play gaps of 10 s or more are normal." },
+    { id: "T13", title: "Ball gaps are long, not flickers.", line: "150 gaps over the graded halves, median 10.7 s, p90 34 s, max 3.7 min; gaps under 2 s hold 0.1% of the missing frames, so interpolation buys almost nothing." },
+    { id: "T14", title: "The nearest player is not the possessor.", line: "Wrong on 22% of in-play, ball-visible public frames: passes in flight, duels, deflections." },
+    { id: "T15", title: "Track slots are tracklets, not players.", line: "46 slots for 22 players that appear, vanish, swap and duplicate; build permutation-invariant features." },
+    { id: "T21", title: "Line endings change the file.", line: "Write with `newline=\"\\n\"`, and compare hashes of freshly regenerated files, not of the working tree." },
+    { id: "T24", title: "The scorer reads every CSV in `evaluation/results/`.", line: "Use `--results <dir>`; never name our files `baseline_*.csv`; `starter/baseline.py` without `--out` overwrites the committed baselines." },
+    { id: "T25", title: "Data must never leave our machines the wrong way.", line: "No match data to any LLM; nothing from `data/` or derived frame-level data in git; check `git status` before every commit." },
+    { id: "T26", title: "Nothing about this fixture from outside the bundle.", line: "Event feeds, possession stats, match reports, goal times: human-produced data about this game, from any source, is off-limits." },
+    { id: "T27", title: "No hand labels on this match, not even to validate, and the public window is not training data.", line: "Watching to understand is fine; turning what was seen into labels, corrections, or rules and constants tied to frames is not." },
+    { id: "T28", title: "Speed is not presence.", line: "The ATD speed channel is NaN on 370,297 slot-frames and 103,579 ball frames where the position exists: test presence on x." },
+    { id: "T31", title: "The ATD ball-speed channel is unusable.", line: "NaN on 92.2% of graded ball-present frames, and where given it behaves like a player's speed (median 1.3 m/s against 4.8): derive speed from positions." },
+    { id: "T33", title: "DFL's possessions are fine-grained, and the public window cannot say by how much ours differ.", line: "437 possessions a match, median 3.7 s. Rank length-dependent choices under the raw and the coarse truth and treat a disagreement as a warning." },
+    { id: "T38", title: "The default profile cannot value evidence about where the ball's gaps fall.", line: "`tracking` v3's gaps are blind to the play, so a choice that depends on them is read on `context` too, under both truths." },
+    { id: "T39", title: "DFL tracks the ball out of play, so a dead-ball model looks near-perfect on the benchmark.", line: "P05's alive/dead F1 there (0.9725) is an upper bound for our match: say so beside the number." },
+    { id: "T40", title: "Our ground truth's dead-ball edges and team flips need not follow DFL's flag.", line: "A component tuned on the benchmark may carry DFL's timing (A11)." },
+    { id: "T41", title: "Hours of benchmark runs can take a machine down.", line: "One heavy process at a time, chunks of about 24 configs, `OPENBLAS_NUM_THREADS=1`, below-normal priority; `run.py` writes nothing until its last config is scored." },
+    { id: "T43", title: "An oracle that stops where the truth changes measures more than a source can deliver.", line: "A12's +0.0198 restart ceiling became +0.0040 (R014): build an oracle with the real source's footprint." },
+    { id: "T44", title: "A transition price binds only below the largest evidence it competes with.", line: "R014b's `switch_restart` grid could not differ: put a penalty grid on both sides of the largest evidence." },
+    { id: "T45", title: "A degradation fitted to one statistic can move the others away.", line: "R015's offpitch v1 matched its statistic and failed the median gap: sweep every gate statistic with a cheap label-free script first." }
+  ],
+  topTraps: ["T01", "T02", "T03", "T04", "T05", "T11", "T12", "T13", "T14", "T27", "T31", "T33", "T38", "T39", "T41", "T43", "T45"],
+
+  /* ---------- How it works ---------- */
+  how: {
+    task: [
+      "For every frame of the tactical video of FC Barcelona (home) against Athletic Club (away), LaLiga 2024-25 MD2 (199,319 frames at 25 fps), output `H` (home has the ball, in play), `A` (away has it), `D` (dead ball) or `X` (abstain). Only the graded halves count: frames 11,185–90,651 and 110,808–190,197.",
+      "The ranking metric is **spellF1**. A possession is a maximal run of `H` or of `A` inside a graded half, so `H H D D H H` is two. Predicted possessions are matched one-to-one to true ones (same team, greedy by temporal IoU), and F1 is averaged over IoU 0.3, 0.4, 0.5, 0.6 and 0.7. Ties are broken by **macroF1**.",
+      "**Flicker is fatal.** The raw nearest-player baseline reports 131 possessions in the public window against 17 real ones, and a five-frame blip turns one possession into three (T04). **Latency costs too:** perfect labels 1 s late score 0.65 (T03).",
+      "**`X` is forward-filled for spellF1** with the last label in the half (back-filled at its start): free inside a possession, but across a hand-over it drags the old team over the new one. For macroF1 an `X` on a graded frame is a miss. So abstain inside possessions if at all, and guess at transitions."
+    ],
+    illustrations: [
+      { title: "A blip costs three possessions", rows: [["truth", "HHHHHHHHHHHHDDDAAAAA"], ["predicted", "HHHHHAAHHHHHDDDAAAAA"]],
+        cap: "Two frames of `A` split one true `H` possession into `H`, `A`, `H`: one possession becomes three, and none of the pieces may reach the IoU thresholds." },
+      { title: "X is forward-filled for spellF1", rows: [["predicted", "HHHHHHXXXXXXXXAAAAAA"], ["as scored", "HHHHHHHHHHHHHHAAAAAA"], ["truth", "HHHHHHHHAAAAAAAAAAAA"]],
+        cap: "The `X` run takes the last label before it, so an abstention across a hand-over pushes the change late. Inside a possession it costs nothing on spellF1." }
+    ],
+    illustrationNote: "Illustrations with made-up frames, not data.",
+    facts: [
+      { value: "40.7%", label: "of graded frames have no ball", text: "In only 150 gaps, median 10.7 s (p90 34 s, max 3.7 min). Gaps under 2 s hold 0.1% of the missing frames, so interpolation cannot help: possession changes inside the gaps." },
+      { value: "12%", label: "missing in the public window", text: "Later 5-minute blocks reach 80%. The window is the best-covered block of the whole match, so it flatters ball-based methods." },
+      { value: "22%", label: "nearest player on the wrong team", text: "With the ball visible and in play, the nearest player's team is wrong on 22% of frames: passes in flight, duels, deflections." },
+      { value: "66%", label: "of dead-ball frames show the ball", text: "Placed, held, thrown in: a missing ball is not a dead ball, and the baseline hands those frames to a team." },
+      { value: "7.6 s", label: "median possession", text: "6 of the 17 public possessions last under 5 s, and the six shortest tolerate only 0.3–1.5 s of total boundary error at IoU 0.7. The baselines report 398–1,949 possessions: fragmentation is their main failure." }
+    ],
+    factsNote: "Measured on 2026-10-21 (A01–A03); “What the measurements say” in [proposals.md](../docs/proposals.md). These five facts drove the ordering of the proposals.",
+    principles: [
+      "**Opinions are separate from decisions.** Evidence sources say what the data suggests about each frame and never pick a label; the decoder weighs every source and pays for every change. A new source plugs in without touching the decoder.",
+      "**Decoders never see across halftime.** The runner cuts the evidence into one block per graded half before any decoder or refiner runs, and writes `X` outside the blocks (T11).",
+      "**Every constant is chosen on other matches, by a rule declared before the run** (or is a measurement, a fixed rule or the documented kick-offs). Each constant of `main.toml` traces to its entry in docs/results.md (the audit in the technical document, section 5).",
+      "**The public window only checks correctness.** It holds 17 possessions, ranks the baselines the wrong way round and, since 23 Oct (`f8f2629`), is “not training data and not a tuning set” (T01).",
+      "**No hand labels on this match**, not to train, validate or calibrate, and no hand-corrected tracking (`c073f29`, `f8f2629`, T27). The labels come from an algorithm.",
+      "**Byte for byte.** Same config, data and versions give the same bytes: seeded, pinned dependencies, LF endings, one command from `data/` to the CSV."
+    ],
+    solution: [
+      { name: "controlled_touch", p: "P04", role: "home where the ball is seen",
+        why: "The nearest player is wrong 22% of the time, and possession changes only when the other team gains controlled possession. A control episode is a player within 1.5 m of the ball, no opponent within the duel radius, moving with it; its vote (0.93) starts on the episode's first frame (back-dating, T03), and a weak hold (0.60) keeps the last controlling team through a pass in flight.",
+        added: "Together with P05 and the re-tuned decoder: **+0.2199 raw** over `nearest_w50` (R010, 7 wins in 7). Removing it from R010's config loses 0.1421 raw." },
+      { name: "dead_ball_model", p: "P05", role: "alive",
+        why: "The ball is visible on 66% of dead frames and missing in long in-play gaps, so its presence cannot say `D`. Boosted trees on 30 play features, trained on the seven DFL matches degraded like ours, beat logistic regression and fixed rules (R009).",
+        added: "Part of R010's **+0.2199 raw**; alive/dead F1 0.9726, on a benchmark that overstates it for our match (T38, T39)." },
+      { name: "hmm", p: "P06", role: "the decoder",
+        why: "Possessions are intervals and spellF1 pays for every split. Per half, the decoder pays 4 nats for a change of team and 32 for a change into or out of `D`, and allows no possession under 35 frames and no stoppage under 25.",
+        added: "Alone with the old sources it did not clear its bar (R007: +0.0036 raw). It is what P04, P05 and P07 plug into; its parameters were re-chosen in R010 and R013." },
+      { name: "shape_possession", p: "P07", role: "home everywhere, the only home in the gaps",
+        why: "40.7% of graded frames have no ball, in gaps long enough to hold several possessions. 26 features of how the two teams stand and move, none reading the ball, trained on DFL with the ball hidden; weight 0.2 on every graded frame.",
+        added: "**+0.0942 raw** over R010 (R011, 7 wins in 7; +0.1035 coarse). Not a forecast for our match: the model never saw our teams." },
+      { name: "shift_edges", p: "P02", role: "refine",
+        why: "With 0.3–1.5 s of slack on short possessions, a systematic offset is fatal. The edges move by the pipeline's own lag on DFL, negated: team +1, into `D` −2, out of `D` 0 frames.",
+        added: "**+0.0005 raw**, inside noise (R012): adopted because its declared rule said so, not because it is shown to help." },
+      { name: "R013 retune", p: "P04 · P06 · P07", role: "the constants again",
+        why: "In R006 to R009 every candidate carried a value derived from the public window (`nearest_player` at 0.78 or `ball_presence`, A01), so the touch rule was chosen with them present. After the 23 Oct rule, R013 re-chose the touch rule (192 configs), then `switch_team`, `min_possession` and P07's weight (144 configs) on `main.toml`'s own evidence, with no window-derived value in any candidate.",
+        added: "**+0.0267 raw** (p 0.0156, 7 wins in 7) and +0.0001 coarse: a raw-truth gain (T33)." }
+    ],
+    validate: [
+      "**P01's benchmark.** The seven DFL/IDSSE open matches (two Bundesliga, five 2. Bundesliga; CC BY 4.0). Their truth is built as ours is: `D` where `BallStatus` is dead, else the team in `BallPossession`. Configs run through the pipeline's own components and are scored by the official scorer, half by half.",
+      "**Degraded to look like ours.** `tracking` v3, the default since R004c: our own missing-ball masks transplanted (their pattern, not their clock), our tracklets in 46 slots, wrong-team slots, NaN speeds, smoothing and low-count frames. `fidelity.py` checks 8 gates and 10 WARNs, and all pass. `context` (R005) places the gaps by the play and is a sensitivity check only.",
+      "**Two truths.** Raw is DFL's flag (437 possessions a match, median 3.7 s); coarse absorbs every possession under 5 s that sits between two of the other team. Our grain is unknown, so read both, and treat a disagreement as a warning (T33).",
+      "**Uncertainty.** 90% t-intervals over the seven per-match deltas, the exact sign-flip test (the smallest possible p is 2/128 = 0.0156) and wins of seven; never a bootstrap. A degradation seed moves a pooled spellF1 by up to about 0.015.",
+      "**The bar and the rule.** Each experiment declares its values, objective, selection rule and bar in docs/results.md before its runs. The usual rule (`choose.py`): the best pooled raw spellF1, ties within 0.005, then the best coarse, with a leave-one-match-out estimate. P06's bar: a delta above 0 with p ≤ 0.05 against `nearest_w50` raw and `nearest_w125` coarse.",
+      "**The caveats.** T38: `tracking`'s gaps are blind to the play, so gap-dependent choices are read on `context` too. T39: DFL tracks the ball out of play, so P05 looks near-perfect there; its benchmark score is an upper bound. Absolute benchmark spellF1 is not our leaderboard's."
+    ],
+    limits: [
+      "**The benchmark's conventions.** DFL's flags may flip at other moments than our truth's, and P04's back-dating, P05's `D` onset and the shift follow DFL. A11's leads (our `D` 2.5–3 s longer, our team flipping about a second earlier) are not measurements.",
+      "**Seven matches,** five of them one club's home games: the intervals are wide, and selecting from hundreds of configs is optimistic (R013 chose from 336; its leave-one-match-out estimates agree).",
+      "**The shape model never saw our teams.** P07's benchmark gain is not a forecast for BAR-ATH, and the possession count moved the other way on our match (down 2.4%, where the benchmark's went up 16%).",
+      "**The grain of our truth is unknown.** R013 is +0.0267 raw and level coarse; which truth ours resembles decides whether it helps (P16).",
+      "**DFL tracks the ball out of play.** Two profiles that hide it were tried and dropped (R015, R015b), so how much of P05 transfers stays unmeasured (T39).",
+      "**No video, audio, homography or Smart Tagging on the benchmark,** so P08, P09, P10, P14 and P15 cannot be validated there."
+    ]
+  },
+
+  /* ---------- History ---------- */
+  timeline: [
+    { date: "2026-09-24", title: "The organisers' starter repo", entries: "upstream", outcome: "infra", stages: ["project"],
+      text: "`metrica-sports/more-than-a-hack-2027`: the official scorer (`evaluation/`), the loaders and the four baselines (`starter/`). Our fork tracks it as `upstream`." },
+    { date: "2026-10-21", title: "First measurements: the public window, ball coverage, camera aim", entries: "A01–A03", outcome: "analysis", stages: ["inputs", "evidence"],
+      text: "The ball is missing on 40.7% of graded frames in 150 long gaps (median 10.7 s); the nearest player's team is wrong on 22% of ball-visible, in-play frames; the ball shows on 66% of dead-ball frames; the camera's aim follows the ball along the pitch about 35 frames late." },
+    { date: "2026-10-22", title: "Pipeline skeleton: one command, deterministic, cached", entries: "P03, R001", outcome: "infra", stages: ["inputs", "evidence", "decode", "output"],
+      text: "Five stages with fixed contracts and the ATD parsed once into a cache; `selftest.py --data` rebuilds the four published baselines byte for byte. `main.toml` was the `nearest_w50` yardstick (public spellF1 0.3256)." },
+    { date: "2026-10-22", title: "Rule: no hand labels on this match", entries: "upstream c073f29", outcome: "rule", stages: ["project"],
+      text: "Hand-labelled data only from other matches; none on BAR-ATH, not even to validate or calibrate. P01's first plan (label about 15 minutes of our match) was dropped." },
+    { date: "2026-10-22", title: "What the files contain; the DFL parser", entries: "A04, A05", outcome: "analysis", stages: ["inputs", "benchmark"],
+      text: "A04: the tactical mp4 carries audio (AAC stereo 48 kHz, starting at 0.000 s), which P10 needs. A05: our own DFL parser against kloppy, 0 disagreements." },
+    { date: "2026-10-23", title: "P01 benchmark: seven DFL matches degraded to look like ours", entries: "P01, R002–R005, A06–A09", outcome: "infra", stages: ["benchmark"],
+      text: "Profiles `clean` (R002), `gaps` (R003), `tracking` v1–v3 (R004–R004c; v3 the default, all eight gates pass) and `context` (R005, sensitivity only, fails two gates). A06: DFL's flag gives 437 possessions a match, median 3.7 s, hence the raw and the coarse truth." },
+    { date: "2026-10-23", title: "Rule: the public window is a check, never a tuning set", entries: "upstream f8f2629 (merged 25 Oct)", outcome: "rule", stages: ["project"],
+      text: "The public 5 minutes are “not training data and not a tuning set”; no human-produced data about this match from any source; correcting its tracking by hand counts as annotation." },
+    { date: "2026-10-25", title: "P06: the hmm decoder", entries: "P06, R006, R007, A10", outcome: "infra", stages: ["decode"],
+      text: "A three-state HMM per half, with switch penalties and minimum runs. With `nearest_player` and `ball_presence` its first choice (8, 32, 75, 1) scored 0.2053 raw / 0.1967 coarse and missed its bar, so it was not adopted alone; P04, P05 and P07 plug into it. A10 sized what perfect evidence would add." },
+    { date: "2026-10-25", title: "P04 controlled_touch and P05 dead_ball_model, adopted together", entries: "R008, R009, R010", outcome: "adopted", stages: ["evidence", "decode"],
+      text: "R008 chose the touch rule (24 configs), R009 the boosted dead-ball trees (24 configs), R010 the decoder around both (72 configs): 0.4217 raw / 0.4556 coarse, +0.2199 raw over `nearest_w50` (p 0.0156, 7 wins in 7). `main.toml` switched." },
+    { date: "2026-10-25", title: "P07 shape_possession adopted", entries: "R011", outcome: "adopted", stages: ["evidence"],
+      text: "Team shape from the players alone, at weight 0.2 on every graded frame: +0.0942 raw over R010 (7 wins in 7); 0.5159 raw / 0.5591 coarse." },
+    { date: "2026-10-25", title: "P02 timing conventions and shift_edges adopted", entries: "A11, R012", outcome: "adopted", stages: ["refine", "benchmark"],
+      text: "A11, a lead and not a measurement: our `D` looks 2.5–3 s longer than DFL's flag would draw it, and our team flips about a second before the new team's first controlled touch. R012 shifts the edges by the pipeline's own lag on DFL (+1, −2, 0): +0.0005 raw, inside noise, adopted by its declared rule." },
+    { date: "2026-10-26", title: "R013: the touch rule and the decoder re-chosen without the window's values", entries: "R013", outcome: "adopted", stages: ["evidence", "decode", "refine"],
+      text: "Stage A (192 configs) and Stage C (144 configs) on `main.toml`'s own evidence: +0.0267 raw (p 0.0156, 7 wins in 7), +0.0001 coarse; 0.5430 raw / 0.5593 coarse. Today's `main.toml`, sha256 `0ebdfbec…`." },
+    { date: "2026-10-26", title: "P17 restart-team channel dropped", entries: "A12, R014, R014b", outcome: "dropped", stages: ["evidence", "decode"],
+      text: "A12: a perfect 2 s restart vote is worth +0.0198 raw. The vote after the restart delivered +0.0040 raw (R014, p 0.0938) and restart states in the decoder +0.0003 (R014b): neither met the bar of +0.005 with p ≤ 0.05. The code stays, off by default." },
+    { date: "2026-10-29", title: "A13: the headroom of main.toml", entries: "A13", outcome: "analysis", stages: ["benchmark", "evidence"],
+      text: "The remaining score is in who has the ball: a perfect team where the ball is seen adds +0.194 raw and in the gaps +0.176, against +0.029 for a perfect dead-ball source (7 wins in 7 each)." },
+    { date: "2026-10-29", title: "P18 offpitch profile dropped", entries: "R015, R015b", outcome: "dropped", stages: ["benchmark"],
+      text: "Hiding DFL's out-of-play ball: v1 failed the median-gap gate (15.04 s against 10.74 s) and cost today's P05 0.013 alive/dead F1; v2 could not reach our share past a line (0.258–0.262 against 0.0407). Code removed in `7b555eb`; `main.toml` unchanged." }
+  ],
+  outcomes: {
+    adopted: { label: "adopted", cls: "ok", glyph: "✓" },
+    dropped: { label: "dropped", cls: "bad", glyph: "✕" },
+    analysis: { label: "analysis", cls: "info", glyph: "◎" },
+    infra: { label: "infrastructure", cls: "ref", glyph: "▣" },
+    rule: { label: "rule", cls: "rule", glyph: "§" }
+  },
+  stageNames: { inputs: "1 inputs", evidence: "2 evidence", decode: "3 decode", refine: "4 refine", output: "5 output", benchmark: "benchmark", project: "rules and repo" },
+
+  /* main.toml's benchmark score by entry (pooled spellF1, tracking v3, 3 seeds). adopted: false = a candidate that was not. */
+  progression: [
+    { id: "R001", date: "2026-10-22", raw: 0.2018, coarse: 0.1842, adopted: true, what: "Pipeline skeleton: the `nearest_w50` yardstick", note: "Under the coarse truth the best yardstick is `nearest_w125`, 0.2226." },
+    { id: "R007", date: "2026-10-25", raw: 0.2053, coarse: 0.1967, adopted: false, what: "P06's hmm with the old sources (8/32/75/1)", note: "Bar not met; not adopted." },
+    { id: "R010", date: "2026-10-25", raw: 0.4217, coarse: 0.4556, adopted: true, what: "P04 + P05 + the hmm (4/32/25/25)", note: "+0.2199 raw over `nearest_w50`." },
+    { id: "R011", date: "2026-10-25", raw: 0.5159, coarse: 0.5591, adopted: true, what: "+ P07 shape_possession at weight 0.2", note: "+0.0942 raw over R010." },
+    { id: "R012", date: "2026-10-25", raw: 0.5164, coarse: 0.5592, adopted: true, what: "+ P02 shift_edges (+1/−2/0)", note: "+0.0005 raw, inside noise; adopted by its rule." },
+    { id: "R013", date: "2026-10-26", raw: 0.5430, coarse: 0.5593, adopted: true, what: "Touch rule and decoder re-chosen (today's main.toml)", note: "+0.0267 raw, +0.0001 coarse." },
+    { id: "R014", date: "2026-10-26", raw: 0.5470, coarse: 0.5564, adopted: false, what: "P17's restart vote (`r014_t025_b0`)", note: "Bar not met (+0.0040 raw, p 0.0938)." },
+    { id: "R014b", date: "2026-10-26", raw: 0.5433, coarse: 0.5589, adopted: false, what: "P17's restart states (`r014b_s04_b1`)", note: "Bar not met (+0.0003 raw, p 0.8125)." }
+  ],
+  progressionCaption: "Pooled spellF1 of `main.toml` on the benchmark (`tracking` v3, 7 DFL matches, 3 seeds) at each entry that changed it, with the candidates that did not make it. Filled points were adopted into `main.toml`; hollow points were not. Benchmark scores rank versions; they are not our leaderboard's.",
+  publicWindow: {
+    note: "Check only: the window holds 17 possessions, one possession moves spellF1 about 0.06, and nothing is chosen on it (T01).",
+    truth: "Truth: 17 possessions.",
+    rows: [
+      { id: "R001", spell: "0.3256", macro: "0.6207", poss: "26" },
+      { id: "R010", spell: "0.4686", macro: "0.6996", poss: "18" },
+      { id: "R011", spell: "0.4000", macro: "0.7151", poss: "20" },
+      { id: "R012", spell: "0.4000", macro: "0.7159", poss: "20" },
+      { id: "R013", spell: "0.4649", macro: "0.7152", poss: "20" }
+    ]
+  },
+
+  /* ---------- Work to do ---------- */
+  deliverables: [
+    { title: "CSV uploaded (`<team_name>.csv`)", status: "todo", label: "not yet",
+      text: "The submission log is empty. Upload a safety file early: the form keeps only the last response before the deadline. Validate the exact file and log every upload in [docs/results.md](../docs/results.md).",
+      cmds: ["python pipeline/run.py pipeline/configs/main.toml --out ../<team_name>.csv", "python evaluation/validate_submission.py ../<team_name>.csv"] },
+    { title: "Public repo URL", status: "todo", label: "private",
+      text: "The repository is private and must be made public by 17 Nov, as a deliberate final step. It must hold the source, pinned dependencies, install and run instructions, and the command that regenerates the CSV." },
+    { title: "Technical document (`<team_name>.pdf` or `.md`)", status: "doing", label: "draft",
+      text: "[docs/technical_document.md](../docs/technical_document.md) is a long draft for “a few pages”, still with placeholders ([Team name], the five names, the repo URL, the commit and the sha256). Condense it." },
+    { title: "Clean-clone reproduction on a second machine", status: "todo", label: "not done",
+      text: "Regenerate the file from a clean clone, ideally on a second machine, and compare the sha256 with `0ebdfbec…` (T21)." },
+    { title: "Pinned dependencies", status: "done", label: "done",
+      text: "[requirements-pipeline.txt](../requirements-pipeline.txt) pins what the pipeline imports (numpy 2.4.6, pandas 3.0.6; Python 3.11.9)." }
+  ],
+  formNote: "One Google Form per team; the last response before the deadline counts.",
+  plan: "Week 4: feature freeze **Fri 13 Nov**; regenerate the file from a clean clone on a second machine; finish the technical document; submit **Mon 16 Nov** and keep Tuesday as slack (proposals.md, “Suggested plan”).",
+
+  experiment: [
+    { title: "Pick a proposal", text: "Read [proposals.md](../docs/proposals.md) and [traps.md](../docs/traps.md), and put your name in the proposal's status (“doing (name)”)." },
+    { title: "Copy `main.toml`", text: "The file name becomes the run's name.", cmd: "cp pipeline/configs/main.toml pipeline/configs/my_experiment.toml" },
+    { title: "Declare the protocol before the first run", text: "In docs/results.md: the values to try, the objective (pooled raw spellF1 on `tracking` v3, 3 seeds), the selection rule and the bar. Nothing from the public window." },
+    { title: "Run it on the benchmark, both truths", text: "Against the reference config. If the choice depends on where the ball's gaps fall, also run `--profile context` (T38).", cmd: "python pipeline/benchmark/run.py pipeline/configs/main.toml pipeline/configs/my_experiment.toml --truth both" },
+    { title: "One heavy process at a time", text: "T41: chunks of about 24 configs, one BLAS thread, below-normal priority, a pause between processes; `run.py` writes nothing until its last config is scored. The line below is bash; in PowerShell set `$env:OPENBLAS_NUM_THREADS = 1` first.", cmd: "OPENBLAS_NUM_THREADS=1 python pipeline/benchmark/run.py ..." },
+    { title: "Check it on our match", text: "The file, its possessions and the public-window agreement: a correctness check, never a reason to choose (T01).", cmd: "python pipeline/run.py pipeline/configs/my_experiment.toml --score" },
+    { title: "Log the R entry, failures too", text: "Commit, command, scores, verdict, and a scoreboard row in [results.md](../docs/results.md); a dropped idea with a reason is as useful as a win." },
+    { title: "Adopt only by the declared rule", text: "If it wins, bring the change into `main.toml`, run the regression check, record the new sha256 in the submission log and update the technical document.", cmd: "python pipeline/selftest.py --data" }
+  ],
+
+  person: [
+    { title: "P02: watch the public transitions, to understand", text: "Around each change of the public truth: where `D` begins and ends (the line, the whistle, the stoppage) and what restart follows. The file is written locally and no LLM reads it; what comes out is a note in aggregates, never a constant, a label or a frame-tied rule (T27, T40).", cmd: "python pipeline/benchmark/conventions.py public" },
+    { title: "Decide how much of the gain to believe", text: "A decision, not a run, on the benchmark and the label-free checks, with T38, T39 and R011's caveats; R013's is a raw-truth gain. Settle it before the freeze." },
+    { title: "Reproduce from a clean clone, then publish", text: "On a second machine, then make the repository public as the final step, and send the one form response (the last one before the deadline counts)." }
+  ],
+
+  /* ---------- Reference ---------- */
+  rules: [
+    "**Match data never reaches an LLM, Claude included.** Nothing under `data/` is read, printed or pasted; only aggregates (scores, counts, shapes, pass/fail) leave a local process.",
+    "**Never commit match data** or derived data that could rebuild it (frame-level exports, clipped video). The repo will be public; `.gitignore` covers `data/*`, `*.mp4` and `evaluation/results/*.csv`.",
+    "**Labels come from an algorithm.** Hand-labelling or hand-correcting the output disqualifies.",
+    "**No hand labels on this match at all**, to train, validate or calibrate, and no hand-corrected tracking (`c073f29`, `f8f2629`). Hand labels of other games are fine if documented.",
+    "**The public 5 minutes check correctness only:** never train, fit, calibrate or choose a constant on them, out of fold or not (T01, T27).",
+    "**No private ground truth and no human-produced data about this match** from any source; external data must be about other games (T26).",
+    "**The repo regenerates the submitted CSV exactly:** seeded randomness, pinned dependencies, one command from `data/` to the CSV.",
+    "**Don't modify `evaluation/`.** It is the official scorer; where the docs and `possession_metrics.py` disagree, the code is right."
+  ],
+  commandsNote: "Run everything with the venv's interpreter: `.venv/Scripts/python` on Windows, `.venv/bin/python` on macOS/Linux (Python 3.11.9).",
+  commands: [
+    { group: "Run", items: [
+      { cmd: "python pipeline/run.py pipeline/configs/main.toml", note: "data/ → evaluation/results/main.csv, validated, with a manifest" },
+      { cmd: "python pipeline/run.py pipeline/configs/main.toml --score", note: "+ public-window scores and per-source agreement (check only)" },
+      { cmd: "python pipeline/run.py pipeline/configs/main.toml --out ../<team_name>.csv", note: "CSVs only to evaluation/results/, data/ or outside the repo" }
+    ] },
+    { group: "Checks", items: [
+      { cmd: "python pipeline/selftest.py", note: "contract and equivalence checks on synthetic data (seconds)" },
+      { cmd: "python pipeline/selftest.py --data", note: "+ the 4 committed baselines rebuilt byte for byte" },
+      { cmd: "python pipeline/benchmark/selftest.py", note: "the benchmark's checks; --dfl for the 7 matches, --data for ours" }
+    ] },
+    { group: "Benchmark", items: [
+      { cmd: "python pipeline/benchmark/run.py pipeline/benchmark/configs/nearest_w50.toml pipeline/configs/MINE.toml --truth both", note: "the first config is the reference; both truths from one decode" },
+      { cmd: "python pipeline/benchmark/choose.py --reference main STEM ...", note: "a grid's declared rule on its reports, + leave-one-match-out" },
+      { cmd: "python pipeline/benchmark/fidelity.py --profile tracking --seeds 3", note: "the profile's gates and WARNs against our match" },
+      { cmd: "python pipeline/benchmark/headroom.py pipeline/configs/main.toml", note: "oracle variants: what a perfect source could add" },
+      { cmd: "python pipeline/benchmark/sources.py --verify", note: "check the 7 DFL matches on disk (size and md5)" }
+    ] },
+    { group: "Validate and score", items: [
+      { cmd: "python evaluation/validate_submission.py path/to.csv", note: "the official checks; run on the exact upload" },
+      { cmd: "python evaluation/run_evaluation.py --bootstrap 1000", note: "every CSV in evaluation/results/ vs the public GT, with intervals" }
+    ] }
+  ],
+  glossary: [
+    { term: "H / A / D / X", def: "The per-frame labels: `H` home (Barcelona) has the ball in play, `A` away (Athletic Club) has it, `D` dead ball, `X` abstain." },
+    { term: "possession", def: "A maximal run of `H` or of `A` inside a graded half. `D` runs are stoppages, so `H H D D H H` is two possessions." },
+    { term: "spellF1", def: "The ranking metric: predicted possessions matched one-to-one to true ones (same team, greedy by temporal IoU), F1 averaged over IoU 0.3 to 0.7. `X` is forward-filled with the last label in the half (back-filled at its start)." },
+    { term: "macroF1", def: "The tie-break, scored frame by frame; an `X` on a graded frame counts as a miss." },
+    { term: "graded halves", def: "Frames 11,185–90,651 and 110,808–190,197 of the tactical video. Everything else is ungraded, so `X` there is free. The 2nd half is graded from 2,934 frames before its kick-off, all `D`." },
+    { term: "public window", def: "The 5 published minutes of ground truth (frames 11,185–18,684, 17 possessions): for checking that the pipeline is correct, “not training data and not a tuning set” (`f8f2629`)." },
+    { term: "benchmark (P01)", def: "The seven DFL/IDSSE open matches with their tracking degraded to look like ours, run through our own components and scored by the official scorer. Every choice between versions is made here." },
+    { term: "raw vs coarse truth", def: "Raw: DFL's flags as they are (437 possessions a match, median 3.7 s). Coarse: every possession under 5 s that sits between two possessions of the other team absorbed. Our grain is unknown, so read both (T33)." },
+    { term: "profile", def: "How a DFL match is degraded before a config sees it. `tracking` v3 is the default; `context` places the gaps by a hazard fitted on our tracker and is a sensitivity check only (it fails two gates)." },
+    { term: "yardstick", def: "The organisers' four baselines decoded per half on the benchmark (`nearest_w0/25/50/125`): `nearest_w50` is the raw truth's best (0.2018), `nearest_w125` the coarse truth's (0.2226). A check, not a target." },
+    { term: "oracle / headroom", def: "An oracle is evidence that reads the truth; `headroom.py` runs a config beside oracle variants to bound what a perfect source could add (A10, A12, A13). Upper bounds, never forecasts (T43)." },
+    { term: "evidence (alive / home)", def: "A source's per-frame opinion: `alive` = P(ball in play), `home` = P(home has it | in play), NaN = no opinion. P(H) = alive·home, P(A) = alive·(1 − home), P(D) = 1 − alive." },
+    { term: "declared rule", def: "The values, objective, selection rule and bar written in docs/results.md before an experiment runs; adoption follows it whatever the result." },
+    { term: "the bar", def: "The threshold an experiment declares for adoption; P06's was a delta above 0 with p ≤ 0.05 against `nearest_w50` (raw) and `nearest_w125` (coarse), P17's +0.005 raw with p ≤ 0.05." },
+    { term: "sign-flip test", def: "An exact two-sided test of the seven per-match deltas over all 2^7 sign patterns; the smallest possible p is 2/128 = 0.0156. Used with 90% t-intervals and wins of seven, never a bootstrap." }
+  ],
+  docs: [
+    { href: "../CLAUDE.md", label: "CLAUDE.md", text: "The hard rules, every command, the architecture and the data facts that bite." },
+    { href: "../docs/README.md", label: "docs/README.md", text: "What each team doc holds and when to update it." },
+    { href: "../docs/proposals.md", label: "docs/proposals.md", text: "Ideas P01–P18 with effort, impact and status, and the “After …” recommendations." },
+    { href: "../docs/results.md", label: "docs/results.md", text: "Every R and A entry with its numbers, the scoreboard and the submission log." },
+    { href: "../docs/traps.md", label: "docs/traps.md", text: "Pitfalls T01–T45: why they happen and what to do instead." },
+    { href: "../docs/technical_document.md", label: "docs/technical_document.md", text: "The draft of deliverable 3." },
+    { href: "../pipeline/README.md", label: "pipeline/README.md", text: "The pipeline's overview: diagram, contracts, configs, checks, validation." },
+    { href: "../pipeline/inputs/README.md", label: "pipeline/inputs/README.md", text: "Stage 1: alignment and the ATD cache." },
+    { href: "../pipeline/evidence/README.md", label: "pipeline/evidence/README.md", text: "Stage 2: every source, its parameters, and how to write one." },
+    { href: "../pipeline/decode/README.md", label: "pipeline/decode/README.md", text: "Stage 3: the vote, the hmm and its restart states." },
+    { href: "../pipeline/refine/README.md", label: "pipeline/refine/README.md", text: "Stage 4: shift_edges and the candidate refiners." },
+    { href: "../pipeline/output/README.md", label: "pipeline/output/README.md", text: "Stage 5: the CSV's bytes, the manifest, before you upload." },
+    { href: "../pipeline/benchmark/README.md", label: "pipeline/benchmark/README.md", text: "P01: profiles, fidelity, the two truths, headroom, choosing from a grid." },
+    { href: "../RULES.md", label: "RULES.md", text: "The organisers' rules (with EVALUATION.md, SUBMISSION.md, CHALLENGE.md and FAQ.md beside it)." }
+  ]
+};
+
+/* ===========================================================================================================
+   Rendering. Nothing below holds a fact; it only reads DATA.
+   =========================================================================================================== */
+(function () {
+  const $ = (sel, root) => (root || document).querySelector(sel);
+  const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
+
+  function esc(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+  function safeHref(u) { return /^(\.\.\/|\.\/|#)/.test(u) && !/^[a-z]+:/i.test(u); }
+  // A little markdown: `code`, **bold**, [label](relative link). Everything is escaped first.
+  function md(s) {
+    if (s == null) return "";
+    let out = esc(s);
+    out = out.replace(/`([^`]+)`/g, "<code>$1</code>");
+    out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    out = out.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, t, u) => safeHref(u.replace(/&amp;/g, "&")) ? '<a href="' + u + '">' + t + "</a>" : t);
+    return out;
+  }
+  function h(tag, attrs) {
+    const e = document.createElement(tag);
+    if (attrs) {
+      for (const k of Object.keys(attrs)) {
+        const v = attrs[k];
+        if (v == null || v === false) continue;
+        if (k === "class") e.className = v;
+        else if (k === "html") e.innerHTML = v;
+        else if (k === "text") e.textContent = v;
+        else if (k.slice(0, 2) === "on") e.addEventListener(k.slice(2), v);
+        else e.setAttribute(k, v === true ? "" : v);
+      }
+    }
+    for (let i = 2; i < arguments.length; i++) append(e, arguments[i]);
+    return e;
+  }
+  function append(e, kid) {
+    if (kid == null || kid === false) return;
+    if (Array.isArray(kid)) { kid.forEach(k => append(e, k)); return; }
+    e.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
+  }
+
+  const STATUS = {
+    main: { label: "in main.toml", cls: "ok", glyph: "✓" },
+    off: { label: "available · off", cls: "off", glyph: "○" },
+    baseline: { label: "baseline", cls: "ref", glyph: "◇" },
+    tool: { label: "tool", cls: "ref", glyph: "◇" },
+    dropped: { label: "dropped", cls: "bad", glyph: "✕" },
+    idea: { label: "idea", cls: "plan", glyph: "→" },
+    partly: { label: "partly done", cls: "info", glyph: "◐" },
+    done: { label: "done", cls: "ok", glyph: "✓" },
+    todo: { label: "to do", cls: "plan", glyph: "→" },
+    doing: { label: "in progress", cls: "info", glyph: "◐" }
+  };
+  function badge(status, label) {
+    const s = STATUS[status] || STATUS.baseline;
+    return h("span", { class: "badge " + s.cls }, h("span", { class: "g", "aria-hidden": "true", text: s.glyph }), label || s.label);
+  }
+  function outcomeBadge(key) {
+    const o = DATA.outcomes[key];
+    return h("span", { class: "badge " + o.cls }, h("span", { class: "g", "aria-hidden": "true", text: o.glyph }), o.label);
+  }
+  const trapById = id => DATA.traps.find(t => t.id === id);
+  const propById = id => DATA.proposals.find(p => p.id === id);
+
+  function copyText(text, btn) {
+    const done = ok => { btn.textContent = ok ? "Copied" : "Select"; setTimeout(() => { btn.textContent = "Copy"; }, 1400); };
+    try {
+      if (navigator.clipboard && window.isSecureContext) { navigator.clipboard.writeText(text).then(() => done(true), () => done(fallback())); return; }
+    } catch (e) { /* fall through */ }
+    done(fallback());
+    function fallback() {
+      try {
+        const ta = h("textarea", { style: "position:fixed;left:-9999px;top:0", "aria-hidden": "true" });
+        ta.value = text; document.body.append(ta); ta.select();
+        const ok = document.execCommand("copy"); ta.remove(); return ok;
+      } catch (e) { return false; }
+    }
+  }
+  function cmdBlock(cmd, note) {
+    const btn = h("button", { type: "button", class: "copy", "aria-label": "Copy command", text: "Copy" });
+    btn.addEventListener("click", () => copyText(cmd, btn));
+    return h("div", { class: "cmd" }, h("pre", {}, h("code", { text: cmd })), btn, note ? h("div", { class: "c-noteline", html: md(note) }) : null);
+  }
+  function fmtDate(iso) {
+    const [y, m, d] = iso.split("-").map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+  }
+  function shortDate(iso) {
+    const [y, m, d] = iso.split("-").map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  }
+  function daysUntil(iso) {
+    const [y, m, d] = iso.split("-").map(Number);
+    const n = new Date();
+    const today = new Date(n.getFullYear(), n.getMonth(), n.getDate());
+    return Math.round((new Date(y, m - 1, d) - today) / 86400000);
+  }
+  function dayWords(n) {
+    if (n > 1) return "in " + n + " days";
+    if (n === 1) return "tomorrow";
+    if (n === 0) return "today";
+    if (n === -1) return "yesterday";
+    return -n + " days ago";
+  }
+  // Round half up on the decimal value (0.4095 → 0.410), not on its binary approximation.
+  const fixed = (v, d) => (Math.round(Math.abs(v) * Math.pow(10, d) + 1e-6) / Math.pow(10, d)).toFixed(d);
+  const sign = v => (v >= 0 ? "+" : "−") + fixed(v, 3);
+  const sign4 = v => (v >= 0 ? "+" : "−") + fixed(v, 4);
+
+  /* ---------------- Tooltip (shared) ---------------- */
+  const tip = $("#tip");
+  function showTip(node, x, y) {
+    tip.replaceChildren(node);
+    tip.hidden = false;
+    const r = tip.getBoundingClientRect();
+    let left = x + 14, top = y + 14;
+    if (left + r.width > window.innerWidth - 8) left = Math.max(8, x - r.width - 14);
+    if (top + r.height > window.innerHeight - 8) top = Math.max(8, y - r.height - 14);
+    tip.style.left = left + "px"; tip.style.top = top + "px";
+  }
+  function hideTip() { tip.hidden = true; }
+  function tipRow(cls, value, name, extra) {
+    return h("div", { class: "t-row" }, h("span", { class: "t-key", style: "background: var(--" + cls + ")" }), h("strong", { text: value }), h("span", { class: "n", text: name + (extra ? " " + extra : "") }));
+  }
+
+  /* ---------------- Header, footer, theme ---------------- */
+  function renderChrome() {
+    $("#site-title").textContent = DATA.title;
+    $("#site-sub").textContent = DATA.subtitle;
+    $("#footer").textContent = DATA.footer;
+    document.title = "Possession Pipeline Overview";
+    updateThemeButton();
+  }
+  const mq = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+  function effectiveTheme() {
+    const t = document.documentElement.getAttribute("data-theme");
+    if (t === "light" || t === "dark") return t;
+    return mq && mq.matches ? "dark" : "light";
+  }
+  function updateThemeButton() {
+    const cur = effectiveTheme();
+    $("#theme-icon").textContent = cur === "dark" ? "☀" : "☾";
+    $("#theme-text").textContent = cur === "dark" ? "Light" : "Dark";
+    $("#theme-btn").setAttribute("aria-label", "Switch to " + (cur === "dark" ? "light" : "dark") + " theme");
+  }
+  $("#theme-btn").addEventListener("click", () => {
+    const next = effectiveTheme() === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    try { localStorage.setItem("mtah-theme", next); } catch (e) { /* storage may be blocked */ }
+    updateThemeButton();
+  });
+  if (mq && mq.addEventListener) mq.addEventListener("change", updateThemeButton);
+
+  /* ---------------- Shared: the dates strip ---------------- */
+  const dateStrips = [];
+  function datesStrip() {
+    const box = h("div", { class: "dates" });
+    dateStrips.push(box);
+    fillDates(box);
+    return box;
+  }
+  function fillDates(box) {
+    box.replaceChildren();
+    DATA.dates.forEach(d => {
+      const n = daysUntil(d.date);
+      box.append(h("div", { class: "date" + (d.key ? " key" : "") + (n < 0 ? " past" : "") },
+        h("div", { class: "d-label", text: d.label }),
+        h("div", { class: "d-when", text: dayWords(n) }),
+        h("div", { class: "d-date num", text: fmtDate(d.date) })));
+    });
+  }
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) dateStrips.forEach(fillDates); });
+
+  function sectionHead(title, sub, id) {
+    return h("div", { class: "section-head" }, h("h2", { id: id || null, text: title }), sub ? h("p", { html: md(sub) }) : null);
+  }
+
+  /* ---------------- Overview ---------------- */
+  function renderOverview() {
+    const p = $("#panel-overview");
+    const cards = h("div", { class: "cards" });
+    DATA.cards.forEach(c => {
+      cards.append(h("article", { class: "card" },
+        h("div", { class: "kpi-label" }, c.label, c.badge ? badge(c.badge) : null),
+        h("div", { class: "kpi-value" + (c.hero ? " hero" : "") }, c.value, c.unit ? h("span", { class: "kpi-unit", text: c.unit }) : null),
+        c.second ? h("div", { class: "kpi-second", text: c.second }) : null,
+        c.text ? h("p", { class: "kpi-text", html: md(c.text) }) : null,
+        c.note ? h("div", { class: "kpi-note", html: md(c.note) }) : null,
+        c.flag ? h("div", { class: "flag" }, h("span", { "aria-hidden": "true", text: "⚑" }), h("span", { html: md(c.flag) })) : null));
+    });
+
+    const t = DATA.today;
+    const link = (x, chan) => h("div", { class: "link" }, h("b", {}, x.name, " ", chan ? h("span", { class: "chan", text: chan }) : null), h("span", { text: x.params }));
+    const arrow = ch => h("span", { class: "chain-arrow", "aria-hidden": "true", text: ch });
+    const chain = h("div", { class: "chain", role: "group", "aria-label": "What main.toml runs, in order" },
+      h("div", { class: "chain-row" }, t.home.map(x => link(x, x.channel)).concat(t.alive.map(x => link(x, x.channel)))),
+      h("div", { class: "chain-row" }, arrow("↓"), h("span", { class: "small muted", text: t.joinNote })),
+      h("div", { class: "chain-row seq" }, link(t.decoder), arrow("→"), link(t.refine), arrow("→"), link(t.output)));
+    const today = h("article", { class: "card" }, h("h3", { text: "What runs today" }), chain, t.text.map(x => h("p", { class: "small", html: md(x) })),
+      h("p", { class: "small" }, h("a", { href: "#pipeline/evidence", text: "Open the pipeline →" })));
+
+    const steps = h("ol", { class: "steps" });
+    DATA.nextSteps.forEach(s => steps.append(h("li", {}, h("b", { text: s.title }), h("p", { html: md(s.text) }))));
+    const next = h("article", { class: "card" }, h("h3", { text: "Next steps", style: "margin-bottom:12px" }), steps);
+
+    const hr = DATA.headroom;
+    const chartBox = h("div", { class: "chart", id: "chart-headroom" });
+    const headroom = h("article", { class: "card chart-card" },
+      h("h3", { text: "Where the remaining score is (A13)" }),
+      h("p", { class: "small muted", style: "margin:4px 0 0", html: md("Gain over `main.toml` (" + hr.base.raw + " raw, " + hr.base.coarse + " coarse) if one kind of evidence were perfect.") }),
+      h("div", { class: "legend" },
+        h("span", { class: "k" }, h("span", { class: "key-rect", style: "background: var(--s1)" }), "raw truth"),
+        h("span", { class: "k" }, h("span", { class: "key-rect", style: "background: var(--s2)" }), "coarse truth")),
+      chartBox,
+      h("p", { class: "chart-cap", html: md(hr.caption) }),
+      headroomTable());
+
+    p.append(
+      h("div", { class: "section" }, sectionHead("Where we stand", "As of " + fmtDate(DATA.asOf) + " · main at `" + DATA.commit + "`"), cards),
+      h("div", { class: "section" }, sectionHead("Dates", "Counted from your computer's date."), datesStrip()),
+      h("div", { class: "section two" }, today, next),
+      h("div", { class: "section" }, headroom));
+    observeChart(chartBox, drawHeadroom);
+  }
+
+  function headroomTable() {
+    const hr = DATA.headroom;
+    const tb = h("tbody");
+    hr.rows.forEach(r => tb.append(h("tr", {},
+      h("td", { "data-label": "evidence" }, r.label, h("div", { class: "muted small" }, h("code", { text: r.variant }))),
+      h("td", { class: "n", "data-label": "raw" }, sign4(r.raw), h("div", { class: "muted small", text: r.rawCI })),
+      h("td", { class: "n", "data-label": "coarse" }, sign4(r.coarse), h("div", { class: "muted small", text: r.coarseCI })))));
+    return h("details", { class: "table-twin" }, h("summary", { text: "Data table (pooled delta and 90% t-interval)" }),
+      h("table", { class: "resp" }, h("thead", {}, h("tr", {}, h("th", { text: "perfect source" }), h("th", { class: "n", text: "raw" }), h("th", { class: "n", text: "coarse" }))), tb));
+  }
+
+  /* ---------------- Charts ---------------- */
+  function observeChart(box, draw) {
+    let last = 0, raf = 0;
+    const go = () => { raf = 0; const w = Math.floor(box.clientWidth); if (w > 60 && w !== last) { last = w; draw(box, w); } };
+    if (window.ResizeObserver) new ResizeObserver(() => { if (!raf) raf = requestAnimationFrame(go); }).observe(box);
+    else window.addEventListener("resize", go);
+    requestAnimationFrame(go);
+  }
+  function barPath(x0, y, x1, hgt, r) {
+    const w = x1 - x0;
+    if (w <= 0) return "";
+    r = Math.min(r, w, hgt / 2);
+    return "M" + x0 + "," + y + "H" + (x1 - r) + "A" + r + "," + r + " 0 0 1 " + x1 + "," + (y + r) + "V" + (y + hgt - r) +
+      "A" + r + "," + r + " 0 0 1 " + (x1 - r) + "," + (y + hgt) + "H" + x0 + "Z";
+  }
+
+  function drawHeadroom(box, W) {
+    const rows = DATA.headroom.rows;
+    const max = 0.45, padR = 52, labelH = 20, barH = 12, gap = 2, groupGap = 18, axisH = 26;
+    const groupH = labelH + barH * 2 + gap + groupGap;
+    const H = rows.length * groupH + axisH;
+    const plotW = Math.max(60, W - padR);
+    const x = v => (v / max) * plotW;
+    let s = '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + " " + H + '" role="group" aria-label="Bar chart: pooled spellF1 gained by a perfect source on top of main.toml, raw and coarse truth">';
+    const plotH = rows.length * groupH - groupGap / 2;
+    const ticks = [0, 0.1, 0.2, 0.3, 0.4];
+    ticks.forEach(t => {
+      const gx = Math.round(x(t)) + 0.5;
+      s += '<text class="c-tick" x="' + gx + '" y="' + (plotH + 16) + '" text-anchor="' + (t === 0 ? "start" : "middle") + '">' + (t === 0 ? "0" : "+" + t.toFixed(1)) + "</text>";
+    });
+    // Gridlines run through each bar band only, so they never cross a category label.
+    rows.forEach((r, i) => {
+      const yb = i * groupH + labelH;
+      ticks.forEach(t => {
+        const gx = Math.round(x(t)) + 0.5;
+        s += '<line class="' + (t === 0 ? "c-axis" : "c-grid") + '" x1="' + gx + '" x2="' + gx + '" y1="' + (yb - 4) + '" y2="' + (yb + barH * 2 + gap + 4) + '"/>';
+      });
+    });
+    rows.forEach((r, i) => {
+      const y0 = i * groupH;
+      const yb = y0 + labelH;
+      const aria = r.label + ": raw " + sign4(r.raw) + ", coarse " + sign4(r.coarse);
+      s += '<g class="c-group" tabindex="0" role="img" data-i="' + i + '" aria-label="' + esc(aria) + '">';
+      s += '<rect class="c-wash" x="-4" y="' + (y0 - 2) + '" width="' + (W + 4) + '" height="' + (labelH + barH * 2 + gap + 8) + '" rx="6"/>';
+      s += '<text class="c-label" x="0" y="' + (y0 + 14) + '">' + esc(r.label) + "</text>";
+      s += '<path class="f1" d="' + barPath(0.5, yb, Math.max(1.5, x(r.raw)), barH, 4) + '"/>';
+      s += '<path class="f2" d="' + barPath(0.5, yb + barH + gap, Math.max(1.5, x(r.coarse)), barH, 4) + '"/>';
+      s += '<text class="c-val" x="' + (x(r.raw) + 6) + '" y="' + (yb + barH - 2) + '">' + sign(r.raw) + "</text>";
+      s += '<text class="c-val" x="' + (x(r.coarse) + 6) + '" y="' + (yb + barH * 2 + gap - 2) + '">' + sign(r.coarse) + "</text>";
+      s += "</g>";
+    });
+    s += "</svg>";
+    box.innerHTML = s;
+    $$(".c-group", box).forEach(g => {
+      const r = rows[+g.getAttribute("data-i")];
+      const content = () => h("div", {}, h("div", { class: "t-head", text: r.label }), h("div", { class: "t-sub" }, h("code", { text: r.variant }), " · " + r.desc),
+        tipRow("s1", sign4(r.raw), "raw", r.rawCI), tipRow("s2", sign4(r.coarse), "coarse", r.coarseCI));
+      g.addEventListener("pointermove", e => { g.classList.add("on"); showTip(content(), e.clientX, e.clientY); });
+      g.addEventListener("pointerleave", () => { g.classList.remove("on"); hideTip(); });
+      g.addEventListener("focus", () => { const b = g.getBoundingClientRect(); showTip(content(), b.left + Math.min(b.width - 40, 200), b.top + 8); });
+      g.addEventListener("blur", hideTip);
+    });
+  }
+
+  function drawProgression(box, W) {
+    const pts = DATA.progression;
+    const n = pts.length;
+    const H = W < 520 ? 270 : 320;
+    const padL = 38, padR = 12, padT = 28, padB = 34;
+    const plotW = W - padL - padR, plotH = H - padT - padB;
+    const ymax = 0.6;
+    const x = i => padL + (i + 0.5) * plotW / n;
+    const y = v => padT + (1 - v / ymax) * plotH;
+    let s = '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + " " + H + '" tabindex="0" role="group" aria-label="Line chart of main.toml\'s pooled spellF1 by entry, raw and coarse truth. Use the left and right arrow keys to step through the entries.">';
+    for (let t = 0; t <= 6; t++) {
+      const v = t / 10, gy = Math.round(y(v)) + 0.5;
+      s += '<line class="' + (t === 0 ? "c-axis" : "c-grid") + '" x1="' + padL + '" x2="' + (W - padR) + '" y1="' + gy + '" y2="' + gy + '"/>';
+      s += '<text class="c-tick" x="' + (padL - 8) + '" y="' + (gy + 4) + '" text-anchor="end">' + v.toFixed(1) + "</text>";
+    }
+    const adopted = pts.map((p, i) => [p, i]).filter(a => a[0].adopted);
+    [["raw", "l1"], ["coarse", "l2"]].forEach(([k, cls]) => {
+      const d = adopted.map((a, j) => (j ? "L" : "M") + x(a[1]).toFixed(1) + "," + y(a[0][k]).toFixed(1)).join("");
+      s += '<path class="c-line ' + cls + '" d="' + d + '"/>';
+    });
+    s += '<line class="c-cross" id="prog-cross" x1="0" x2="0" y1="' + padT + '" y2="' + (padT + plotH) + '" visibility="hidden"/>';
+    pts.forEach((p, i) => {
+      [["raw", "1"], ["coarse", "2"]].forEach(([k, c]) => {
+        const cx = x(i).toFixed(1), cy = y(p[k]).toFixed(1);
+        if (p.adopted) s += '<circle class="c-dot f' + c + '" cx="' + cx + '" cy="' + cy + '" r="5"/>';
+        else s += '<circle class="c-hollow l' + c + '" cx="' + cx + '" cy="' + cy + '" r="4.5"/>';
+      });
+      s += '<text class="' + (p.adopted ? "c-label" : "c-note") + '" x="' + x(i).toFixed(1) + '" y="' + (H - 12) + '" text-anchor="middle" font-size="12">' + esc(p.id) + "</text>";
+    });
+    const last = adopted[adopted.length - 1];
+    if (last) {
+      const lx = x(last[1]), ly = y(Math.max(last[0].raw, last[0].coarse)) - 12;
+      s += '<text class="c-note" x="' + lx.toFixed(1) + '" y="' + ly.toFixed(1) + '" text-anchor="middle">main.toml today</text>';
+    }
+    const first = adopted[0];
+    if (first && W >= 600) {
+      s += '<text class="c-note" x="' + (x(first[1]) + 8).toFixed(1) + '" y="' + (y(first[0].raw) - 12).toFixed(1) + '" text-anchor="start">baseline yardstick</text>';
+    }
+    s += '<rect class="c-hit" x="' + padL + '" y="' + padT + '" width="' + plotW + '" height="' + plotH + '"/>';
+    s += "</svg>";
+    box.innerHTML = s;
+    const svg = $("svg", box), cross = $("#prog-cross", box), hit = $(".c-hit", box);
+    let cur = -1;
+    const content = p => h("div", {},
+      h("div", { class: "t-head" }, p.id + " · " + shortDate(p.date)),
+      h("div", { class: "t-sub", html: md(p.what) }),
+      tipRow("s1", p.raw.toFixed(4), "raw"), tipRow("s2", p.coarse.toFixed(4), "coarse"),
+      h("div", { class: "t-sub", style: "margin:6px 0 0" }, h("strong", { text: p.adopted ? "Adopted. " : "Not adopted. " }), h("span", { html: md(p.note) })));
+    function show(i, cx, cy) {
+      cur = i;
+      const xx = x(i).toFixed(1);
+      cross.setAttribute("x1", xx); cross.setAttribute("x2", xx); cross.setAttribute("visibility", "visible");
+      showTip(content(pts[i]), cx, cy);
+    }
+    function hide() { cross.setAttribute("visibility", "hidden"); hideTip(); }
+    const idxAt = clientX => {
+      const r = svg.getBoundingClientRect();
+      const px = (clientX - r.left) * (W / r.width);
+      return Math.max(0, Math.min(n - 1, Math.floor((px - padL) / (plotW / n))));
+    };
+    hit.addEventListener("pointermove", e => show(idxAt(e.clientX), e.clientX, e.clientY));
+    hit.addEventListener("pointerleave", hide);
+    const showAtCur = () => { const r = svg.getBoundingClientRect(); const px = r.left + x(cur) * (r.width / W); show(cur, px, r.top + padT); };
+    svg.addEventListener("focus", () => { if (cur < 0) cur = pts.length - 1; showAtCur(); });
+    svg.addEventListener("blur", hide);
+    svg.addEventListener("keydown", e => {
+      if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+        e.preventDefault();
+        cur = Math.max(0, Math.min(n - 1, cur + (e.key === "ArrowRight" ? 1 : -1)));
+        showAtCur();
+      } else if (e.key === "Escape") hide();
+    });
+  }
+
+  /* ---------------- Pipeline ---------------- */
+  const stageById = id => DATA.stages.find(s => s.id === id);
+  let selectedStage = null;
+
+  function renderPipeline() {
+    const p = $("#panel-pipeline");
+    const legend = h("div", { class: "diagram-legend" }, h("span", { class: "muted", text: "Component status:" }),
+      badge("main"), badge("off"), badge("baseline"), badge("dropped"), h("span", { class: "muted", text: "· Click a stage, or Tab to it and press Enter." }));
+
+    const flow = h("div", { class: "flow" });
+    const F = DATA.flow;
+    const assets = h("div", { class: "static" },
+      h("span", { class: "n-num", text: F.assetsKicker }),
+      h("span", { class: "n-name", text: "assets" }),
+      h("ul", { class: "assets" }, DATA.assets.map(a => {
+        const s = STATUS[a.status];
+        return h("li", {}, h("span", { class: "g badge " + s.cls, style: "padding:0 3px", "aria-hidden": "true", text: s.glyph }), h("span", {}, a.name, h("span", { class: "muted", text: " · " + a.note })));
+      })));
+    flow.append(h("div", { class: "fi arrow row1" }, assets));
+
+    const stageNode = st => {
+      const comps = DATA.components.filter(c => c.stage === st.id);
+      const inMain = comps.filter(c => c.status === "main").length;
+      const btn = h("button", { type: "button", class: "node", "data-stage": st.id, "aria-pressed": "false", "aria-controls": "stage-panel",
+        "aria-label": (st.side ? "" : "Stage " + st.num + ", ") + st.name + ": " + st.short + ". Open details." });
+      btn.append(h("span", { class: "n-num", text: st.side ? (st.id === "benchmark" ? "side loop · P01" : "side input") : "stage " + st.num }),
+        h("span", { class: "n-name", text: st.name }), h("span", { class: "n-desc", text: st.short }));
+      if (st.id === "evidence") {
+        btn.append(h("span", { class: "n-chips", "aria-hidden": "true" }, comps.map(c => badge(c.status, c.name))));
+        btn.append(h("span", { class: "n-desc", text: inMain + " of " + comps.length + " sources in main.toml" }));
+      }
+      btn.append(h("span", { class: "n-open", "aria-hidden": "true", text: "Details →" }));
+      btn.addEventListener("click", () => selectStage(st.id, true));
+      return btn;
+    };
+    const junction = text => h("div", { class: "junction" }, h("span", { text: text }));
+
+    flow.append(
+      h("div", { class: "fi arrow row1" }, stageNode(stageById("inputs"))),
+      h("div", { class: "fi arrow row1" }, stageNode(stageById("evidence"))),
+      h("div", { class: "fi arrow row1" }, junction(F.cut)),
+      h("div", { class: "fi arrow row1" }, stageNode(stageById("decode"))),
+      h("div", { class: "fi arrow row1" }, stageNode(stageById("refine"))),
+      h("div", { class: "fi arrow row1" }, junction(F.join)),
+      h("div", { class: "fi arrow row1" }, stageNode(stageById("output"))),
+      h("div", { class: "fi row1" }, h("div", { class: "static" },
+        h("span", { class: "n-num", text: "result" }), h("span", { class: "n-name", text: F.resultName }),
+        h("span", { class: "n-desc", html: md(F.resultText) }))),
+      h("div", { class: "conn c3", "aria-hidden": "true" }), h("div", { class: "conn c5", "aria-hidden": "true" }), h("div", { class: "conn c6", "aria-hidden": "true" }),
+      h("div", { class: "fi side cfg" }, stageNode(stageById("configs"))),
+      h("div", { class: "fi side bench" }, stageNode(stageById("benchmark"))));
+
+    p.append(
+      h("div", { class: "section" }, sectionHead("The pipeline", F.intro), legend, flow,
+        h("section", { class: "card stage-panel", id: "stage-panel", "aria-live": "polite", tabindex: "-1" })));
+  }
+
+  function selectStage(id, userAction) {
+    const st = stageById(id) || stageById("evidence");
+    selectedStage = st.id;
+    $$(".node").forEach(b => b.setAttribute("aria-pressed", b.getAttribute("data-stage") === st.id ? "true" : "false"));
+    renderStagePanel(st);
+    if (userAction) {
+      try { history.replaceState(null, "", "#pipeline/" + st.id); } catch (e) { /* file:// may refuse */ }
+      const panel = $("#stage-panel");
+      const r = panel.getBoundingClientRect();
+      if (r.top > window.innerHeight - 120 || r.top < 0) {
+        const smooth = !(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+        panel.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" });
+      }
+    }
+  }
+
+  function compCard(c) {
+    const s = STATUS[c.status];
+    const meta = h("dl", { class: "meta" });
+    if (c.params) meta.append(h("dt", { text: "main.toml" }), h("dd", { html: md(c.params) }));
+    if (c.entries) meta.append(h("dt", { text: "Entries" }), h("dd", { text: c.entries }));
+    meta.append(h("dt", { text: "Built" }), h("dd", { class: "num", text: c.built ? c.built[0] + " · " + c.built[1] : "—" }));
+    meta.append(h("dt", { text: "Last re-tuned" }), h("dd", { class: "num", text: c.retuned ? c.retuned[0] + " · " + c.retuned[1] : "never" }));
+    return h("article", { class: "comp" },
+      h("div", { class: "comp-head" }, h("span", { class: "comp-name", text: c.name }), badge(c.status, c.label || s.label), c.channel ? h("span", { class: "chan", text: c.channel }) : null),
+      h("p", { html: md(c.what) }), meta);
+  }
+  function plannedList(items) {
+    const ul = h("ul", { class: "plist" });
+    items.forEach(it => {
+      if (typeof it === "string") {
+        const pr = propById(it);
+        if (!pr) return;
+        ul.append(h("li", {},
+          h("div", { class: "p-top" }, h("a", { class: "p-id", href: "../docs/proposals.md#" + pr.anchor, text: pr.id }), h("span", { text: pr.title }), badge(pr.status)),
+          h("div", { class: "p-sub", text: "effort " + pr.effort + " · impact " + pr.impact }),
+          pr.next ? h("p", { html: md(pr.next) }) : null));
+      } else {
+        ul.append(h("li", {}, h("div", { class: "p-top" }, h("strong", { text: it.title }), badge("idea", "planned")), it.text ? h("p", { html: md(it.text) }) : null));
+      }
+    });
+    return ul;
+  }
+  function trapList(ids) {
+    return h("ul", { class: "traps" }, ids.map(id => {
+      const t = trapById(id);
+      if (!t) return null;
+      return h("li", {}, h("a", { class: "t-id", href: "../docs/traps.md", text: t.id }), h("span", { class: "t-title", html: md(t.title) }), h("span", { class: "t-line", html: md(t.line) }));
+    }));
+  }
+
+  function renderStagePanel(st) {
+    const panel = $("#stage-panel");
+    panel.replaceChildren();
+    const comps = DATA.components.filter(c => c.stage === st.id);
+    const left = h("div", { class: "sp-col" });
+    if (st.id === "configs") {
+      left.append(h("section", {}, h("h3", { text: "The configs" }), DATA.configs.map(c => h("article", { class: "comp" },
+        h("div", { class: "comp-head" }, h("a", { class: "comp-name", href: "../pipeline/configs/" + c.name, text: c.name }), badge(c.status, c.label)), h("p", { html: md(c.text) })))));
+    } else {
+      left.append(h("section", {}, h("h3", { text: "Built" }), comps.length ? comps.map(compCard) : h("p", { class: "muted", text: "Nothing yet." })));
+    }
+    const right = h("div", { class: "sp-col" });
+    if (st.planned && st.planned.length) right.append(h("section", {}, h("h3", { text: "Planned / possible improvements" }), plannedList(st.planned)));
+    right.append(h("section", {}, h("h3", { text: "Watch out" }), trapList(st.traps)));
+    right.append(h("section", {}, h("h3", { text: "Files" }), h("ul", { class: "files" }, st.files.map(f => h("li", {}, h("a", { href: f.href, text: f.label }))))));
+    right.append(h("section", {}, h("h3", { text: "Run it" }), st.run.map(r => cmdBlock(r.cmd, r.note)), h("p", { class: "small muted", html: md(DATA.commandsNote) })));
+
+    panel.append(
+      h("div", { class: "sp-head" },
+        h("span", { class: "sp-kicker", text: st.side ? (st.id === "benchmark" ? "Side loop · validation" : "Side input") : "Stage " + st.num }),
+        h("h2", { text: st.name }),
+        h("span", { class: "sp-built", text: "built: " + st.built })),
+      h("p", { class: "lead", html: md(st.summary) }),
+      h("div", { class: "contract", html: md(st.contract) }),
+      h("div", { class: "sp-grid" }, left, right));
+  }
+
+  /* ---------------- How it works ---------------- */
+  function renderHow() {
+    const p = $("#panel-how");
+    const H = DATA.how;
+    const sections = [
+      ["how-task", "The task and the metric"], ["how-facts", "Five measured facts"], ["how-principles", "Design principles"],
+      ["how-solution", "The current solution, step by step"], ["how-validate", "How we validate"], ["how-limits", "Known limitations"]
+    ];
+    const toc = h("nav", { class: "toc", "aria-label": "On this tab" }, sections.map(s => h("a", { href: "#how", "data-target": s[0], text: s[1] })));
+    $$("a", toc).forEach(a => a.addEventListener("click", e => { e.preventDefault(); const t = document.getElementById(a.getAttribute("data-target")); if (t) t.scrollIntoView({ block: "start" }); }));
+
+    const sec = (id, title, ...kids) => h("section", { class: "how-sec", id: id, style: "scroll-margin-top: 120px" }, h("h2", { text: title }), kids);
+
+    const illus = h("div", { class: "illus" }, H.illustrations.map(il => h("figure", { class: "card", style: "margin:0" },
+      h("h3", { text: il.title, style: "font-size:14px; margin-bottom:8px" }),
+      il.rows.map(([name, seq]) => h("div", { class: "strip-row" }, h("span", { class: "s-name", text: name }),
+        h("div", { class: "strip", role: "img", "aria-label": name + ": " + seq.split("").join(" ") }, seq.split("").map(ch => h("span", { class: "cell " + ch, "aria-hidden": "true", text: ch }))))),
+      h("figcaption", { class: "cap", html: md(il.cap) }))));
+
+    const facts = h("div", { class: "facts" }, H.facts.map(f => h("article", { class: "card fact" },
+      h("div", { class: "kpi-value", text: f.value }), h("div", { class: "f-label", text: f.label }), h("p", { text: f.text }))));
+
+    const sol = h("ol", { class: "sol-steps" }, H.solution.map(s => h("li", { class: "card" },
+      h("div", { class: "sol-top" }, h("code", { class: "sol-name", text: s.name }), h("span", { class: "badge ref", text: s.p }), h("span", { class: "muted small", text: s.role })),
+      h("p", { html: md(s.why) }), h("p", { class: "added", html: "<b>What it added on the benchmark:</b> " + md(s.added) }))));
+
+    const prog = DATA.progression.filter(x => x.adopted);
+    const solTable = h("table", { class: "resp", style: "margin-top:14px" },
+      h("thead", {}, h("tr", {}, h("th", { text: "entry" }), h("th", { text: "main.toml became" }), h("th", { class: "n", text: "raw" }), h("th", { class: "n", text: "coarse" }))),
+      h("tbody", {}, prog.map(x => h("tr", {}, h("td", { "data-label": "entry", class: "num", text: x.id }), h("td", { "data-label": "change", html: md(x.what) }),
+        h("td", { class: "n", "data-label": "raw", text: x.raw.toFixed(4) }), h("td", { class: "n", "data-label": "coarse", text: x.coarse.toFixed(4) })))));
+
+    p.append(
+      h("div", { class: "section" }, sectionHead("How it works", "The write-up in short; the long form is [docs/technical_document.md](../docs/technical_document.md)."), toc),
+      h("div", { class: "prose" }, sec("how-task", "The task and the metric", H.task.map(t => h("p", { html: md(t) })))),
+      illus, h("p", { class: "small muted", text: H.illustrationNote }),
+      sec("how-facts", "Five measured facts", facts, h("p", { class: "small muted", style: "margin-top:10px", html: md(H.factsNote) })),
+      h("div", { class: "prose" }, sec("how-principles", "Design principles", h("ul", {}, H.principles.map(x => h("li", { html: md(x) }))))),
+      sec("how-solution", "The current solution, step by step", sol, h("h3", { text: "Pooled spellF1 on the benchmark, step by step", style: "margin-top:18px" }), solTable),
+      h("div", { class: "prose" }, sec("how-validate", "How we validate", h("ul", {}, H.validate.map(x => h("li", { html: md(x) }))))),
+      h("div", { class: "prose" }, sec("how-limits", "Known limitations", h("ul", {}, H.limits.map(x => h("li", { html: md(x) }))),
+        h("p", { class: "small muted", html: md("From section 6 of the [technical document](../docs/technical_document.md).") }))));
+  }
+
+  /* ---------------- History ---------------- */
+  function renderHistory() {
+    const p = $("#panel-history");
+
+    // Score progression
+    const chartBox = h("div", { class: "chart", id: "chart-progression" });
+    const pw = DATA.publicWindow;
+    const progTable = h("details", { class: "table-twin" }, h("summary", { text: "Data table" }),
+      h("table", { class: "resp" }, h("thead", {}, h("tr", {}, h("th", { text: "entry" }), h("th", { text: "date" }), h("th", { text: "what" }), h("th", { class: "n", text: "raw" }), h("th", { class: "n", text: "coarse" }), h("th", { text: "adopted" }))),
+        h("tbody", {}, DATA.progression.map(x => h("tr", {}, h("td", { "data-label": "entry", text: x.id }), h("td", { "data-label": "date", class: "num", text: x.date }), h("td", { "data-label": "what", html: md(x.what) }),
+          h("td", { class: "n", "data-label": "raw", text: x.raw.toFixed(4) }), h("td", { class: "n", "data-label": "coarse", text: x.coarse.toFixed(4) }), h("td", { "data-label": "adopted", text: x.adopted ? "yes" : "no" }))))));
+    const chartCard = h("article", { class: "card chart-card" },
+      h("h3", { text: "main.toml's benchmark score by entry" }),
+      h("div", { class: "legend" },
+        h("span", { class: "k" }, h("span", { class: "key-line", style: "background: var(--s1)" }), "raw truth"),
+        h("span", { class: "k" }, h("span", { class: "key-line", style: "background: var(--s2)" }), "coarse truth"),
+        h("span", { class: "k" }, h("span", { class: "key-dot filled" }), "adopted"),
+        h("span", { class: "k" }, h("span", { class: "key-dot" }), "candidate, not adopted")),
+      chartBox, h("p", { class: "chart-cap", html: md(DATA.progressionCaption) }), progTable);
+    const pwCard = h("article", { class: "card" },
+      h("h3", { text: "Public window (check only)" }),
+      h("p", { class: "small muted", style: "margin:4px 0 10px", html: md(pw.note) }),
+      h("table", {}, h("thead", {}, h("tr", {}, h("th", { text: "entry" }), h("th", { class: "n", text: "spellF1" }), h("th", { class: "n", text: "macroF1" }), h("th", { class: "n", text: "poss." }))),
+        h("tbody", {}, pw.rows.map(r => h("tr", {}, h("td", { text: r.id }), h("td", { class: "n", text: r.spell }), h("td", { class: "n", text: r.macro }), h("td", { class: "n", text: r.poss }))))),
+      h("p", { class: "small muted", style: "margin-top:8px", text: pw.truth }));
+
+    // Timeline with filters
+    const stageSel = h("select", { id: "tl-stage" }, h("option", { value: "", text: "all stages" }), Object.keys(DATA.stageNames).map(k => h("option", { value: k, text: DATA.stageNames[k] })));
+    const active = new Set(Object.keys(DATA.outcomes));
+    const chips = h("div", { class: "chips", role: "group", "aria-label": "Outcome" }, Object.keys(DATA.outcomes).map(k => {
+      const o = DATA.outcomes[k];
+      const b = h("button", { type: "button", class: "fchip " + o.cls, "aria-pressed": "true" }, h("span", { "aria-hidden": "true", text: o.glyph }), o.label);
+      b.addEventListener("click", () => { if (active.has(k)) active.delete(k); else active.add(k); b.setAttribute("aria-pressed", active.has(k) ? "true" : "false"); drawTimeline(); });
+      return b;
+    }));
+    const count = h("span", { class: "count", "aria-live": "polite" });
+    const list = h("ol", { class: "timeline" });
+    function drawTimeline() {
+      const st = stageSel.value;
+      const items = DATA.timeline.map((t, i) => [t, i]).filter(([t]) => active.has(t.outcome) && (!st || t.stages.indexOf(st) >= 0))
+        .sort((a, b) => (a[0].date < b[0].date ? 1 : a[0].date > b[0].date ? -1 : b[1] - a[1]));
+      list.replaceChildren();
+      items.forEach(([t]) => {
+        const o = DATA.outcomes[t.outcome];
+        list.append(h("li", { class: "tl " + o.cls },
+          h("div", { class: "tl-top" }, h("span", { class: "tl-date", text: t.date }), outcomeBadge(t.outcome), h("span", { class: "tl-entries", text: t.entries })),
+          h("div", { class: "tl-title", html: md(t.title) }), h("p", { html: md(t.text) })));
+      });
+      if (!items.length) list.append(h("li", { class: "muted", text: "No entry matches these filters." }));
+      count.textContent = items.length + " of " + DATA.timeline.length + " entries";
+    }
+    stageSel.addEventListener("change", drawTimeline);
+    drawTimeline();
+
+    // Component age table
+    const ageCard = h("article", { class: "card" });
+    const rows = DATA.components.filter(c => c.built);
+    const cols = [
+      { key: "name", label: "component", get: c => c.name },
+      { key: "stage", label: "stage", get: c => DATA.stageNames[c.stage] },
+      { key: "status", label: "status", get: c => (c.label || STATUS[c.status].label) },
+      { key: "built", label: "built", get: c => c.built[0] + " " + c.built[1] },
+      { key: "retuned", label: "last re-tuned", get: c => (c.retuned ? c.retuned[0] + " " + c.retuned[1] : "") },
+      { key: "touched", label: "last change", get: c => (c.retuned || c.built)[0] }
+    ];
+    let sortKey = "touched", sortDir = 1;
+    const thead = h("thead"), tbody = h("tbody");
+    const table = h("table", { class: "resp" }, thead, tbody);
+    function drawAge() {
+      thead.replaceChildren(h("tr", {}, cols.map(c => {
+        const th = h("th", { scope: "col" });
+        if (c.key === sortKey) th.setAttribute("aria-sort", sortDir > 0 ? "ascending" : "descending");
+        const b = h("button", { type: "button", class: "sort" }, c.label, h("span", { class: "arr", "aria-hidden": "true", text: c.key === sortKey ? (sortDir > 0 ? "▲" : "▼") : "↕" }));
+        b.addEventListener("click", () => { if (sortKey === c.key) sortDir = -sortDir; else { sortKey = c.key; sortDir = 1; } drawAge(); });
+        th.append(b);
+        return th;
+      })));
+      const col = cols.find(c => c.key === sortKey);
+      const sorted = rows.slice().sort((a, b) => {
+        const va = col.get(a), vb = col.get(b);
+        if (va === vb) return a.name < b.name ? -1 : 1;
+        if (va === "") return 1;
+        if (vb === "") return -1;
+        return (va < vb ? -1 : 1) * sortDir;
+      });
+      tbody.replaceChildren();
+      sorted.forEach(c => tbody.append(h("tr", {},
+        h("td", { "data-label": "component" }, h("code", { text: c.name })),
+        h("td", { "data-label": "stage", text: DATA.stageNames[c.stage] }),
+        h("td", { "data-label": "status" }, badge(c.status, c.label)),
+        h("td", { "data-label": "built", class: "num", text: c.built[0] + " · " + c.built[1] }),
+        h("td", { "data-label": "re-tuned", class: "num", text: c.retuned ? c.retuned[0] + " · " + c.retuned[1] : "never" }),
+        h("td", { "data-label": "last change", class: "num", text: (c.retuned || c.built)[0] }))));
+    }
+    drawAge();
+    ageCard.append(h("h3", { text: "Component age" }), h("p", { class: "small muted", style: "margin:4px 0 10px", text: "Sorted by last change, oldest first, to find the piece most worth revisiting. Click a column to sort by it." }), table);
+
+    p.append(
+      h("div", { class: "section" }, sectionHead("History", "Newest first. Every entry's numbers, commit and command are in [docs/results.md](../docs/results.md)."),
+        h("div", { class: "filters" }, h("label", { for: "tl-stage" }, "Stage", stageSel), chips, count), list),
+      h("div", { class: "section two wide" }, chartCard, pwCard),
+      h("div", { class: "section" }, ageCard));
+    observeChart(chartBox, drawProgression);
+  }
+
+  /* ---------------- Work to do ---------------- */
+  function renderWork() {
+    const p = $("#panel-work");
+    const checklist = h("ul", { class: "checklist" }, DATA.deliverables.map((d, i) => h("li", {},
+      h("span", { class: "box " + (d.status === "done" ? "done" : d.status === "doing" ? "doing" : ""), "aria-hidden": "true", text: d.status === "done" ? "✓" : d.status === "doing" ? "◐" : "" }),
+      h("div", {}, h("div", { class: "cl-top" }, h("span", { class: "cl-title", html: (i + 1) + ". " + md(d.title) }), badge(d.status, d.label)),
+        h("p", { html: md(d.text) }), d.cmds ? h("div", { style: "margin-top:8px" }, d.cmds.map(c => cmdBlock(c))) : null))));
+
+    // Proposals: open ones with a filter, done and dropped folded away.
+    const openSet = new Set(["idea", "partly"]);
+    const shown = new Set(["idea", "partly"]);
+    const pTbody = h("tbody");
+    const pCount = h("span", { class: "count", "aria-live": "polite" });
+    const propRow = pr => h("tr", {},
+      h("td", { "data-label": "ID" }, h("a", { href: "../docs/proposals.md#" + pr.anchor, text: pr.id, style: "font-weight:700" })),
+      h("td", { "data-label": "proposal" }, h("div", { html: md(pr.title) }), pr.next ? h("div", { class: "small muted", style: "margin-top:4px", html: md(pr.next) }) : null),
+      h("td", { "data-label": "attacks", text: pr.attacks }),
+      h("td", { "data-label": "effort", text: pr.effort }),
+      h("td", { "data-label": "impact", text: pr.impact }),
+      h("td", { "data-label": "status" }, badge(pr.status, pr.note || null)));
+    const headRow = () => h("thead", {}, h("tr", {}, ["ID", "proposal", "attacks", "effort", "impact", "status"].map(x => h("th", { text: x }))));
+    function drawProps() {
+      const items = DATA.proposals.filter(pr => openSet.has(pr.status) && shown.has(pr.status));
+      pTbody.replaceChildren();
+      items.forEach(pr => pTbody.append(propRow(pr)));
+      pCount.textContent = items.length + " open";
+    }
+    const pChips = h("div", { class: "chips", role: "group", "aria-label": "Status" }, ["idea", "partly"].map(k => {
+      const s = STATUS[k];
+      const b = h("button", { type: "button", class: "fchip " + s.cls, "aria-pressed": "true" }, h("span", { "aria-hidden": "true", text: s.glyph }), s.label);
+      b.addEventListener("click", () => { if (shown.has(k)) shown.delete(k); else shown.add(k); b.setAttribute("aria-pressed", shown.has(k) ? "true" : "false"); drawProps(); });
+      return b;
+    }));
+    drawProps();
+    const closed = DATA.proposals.filter(pr => !openSet.has(pr.status));
+    const nDone = closed.filter(pr => pr.status === "done").length, nDropped = closed.filter(pr => pr.status === "dropped").length;
+    const closedFold = h("details", { class: "fold", style: "margin-top:14px" }, h("summary", { text: "Done (" + nDone + ") and dropped (" + nDropped + ")" }),
+      h("table", { class: "resp", style: "margin-top:8px" }, headRow(), h("tbody", {}, closed.map(propRow))));
+
+    const exp = h("ol", { class: "exp-steps" }, DATA.experiment.map(s => h("li", {}, h("strong", { html: md(s.title) }), h("p", { html: md(s.text) }), s.cmd ? cmdBlock(s.cmd) : null)));
+    const person = h("ul", { class: "plist" }, DATA.person.map(s => h("li", {}, h("strong", { html: md(s.title) }), h("p", { html: md(s.text) }), s.cmd ? h("div", { style: "margin-top:6px" }, cmdBlock(s.cmd)) : null)));
+
+    p.append(
+      h("div", { class: "section" }, sectionHead("Dates", "Counted from your computer's date."), datesStrip(), h("p", { class: "small", style: "margin-top:10px", html: md(DATA.plan) })),
+      h("div", { class: "section two even" },
+        h("article", { class: "card" }, h("h3", { text: "Deliverables" }), h("p", { class: "small muted", style: "margin:4px 0 0", html: md(DATA.formNote) }), checklist),
+        h("article", { class: "card" }, h("h3", { text: "Things a person (not an LLM) can do" }), h("p", { class: "small muted", style: "margin:4px 0 6px", text: "Work that needs eyes on the video or a decision, not a benchmark run." }), person)),
+      h("div", { class: "section" }, h("article", { class: "card" },
+        h("div", { class: "section-head", style: "margin-bottom:8px" }, h("h3", { text: "Open proposals" }), h("p", { html: md("From the overview table of [proposals.md](../docs/proposals.md). Each needs its own protocol declared before its runs.") })),
+        h("div", { class: "filters" }, pChips, pCount),
+        h("table", { class: "resp" }, headRow(), pTbody), closedFold)),
+      h("div", { class: "section" }, h("article", { class: "card" }, h("h3", { text: "How to run an experiment", style: "margin-bottom:12px" }), exp, h("p", { class: "small muted", html: md(DATA.commandsNote) }))));
+  }
+
+  /* ---------------- Reference ---------------- */
+  function renderReference() {
+    const p = $("#panel-reference");
+    const rules = h("ul", { class: "rules" }, DATA.rules.map(r => h("li", { html: md(r) })));
+    const cmds = h("div", {}, h("p", { class: "small muted", html: md(DATA.commandsNote) }), DATA.commands.map(g => h("div", { class: "cmd-group" }, h("h3", { text: g.group }), g.items.map(c => cmdBlock(c.cmd, c.note)))));
+
+    const gFilter = h("input", { type: "search", placeholder: "Filter terms", "aria-label": "Filter the glossary" });
+    const gl = h("dl", { class: "gloss" });
+    function drawGloss() {
+      const q = gFilter.value.trim().toLowerCase();
+      gl.replaceChildren();
+      DATA.glossary.filter(g => !q || (g.term + " " + g.def).toLowerCase().indexOf(q) >= 0)
+        .forEach(g => gl.append(h("div", {}, h("dt", { text: g.term }), h("dd", { html: md(g.def) }))));
+      if (!gl.children.length) gl.append(h("div", { class: "muted", text: "No term matches." }));
+    }
+    gFilter.addEventListener("input", drawGloss);
+    drawGloss();
+
+    const traps = trapList(DATA.topTraps);
+    const docs = h("ul", { class: "docmap" }, DATA.docs.map(d => h("li", {}, h("a", { href: d.href, text: d.label }), h("span", { html: md(d.text) }))));
+
+    p.append(
+      h("div", { class: "section two even" },
+        h("article", { class: "card" }, h("h3", { text: "Hard rules", style: "margin-bottom:10px" }), rules,
+          h("p", { class: "small muted", style: "margin-top:10px", html: md("Condensed from [CLAUDE.md](../CLAUDE.md) and RULES.md; when in doubt, read those.") })),
+        h("article", { class: "card" }, h("h3", { text: "Commands", style: "margin-bottom:6px" }), cmds)),
+      h("div", { class: "section two even" },
+        h("article", { class: "card" }, h("div", { class: "section-head", style: "margin-bottom:6px" }, h("h3", { text: "Glossary" }), gFilter), gl),
+        h("article", { class: "card" }, h("h3", { text: "Top traps", style: "margin-bottom:10px" }), traps,
+          h("p", { class: "small muted", html: md("All of them, with the why and what to do instead: [docs/traps.md](../docs/traps.md).") }))),
+      h("div", { class: "section" }, sectionHead("Doc map", "The docs are the source of truth; this page only summarises them."), docs));
+  }
+
+  /* ---------------- Tabs and routing ---------------- */
+  const TABS = ["overview", "pipeline", "how", "history", "work", "reference"];
+  function route() {
+    let raw = (location.hash || "").replace(/^#/, "");
+    try { raw = decodeURIComponent(raw); } catch (e) { /* keep it as it is */ }
+    const [tab, sub] = raw.split("/");
+    const t = TABS.indexOf(tab) >= 0 ? tab : "overview";
+    TABS.forEach(id => {
+      const on = id === t;
+      const btn = $("#tab-" + id);
+      btn.setAttribute("aria-selected", on ? "true" : "false");
+      btn.setAttribute("tabindex", on ? "0" : "-1");
+      $("#panel-" + id).hidden = !on;
+    });
+    hideTip();
+    if (t === "pipeline") selectStage(sub && stageById(sub) ? sub : (selectedStage || "evidence"), false);
+  }
+  $$(".tab").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-tab");
+      if (location.hash.replace(/^#/, "").split("/")[0] === id) { route(); return; }
+      location.hash = id;
+      window.scrollTo(0, 0);
+    });
+    btn.addEventListener("keydown", e => {
+      const i = TABS.indexOf(btn.getAttribute("data-tab"));
+      let j = -1;
+      if (e.key === "ArrowRight") j = (i + 1) % TABS.length;
+      else if (e.key === "ArrowLeft") j = (i - 1 + TABS.length) % TABS.length;
+      else if (e.key === "Home") j = 0;
+      else if (e.key === "End") j = TABS.length - 1;
+      if (j >= 0) { e.preventDefault(); const nb = $("#tab-" + TABS[j]); nb.focus(); nb.click(); }
+    });
+  });
+  window.addEventListener("hashchange", route);
+  window.addEventListener("scroll", hideTip, { passive: true });
+
+  renderChrome();
+  renderOverview();
+  renderPipeline();
+  renderHow();
+  renderHistory();
+  renderWork();
+  renderReference();
+  route();
+})();
+</script>
+</body>
+</html>

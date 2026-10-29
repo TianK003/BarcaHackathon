@@ -13,6 +13,9 @@ Our working notes for the Phase 1 entry. Read [proposals.md](proposals.md) befor
 The pipeline is documented next to its code: [pipeline/README.md](../pipeline/README.md) has the overview and the
 diagram, and each stage folder has its own README.
 
+[site/index.html](../site/index.html) is the visual overview: the pipeline as a clickable diagram, its history and
+the work left, in one page that opens from disk (how to update it: [site/README.md](../site/README.md)).
+
 IDs: proposals `P01`, experiments `R001`, analyses `A01`, traps `T01`. Never reuse or renumber them, and
 cross-reference freely (`R004 tests P05, hit T03`).
 
