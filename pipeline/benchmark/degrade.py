@@ -363,9 +363,17 @@ HAZARD_SCALE = 0.699
 # calibrate two label-free statistics, the share of the visible ball frames past a line and the missing share, and are
 # fitted ONCE by `offpitch.py fit` (R015), then pinned here with the fit's record (OFFPITCH_FIT: its scalars, which the
 # two follow from) and frozen. None is not fitted yet, and the profile refuses to be made (_offpitch_constants).
-OFFPITCH_MARGIN_M = None
-OFFPITCH_DROP_PROB = None
-OFFPITCH_FIT = None
+# Fitted on 2026-10-29 (R015), over the 7 DFL matches x seeds 0-2 pooled by sums (3,007,932 rows from the kick-offs),
+# against our target 0.040721223 (3,740 of 91,844 visible frames past a line, offpitch.py target, key 55d73a4cdb45983a)
+# and the Calibration's missing share 0.410965669 (sha256 65b0c191...): m = 0.2 m gives 0.041424766 past a line (73,308
+# of 1,769,666 visible frames; 0.1 m gives 0.0182 and 0.3 m 0.0800), and at it q = 0.430 gives a missing share of
+# 0.411666886; the share past a line at (0.2, 0.430) stays within 0.005 of the target, so m is not refitted. It is
+# frozen: never touch it again because of a gate, a WARN or a score.
+OFFPITCH_MARGIN_M = 0.2
+OFFPITCH_DROP_PROB = 0.43
+OFFPITCH_FIT = {"margin_m": 0.2, "drop_prob": 0.43, "target_share": 0.040721223, "share_at_fit": 0.041424766,
+                "missing_target": 0.410965669, "missing_at_fit": 0.411666886, "refit": False, "seeds": 3,
+                "rows": 3007932, "date": "2026-10-29", "entry": "R015"}
 # The counts of the offpitch profile's info["ball"], per half and in all.
 OFFPITCH_COUNTS = ("interior_gaps", "gaps_dropped", "frames_restored", "offpitch_stretches", "offpitch_frames",
                    "missing_frames", "rows")
