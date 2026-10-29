@@ -100,6 +100,28 @@ def test_offpitch_kickoff_spans_match_calibrations():
     expect_error(ValueError, lambda: offpitch.kickoff_spans(outside), "kick-off", "half 1")
 
 
+def test_offpitch_key_follows_the_kickoff_spans():
+    def stub(graded, kickoffs):
+        return types.SimpleNamespace(graded=graded, kickoffs=kickoffs, pitch=PITCH, fps=25.0,
+                                     atd_manifest={"sources": {"atd": "a"}})
+    base = offpitch._key(stub([(1, 50, 280), (2, 320, 560)], {1: 60, 2: 340}))
+    assert base == offpitch._key(stub([(1, 50, 280), (2, 320, 560)], {1: 60, 2: 340}))
+    other_kickoff = offpitch._key(stub([(1, 50, 280), (2, 320, 560)], {1: 61, 2: 340}))
+    other_block = offpitch._key(stub([(1, 50, 281), (2, 320, 560)], {1: 60, 2: 340}))
+    assert len({base, other_kickoff, other_block}) == 3, (base, other_kickoff, other_block)
+    assert offpitch.target_path("d", base) != offpitch.target_path("d", other_kickoff)
+
+
+def test_offpitch_line_stats_errors_name_the_function():
+    present, xy, blocks = _frames()
+    expect_error(ValueError, lambda: offpitch.line_stats(present.astype(int), blocks, xy, PITCH),
+                 "offpitch.line_stats", "ball_present")
+    expect_error(ValueError, lambda: offpitch.line_stats(present, [(1, 0, 11)], xy, PITCH),
+                 "offpitch.line_stats", "blocks")
+    expect_error(ValueError, lambda: offpitch.line_stats(present, blocks, xy, (1.0, -1.0)),
+                 "offpitch.line_stats", "pitch")
+
+
 def test_data_offpitch_target_is_cached_and_aggregate_only():
     """On our match: built once, then read from the cache; the file holds the documented keys and no frame."""
     from pipeline.inputs import Inputs

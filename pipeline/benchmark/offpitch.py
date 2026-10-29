@@ -28,8 +28,8 @@ The target. Ours is measured on the kick-off spans (each half from its kick-off 
 calibration.measure's spans are, because the degraded matches start at their kick-off. kickoff_spans repeats measure's
 construction, since measure keeps its spans in a local variable and calibration.py is not edited (its hash keys the
 Calibration's cache). The result is cached as JSON under <data dir>/cache/benchmark/offpitch/target-<16 hex>.json, the
-key being the sha256 of the ATD cache's source record, this file's own sha256 (LF-normalised), numpy's version, the pitch
-and the fps, so that an edit of this file, a new ATD or a new numpy is a new file and the old ones are left alone.
+key being the sha256 of the ATD cache's source record, this file's own sha256 (LF-normalised), numpy's version, the pitch,
+the fps and the kick-off spans, so that an edit of this file, a new ATD or a new numpy is a new file and the old ones are left alone.
 
 The fit comes in a later task: this module measures and does not fit. The assumption behind matching the share is that
 our out-of-play time is like DFL's, that is, that when the ball leaves the pitch the same share of the match's visible
@@ -79,14 +79,14 @@ def line_stats(ball_present, blocks, ball_xy_m, pitch):
     beyond frames (QUANTILES; {} when there is none). ValueError, naming the argument, for a flag that is not a (n,)
     bool array, a position that is not (n, 2), a flag set where the position is absent, a bad pitch and bad blocks.
     """
-    flag = calibration._bool_array("ball_present", ball_present, 1)
+    flag = _named(calibration._bool_array, "ball_present", ball_present, 1)
     n = len(flag)
     xy = np.asarray(ball_xy_m, dtype=np.float64)
     if xy.shape != (n, 2):
         raise ValueError("offpitch.line_stats: ball_present has {} frames but ball_xy_m has shape {}; both are one "
                          "value per frame of the match, the position in metres".format(n, xy.shape))
-    length, width = calibration._pitch(pitch)
-    blocks = calibration._blocks(blocks, n)
+    length, width = _named(calibration._pitch, pitch)
+    blocks = _named(calibration._blocks, blocks, n)
     finite = np.isfinite(xy).all(axis=1)
     stray = int((~flag & finite).sum())
     if stray:
@@ -107,6 +107,14 @@ def line_stats(ball_present, blocks, ball_xy_m, pitch):
         "beyond_line_share": past.size / visible_frames if visible_frames else math.nan,
         "beyond_m_quantiles": {name: float(np.quantile(past, level)) for name, level in QUANTILES} if past.size else {},
     }
+
+
+def _named(helper, *args):
+    """helper(*args), a ValueError of calibration's re-raised with this function's name in front of its message."""
+    try:
+        return helper(*args)
+    except ValueError as error:
+        raise ValueError("offpitch.line_stats: {}".format(error)) from None
 
 
 def kickoff_spans(inputs):
@@ -165,6 +173,7 @@ def _key(inputs):
         "numpy": np.__version__,
         "pitch": [float(side) for side in inputs.pitch],
         "fps": inputs.fps,
+        "spans": [list(span) for span in kickoff_spans(inputs)],   # the kick-offs and graded ends the share is taken on
         "version": VERSION,
     }
     canonical = json.dumps(parts, sort_keys=True, separators=(",", ":"))
