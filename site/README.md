@@ -4,9 +4,15 @@
 the pipeline as a clickable diagram, how it works, its history (a timeline, the benchmark score by entry, how old
 each component is) and the work left before the deadline. It summarises the team docs; it does not replace them.
 
+`rules.html` is its companion: the competition rules as the organisers wrote them (RULES.md is the authority), what
+each means for us, our stricter team practices kept apart from the rules, a self-check, and the rules' history. It
+says when it was last checked against the organisers' repo; re-check with
+`git fetch upstream && git log main..upstream/main` and update its DATA when they change a rule.
+
 ## Open it
 
-It is one self-contained file (inline CSS, JavaScript and SVG) that makes no network requests, so any of these work:
+Each page is one self-contained file (inline CSS, JavaScript and SVG) that makes no network requests, so any of these
+work:
 
 - double-click `site/index.html`;
 - `start site/index.html` (Windows), `open site/index.html` (macOS), `xdg-open site/index.html` (Linux);

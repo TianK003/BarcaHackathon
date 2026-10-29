@@ -151,7 +151,13 @@ button { font: inherit; color: inherit; }
   padding: 5px 12px; font-size: 13px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center;
 }
 .theme-btn:hover { background: var(--hover); }
-.tabs { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; margin-top: 8px; }
+.navrow { display: flex; align-items: flex-end; gap: 6px; margin-top: 8px; }
+.tabs { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; flex: 1 1 auto; min-width: 0; }
+.navlink {
+  flex: none; padding: 9px 10px 10px; font-size: 14px; font-weight: 600; color: var(--accent); text-decoration: none;
+  border-bottom: 2px solid transparent; border-left: 1px solid var(--line); margin-bottom: 2px; white-space: nowrap;
+}
+.navlink:hover { border-bottom-color: var(--accent); }
 .tabs::-webkit-scrollbar { display: none; }
 .tab {
   flex: none; border: 0; background: none; padding: 9px 12px 10px; font-size: 14px; font-weight: 600;
@@ -496,6 +502,7 @@ footer { border-top: 1px solid var(--line); margin-top: 24px; padding: 16px 0 28
       </div>
       <button type="button" class="theme-btn" id="theme-btn" aria-label="Switch theme"><span aria-hidden="true" id="theme-icon"></span><span id="theme-text"></span></button>
     </div>
+    <div class="navrow">
     <nav class="tabs" role="tablist" aria-label="Sections">
       <button class="tab" role="tab" id="tab-overview" aria-controls="panel-overview" data-tab="overview">Overview</button>
       <button class="tab" role="tab" id="tab-pipeline" aria-controls="panel-pipeline" data-tab="pipeline">Pipeline</button>
@@ -504,6 +511,8 @@ footer { border-top: 1px solid var(--line); margin-top: 24px; padding: 16px 0 28
       <button class="tab" role="tab" id="tab-work" aria-controls="panel-work" data-tab="work">Work to do</button>
       <button class="tab" role="tab" id="tab-reference" aria-controls="panel-reference" data-tab="reference">Reference</button>
     </nav>
+    <a class="navlink" id="rules-link" href="rules.html">Rules <span aria-hidden="true">→</span></a>
+    </div>
   </div>
 </header>
 
@@ -1113,6 +1122,7 @@ const DATA = {
     "**The repo regenerates the submitted CSV exactly:** seeded randomness, pinned dependencies, one command from `data/` to the CSV.",
     "**Don't modify `evaluation/`.** It is the official scorer; where the docs and `possession_metrics.py` disagree, the code is right."
   ],
+  rulesNote: "Condensed from [CLAUDE.md](../CLAUDE.md) and RULES.md. **Full list:** [rules.html](rules.html), the competition rules as written, what each means for us, and which of the above are team practice.",
   commandsNote: "Run everything with the venv's interpreter: `.venv/Scripts/python` on Windows, `.venv/bin/python` on macOS/Linux (Python 3.11.9).",
   commands: [
     { group: "Run", items: [
@@ -1182,7 +1192,8 @@ const DATA = {
   function esc(s) {
     return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
-  function safeHref(u) { return /^(\.\.\/|\.\/|#)/.test(u) && !/^[a-z]+:/i.test(u); }
+  // Relative links only: nothing with a URL scheme (web, javascript:, data:) and no protocol-relative "//".
+  function safeHref(u) { return !/^[a-z][a-z0-9+.-]*:/i.test(u) && !/^\/\//.test(u); }
   // A little markdown: `code`, **bold**, [label](relative link). Everything is escaped first.
   function md(s) {
     if (s == null) return "";
@@ -1920,7 +1931,7 @@ const DATA = {
       h("div", { class: "section" }, firstDay),
       h("div", { class: "section two even" },
         h("article", { class: "card" }, h("h3", { text: "Hard rules", style: "margin-bottom:10px" }), rules,
-          h("p", { class: "small muted", style: "margin-top:10px", html: md("Condensed from [CLAUDE.md](../CLAUDE.md) and RULES.md; when in doubt, read those.") })),
+          h("p", { class: "small", style: "margin-top:10px", html: md(DATA.rulesNote) })),
         h("article", { class: "card" }, h("h3", { text: "Commands", style: "margin-bottom:6px" }), cmds)),
       h("div", { class: "section two even" },
         h("article", { class: "card" }, h("div", { class: "section-head", style: "margin-bottom:6px" }, h("h3", { text: "Glossary" }), gFilter), gl),

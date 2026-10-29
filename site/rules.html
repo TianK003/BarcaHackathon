@@ -1,0 +1,689 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Competition Rules</title>
+<meta name="description" content="The More than a Hack 2027 Phase 1 rules as the organisers wrote them, what each means for our team, and our stricter team practices.">
+<script>
+  try {
+    var t = localStorage.getItem("mtah-theme");
+    if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+  } catch (e) {}
+</script>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f4f4f1;
+  --surface: #ffffff;
+  --surface-2: #f8f8f6;
+  --ink: #0b0b0b;
+  --ink-2: #47463f;
+  --muted: #66655f;
+  --line: #e3e2dc;
+  --line-2: #cfcec6;
+  --axis: #a9a8a0;
+  --grid: #ebeae4;
+  --accent: #1f6fcf;
+  --accent-soft: rgba(42, 120, 214, 0.18);
+  --focus: #1f6fcf;
+  --hover: rgba(11, 11, 11, 0.045);
+  --code-bg: #f0efea;
+  --s1: #2a78d6;
+  --s2: #eb6834;
+  --lab-h: #2a78d6;
+  --lab-a: #c93c3b;
+  --lab-d: #8d8c85;
+  --ok-bg: #e2f3e2; --ok-fg: #0b5a0b;
+  --off-bg: #e9ecf0; --off-fg: #3a4758;
+  --ref-bg: #eeeeea; --ref-fg: #45443f;
+  --bad-bg: #f7e4e2; --bad-fg: #8a2a24;
+  --plan-bg: #fbeed2; --plan-fg: #6e4700;
+  --info-bg: #e2edfb; --info-fg: #17508f;
+  --rule-bg: #ece9fb; --rule-fg: #45389e;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0f0f0e;
+    --surface: #1a1a19;
+    --surface-2: #212120;
+    --ink: #f0efec;
+    --ink-2: #c9c8be;
+    --muted: #a3a29a;
+    --line: #2e2e2b;
+    --line-2: #44443f;
+    --axis: #5d5c56;
+    --grid: #2a2a28;
+    --accent: #5d9fe9;
+    --accent-soft: rgba(57, 135, 229, 0.28);
+    --focus: #7db3ef;
+    --hover: rgba(255, 255, 255, 0.06);
+    --code-bg: #262624;
+    --s1: #3987e5;
+    --s2: #d95926;
+    --lab-h: #3987e5;
+    --lab-a: #d65a59;
+    --lab-d: #6d6c66;
+    --ok-bg: #16301a; --ok-fg: #93dc93;
+    --off-bg: #262b32; --off-fg: #b7c3d4;
+    --ref-bg: #2b2b29; --ref-fg: #c9c8be;
+    --bad-bg: #3b1e1c; --bad-fg: #f1a8a2;
+    --plan-bg: #3a2e12; --plan-fg: #f3c96c;
+    --info-bg: #162a43; --info-fg: #95c1f3;
+    --rule-bg: #2a2548; --rule-fg: #c0b7f6;
+    --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0f0f0e;
+  --surface: #1a1a19;
+  --surface-2: #212120;
+  --ink: #f0efec;
+  --ink-2: #c9c8be;
+  --muted: #a3a29a;
+  --line: #2e2e2b;
+  --line-2: #44443f;
+  --axis: #5d5c56;
+  --grid: #2a2a28;
+  --accent: #5d9fe9;
+  --accent-soft: rgba(57, 135, 229, 0.28);
+  --focus: #7db3ef;
+  --hover: rgba(255, 255, 255, 0.06);
+  --code-bg: #262624;
+  --s1: #3987e5;
+  --s2: #d95926;
+  --lab-h: #3987e5;
+  --lab-a: #d65a59;
+  --lab-d: #6d6c66;
+  --ok-bg: #16301a; --ok-fg: #93dc93;
+  --off-bg: #262b32; --off-fg: #b7c3d4;
+  --ref-bg: #2b2b29; --ref-fg: #c9c8be;
+  --bad-bg: #3b1e1c; --bad-fg: #f1a8a2;
+  --plan-bg: #3a2e12; --plan-fg: #f3c96c;
+  --info-bg: #162a43; --info-fg: #95c1f3;
+  --rule-bg: #2a2548; --rule-fg: #c0b7f6;
+  --shadow: none;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  overflow-x: hidden;
+}
+a { color: var(--accent); text-underline-offset: 2px; }
+a:hover { text-decoration-thickness: 2px; }
+code, pre { font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace; font-size: 0.86em; }
+code { background: var(--code-bg); padding: 1px 4px; border-radius: 4px; overflow-wrap: anywhere; }
+h1, h2, h3, h4 { line-height: 1.25; margin: 0; }
+h2 { font-size: 21px; font-weight: 700; }
+h3 { font-size: 16px; font-weight: 650; }
+p { margin: 0 0 10px; }
+ul, ol { margin: 0; padding-left: 20px; }
+li { margin: 4px 0; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+.wrap { max-width: 1200px; margin: 0 auto; padding: 0 16px; }
+@media (min-width: 720px) { .wrap { padding: 0 24px; } }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+
+.top { background: var(--surface); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 20; }
+.top-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 12px; }
+.brand h1 { font-size: 17px; font-weight: 700; }
+.brand p { margin: 2px 0 0; font-size: 12.5px; color: var(--muted); }
+.theme-btn {
+  flex: none; border: 1px solid var(--line-2); background: var(--surface-2); border-radius: 999px;
+  padding: 5px 12px; font-size: 13px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center;
+}
+.theme-btn:hover { background: var(--hover); }
+.jump { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; margin-top: 8px; }
+.jump::-webkit-scrollbar { display: none; }
+.jump a {
+  flex: none; padding: 9px 10px 10px; font-size: 14px; font-weight: 600; color: var(--muted); text-decoration: none;
+  border-bottom: 2px solid transparent;
+}
+.jump a:hover { color: var(--ink); }
+.jump a.home { color: var(--accent); }
+main { padding: 20px 0 8px; }
+section.block { margin: 0 0 32px; scroll-margin-top: 110px; }
+.block-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 14px; margin-bottom: 12px; }
+.block-head p { margin: 0; color: var(--muted); font-size: 13.5px; max-width: 72ch; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; box-shadow: var(--shadow); min-width: 0; }
+
+.banner { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; background: var(--info-bg); color: var(--info-fg); border-radius: 10px; padding: 10px 14px; margin-bottom: 18px; font-size: 13.5px; }
+.banner code { background: rgba(127, 127, 127, 0.14); }
+.banner .cmd { flex: 1 1 320px; margin: 0; }
+
+.summary { font-size: 16.5px; line-height: 1.6; max-width: 86ch; }
+.summary strong { font-weight: 700; }
+
+/* The exact line on learning from the provided match */
+.line-grid { display: grid; gap: 14px; grid-template-columns: 1fr; margin-top: 12px; }
+@media (min-width: 900px) { .line-grid { grid-template-columns: 1.55fr 1fr; } }
+.forbid {
+  background: var(--bad-bg); color: var(--ink); border: 2px solid var(--bad-fg); border-radius: 12px; padding: 16px 18px;
+}
+.forbid h3, .permit h3 { display: flex; align-items: center; gap: 10px; font-size: 19px; margin-bottom: 10px; }
+.forbid h3 { color: var(--bad-fg); }
+.permit h3 { color: var(--ok-fg); }
+.big-glyph { display: inline-flex; width: 30px; height: 30px; border-radius: 50%; align-items: center; justify-content: center; font-size: 17px; font-weight: 800; flex: none; }
+.forbid .big-glyph { background: var(--bad-fg); color: var(--bad-bg); }
+.permit .big-glyph { background: var(--ok-fg); color: var(--ok-bg); }
+.forbid ul, .permit ul { list-style: none; padding: 0; margin: 0; }
+.forbid li, .permit li { padding: 8px 0 8px 26px; position: relative; margin: 0; border-top: 1px solid rgba(127, 127, 127, 0.22); font-size: 15px; }
+.forbid li:first-child, .permit li:first-child { border-top: 0; }
+.forbid li::before { content: "✕"; position: absolute; left: 2px; top: 8px; color: var(--bad-fg); font-weight: 800; }
+.permit li::before { content: "✓"; position: absolute; left: 2px; top: 8px; color: var(--ok-fg); font-weight: 800; }
+.forbid li strong { color: var(--bad-fg); }
+.src { display: block; font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+.permit { background: var(--ok-bg); border: 1px solid var(--ok-fg); border-radius: 12px; padding: 16px 18px; }
+.permit .note { font-size: 13.5px; margin: 10px 0 0; color: var(--ink-2); }
+.shorthand { margin-top: 12px; font-size: 14px; color: var(--ink-2); max-width: 90ch; }
+
+/* Rule cards */
+.cards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr)); }
+.rule-card { border-left-width: 4px; display: flex; flex-direction: column; gap: 8px; }
+.rule-card.no { border-left-color: var(--bad-fg); }
+.rule-card.yes { border-left-color: var(--ok-fg); }
+.rule-card.team { border-left-color: var(--rule-fg); }
+.rc-top { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
+.rc-title { font-size: 15.5px; font-weight: 700; }
+.rule-card p { margin: 0; font-size: 14px; color: var(--ink-2); }
+blockquote { margin: 0; padding: 6px 10px; border-left: 3px solid var(--line-2); background: var(--surface-2); border-radius: 0 6px 6px 0; font-size: 13.5px; color: var(--ink-2); }
+blockquote cite { display: block; font-style: normal; font-size: 12px; color: var(--muted); margin-top: 3px; }
+.means h4 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-bottom: 2px; }
+.means ul { padding-left: 18px; font-size: 13.5px; color: var(--ink-2); }
+.srcs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 4px; }
+.srcs a { font-size: 12px; border: 1px solid var(--line-2); border-radius: 6px; padding: 1px 7px; text-decoration: none; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.srcs a:hover { background: var(--hover); }
+.badge {
+  display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 650; line-height: 1.5;
+  padding: 0 8px; border-radius: 999px; background: var(--b-bg); color: var(--b-fg); white-space: nowrap;
+}
+.ok { --b-bg: var(--ok-bg); --b-fg: var(--ok-fg); }
+.bad { --b-bg: var(--bad-bg); --b-fg: var(--bad-fg); }
+.rule { --b-bg: var(--rule-bg); --b-fg: var(--rule-fg); }
+.info { --b-bg: var(--info-bg); --b-fg: var(--info-fg); }
+.ref { --b-bg: var(--ref-bg); --b-fg: var(--ref-fg); }
+.ask { margin-top: 12px; font-size: 14px; background: var(--surface); border: 1px dashed var(--line-2); border-radius: 10px; padding: 10px 14px; }
+
+/* Deliverables */
+.two { display: grid; gap: 14px; grid-template-columns: 1fr; }
+@media (min-width: 900px) { .two { grid-template-columns: 1fr 1fr; } }
+.dl { list-style: none; padding: 0; margin: 0; counter-reset: d; }
+.dl > li { position: relative; padding: 0 0 12px 34px; margin: 0; counter-increment: d; font-size: 14px; color: var(--ink-2); }
+.dl > li::before { content: counter(d); position: absolute; left: 0; top: 0; width: 24px; height: 24px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--line-2); font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; color: var(--ink-2); }
+.dl > li strong { color: var(--ink); display: block; }
+.facts { list-style: none; padding: 0; margin: 0; }
+.facts li { padding: 7px 0; border-bottom: 1px solid var(--line); margin: 0; font-size: 14px; color: var(--ink-2); }
+.facts li:last-child { border-bottom: 0; }
+.dates { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-bottom: 14px; }
+.date { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.date.key { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.date .d-label { font-size: 12.5px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.date .d-when { font-size: 21px; font-weight: 650; margin: 2px 0; }
+.date.past .d-when { color: var(--muted); }
+.date .d-date { font-size: 13px; color: var(--ink-2); }
+.cmd { position: relative; margin: 8px 0; }
+.cmd pre { margin: 0; padding: 8px 64px 8px 10px; background: var(--code-bg); border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12.5px; line-height: 1.45; border: 1px solid var(--line); color: var(--ink); }
+.copy { position: absolute; top: 5px; right: 5px; border: 1px solid var(--line-2); background: var(--surface); border-radius: 6px; font-size: 11.5px; padding: 1px 8px; cursor: pointer; color: var(--ink); }
+.copy:hover { background: var(--hover); }
+
+/* Self-check */
+.checks { list-style: none; padding: 0; margin: 0; }
+.checks li { display: grid; grid-template-columns: 1fr auto; gap: 6px 14px; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; margin: 0 0 8px; background: var(--surface); }
+.checks li.stop { border-color: var(--bad-fg); background: var(--bad-bg); }
+.checks li.clear { border-color: var(--ok-fg); }
+.q { font-size: 14.5px; }
+.q .badge { margin-left: 6px; }
+.yn { display: inline-flex; gap: 6px; }
+.yn button { border: 1px solid var(--line-2); background: var(--surface); border-radius: 8px; padding: 3px 14px; cursor: pointer; font-weight: 600; font-size: 13.5px; }
+.yn button[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.advice { grid-column: 1 / -1; font-size: 13.5px; color: var(--bad-fg); font-weight: 600; }
+.advice[hidden] { display: none; }
+.check-sum { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-bottom: 10px; font-size: 14px; }
+.reset { border: 1px solid var(--line-2); background: var(--surface); border-radius: 8px; padding: 3px 10px; cursor: pointer; font-size: 13px; }
+@media (max-width: 560px) { .checks li { grid-template-columns: 1fr; } }
+
+/* History */
+.hist { list-style: none; padding: 0; margin: 0; position: relative; }
+.hist::before { content: ""; position: absolute; left: 7px; top: 6px; bottom: 6px; width: 2px; background: var(--line); }
+.hist li { position: relative; padding: 0 0 14px 28px; margin: 0; }
+.hist li::before { content: ""; position: absolute; left: 2px; top: 5px; width: 12px; height: 12px; border-radius: 50%; background: var(--surface); border: 2px solid var(--axis); }
+.hist li.key::before { border-color: var(--rule-fg); background: var(--rule-bg); }
+.h-top { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.h-date { font-size: 12.5px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
+.h-title { font-weight: 650; }
+.hist p { margin: 2px 0 0; font-size: 14px; color: var(--ink-2); max-width: 90ch; }
+
+footer { border-top: 1px solid var(--line); margin-top: 24px; padding: 16px 0 28px; font-size: 13px; color: var(--muted); }
+@media (forced-colors: active) { .badge, .forbid, .permit { border: 1px solid CanvasText; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="top-row">
+      <div class="brand">
+        <h1 id="site-title"></h1>
+        <p id="site-sub"></p>
+      </div>
+      <button type="button" class="theme-btn" id="theme-btn" aria-label="Switch theme"><span aria-hidden="true" id="theme-icon"></span><span id="theme-text"></span></button>
+    </div>
+    <nav class="jump" id="jump" aria-label="On this page"></nav>
+  </div>
+</header>
+
+<main class="wrap" id="main"></main>
+
+<footer><div class="wrap" id="footer"></div></footer>
+
+<script>
+"use strict";
+
+/* ===========================================================================================================
+   DATA: every statement on this page. The competition docs are the authority: RULES.md first, then FAQ.md,
+   OVERVIEW.md, SUBMISSION.md and EVALUATION.md. Quote them; never add a rule that is not in them. Our own, stricter
+   habits go under `team` and stay labelled "team practice, not a competition rule".
+   Text fields understand `code`, **bold** and [label](relative link).
+   =========================================================================================================== */
+const DATA = {
+  title: "Competition rules",
+  subtitle: "More than a Hack 2027, Phase 1 · what the organisers' rules say, what each means for us, and our stricter team practices",
+  home: { href: "index.html", label: "← Team overview" },
+  footer: "As of 2026-10-29. RULES.md is the authority; if this page and the organisers' docs disagree, the docs win. Update DATA when the organisers change a rule.",
+
+  checked: {
+    text: "Last checked against the organisers' repo: **2026-10-29**, latest change `f8f2629` (23 Oct 2026), merged into our main on 25 Oct. To re-check:",
+    cmd: "git fetch upstream && git log main..upstream/main"
+  },
+
+  summary: "**The labels must come from an algorithm.** **No hand labels on the provided match**, for any purpose: not for the submission, not to train a model and not to validate one. **The 5 public minutes are a correctness check**, never training or tuning data. **No private ground truth, and no human-produced data about this match** from any source. **The repository must regenerate the exact file**, not approximately. **Never give the match data to a third-party or cloud LLM**, and **never publish the data** or anything that would reconstruct it.",
+
+  line: {
+    title: "Learning from the provided match: the exact line",
+    shorthand: "A shorthand that goes around is “no training or fine-tuning is ever done on the match they gave us”. The rule as written is narrower than that, and its forbidden side is absolute:",
+    forbidden: [
+      { text: "**Human labels on the provided match**, in any amount and for any purpose: not for the submission, not to train a model, not to validate one.", src: "RULES.md §1, “Training and validation data”" },
+      { text: "**Training, fitting, tuning or choosing anything on the 5 public minutes.** They are “not training data and not a tuning set”.", src: "RULES.md §2; FAQ.md; EVALUATION.md" },
+      { text: "**The private ground truth, or anything derived from it.**", src: "RULES.md §2" },
+      { text: "**Human-produced data about the match from any source**: event data, corrected tracking, possession data, annotations.", src: "RULES.md §2" }
+    ],
+    allowed: [
+      { text: "**Learning on the provided match without human labels**: “unsupervised or self-supervised methods, or pseudo-labels produced by an algorithm, provided no person decided any of them”.", src: "RULES.md §1, “What remains fine”" }
+    ],
+    allowedNote: "Where we stand: nothing in `main.toml` is trained on BAR-ATH today. P05's and P07's models are trained on the seven DFL matches (pipeline/evidence/README.md).",
+    ask: "Near a line? “If a rule is unclear, or your approach sits near a line, **ask before you build on it**. Open an issue.” (RULES.md, Questions)"
+  },
+
+  notAllowed: [
+    { title: "Annotating the provided match by hand",
+      rule: "Every label in the file must come out of a system. Hand-correcting an algorithm's output counts as annotation too.",
+      quote: { text: "The labels must be produced by an algorithm. […] hand-correcting an algorithm's output — frame by frame, segment by segment or at transitions only — […] all the same thing as far as this rule is concerned", cite: "RULES.md §1" },
+      means: ["No person decides any label in the CSV.", "No fixing transitions by eye after a run, not even a few.", "A refiner applies one rule to the whole match; it never edits particular frames."],
+      sources: [["RULES.md §1", "../RULES.md#1-annotate-the-data-by-hand"], ["OVERVIEW.md Rules", "../OVERVIEW.md#rules"]] },
+    { title: "Hand labels on the provided match for training or validation",
+      rule: "The line is drawn by which game the labels are on, not by how many there are. Clarified by the organisers on 22 Oct (`c073f29`).",
+      quote: { text: "No hand labels on the provided game, in any amount and for any purpose — not for the submission, not to train a model and not to validate one.", cite: "RULES.md §1, Training and validation data" },
+      means: ["No labelling 15 minutes of our match to validate (P01's first plan, dropped).", "No ball boxes drawn on its frames to fine-tune a detector (P14 fine-tunes on other matches only).", "No “blind” calibration labels on the public window."],
+      sources: [["RULES.md §1", "../RULES.md#training-and-validation-data"], ["FAQ hand-label", "../FAQ.md#can-i-hand-label-some-frames"]] },
+    { title: "Correcting the provided tracking by hand",
+      rule: "Improving the tracking is welcome, but only by code. Fixing it by hand is hand annotation, and rule 1 applies.",
+      quote: { text: "Corrections must come out of code. Manually correcting the tracking of the provided game — fixing ball positions, identity switches or anything else by hand — is hand annotation", cite: "RULES.md, The provided data is a starting point" },
+      means: ["No hand-fixing a ball position or an identity switch in the ATD.", "A fix is a function in `pipeline/inputs/` or `pipeline/evidence/` that runs on the whole match."],
+      sources: [["RULES.md", "../RULES.md#the-provided-data-is-a-starting-point-not-a-constraint"], ["FAQ own tracking", "../FAQ.md#can-i-use-my-own-tracking-instead-of-the-provided-atd"]] },
+    { title: "Turning what you saw into labels, corrections or frame-tied constants",
+      rule: "Watching the video is fine. Writing down what you saw as a label, a correction, or a rule or constant tied to specific frames is not.",
+      quote: { text: "Watching is not the problem; turning what you saw into labels, corrections, or rules and constants tied to specific frames of the game is.", cite: "RULES.md §1, What remains fine" },
+      means: ["Watching P02's transitions to understand our truth's timing is fine.", "Writing “the ball goes dead at frame N” into a config is not.", "What a viewer learns goes into the docs as understanding, in aggregates, never as a number for a config."],
+      sources: [["RULES.md §1", "../RULES.md#1-annotate-the-data-by-hand"]] },
+    { title: "Using the private ground truth",
+      rule: "The full-match ground truth stays private, and nothing derived from it may be used.",
+      quote: { text: "You may not use the full-match ground truth, or anything derived from it.", cite: "RULES.md §2" },
+      means: ["Our only full-match numbers are the organisers' published baseline scores; we choose on our own benchmark.", "No statistic of the private truth (possession count, mean duration, possession share) is published, “since those are precisely the quantities a submission could be tuned against” (OVERVIEW.md)."],
+      sources: [["RULES.md §2", "../RULES.md#2-use-the-private-ground-truth-or-any-human-produced-data-about-the-game"], ["OVERVIEW.md", "../OVERVIEW.md#how-the-task-is-scored"]] },
+    { title: "Training, tuning or choosing anything on the 5 public minutes",
+      rule: "The published window checks that the pipeline is correct. It is not training data and not a tuning set, and since 23 Oct (`f8f2629`) that is a rule, not advice. Why: it holds 17 possessions, and it picks the wrong baseline. `smooth125` scores 0.4242 there against `smooth50`'s 0.3256, while the full match says 0.2242 against 0.2433.",
+      quote: { text: "They are not training data and not a tuning set.", cite: "RULES.md §2 · FAQ: “Can I train or tune a model on the 5 public minutes? No.”" },
+      means: ["Every hyperparameter is chosen on the benchmark of other matches (P01), never on the window.", "Constants once derived from the window (`nearest_player` 0.78, `ball_presence` 0.2 / 0.585) stay out of submission configs.", "`--score` reports the window as a check; “one missed possession moves spellF1 by roughly six points here” (EVALUATION.md)."],
+      sources: [["RULES.md §2", "../RULES.md#2-use-the-private-ground-truth-or-any-human-produced-data-about-the-game"], ["FAQ tune", "../FAQ.md#can-i-train-or-tune-a-model-on-the-5-public-minutes"], ["EVALUATION.md", "../EVALUATION.md#the-public-window-is-not-a-leaderboard"]] },
+    { title: "Human-produced data about this match, from any source",
+      rule: "External data must be about other games. Anything a person produced about this match is out, whoever published it.",
+      quote: { text: "any human-produced data about the provided game, from any source: event data (Opta, StatsBomb, Wyscout, LaLiga or anyone else), corrected tracking, possession data or annotations of any kind. Data of this kind about other games is fine.", cite: "RULES.md §2" },
+      means: ["No event feed, match report, goal times or possession stats of FC Barcelona against Athletic Club.", "The DFL/IDSSE matches we validate on are other games, so they are fine."],
+      sources: [["RULES.md §2", "../RULES.md#2-use-the-private-ground-truth-or-any-human-produced-data-about-the-game"], ["FAQ external data", "../FAQ.md#can-i-use-llms-pre-trained-models-external-data"]] },
+    { title: "Submitting a file the repository cannot regenerate",
+      rule: "Running the repository on the provided data must give back the submitted file byte for byte. Organisers may re-run the winning team's repository before results are final (OVERVIEW.md).",
+      quote: { text: "Running your repository against the provided data must reproduce your submission. Not approximately — the same file.", cite: "RULES.md §3" },
+      means: ["Seeded randomness, pinned dependencies, LF line endings, one command.", "Before uploading, regenerate the file from a clean clone and compare the sha256."],
+      sources: [["RULES.md §3", "../RULES.md#3-submit-a-file-your-repository-cannot-regenerate"], ["SUBMISSION.md", "../SUBMISSION.md#2-a-public-code-repository"]] },
+    { title: "Giving the match data to a third-party or cloud LLM",
+      rule: "LLMs are allowed anywhere in the pipeline, but the Terms and Conditions forbid making the competition's videos, datasets or any extract of them available to a third-party hosted or cloud LLM.",
+      quote: { text: "participants shall not upload, disclose or otherwise make available to any third-party hosted or cloud-based LLM any videos, datasets, confidential information or other restricted materials provided in connection with the Competition, or any extracts thereof", cite: "Terms and Conditions, as quoted in OVERVIEW.md and FAQ.md" },
+      means: ["Claude and any other cloud LLM see aggregates only (scores, counts), never frames, rows or video.", "No pasting tracking, tagging or homography rows into a chat.", "A hosted LLM may help with code and docs, never with the data."],
+      sources: [["OVERVIEW.md LLMs", "../OVERVIEW.md#use-of-large-language-models"], ["FAQ LLMs", "../FAQ.md#can-i-use-llms-pre-trained-models-external-data"]] },
+    { title: "Redistributing the data, or publishing what would rebuild it",
+      rule: "The match assets are licensed for this competition only. The submission repository must be public, so the data must not be in it.",
+      quote: { text: "Do not redistribute the data. […] Do not publish derived data that would reconstruct it. Frame-level tracking exports, clipped video, and similar.", cite: "RULES.md, The data" },
+      means: ["`data/` stays out of git; caches and run manifests live under it.", "No frame-level export or clipped video anywhere in the repo.", "Check `git status` before every commit."],
+      sources: [["RULES.md The data", "../RULES.md#the-data"], ["SUBMISSION.md", "../SUBMISSION.md#2-a-public-code-repository"]] },
+    { title: "A private in-house model or an unavailable dataset",
+      rule: "Everything in the pipeline must be something the organisers can access and run. This is “the one thing” the open-method rule rules out.",
+      quote: { text: "A private in-house model or an unavailable internal dataset is the one thing this rules out. If your approach depends on something you cannot share, ask before you build on it.", cite: "RULES.md, What you may use" },
+      means: ["Everything we use is in the repo or public (the DFL/IDSSE open data, CC BY 4.0).", "Anything that cannot be shared: ask the organisers first."],
+      sources: [["RULES.md", "../RULES.md#what-you-may-use"]] }
+  ],
+
+  allowed: [
+    { title: "Any method the organisers can access, explained in the technical document",
+      rule: "Two conditions only: the organisers can access and inspect it, and the technical document explains it.",
+      quote: { text: "Any language, any framework. Pre-trained models, commercial or open. LLMs, hosted or local. External data about other games. Your own detection, tracking or event-recognition models. Classical methods with no learning at all.", cite: "RULES.md, What you may use" },
+      means: ["LLMs are allowed in the pipeline; the data rule above still applies.", "Our models are committed as plain JSON, and the technical document explains them."],
+      sources: [["RULES.md", "../RULES.md#what-you-may-use"]] },
+    { title: "External data about other games, hand-labelled included",
+      rule: "Hand labels on other games are fine in any amount, if the organisers can access them and the technical document says what was labelled, how, by whom and how much.",
+      quote: { text: "Hand-labelled data from other games is fine, in any amount.", cite: "RULES.md §1, Training and validation data" },
+      means: ["Our DFL/IDSSE benchmark (seven open matches, CC BY 4.0) is other games.", "The technical document lists every labelled dataset: “None of it may come from the provided game” (SUBMISSION.md)."],
+      sources: [["RULES.md §1", "../RULES.md#training-and-validation-data"], ["SUBMISSION.md", "../SUBMISSION.md#3-a-technical-document"]] },
+    { title: "Learning on the provided match without human labels",
+      rule: "Label-free learning on the match itself is allowed: unsupervised or self-supervised methods, or pseudo-labels an algorithm produced, as long as no person decided any of them. What stays forbidden: human labels, the public 5 minutes as training or tuning data, and anything derived from the private ground truth.",
+      quote: { text: "Learning without human labels — unsupervised or self-supervised methods, or pseudo-labels produced by an algorithm, provided no person decided any of them.", cite: "RULES.md §1, What remains fine" },
+      means: ["Self-supervised features learned from our own match's tracking: allowed.", "P07's original plan, training on frames where P04's algorithm is confident (pseudo-labels): allowed, since no person decides them.", "A person “just fixing a few” pseudo-labels turns them into hand labels: not allowed."],
+      sources: [["RULES.md §1", "../RULES.md#1-annotate-the-data-by-hand"]] },
+    { title: "Watching the video and inspecting the data",
+      rule: "To understand the data, debug the pipeline and design features.",
+      quote: { text: "Watching the video and inspecting the data to understand them, debug your pipeline and design features.", cite: "RULES.md §1, What remains fine" },
+      means: ["A person may watch the public transitions (P02) to understand where `D` begins and ends.", "Team practice adds: an LLM, Claude included, still sees aggregates only."],
+      sources: [["RULES.md §1", "../RULES.md#1-annotate-the-data-by-hand"]] },
+    { title: "Improving or replacing the provided tracking with your own algorithms",
+      rule: "The provided tracking is a starting point, not a constraint, as long as every improvement comes out of an algorithm.",
+      quote: { text: "Improving that data, or replacing it with your own, is entirely legitimate", cite: "RULES.md, The provided data is a starting point" },
+      means: ["Our own ball detector on the video (P14), or our own tracking, is allowed.", "Hand corrections are not (see Not allowed)."],
+      sources: [["RULES.md", "../RULES.md#the-provided-data-is-a-starting-point-not-a-constraint"], ["FAQ own tracking", "../FAQ.md#can-i-use-my-own-tracking-instead-of-the-provided-atd"]] },
+    { title: "Smart Tagging, and the broadcast video and tracking",
+      rule: "Smart Tagging is automatic, not ground truth, and its intervals are phases, not possessions. The broadcast is on its own timeline, with no mapping to the tactical video provided.",
+      quote: { text: "Use it — that is why it is there. It is not ground truth and not derived from it", cite: "FAQ.md, Smart Tagging" },
+      means: ["P08 may turn tags into soft evidence.", "P15 must align the broadcast itself; a file of ~164k rows means the broadcast was indexed."],
+      sources: [["FAQ Smart Tagging", "../FAQ.md#can-i-use-the-smart-tagging-isnt-that-cheating"], ["FAQ broadcast", "../FAQ.md#can-i-use-the-broadcast-video-and-its-tracking"]] },
+    { title: "Using the 5 public minutes to check correctness",
+      rule: "Check that frames are aligned, the file is well formed and the labels mean what you think. Never use them to choose between two versions.",
+      quote: { text: "for checking that your pipeline is correct — frames aligned, file well-formed, labels meaning what you think", cite: "RULES.md §2" },
+      means: ["`run.py --score` and each source's agreement with the window: correctness checks.", "Run `--bootstrap 1000` before believing a gap there (EVALUATION.md)."],
+      sources: [["RULES.md §2", "../RULES.md#2-use-the-private-ground-truth-or-any-human-produced-data-about-the-game"], ["EVALUATION.md", "../EVALUATION.md#the-public-window-is-not-a-leaderboard"]] }
+  ],
+
+  deliverables: [
+    { title: "The possession file", text: "`frame,label`, exactly 199,319 rows, `frame` 0…199318 in order, labels `H`, `A`, `D` or `X`, no blank cells. This is what is scored." },
+    { title: "A public code repository", text: "Source, pinned dependencies, installation and run instructions, and the command that regenerates the file: “Not approximately — the same file.” The match data must not be in it." },
+    { title: "A short technical document", text: "A few pages, PDF or Markdown: the approach, the assets used and dropped, every labelled dataset (its source, who labelled it and how much; none from the provided game), the possession rules, the limitations, and how to reproduce." }
+  ],
+  form: [
+    "One Google Form with three fields plus the team name; the URL comes by email to registered participants.",
+    "**One response per team.** It can be edited; the last response before the deadline is the one scored.",
+    "Name the files after the team: `<team_name>.csv` and `<team_name>.pdf`.",
+    "A Google account is needed to upload.",
+    "**No live leaderboard and no feedback**: the public window and `validate_submission.py` are the only signals before the deadline."
+  ],
+  validate: { text: "Validate the exact file you upload; it “runs **exactly** the checks the official scorer runs” (SUBMISSION.md).", cmd: "python evaluation/validate_submission.py <team_name>.csv" },
+  dates: [
+    { label: "Registration opened", date: "2026-10-01" },
+    { label: "Data released", date: "2026-10-20" },
+    { label: "Deadline", date: "2026-11-17", key: true },
+    { label: "Results (before)", date: "2026-11-26" }
+  ],
+  team: "Teams of 3 to 5 members. A team of fewer than 3 is not eligible for the Innovation Challenge and the Final Pitch (RULES.md, Eligibility and teams).",
+  deliverableSources: [["SUBMISSION.md", "../SUBMISSION.md#the-three-deliverables"], ["How to submit", "../SUBMISSION.md#how-to-submit"], ["OVERVIEW.md calendar", "../OVERVIEW.md#registration-and-calendar"], ["RULES.md teams", "../RULES.md#eligibility-and-teams"]],
+
+  teamPractice: {
+    intro: "These are our own habits, from CLAUDE.md “Hard rules”. They are stricter than the competition rules, or are how we make sure we keep them.",
+    items: [
+      { title: "No match data reaches any LLM, Claude included", text: "Aggregates only: no reading files under `data/`, no printing rows, no video frames. The T&C forbid third-party and cloud LLMs; we extend it to every LLM." },
+      { title: "Every constant is chosen on the benchmark of other matches", text: "By a rule declared in docs/results.md before the run. The rules forbid tuning on the public window; declaring the rule first is our addition." },
+      { title: "Never modify `evaluation/`", text: "It is the official scorer: local edits would only make our numbers drift from the organisers'." },
+      { title: "Seed, pin, LF, one command", text: "Seeded randomness, pinned dependencies, LF line endings, one command from `data/` to the CSV: how we keep RULES.md §3." },
+      { title: "Keep `data/` and frame-level exports out of git", text: "`.gitignore` covers `data/*`, `*.mp4` and `evaluation/results/*.csv`; caches live under `data/`. How we keep “The data” rules." },
+      { title: "Log every experiment, failures too", text: "In docs/results.md, with its commit, command, scores and verdict." }
+    ],
+    source: [["CLAUDE.md", "../CLAUDE.md"], ["docs/traps.md T25–T27", "../docs/traps.md"]]
+  },
+
+  selfCheck: [
+    { q: "Did a person decide or correct any label on this match?", safe: "no", kind: "rule", stop: "Stop: labels must come from an algorithm (RULES.md §1)." },
+    { q: "Did any human label on this match go into training or validating anything?", safe: "no", kind: "rule", stop: "Stop: no hand labels on the provided game, for any purpose (RULES.md §1)." },
+    { q: "Did any number in my config come from the public window, or was anything chosen by its score?", safe: "no", kind: "rule", stop: "Stop: the 5 minutes are not training data and not a tuning set (RULES.md §2). Re-derive it on the benchmark." },
+    { q: "Did any human-produced data about this match (events, stats, corrected tracking) enter the pipeline?", safe: "no", kind: "rule", stop: "Stop: no human-produced data about the game, from any source (RULES.md §2)." },
+    { q: "Is there a rule or constant tied to specific frames of this match that I wrote after watching?", safe: "no", kind: "rule", stop: "Stop: turning what you saw into frame-tied rules or constants is not allowed (RULES.md §1)." },
+    { q: "Does anything I'm about to paste into an LLM contain rows, frames or video of the match?", safe: "no", kind: "both", stop: "Stop: never to a cloud LLM (T&C); never to any LLM (team practice). Paste aggregates only." },
+    { q: "Is anything under `data/`, or a frame-level export, staged for commit (`git status`)?", safe: "no", kind: "rule", stop: "Stop: unstage it; the repo will be public (RULES.md, The data)." },
+    { q: "Can a clean clone regenerate the file byte for byte (the same sha256)?", safe: "yes", kind: "rule", stop: "Stop: the repo must reproduce the same file (RULES.md §3). Find what differs first." }
+  ],
+
+  history: [
+    { date: "2026-09-24", title: "The organisers' initial repo", commit: "e47adea", text: "RULES.md, FAQ.md, OVERVIEW.md, SUBMISSION.md and EVALUATION.md as first published." },
+    { date: "2026-10-05", title: "Documentation fixes", commit: "b429693", text: "“Fixing documentation”." },
+    { date: "2026-10-15", title: "Documentation fixes and a BibTeX update", commit: "f00bc32, 3de6b60", text: "“Fixing documentation”; “Bibtex updated”." },
+    { date: "2026-10-22", title: "Clarification on data annotation", commit: "c073f29", key: true, text: "RULES.md and OVERVIEW.md: hand-labelled data from **other matches** is fine in any amount; hand labels on the competition match itself are not. It replaced “small amounts of hand-labelled data used to train or validate a model are fine and normal”." },
+    { date: "2026-10-23", title: "Clarifying the guidelines for annotating the provided video", commit: "f8f2629", key: true, text: "RULES.md, FAQ.md, EVALUATION.md, SUBMISSION.md, OVERVIEW.md and more: the public 5 minutes are not training or tuning data; no human-produced data about the game from any source; corrections must come out of code; watching is fine, but turning it into labels or frame-tied constants is not. Merged into our main on 2026-10-25." },
+    { date: "2026-10-29", title: "Checked: no newer change", commit: "", text: "`git fetch upstream` found no commit after `f8f2629`." }
+  ]
+};
+
+/* ===========================================================================================================
+   Rendering: reads DATA only.
+   =========================================================================================================== */
+(function () {
+  const $ = (s, r) => (r || document).querySelector(s);
+  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;"); }
+  function safeHref(u) { return !/^[a-z][a-z0-9+.-]*:/i.test(u) && !/^\/\//.test(u); }
+  function md(s) {
+    if (s == null) return "";
+    let out = esc(s);
+    out = out.replace(/`([^`]+)`/g, "<code>$1</code>");
+    out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    out = out.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, t, u) => safeHref(u.replace(/&amp;/g, "&")) ? '<a href="' + u + '">' + t + "</a>" : t);
+    return out;
+  }
+  function h(tag, attrs) {
+    const e = document.createElement(tag);
+    if (attrs) for (const k of Object.keys(attrs)) {
+      const v = attrs[k];
+      if (v == null || v === false) continue;
+      if (k === "class") e.className = v;
+      else if (k === "html") e.innerHTML = v;
+      else if (k === "text") e.textContent = v;
+      else if (k.slice(0, 2) === "on") e.addEventListener(k.slice(2), v);
+      else e.setAttribute(k, v === true ? "" : v);
+    }
+    for (let i = 2; i < arguments.length; i++) add(e, arguments[i]);
+    return e;
+  }
+  function add(e, k) {
+    if (k == null || k === false) return;
+    if (Array.isArray(k)) { k.forEach(x => add(e, x)); return; }
+    e.append(k instanceof Node ? k : document.createTextNode(String(k)));
+  }
+  function copyText(text, btn) {
+    const done = ok => { btn.textContent = ok ? "Copied" : "Select"; setTimeout(() => { btn.textContent = "Copy"; }, 1400); };
+    const fallback = () => {
+      try { const ta = h("textarea", { style: "position:fixed;left:-9999px;top:0", "aria-hidden": "true" }); ta.value = text; document.body.append(ta); ta.select(); const ok = document.execCommand("copy"); ta.remove(); return ok; }
+      catch (e) { return false; }
+    };
+    try { if (navigator.clipboard && window.isSecureContext) { navigator.clipboard.writeText(text).then(() => done(true), () => done(fallback())); return; } } catch (e) { /* fall through */ }
+    done(fallback());
+  }
+  function cmdBlock(cmd) {
+    const btn = h("button", { type: "button", class: "copy", "aria-label": "Copy command", text: "Copy" });
+    btn.addEventListener("click", () => copyText(cmd, btn));
+    return h("div", { class: "cmd" }, h("pre", {}, h("code", { text: cmd })), btn);
+  }
+  function fmtDate(iso) { const [y, m, d] = iso.split("-").map(Number); return new Date(y, m - 1, d).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" }); }
+  function daysUntil(iso) { const [y, m, d] = iso.split("-").map(Number); const n = new Date(); return Math.round((new Date(y, m - 1, d) - new Date(n.getFullYear(), n.getMonth(), n.getDate())) / 86400000); }
+  function dayWords(n) { return n > 1 ? "in " + n + " days" : n === 1 ? "tomorrow" : n === 0 ? "today" : n === -1 ? "yesterday" : -n + " days ago"; }
+  const badge = (cls, glyph, label) => h("span", { class: "badge " + cls }, h("span", { "aria-hidden": "true", text: glyph }), label);
+  const srcLinks = list => h("div", { class: "srcs" }, list.map(([label, href]) => h("a", { href: href, text: label })));
+
+  /* Theme */
+  const mq = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+  const effective = () => { const t = document.documentElement.getAttribute("data-theme"); return t === "light" || t === "dark" ? t : (mq && mq.matches ? "dark" : "light"); };
+  function themeBtn() {
+    const cur = effective();
+    $("#theme-icon").textContent = cur === "dark" ? "☀" : "☾";
+    $("#theme-text").textContent = cur === "dark" ? "Light" : "Dark";
+    $("#theme-btn").setAttribute("aria-label", "Switch to " + (cur === "dark" ? "light" : "dark") + " theme");
+  }
+  $("#theme-btn").addEventListener("click", () => {
+    const next = effective() === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    try { localStorage.setItem("mtah-theme", next); } catch (e) { /* storage may be blocked */ }
+    themeBtn();
+  });
+  if (mq && mq.addEventListener) mq.addEventListener("change", themeBtn);
+
+  const SECTIONS = [
+    ["summary", "In one paragraph"], ["line", "The exact line"], ["not-allowed", "Not allowed"], ["allowed", "Allowed"],
+    ["deliverables", "Deliverables and dates"], ["team", "Team practice"], ["self-check", "Self-check"], ["history", "Rule history"]
+  ];
+
+  function ruleCard(c, kind) {
+    const b = kind === "no" ? badge("bad", "✕", "Not allowed") : badge("ok", "✓", "Allowed");
+    return h("article", { class: "card rule-card " + kind },
+      h("div", { class: "rc-top" }, b),
+      h("h3", { class: "rc-title", html: md(c.title) }),
+      h("p", { html: md(c.rule) }),
+      h("blockquote", {}, h("span", { html: "“" + md(c.quote.text) + "”" }), h("cite", { html: md(c.quote.cite) })),
+      h("div", { class: "means" }, h("h4", { text: "What this means for us" }), h("ul", {}, c.means.map(m => h("li", { html: md(m) })))),
+      srcLinks(c.sources));
+  }
+
+  function render() {
+    $("#site-title").textContent = DATA.title;
+    $("#site-sub").textContent = DATA.subtitle;
+    $("#footer").textContent = DATA.footer;
+    const jump = $("#jump");
+    jump.append(h("a", { class: "home", href: DATA.home.href, text: DATA.home.label }));
+    SECTIONS.forEach(([id, label]) => jump.append(h("a", { href: "#" + id, text: label })));
+
+    const main = $("#main");
+    const L = DATA.line;
+
+    main.append(
+      h("div", { class: "banner", role: "note" }, h("span", { html: md(DATA.checked.text) }), cmdBlock(DATA.checked.cmd)),
+
+      h("section", { class: "block", id: "summary", "aria-labelledby": "h-summary" },
+        h("div", { class: "block-head" }, h("h2", { id: "h-summary", text: "The rules in one paragraph" }), h("p", { html: md("From [RULES.md](../RULES.md), the authority.") })),
+        h("div", { class: "card" }, h("p", { class: "summary", html: md(DATA.summary) }))),
+
+      h("section", { class: "block", id: "line", "aria-labelledby": "h-line" },
+        h("div", { class: "block-head" }, h("h2", { id: "h-line", text: L.title })),
+        h("p", { class: "shorthand", html: md(L.shorthand) }),
+        h("div", { class: "line-grid" },
+          h("div", { class: "forbid" }, h("h3", {}, h("span", { class: "big-glyph", "aria-hidden": "true", text: "✕" }), "Forbidden"),
+            h("ul", {}, L.forbidden.map(f => h("li", {}, h("span", { html: md(f.text) }), h("span", { class: "src", text: f.src }))))),
+          h("div", { class: "permit" }, h("h3", {}, h("span", { class: "big-glyph", "aria-hidden": "true", text: "✓" }), "Allowed"),
+            h("ul", {}, L.allowed.map(f => h("li", {}, h("span", { html: md(f.text) }), h("span", { class: "src", text: f.src })))),
+            h("p", { class: "note", html: md(L.allowedNote) }))),
+        h("p", { class: "ask", html: md(L.ask) })),
+
+      h("section", { class: "block", id: "not-allowed", "aria-labelledby": "h-no" },
+        h("div", { class: "block-head" }, h("h2", { id: "h-no", text: "Not allowed" }), h("p", { text: "Each rule in plain words, the organisers' own phrase, what it means for us, and where it is written." })),
+        h("div", { class: "cards" }, DATA.notAllowed.map(c => ruleCard(c, "no")))),
+
+      h("section", { class: "block", id: "allowed", "aria-labelledby": "h-yes" },
+        h("div", { class: "block-head" }, h("h2", { id: "h-yes", text: "Allowed" }), h("p", { text: "Any method, provided the organisers can access it and the technical document explains it." })),
+        h("div", { class: "cards" }, DATA.allowed.map(c => ruleCard(c, "yes")))),
+
+      renderDeliverables(),
+      renderTeam(),
+      renderSelfCheck(),
+      renderHistory());
+  }
+
+  function renderDeliverables() {
+    const dates = h("div", { class: "dates" }, DATA.dates.map(d => {
+      const n = daysUntil(d.date);
+      return h("div", { class: "date" + (d.key ? " key" : "") + (n < 0 ? " past" : "") },
+        h("div", { class: "d-label", text: d.label }), h("div", { class: "d-when", text: dayWords(n) }), h("div", { class: "d-date", text: fmtDate(d.date) }));
+    }));
+    return h("section", { class: "block", id: "deliverables", "aria-labelledby": "h-del" },
+      h("div", { class: "block-head" }, h("h2", { id: "h-del", text: "Deliverables and dates" }), h("p", { text: "Day counts come from your computer's date." })),
+      dates,
+      h("div", { class: "two" },
+        h("article", { class: "card" }, h("h3", { text: "The three deliverables", style: "margin-bottom:10px" }),
+          h("ol", { class: "dl" }, DATA.deliverables.map(d => h("li", {}, h("strong", { html: md(d.title) }), h("span", { html: md(d.text) })))),
+          h("p", { class: "small", html: md(DATA.validate.text) }), cmdBlock(DATA.validate.cmd)),
+        h("article", { class: "card" }, h("h3", { text: "The form", style: "margin-bottom:6px" }),
+          h("ul", { class: "facts" }, DATA.form.map(f => h("li", { html: md(f) }))),
+          h("p", { class: "small", style: "margin-top:10px", html: md(DATA.team) }),
+          srcLinks(DATA.deliverableSources))));
+  }
+
+  function renderTeam() {
+    const T = DATA.teamPractice;
+    return h("section", { class: "block", id: "team", "aria-labelledby": "h-team" },
+      h("div", { class: "block-head" }, h("h2", { id: "h-team", text: "Our team's practices" }), h("p", { html: md(T.intro) })),
+      h("div", { class: "cards" }, T.items.map(t => h("article", { class: "card rule-card team" },
+        h("div", { class: "rc-top" }, badge("rule", "§", "team practice, not a competition rule")),
+        h("h3", { class: "rc-title", html: md(t.title) }), h("p", { html: md(t.text) })))),
+      h("div", { style: "margin-top:10px" }, srcLinks(T.source)));
+  }
+
+  function renderSelfCheck() {
+    const answers = DATA.selfCheck.map(() => null);
+    const sum = h("span", { "aria-live": "polite" });
+    const list = h("ol", { class: "checks" });
+    const rows = DATA.selfCheck.map((c, i) => {
+      const advice = h("div", { class: "advice", hidden: true, text: c.stop });
+      const btn = v => {
+        const b = h("button", { type: "button", "aria-pressed": "false", text: v === "yes" ? "Yes" : "No" });
+        b.addEventListener("click", () => { answers[i] = answers[i] === v ? null : v; paint(); });
+        return b;
+      };
+      const yes = btn("yes"), no = btn("no");
+      const kindBadge = c.kind === "rule" ? badge("bad", "§", "rule") : badge("rule", "§", "rule + team practice");
+      const li = h("li", {}, h("div", { class: "q" }, h("span", { html: md(c.q) }), kindBadge),
+        h("div", { class: "yn", role: "group", "aria-label": "Answer" }, yes, no), advice);
+      list.append(li);
+      return { li, yes, no, advice };
+    });
+    function paint() {
+      let answered = 0, stops = 0;
+      rows.forEach((r, i) => {
+        const a = answers[i], c = DATA.selfCheck[i];
+        r.yes.setAttribute("aria-pressed", a === "yes" ? "true" : "false");
+        r.no.setAttribute("aria-pressed", a === "no" ? "true" : "false");
+        const stop = a && a !== c.safe;
+        r.li.classList.toggle("stop", !!stop);
+        r.li.classList.toggle("clear", !!a && !stop);
+        r.advice.hidden = !stop;
+        if (a) answered++;
+        if (stop) stops++;
+      });
+      sum.textContent = answered + " of " + rows.length + " answered" + (stops ? " · " + stops + " need a look before you go on" : answered === rows.length ? " · all clear" : "");
+    }
+    const reset = h("button", { type: "button", class: "reset", text: "Reset" });
+    reset.addEventListener("click", () => { answers.fill(null); paint(); });
+    paint();
+    return h("section", { class: "block", id: "self-check", "aria-labelledby": "h-check" },
+      h("div", { class: "block-head" }, h("h2", { id: "h-check", text: "A quick self-check before you run or commit" }), h("p", { text: "Answer each one honestly. Nothing is stored or sent anywhere." })),
+      h("div", { class: "check-sum" }, sum, reset), list);
+  }
+
+  function renderHistory() {
+    return h("section", { class: "block", id: "history", "aria-labelledby": "h-hist" },
+      h("div", { class: "block-head" }, h("h2", { id: "h-hist", text: "Rule history" }), h("p", { text: "The organisers' commits upstream, oldest first." })),
+      h("div", { class: "card" }, h("ol", { class: "hist" }, DATA.history.map(e => h("li", { class: e.key ? "key" : null },
+        h("div", { class: "h-top" }, h("span", { class: "h-date", text: e.date }), h("span", { class: "h-title", text: e.title }), e.commit ? h("code", { text: e.commit }) : null),
+        h("p", { html: md(e.text) }))))));
+  }
+
+  themeBtn();
+  render();
+})();
+</script>
+</body>
+</html>
