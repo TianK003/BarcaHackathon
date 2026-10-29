@@ -666,7 +666,8 @@ def test_runner_gaps_runs_on_degraded_tracking():
     its own draws, the report holds the Calibration's digest and version, the file name carries `.s<n>` for a number of
     seeds that is not the default, and the printout names the calibration that made the run.
     """
-    assert benchmark_run.PROFILES == degrade.PROFILES == {"clean": 1, "gaps": 1, "tracking": 3, "context": 1}
+    assert benchmark_run.PROFILES == degrade.PROFILES == {"clean": 1, "gaps": 1, "tracking": 3, "context": 1,
+                                                          "offpitch": 1}
     matches, cal = synthetic_matches(), synthetic_calibration()
     paths = [yardstick_path(50), yardstick_path(0)]
     with tempfile.TemporaryDirectory() as root:

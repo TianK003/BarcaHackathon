@@ -682,9 +682,10 @@ def test_context_profile_is_registered_with_its_own_stream():
     """The profile is version 1, the hazard has the stream after the speed_nan one, and what the profile read of the
     Calibration is named: the profiles nest (context's players are tracking's, and the draws of the earlier parts
     stay)."""
-    assert degrade.PROFILES == {"clean": 1, "gaps": 1, "tracking": 3, "context": 1}
+    assert degrade.PROFILES == {"clean": 1, "gaps": 1, "tracking": 3, "context": 1, "offpitch": 1}
     assert degrade.CONTEXT == "context" and degrade.COMPONENTS["hazard"] == 4
-    assert degrade.COMPONENTS == {"transplant": 0, "tracklets": 1, "wrong_team": 2, "speed_nan": 3, "hazard": 4}
+    assert degrade.COMPONENTS == {"transplant": 0, "tracklets": 1, "wrong_team": 2, "speed_nan": 3, "hazard": 4,
+                                  "thinning": 5}
     assert degrade.CONTEXT_FIELDS == ("hazard_model", "hazard_c", "hazard_durations_s")
     assert degrade.HAZARD_SCALE > 0 and calibration.NEAR_LINE_M == NEAR_M
     assert set(HAZARD_SECONDS) == {0, 1} and made_up_hazard()["hazard_c"] == 1.0

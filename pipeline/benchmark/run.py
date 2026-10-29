@@ -57,14 +57,16 @@ evaluate_configs() is what the team chooses between methods with, so it is built
   tracking was degraded with, and a later run with a newer Calibration writes over the older report of the same name.
 
 The profiles (degrade.py). The tracking is served to every config as an Atd made by degrade.degrade from a TrackingView
-of the match, which has no flag of the truth. There are four (PROFILES, each with the version of its recipe, which a
+of the match, which has no flag of the truth. There are five (PROFILES, each with the version of its recipe, which a
 report holds). "clean" is DFL's tracking as it is and needs no Calibration. "gaps" has the ball missing where ours was
 (the Calibration's masks, transplanted), so nearest_player votes on fewer frames, majority_vote has D to give, and the
 scores are no longer those of a ball that is always there. "tracking", the default (version 3), adds the players broken
 up as ours are (tracked spans and lost spans, 46 anonymous slots, a wrong-team slot now and then, NaN speeds in runs and
 our frames with few players tracked): it is the profile whose gates all pass (R004c). "context" has tracking's players
 and a ball whose gaps a hazard fitted on our match draws; it fails two of its gates (R005), so it is a sensitivity check
-and not the yardstick, and the help, the printout and the report say so (SENSITIVITY_ONLY). Every profile but clean
+and not the yardstick, and the help, the printout and the report say so (SENSITIVITY_ONLY). "offpitch" (P18) has
+tracking's players and its ball's transplanted gaps, thinned, with the ball hidden once it is more than a margin
+past a line until it is back on the pitch; its two constants are fitted once (R015). Every profile but clean
 needs the Calibration of BAR-ATH (calibration.load, measured once and cached), which evaluate_configs loads unless it is
 given one, and whose digest goes into every report.
 
@@ -137,6 +139,8 @@ PROVENANCE = {
                 "(calibration.py)",
     "context": "the ball's gaps are drawn by the hazard fitted on our match (A08), the players are tracking's, from "
                "our tracklets, slots and counts",
+    "offpitch": "the ball's gaps are our match's, transplanted and thinned, the ball is hidden past a margin off the "
+                "pitch, and the players are tracking's, from our tracklets, slots and counts",
 }
 
 
@@ -182,7 +186,8 @@ def make_atd(match, profile, seed, calibration=None):
     (degrade.py), and degrade.degrade makes the Atd: "clean" is DFL's tracking as it is (nothing is degraded, so the
     seed and the calibration are not used); "gaps" has our ball's missing masks transplanted onto it; "tracking" adds
     the players broken up as ours are (tracklets, slots, a wrong-team slot now and then, NaN speeds, a cap on the frames
-    where ours tracks few); "context" has tracking's players and a ball whose gaps the hazard fitted on our match draws.
+    where ours tracks few); "context" has tracking's players and a ball whose gaps the hazard fitted on our match draws;
+    "offpitch" has tracking's players and its ball, thinned and hidden past a margin off the pitch.
     Every profile but clean needs `calibration`. BenchmarkError, listing the profiles there are, for any other name.
     """
     _check_profile(profile)
