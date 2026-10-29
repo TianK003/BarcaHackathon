@@ -696,7 +696,7 @@ P05 on a ball that is visible out of play would produce.
 **What.**
 - **A13** (done, part 1): the headroom of `main.toml` with oracles added to its own evidence (`plus_` variants), on
   `tracking` and `context`. Part 2, on `offpitch`, was not run.
-- **R015** (done, paused): a benchmark profile, `offpitch` v1, in which `tracking` v3's ball is also hidden once it is
+- **R015** (done): a benchmark profile, `offpitch` v1, in which `tracking` v3's ball is also hidden once it is
   more than m past a line (until it is back on the pitch), and a share q of the transplanted gaps is dropped. m is fitted
   once so that the share of visible ball frames past a line equals ours (0.0407), and q so that the missing share equals
   ours; both are frozen (m 0.2 m, q 0.430). Tian reopened R005's ruling against a mask for the ball off the pitch on

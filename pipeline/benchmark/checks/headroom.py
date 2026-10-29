@@ -122,9 +122,9 @@ min_dead = 1
 RESTART_STEMS = ("restart", "restart_run")
 PLUS_STEMS = ("plus_home_visible", "plus_home_gaps", "plus_home_all", "alive_plus_home_visible",
               "alive_plus_home_gaps", "alive_plus_home_all")
-# A config as main.toml is: two home sources that are not nearest_player, no nearest_player at all.
+# A config as main.toml is in the one way the tests need: several sources and no nearest_player at all.
 TWO_SOURCES = """
-description = "a touch source and a shape source, no nearest_player"
+description = "two ball_presence sources, no nearest_player"
 seed = 0
 scope = "halves"
 

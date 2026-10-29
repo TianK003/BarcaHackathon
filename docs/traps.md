@@ -285,7 +285,7 @@ R015 hid DFL's out-of-play ball (`offpitch` v1) and today's P05 lost 0.013 alive
 the profile failed a gate (T45), that the overstatement through the visible out-of-play ball is small.
 
 **T45 — A degradation fitted to one statistic can move the others away, and a cheap feasibility sweep finds that first.**
-R015's `offpitch` v1 matched the share of visible ball frames past a line exactly (0.0414 against 0.0407), failed the median
+R015's `offpitch` v1 matched the share of visible ball frames past a line within its gate (0.0414 against 0.0407), failed the median
 gap (15.04 s against 10.74, +-1.5) and moved two checks away (the ball visible on dead frames, 0.3667 against 0.6637; the
 near-line onset share, 0.5400 against 0.2797). Its v2 mechanism could not reach the share at all (0.258 to 0.262 at every
 margin), which a label-free sweep of nine minutes showed before anything was built (R015b). Before building a profile

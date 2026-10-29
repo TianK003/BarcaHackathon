@@ -1473,13 +1473,15 @@ the interval is that of the per-match deltas.
 **Reading.**
 - **On the benchmark the dead-ball side is nearly exhausted.** A perfect `alive` adds only +0.029 to +0.045 spellF1, and
   alive/dead F1 is already 0.970 to 0.973. This is the T39 caveat in numbers: the benchmark's P05 is near-perfect partly
-  because DFL tracks the ball out of play. R015 and R016 (P18) test how much of that holds when the out-of-play ball is
-  hidden.
+  because DFL tracks the ball out of play. R015 tried it: with the out-of-play ball hidden, today's P05 lost 0.013
+  alive/dead F1 (0.9731 to 0.9600), a lead only since the profile failed a gate; R016 never ran (R015b).
 - **The team is where the score is.** A perfect team where the ball is seen adds +0.19 to +0.24; in the gaps +0.10 to
   +0.18 (more under the raw truth than the coarse one); on every live frame +0.33 to +0.35. A10, with the old decoder,
   had the possessor where seen worth +0.15 raw.
-- **The interaction is small.** With the dead ball perfect, the team in the gaps is worth +0.21 raw instead of +0.18, and
-  the team where seen +0.22 instead of +0.19.
+- **The interaction is small.** Taken as deltas over the `alive` variant, with the dead ball perfect the team in the gaps
+  is worth 0.7546 - 0.5720 = +0.183 (against +0.176 over `main`) and the team where the ball is seen 0.7663 - 0.5720 =
+  +0.194 (against +0.194) on `tracking` raw. Over all 8 cells (gaps and seen, four columns) `alive_plus_X` minus `alive`
+  differs from `plus_X` minus `main` by at most 0.0093 (gaps, `context` coarse).
 - **The decoder's own ceiling with perfect evidence is 0.918 raw and 0.969 coarse** (A10's old decoder: 0.7627 and
   0.9226): `min_possession` 35 and the penalties cap the score far less than they did.
 - **`tracking` and `context` agree in every variant**: the same order, and deltas within 0.02.

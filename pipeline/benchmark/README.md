@@ -503,8 +503,9 @@ the benchmark beside five variants of it whose evidence is the truth itself:
 .venv/Scripts/python pipeline/benchmark/headroom.py CONFIG [--profile P] [--seeds N] [--truth raw|coarse] [--matches ID ...] [--data-dir D] [--write]
 ```
 
-`CONFIG` is the reference, run from its own file as it is, and needs exactly one `nearest_player` source (the home
-variants replace it). The runner's table then says, against it, what each variant gains:
+`CONFIG` is the reference, run from its own file as it is, and needs exactly one `nearest_player` source only for the
+classic home variants (`home_visible`, `home_all`, `alive_home_visible`, `alive_home_all`), which replace it; `alive`,
+`restart`, `restart_run` and the `plus_` variants need none. The runner's table then says, against it, what each variant gains:
 
 | config | evidence |
 |---|---|
@@ -536,14 +537,14 @@ on what the evidence could give this config and its penalties, and not an estima
   other has open (Windows refuses that). A parameter that is not a str, int, float or bool (the flat tables that
   `Config` holds) is refused by name before any file is written, and so is a config without one `nearest_player`. What
   only the runner knows (an unknown profile, say) is refused by it, after the variants are written.
-- **Reports** are written only with `--write`, and only for the five variants, as the runner writes them
+- **Reports** are written only with `--write`, and only for the variants run, as the runner writes them
   (`<stem>__<variant>[.<truth>][.m-<ids>][.s<n>].json` under `<data dir>/runs/benchmark/<profile>/`). `CONFIG`'s own
   report is `run.py`'s to write: it holds the comparison with whichever configs it was run beside, which a headroom run
   cannot reproduce, so a headroom run never writes or replaces it.
 
 **`--variants` (P17).** `--variants NAME ...` picks the variants to run, by suffix, from the five above, two more:
 `restart` and `restart_run`, and the six `plus_` ones below. Without it the five run, as always. The two restart variants replace nothing, so they need
-no `nearest_player` (`main.toml` has none), and the others are refused for a config without one, by name. Each adds an
+no `nearest_player` (`main.toml` has none), and the `plus_` ones neither; only the classic home variants are refused for a config without one, by name. Each adds an
 oracle to CONFIG's own evidence at weight 1, and both read the truth by closure like the rest:
 
 - `oracle_restart` (`main__restart`) is a perfect "which team restarts" for 2 s. After each true `D` run followed by `H`
@@ -573,7 +574,8 @@ then one home oracle at weight 1. `--variants` takes their suffixes:
 
 Adding is close to replacing where the oracle speaks: it carries about 13.8 nats a frame at the default `eps` against at
 most about 2.6 for a real source, so the decoder follows it, and where it is silent the config's own sources decide.
-`alive_plus_home_all` still reproduces the truth. A config that has a `nearest_player` keeps it under `plus_`, and the
+`alive_plus_home_all` reproduces the truth only for a decoder free to follow it; on `main.toml` it scores 0.918 raw and
+0.969 coarse (A13). A config that has a `nearest_player` keeps it under `plus_`, and the
 classic variants still replace it; neither changes the other.
 
 ```
@@ -592,8 +594,16 @@ than in the pooled number alone. Nothing here is a config to submit. The checks 
 `test_headroom_a_second_write_leaves_the_variants_alone`,
 `test_headroom_a_write_that_loses_a_race_for_the_same_bytes_is_not_an_error`,
 `test_headroom_loads_each_match_once_and_keeps_none`,
-`test_headroom_writes_the_variants_reports_only_when_asked_and_never_the_references` and
-`test_headroom_command_line_prints_the_table_and_the_report_lines`, all in `checks/headroom.py` and all synthetic.
+`test_headroom_writes_the_variants_reports_only_when_asked_and_never_the_references`,
+`test_headroom_command_line_prints_the_table_and_the_report_lines`,
+`test_headroom_gaps_oracle_speaks_only_where_the_ball_is_missing`,
+`test_headroom_plus_variants_add_the_oracles_after_the_configs_own_sources`,
+`test_headroom_plus_variants_add_and_classic_ones_still_replace`, `test_headroom_alive_plus_home_all_is_perfect` and,
+for the restart variants, `test_headroom_restart_oracle_marks_each_restart`,
+`test_headroom_restart_oracle_stops_at_the_next_change_and_the_block`,
+`test_headroom_restart_oracle_needs_a_team_after_the_stoppage`,
+`test_headroom_restart_variants_need_no_home_source` and `test_headroom_restart_variants_run_end_to_end`, all in
+`checks/headroom.py` and all synthetic.
 
 ## Restarts: how the stoppages end
 

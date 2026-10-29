@@ -546,10 +546,6 @@ file has macroF1 0.6996, spellF1 0.4686 and 18 possessions against 17.
 These benchmark figures are upper bounds for our match, not predictions: DFL tracks the ball out of play, so the
 benchmark overstates P05 by an amount it cannot measure (section 6, T38, T39).
 
-**Where the remaining score is** (A13). On the benchmark's `tracking` v3, a perfect team where the ball is seen would add
-+0.194 raw spellF1 to `main.toml` and in the gaps +0.176, against +0.029 for a perfect dead-ball source, so what is left
-is who has the ball, and not whether it is dead.
-
 **P07 on the benchmark** (R011). The shape model was scored out of fold first (section 3), and then 12 configs added it
 to R010's config with the decoder unchanged: weight {0.01, 0.02, 0.05, 0.1, 0.2, 0.5} x scope {the frames with no ball,
 every graded frame}. The protocol was declared before any of them ran: the objective is the pooled raw spellF1 on
@@ -637,6 +633,10 @@ adopted, and the oracle's gap was partly information a fixed-length vote does no
 changed, T43) and partly the rest of the distance to a real source: coverage (73.2% of true restarts called),
 agreement (72 to 93% by type), the error in the estimated restart frame, and the vote's strength (the oracle's about
 13.8 nats a frame against about 2.4 for a 0.92 vote).
+
+**Where the remaining score is** (A13). On the benchmark's `tracking` v3, a perfect team where the ball is seen would add
++0.194 raw spellF1 to `main.toml` and in the gaps +0.176, against +0.029 for a perfect dead-ball source, so what is left
+is who has the ball, and not whether it is dead, on the benchmark (T39).
 
 **Why these choices.** Lang et al. (2022, *Scientific Reports*) predict the in-play status from tracking and find
 boosting the best of four classical families (92.0% frame accuracy, against 86.7% for logistic regression), from the
