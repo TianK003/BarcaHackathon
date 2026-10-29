@@ -5,7 +5,9 @@
 >   labels must come from an algorithm. No hand labels on the provided match, for any purpose. The 5 public minutes
 >   are a correctness check, never training or tuning data. No private ground truth, and no human-produced data about
 >   this match. The match data never goes to a cloud LLM and never into this repository. The repository must
->   regenerate the exact submitted file. Learning on the match without human labels is allowed.
+>   regenerate the exact submitted file. Learning on the match without human labels is allowed. Anything we use must
+>   be accessible to the organisers and explained in the technical document. If an idea sits near a line, ask the
+>   organisers before building on it. Deadline: 17 November 2026.
 > - **[site/index.html](site/index.html): the pipeline overview.** It covers each stage, what is built, what is planned,
 >   the history and the work left.
 >
