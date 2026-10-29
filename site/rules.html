@@ -183,7 +183,7 @@ section.block { margin: 0 0 32px; scroll-margin-top: 110px; }
 .src { display: block; font-size: 12.5px; color: var(--muted); margin-top: 2px; }
 .permit { background: var(--ok-bg); border: 1px solid var(--ok-fg); border-radius: 12px; padding: 16px 18px; }
 .permit .note { font-size: 13.5px; margin: 10px 0 0; color: var(--ink-2); }
-.shorthand { margin-top: 12px; font-size: 14px; color: var(--ink-2); max-width: 90ch; }
+.misreading { margin-top: 12px; font-size: 14px; color: var(--ink-2); max-width: 90ch; }
 
 /* Rule cards */
 .cards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr)); }
@@ -307,7 +307,7 @@ const DATA = {
 
   line: {
     title: "Learning from the provided match: the exact line",
-    shorthand: "A shorthand that goes around is “no training or fine-tuning is ever done on the match they gave us”. The rule as written is narrower than that, and its forbidden side is absolute:",
+    misreading: "A common misreading is “no training on the provided match at all”. The rule is narrower: learning on the match without human labels is allowed. What it forbids, it forbids absolutely:",
     forbidden: [
       { text: "**Human labels on the provided match**, in any amount and for any purpose: not for the submission, not to train a model, not to validate one.", src: "RULES.md §1, “Training and validation data”" },
       { text: "**Training, fitting, tuning or choosing anything on the 5 public minutes.** They are “not training data and not a tuning set”.", src: "RULES.md §2; FAQ.md; EVALUATION.md" },
@@ -580,7 +580,7 @@ const DATA = {
 
       h("section", { class: "block", id: "line", "aria-labelledby": "h-line" },
         h("div", { class: "block-head" }, h("h2", { id: "h-line", text: L.title })),
-        h("p", { class: "shorthand", html: md(L.shorthand) }),
+        h("p", { class: "misreading", html: md(L.misreading) }),
         h("div", { class: "line-grid" },
           h("div", { class: "forbid" }, h("h3", {}, h("span", { class: "big-glyph", "aria-hidden": "true", text: "✕" }), "Forbidden"),
             h("ul", {}, L.forbidden.map(f => h("li", {}, h("span", { html: md(f.text) }), h("span", { class: "src", text: f.src }))))),
