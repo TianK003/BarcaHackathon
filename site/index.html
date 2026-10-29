@@ -428,7 +428,7 @@ pre.layout code { background: transparent; padding: 0; }
 @media (min-width: 860px) { .illus { grid-template-columns: 1fr 1fr; } }
 .strip-row { display: grid; grid-template-columns: 92px 1fr; gap: 8px; align-items: center; margin: 4px 0; }
 .strip-row .s-name { font-size: 12px; color: var(--muted); font-weight: 600; }
-.strip { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; }
+.strip { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 2px; }
 .cell { height: 22px; border-radius: 3px; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; color: #fff; }
 .cell.H { background: var(--lab-h); }
 .cell.A { background: var(--lab-a); }
@@ -482,6 +482,123 @@ dl.gloss dd { margin: 2px 0 0; color: var(--ink-2); font-size: 14px; }
 .docmap a { font-weight: 650; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 13px; }
 .docmap span { display: block; color: var(--ink-2); margin-top: 2px; }
 
+/* Start here (onboarding path) */
+.path { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); counter-reset: p; }
+.path > li { margin: 0; counter-increment: p; }
+.path a { display: flex; flex-direction: column; gap: 3px; height: 100%; text-decoration: none; color: inherit; border: 1px solid var(--line-2); border-radius: 10px; padding: 10px 12px 10px 44px; position: relative; background: var(--surface-2); }
+.path a:hover { border-color: var(--accent); }
+.path a::before {
+  content: counter(p); position: absolute; left: 12px; top: 10px; width: 24px; height: 24px; border-radius: 50%;
+  background: var(--accent); color: var(--surface); font-size: 12.5px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+}
+.path .p-t { font-weight: 650; font-size: 14px; }
+.path .p-d { font-size: 12.5px; color: var(--ink-2); line-height: 1.4; }
+.path .p-m { font-size: 12px; color: var(--muted); margin-top: auto; padding-top: 4px; }
+
+/* Models */
+.mmap { display: grid; gap: 10px; grid-template-columns: 1fr; align-items: stretch; }
+@media (min-width: 900px) { .mmap { grid-template-columns: 1.6fr auto 1fr auto 1fr; } }
+.mstage { border: 1px dashed var(--line-2); border-radius: 10px; padding: 10px 12px; background: var(--surface-2); min-width: 0; }
+.mstage .ms-k { font-size: 11.5px; font-weight: 700; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+.mstage .ms-d { font-size: 12.5px; color: var(--ink-2); margin: 2px 0 8px; }
+.mchips { display: flex; flex-wrap: wrap; gap: 6px; }
+.mchip { display: inline-flex; flex-direction: column; gap: 2px; text-decoration: none; color: inherit; border: 1px solid var(--line-2); border-radius: 8px; padding: 6px 10px; background: var(--surface); min-width: 0; }
+.mchip:hover { border-color: var(--accent); }
+.mchip b { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 13px; }
+.mchip span { font-size: 12px; color: var(--muted); }
+.marrow { align-self: center; justify-self: center; color: var(--axis); font-size: 18px; }
+@media (max-width: 899px) { .marrow { transform: rotate(90deg); } }
+.model { scroll-margin-top: 120px; margin-bottom: 22px; }
+.m-head { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.m-head h2 { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 20px; }
+.m-q { font-size: 17px; font-weight: 600; margin: 8px 0 4px; max-width: 80ch; }
+.m-one { color: var(--ink-2); max-width: 80ch; margin-bottom: 4px; }
+.m-grid { display: grid; gap: 18px 28px; grid-template-columns: 1fr; margin-top: 14px; }
+@media (min-width: 980px) { .m-grid { grid-template-columns: 1fr 1fr; } }
+.m-sec { min-width: 0; }
+.m-sec > h3 { font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 8px; }
+.m-sec p, .m-sec li { font-size: 14px; color: var(--ink-2); }
+.m-sec ul { margin: 0 0 8px; }
+.m-full { grid-column: 1 / -1; }
+.params { font-size: 12.5px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; color: var(--ink-2); margin: 6px 0 10px; }
+.formula { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12.5px; background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 10px; }
+.kpis { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin: 4px 0 12px; }
+.kpi { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--surface-2); min-width: 0; }
+.kpi .v { font-size: 21px; font-weight: 650; line-height: 1.15; overflow-wrap: anywhere; }
+.kpi .l { font-size: 12.5px; font-weight: 600; color: var(--ink); margin-top: 2px; }
+.kpi .n { font-size: 12px; color: var(--muted); margin-top: 2px; line-height: 1.35; }
+.illus-cap { font-size: 12.5px; color: var(--muted); margin: 6px 0 0; }
+.illus-svg { display: block; width: 100%; max-width: 560px; height: auto; }
+.illus-svg text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+.i-pitch { fill: none; stroke: var(--line-2); stroke-width: 0.5; }
+.i-h { fill: var(--lab-h); stroke: var(--surface); stroke-width: 0.5; }
+.i-a { fill: var(--lab-a); stroke: var(--surface); stroke-width: 0.5; }
+.i-ball { fill: var(--ink); }
+.i-ball.faded { fill: none; stroke: var(--muted); stroke-dasharray: 0.6 0.6; stroke-width: 0.35; }
+.i-txt { fill: var(--ink-2); }
+.i-mut { fill: var(--muted); }
+.i-guide { stroke: var(--muted); stroke-width: 0.45; stroke-dasharray: 1.2 1; fill: none; }
+.i-ring { fill: none; stroke: var(--ink-2); stroke-width: 0.5; stroke-dasharray: 1.4 1; }
+.i-ring.duel { stroke: var(--lab-a); stroke-dasharray: 0.6 0.8; }
+.i-arrow { stroke: var(--ink-2); stroke-width: 0.7; fill: none; }
+.i-arrowhead { fill: var(--ink-2); }
+.cell.N { background: transparent; border: 1px dashed var(--line-2); color: var(--muted); }
+.cell.hw { background: transparent; border: 2px solid var(--lab-h); color: var(--lab-h); }
+.cell.aw { background: transparent; border: 2px solid var(--lab-a); color: var(--lab-a); }
+.strips { margin: 4px 0 0; }
+.strips .strip-row { grid-template-columns: 112px 1fr; }
+@media (max-width: 560px) {
+  .strips .strip-row { grid-template-columns: 76px 1fr; gap: 6px; }
+  .strips .cell { font-size: 9.5px; height: 20px; }
+  .strips .cell.hw, .strips .cell.aw { border-width: 1.5px; }
+}
+.skey { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted); margin: 6px 0 0; }
+.skey .cell { display: inline-flex; width: 18px; height: 16px; font-size: 10px; vertical-align: middle; margin-right: 4px; }
+/* a boosted model's first questions, as a flow */
+.bflow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 6px; margin: 6px 0 4px; }
+.bbox { border: 1px solid var(--line-2); border-radius: 8px; padding: 6px 9px; background: var(--surface); font-size: 12.5px; min-width: 0; flex: 1 1 120px; max-width: 200px; display: flex; flex-direction: column; gap: 2px; }
+.bbox .bk { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.bbox .bq { color: var(--ink); font-weight: 600; }
+.bbox .bv { font-variant-numeric: tabular-nums; color: var(--ink-2); margin-top: auto; }
+.bbox.sum { background: var(--surface-2); border-style: dashed; }
+.bop { align-self: center; font-weight: 700; color: var(--muted); font-size: 16px; }
+/* a decision tree, as an indented list (readable at any width) */
+.dtree, .dtree ul { list-style: none; margin: 0; padding: 0; }
+.dtree ul { margin-left: 14px; padding-left: 16px; border-left: 2px solid var(--line-2); }
+.dtree li { margin: 6px 0 0; position: relative; }
+.dtree ul > li::before { content: ""; position: absolute; left: -16px; top: 15px; width: 13px; border-top: 2px solid var(--line-2); }
+.drow { display: flex; gap: 6px; align-items: flex-start; }
+.dedge { flex: none; font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; padding-top: 7px; width: 26px; }
+.dnode { border: 1px solid var(--line-2); border-radius: 8px; padding: 5px 10px; background: var(--surface); min-width: 0; display: flex; flex-direction: column; }
+.dnode .dq { font-weight: 600; font-size: 13.5px; }
+.dnode .dc { font-size: 12px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; overflow-wrap: anywhere; }
+.dnode.dleaf { border-left: 4px solid var(--leaf, var(--axis)); }
+.dnode.dmore { background: var(--surface-2); border-style: dashed; }
+.dnode.dmore .dq { font-weight: 500; color: var(--ink-2); }
+.dtree[data-sense="team"] .dleaf.pos { --leaf: var(--lab-h); }
+.dtree[data-sense="team"] .dleaf.neg { --leaf: var(--lab-a); }
+.dtree[data-sense="alive"] .dleaf.pos { --leaf: var(--accent); }
+.dtree[data-sense="alive"] .dleaf.neg { --leaf: var(--lab-d); }
+.m-charts { display: grid; gap: 22px 28px; grid-template-columns: 1fr; }
+@media (min-width: 980px) { .m-charts { grid-template-columns: 1fr 1fr; } }
+.m-chart { min-width: 0; }
+.m-ct { font-weight: 650; font-size: 14px; color: var(--ink); margin: 0 0 2px; }
+.mini-models { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin: 0 0 18px; }
+.mini { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; background: var(--surface-2); min-width: 0; }
+.mini .mini-top { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
+.mini p { font-size: 13.5px; color: var(--ink-2); margin: 6px 0; }
+.mini .mini-k { font-size: 12.5px; color: var(--ink-2); margin: 0 0 6px; }
+.mini .mini-k b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.more-link { font-size: 13px; font-weight: 600; }
+.c-ref { stroke: var(--ink-2); stroke-width: 1; stroke-dasharray: 3 3; }
+.c-diag { stroke: var(--axis); stroke-width: 1; stroke-dasharray: 4 4; }
+.c-dumb { stroke: var(--line-2); stroke-width: 2; }
+.st-edge { stroke: var(--axis); stroke-width: 2; fill: none; }
+.st-node text { fill: #fff; font-weight: 700; font-size: 18px; }
+.st-lbl { fill: var(--ink-2); font-size: 12.5px; }
+.st-cost { fill: var(--ink); font-size: 12.5px; font-weight: 650; }
+.st-costbg { fill: var(--surface); }
+
 footer { border-top: 1px solid var(--line); margin-top: 24px; padding: 16px 0 28px; font-size: 13px; color: var(--muted); }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -506,6 +623,7 @@ footer { border-top: 1px solid var(--line); margin-top: 24px; padding: 16px 0 28
     <nav class="tabs" role="tablist" aria-label="Sections">
       <button class="tab" role="tab" id="tab-overview" aria-controls="panel-overview" data-tab="overview">Overview</button>
       <button class="tab" role="tab" id="tab-pipeline" aria-controls="panel-pipeline" data-tab="pipeline">Pipeline</button>
+      <button class="tab" role="tab" id="tab-models" aria-controls="panel-models" data-tab="models">Models</button>
       <button class="tab" role="tab" id="tab-how" aria-controls="panel-how" data-tab="how">How it works</button>
       <button class="tab" role="tab" id="tab-history" aria-controls="panel-history" data-tab="history">History</button>
       <button class="tab" role="tab" id="tab-work" aria-controls="panel-work" data-tab="work">Work to do</button>
@@ -519,6 +637,7 @@ footer { border-top: 1px solid var(--line); margin-top: 24px; padding: 16px 0 28
 <main class="wrap">
   <section class="panel" role="tabpanel" id="panel-overview" aria-labelledby="tab-overview" tabindex="-1"></section>
   <section class="panel" role="tabpanel" id="panel-pipeline" aria-labelledby="tab-pipeline" tabindex="-1" hidden></section>
+  <section class="panel" role="tabpanel" id="panel-models" aria-labelledby="tab-models" tabindex="-1" hidden></section>
   <section class="panel" role="tabpanel" id="panel-how" aria-labelledby="tab-how" tabindex="-1" hidden></section>
   <section class="panel" role="tabpanel" id="panel-history" aria-labelledby="tab-history" tabindex="-1" hidden></section>
   <section class="panel" role="tabpanel" id="panel-work" aria-labelledby="tab-work" tabindex="-1" hidden></section>
@@ -541,12 +660,26 @@ footer { border-top: 1px solid var(--line); margin-top: 24px; padding: 16px 0 28
    =========================================================================================================== */
 const DATA = {
   asOf: "2026-10-29",
-  commit: "7d952e2",
+  commit: "d47ec20",
   title: "Possession pipeline · team overview",
   subtitle: "More than a Hack 2027, Phase 1 · FC Barcelona (H) vs Athletic Club (A), LaLiga 2024-25 MD2",
-  footer: "As of 2026-10-29 (main at 7d952e2). Update DATA when an entry lands; the docs are the source of truth.",
+  footer: "As of 2026-10-29 (main at d47ec20, plus A14 and P19–P22 in the docs). Update DATA when an entry lands; the docs are the source of truth.",
 
   /* ---------- Overview ---------- */
+  onboarding: {
+    title: "New to the team? Start here",
+    intro: "About two hours from nothing to your first experiment. Each step opens the part of this page, or the doc, that holds it.",
+    steps: [
+      { title: "Read the rules", text: "What we may and may not do with the match data, and why an LLM never sees it.", href: "rules.html", time: "10 min" },
+      { title: "The task and the metric", text: "`H`/`A`/`D`/`X` per frame, spellF1, why flicker and latency are fatal, five measured facts.", href: "#how", time: "15 min" },
+      { title: "The pipeline", text: "Five stages with fixed contracts. Click a stage for its files, traps and commands.", href: "#pipeline", time: "10 min" },
+      { title: "The models, explained", text: "The touch rule, two boosted-tree models and the HMM decoder: idea, intuition, how well each does.", href: "#models", time: "20 min" },
+      { title: "Set up your machine", text: "Venv, pinned versions, the data bundle, the DFL benchmark, the selftests.", href: "#reference", time: "30 min" },
+      { title: "Pick a proposal", text: "Open proposals with effort and impact; claim one in docs/proposals.md before you start.", href: "#work", time: "10 min" },
+      { title: "Run your first experiment", text: "Copy `main.toml`, declare the protocol, run the benchmark under both truths, log it.", href: "#work", time: "1–2 hours" }
+    ]
+  },
+
   cards: [
     {
       label: "main.toml on the benchmark", hero: true, value: "0.5430", unit: "raw", second: "0.5593 coarse",
@@ -595,11 +728,11 @@ const DATA = {
   },
 
   nextSteps: [
-    { title: "Who has the ball where it is seen", text: "A13: a perfect team where the ball is seen adds +0.194 raw / +0.231 coarse. P04's touch rule is already chosen and needs no second round (After R013, item 3); P11 (touch and pass events) is the open route." },
-    { title: "Who has the ball in the gaps", text: "A13: +0.176 raw / +0.108 coarse. P07's shape model never saw our teams; P09's camera aim is a feature for it and P13 pre-trains on external data. Each needs its own protocol declared before its runs." },
-    { title: "The grain of our truth (P16)", text: "Every re-tune since R007 split the two truths, and R013 is +0.0267 raw but level coarse. Metrica's sample games, in our provider's conventions, are how to learn which truth ours resembles." },
-    { title: "Decide how much of the gain to believe", text: "A decision, not a run: the benchmark (with the T38, T39 and R011 caveats) and the label-free checks. Settle it before the freeze on 13 Nov." },
-    { title: "The deliverables", text: "Regenerate `main.toml`'s file from a clean clone on a second machine, make the repo public as the last step, and condense the technical document. Our advice, not a rule: upload that file early as a safety copy, since the form keeps the last response before the deadline and an early upload is insurance. See [Work to do](#work)." }
+    { title: "P19: a learned team model where the ball is seen", text: "A13's largest lever: a perfect team where the ball is seen adds +0.194 raw / +0.231 coarse. Feasibility first (half a day): leave-one-match-out per-frame accuracy against the touch rule and its hold. Fully benchmarkable (“After A14”, item 2)." },
+    { title: "P20 step 0: PathCRF's checkpoint against P07", text: "A ball-free possession model (KDD 2026) trained on the same seven DFL matches; 92.4% team accuracy without the ball, on clean tracking. One to two days: its held-out match, clean and degraded, against P07 on the same gap frames." },
+    { title: "The grain of our truth (P16)", text: "Every ball-rich change splits the two truths: R010's decoder, R013's touch rule, A14's ball. Metrica's sample games, in our provider's conventions, are how to learn which truth ours resembles." },
+    { title: "Not now: a video ball detector (P14)", text: "A14: the ball is about 6 px wide, smaller than a ViT patch (T46), and a perfect ball in our gaps is worth +0.10 raw but only +0.02 coarse. A half-day zero-shot test only if someone is free." },
+    { title: "The deliverables", text: "Regenerate `main.toml`'s file from a clean clone on a second machine, make the repo public as the last step, condense the technical document, and decide before the freeze how much of the benchmark's gain to believe (a decision, not a run: T38, T39, R011). Our advice, not a rule: upload the file early as a safety copy. See [Work to do](#work)." }
   ],
 
   headroom: {
@@ -636,8 +769,8 @@ const DATA = {
       built: "P03 · R001 · 2026-10-22",
       summary: "Every later stage works on arrays where row i is frame i of the tactical video, the submission's own index. The data does not arrive that way (the ATD counts from 1, Smart Tagging in seconds, the broadcast on its own timeline), and one off-by-one shifts every transition, so the conversions happen once, here, and are checked. It also parses the 195 MB ATD once into `data/cache/atd_tactical/` (about 15 s, then 1–2 s a run). Everything is lazy: an asset loads the first time a source asks for it.",
       contract: "**In:** `data/tactical/*` and `games.py`. **Out:** `Inputs`, read-only arrays of 199,319 rows; `graded` halves 11,185–90,651 and 110,808–190,197; `kickoffs` 11,185 and 113,742; pitch 105.3 × 68.0 m.",
-      planned: ["P10", "P14", "P15"],
-      traps: ["T08", "T09", "T15", "T28"],
+      planned: ["P21", "P14", "P10", "P15"],
+      traps: ["T08", "T09", "T15", "T28", "T46"],
       files: [
         { label: "inputs/README.md", href: "../pipeline/inputs/README.md" },
         { label: "inputs/atd_cache.py", href: "../pipeline/inputs/atd_cache.py" },
@@ -654,7 +787,7 @@ const DATA = {
       built: "R001 · 2026-10-22; sources since",
       summary: "Each source reads the whole match and gives an opinion on every frame; it never decides a label. Deciding (weighing the sources, keeping possessions as intervals, paying for every change) is the decoder's job, so a new source plugs in without touching it and a better decoder improves every source at once. `main.toml` runs three: `controlled_touch` and `shape_possession` for `home`, `dead_ball_model` for `alive`.",
       contract: "**Out:** one `Evidence(alive, home)` per source, float64 per frame in [0, 1], NaN = no opinion. `alive` = P(ball in play); `home` = P(home has it | in play). Read together: P(H) = alive·home, P(A) = alive·(1 − home), P(D) = 1 − alive.",
-      planned: ["P08", "P09", "P10", "P11", "P13", { title: "A13 says where", text: "The team side holds the remaining score: a perfect team where the ball is seen is worth +0.194 raw and in the gaps +0.176, a perfect dead ball only +0.029." }],
+      planned: [{ title: "A13 says where", text: "The team side holds the remaining score: a perfect team where the ball is seen is worth +0.194 raw and in the gaps +0.176, a perfect dead ball only +0.029." }, "P19", "P20", "P22", "P11", "P08", "P09", "P13"],
       traps: ["T12", "T14", "T38", "T39"],
       files: [
         { label: "evidence/README.md", href: "../pipeline/evidence/README.md" },
@@ -778,18 +911,18 @@ const DATA = {
     { name: "ball_presence", stage: "evidence", status: "off", label: "available · off", channel: "alive",
       what: "Whether the tracker sees the ball, as `alive` evidence for the decoder. Its values (missing 0.2, seen 0.585) came from the public window (A01), and P05 replaced it.",
       entries: "P06: R006, R007", built: ["2026-10-25", "R006"], retuned: null },
-    { name: "controlled_touch", stage: "evidence", status: "main", channel: "home",
+    { name: "controlled_touch", stage: "evidence", status: "main", channel: "home", explain: "controlled_touch",
       what: "P04: a player within `radius` of the ball, no opponent within the duel radius, moving with it for at least `min_frames`, makes a control episode; its vote starts on the episode's first frame (back-dating, T03), and `hold` gives a weak vote for the last controlling team between episodes, so a pass in flight keeps the old team. Silent where the ball is missing.",
       params: "radius 1.5 m · max_rel_speed 6.0 m/s · min_frames 1 · hold 0.60 · confidence 0.93",
       entries: "P04: R008 (24 configs), R010; re-chosen R013 (192 configs)", built: ["2026-10-25", "R008"], retuned: ["2026-10-26", "R013"] },
     { name: "dead_ball_rules", stage: "evidence", status: "off", label: "available · off", channel: "alive",
       what: "P05's fixed rules on the 30 play features: the ball beyond a line, still at a restart spot, a collective slowdown, a kick-off formation. Thresholds from the laws of the game, values measured (R009); the boosted trees beat it.",
       entries: "P05: R009", built: ["2026-10-25", "R009"], retuned: null },
-    { name: "dead_ball_model", stage: "evidence", status: "main", channel: "alive",
+    { name: "dead_ball_model", stage: "evidence", status: "main", channel: "alive", explain: "dead_ball_model",
       what: "P05: gradient-boosted trees on 30 play features (where the ball is against the lines and the restart spots, how the players move, the set-piece shapes), trained on the 7 DFL matches degraded as `tracking` v3; a prior-corrected P(alive), and 0.001 before a half's kick-off. **Not re-tuned since R010, and that matters:** R009 chose the source and its weight with window-derived values in every candidate (`nearest_player` at 0.78, A01), and R013 declared them out of scope, so this is the one choice in `main.toml` never re-confirmed without the window's values (“After R013”).",
       params: "model `dead_ball_hgb.json` · weight 1.0",
       entries: "P05: R009 (24 configs), R010", built: ["2026-10-25", "R009"], retuned: ["2026-10-25", "R010"] },
-    { name: "shape_possession", stage: "evidence", status: "main", channel: "home",
+    { name: "shape_possession", stage: "evidence", status: "main", channel: "home", explain: "shape_possession",
       what: "P07: boosted trees on 26 features of how the two teams stand and move, none reading the ball, trained on the 7 DFL matches with the ball hidden and read symmetrically in the two teams. The only `home` evidence where the ball is missing (40.7% of the graded frames).",
       params: "model `shape_possession_hgb.json` · weight 0.2 · scope all · min_prob 0.02",
       entries: "P07: R011 (12 configs); weight re-chosen R013", built: ["2026-10-25", "R011"], retuned: ["2026-10-26", "R013"] },
@@ -799,14 +932,14 @@ const DATA = {
     { name: "majority_vote", stage: "decode", status: "baseline", label: "baseline · not in main",
       what: "Step 2 of the baseline: a ±`half_width` vote on `home`, ties to home, `D` where nobody voted. Rebuilds the four published baselines byte for byte; it ignores `alive`, so its `D` is only “the tracking lost the ball”.",
       entries: "R001", built: ["2026-10-22", "R001"], retuned: null },
-    { name: "hmm", stage: "decode", status: "main",
+    { name: "hmm", stage: "decode", status: "main", explain: "hmm",
       what: "P06: a three-state model (`H`, `A`, `D`) decoded by Viterbi once per half. Each source adds a log-likelihood ratio to the states it speaks for and a NaN adds nothing; a path pays `switch_team` for every change of team and `switch_dead` for every change into or out of `D`, and no run may be shorter than its minimum.",
       params: "switch_team 4 · switch_dead 32 · min_possession 35 · min_dead 25",
       entries: "P06: R006, R007, A10; re-chosen R010 (72 configs), R013 (144 configs)", built: ["2026-10-25", "R006"], retuned: ["2026-10-26", "R013"] },
     { name: "hmm restart states", stage: "decode", status: "dropped", label: "dropped · off",
       what: "`restart_source`: `D` split into “dead, home restarts” and “dead, away restarts”, so the decoder carries the restart team to wherever it ends `D`. +0.0003 raw (R014b, p 0.8125); off by default.",
       entries: "P17: R014b", built: ["2026-10-26", "R014b"], retuned: null },
-    { name: "shift_edges", stage: "refine", status: "main",
+    { name: "shift_edges", stage: "refine", status: "main", explain: "shift_edges",
       what: "P02: moves each kind of edge by a fixed number of frames, the pipeline's own lag on DFL negated; edges at a kick-off or next to an `X` never move, and nothing is added, removed or merged. +0.0005 raw, inside noise: adopted because its declared rule said so, not because it is shown to help.",
       params: "team +1 · into_dead −2 · out_of_dead 0",
       entries: "P02: A11, R012; re-derived R013 (same values)", built: ["2026-10-25", "R012"], retuned: ["2026-10-26", "R013"] },
@@ -849,6 +982,324 @@ const DATA = {
     { name: "p06_hmm.toml", status: "off", label: "research only", text: "P06's candidate. It did not clear its bar and its constants came from the public window, so it must not become a submission config unless they are re-derived from other games." }
   ],
 
+  /* ---------- Models: every model a pipeline stage runs. Numbers from docs/results.md (R008–R013, A13) and from
+     reading the committed JSON models (split shares and first trees: aggregates of models fitted on public DFL data). ---------- */
+  models: {
+    intro: "Every model a stage of `main.toml` runs, in the order the data meets them. Two are learned (boosted trees, trained on the seven DFL matches only), one is probabilistic (the HMM decoder), two are fixed rules. Nothing is fitted or chosen on our match.",
+    kinds: {
+      learned: { label: "learned · boosted trees", cls: "info", glyph: "◆" },
+      probabilistic: { label: "probabilistic · HMM", cls: "rule", glyph: "◇" },
+      rule: { label: "rule · fixed constants", cls: "ref", glyph: "▢" }
+    },
+    map: [
+      { stage: "evidence", title: "2 evidence", text: "Each source gives an opinion on every frame, never a label.", ids: ["controlled_touch", "shape_possession", "dead_ball_model"] },
+      { stage: "decode", title: "3 decode", text: "One label a frame, a whole half at a time.", ids: ["hmm"] },
+      { stage: "refine", title: "4 refine", text: "Metric-aware clean-ups.", ids: ["shift_edges"] }
+    ],
+    boosting: {
+      title: "The shared idea: gradient-boosted trees",
+      text: [
+        "A **decision tree** asks a few yes/no questions about a frame's features (“is the away team narrower than 37 m?”) and ends in a leaf that holds a number. One small tree is a crude rule.",
+        "**Boosting** adds 300 of them in sequence. Each new tree is fitted to what the trees before it still get wrong, and its leaves are scaled down by the learning rate (0.05), so every tree nudges the score a little. The score is the baseline plus one leaf from every tree: a **log-odds**, which the sigmoid turns into a probability.",
+        "**Why trees here.** They take raw metres, seconds and shares without scaling; they send a missing value down a learned side of each split (our ball is missing on 41% of frames, and a team can be missing too); and they capture interactions (many slow players together with a still ball). The one direct study of in-play status from tracking found boosting best (Lang et al. 2022)."
+      ],
+      flowCap: "The questions are the first three trees of the committed `shape_possession` model; the leaf values and the total are illustrative. A positive score leans home.",
+      flow: [
+        { k: "tree 1", q: "Away team narrower than 37.0 m?", v: "+0.07" },
+        { k: "tree 2", q: "Home team narrower than 37.0 m?", v: "−0.02" },
+        { k: "tree 3", q: "Away team narrower than 37.8 m?", v: "+0.05" }
+      ],
+      flowEnd: { more: "297 more trees", score: "+1.30", p: "P(home) = 0.79" },
+      settings: "Fixed beforehand and never tuned (T26): `loss log_loss` · `learning_rate 0.05` · 300 trees · 15 leaves a tree · at least 1,000 rows a leaf · `l2_regularization 1.0` · 255 bins · `random_state 0` · no early stopping (a random hold-out of neighbouring frames leaks).",
+      protocol: [
+        "**Trained on other matches only:** the seven DFL matches, degraded to look like our tracking (`tracking` v3, three seeds), every 5th graded frame (0.2 s apart, which cuts the near-duplicate neighbours).",
+        "**Leave one match out:** one model per held-out match, fitted on the other six, scores that match on the benchmark, so every benchmark number is out of fold. `full`, fitted on all seven, runs on our match.",
+        "**Shipped as JSON, run with numpy:** the trees' node arrays are exported and walked by `pipeline/evidence/trees.py`, so the submission needs neither scikit-learn nor a pickle, and `--verify` retrains and compares the file.",
+        "**Nothing from our match** fits or chooses anything (T01, T27); on it, only label-free checks are read."
+      ]
+    },
+    items: [
+      {
+        id: "controlled_touch", p: "P04", stage: "evidence", channel: "home", kind: "rule",
+        question: "Which team controls the ball right now, where the ball is seen?",
+        oneLine: "A fixed rule from the definition of possession: a team has the ball when one of its players is close to it, unchallenged, and moving with it. Nothing is learned; its one number, the confidence, is measured on DFL.",
+        intuition: [
+          "The nearest player is the wrong team on 22% of in-play frames (T14): during a pass in flight, a duel or a deflection, someone is nearest without having the ball. Possession changes only when the other team **controls** the ball, so this source speaks only inside control episodes.",
+          "A frame is a candidate when the ball is seen, its nearest player is within **1.5 m**, no opponent is within **1.0 m** of the ball, and ball and player move together (relative speed under **6 m/s**). A run of candidate frames for one team is an **episode**. Its vote starts on the episode's first frame, so confirming control costs no latency (back-dating, T03).",
+          "Between episodes a weak **hold** (0.60) keeps voting for the last team in control, so a pass in flight does not hand the ball over. Where the ball is missing it says nothing, and the shape model and the decoder carry those frames."
+        ],
+        visual: "touch",
+        strips: {
+          rows: [["nearest player", "HHHHHHHAAHAAAAAAHAAA"], ["touch evidence", "HHHHHhhhhhhAAAAAaaaa"], ["the truth", "HHHHHHHHHHHAAAAAAAAA"]],
+          cap: "Illustration, made-up frames. While the ball is in flight the nearest player flickers; the touch rule holds the old team weakly (outlined) until the other team controls the ball, and its vote for the new team starts on the first frame of that control."
+        },
+        reads: "The ball's position and every player's position, with velocities derived from positions (never the ATD's speed channels, T31), and each slot's team.",
+        params: "`radius` 1.5 m · `max_rel_speed` 6.0 m/s · `min_frames` 1 · `duel_radius` 1.0 m · `hold` 0.60 · `confidence` 0.93",
+        built: [
+          "Chosen by R013 on the benchmark: 192 settings of radius, relative speed, minimum frames and hold, with no window-derived value in any candidate. The settings trade off: on R008's grid the agreement fell from 95.8% to 91.9% as the share of ball-visible frames inside an episode rose from 26.7% to 47.6%.",
+          "`confidence` is not tuned: it is the floor of the pooled share of episode frames whose team is right on DFL (93.1%, so 0.93)."
+        ],
+        decoder: "On an episode frame `home` is 0.93 (or 0.07): log(0.93 / 0.07) = **2.59 nats** a frame between `H` and `A`. On a hold frame 0.60 (or 0.40): 0.41 nats. Elsewhere NaN, no opinion.",
+        kpis: [
+          { v: "93%", l: "of episode frames name the right team", n: "pooled on the DFL benchmark: the confidence, measured (R013)" },
+          { v: "43.4% · 36.9%", l: "of ball-visible frames inside an episode", n: "benchmark · our match (label-free, R013)" },
+          { v: "−0.1421", l: "raw spellF1 without it", n: "removed from R010's config (R010)" },
+          { v: "0", l: "frames it speaks on without the ball", n: "silent in the gaps, 40.7% of the graded frames" }
+        ],
+        limits: [
+          "Silent in the ball gaps; the shape model is the only `home` source there.",
+          "It takes the slot's team, so an identity swap next to the ball gives a confident wrong team (T32, P21).",
+          "Three of its constants sit on edges of R013's grid, and R013 advises no second round: a tighter rule covers even fewer of our frames (“After R013”, item 3). The next step on this side is P19, a learned model."
+        ],
+        files: [
+          { label: "controlled_touch.py", href: "../pipeline/evidence/controlled_touch.py" },
+          { label: "kinematics.py", href: "../pipeline/evidence/kinematics.py" },
+          { label: "touch_stats.py", href: "../pipeline/benchmark/touch_stats.py" },
+          { label: "evidence/README.md", href: "../pipeline/evidence/README.md" }
+        ],
+        run: [{ cmd: "python pipeline/benchmark/touch_stats.py --grid r013", note: "each setting's agreement and coverage on DFL, as R013 measured them" }]
+      },
+      {
+        id: "shape_possession", p: "P07", stage: "evidence", channel: "home", kind: "learned",
+        question: "Which team has the ball, judging only by how the two teams stand and move?",
+        oneLine: "Gradient-boosted trees on 26 features of the two teams' shape, none of which reads the ball, so it speaks in the gaps, where no other source can.",
+        intuition: [
+          "A team with the ball pushes up and spreads out to make the pitch big; the team without it drops deeper, narrows and shifts towards the ball. Those shapes are in the players' positions on every frame, ball or no ball.",
+          "So the model never looks at the ball. It was trained on the seven DFL matches with the ball hidden and our tracking's flaws simulated, and is asked about our gaps from the same kind of inputs.",
+          "Which team is home does not matter to the question, so every training row is also shown mirrored (the teams swapped, the label flipped), and at run time the source averages a frame with its mirror: logit(home) = (r(x) − r(swap(x))) / 2. Swapping the teams flips the answer exactly."
+        ],
+        visual: "shape",
+        reads: "Twelve numbers per team: players present; how far up the pitch they stand (mean, deepest line at the 10th percentile, most advanced at the 90th); width (90th minus 10th percentile across); velocity up the pitch, now and over ±1 s; mean speed; the shares in the attacking and defending thirds; the displacement over 1 s and 2 s. Then the gap between the two teams' middles and the difference in players present.",
+        shares: {
+          title: "What its 300 trees ask about",
+          cap: "Share of the model's 4,200 splits on each kind of feature, both teams together (the `full` model). A rough proxy of what it leans on, not an importance measured on data.",
+          rows: [
+            { label: "deepest line's height (10th pct.)", code: "adv_p10", v: 0.2233 },
+            { label: "mean player speed", code: "speed_mean", v: 0.1671 },
+            { label: "width", code: "width", v: 0.1643 },
+            { label: "most advanced line (90th pct.)", code: "adv_p90", v: 0.1174 },
+            { label: "the team's middle (mean)", code: "adv_mean", v: 0.0690 },
+            { label: "share in its own third", code: "own_third", v: 0.0531 },
+            { label: "moving up the pitch, ±1 s", code: "vel_adv_1s", v: 0.0474 },
+            { label: "moving up the pitch, now", code: "vel_adv", v: 0.0348 },
+            { label: "share in the attacking third", code: "att_third", v: 0.0345 },
+            { label: "5 others", code: "n, d_adv_2s, adv_gap, n_diff, d_adv_1s", v: 0.0890 }
+          ]
+        },
+        tree: {
+          sense: "team", pos: "home", neg: "away",
+          cap: "Tree 1 of 300, its first two levels, exactly as the committed model holds it. A leaf adds its value to the log-odds of home: positive leans home, negative away. Trees 2 to 5 also open on a team's width, at about 37 to 38 m.",
+          root: { q: "Is the away team narrower than 37 m?", code: "a_width ≤ 36.95 m", missing: "yes",
+            yes: { q: "Is the home team narrower than 33 m?", code: "h_width ≤ 32.98 m", missing: "yes",
+              yes: { more: "Both narrow: 9 more leaves, from −0.076 to +0.065; it asks next whether the away team is dropping back (`a_vel_adv ≤ −0.77 m/s`)." },
+              no: { more: "Home wider: 4 more leaves, from −0.015 to +0.088, mostly towards home." } },
+            no: { q: "Is the home team narrower than 40.7 m?", code: "h_width ≤ 40.68 m", missing: "no",
+              yes: { leaf: -0.0841, note: "the away team is the wide one" },
+              no: { leaf: 0.0714, note: "the home team is wider still" } } }
+        },
+        params: "`model` shape_possession_hgb.json · `weight` 0.2 · `scope` all · `min_prob` 0.02",
+        built: [
+          "Trained by `train_shape.py` on the alive frames of the seven DFL matches (`tracking` v3, three seeds, every 5th frame), each row with its mirror, so the classes balance exactly and `prior_home` is 0.5.",
+          "R011 chose weight 0.2 on every graded frame from 12 configs (weights 0.01 to 0.5, scope gaps or all), and R013 chose it again with the decoder (144 configs)."
+        ],
+        decoder: "`home` is clipped to [0.02, 0.98] and weighted 0.2, so a frame adds at most 0.2 × log(0.98 / 0.02) = **0.78 nats** between `H` and `A`. Weak on purpose: where a touch episode speaks (2.59 nats) the touch wins, and in the gaps it is the only voice. It says nothing about `alive`.",
+        kpis: [
+          { v: "0.376", l: "held-out log-loss, ball missing", n: "a coin flip scores ln 2 = 0.693 (R011)" },
+          { v: "83.5%", l: "held-out accuracy, ball missing", n: "pooled over the 7 held-out matches (R011)" },
+          { v: "+0.0942", l: "raw spellF1 it added", n: "over R010's config, 7 wins in 7 (R011)" },
+          { v: "0.825", l: "agrees with touch episodes on our match", n: "label-free transfer check; gate 0.749 (R011)" }
+        ],
+        charts: [
+          { type: "hbars", title: "Held-out accuracy where the ball is missing, per match", cap: "Each match scored by the model fitted on the other six, on its alive frames with the served ball missing (R011). The dashed line is a coin flip. J03WN1 is the hardest match on every measure.",
+            max: 1, ticks: [0, 0.25, 0.5, 0.75, 1], fmt: "pct1", ref: { v: 0.5, label: "coin flip" },
+            rows: [
+              { label: "J03WMX", v: 0.8304, tip: "log-loss 0.3928 on 98,966 ball-missing frames" },
+              { label: "J03WN1", v: 0.7912, tip: "log-loss 0.4612 on 87,035 ball-missing frames" },
+              { label: "J03WOH", v: 0.8373, tip: "log-loss 0.3711 on 90,369 ball-missing frames" },
+              { label: "J03WOY", v: 0.8440, tip: "log-loss 0.3624 on 95,561 ball-missing frames" },
+              { label: "J03WPY", v: 0.8389, tip: "log-loss 0.3574 on 101,397 ball-missing frames" },
+              { label: "J03WQQ", v: 0.8475, tip: "log-loss 0.3481 on 108,130 ball-missing frames" },
+              { label: "J03WR9", v: 0.8495, tip: "log-loss 0.3500 on 96,442 ball-missing frames" }
+            ] }
+        ],
+        limits: [
+          "It never saw Barça or Athletic: the benchmark's gain is not a forecast, and the count of possessions moved the other way on our match (down 2.4% where the benchmark's rose 16%, R011).",
+          "Shape lags a turnover: a team needs seconds to reshape, so it is good on who has the ball and weak on when it changed; touches and the decoder place the edges.",
+          "Wrong-team slots move its features (T32). It uses means, percentiles and shares, never a minimum or maximum, to limit that.",
+          "Next on this question: P20 (PathCRF, a stronger model of the same thing) and P22 (adapting this one to our teams without labels)."
+        ],
+        files: [
+          { label: "shape_possession.py", href: "../pipeline/evidence/shape_possession.py" },
+          { label: "shape_features.py", href: "../pipeline/evidence/shape_features.py" },
+          { label: "trees.py", href: "../pipeline/evidence/trees.py" },
+          { label: "train_shape.py", href: "../pipeline/benchmark/train_shape.py" },
+          { label: "shape_possession_hgb.json", href: "../pipeline/models/shape_possession_hgb.json" }
+        ],
+        run: [
+          { cmd: "python pipeline/benchmark/train_shape.py --verify", note: "retrain on DFL and compare with the committed JSON" },
+          { cmd: "python pipeline/benchmark/train_shape.py --report", note: "the held-out scores per match (the chart above)" }
+        ]
+      },
+      {
+        id: "dead_ball_model", p: "P05", stage: "evidence", channel: "alive", kind: "learned",
+        question: "Is the ball in play on this frame?",
+        oneLine: "Gradient-boosted trees on 30 features of the ball's state, the players' speeds and the set-piece shapes, trained on DFL's in-play flag. It gives the decoder its `D`.",
+        intuition: [
+          "A missing ball is not a dead ball (T12): our ball is visible on 66% of dead frames and missing in long in-play gaps. A stoppage leaves other traces: the ball past a line or on a restart spot, everyone slowing down at once, and the shapes of a kick-off, a corner or a goal kick.",
+          "The trees combine those traces. They lean most on where the ball is next and last seen relative to the lines and the restart spots, on how far past a line the farthest player stands (a throw-in taker), and on the players' speeds in the seconds before and after.",
+          "Two monotone constraints encode the laws of the game: a ball further past a line, and more slow players, never make play likelier."
+        ],
+        visual: "themes",
+        themes: {
+          title: "Four kinds of trace, and how often the trees ask about each",
+          cap: "Share of the model's 4,200 splits by kind of feature (the `full` model). It never splits on `ball_missing` itself.",
+          rows: [
+            { label: "the ball's state", code: "12 features", v: 0.4157, tip: "Past a line, still, on a restart spot, in a goal area; how long unseen, and where it was when last and next seen." },
+            { label: "the players' speeds", code: "9 features", v: 0.3198, tip: "Mean and 90th-percentile speed now, over the last 4 s and the next 4 s, and the share of slow players over ±0.5, ±2 and ±5 s." },
+            { label: "set-piece shapes", code: "6 features", v: 0.1888, tip: "Everyone in their own half (a kick-off), a crowd in a box, players in a goal area, someone at a corner or past a line." },
+            { label: "the teams' shape", code: "3 features", v: 0.0757, tip: "The gap between the teams' centroids, their spread, and how many slots are present." }
+          ]
+        },
+        reads: "Thirty numbers a frame. The ten it splits on most: how far past a line the ball is when next seen (8.0% of splits), how far past a line the farthest player stands (7.7%), how far from a restart spot the ball is when next seen (6.4%), how far past a line it was when last seen (6.1%), the players' mean speed over the last 4 s and the next 4 s (6.0% each), the share of slow players over ±5 s (5.6%), the teams' spread (4.7%), the ball's speed and the seconds since it was last seen (4.3% each).",
+        tree: {
+          sense: "alive", pos: "in play", neg: "dead",
+          cap: "Tree 1 of 300, its first two levels, from the committed model. A leaf adds its value to the log-odds that the ball is in play: positive leans in play, negative dead. Trees 2 to 5 open on the same slowdown (76%) or on the ball's speed when it was last seen.",
+          root: { q: "Are at most 76% of the players slow (under 2 m/s), over ±2 s?", code: "slow_share_c4 ≤ 0.761", missing: "yes",
+            yes: { q: "Is the ball exactly still?", code: "ball_speed ≤ 0", missing: "no",
+              yes: { leaf: -0.0109, note: "a still ball among moving players" },
+              no: { more: "9 more leaves, from −0.011 to +0.090, mostly towards in play; it asks next whether a player stands past a line (`outside_player_m ≤ 0.21 m`)." } },
+            no: { q: "Is the ball exactly still, or missing?", code: "ball_speed ≤ 0", missing: "yes",
+              yes: { more: "Nearly everyone slow and the ball still or gone: 4 more leaves, from −0.108 to −0.011, all towards dead." },
+              no: { leaf: -0.0109, note: "the ball moves while the players stand" } } }
+        },
+        params: "`model` dead_ball_hgb.json · `weight` 1.0 · `min_prob` 0.001",
+        built: [
+          "Trained by `train_dead_ball.py` on the seven DFL matches (`tracking` v3, three seeds, every 5th graded frame), label 1 where the truth is not `D`.",
+          "R009 chose it over logistic regression and fixed rules (24 configs: source × weight × `ball_presence`), and R010 kept it at weight 1.0 with the decoder re-tuned around it."
+        ],
+        decoder: "The trees' probability is calibrated to DFL's in-play share (55%), so the source removes that prior, logit(alive) = logit(p) − logit(0.55), and the decoder sets its own. Clipped to [0.001, 0.999]: up to **6.9 nats** a frame between in play and dead. Before the second half's kick-off it is 0.001 by rule (T02). It says nothing about `home`.",
+        kpis: [
+          { v: "0.084", l: "held-out log-loss", n: "logistic regression 0.153; better in 7 of 7 matches (R009)" },
+          { v: "0.993–0.997", l: "held-out AUC, alive against dead", n: "range over the 7 held-out matches (R009)" },
+          { v: "0.973", l: "alive/dead F1 on the benchmark", n: "overstated for our match: DFL tracks the ball out of play (T39)" },
+          { v: "−0.1661", l: "raw spellF1 without it", n: "removed from R010's config (R010)" },
+          { v: "35.9%", l: "of our graded frames it helps call `D`", n: "label-free check on our match; the benchmark's truth is 44.8% (R013, A14)" }
+        ],
+        charts: [
+          { type: "reliability", title: "Is a predicted 80% really 80%? Calibration, held out",
+            cap: "Pooled over the 7 held-out matches, 10 bins of the predicted P(alive) (R009). On the diagonal, a predicted rate is the observed one. Most frames sit in the two end bins (547,579 of 601,602 for the trees), where both models are within a hundredth.",
+            series: [["s1", "boosted trees"], ["s2", "logistic regression"]],
+            bins: ["0.0–0.1", "0.1–0.2", "0.2–0.3", "0.3–0.4", "0.4–0.5", "0.5–0.6", "0.6–0.7", "0.7–0.8", "0.8–0.9", "0.9–1.0"],
+            a: { rows: [243650, 9487, 5421, 4417, 4232, 4368, 5202, 7081, 13815, 303929], pred: [0.0074, 0.1428, 0.2473, 0.3491, 0.4503, 0.5525, 0.6523, 0.7531, 0.8573, 0.9905], obs: [0.0073, 0.1598, 0.2773, 0.3724, 0.4336, 0.5602, 0.6415, 0.7376, 0.8481, 0.9899] },
+            b: { rows: [215035, 21455, 12776, 10017, 9001, 9135, 10811, 14357, 24803, 274212], pred: [0.0152, 0.1429, 0.2472, 0.3492, 0.4494, 0.5510, 0.6514, 0.7525, 0.8560, 0.9859], obs: [0.0109, 0.1335, 0.2527, 0.3568, 0.4829, 0.6011, 0.6899, 0.7841, 0.8728, 0.9834] } },
+          { type: "dumbbell", title: "Held-out log-loss per match (lower is better)",
+            cap: "Each match scored by the model fitted on the other six (R009). The trees beat logistic regression on every match, by 0.06 to 0.08.",
+            series: [["s1", "boosted trees"], ["s2", "logistic regression"]], max: 0.2, ticks: [0, 0.05, 0.1, 0.15, 0.2],
+            rows: [
+              { label: "J03WMX", a: 0.0721, b: 0.1328 }, { label: "J03WN1", a: 0.0911, b: 0.1578 }, { label: "J03WOH", a: 0.0832, b: 0.1485 },
+              { label: "J03WOY", a: 0.0870, b: 0.1584 }, { label: "J03WPY", a: 0.0651, b: 0.1340 }, { label: "J03WQQ", a: 0.1028, b: 0.1693 },
+              { label: "J03WR9", a: 0.0855, b: 0.1677 }
+            ] }
+        ],
+        limits: [
+          "The benchmark overstates it for our match: DFL tracks the ball out of play and our tracker loses it there (T38, T39). Two profiles that would have measured this were dropped (P18).",
+          "Its source and weight were chosen with window-derived values present (R009) and never re-confirmed without them (“After R013”).",
+          "A perfect dead-ball source would add only +0.029 raw on the benchmark (A13): the remaining score is on the team side."
+        ],
+        files: [
+          { label: "dead_ball_model.py", href: "../pipeline/evidence/dead_ball_model.py" },
+          { label: "play_features.py", href: "../pipeline/evidence/play_features.py" },
+          { label: "trees.py", href: "../pipeline/evidence/trees.py" },
+          { label: "train_dead_ball.py", href: "../pipeline/benchmark/train_dead_ball.py" },
+          { label: "dead_ball_hgb.json", href: "../pipeline/models/dead_ball_hgb.json" }
+        ],
+        run: [
+          { cmd: "python pipeline/benchmark/train_dead_ball.py --model hgb --verify", note: "retrain on DFL and compare with the committed JSON; prints the held-out log-loss, Brier, AUC and calibration" }
+        ]
+      },
+      {
+        id: "hmm", p: "P06", stage: "decode", kind: "probabilistic",
+        question: "Given every source's opinion on every frame, what is the most likely sequence of possessions and stoppages for the whole half?",
+        oneLine: "A three-state hidden Markov model (`H`, `A`, `D`) decoded by Viterbi, once per graded half. It adds up the evidence, charges for every change and forbids runs that are too short.",
+        intuition: [
+          "Sources disagree and flicker, and spellF1 punishes every flicker: a blip turns one possession into three (T04). The decoder treats the labels as a path through three states and picks the path with the best total score over the whole half at once.",
+          "Each source turns its probability into **nats** (log-likelihood ratios) for the states it speaks about, and a NaN adds nothing. A path's score is the sum of its frames' nats, minus **4** for every change of team and **32** for every change into or out of `D`.",
+          "So a change has to be paid for by evidence. Two frames of a touch episode pay for a change of team, but a blip (out and back) costs 8 nats and needs strong evidence. And no possession may be shorter than **35 frames** (1.4 s), no stoppage shorter than **25** (1 s).",
+          "Viterbi finds the best path exactly by dynamic programming, in time linear in the half's length: nothing is approximated, and the same input always gives the same labels."
+        ],
+        visual: "hmm",
+        strips: {
+          rows: [["evidence leans", "HHHAHHHH··DDDDD·AAAA"], ["decoded (hmm)", "HHHHHHHHHHDDDDDDAAAA"]],
+          cap: "Schematic, made-up frames, not to scale (a real possession is at least 35 frames). The one-frame `A` cannot pay for two changes of team and is dropped; frames with no opinion keep the current state, since staying costs nothing; the stoppage's evidence pays for its two changes, so it stays."
+        },
+        reads: "One emission score per frame and state, summed over the sources in the config, each at its weight w (an exponent on its likelihood):",
+        formula: "where home h is known:   e[H] += w·log 2h     e[A] += w·log 2(1 − h)\nwhere alive a is known:  e[H], e[A] += w·log 2a     e[D] += w·log 2(1 − a)\npath score = Σ e[t, state] − 4 · (changes of team) − 32 · (changes into or out of D)",
+        params: "`switch_team` 4 · `switch_dead` 32 · `min_possession` 35 · `min_dead` 25 · per graded half",
+        built: [
+          "P06 built it (R006, R007); its four numbers were chosen on the benchmark with the sources they decode: R010 (72 configs) and R013 (144 configs, with P07's weight), each by a rule declared before its runs.",
+          "Alone, with the old window-derived sources, it did not clear its bar (R007: +0.0036 raw). It is what P04, P05 and P07 plug into."
+        ],
+        decoderTitle: "What it outputs",
+        decoder: "One label a frame (`H`, `A` or `D`) for each graded half, decoded on its own so nothing crosses halftime (T11); the runner writes `X` off the graded halves. It can also return P(H), P(A) and P(D) per frame (`posterior`, off in `main.toml`). The refiners then run on its labels.",
+        nats: {
+          title: "How hard each source can push, per frame",
+          cap: "The largest difference in nats one frame of each source adds between the states it separates, at `main.toml`'s settings. A change of team costs 4 nats, a blip out and back 8, a stoppage in and out 64; hover a bar for how many frames of that source pay for each.",
+          rows: [
+            { label: "dead_ball_model: in play against dead", v: 6.907, tip: "Clip 0.001, weight 1.0. Pays for a stoppage's two changes (64 nats) in 10 frames; no stoppage is shorter than 25 frames anyway." },
+            { label: "controlled_touch episode: H against A", v: 2.587, tip: "Confidence 0.93. Pays for a change of team (4 nats) in 2 frames, for a blip out and back (8 nats) in 4." },
+            { label: "shape_possession, at most: H against A", v: 0.778, tip: "0.2 × log(0.98 / 0.02). Pays for a change of team in 6 frames at its most confident, for a blip in 11." },
+            { label: "controlled_touch hold: H against A", v: 0.405, tip: "Hold 0.60. Pays for a change of team in 10 frames, a blip in 20: too weak to flip a team on its own, enough to keep one." }
+          ]
+        },
+        kpis: [
+          { v: "4 · 32", l: "nats a change of team · into or out of `D`", n: "`switch_team`, `switch_dead` (R010, R013)" },
+          { v: "35 · 25", l: "shortest possession · stoppage, in frames", n: "1.4 s and 1.0 s (R013)" },
+          { v: "0.918 · 0.969", l: "its ceiling with perfect evidence", n: "raw · coarse, against `main.toml`'s 0.543 · 0.559 (A13)" },
+          { v: "+0.0036", l: "alone, with the old sources", n: "R007: bar missed; it needs good evidence" }
+        ],
+        limits: [
+          "Its four numbers were chosen on DFL's fine-grained truth; the coarse truth prefers longer minimums (T33), and our truth's grain is unknown (P16).",
+          "The minimums are hard: a real possession under 1.4 s cannot be output, and the public window has ones of 0.76 s and 1.32 s. A duration prior (semi-Markov) would soften this.",
+          "A transition price binds only below the largest evidence it competes with (T44): at 6.9 nats a frame the dead-ball model can pay for a stoppage quickly."
+        ],
+        files: [
+          { label: "hmm.py", href: "../pipeline/decode/hmm.py" },
+          { label: "decode/README.md", href: "../pipeline/decode/README.md" }
+        ],
+        run: [{ cmd: "python pipeline/selftest.py", note: "pins the hmm against a brute force over every path of tiny blocks" }]
+      },
+      {
+        id: "shift_edges", p: "P02", stage: "refine", kind: "rule",
+        question: "The pipeline is a frame or two late or early at each kind of change: can we undo that?",
+        oneLine: "Moves every edge by a fixed number of frames, the pipeline's own median lag on DFL negated: a change of team 1 frame later, a change into `D` 2 frames earlier, a change out of `D` unmoved.",
+        intuition: [
+          "The shortest possessions tolerate only 0.3 to 1.5 s of total boundary error at IoU 0.7 (fact 5), so a systematic lag costs score. The lag was measured on DFL (A11, R012), and the shift undoes it.",
+          "It never adds, removes or merges a run, and an edge at a kick-off or next to an `X` never moves."
+        ],
+        visual: "shift",
+        strips: {
+          rows: [["decoded", "HHHHHHHAAAAAAADDDDDD"], ["after the shift", "HHHHHHHHAAAADDDDDDDD"]],
+          cap: "Illustration, made-up frames: the change of team moves 1 frame later, the change into `D` 2 frames earlier."
+        },
+        reads: "The decoded labels of one graded half, and nothing else.",
+        params: "`team` +1 · `into_dead` −2 · `out_of_dead` 0 frames",
+        built: ["R012 measured the pipeline's own lag on DFL and adopted its negation by a declared rule; R013 re-derived it and got the same values. The rule's second half, a gap to our truth's convention read from the public window, is retired (T40)."],
+        decoderTitle: "Where it runs",
+        decoder: "After the decoder, block by block, on its labels; so it cannot leak across halftime either.",
+        kpis: [
+          { v: "+1 · −2 · 0", l: "frames: team · into `D` · out of `D`", n: "R012, re-derived in R013" },
+          { v: "+0.0005", l: "raw spellF1 on the benchmark", n: "inside noise; adopted because its declared rule said so (R012)" }
+        ],
+        limits: ["DFL's flags may flip at other moments than our truth's (T40). A shift towards our convention would have to come from other games of our provider (P16), never from the public window."],
+        files: [
+          { label: "shift_edges.py", href: "../pipeline/refine/shift_edges.py" },
+          { label: "conventions.py", href: "../pipeline/benchmark/conventions.py" }
+        ],
+        run: [{ cmd: "python pipeline/benchmark/conventions.py latency", note: "the pipeline's own lag on DFL, per kind of change" }]
+      }
+    ]
+  },
+
   /* ---------- Proposals (docs/proposals.md, overview table and each Status) ---------- */
   proposals: [
     { id: "P01", anchor: "p01--a-validation-set-we-can-trust", title: "Validation set we can trust: other matches, degraded to look like ours", attacks: "deciding anything at all", effort: "M", impact: "enabling", status: "done", note: "done → R002–R005" },
@@ -864,21 +1315,29 @@ const DATA = {
     { id: "P09", anchor: "p09--camera-aim-as-a-coarse-ball-zone-prior", title: "Camera aim as a coarse ball-zone prior", attacks: "fact 1", effort: "S", impact: "low–medium", status: "idea", stage: "evidence",
       next: "The aim follows the ball's along-pitch position (corr 0.84) about 35 frames late, median error 12 m, nothing across the pitch (A03): features for P07 and P06, never for nearest-player logic." },
     { id: "P10", anchor: "p10--referee-whistle-from-the-audio-track", title: "Referee whistle from the audio track", attacks: "fact 4", effort: "S–M", impact: "medium (audio confirmed, A04)", status: "idea", stage: "evidence",
-      next: "Band-pass around 2–4 kHz and detect sustained tonal peaks; frame = `round(t × 25)` with no offset (A04); feed the whistle probability to P05 and P06." },
+      next: "Use a pretrained audio tagger (PANNs CNN14, MIT; AudioSet's “Whistle” class) in place of a hand-built band-pass; frame = `round(t × 25)` with no offset (A04); feed the whistle probability to P05 and P06. Low priority: the dead-ball headroom is +0.029 on the benchmark (A13)." },
     { id: "P11", anchor: "p11--touch-and-pass-events-to-place-boundaries", title: "Touch and pass events to place boundaries", attacks: "fact 5", effort: "M–L", impact: "medium–high", status: "idea", stage: "evidence",
-      next: "Touch candidates from the ball's kinematics, given to the nearest player; chain them into passes, receptions and interceptions; apply CHALLENGE.md literally and snap the decoder's boundaries to the matching touch." },
+      next: "Touch candidates from the ball's kinematics, given to the nearest player; chain them into passes, receptions and interceptions; snap the decoder's boundaries to the matching touch. Measure the detector first against DFL's own events (PathCRF's repository has them synchronised), starting from Vidal-Codina et al. 2022's rules." },
     { id: "P12", anchor: "p12--metric-aware-post-processing", title: "Metric-aware post-processing", attacks: "fact 5", effort: "S", impact: "medium", status: "partly", note: "partly done → R012 (the shift)", stage: "refine",
       next: "Left: drop possession blips shorter than m frames and `D` blips inside possessions (validate m on P01: real 0.76 s and 1.32 s possessions exist); explicit `D`, never `X`, before kick-offs and once the ball is out (T02); `X` only inside genuinely uncertain possessions." },
     { id: "P13", anchor: "p13--learn-from-external-labelled-tracking-data", title: "Pre-train on external labelled tracking data", attacks: "facts 1, 2", effort: "L (M on top of P01)", impact: "medium–high", status: "idea", stage: "evidence",
       next: "DFL, Metrica's sample games and SkillCorner, degraded as P01 does; pre-train P07 or a sequence model and hold the benchmark matches out. Nothing about this fixture (T26)." },
-    { id: "P14", anchor: "p14--recover-the-ball-from-the-video", title: "Recover the ball from the video", attacks: "facts 1, 2", effort: "L", impact: "medium–high, uncertain", status: "idea", stage: "inputs",
-      next: "A pretrained ball detector on the ~65k graded ATD-gap frames, projected with the homography; fine-tune only on other matches (T27) and decode frame-exactly (T23)." },
+    { id: "P14", anchor: "p14--recover-the-ball-from-the-video", title: "Recover the ball from the video", attacks: "facts 1, 2", effort: "L", impact: "A14: a perfect ball in our gaps is worth +0.10 raw but +0.02 coarse; a real detector perhaps +0.025 to +0.04 raw", status: "idea", note: "not built → A14 (gated)", stage: "inputs",
+      next: "Not a ViT: the ball is about 6 px wide (T46). If ever built, a stride-4 heatmap net at full resolution with stacked frames (FootAndBall or WASB-SBDT, MIT), trained on the ATD's own ball as algorithm-made pseudo-labels. Only test B may run now: zero-shot, half a day, CPU only (“After A14”, item 1)." },
     { id: "P15", anchor: "p15--broadcast-tracking-as-a-second-opinion", title: "Broadcast tracking as a second opinion", attacks: "facts 1, 4", effort: "L", impact: "medium", status: "idea", stage: "inputs",
       next: "Align the broadcast to the tactical feed by matching player configurations, a monotone time warp per shot; then fuse its ball and use “broadcast off the pitch” as stoppage evidence." },
     { id: "P16", anchor: "p16--metricas-sample-games-in-our-ground-truth-providers-conventions", title: "Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing", attacks: "boundary timing, grain", effort: "M", impact: "medium", status: "idea", stage: "benchmark",
       next: "Declare the adoption rule first, on the sample games alone; derive `H`, `A` and `D` from their events and tracking; measure the switch timing and the grain beside DFL's (A06). It decides whether R013's raw-truth gain helps on our match." },
     { id: "P17", anchor: "p17--the-restart-team-channel", title: "Restart-team channel: who restarts after a stoppage, from the players' arrangement", attacks: "facts 3, 5", effort: "S–M", impact: "ceiling +0.0198 raw (A12); delivered +0.0040 raw at best, bar not met (R014)", status: "dropped", note: "dropped → R014, R014b (code stays, off)" },
-    { id: "P18", anchor: "p18--the-offpitch-profile-dfls-ball-hidden-off-the-pitch-as-ours-is-and-p05-retrained-on-it", title: "offpitch profile: DFL's ball hidden off the pitch as ours is, and P05 retrained on it", attacks: "T39", effort: "M", impact: "A13: a perfect dead-ball source adds +0.029 raw; hiding the out-of-play ball cost today's P05 0.013 alive/dead F1 (R015)", status: "dropped", note: "dropped → R015, R015b (code removed)" }
+    { id: "P18", anchor: "p18--the-offpitch-profile-dfls-ball-hidden-off-the-pitch-as-ours-is-and-p05-retrained-on-it", title: "offpitch profile: DFL's ball hidden off the pitch as ours is, and P05 retrained on it", attacks: "T39", effort: "M", impact: "A13: a perfect dead-ball source adds +0.029 raw; hiding the out-of-play ball cost today's P05 0.013 alive/dead F1 (R015)", status: "dropped", note: "dropped → R015, R015b (code removed)" },
+    { id: "P19", anchor: "p19--a-learned-team-model-where-the-ball-is-seen", title: "A learned team model where the ball is seen: P05's recipe applied to the team", attacks: "fact 3; A13's largest lever (+0.194 raw where the ball is seen)", effort: "M (feasibility S)", impact: "guess +0.02 to +0.05 raw; fully benchmarkable", status: "idea", stage: "evidence",
+      next: "Boosted trees on the ball, the two nearest players of each team, the touch episodes on either side and P07's shape, trained on DFL's `BallPossession`. Feasibility first: leave-one-match-out per-frame accuracy against the touch rule and its hold; go if at least 2 points better in 6 of 7 matches." },
+    { id: "P20", anchor: "p20--ball-free-possession-paths-pathcrf-on-our-slots", title: "Ball-free possession paths: PathCRF (KDD 2026), trained on the same DFL matches", attacks: "fact 1; A13's gaps (+0.176 raw)", effort: "S test, L to adopt", impact: "medium–high, uncertain: 92.4% team accuracy without the ball on clean tracking, unknown on ours", status: "idea", stage: "evidence",
+      next: "Step 0: its published checkpoint (MPL-2.0) on the one DFL match it never trained on, clean and degraded to `tracking` v3 with a slot-stitching adapter, against P07 on the same gap frames; go if at least 4 points better. Retraining needs a GPU and DFL data only." },
+    { id: "P21", anchor: "p21--wrong-team-slots-measure-the-ceiling-then-repair-them", title: "Wrong-team slots: measure the ceiling, then repair from tracking or jersey colours", attacks: "T32", effort: "S test, M", impact: "low on the benchmark: all of `tracking`'s player degradation costs `main.toml` 0.013 (A14)", status: "idea", stage: "inputs",
+      next: "Step 0 (an hour): do our identity swaps cluster at the ball? If the share of touch candidates with a team over 11 slots is not well above 10.8%, drop it. Else repair by trajectory continuity, or by unsupervised jersey-colour clustering through the homography." },
+    { id: "P22", anchor: "p22--the-shape-model-adapted-to-our-two-teams-without-labels", title: "The shape model adapted to our two teams without labels", attacks: "fact 1", effort: "S–M", impact: "low: guess +0.00 to +0.02", status: "idea", stage: "evidence",
+      next: "(a) an EM label-shift prior from P07's own outputs; (b) one round of class-balanced self-training on confident `main.toml` frames, cross-fitted by half. Validate by simulating it leave-one-match-out on DFL." }
   ],
 
   /* ---------- Traps (docs/traps.md) ---------- */
@@ -910,9 +1369,10 @@ const DATA = {
     { id: "T41", title: "Hours of benchmark runs can take a machine down.", line: "One heavy process at a time, chunks of about 24 configs, `OPENBLAS_NUM_THREADS=1`, below-normal priority; `run.py` writes nothing until its last config is scored." },
     { id: "T43", title: "An oracle that stops where the truth changes measures more than a source can deliver.", line: "A12's +0.0198 restart ceiling became +0.0040 (R014): build an oracle with the real source's footprint." },
     { id: "T44", title: "A transition price binds only below the largest evidence it competes with.", line: "R014b's `switch_restart` grid could not differ: put a penalty grid on both sides of the largest evidence." },
-    { id: "T45", title: "A degradation fitted to one statistic can move the others away.", line: "R015's offpitch v1 matched its statistic and failed the median gap: sweep every gate statistic with a cheap label-free script first." }
+    { id: "T45", title: "A degradation fitted to one statistic can move the others away.", line: "R015's offpitch v1 matched its statistic and failed the median gap: sweep every gate statistic with a cheap label-free script first." },
+    { id: "T46", title: "The ball is about 6 px wide in the tactical video, smaller than a vision transformer's patch.", line: "4.7 to 8.2 px (A14). Any detector that shrinks the frame first loses it: check the ball's pixel size before choosing a vision model." }
   ],
-  topTraps: ["T01", "T02", "T03", "T04", "T05", "T11", "T12", "T13", "T14", "T27", "T31", "T33", "T38", "T39", "T41", "T43", "T45"],
+  topTraps: ["T01", "T02", "T03", "T04", "T05", "T11", "T12", "T13", "T14", "T27", "T31", "T33", "T38", "T39", "T41", "T43", "T45", "T46"],
 
   /* ---------- How it works ---------- */
   how: {
@@ -1014,7 +1474,9 @@ const DATA = {
     { date: "2026-10-29", title: "A13: the headroom of main.toml", entries: "A13", outcome: "analysis", stages: ["benchmark", "evidence"],
       text: "The remaining score is in who has the ball: a perfect team where the ball is seen adds +0.194 raw and in the gaps +0.176, against +0.029 for a perfect dead-ball source (7 wins in 7 each)." },
     { date: "2026-10-29", title: "P18 offpitch profile dropped", entries: "R015, R015b", outcome: "dropped", stages: ["benchmark"],
-      text: "Hiding DFL's out-of-play ball: v1 failed the median-gap gate (15.04 s against 10.74 s) and cost today's P05 0.013 alive/dead F1; v2 could not reach our share past a line (0.258–0.262 against 0.0407). Code removed in `7b555eb`; `main.toml` unchanged." }
+      text: "Hiding DFL's out-of-play ball: v1 failed the median-gap gate (15.04 s against 10.74 s) and cost today's P05 0.013 alive/dead F1; v2 could not reach our share past a line (0.258–0.262 against 0.0407). Code removed in `7b555eb`; `main.toml` unchanged." },
+    { date: "2026-10-29", title: "A14: a video ball detector, debated and measured before building", entries: "A14, P14, P19–P22", outcome: "analysis", stages: ["inputs", "benchmark"],
+      text: "The ball is about 6 px wide in the tactical video, smaller than a ViT patch (T46), and the tracker loses it inside the image, not at its edge. On the benchmark a perfect ball in our gaps is worth +0.10 raw but +0.02 coarse; both sides' declared rules say no full build. P19–P22 were added for the team side." }
   ],
   outcomes: {
     adopted: { label: "adopted", cls: "ok", glyph: "✓" },
@@ -1162,14 +1624,21 @@ const DATA = {
     { term: "evidence (alive / home)", def: "A source's per-frame opinion: `alive` = P(ball in play), `home` = P(home has it | in play), NaN = no opinion. P(H) = alive·home, P(A) = alive·(1 − home), P(D) = 1 − alive." },
     { term: "declared rule", def: "The values, objective, selection rule and bar written in docs/results.md before an experiment runs; adoption follows it whatever the result." },
     { term: "the bar", def: "The threshold an experiment declares for adoption; P06's was a delta above 0 with p ≤ 0.05 against `nearest_w50` (raw) and `nearest_w125` (coarse), P17's +0.005 raw with p ≤ 0.05." },
-    { term: "sign-flip test", def: "An exact two-sided test of the seven per-match deltas over all 2^7 sign patterns; the smallest possible p is 2/128 = 0.0156. Used with 90% t-intervals and wins of seven, never a bootstrap." }
+    { term: "sign-flip test", def: "An exact two-sided test of the seven per-match deltas over all 2^7 sign patterns; the smallest possible p is 2/128 = 0.0156. Used with 90% t-intervals and wins of seven, never a bootstrap." },
+    { term: "gradient-boosted trees (HGB)", def: "Many small decision trees added in sequence, each fitted to what the trees before it still get wrong; their leaf values add up to a log-odds. P05 and P07 use scikit-learn's `HistGradientBoostingClassifier`, exported to JSON and walked with numpy ([Models](#models))." },
+    { term: "log-odds, nats", def: "log(p / (1 − p)) in natural-log units, called nats. The decoder adds evidence in nats: a source that says 0.93 is worth log(0.93 / 0.07) = 2.59 nats a frame between `H` and `A`." },
+    { term: "Viterbi", def: "The dynamic-programming algorithm that finds the single best path of states through a whole half, exactly, in time linear in its length. The `hmm` decoder uses it." },
+    { term: "out of fold, leave one match out", def: "A benchmark match is scored only by a model fitted on the other six, so no model is scored on a match it saw. Our match is scored by `full`, fitted on all seven." },
+    { term: "calibration (reliability)", def: "A model is calibrated when, among the frames it calls 80% likely, about 80% are. The reliability chart on the Models tab compares predicted with observed rates, bin by bin." },
+    { term: "prior correction", def: "Taking the training set's class share out of a probability, logit(p) − logit(prior), so that the decoder receives a likelihood and sets its own prior. `dead_ball_model` does it; `shape_possession` needs none (its prior is 0.5 by construction)." },
+    { term: "split share", def: "How often a boosted model splits on a feature, over all its trees: a rough proxy of what it leans on, not an importance measured on data." }
   ],
   docs: [
     { href: "../CLAUDE.md", label: "CLAUDE.md", text: "The hard rules, every command, the architecture and the data facts that bite." },
     { href: "../docs/README.md", label: "docs/README.md", text: "What each team doc holds and when to update it." },
-    { href: "../docs/proposals.md", label: "docs/proposals.md", text: "Ideas P01–P18 with effort, impact and status, and the “After …” recommendations." },
+    { href: "../docs/proposals.md", label: "docs/proposals.md", text: "Ideas P01–P22 with effort, impact and status, and the “After …” recommendations." },
     { href: "../docs/results.md", label: "docs/results.md", text: "Every R and A entry with its numbers, the scoreboard and the submission log." },
-    { href: "../docs/traps.md", label: "docs/traps.md", text: "Pitfalls T01–T45: why they happen and what to do instead." },
+    { href: "../docs/traps.md", label: "docs/traps.md", text: "Pitfalls T01–T46: why they happen and what to do instead." },
     { href: "../docs/technical_document.md", label: "docs/technical_document.md", text: "The draft of deliverable 3." },
     { href: "../pipeline/README.md", label: "pipeline/README.md", text: "The pipeline's overview: diagram, contracts, configs, checks, validation." },
     { href: "../pipeline/inputs/README.md", label: "pipeline/inputs/README.md", text: "Stage 1: alignment and the ATD cache." },
@@ -1401,7 +1870,14 @@ const DATA = {
       h("p", { class: "chart-cap", html: md(hr.caption) }),
       headroomTable());
 
+    const ob = DATA.onboarding;
+    const start = h("article", { class: "card" },
+      h("div", { class: "section-head", style: "margin-bottom:0" }, h("h3", { text: ob.title }), h("p", { html: md(ob.intro) })),
+      h("ol", { class: "path" }, ob.steps.map(s => h("li", {}, h("a", { href: s.href },
+        h("span", { class: "p-t", text: s.title }), h("span", { class: "p-d", html: md(s.text) }), h("span", { class: "p-m", text: s.time }))))));
+
     p.append(
+      h("div", { class: "section" }, start),
       h("div", { class: "section" }, sectionHead("Where we stand", "As of " + fmtDate(DATA.asOf) + " · main at `" + DATA.commit + "`"), cards),
       h("div", { class: "section" }, sectionHead("Dates", "Counted from your computer's date."), datesStrip()),
       h("div", { class: "section two" }, today, next),
@@ -1640,7 +2116,8 @@ const DATA = {
     meta.append(h("dt", { text: "Last re-tuned" }), h("dd", { class: "num", text: c.retuned ? c.retuned[0] + " · " + c.retuned[1] : "never" }));
     return h("article", { class: "comp" },
       h("div", { class: "comp-head" }, h("span", { class: "comp-name", text: c.name }), badge(c.status, c.label || s.label), c.channel ? h("span", { class: "chan", text: c.channel }) : null),
-      h("p", { html: md(c.what) }), meta);
+      h("p", { html: md(c.what) }), meta,
+      c.explain ? h("p", { style: "margin:6px 0 0" }, h("a", { class: "more-link", href: "#models/" + c.explain, text: "How it works, with visuals →" })) : null);
   }
   function plannedList(items) {
     const ul = h("ul", { class: "plist" });
@@ -1683,6 +2160,10 @@ const DATA = {
     right.append(h("section", {}, h("h3", { text: "Files" }), h("ul", { class: "files" }, st.files.map(f => h("li", {}, h("a", { href: f.href, text: f.label }))))));
     right.append(h("section", {}, h("h3", { text: "Run it" }), st.run.map(r => cmdBlock(r.cmd, r.note)), h("p", { class: "small muted", html: md(DATA.commandsNote) })));
 
+    const ms = DATA.models.items.filter(m => m.stage === st.id);
+    const minis = ms.length ? h("section", {}, h("h3", { text: ms.length > 1 ? "The models in this stage" : "The model in this stage", style: "font-size:14px; margin:0 0 10px" }),
+      h("div", { class: "mini-models" }, ms.map(modelMini))) : null;
+
     panel.append(
       h("div", { class: "sp-head" },
         h("span", { class: "sp-kicker", text: st.side ? (st.id === "benchmark" ? "Side loop · validation" : "Side input") : "Stage " + st.num }),
@@ -1690,7 +2171,346 @@ const DATA = {
         h("span", { class: "sp-built", text: "built: " + st.built })),
       h("p", { class: "lead", html: md(st.summary) }),
       h("div", { class: "contract", html: md(st.contract) }),
+      minis,
       h("div", { class: "sp-grid" }, left, right));
+  }
+
+  /* ---------------- Models ---------------- */
+  const modelById = id => DATA.models.items.find(m => m.id === id);
+  function kindBadge(kind) {
+    const k = DATA.models.kinds[kind];
+    return h("span", { class: "badge " + k.cls }, h("span", { class: "g", "aria-hidden": "true", text: k.glyph }), k.label);
+  }
+  function kpiGrid(kpis) {
+    return h("div", { class: "kpis" }, kpis.map(k => h("div", { class: "kpi" },
+      h("div", { class: "v num", html: md(k.v) }), h("div", { class: "l", html: md(k.l) }), k.n ? h("div", { class: "n", html: md(k.n) }) : null)));
+  }
+
+  // Strips of made-up frames: a letter in every cell, so a label never rests on colour alone.
+  const STRIP = { H: ["H", "H", "home"], A: ["A", "A", "away"], D: ["D", "D", "dead"], "·": ["N", "·", "no opinion"],
+    h: ["hw", "H", "home, a weak hold"], a: ["aw", "A", "away, a weak hold"] };
+  function stripRows(rows) {
+    const used = [];
+    const box = h("div", { class: "strips" }, rows.map(([name, seq]) => {
+      const cells = Array.from(seq);
+      cells.forEach(c => { if (STRIP[c] && used.indexOf(c) < 0) used.push(c); });
+      return h("div", { class: "strip-row" }, h("span", { class: "s-name", text: name }),
+        h("div", { class: "strip", role: "img", "aria-label": name + ": " + cells.map(c => (STRIP[c] ? STRIP[c][2] : c)).join(", ") },
+          cells.map(c => { const s = STRIP[c] || ["N", c]; return h("span", { class: "cell " + s[0], "aria-hidden": "true", text: s[1] }); })));
+    }));
+    const order = ["H", "A", "D", "h", "a", "·"].filter(c => used.indexOf(c) >= 0);
+    return h("div", {}, box, h("div", { class: "skey", "aria-hidden": "true" },
+      order.map(c => h("span", {}, h("span", { class: "cell " + STRIP[c][0], text: STRIP[c][1] }), STRIP[c][2]))));
+  }
+
+  // A decision tree as an indented list: readable at any width, no layout to break.
+  function treeView(t) {
+    const node = n => {
+      if (n.leaf != null) {
+        const pos = n.leaf >= 0;
+        return h("div", { class: "dnode dleaf " + (pos ? "pos" : "neg") },
+          h("span", { class: "dq num", text: (pos ? "+" : "−") + Math.abs(n.leaf).toFixed(3) + " → towards " + (pos ? t.pos : t.neg) }),
+          n.note ? h("span", { class: "dc", style: "font-family: inherit", text: n.note }) : null);
+      }
+      if (n.more) return h("div", { class: "dnode dmore" }, h("span", { class: "dq", html: md(n.more) }));
+      return h("div", { class: "dnode" }, h("span", { class: "dq", text: n.q }), h("span", { class: "dc", text: n.code + " · missing goes " + n.missing }));
+    };
+    const kids = n => h("ul", {}, branch("yes", n.yes), branch("no", n.no));
+    const branch = (edge, n) => h("li", {}, h("div", { class: "drow" }, h("span", { class: "dedge", text: edge }), node(n)), n.yes ? kids(n) : null);
+    return h("ul", { class: "dtree", "data-sense": t.sense }, h("li", {}, node(t.root), kids(t.root)));
+  }
+
+  function boostFlow(b) {
+    const box = (k, q, v, cls) => h("div", { class: "bbox" + (cls ? " " + cls : "") }, h("span", { class: "bk", text: k }),
+      q ? h("span", { class: "bq", text: q }) : null, v ? h("span", { class: "bv", text: v }) : null);
+    const op = t => h("span", { class: "bop", "aria-hidden": "true", text: t });
+    const kids = [box("start", "the baseline", "0.00", "sum")];
+    b.flow.forEach(f => kids.push(op("+"), box(f.k, f.q, "adds " + f.v)));
+    kids.push(op("+"), box("…", b.flowEnd.more, null, "sum"), op("="), box("score", "log-odds", b.flowEnd.score, "sum"), op("→"), box("sigmoid", null, b.flowEnd.p, "sum"));
+    return h("div", { class: "bflow", role: "img", "aria-label": "Boosting: a baseline plus the leaf of each of 300 trees gives a log-odds score, which the sigmoid turns into a probability. " +
+      b.flow.map(f => f.k + " asks: " + f.q).join("; ") + "." }, kids);
+  }
+
+  // Illustrations with made-up positions: what each source looks at, not data.
+  function touchSvg() {
+    return '<svg class="illus-svg" style="max-width:440px" viewBox="0 12 120 63" role="img" aria-label="Illustration of a control episode: a home player with the ball within 1.5 metres, no opponent within 1.0 metre of the ball, and ball and player moving the same way.">' +
+      '<defs><marker id="touch-arrow" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="4" markerHeight="4" orient="auto-start-reverse"><path class="i-arrowhead" d="M0,0 L6,3 L0,6 Z"/></marker></defs>' +
+      '<circle class="i-ring" cx="34" cy="36" r="14"/>' +
+      '<circle class="i-ring duel" cx="41" cy="33" r="8"/>' +
+      '<line class="i-arrow" x1="38" y1="38.5" x2="55" y2="44" marker-end="url(#touch-arrow)"/>' +
+      '<line class="i-arrow" x1="43" y1="34" x2="60" y2="39.5" marker-end="url(#touch-arrow)"/>' +
+      '<circle class="i-h" cx="34" cy="36" r="3.4"/><text x="34" y="37.3" text-anchor="middle" font-size="3.6" font-weight="700" fill="#fff">H</text>' +
+      '<circle class="i-ball" cx="41" cy="33" r="1.4"/>' +
+      '<rect class="i-a" x="70" y="15" width="6.4" height="6.4" rx="1"/><text x="73.2" y="19.5" text-anchor="middle" font-size="3.6" font-weight="700" fill="#fff">A</text>' +
+      '<text class="i-txt" x="78.5" y="19.8" font-size="3.7">opponent, beyond 1.0 m</text>' +
+      '<text class="i-txt" x="61" y="44.5" font-size="3.7">moving together:</text>' +
+      '<text class="i-txt" x="61" y="49.3" font-size="3.7">relative speed under 6 m/s</text>' +
+      '<text class="i-mut" x="2" y="61" font-size="3.7">dashed ring: 1.5 m around the nearest player</text>' +
+      '<text class="i-mut" x="2" y="66.5" font-size="3.7">dotted ring: 1.0 m around the ball, no opponent in it</text>' +
+      '<text class="i-mut" x="2" y="72" font-size="3.7">all three, frame after frame: a control episode for H</text></svg>';
+  }
+  function shapeSvg() {
+    const hs = [[6, 34], [40, 9], [39, 26], [39, 42], [41, 59], [55, 7], [57, 28], [56, 44], [59, 61], [73, 22], [75, 46]];
+    const as = [[99, 34], [85, 22], [84, 30], [84, 38], [85, 46], [75, 19], [74, 29], [74, 39], [76, 49], [65, 30], [66, 40]];
+    let s = '<svg class="illus-svg" viewBox="0 0 105 82" role="img" aria-label="Illustration, made-up positions: the home team, in possession and attacking right, stands high and wide, about 54 metres; the away team stands deep and narrow, about 30 metres. The ball is not read.">';
+    s += '<rect class="i-pitch" x="0.5" y="0.5" width="104" height="67"/><line class="i-pitch" x1="52.5" y1="0.5" x2="52.5" y2="67.5"/>';
+    s += '<circle class="i-pitch" cx="52.5" cy="34" r="9.15"/><rect class="i-pitch" x="0.5" y="13.84" width="16" height="40.32"/><rect class="i-pitch" x="88.5" y="13.84" width="16" height="40.32"/>';
+    s += '<line class="i-guide" x1="39" y1="2" x2="39" y2="66"/><line class="i-guide" x1="84" y1="2" x2="84" y2="66"/>';
+    hs.forEach(([x, y]) => { s += '<circle class="i-h" cx="' + x + '" cy="' + y + '" r="1.7"/>'; });
+    as.forEach(([x, y]) => { s += '<rect class="i-a" x="' + (x - 1.5) + '" y="' + (y - 1.5) + '" width="3" height="3"/>'; });
+    s += '<circle class="i-ball faded" cx="61.5" cy="57.5" r="1.1"/>';
+    s += '<text class="i-mut" x="37.5" y="4.6" font-size="2.8" text-anchor="end">H deepest line →</text><text class="i-mut" x="82.5" y="4.6" font-size="2.8" text-anchor="end">A deepest line →</text>';
+    s += '<circle class="i-h" cx="2.2" cy="73" r="1.7"/><text class="i-txt" x="5" y="74.1" font-size="2.9">H, attacking →: high and wide (54 m)</text>';
+    s += '<rect class="i-a" x="0.7" y="76.8" width="3" height="3"/><text class="i-txt" x="5" y="79.5" font-size="2.9">A: deep and narrow (30 m)</text>';
+    s += '<text class="i-mut" x="104" y="79.6" font-size="2.9" text-anchor="end">dashed circle: the ball, never read</text></svg>';
+    return s;
+  }
+
+  // Bars from zero, one series, one row each: label above its bar, value at its end.
+  const fmtBy = (f, v) => f === "pct" || f === "pct1" ? (v * 100).toFixed(1) + "%" : f === "nats" ? v.toFixed(2) + " nats" : String(v);
+  function drawHBars(box, W, spec) {
+    const rows = spec.rows, labelH = 18, barH = 12, groupGap = 12, axisH = 22, padR = 70, topPad = spec.ref ? 16 : 0;
+    const groupH = labelH + barH + groupGap;
+    const plotH = rows.length * groupH - groupGap / 2;
+    const H = topPad + plotH + axisH;
+    const plotW = Math.max(60, W - padR);
+    const x = v => (v / spec.max) * plotW;
+    const maxChars = Math.max(12, Math.floor(W / 7));
+    const clip = t => (t.length > maxChars ? t.slice(0, maxChars - 1) + "…" : t);
+    let s = '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + " " + H + '" role="group" aria-label="' + esc(spec.aria || spec.title) + '">';
+    spec.ticks.forEach(t => {
+      const gx = Math.round(x(t)) + 0.5;
+      s += '<text class="c-tick" x="' + gx + '" y="' + (topPad + plotH + 16) + '" text-anchor="' + (t === 0 ? "start" : "middle") + '">' + fmtBy(spec.fmt === "nats" ? "plain" : spec.fmt, t).replace(".0%", "%") + "</text>";
+    });
+    rows.forEach((r, i) => {
+      const yb = topPad + i * groupH + labelH;
+      spec.ticks.forEach(t => {
+        const gx = Math.round(x(t)) + 0.5;
+        s += '<line class="' + (t === 0 ? "c-axis" : "c-grid") + '" x1="' + gx + '" x2="' + gx + '" y1="' + (yb - 3) + '" y2="' + (yb + barH + 3) + '"/>';
+      });
+    });
+    if (spec.ref) {
+      const rx = Math.round(x(spec.ref.v)) + 0.5;
+      s += '<line class="c-ref" x1="' + rx + '" x2="' + rx + '" y1="' + (topPad - 2) + '" y2="' + (topPad + plotH) + '"/>';
+      s += '<text class="c-note" x="' + (rx + 4) + '" y="11">' + esc(spec.ref.label) + "</text>";
+    }
+    rows.forEach((r, i) => {
+      const y0 = topPad + i * groupH, yb = y0 + labelH;
+      s += '<g class="c-group" tabindex="0" role="img" data-i="' + i + '" aria-label="' + esc(r.label + ": " + fmtBy(spec.fmt, r.v) + (r.tip ? ". " + r.tip : "")) + '">';
+      s += '<rect class="c-wash" x="-4" y="' + (y0 - 2) + '" width="' + (W + 4) + '" height="' + (labelH + barH + 8) + '" rx="6"/>';
+      s += '<text class="c-label" x="0" y="' + (y0 + 13) + '">' + esc(clip(r.label)) + "</text>";
+      s += '<path class="f1" d="' + barPath(0.5, yb, Math.max(1.5, x(r.v)), barH, 4) + '"/>';
+      s += '<text class="c-val" x="' + (x(r.v) + 6) + '" y="' + (yb + barH - 2) + '">' + fmtBy(spec.fmt, r.v) + "</text>";
+      s += "</g>";
+    });
+    box.innerHTML = s + "</svg>";
+    bindTips(box, i => {
+      const r = rows[i];
+      return h("div", {}, h("div", { class: "t-head", text: r.label }), r.code ? h("div", { class: "t-sub" }, h("code", { text: r.code })) : null,
+        tipRow("s1", fmtBy(spec.fmt, r.v), spec.valueName || ""), r.tip ? h("div", { class: "t-sub", style: "margin:6px 0 0", html: md(r.tip) }) : null);
+    });
+  }
+
+  // Two values per row on one axis, joined: a paired comparison.
+  function drawDumbbell(box, W, spec) {
+    const rows = spec.rows, rowH = 30, padL = 70, padR = 16, axisH = 24;
+    const H = rows.length * rowH + axisH;
+    const plotW = Math.max(60, W - padL - padR);
+    const x = v => padL + (v / spec.max) * plotW;
+    let s = '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + " " + H + '" role="group" aria-label="' + esc(spec.title) + '">';
+    spec.ticks.forEach(t => {
+      const gx = Math.round(x(t)) + 0.5;
+      s += '<line class="' + (t === 0 ? "c-axis" : "c-grid") + '" x1="' + gx + '" x2="' + gx + '" y1="0" y2="' + (rows.length * rowH) + '"/>';
+      s += '<text class="c-tick" x="' + gx + '" y="' + (rows.length * rowH + 16) + '" text-anchor="middle">' + t.toFixed(2) + "</text>";
+    });
+    rows.forEach((r, i) => {
+      const cy = i * rowH + rowH / 2;
+      const aria = r.label + ": " + spec.series[0][1] + " " + r.a.toFixed(4) + ", " + spec.series[1][1] + " " + r.b.toFixed(4);
+      s += '<g class="c-group" tabindex="0" role="img" data-i="' + i + '" aria-label="' + esc(aria) + '">';
+      s += '<rect class="c-wash" x="0" y="' + (cy - rowH / 2 + 1) + '" width="' + W + '" height="' + (rowH - 2) + '" rx="6"/>';
+      s += '<text class="c-label" x="4" y="' + (cy + 4.5) + '">' + esc(r.label) + "</text>";
+      s += '<line class="c-dumb" x1="' + x(r.a).toFixed(1) + '" x2="' + x(r.b).toFixed(1) + '" y1="' + cy + '" y2="' + cy + '"/>';
+      s += '<circle class="c-dot f1" cx="' + x(r.a).toFixed(1) + '" cy="' + cy + '" r="5"/>';
+      s += '<circle class="c-dot f2" cx="' + x(r.b).toFixed(1) + '" cy="' + cy + '" r="5"/>';
+      s += "</g>";
+    });
+    box.innerHTML = s + "</svg>";
+    bindTips(box, i => {
+      const r = rows[i];
+      return h("div", {}, h("div", { class: "t-head", text: r.label }),
+        tipRow("s1", r.a.toFixed(4), spec.series[0][1]), tipRow("s2", r.b.toFixed(4), spec.series[1][1]),
+        h("div", { class: "t-sub", style: "margin:6px 0 0", text: "difference " + (r.b - r.a).toFixed(4) }));
+    });
+  }
+
+  // Predicted against observed, per bin, two series; the diagonal is a perfect calibration.
+  function drawReliability(box, W, spec) {
+    const padL = 40, padR = 12, padT = 10, padB = 34;
+    const size = Math.max(160, Math.min(W - padL - padR, 340));
+    const H = size + padT + padB;
+    const x = v => padL + v * size, y = v => padT + (1 - v) * size;
+    let s = '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + " " + H + '" role="group" aria-label="' + esc(spec.title) + '">';
+    [0, 0.25, 0.5, 0.75, 1].forEach(t => {
+      const gx = Math.round(x(t)) + 0.5, gy = Math.round(y(t)) + 0.5;
+      s += '<line class="' + (t === 0 ? "c-axis" : "c-grid") + '" x1="' + padL + '" x2="' + (padL + size) + '" y1="' + gy + '" y2="' + gy + '"/>';
+      s += '<line class="' + (t === 0 ? "c-axis" : "c-grid") + '" x1="' + gx + '" x2="' + gx + '" y1="' + padT + '" y2="' + (padT + size) + '"/>';
+      s += '<text class="c-tick" x="' + (padL - 6) + '" y="' + (gy + 4) + '" text-anchor="end">' + t + "</text>";
+      s += '<text class="c-tick" x="' + gx + '" y="' + (padT + size + 15) + '" text-anchor="middle">' + t + "</text>";
+    });
+    s += '<line class="c-diag" x1="' + x(0) + '" y1="' + y(0) + '" x2="' + x(1) + '" y2="' + y(1) + '"/>';
+    s += '<text class="c-note" x="' + (padL + size / 2) + '" y="' + (padT + size + 30) + '" text-anchor="middle">predicted P(alive), bin mean</text>';
+    s += '<text class="c-note" x="' + (x(0.03)) + '" y="' + (y(0.93)) + '">observed share alive</text>';
+    [["a", "l1", "f1"], ["b", "l2", "f2"]].forEach(([k, lc]) => {
+      const d = spec[k].pred.map((p, i) => (i ? "L" : "M") + x(p).toFixed(1) + "," + y(spec[k].obs[i]).toFixed(1)).join("");
+      s += '<path class="c-line ' + lc + '" d="' + d + '"/>';
+    });
+    spec.bins.forEach((bn, i) => {
+      s += '<g class="c-group" tabindex="0" role="img" data-i="' + i + '" aria-label="' + esc("Bin " + bn + ": " + spec.series[0][1] + " predicted " + spec.a.pred[i].toFixed(3) + ", observed " + spec.a.obs[i].toFixed(3) + "; " + spec.series[1][1] + " predicted " + spec.b.pred[i].toFixed(3) + ", observed " + spec.b.obs[i].toFixed(3)) + '">';
+      [["a", "f1"], ["b", "f2"]].forEach(([k, fc]) => {
+        const cx = x(spec[k].pred[i]).toFixed(1), cy = y(spec[k].obs[i]).toFixed(1);
+        s += '<circle class="c-hit" cx="' + cx + '" cy="' + cy + '" r="11"/><circle class="c-dot ' + fc + '" cx="' + cx + '" cy="' + cy + '" r="4.5"/>';
+      });
+      s += "</g>";
+    });
+    box.innerHTML = s + "</svg>";
+    bindTips(box, i => h("div", {}, h("div", { class: "t-head", text: "Bin " + spec.bins[i] }),
+      tipRow("s1", spec.a.obs[i].toFixed(3), spec.series[0][1], "observed, predicted " + spec.a.pred[i].toFixed(3)),
+      tipRow("s2", spec.b.obs[i].toFixed(3), spec.series[1][1], "observed, predicted " + spec.b.pred[i].toFixed(3)),
+      h("div", { class: "t-sub", style: "margin:6px 0 0", text: spec.a.rows[i].toLocaleString("en-GB") + " and " + spec.b.rows[i].toLocaleString("en-GB") + " held-out rows" })));
+  }
+
+  // The hmm's three states and the price of each change.
+  function drawStates(box, W) {
+    const H = 240, r = 24, narrow = W < 440;
+    const P = { H: [Math.max(r + 8, W * 0.2), 64], A: [Math.min(W - r - 8, W * 0.8), 64], D: [W / 2, 178] };
+    const cls = { H: "--lab-h", A: "--lab-a", D: "--lab-d" };
+    const sub = { H: narrow ? "home · ≥ 35 frames" : "home has it · at least 35 frames", A: narrow ? "away · ≥ 35 frames" : "away has it · at least 35 frames", D: narrow ? "dead · ≥ 25 frames" : "dead ball · at least 25 frames" };
+    let s = '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="State diagram of the hmm: states H, A and D. A change between H and A costs 4 nats; a change between H or A and D costs 32 nats; staying costs nothing. A possession lasts at least 35 frames, a stoppage at least 25.">';
+    const edge = (a, b, label) => {
+      const [x1, y1] = P[a], [x2, y2] = P[b];
+      const L = Math.hypot(x2 - x1, y2 - y1), ux = (x2 - x1) / L, uy = (y2 - y1) / L;
+      s += '<line class="st-edge" x1="' + (x1 + ux * (r + 4)).toFixed(1) + '" y1="' + (y1 + uy * (r + 4)).toFixed(1) + '" x2="' + (x2 - ux * (r + 4)).toFixed(1) + '" y2="' + (y2 - uy * (r + 4)).toFixed(1) + '"/>';
+      const mx = (x1 + x2) / 2, my = (y1 + y2) / 2, tw = label.length * 7 + 10;
+      s += '<rect class="st-costbg" x="' + (mx - tw / 2).toFixed(1) + '" y="' + (my - 10) + '" width="' + tw + '" height="20" rx="4"/>';
+      s += '<text class="st-cost" x="' + mx.toFixed(1) + '" y="' + (my + 4.5) + '" text-anchor="middle">' + label + "</text>";
+    };
+    edge("H", "A", "4 nats");
+    edge("H", "D", "32 nats");
+    edge("A", "D", "32 nats");
+    ["H", "A", "D"].forEach(k => {
+      const [cx, cy] = P[k];
+      s += '<g class="st-node"><circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" style="fill: var(' + cls[k] + ')"/><text x="' + cx + '" y="' + (cy + 6) + '" text-anchor="middle">' + k + "</text></g>";
+      // H and A carry their labels above (the edges to D leave from below them), D below.
+      const ty = k === "D" ? cy + r + 20 : cy - r - 12;
+      s += '<text class="st-lbl" x="' + Math.min(Math.max(cx, 80), W - 80) + '" y="' + ty + '" text-anchor="middle">' + sub[k] + "</text>";
+    });
+    box.innerHTML = s + "</svg>";
+  }
+
+  function bindTips(box, content) {
+    $$(".c-group", box).forEach(g => {
+      const i = +g.getAttribute("data-i");
+      g.addEventListener("pointermove", e => { g.classList.add("on"); showTip(content(i), e.clientX, e.clientY); });
+      g.addEventListener("pointerleave", () => { g.classList.remove("on"); hideTip(); });
+      g.addEventListener("focus", () => { const b = g.getBoundingClientRect(); showTip(content(i), b.left + Math.min(b.width - 40, 200), b.top + 8); });
+      g.addEventListener("blur", hideTip);
+    });
+  }
+
+  function chartTable(spec) {
+    let head, body;
+    if (spec.type === "reliability") {
+      head = ["bin", spec.series[0][1] + ": predicted", "observed", "rows", spec.series[1][1] + ": predicted", "observed", "rows"];
+      body = spec.bins.map((b, i) => [b, spec.a.pred[i].toFixed(4), spec.a.obs[i].toFixed(4), spec.a.rows[i].toLocaleString("en-GB"), spec.b.pred[i].toFixed(4), spec.b.obs[i].toFixed(4), spec.b.rows[i].toLocaleString("en-GB")]);
+    } else if (spec.type === "dumbbell") {
+      head = ["match", spec.series[0][1], spec.series[1][1]];
+      body = spec.rows.map(r => [r.label, r.a.toFixed(4), r.b.toFixed(4)]);
+    } else {
+      head = ["", spec.valueName || "value"];
+      body = spec.rows.map(r => [r.label + (r.code ? " (" + r.code + ")" : ""), fmtBy(spec.fmt, r.v)]);
+    }
+    return h("details", { class: "table-twin" }, h("summary", { text: "Data table" }),
+      h("table", {}, h("thead", {}, h("tr", {}, head.map((t, i) => h("th", { class: i ? "n" : null, text: t })))),
+        h("tbody", {}, body.map(row => h("tr", {}, row.map((c, i) => h("td", { class: i ? "n" : null, text: c })))))));
+  }
+  function chartBlock(spec) {
+    const box = h("div", { class: "chart" });
+    const draw = { hbars: drawHBars, dumbbell: drawDumbbell, reliability: drawReliability }[spec.type];
+    const keyCls = spec.type === "hbars" ? "key-rect" : "key-dot filled";
+    const legend = spec.series ? h("div", { class: "legend" }, spec.series.map(([c, name]) => h("span", { class: "k" },
+      h("span", { class: keyCls, style: "background: var(--" + c + "); border-color: var(--" + c + ")" }), name))) : null;
+    observeChart(box, (b, W) => draw(b, W, spec));
+    return h("figure", { class: "m-chart", style: "margin:0" }, h("figcaption", { class: "m-ct", text: spec.title }), legend, box,
+      h("p", { class: "chart-cap", html: md(spec.cap) }), chartTable(spec));
+  }
+
+  function modelVisual(m) {
+    const parts = [];
+    if (m.visual === "touch") parts.push(h("div", { html: touchSvg() }));
+    if (m.visual === "shape") parts.push(h("div", { html: shapeSvg() }), h("p", { class: "illus-cap", text: "Illustration, made-up positions: the team with the ball (circles, attacking right) stands higher and wider than the team without it (squares). The model reads only the players." }));
+    if (m.visual === "hmm") { const box = h("div", { class: "chart" }); observeChart(box, drawStates); parts.push(box, h("p", { class: "illus-cap", text: "Staying in a state costs nothing; every change is paid for in nats of evidence." })); }
+    if (m.visual === "themes") parts.push(chartBlock(Object.assign({ type: "hbars", max: 0.5, ticks: [0, 0.25, 0.5], fmt: "pct", valueName: "share of splits" }, m.themes)));
+    if (m.strips) parts.push(stripRows(m.strips.rows), h("p", { class: "illus-cap", html: md(m.strips.cap) }));
+    return parts.length ? h("div", { style: "margin-top:8px" }, parts) : null;
+  }
+
+  function modelCard(m) {
+    const k = DATA.models.kinds[m.kind];
+    const head = h("div", { class: "m-head" }, h("h2", { text: m.id }), kindBadge(m.kind), h("span", { class: "badge ref", text: m.p }), badge("main"),
+      h("span", { class: "chan", text: DATA.stageNames[m.stage] }), m.channel ? h("span", { class: "chan", text: m.channel }) : null);
+    const readsChart = m.shares ? chartBlock(Object.assign({ type: "hbars", max: 0.25, ticks: [0, 0.1, 0.2], fmt: "pct", valueName: "share of splits" }, m.shares))
+      : m.nats ? chartBlock(Object.assign({ type: "hbars", max: 7.5, ticks: [0, 2, 4, 6], fmt: "nats", valueName: "nats a frame, at most" }, m.nats)) : null;
+    const idea = h("div", { class: "m-sec" }, h("h3", { text: "The idea" }), m.intuition.map(t => h("p", { html: md(t) })), modelVisual(m));
+    const reads = h("div", { class: "m-sec" },
+      h("h3", { text: "What it reads" }), h("p", { html: md(m.reads) }), m.formula ? h("div", { class: "formula", text: m.formula }) : null, readsChart,
+      h("h3", { text: m.kind === "learned" ? "How it was trained and chosen" : "How it was chosen", style: "margin-top:16px" }),
+      h("div", { class: "params", html: "<b>In main.toml:</b> " + md(m.params) }), m.built.map(t => h("p", { html: md(t) })),
+      h("h3", { text: m.decoderTitle || "How it enters the decoder", style: "margin-top:16px" }), h("p", { html: md(m.decoder) }));
+    const grid = h("div", { class: "m-grid" }, idea, reads);
+    if (m.tree) grid.append(h("div", { class: "m-sec m-full" }, h("h3", { text: "One of its 300 trees, as committed" }), treeView(m.tree), h("p", { class: "illus-cap", html: md(m.tree.cap) })));
+    grid.append(h("div", { class: "m-sec m-full" }, h("h3", { text: "How well it does" }), kpiGrid(m.kpis),
+      m.charts ? h("div", { class: "m-charts" }, m.charts.map(chartBlock)) : null));
+    grid.append(
+      h("div", { class: "m-sec" }, h("h3", { text: "Limits and what is next" }), h("ul", {}, m.limits.map(t => h("li", { html: md(t) })))),
+      h("div", { class: "m-sec" }, h("h3", { text: "Files and commands" }), h("ul", { class: "files", style: "margin-bottom:10px" }, m.files.map(f => h("li", {}, h("a", { href: f.href, text: f.label })))),
+        m.run.map(r => cmdBlock(r.cmd, r.note))));
+    return h("article", { class: "card model", id: "model-" + m.id, "aria-label": m.id + ", " + k.label }, head,
+      h("p", { class: "m-q", text: m.question }), h("p", { class: "m-one", html: md(m.oneLine) }), grid);
+  }
+
+  function modelMini(m) {
+    return h("article", { class: "mini" },
+      h("div", { class: "mini-top" }, h("a", { class: "comp-name", href: "#models/" + m.id, text: m.id }), kindBadge(m.kind)),
+      h("p", { text: m.question }),
+      h("div", { class: "mini-k" }, m.kpis.slice(0, 2).map(k => h("div", {}, h("b", { html: md(k.v) }), " ", h("span", { html: md(k.l) })))),
+      h("a", { class: "more-link", href: "#models/" + m.id, text: "Idea, visuals and performance →" }));
+  }
+
+  function renderModels() {
+    const p = $("#panel-models");
+    const M = DATA.models;
+    const map = h("div", { class: "mmap", role: "group", "aria-label": "Where each model sits in the pipeline" });
+    M.map.forEach((g, i) => {
+      if (i) map.append(h("span", { class: "marrow", "aria-hidden": "true", text: "→" }));
+      map.append(h("div", { class: "mstage" }, h("div", { class: "ms-k", text: g.title }), h("div", { class: "ms-d", text: g.text }),
+        h("div", { class: "mchips" }, g.ids.map(id => {
+          const m = modelById(id);
+          return h("a", { class: "mchip", href: "#models/" + id }, h("b", { text: id }), h("span", { text: M.kinds[m.kind].label + (m.channel ? " · " + m.channel : "") }));
+        }))));
+    });
+    const B = M.boosting;
+    const boost = h("article", { class: "card model", id: "model-boosting" },
+      h("div", { class: "m-head" }, h("h2", { text: "boosted trees", style: "font-family: inherit" }), kindBadge("learned"), h("span", { class: "muted small", text: "shared by shape_possession and dead_ball_model" })),
+      h("p", { class: "m-q", text: B.title }),
+      h("div", { class: "m-grid" },
+        h("div", { class: "m-sec" }, h("h3", { text: "The idea" }), B.text.map(t => h("p", { html: md(t) }))),
+        h("div", { class: "m-sec" }, h("h3", { text: "How both are trained" }), h("ul", {}, B.protocol.map(t => h("li", { html: md(t) }))),
+          h("div", { class: "params", html: md(B.settings) })),
+        h("div", { class: "m-sec m-full" }, h("h3", { text: "One frame through the forest" }), boostFlow(B), h("p", { class: "illus-cap", html: md(B.flowCap) }))));
+    p.append(
+      h("div", { class: "section" }, sectionHead("The models", M.intro), map),
+      h("div", { class: "section" }, M.items.filter(m => m.stage === "evidence").map(m => m.kind === "learned" && m.id === "shape_possession" ? [boost, modelCard(m)] : modelCard(m))),
+      h("div", { class: "section" }, M.items.filter(m => m.stage !== "evidence").map(modelCard)));
   }
 
   /* ---------------- How it works ---------------- */
@@ -1716,7 +2536,8 @@ const DATA = {
       h("div", { class: "kpi-value", text: f.value }), h("div", { class: "f-label", text: f.label }), h("p", { text: f.text }))));
 
     const sol = h("ol", { class: "sol-steps" }, H.solution.map(s => h("li", { class: "card" },
-      h("div", { class: "sol-top" }, h("code", { class: "sol-name", text: s.name }), h("span", { class: "badge ref", text: s.p }), h("span", { class: "muted small", text: s.role })),
+      h("div", { class: "sol-top" }, h("code", { class: "sol-name", text: s.name }), h("span", { class: "badge ref", text: s.p }), h("span", { class: "muted small", text: s.role }),
+        modelById(s.name) ? h("a", { class: "more-link", href: "#models/" + s.name, text: "The model, explained →" }) : null),
       h("p", { html: md(s.why) }), h("p", { class: "added", html: "<b>What it added on the benchmark:</b> " + md(s.added) }))));
 
     const prog = DATA.progression.filter(x => x.adopted);
@@ -1941,7 +2762,8 @@ const DATA = {
   }
 
   /* ---------------- Tabs and routing ---------------- */
-  const TABS = ["overview", "pipeline", "how", "history", "work", "reference"];
+  const TABS = ["overview", "pipeline", "models", "how", "history", "work", "reference"];
+  let lastTab = null;
   function route() {
     let raw = (location.hash || "").replace(/^#/, "");
     try { raw = decodeURIComponent(raw); } catch (e) { /* keep it as it is */ }
@@ -1956,6 +2778,11 @@ const DATA = {
     });
     hideTip();
     if (t === "pipeline") selectStage(sub && stageById(sub) ? sub : (selectedStage || "evidence"), false);
+    // A link to a model scrolls to its card; a link to another tab (the Start here path) starts at its top.
+    const target = t === "models" && sub ? document.getElementById("model-" + sub) : null;
+    if (target) requestAnimationFrame(() => target.scrollIntoView({ block: "start" }));
+    else if (lastTab !== null && t !== lastTab && t !== "pipeline") window.scrollTo(0, 0);
+    lastTab = t;
   }
   $$(".tab").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -1980,6 +2807,7 @@ const DATA = {
   renderChrome();
   renderOverview();
   renderPipeline();
+  renderModels();
   renderHow();
   renderHistory();
   renderWork();
