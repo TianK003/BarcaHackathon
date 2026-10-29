@@ -34,7 +34,8 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R013 | 2026-10-26 | the touch rule and the decoder re-chosen without the window's values (P04, P06, P07): Stage A, `controlled_touch` radius x speed x frames x hold, 192 configs on R012's `main.toml`; Stage C, switch_team x min_possession x P07's weight, 144 configs at Stage A's choice; the shift re-derived by R012's rule; the final config is `pipeline/configs/r013_retune.toml` and now `main.toml` | 0.7152 | 0.4649 | 20 / 14.1 s | 0.5430 raw and 0.5593 coarse for the final config (radius 1.5 m, 6 m/s, 1 frame, hold 0.60; hmm 4/32/35/25; P07 at 0.2; shift +1/-2/0), against R012's `main` 0.5164 raw and 0.5592 coarse; on `context` (sensitivity only) 0.5489 and 0.5642 against 0.5162 and 0.5544 | **adopted by the declared rule**: the guard passes (`tracking` raw +0.0267, p 0.0156, 7 wins in 7; `tracking` coarse +0.0001; `context` +0.0327 raw, +0.0097 coarse) and the bar is met; Stage A alone was +0.0310 raw and -0.0107 coarse (T33), and Stage C's longer minimum possession (35 frames) won the coarse cell back; leave-one-match-out +0.0306 (Stage A) and +0.0263 (Stage C) raw, 7 wins in 7; the touch rule is on three edges of its grid and covers relatively fewer ball-visible frames on BAR-ATH than on DFL (36.9% against R008's rule's 43.6%); s_b re-derived as R012's; label-free checks pass (`D` 35.9%, no `X`, the same sha256 twice, 410 possessions against 439); `main.toml` writes sha256 `0ebdfbec...` (not uploaded); the public window is a correctness check only (spellF1 0.4649, 20 possessions against R012's 0.4000, 20) |
 | R014 | 2026-10-26 | the restart vote (P17) on `main.toml`: `restart_team` over tail {25, 50, 100, 150} x `use_ball` {false, true}, 8 configs at their measured confidences | — | — | — | 0.5470 raw and 0.5564 coarse for `r014_t025_b0`, against `main.toml`'s 0.5430 and 0.5593 | bar not met (+0.0040 raw, p 0.0938); not adopted; Phase 2b followed |
 | R014b | 2026-10-26 | restart states in the decoder (P17, Phase 2b): `restart_team` span `stoppage_end` with `hmm` `restart_source`, `switch_restart` {4, 8, 16, inf} x `use_ball` {false, true}, 8 configs | — | — | — | 0.5433 raw and 0.5589 coarse for `r014b_s04_b1`, against `main.toml`'s 0.5430 and 0.5593 | bar not met (+0.0003 raw, p 0.8125); not adopted; P17 dropped |
-| R015 | 2026-10-29 | the `offpitch` profile (P18): `tracking` v3 with DFL's ball hidden once it is more than m past a line and a share q of the transplanted gaps dropped, m and q fitted once on label-free statistics of our match, its fidelity, and `main.toml` on it | — | — | — | 0.5509 raw and 0.5296 coarse for `main.toml` on `offpitch`, against 0.5430 and 0.5593 on `tracking` (a difference between two profiles) | `offpitch` v1 frozen (m 0.2 m, q 0.430); 8 of 9 gates pass, median gap fails (15.04 s against 10.74); main.toml 0.5509 raw / 0.5296 coarse on it; paused for Tian |
+| R015 | 2026-10-29 | the `offpitch` profile (P18): `tracking` v3 with DFL's ball hidden once it is more than m past a line and a share q of the transplanted gaps dropped, m and q fitted once on label-free statistics of our match, its fidelity, and `main.toml` on it | — | — | — | 0.5509 raw and 0.5296 coarse for `main.toml` on `offpitch`, against 0.5430 and 0.5593 on `tracking` (a difference between two profiles) | `offpitch` v1 frozen (m 0.2 m, q 0.430); 8 of 9 gates pass, median gap fails (15.04 s against 10.74); main.toml 0.5509 raw / 0.5296 coarse on it; P18 dropped after R015b |
+| R015b | 2026-10-29 | the `offpitch` v2 rule (the ball hidden while it is more than m past a line and moving, found again at rest), swept once on the benchmark's label-free fidelity statistics before anything was built | — | — | — | — | v2 cannot reach our share past a line at any margin (0.258 to 0.262 against 0.0407); P18 dropped, offpitch code removed (7b555eb) |
 
 ### The four yardsticks on every profile, in one table
 
@@ -1420,8 +1421,8 @@ python pipeline/benchmark/headroom.py pipeline/configs/main.toml --variants aliv
 Validation (P01 benchmark): 7 DFL matches x 3 degradation seeds (0, 1, 2), `main.toml` as R013 left it (sha256
 `0ebdfbec...`), on `tracking` version 3 and, as a sensitivity check, `context` version 1 (R005), under the raw and the
 coarse truth. All four logs end `EXIT=0` (2026-10-29). The `main` row reproduces R013: `tracking` 0.5430 raw and 0.5593
-coarse, `context` 0.5489 and 0.5642. **Part 1 of two**: this is `tracking` and `context`; part 2, on `offpitch`, comes
-after R016 (P18) and is added here. Aggregates only: the benchmark is public DFL data. This is a measurement of bounds
+coarse, `context` 0.5489 and 0.5642. **Part 1 of two**: this is `tracking` and `context`; part 2, on `offpitch`, was not run,
+since P18 was dropped ([R015b](#r015b--offpitch-v2-found-again-at-rest-a-feasibility-check-and-p18-dropped-2026-10-29-tian)). Aggregates only: the benchmark is public DFL data. This is a measurement of bounds
 and nothing is adopted.
 
 **What was measured.** A10 sized what perfect evidence would add for P06's old decoder and its old sources
@@ -5775,7 +5776,57 @@ J03WR9 0.5622. Coarse: J03WMX 0.5362, J03WN1 0.4841, J03WOH 0.5292, J03WOY 0.520
 - The profile fails one gate: its median gap is 15.04 s against ours 10.74 (+-1.5), and two checks WARN. The gap counts
   are lower than `tracking`'s in every match, and the distances past a line stop at 0.2 m by construction.
 
-Paused for Tian's decision (a gate fails; nothing is fixed or refitted without it).
+At the pause Tian chose to try a v2 profile designed from these lessons; R015b records it and P18's drop.
+
+### R015b — offpitch v2 (found again at rest): a feasibility check, and P18 dropped (2026-10-29, Tian)
+
+Proposal: P18 · Commits: the check was run at `cac9849` (code as `fb33b38`); the removal is `7b555eb` · Command: a
+throwaway script, not committed (like R005's `nearline_diag`), run once from the repo root, one process, one BLAS thread,
+below-normal priority. It printed label-free fidelity statistics only and scored nothing.
+
+**Why a v2.** R015's v1 matched our share past a line (0.0414 against 0.0407) and failed the median gap (15.04 s against
+10.74), with two WARNs. Our tracker sees the ball off the pitch rarely (4.07% of its visible frames) but well outside (median
+1.74 m past the line, p90 8.09 m), which looked like a ball at rest or held for a restart, and v1 hid the restart
+preparation too. At the pause (2026-10-29) Tian chose to try a v2 designed from v1's lessons, approved its rule and a quick
+label-free feasibility check first, and set the rule: **if v2 fails, P18 is dropped and its code removed.** One shot.
+
+**The v2 rule.** DFL's clean ball is hidden from the first frame on which it is more than m past a line and moving (speed
+at least 1.0 m/s, `play_features.STILL_SPEED`, the dead-ball features' own "still" threshold), until the first frame on
+which it is back on the pitch or at rest (speed below 1.0 m/s). The same two fitted constants as v1 (m, q).
+
+**The check.** The 7 DFL matches x seeds 0 to 2, on the kick-off spans. For each m the script also found the q whose
+missing share is closest to ours (0.410966). Share past a line is over all visible frames on the kick-off spans, which is
+why `tracking` v3's ball shows 0.2608 here; R005's 17.68% was over the hazard's at-risk rows of `context`, a different
+set. The window's dead-ball visible share is 0.6637.
+
+| ball | m | q | share past a line | median gap (s) | gaps / 10k frames | gaps < 2 s | near-line onsets | dead visible |
+|---|---|---|---|---|---|---|---|---|
+| ours (target) | | | 0.0407 | 10.74 | 9.36 | 0.1027 | 0.2797 | (window 0.6637) |
+| `tracking` v3's ball | | 0 | 0.2608 | 10.76 | 9.41 | 0.0979 | 0.3597 | 0.5684 |
+| v1 (frozen) | 0.2 | 0.430 | 0.0414 | 15.04 | 7.35 | 0.0904 | 0.5400 | 0.3667 |
+| v2 | 0.0 | 0.030 | 0.2579 | 5.76 | 14.91 | 0.4481 | 0.6091 | 0.5764 |
+| v2 | 0.2 | 0.030 | 0.2586 | 6.08 | 14.03 | 0.4133 | 0.5848 | 0.5767 |
+| v2 | 0.5 | 0.025 | 0.2601 | 7.32 | 12.24 | 0.3229 | 0.5198 | 0.5760 |
+| v2 | 1.0 | 0.025 | 0.2610 | 9.48 | 10.35 | 0.1994 | 0.4315 | 0.5769 |
+| v2 | 2.0 | 0.025 | 0.2614 | 10.68 | 9.53 | 0.1301 | 0.3818 | 0.5773 |
+| v2 | 5.0 / 10.0 | 0.025 | 0.2616 | 10.76 | 9.18 | 0.0971 | 0.3581 | 0.5774 |
+
+**Reading.**
+- DFL's ball, when off the pitch, is almost always slow or at rest (held for a throw-in, waiting), so "found again at
+  rest" brings almost all of it back: the share past a line stays at `tracking` v3's level (0.258 to 0.262) at every
+  margin, and `beyond_line_share` (+-0.01 around 0.0407) cannot pass at any m.
+- Small margins also make the ball flicker: up to 45% of the gaps are under 2 s (m 0.0: 0.4481), against ours 10%.
+- v1 and v2 bracket what our tracker does: hiding the off-pitch ball until play resumes matches our share past a line and
+  makes the gaps too long; re-finding it at rest keeps the gaps' shape and shows far too much of it. Where our ball is
+  during our own gaps is not observable, which is R005's original objection, and it stands.
+- v2's mechanism was designed after v1's gates had been seen, so the gates are less independent of it than they were of v1.
+
+**Decision (Tian's rule): P18 is dropped.** The offpitch code was removed in `7b555eb`: `degrade.py`, `fidelity.py`,
+`run.py` and the checks are restored to their state at `5ab0e89`, and `offpitch.py` and its two check modules are deleted.
+It is recoverable from `fb33b38`. After it, the benchmark's `selftest.py` passed 402 checks, `pipeline/selftest.py --data`
+186 of 186, and `main.toml`'s sha256 `0ebdfbec...` is unchanged. What stays: `headroom.py`'s `plus_` variants and the
+gaps-only team oracle (A13, `5ab0e89`). R016 never ran, A13 part 2 (on `offpitch`) never ran, and `main.toml` is unchanged.
+What it leaves is in [After P18](proposals.md#after-p18) and T45.
 
 ## Submission log
 

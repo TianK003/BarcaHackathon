@@ -281,6 +281,21 @@ spot, a throw-in):
 - do not choose a decoder parameter that trades `D` against the team (`switch_dead`, a source's weight) from that
   source's benchmark alive/dead score alone.
 
+R015 hid DFL's out-of-play ball (`offpitch` v1) and today's P05 lost 0.013 alive/dead F1 (0.9731 to 0.9600): a lead, since
+the profile failed a gate (T45), that the overstatement through the visible out-of-play ball is small.
+
+**T45 — A degradation fitted to one statistic can move the others away, and a cheap feasibility sweep finds that first.**
+R015's `offpitch` v1 matched the share of visible ball frames past a line exactly (0.0414 against 0.0407), failed the median
+gap (15.04 s against 10.74, +-1.5) and moved two checks away (the ball visible on dead frames, 0.3667 against 0.6637; the
+near-line onset share, 0.5400 against 0.2797). Its v2 mechanism could not reach the share at all (0.258 to 0.262 at every
+margin), which a label-free sweep of nine minutes showed before anything was built (R015b). Before building a profile
+around a statistic:
+- sweep its parameter on all the gate statistics with a throwaway label-free script, and read the whole table, not the
+  fitted statistic alone;
+- declare which statistics are fitted and which are checks, as R015 did for the share and the near-line onsets;
+- a mechanism designed after seeing a profile's gates makes those gates less independent of it, so say so beside the
+  result.
+
 **T43 — An oracle that stops where the truth changes measures more than a source can deliver.** A12 sized P17's
 prize with a perfect 2 s vote for the restarting team (+0.0198 raw spellF1), and that vote stopped at the truth's next
 change of team. A real vote has a fixed length and cannot know that change: it keeps pushing after the restarting team's

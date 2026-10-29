@@ -546,6 +546,10 @@ file has macroF1 0.6996, spellF1 0.4686 and 18 possessions against 17.
 These benchmark figures are upper bounds for our match, not predictions: DFL tracks the ball out of play, so the
 benchmark overstates P05 by an amount it cannot measure (section 6, T38, T39).
 
+**Where the remaining score is** (A13). On the benchmark's `tracking` v3, a perfect team where the ball is seen would add
++0.194 raw spellF1 to `main.toml` and in the gaps +0.176, against +0.029 for a perfect dead-ball source, so what is left
+is who has the ball, and not whether it is dead.
+
 **P07 on the benchmark** (R011). The shape model was scored out of fold first (section 3), and then 12 configs added it
 to R010's config with the decoder unchanged: weight {0.01, 0.02, 0.05, 0.1, 0.2, 0.5} x scope {the frames with no ball,
 every graded frame}. The protocol was declared before any of them ran: the objective is the pooled raw spellF1 on
@@ -669,6 +673,10 @@ classes balance exactly and the model has no prior to subtract and no notion of 
 - **No video, audio, homography or Smart Tagging.** Whatever uses them (P08, P09, P10, P14, P15) is checked on the
   public window for correctness only, with its strength fixed by a declared constant, or simulated from the
   benchmark's truth with noise measured on our match (A03).
+- **DFL tracks the ball out of play, and ours does not.** We tried two profiles that hide it (R015, R015b) and dropped
+  both. One matched our share of visible frames past a line (0.0414 against 0.0407) but made the gaps too long (median
+  15.04 s against 10.74); the other could not reach the share at all (0.258 to 0.262). With the ball hidden by the first,
+  today's dead-ball model lost 0.013 alive/dead F1 (0.9731 to 0.9600), a lead and not a measurement (T39, T45).
 - **Aerial projection.** A camera-based tracker projects an airborne ball onto the pitch plane, which displaces it.
   DFL's positions carry no such error and the benchmark adds none, and ours has no ball height, so the error cannot be
   measured on ours. Nor can we tell how many of our ball gaps come from airborne balls: our first plan said "crowded
