@@ -3,6 +3,7 @@
     python pipeline/benchmark/fidelity.py --profile gaps --seeds 3     # -> <data dir>/runs/benchmark/fidelity_gaps.json
     python pipeline/benchmark/fidelity.py --profile tracking --seeds 3     # -> .../fidelity_tracking.json
     python pipeline/benchmark/fidelity.py --profile context --seeds 3      # -> .../fidelity_context.json
+    python pipeline/benchmark/fidelity.py --profile offpitch --seeds 3     # -> .../fidelity_offpitch.json
     report = fidelity.report("gaps", seeds=3)                          # the same, as a dict (aggregates only)
 
 What it is for. P01 validates pipeline choices on matches that are not ours, after degrading them until their tracking
@@ -23,11 +24,14 @@ s. For tracking, those two and: the share of frames with exactly 22 slots presen
 the share with 14 or fewer present +-0.02 (these three on full-strength frames, below), the wrong-team share +-0.03, the
 tracklet median +-50% and the NaN-speed share +-0.01. For context, those eight and the share of the gaps that start
 within 2 m of a line +-0.05, pooled as near-line onsets over interior gaps (the centre is the Calibration's
-near_line_share, on the kick-off spans). A gate is printed as measured, centre, tolerance, and pass or FAIL; a FAIL
-makes the command exit 1. A profile can be the runner's default only if all its gates pass: tracking's do (R004c), and
-context fails two of its nine (R005, the near-line share badly and the missing share narrowly), so it is kept, frozen as
-it is (§B14), as a sensitivity check. Every gate of `tracking` counts since version 2, which has the low-count tail (the
-cap, degrade.cap_pieces).
+near_line_share, on the kick-off spans). For offpitch, tracking's eight and the share of the visible ball frames past a
+line +-0.01, pooled as the frames past a line over the visible frames, whose centre is the one centre that is not the
+Calibration's: our match's share, offpitch.target(), measured by the same ruler (offpitch.line_stats) on the same
+kick-off spans (the Calibration does not hold it, and its digest must not change). A gate is printed as measured,
+centre, tolerance, and pass or FAIL; a FAIL makes the command exit 1. A profile can be the runner's default only if all
+its gates pass: tracking's do (R004c), and context fails two of its nine (R005, the near-line share badly and the
+missing share narrowly), so it is kept, frozen as it is (§B14), as a sensitivity check. Every gate of `tracking` counts
+since version 2, which has the low-count tail (the cap, degrade.cap_pieces).
 
 Full strength (COUNT_GATES). The three gates about how many slots are present (exactly 22, the mean, 14 or fewer) are
 measured on the full-strength frames only: the frames, inside the same spans, where the clean DFL match has exactly 22
@@ -62,6 +66,18 @@ The bands are:
     nearest agreement      +-0.05      dead-ball ball visible share   +-0.10
     possessions per minute +-25%       D share                        +-0.05
 
+The offpitch profile (P18, R015) has one check more, last: the share of the interior gaps that start within 2 m of a
+line, context's gate, with the Calibration's centre and +-0.05. It is a check and not a gate, because the profile is
+expected to raise it (a gap now starts where the ball leaves the margin). And its report holds information that no band
+judges ("offpitch", offpitch_info), aggregates only: the quantiles of how far past the line the visible frames past a
+line are, ours (the target's) beside the profile's pooled over every match and seed (the distances laid end to end); the
+gaps shorter than SHORT_GAP_S, how many and their share of the gaps and of the time without a ball, the profile's and
+ours (the Calibration's gap lengths, counted and never listed); the gaps per match and seed beside those of tracking's
+ball on the same draws (the gaps profile's ball, which tracking's is); the dead-ball visible share beside tracking's
+ball's; and the counts of the profile's records of the ball added up (the off-pitch stretches hidden and their frames,
+the interior gaps and those dropped, the frames given back). The tracking and context reports are as they were: none of
+this is in them.
+
 The yardsticks' outputs of ours (Calibration.baseline_outputs) are over our graded halves, as the published baselines
 are, and not over the kick-off spans of the rest of the Calibration: an accepted offset of at most 1% of the frames
 (the 117 s of the second half before its kick-off, all D, and the first half's lead-in).
@@ -80,6 +96,7 @@ and `.s<n>` otherwise, so that a quick look never replaces the report that a res
 """
 
 import argparse
+import math
 import os
 import sys
 
@@ -96,7 +113,7 @@ import games  # noqa: E402
 from pipeline import evidence, output  # noqa: E402  (importing pipeline also puts evaluation/ on sys.path)
 from pipeline import run as pipeline_run  # noqa: E402
 from pipeline.benchmark import calibration as calibration_module  # noqa: E402
-from pipeline.benchmark import degrade, dfl, run  # noqa: E402
+from pipeline.benchmark import degrade, dfl, offpitch, run  # noqa: E402
 from pipeline.benchmark import inputs as match_inputs  # noqa: E402
 from pipeline.benchmark import truth as truths  # noqa: E402
 from pipeline.config import ConfigError, load_config  # noqa: E402
@@ -136,6 +153,12 @@ GATES["context"] = GATES["tracking"] + (
     {"name": "near_line_share", "tolerance": 0.05, "kind": "absolute",
      "text": "share of the gaps that start within 2 m of a line"},
 )
+# The offpitch profile has the tracking profile's gates and the share of the visible ball frames past a line, whose
+# centre is our match's, offpitch.target()'s: the one centre that is not the Calibration's (centre_of).
+GATES["offpitch"] = GATES["tracking"] + (
+    {"name": "beyond_line_share", "tolerance": 0.01, "kind": "absolute",
+     "text": "share of the visible ball frames past a line"},
+)
 # The gates that cannot be met until a part of the profile that they wait for is built: printed with the status
 # "pending" and never counted. Empty: the three gates about how many slots are present were pending for version 1 of the
 # tracking profile, which had no low-count tail, and version 2 has it (R004b). A profile that adds a part in a later
@@ -151,6 +174,8 @@ NEAREST_BAND = ("absolute", 0.05)
 DEAD_VISIBLE_BAND = ("absolute", 0.10)
 POSSESSIONS_BAND = ("relative", 0.25)
 D_SHARE_BAND = ("absolute", 0.05)
+NEAR_LINE_BAND = ("absolute", 0.05)     # offpitch's check of the near-line onset share (context's gate, its tolerance)
+SHORT_GAP_S = 2.0                       # offpitch's information: the gaps shorter than this, the profile's and ours
 FILE_FOLDER = run.REPORT_FOLDER                   # <data dir>/runs/benchmark/fidelity_<profile>[.m-<ids>][.s<n>].json
 # The counts of what the players' degradation drew that a report adds up over matches, seeds and halves.
 PLAYERS_DRAWS = ("tracklets", "onsets", "episodes", "skipped_far", "skipped_overlap", "episode_frames",
@@ -172,6 +197,9 @@ FULL_STRENGTH_NOTE = ("The gates on how many slots are present ({}) are measured
                       "frames.")
 PENDING_NOTE = ("Pending gates ({}) are printed and not counted: they depend on a part of the profile that is not "
                 "built yet, and the task that builds it empties PENDING_GATES.")
+OFFPITCH_NOTE = ("The centre of beyond_line_share is our match's share of the visible ball frames past a line, "
+                 "offpitch.target(), measured by the same ruler (offpitch.line_stats) on the kick-off spans; the "
+                 "Calibration does not hold it, and every other centre is the Calibration's.")
 
 
 class FidelityError(ValueError):
@@ -180,14 +208,17 @@ class FidelityError(ValueError):
 
 # -- the report -------------------------------------------------------------------------------------------------------
 
-def report(profile, seeds=DEFAULT_SEEDS, match_ids=None, matches=None, calibration=None, data_dir=None, log=print):
+def report(profile, seeds=DEFAULT_SEEDS, match_ids=None, matches=None, calibration=None, data_dir=None, log=print,
+           target=None):
     """The fidelity of `profile` on the benchmark's matches, against our match's Calibration: a JSON-ready dict.
 
     Each match (all seven, or `match_ids`; `matches` is {id: DflMatch} to use instead of loading, as in
     run.evaluate_configs) is degraded under seeds 0 .. seeds - 1, and everything is measured on the degraded tracking:
     ball_stats and player_stats of calibration.py, the nearest player's agreement with the truth, the dead-ball
     visibility and the four yardsticks' outputs. `calibration` is the Calibration of BAR-ATH, calibration.load() if
-    none is given. One match is in memory at a time.
+    none is given. `target` is our match's share past a line as offpitch.target() returns it, which the offpitch
+    profile's gate beyond_line_share is centred on: offpitch.target(data_dir) if none is given, read for offpitch only,
+    and before the first match, as the Calibration is. One match is in memory at a time.
 
     Returns {"profile", "seeds", "matches", "calibration", "git", "gates", "checks", "statistics", "draws",
     "players_draws", "ball_draws", "full_strength", "passed", "warnings", "notes"}. "profile" is
@@ -206,9 +237,12 @@ def report(profile, seeds=DEFAULT_SEEDS, match_ids=None, matches=None, calibrati
     the frames in the spans of all the matches (once each, whatever the seeds), those at full strength (COUNT_GATES are
     measured on them only), their share, and {match: share of its frames AT full strength} for each match that is not at
     full strength throughout (the keys say which matches fall short, the value is the share of its frames that is at
-    full strength, not the share that is not). FidelityError for a profile that has no gates (clean, which degrades
-    nothing) or that is not one, for seeds below 1, for a calibration that is not a Calibration, and for count gates
-    with no full-strength frame to measure; run.BenchmarkError for matches that are not as asked.
+    full strength, not the share that is not). For offpitch only, "checks" ends with near_line_share, "notes" with
+    OFFPITCH_NOTE, "ball_draws" is {} (its ball's counts are under "offpitch") and the report has one key more,
+    "offpitch": offpitch_info's information. FidelityError for a profile that has no gates (clean, which degrades
+    nothing) or that is not one, for seeds below 1, for a calibration that is not a Calibration, for count gates with
+    no full-strength frame to measure, and for offpitch while its constants are not fitted or with a target that is not
+    offpitch.target()'s; run.BenchmarkError for matches that are not as asked.
     """
     if profile not in degrade.PROFILES:
         raise FidelityError("profile {!r} is not one of: {}".format(profile, ", ".join(sorted(degrade.PROFILES))))
@@ -217,12 +251,20 @@ def report(profile, seeds=DEFAULT_SEEDS, match_ids=None, matches=None, calibrati
                             "for: {}".format(profile, ", ".join(sorted(GATES))))
     if isinstance(seeds, bool) or not isinstance(seeds, int) or seeds < 1:
         raise FidelityError("seeds must be a whole number of at least 1, got {!r}".format(seeds))
+    off_pitch = profile == degrade.OFFPITCH
+    if off_pitch:
+        try:
+            degrade._offpitch_constants()      # refused here, before anything is loaded, rather than at the first match
+        except ValueError as error:
+            raise FidelityError(str(error)) from None
     ids = run.resolve_match_ids(match_ids, matches)
     if calibration is None:
         calibration = calibration_module.load(data_dir=data_dir)
     if not isinstance(calibration, calibration_module.Calibration):
         raise FidelityError("calibration must be a Calibration of our own match, as calibration.load() returns, and it "
                             "is a {}".format(type(calibration).__name__))
+    if off_pitch:
+        target = _offpitch_target(offpitch.target(data_dir=data_dir) if target is None else target)
     configs = [load_config(os.path.join(calibration_module.CONFIG_FOLDER, "nearest_w{}.toml".format(width)))
                for width in calibration_module.YARDSTICK_WIDTHS]
 
@@ -244,8 +286,9 @@ def report(profile, seeds=DEFAULT_SEEDS, match_ids=None, matches=None, calibrati
             atd, info = degrade.degrade(view, profile, calibration, seed)
             inputs = match_inputs.MatchInputs(match, atd, profile=profile, seed=seed, data_dir=data_dir)
             spans = [(half, inputs.kickoffs[half], stop) for half, _, stop in inputs.graded]
-            pool.add_ball(calibration_module.ball_stats(atd.ball_present, spans, inputs.metres(atd.ball_xy),
-                                                        inputs.pitch, inputs.fps))
+            ball = calibration_module.ball_stats(atd.ball_present, spans, inputs.metres(atd.ball_xy), inputs.pitch,
+                                                 inputs.fps)
+            pool.add_ball(ball)
             if measured_players is None or measured_players[0] is not atd.players_xy:
                 # The same arrays give the same statistics: a profile that leaves the players alone (gaps) measures
                 # them once for a match, however many seeds there are.
@@ -257,9 +300,21 @@ def report(profile, seeds=DEFAULT_SEEDS, match_ids=None, matches=None, calibrati
             pool.add_players(measured_players[1], measured_players[2])
             pool.add_draws(match_id, seed, info)
             pool.add_players_draws(info)
-            pool.add_ball_draws(info)
             dead = codes_true == D
             pool.add_dead(int(dead.sum()), int(atd.ball_present[dead].sum()))
+            if off_pitch:
+                # The ball past a line, by the ruler, and tracking's ball on the same draws (the gaps profile's ball is
+                # tracking's, byte for byte), for the gaps and the dead-ball visibility beside the profile's.
+                pool.add_line(*offpitch.beyond_distances(atd.ball_present, spans, inputs.metres(atd.ball_xy),
+                                                         inputs.pitch))
+                plain = degrade.degrade(view, degrade.GAPS, calibration, seed)[0]
+                plain_stats = calibration_module.ball_stats(plain.ball_present, spans, inputs.metres(plain.ball_xy),
+                                                            inputs.pitch, inputs.fps)
+                pool.add_offpitch(match_id, ball["gaps"], plain_stats["gaps"], info["ball"],
+                                  int(plain.ball_present[dead].sum()))
+                del plain
+            else:
+                pool.add_ball_draws(info)
             for position, config in enumerate(configs):
                 codes, sources_ = run.predict(config, inputs)
                 summary = output.summarise(codes, inputs.graded, inputs.fps)
@@ -274,7 +329,7 @@ def report(profile, seeds=DEFAULT_SEEDS, match_ids=None, matches=None, calibrati
             del atd, inputs
         del match, codes_true, view, measured_players
 
-    gates = [_gate(spec, pool, calibration) for spec in GATES[profile]]
+    gates = [_gate(spec, pool, calibration, target) for spec in GATES[profile]]
     pending = [gate["name"] for gate in gates if gate["status"] == PENDING]
     result = {
         "profile": degrade.profile_record(profile),
@@ -284,7 +339,7 @@ def report(profile, seeds=DEFAULT_SEEDS, match_ids=None, matches=None, calibrati
                         "version": calibration_module.CALIBRATION_VERSION},
         "git": pipeline_run.git_state(),                 # which code made these figures, as the runner's reports say
         "gates": gates,
-        "checks": _checks(pool, calibration),
+        "checks": _checks(pool, calibration, profile),
         "statistics": statistics(pool, calibration),
         "draws": pool.draws,
         "players_draws": dict(pool.players_draws),
@@ -294,8 +349,10 @@ def report(profile, seeds=DEFAULT_SEEDS, match_ids=None, matches=None, calibrati
             [FULL_STRENGTH_NOTE.format(", ".join(name for name in COUNT_GATES if any(
                 gate["name"] == name for gate in gates)), FULL_STRENGTH, FULL_STRENGTH)]
             if any(gate["name"] in COUNT_GATES for gate in gates) else []) + (
-            [PENDING_NOTE.format(", ".join(pending))] if pending else []),
+            [PENDING_NOTE.format(", ".join(pending))] if pending else []) + ([OFFPITCH_NOTE] if off_pitch else []),
     }
+    if off_pitch:
+        result["offpitch"] = offpitch_info(pool, calibration, target)
     result["passed"] = not any(gate["status"] == FAIL for gate in gates)
     result["warnings"] = sum(1 for check in result["checks"] if check["status"] == WARN)
     return run.plain(result)
@@ -359,6 +416,13 @@ class Pool:
         self.draws = []
         self.missing_shares = []
         self.last_missing_share = float("nan")
+        # The offpitch profile's: the visible ball frames and the distances past a line of those past one (add_line),
+        # and per match the gaps of its ball and of tracking's, with the seeds they are over, the counts of its ball's
+        # records, and tracking's ball visible on the dead frames (add_offpitch).
+        self.line = {"visible_frames": 0, "beyond_frames": 0, "past": []}
+        self.offpitch_gaps = {}                       # match id -> [the profile's gaps, tracking's gaps, seeds]
+        self.offpitch_draws = {}
+        self.tracking_dead_visible = 0
 
     def add_ball(self, stats):
         for name in ("frames", "missing_frames", "gaps", "interior_gaps", "near_line_onsets"):
@@ -398,6 +462,25 @@ class Pool:
         return {"frames": frames, "full_frames": full, "share": _round(full / frames) if frames else None,
                 "share_at_full": {match_id: _round(counts[0] / counts[1]) for match_id, counts
                                   in sorted(self.full_strength.items()) if counts[0] < counts[1]}}
+
+    def add_line(self, visible_frames, past):
+        """Add one (match, seed) of offpitch.beyond_distances: its visible frames, and its distances past a line laid
+        after the others'."""
+        past = np.asarray(past, dtype=np.float64)
+        self.line["visible_frames"] += int(visible_frames)
+        self.line["beyond_frames"] += int(past.size)
+        self.line["past"].append(past)
+
+    def add_offpitch(self, match_id, gaps, tracking_gaps, ball, tracking_dead_visible):
+        """Add one (match, seed) of the offpitch profile: the gaps of its ball and of tracking's on the same draws, the
+        counts of its ball's record (degrade.OFFPITCH_COUNTS) and how many dead frames tracking's ball is visible on."""
+        row = self.offpitch_gaps.setdefault(match_id, [0, 0, 0])
+        row[0] += int(gaps)
+        row[1] += int(tracking_gaps)
+        row[2] += 1
+        for name in degrade.OFFPITCH_COUNTS:
+            self.offpitch_draws[name] = self.offpitch_draws.get(name, 0) + int(ball[name])
+        self.tracking_dead_visible += int(tracking_dead_visible)
 
     def add_agreement(self, judged, agreement):
         if judged:
@@ -462,8 +545,18 @@ class Pool:
 
 # -- gates and checks -------------------------------------------------------------------------------------------------
 
-def centre_of(name, calibration):
-    """The Calibration's value of the quantity a gate is about: measured on our kick-off spans, as the benchmark is."""
+def centre_of(name, calibration, target=None):
+    """The Calibration's value of the quantity a gate is about: measured on our kick-off spans, as the benchmark is.
+
+    The one exception is beyond_line_share, which the Calibration does not hold: its centre is `target`'s, our match's
+    share past a line as offpitch.target() returns it (measured by offpitch.line_stats on the same spans), and without
+    a target it is a FidelityError."""
+    if name == "beyond_line_share":
+        if target is None:
+            raise FidelityError("the centre of the gate beyond_line_share is our match's share of the visible ball "
+                                "frames past a line, offpitch.target(), which the Calibration does not hold; pass it "
+                                "as the target")
+        return target["beyond_line_share"]
     scalars = calibration.scalars
     if name == "missing_share":
         return scalars["missing_share"]
@@ -514,20 +607,24 @@ def measured(name, pool):
     if name == "near_line_share":
         return (pool.ball["near_line_onsets"] / pool.ball["interior_gaps"] if pool.ball["interior_gaps"]
                 else float("nan"))
+    if name == "beyond_line_share":
+        line = pool.line
+        return line["beyond_frames"] / line["visible_frames"] if line["visible_frames"] else float("nan")
     raise KeyError(name)
 
 
-def _gate(spec, pool, calibration):
+def _gate(spec, pool, calibration, target=None):
     """One gate as the report holds it: the pooled value, the Calibration's centre, the tolerance, its kind, the status.
 
     The tolerance is +- spec["tolerance"], or that share of the centre's size when the spec's kind is "relative". A gate
-    in PENDING_GATES is "pending" whatever it measures: it is printed and never counted.
+    in PENDING_GATES is "pending" whatever it measures: it is printed and never counted. `target` is offpitch.target()'s
+    dict, which centre_of reads for beyond_line_share only.
     """
     kind = spec.get("kind")
     if kind not in KINDS:
         raise FidelityError("gate {!r} has the kind {!r}; the tolerance of a gate is of one of the kinds: {}".format(
             spec.get("name"), kind, ", ".join(KINDS)))
-    got, centre = _round(measured(spec["name"], pool)), _round(centre_of(spec["name"], calibration))
+    got, centre = _round(measured(spec["name"], pool)), _round(centre_of(spec["name"], calibration, target))
     limit = spec["tolerance"] if kind == "absolute" else spec["tolerance"] * abs(centre)
     if spec["name"] in PENDING_GATES:
         status = PENDING
@@ -553,8 +650,9 @@ def _check(name, got, centre, band):
             "status": OK if inside else WARN}
 
 
-def _checks(pool, calibration):
-    """The warning checks, in a fixed order: nearest agreement, dead-ball visibility, then each yardstick's two."""
+def _checks(pool, calibration, profile=None):
+    """The warning checks, in a fixed order: nearest agreement, dead-ball visibility, then each yardstick's two; and for
+    the offpitch profile, last, the near-line onset share (the Calibration's centre, NEAR_LINE_BAND)."""
     window = calibration.public_window
     checks = [_check("nearest_agreement", pool.agreed / pool.judged if pool.judged else float("nan"),
                      window["nearest_agreement"], NEAREST_BAND),
@@ -568,7 +666,66 @@ def _checks(pool, calibration):
                              ours["poss_per_min"], POSSESSIONS_BAND))
         checks.append(_check("d_share:nearest_w{}".format(width), row["d_frames"] / row["graded_frames"],
                              ours["d_share"], D_SHARE_BAND))
+    if profile == degrade.OFFPITCH:
+        checks.append(_check("near_line_share", measured("near_line_share", pool),
+                             centre_of("near_line_share", calibration), NEAR_LINE_BAND))
     return checks
+
+
+def _offpitch_target(target):
+    """`target`, checked to be offpitch.target()'s: a dict with a finite beyond_line_share and its beyond_m_quantiles,
+    {name: finite number}. FidelityError, naming the target, otherwise."""
+    share = target.get("beyond_line_share") if isinstance(target, dict) else None
+    quantiles = target.get("beyond_m_quantiles") if isinstance(target, dict) else None
+
+    def finite(value):
+        return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
+    if not (finite(share) and isinstance(quantiles, dict) and all(finite(value) for value in quantiles.values())):
+        raise FidelityError("the target must be our match's share past a line as offpitch.target() returns it, a dict "
+                            "with a finite beyond_line_share and its beyond_m_quantiles; this one is a {} whose "
+                            "beyond_line_share is {!r}".format(type(target).__name__, share))
+    return target
+
+
+def offpitch_info(pool, calibration, target):
+    """The offpitch profile's information, judged by no band (the module's docstring), as the report holds it.
+
+    {"target": the key and version of the target the gate is centred on; "line": the profile's visible ball frames and
+    those past a line, pooled; "beyond_m_quantiles": {"benchmark", "bar_ath"}, the quantiles of how far past the line
+    (offpitch.QUANTILES) of the profile's distances laid end to end, and the target's; "short_gaps": {"benchmark",
+    "bar_ath"}, _short_gaps of the profile's gaps and of the Calibration's; "gaps_per_match": {match: {"offpitch",
+    "tracking"}}, the gaps a seed of its ball and of tracking's, the mean over the seeds; "dead_ball_visible_share":
+    {"offpitch", "tracking"}; "draws": the counts of its ball's records (degrade.OFFPITCH_COUNTS), summed}."""
+    line = pool.line
+    past = np.concatenate(line["past"]) if line["past"] else np.zeros(0)
+    pooled = offpitch.line_summary(line["visible_frames"], past)
+    dead = pool.dead_frames
+    return {
+        "target": {"key": target.get("key"), "version": target.get("version")},
+        "line": {"visible_frames": line["visible_frames"], "beyond_frames": line["beyond_frames"]},
+        "beyond_m_quantiles": {
+            "benchmark": {name: _round(value) for name, value in pooled["beyond_m_quantiles"].items()},
+            "bar_ath": {name: _round(value) for name, value in target["beyond_m_quantiles"].items()}},
+        "short_gaps": {"benchmark": _short_gaps(pool.gap_durations()),
+                       "bar_ath": _short_gaps(calibration.gap_durations_s)},
+        "gaps_per_match": {match_id: {"offpitch": _round(row[0] / row[2]), "tracking": _round(row[1] / row[2])}
+                           for match_id, row in pool.offpitch_gaps.items()},
+        "dead_ball_visible_share": {"offpitch": _round(pool.dead_visible / dead) if dead else None,
+                                    "tracking": _round(pool.tracking_dead_visible / dead) if dead else None},
+        "draws": dict(pool.offpitch_draws),
+    }
+
+
+def _short_gaps(durations):
+    """{"gaps", "short", "share", "time_share"} of gap lengths in seconds: how many gaps, how many are shorter than
+    SHORT_GAP_S, and their share of the gaps and of the time without a ball (None where there is nothing to share).
+    Counts and shares only: the lengths are never listed."""
+    durations = np.asarray(durations, dtype=np.float64)
+    short = durations < SHORT_GAP_S
+    total = float(durations.sum())
+    return {"gaps": int(durations.size), "short": int(short.sum()),
+            "share": _round(short.sum() / durations.size) if durations.size else None,
+            "time_share": _round(durations[short].sum() / total) if total > 0 else None}
 
 
 def statistics(pool, calibration):
@@ -639,7 +796,9 @@ def render(result):
              "fidelity of profile {} ({})   {} matches   seeds {}   calibration {}...   commit {}{}".format(
                  profile["name"], versions, len(result["matches"]), ",".join(str(seed) for seed in result["seeds"]),
                  result["calibration"]["sha256"][:12], git["commit"] or "?", " +dirty" if git["dirty"] else ""),
-             "", "gates (centre = our Calibration's value, measured on the kick-off spans; the plan's tolerance)",
+             "", "gates (centre = our Calibration's value, measured on the kick-off spans; the plan's tolerance)" + (
+                 "; beyond_line_share's centre is ours from offpitch.target()" if any(
+                     gate["name"] == "beyond_line_share" for gate in result["gates"]) else ""),
              "  {:<18}{:>12}{:>12}{:>12}   {}".format("gate", "measured", "centre", "+-", "status")]
     for gate in result["gates"]:
         tolerance = "{:g}%".format(100 * gate["tolerance"]) if gate["kind"] == "relative" else _cell(gate["tolerance"])
@@ -665,6 +824,8 @@ def render(result):
     for name, row in result["statistics"].items():
         lines.append("  {:<38}{:>12}{:>12}".format(
             name, _cell(row["benchmark"]), _cell(row["bar_ath"])))
+    if "offpitch" in result:
+        lines += _offpitch_lines(result["offpitch"])
     halves = [draw["source_half"] for draw in result["draws"]]
     pending = [gate["name"] for gate in result["gates"] if gate["status"] == PENDING]
     if result["players_draws"]:
@@ -684,6 +845,37 @@ def render(result):
         len(result["gates"]), "all pass" if result["passed"] else "DO NOT ALL PASS",
         " ({} pending, not counted)".format(len(pending)) if pending else "", result["warnings"],
         len(result["checks"])))
+    return lines
+
+
+def _offpitch_lines(info):
+    """The lines of the offpitch profile's information (offpitch_info): no band, nothing judged."""
+    names = [name for name, _ in offpitch.QUANTILES]
+    quantiles, short, dead, draws = (info["beyond_m_quantiles"], info["short_gaps"], info["dead_ball_visible_share"],
+                                     info["draws"])
+
+    def gaps(row):
+        return "{:,} of {:,} gaps ({} of them, {} of the time without a ball)".format(
+            row["short"], row["gaps"], _share(row["share"]), _share(row["time_share"]))
+    lines = ["", "off the pitch (information, no band; our share past a line is offpitch.target()'s, key {})".format(
+                 info["target"]["key"]),
+             "  visible ball frames past a line: {:,} of {:,}".format(info["line"]["beyond_frames"],
+                                                                      info["line"]["visible_frames"]),
+             "  {:<38}".format("metres past the line, frames past it") + "".join(
+                 "{:>10}".format(name) for name in names)]
+    for label, row in (("benchmark", quantiles["benchmark"]), ("ours", quantiles["bar_ath"])):
+        lines.append("  {:<38}".format("  " + label) + "".join("{:>10}".format(_cell(row.get(name))) for name in names))
+    lines += ["  gaps shorter than {:g} s, benchmark: {}".format(SHORT_GAP_S, gaps(short["benchmark"])),
+              "  gaps shorter than {:g} s, ours:      {}".format(SHORT_GAP_S, gaps(short["bar_ath"])),
+              "  gaps per match and seed, offpitch / tracking's ball: " + ", ".join(
+                  "{} {:.1f} / {:.1f}".format(match_id, row["offpitch"], row["tracking"])
+                  for match_id, row in info["gaps_per_match"].items()),
+              "  dead-ball visible share: offpitch {}, tracking's ball {}".format(_share(dead["offpitch"]),
+                                                                                 _share(dead["tracking"])),
+              "  off-pitch stretches hidden {:,} ({:,} frames); interior gaps of the transplant dropped {:,} of {:,} "
+              "({:,} frames given back)".format(draws.get("offpitch_stretches", 0), draws.get("offpitch_frames", 0),
+                                                draws.get("gaps_dropped", 0), draws.get("interior_gaps", 0),
+                                                draws.get("frames_restored", 0))]
     return lines
 
 

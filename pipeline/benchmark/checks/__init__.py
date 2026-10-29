@@ -77,9 +77,13 @@ module of its topic:
                  report (aggregates, worked out frame by frame, the stop rule, no match scored in sample), and
                  touch_agreement on a hand-built scene (synthetic only)
     offpitch_ruler.py
-                 the past-the-line ruler (offpitch.line_stats) on hand-built frames, the kick-off spans against
-                 calibration.measure's rule, and with --data our match's cached target, aggregates only
-                 (synthetic, and ours with --data)
+                 the past-the-line ruler (offpitch.line_stats, beyond_distances) on hand-built frames, the line
+                 distance as one quantity in degrade, hazard, calibration and the ruler, the kick-off spans against
+                 calibration.measure's rule, the one-time fit of m and q (documented values on a hand-built match, ties,
+                 the single refit, the sweeps against the profile's own ball, the refusals, constants_from, the
+                 command), the offpitch profile's fidelity (its gates, its near-line check, its information, the same
+                 figures as the fit's), and with --data our match's cached target, aggregates only (synthetic, and ours
+                 with --data)
     harness.py   the harness itself: what it collects, how it reports NOT RUN, the console set-up, and that no check
                  module imports another one
     common.py    what several modules share, and no checks of its own: the synthetic DFL match, the random one
