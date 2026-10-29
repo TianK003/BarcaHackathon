@@ -1489,6 +1489,79 @@ the interval is that of the per-match deltas.
   a separate question, and A12's restart ceiling (+0.0198) turned into +0.0040 at best (R014). Nothing is adopted and
   there is no scoreboard row: A13 is an analysis.
 
+### A14 — Before a video ball detector (P14): the ball in pixels, where the tracker loses it, and a perfect ball in our gaps (2026-10-29, Tian)
+
+Proposal: P14 · Commit: `d47ec20` (no code change) · Commands, from the repo root, one process at a time on one BLAS
+thread at below-normal priority:
+
+```bash
+python pipeline/benchmark/run.py pipeline/configs/main.toml --profile clean --truth both --no-write
+python pipeline/benchmark/run.py pipeline/configs/main.toml --profile gaps --truth both --no-write
+```
+
+Parts 1 and 2 come from two throwaway local scripts (not committed) that read the ATD cache and the tactical homography
+through `pipeline.inputs.Inputs` and printed aggregates only. Part 3 is the benchmark (public DFL data). It was run as the
+kill test of a debate on P14 between an advocate and a critic, whose decision rules were declared before the result
+(the end of this entry). Nothing is adopted and there is no scoreboard row: A14 is an analysis.
+
+**Part 1: the ball in pixels** (BAR-ATH, graded frames).
+- The ball's diameter, the ATD ball ± 0.11 m along the pitch projected through the homography: p10 4.7, median 6.0, p90
+  8.2 px on the 94,214 ball-present graded frames. Across the pitch the ground footprint is foreshortened to a median of
+  2.9 px, but a sphere looks round, so the ball is about 6 px wide. At the image centre the scale is 29.7 px/m (p10 25.3,
+  p90 33.8): the frame shows about 65 m of pitch across 1,920 px.
+- The ATD ball projects inside the 1920 × 1080 frame on 99.91% of the frames where it exists, and within 40 px of an edge
+  on 0.6%: the provider's ball exists only while it is in view.
+- 95.3% of the present player slots project inside the frame: 95.5% on ball-visible frames and 95.0% in the gaps. The
+  median number of present slots is 22 (21 in the gaps). The camera keeps play in view during the gaps.
+
+**Part 2: where the tracker loses the ball.** The last ball seen before each gap of at least 2 s inside a graded block
+(133 gaps) and the first one after it (131):
+
+| | within 40 px of the frame's edge | within 100 px | median distance to the edge | past a line | within 2 m of a line |
+|---|---|---|---|---|---|
+| last seen before a gap | 0.0% | 6.0% | 285 px | 16.5% | 31.6% |
+| first seen after a gap | 3.8% | 5.3% | 266 px | 21.4% | 29.0% |
+| every 20th ball-visible frame (4,711) | 0.7% | 2.0% | 318 px | — | — |
+
+**Part 3: a perfect ball in our gaps, on the benchmark.** `gaps` is DFL's clean players with our ball mask transplanted
+(R003); `clean` is the same players with DFL's whole ball. Only the ball differs (its speed channel aside, which no
+source reads, T31), so `clean` minus `gaps` is what a perfect ball in our gaps would be worth to `main.toml`.
+
+| profile | raw spellF1 (macroF1, alive/dead F1) | coarse spellF1 | possessions per graded minute |
+|---|---|---|---|
+| `clean` (1 seed) | 0.6575 (0.9351, 0.9976) | 0.5916 | 3.50 |
+| `gaps` (3 seeds) | 0.5559 (0.8948, 0.9727) | 0.5719 | 3.07 |
+| `tracking` v3 (A13, for reference) | 0.5430 (0.8895, 0.9731) | 0.5593 | — |
+| the truth | — | — | 4.58 raw, 2.48 coarse |
+
+Pooled delta `clean` minus `gaps`: **+0.1016 raw and +0.0197 coarse**. The per-match deltas give +0.1014 raw (90%
+t-interval [+0.0944, +0.1084], sign-flip p 0.0156, 7 wins in 7; from +0.0848 to +0.1163) and +0.0191 coarse
+([+0.0064, +0.0319], p 0.0469, 6 wins in 7; from -0.0049 to +0.0475).
+
+**Reading.**
+- **A ViT is the wrong tool here.** A 6 px ball is smaller than one 14 to 16 px patch of DINOv2, RF-DETR or OWLv2, and
+  any detector that shrinks the frame loses it ([T46](traps.md)). The candidate is a stride-4 heatmap network at full
+  resolution with stacked frames (FootAndBall, WASB-SBDT, both MIT).
+- **The ball is lost inside the image, not at its edge.** No onset is within 40 px of the edge, against 0.7% of all
+  visible frames, and the median onset is 285 px from it. The ball was in view when the track was lost, so the camera
+  does not explain the gaps. A lost lock and an occlusion both fit, and only a detector run on the gaps can tell them
+  apart. 16.5% of the onsets are already past a line (the ball out of play), and 21.4% of the ends are found again past a
+  line (a throw-in or a corner being taken).
+- **The truths disagree on what the ball is worth.** Under the raw truth it is worth +0.10, in every match. Under the
+  coarse truth it is worth +0.02, and one match loses. The ball lets the pipeline cut at more of DFL's changes (3.07 to
+  3.50 possessions a minute), and most of those are short possessions that the coarse truth absorbs. This is T33's
+  warning, and which truth our match resembles is P16's open question.
+- **It is generous.** The players are clean in both runs, DFL's ball is visible out of play (T39: alive/dead F1 0.9727
+  to 0.9976), and the oracle has perfect recall and no false positives. Against that, the decoder was not re-chosen for
+  a ball-rich input. A real detector reaching 35 to 50% of the gap frames, as both sides of the debate assume,
+  converts perhaps a quarter to two fifths of this: about +0.025 to +0.04 raw and +0.005 to +0.008 coarse. That is below
+  the full match's noise floor of about 0.04 ([T07](traps.md)).
+- **The decision rules declared before the result.** The advocate: drop P14 if Δraw < +0.04, or if Δcoarse ≤ +0.01, or
+  if raw is high while coarse is below +0.02; go at Δraw ≥ +0.08 with Δcoarse ≥ +0.04. The critic: drop if Δraw < +0.04
+  or Δcoarse ≤ +0.01; test B only in the grey zone; go at Δraw ≥ +0.07 with Δcoarse ≥ +0.03. At +0.1016 and +0.0197, the
+  advocate's own rule says drop (coarse is below +0.02, by 0.0003), and the critic's says no go. P14 is therefore not
+  built now: [After A14](proposals.md#after-a14) and P14's status say what may still run.
+
 ## Experiments
 
 Copy this template for each run, and add a scoreboard row for anything worth comparing.

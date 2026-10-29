@@ -35,6 +35,10 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P16](#p16--metricas-sample-games-in-our-ground-truth-providers-conventions) | Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing | boundary timing, grain | M | medium | idea |
 | [P17](#p17--the-restart-team-channel) | Restart-team channel: who restarts after a stoppage, from the players' arrangement | facts 3, 5 (the hold points at the old team after most stoppages) | S–M | ceiling +0.0198 raw (A12); delivered +0.0040 raw at best, bar not met (R014) | dropped → R014, R014b (the source and the decoder's restart states stay, off by default) |
 | [P18](#p18--the-offpitch-profile-dfls-ball-hidden-off-the-pitch-as-ours-is-and-p05-retrained-on-it) | offpitch profile: DFL's ball hidden off the pitch as ours is, and P05 retrained on it | T39 (P05 overstated by the visible out-of-play ball) | M | A13: a perfect dead-ball source adds +0.029 raw on tracking; main.toml on offpitch 0.5509 raw / 0.5296 coarse; hiding the out-of-play ball cost today's P05 0.013 alive/dead F1 (R015) | dropped → R015, R015b (our tracker's off-pitch ball cannot be reproduced by a simple rule; code removed) |
+| [P19](#p19--a-learned-team-model-where-the-ball-is-seen) | A learned team model where the ball is seen: P05's recipe applied to the team | fact 3; A13's largest lever (+0.194 raw where the ball is seen) | M (feasibility S) | guess +0.02 to +0.05 raw; fully benchmarkable | idea |
+| [P20](#p20--ball-free-possession-paths-pathcrf-on-our-slots) | Ball-free possession paths: PathCRF (KDD 2026), trained on the same DFL matches | fact 1; A13's gaps (+0.176 raw) | S test, L to adopt | medium–high, uncertain: 92.4% team accuracy without the ball on clean tracking, unknown on ours | idea |
+| [P21](#p21--wrong-team-slots-measure-the-ceiling-then-repair-them) | Wrong-team slots: measure the ceiling, then repair from tracking or jersey colours | T32 | S test, M | low on the benchmark: all of `tracking`'s player degradation costs `main.toml` 0.013 (A14) | idea |
+| [P22](#p22--the-shape-model-adapted-to-our-two-teams-without-labels) | The shape model adapted to our two teams without labels | fact 1 | S–M | low: guess +0.00 to +0.02 | idea |
 | [P03](#p03--one-command-deterministic-cached) | One-command, deterministic, cached pipeline | reproducibility | S–M | enabling | done → R001 |
 | [P04](#p04--sticky-ownership-from-controlled-touches) | Sticky ownership from controlled touches | facts 3, 5 | S | high: +0.1421 raw at the chosen decoder (R010) | done → R008, R010; rule re-chosen → R013 |
 | [P05](#p05--a-real-dead-ball-detector) | Dead-ball detector | fact 4 | M | high: +0.1661 raw at the chosen decoder, on a benchmark that overstates it (R010, T38, T39) | done → R009, R010 |
@@ -46,7 +50,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P11](#p11--touch-and-pass-events-to-place-boundaries) | Touch and pass events to place boundaries | fact 5 | M–L | medium–high | idea |
 | [P12](#p12--metric-aware-post-processing) | Metric-aware post-processing | fact 5 | S | medium | partly done → R012 (the shift; see its list for the rest) |
 | [P13](#p13--learn-from-external-labelled-tracking-data) | Pre-train on external labelled tracking data | facts 1, 2 | L (M on top of P01) | medium–high | idea |
-| [P14](#p14--recover-the-ball-from-the-video) | Recover the ball from the video | facts 1, 2 | L | medium–high, uncertain | idea |
+| [P14](#p14--recover-the-ball-from-the-video) | Recover the ball from the video | facts 1, 2 | L | A14: a perfect ball in our gaps is worth +0.10 raw but +0.02 coarse; a real detector perhaps +0.025 to +0.04 raw | not built → A14 (not a ViT: the ball is 6 px, T46; a half-day zero-shot test may run, [After A14](#after-a14)) |
 | [P15](#p15--broadcast-tracking-as-a-second-opinion) | Broadcast tracking as a second opinion | facts 1, 4 | L | medium | idea |
 
 ## Suggested plan — 27 days to 17 November
@@ -278,6 +282,38 @@ Written on 29 Oct from [A13](results.md), [R015](results.md) and [R015b](results
    goes from 0.9731 to 0.9600 with it hidden, and the profile failed a gate. R015b closed the profile.
 3. **So the next work goes to who has the ball:** where it is seen (P04's touch rule is chosen; P11, touch and pass
    events) and in the gaps (P07, which never saw our teams). Each needs its own declared protocol before its runs.
+
+### After A14
+
+Written on 29 Oct. Three inputs: a debate on P14 (a video ball detector, a ViT or anything better), held between an
+advocate and a critic who each researched their case and then rebutted the other's; [A14](results.md), the measurements
+that debate called for; and a survey of the literature for the team side, which produced P19 to P22. `main.toml` is
+unchanged (sha256 `0ebdfbec...`).
+
+1. **P14 is not built now, and would not be a ViT.**
+   - The ball is about 6 px wide, smaller than one ViT patch (T46). If anything, the candidate is a stride-4 heatmap net
+     at full resolution with stacked frames, trained on the ATD's own ball as algorithm-made pseudo-labels.
+   - A perfect ball in our gaps is worth +0.10 raw but only +0.02 coarse on the benchmark (A14). A real detector covering
+     35 to 50% of the gap frames would deliver perhaps +0.025 to +0.04 raw and +0.005 coarse, below the full match's
+     noise.
+   - The cost is about 9 person-days. The machine is a CPU-only laptop that crashes under sustained load, and a neural
+     network's output would sit in the path that has to regenerate the CSV byte for byte.
+   - Both sides declared their rule before A14 ran. The advocate's own rule drops it, and the critic's says no go.
+   - **What may still run** is P14's test B: zero-shot, half a day, one person, CPU only. Run it only if someone is free
+     after items 2 and 3. A full build follows only if test B passes *and* P16 finds that our truth is closer to DFL's raw
+     grain than to the coarse one.
+2. **Next: P19's feasibility test (half a day), then P19.** The team where the ball is seen holds the largest headroom
+   (+0.194 raw, A13). It is fully benchmarkable and needs no new asset.
+3. **In parallel: P20's step 0 (one to two days).** Run PathCRF's published checkpoint on the one DFL match it never
+   trained on, clean and degraded to `tracking` v3, against P07 on the same gap frames. If it wins by the declared
+   margin, P20 is the bet for the gaps. Its retraining needs a GPU and DFL data only.
+4. **Cheap, only if a person is free:**
+   - P21's step 0: do our identity swaps cluster at the ball? A14 already bounds all of the benchmark's player
+     degradation at 0.013 for `main.toml`.
+   - P22(a), the label-shift prior.
+   - P10 with a pretrained audio tagger.
+5. **P16 still decides more than any of these.** Every ball-rich change so far has split the two truths: R010's decoder,
+   R013's touch rule, and now A14's ball. Knowing our truth's grain says which of them helps on our match.
 
 ---
 
@@ -717,6 +753,148 @@ P05 on a ball that is visible out of play would produce.
   is not observable. With the ball hidden by v1, today's P05 lost 0.013 alive/dead F1 (0.9731 to 0.9600), a lead, not a
   measurement, that belief (a) is weak, since the profile failed a gate.
 
+## Who has the ball: the next layer (added 29 Oct)
+
+A13 puts the remaining score on the team side: +0.194 raw where the ball is seen, +0.176 in the gaps, against +0.029 for
+the dead ball. These four came out of a literature survey written for that finding ([After A14](#after-a14)). Each states
+its belief and what would falsify it, starts with a feasibility test that reads aggregates only, and needs its own
+protocol and bar declared before its runs. Every impact figure below is a guess until that test has run.
+
+### P19 — A learned team model where the ball is seen
+
+**Why.** `main.toml` has no learned team source where the ball is seen. `controlled_touch` is a fixed rule with four
+constants, three of them on the edges of R013's grid, and it speaks on only 36.9% of the ball-visible frames on BAR-ATH;
+everywhere else the decoder holds the last team. P05 showed what boosted trees trained on DFL's flags did for the dead
+ball (+0.1661 raw at R010's decoder). P19 applies the same recipe to the team, which is the larger lever (A13).
+- **Belief:** a model that reads the ball, the nearest players of both teams and the touch episodes on either side of a
+  frame names the team more often than the rule and its hold do.
+- **Falsified if:** out of fold, it is not better per frame than the rule and its hold on the same frames.
+
+**What.**
+- Boosted trees, sklearn's `HistGradientBoostingClassifier`, seeded and saved as JSON as P05 and P07 are, trained on the
+  alive, ball-visible frames of the degraded DFL copies (`tracking` v3). The target is `BallPossession`, and the trees
+  read the two teams symmetrically, as P07 does.
+- Features:
+  - per team, the two nearest slots to the ball: distance, closing speed and relative speed, and each team's time to
+    reach the ball;
+  - the ball's speed, acceleration and turn angle over ±0.2, 0.5 and 1 s, from its positions (T31);
+  - a "team over 11 slots" flag (T32);
+  - the time since and until each team's last and next touch episode (offline, so both directions are allowed);
+  - P07's 26 shape features.
+- An optional second head for the gaps' edges: time into the gap and time left in it, the team in control at each edge,
+  and where the ball was last and next seen.
+- It enters the HMM as a `home` source, beside `controlled_touch` or instead of it. A declared grid chooses its weight
+  together with `switch_team` and `min_possession`, since a learned source and the hold can count the same evidence twice.
+
+**Feasibility first (S, half a day).** Leave-one-match-out on the benchmark: per-frame accuracy and log-loss on the
+alive, ball-visible frames, against what `main.toml`'s own labels give on the same frames. Go if it is at least 2 points
+better in 6 of the 7 matches.
+
+**Then the bar,** as R014's: +0.005 pooled raw spellF1 over `main.toml` with sign-flip p at most 0.05 on `tracking`; the
+coarse truth not below -0.005; `context` in the same direction (sensitivity only); and a label-free transfer check on
+BAR-ATH, as R011 had.
+
+**What it cannot settle.** It learns DFL's flag, which is fine-grained (T33): read the coarse truth beside the raw one.
+The literature puts a rule-based model of individual ball possession at F = 0.83, and of individual ball actions at
+0.88, on 60 Bundesliga matches (Link and Hoernig 2017,
+[PLoS ONE, CC BY](https://pmc.ncbi.nlm.nih.gov/articles/PMC5503225/)). That is a reference for the rule, not a forecast for
+our match.
+
+### P20 — Ball-free possession paths: PathCRF on our slots
+
+**Why.** In the gaps, P07 classifies one frame at a time from the teams' shape (83.5% out of fold on gap frames, R011);
+the HMM alone links frames over time. PathCRF (Kim et al., KDD 2026,
+[arXiv 2602.12080](https://arxiv.org/abs/2602.12080); [code](https://github.com/hyunsungkim-ds/pathcrf), MPL-2.0, five
+trained checkpoints) infers who has the ball from player trajectories alone. Set-attention encoders read the players at
+5 fps in 10 s windows. A CRF then chooses, at every step, which player holds the ball, or which of four out-of-play
+nodes, one per line, it has gone to. Viterbi decodes the path, and impossible transitions are forbidden.
+- It was trained on the **same seven Sportec/DFL open matches as our benchmark**: five for training, one for validation,
+  one for testing.
+- On its test match it reports 92.40% frame-level team accuracy, without the ball. That is on clean tracking with known
+  identities, and it is not like for like with P07's 83.5%.
+- It also gives the possessor's changes, which time the boundaries, and out-of-play events, which are evidence for `D`.
+- Its group's earlier work inferred the ball's trajectory from players alone (Kim et al., KDD 2023,
+  [arXiv 2306.08206](https://arxiv.org/abs/2306.08206)).
+
+- **Belief:** a model that reasons over a sequence of hand-overs between players gets the gaps right more often than
+  shape read frame by frame.
+- **Falsified if:** under our degradation it does not beat P07 on the same gap frames.
+
+**What.**
+1. **Step 0 (S, one to two days).** Run the published checkpoint on its own test match, the only one of our seven it
+   never trained or validated on.
+   - Run it on the clean match, and on the match degraded to `tracking` v3.
+   - The degraded copy needs an adapter: 46 anonymous slots become at most 22 nodes per 10 s window, by team, with slots
+     that end and begin joined by proximity.
+   - Compare its team accuracy on the gap frames with P07's out-of-fold on the same frames.
+   - Go if it is at least 4 points better on the degraded copy.
+2. **Step 1 (L).** Retrain leave-one-match-out on degraded copies: the checkpoints saw six of our seven matches, so the
+   benchmark cannot score them anywhere else.
+   - Training needs a GPU. A cloud GPU is acceptable here because it sees only DFL data (public, CC BY 4.0); nothing of
+     BAR-ATH ever leaves our machines.
+   - The weights are committed, inference on BAR-ATH runs on our CPU, and the per-frame team probabilities feed the HMM
+     as a `home` source.
+   - Its scope (gaps or all frames) and weight are chosen by a declared grid, as R011's were. Its out-of-play nodes may
+     later feed `alive`.
+
+**What it cannot settle.**
+- How far 92.4% falls under our identity breaks: tracklets shorter than a window, and wrong-team slots (T32).
+- Byte-for-byte reproduction with a neural network in the path. As P14: one thread, committed weights, and the CSV
+  hashed on an AMD and an Intel machine early.
+- MPL-2.0 is file-level copyleft. It is fine in a public repo, but its files keep their licence headers.
+
+### P21 — Wrong-team slots: measure the ceiling, then repair them
+
+**Why.** T32: on at least 10.8% of the graded frames a team shows more than 11 slots, because a slot has followed a
+player of the other side. `controlled_touch` takes the team of the nearest slot at confidence 0.93, so a swap next to the
+ball injects a confident wrong team. The benchmark places its wrong-team episodes at the closest home and away pair
+anywhere on the pitch, not at the ball, so it may understate the cost. But A14 bounds it there: all of `tracking`'s
+player degradation (tracklets, wrong-team slots, NaN speeds, smoothing) costs `main.toml` only 0.0129 raw and 0.0126
+coarse (`gaps` 0.5559 and 0.5719 against `tracking` 0.5430 and 0.5593).
+- **Belief:** our swaps cluster at the ball, which the benchmark does not simulate.
+- **Falsified if:** they do not cluster there.
+
+**What.**
+1. **Step 0 (S, an hour).** On BAR-ATH, measure the share of `controlled_touch`'s candidate frames that have a team over
+   11 slots, against the 10.8% of all graded frames.
+   - If it is not well above 10.8%, drop P21: the benchmark's bound applies.
+   - If it is, measure the ceiling: `main.toml` on `tracking` with its wrong-team episodes switched off.
+2. **(a) From the tracking (S).** At each encounter under 2 m, test whether the two slots' continuing trajectories fit
+   better swapped (velocity continuity), under a rule of at most 11 slots per team. The benchmark can score it, but its
+   degradation mirrors the repair, so the result partly confirms itself (T37).
+3. **(b) From the video (M).** Cut each slot's track at its close encounters, project each piece's foot point through the
+   homography, crop the torso, and cluster colour histograms per half without labels (KMeans, two teams plus goalkeepers
+   and the referee). A piece's majority overrides the metadata's team when it is confident.
+   - Unsupervised, so allowed. The video is read by code on our machines only.
+   - The benchmark cannot score it (DFL has no video). The label-free checks on our match: the share of frames with a
+     team over 11 slots should fall, and away from encounters the colour team should agree with the metadata's on at
+     least 98% of the pieces.
+   - Sources: Koshkina et al., unsupervised team classification
+     ([CVPRW 2021](https://openaccess.thecvf.com/content/CVPR2021W/CVSports/papers/Koshkina_Contrastive_Learning_for_Sports_Video_Unsupervised_Player_Classification_CVPRW_2021_paper.pdf));
+     [roboflow/sports](https://github.com/roboflow/sports) (MIT) has a team classifier.
+   - Decode to YUV planes with a pinned PyAV, as P14 would, so that the output reproduces.
+
+### P22 — The shape model adapted to our two teams without labels
+
+**Why.** P07 was trained on German teams only, and R011 warns that the benchmark's gain is not a forecast for Barça and
+Athletic: the count of possessions moved the other way on BAR-ATH.
+- **Belief:** part of that gap is a shift in priors and features that can be corrected without labels.
+- **Falsified if:** the correction does not help in the leave-one-match-out simulation below.
+
+**What.**
+- **(a) S:** estimate our match's home share from P07's own outputs by EM label-shift (Saerens, Latinne and Decaestecker,
+  *Neural Computation* 14(1), 2002), and shift its logit by the result. Never take the share from published statistics
+  of this match: they are human-produced data about it (rule 2).
+- **(b) M:** one round of class-balanced self-training of P07 on frames that `main.toml` labels with confidence (a
+  confident touch inside a long decoded possession).
+  - Cross-fit by half: half 1's pseudo-labels adapt the model for half 2, and the reverse. This limits confirmation bias
+    ([Arazo et al. 2019](https://arxiv.org/abs/1908.02983); CBST, [Zou et al. 2018](https://arxiv.org/abs/1810.07911)).
+  - The pseudo-labels are made by an algorithm and decided by no person, so they are allowed.
+  - Train on one half and check on the other. Without that split, R011's transfer gate (agreement with the touch rule)
+    would check the model on its own training labels.
+- **Validate:** simulate the procedure on DFL, leave one match out, each match in turn as the unlabelled target. A
+  Bundesliga-to-Bundesliga shift is small, so expect "no harm" rather than a gain.
+
 ## Cheap signals worth checking
 
 ### P09 — Camera aim as a coarse ball-zone prior
@@ -746,6 +924,15 @@ down a second later. A whistle marks a sharp `D` onset, and it also starts free 
 
 The broadcast audio has whistles too, but it is not aligned (P15).
 
+*Added 29 Oct:* instead of a hand-built band-pass, use a pretrained audio tagger for step 2.
+- PANNs CNN14 ([code and weights](https://github.com/qiuqiangkong/audioset_tagging_cnn), MIT) gives frame-level scores
+  for AudioSet's "Whistle" class, and for "Cheering" and "Crowd". It runs in minutes on the CPU for 2.2 h of audio.
+- AudioSet's whistle class is generic, and no one has checked it on football.
+- DFL has no audio, so its weight is a declared constant. The label-free checks on our match are the whistle count per
+  half and the lag from each whistle to P05's predicted `D` onsets.
+- The benchmark's dead-ball headroom is small (+0.029, A13), though T39 says ours may be larger, so this stays low
+  priority.
+
 ## Precision
 
 ### P11 — Touch and pass events to place boundaries
@@ -759,6 +946,15 @@ The broadcast audio has whistles too, but it is not aligned (P15).
 - Apply CHALLENGE.md literally. A touch without control, a deflection, or an aerial duel without follow-up control
   changes nothing; a controlled reception or a completed pass does.
 - Snap P06's boundaries to the matching touch, and check that `lat_f` on the board sits near 0.
+
+*Added 29 Oct:* the DFL open data ships event data, so the touch detector can be measured on the benchmark before it is
+used.
+- `pipeline/benchmark/dfl_events.py` already reads the restart events.
+- PathCRF's repository (P20) has the events synchronised to the tracking with ELASTIC
+  ([arXiv 2508.09238](https://arxiv.org/abs/2508.09238)).
+- Measure the precision, recall and timing of receptions and interceptions on the degraded copies.
+- Start from the rule-based detector of Vidal-Codina et al. 2022 ([arXiv 2202.00804](https://arxiv.org/abs/2202.00804)).
+- Event timestamps are imprecise, and DFL's conventions are not ours (P16).
 
 ### P12 — Metric-aware post-processing
 
@@ -809,19 +1005,75 @@ it from any source ([T26](traps.md)).
 
 ### P14 — Recover the ball from the video
 
-**Why.** The tracker's ball gaps are long and pile up late in each half (A02); a dedicated detector may see what the
-tracker lost.
+**Status: not built → [A14](results.md) (the debate of 29 Oct).**
+- It would not be a vision transformer. The ball is about 6 px wide, smaller than one patch ([T46](traps.md)).
+- On the benchmark a perfect ball in our gaps is worth +0.10 raw but +0.02 coarse (A14), and a real detector would
+  deliver a fraction of that.
+- Both sides of the debate declared their rule before that result, and both rules say no full build.
+- A half-day zero-shot test (test B, below) may still run: [After A14](#after-a14), item 1.
 
-**What.**
-- Run a pretrained soccer-ball detector only on the graded ATD-gap frames (~65k), searching around the zone from P09
-  and P07.
-- Project the detections to the pitch with the homography (`load_homography.unproject`, valid on 100% of tactical
-  frames), and clean them with a kinematic filter.
-- An airborne ball projects to the wrong ground point, so give it low confidence.
-- Fine-tune only on frames of other matches. Drawing ball boxes on this match's frames is hand-labelling it
-  ([T27](traps.md)).
-- Decode frame-exactly ([T23](traps.md)), budget the GPU time, and keep the video on our own machines unless the T&C
-  clearly allow otherwise.
+**Why.** The tracker's ball gaps are long and pile up late in each half (A02), and a dedicated detector may see what the
+tracker lost. A14 adds that the ball is lost inside the image: the median onset is 285 px from the frame's edge, none is
+within 40 px of it, and the camera keeps play in view through the gaps. So the ball was in view when the track was lost.
+Either the tracker lost its lock or the ball was occluded, and only a detector run on the gaps can tell which.
+
+**What, if it is ever built.** This is the design that both sides of the debate accepted.
+- **Model:** a stride-4 heatmap network at full resolution, with three stacked frames for motion. Two candidates, both
+  MIT-licensed:
+  - FootAndBall (Komorowski et al. 2020, [code and weights](https://github.com/jac99/FootAndBall), trained on ISSIA-CNR),
+    with its first layer widened to take three frames;
+  - WASB-SBDT (Tarashima et al., BMVC 2023, [code](https://github.com/nttcom/WASB-SBDT)), without its downscaling.
+- **Rejected models:** DINOv2, RF-DETR, OWLv2 and Grounding DINO, because of the ball's size (T46); Ultralytics YOLO,
+  because of its AGPL licence and its stride of 8; SAM 2 and CoTracker, for drift and licence.
+- **Training data:** the ATD's own ball, projected through the homography to pixels. RULES.md allows these as
+  pseudo-labels made by an algorithm, provided no person decides any of them.
+  - The filter is code, fixed before any run.
+  - The public window is left out of training and of every test.
+  - Oversample the visible frames within 2 s of a gap's edge, and run at most one round of self-training.
+  - Hand labels of other matches are allowed too. Boxes drawn on this match are not ([T27](traps.md)).
+  - A person may watch gap moments to understand them. A tally of what they saw is not a gate.
+- **Training compute:** about 12k crops of 256 px, which is 10 to 25 h on the laptop's CPU: one or two throttled
+  nights.
+- **Inference:** on the CPU, at 5 fps inside the graded gaps (about 16k frames), in the zone given by P09's camera aim
+  and the players.
+  - Link the detections into tracklets with a motion gate, and keep those of at least 0.4 s whose speeds are
+    plausible.
+  - Project them to the pitch. An airborne ball projects to the wrong ground point, so give it low confidence.
+  - Fill the ATD's ball with them, flagged as coming from the video, so that `controlled_touch` and `dead_ball_model`
+    read it unchanged.
+- **Reproduction:**
+  - Decode to YUV planes with a pinned PyAV. H.264 decoding is bit-exact; swscale is not ([T23](traps.md)).
+  - Commit the weights (about 1 MB) with a `--verify` path, as `train_shape.py` has.
+  - Keep the detections in `data/cache/`. They are frame-level data and are never committed.
+  - Run ONNX Runtime on one thread.
+  - Hash the CSV on an AMD and an Intel machine as soon as the first model exists. Snapping the outputs to a grid
+    makes a threshold flip rarer, but does not prevent one.
+  - Keep the video on our own machines.
+
+**The gates, declared on 29 Oct before any of them ran.**
+- **Test A (done, A14): a perfect ball in our gaps on the benchmark.**
+  - Drop if Δraw < +0.04, or Δcoarse ≤ +0.01, or raw is high while coarse is below +0.02 (the advocate's rule).
+  - Go at Δraw ≥ +0.07 with Δcoarse ≥ +0.03 (the critic's rule) or at +0.08 and +0.04 (the advocate's).
+  - Result: +0.1016 and +0.0197, so not go.
+- **Test B: zero-shot, half a day, one person, CPU only.** Run the stock weights at full resolution, and 1.5 times
+  upscaled, on seeded samples: about 1,500 tracked frames, the last 2 s before each gap, and about 1,500 gap-interior
+  frames that `main.toml` predicts alive. Measure:
+  - R_t: the share of tracked frames with a detection within 1 m of the ATD ball;
+  - R_g: the share of gap-interior frames with a plausible detection (on the pitch, consistent over ±2 frames, below
+    35 m/s, not at a fixed spot such as the penalty spot);
+  - a false-positive proxy: detections near players that never link to the ATD ball at either edge of the gap.
+
+  Kill if R_g < 0.25 R_t or the proxy exceeds 30% of R_g. Build only if R_g ≥ 0.5 R_t and the proxy is under 15% of
+  R_g. In between, drop. A model fine-tuned on easy frames will not make an occluded ball visible.
+- **A build would add a simulation on DFL first.** Give back a share c of the gaps with position noise, and inject
+  false balls near players at f ∈ {0.02, 0.05, 0.1} of the gap frames, then apply the kill rule at the worst f. Ship
+  only if the gain is at least +0.015 raw with its 90% interval above 0, with the coarse truth not below -0.005. One retry
+  at most, then drop and remove the code.
+
+**What it cannot settle.**
+- DFL has no video, so the detector itself cannot be scored on the benchmark.
+- How well it finds the ball deep inside a gap cannot be observed on our match.
+- The frames that would matter most, slow balls at players' feet where the gaps start, are the most occluded.
 
 ### P15 — Broadcast tracking as a second opinion
 

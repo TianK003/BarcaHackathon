@@ -197,6 +197,14 @@ trusts one slot's team (the nearest player's, say) is wrong on those frames. The
 an 11 against 11 cannot be seen. P01's `tracking` profile puts such episodes into the degraded matches, and is checked
 against this share (R004).
 
+**T46 — The ball is about 6 px wide in the tactical video, smaller than a vision transformer's patch.** A14 measured
+4.7 to 8.2 px (p10 to p90, median 6.0) on the frames where the ATD has the ball, at about 30 px per metre. A ViT or
+DETR-family detector (DINOv2, RF-DETR, OWLv2, Grounding DINO) cuts the image into 14 to 16 px patches, so the ball is a
+fraction of one token. Any model that shrinks the frame first (TrackNet and WASB's usual 288 × 512 input, a COCO detector
+at 640 px) turns it into 1 or 2 px. Ball detection on this video needs full resolution, or tiles of it, and a
+small-object architecture: a stride-4 heatmap net, with stacked frames for motion. Check the ball's pixel size before
+choosing any vision model. The homography gives it at every pitch point (A14).
+
 **T35 — DFL's jitter is a few jumps on a 1 cm grid, and what the benchmark first blamed on them was our own slot
 handovers.** The RMS of the second difference of a DFL player's position (what `calibration.player_stats` calls jitter)
 is 9.0 cm over the 7 matches, against 3.3 mm on ours, which is what a rule of the kind "smooth if more than twice ours"
