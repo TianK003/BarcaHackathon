@@ -120,6 +120,29 @@ min_possession = 1
 min_dead = 1
 """
 RESTART_STEMS = ("restart", "restart_run")
+PLUS_STEMS = ("plus_home_visible", "plus_home_gaps", "plus_home_all", "alive_plus_home_visible",
+              "alive_plus_home_gaps", "alive_plus_home_all")
+# A config as main.toml is: two home sources that are not nearest_player, no nearest_player at all.
+TWO_SOURCES = """
+description = "a touch source and a shape source, no nearest_player"
+seed = 0
+scope = "halves"
+
+[[evidence]]
+kind = "ball_presence"
+
+[[evidence]]
+kind = "ball_presence"
+name = "second"
+weight = 0.5
+
+[decoder]
+kind = "hmm"
+switch_team = 0.01
+switch_dead = 0.01
+min_possession = 1
+min_dead = 1
+"""
 FAILS_MID_RUN = HMM.replace("switch_team = 0.01", "switch_team = -1")
 
 
@@ -372,7 +395,7 @@ def test_headroom_restart_variants_run_end_to_end():
             assert stop.code == 2, stop.code
         else:
             raise AssertionError("--variants nope was accepted")
-        assert headroom.VARIANT_NAMES == STEMS + RESTART_STEMS, headroom.VARIANT_NAMES
+        assert headroom.VARIANT_NAMES == STEMS + RESTART_STEMS + PLUS_STEMS, headroom.VARIANT_NAMES
 
 
 # -- the file the variants are written as -----------------------------------------------------------------------------
@@ -452,8 +475,8 @@ def test_headroom_oracles_say_what_the_truth_says():
     codes = truth.truth_codes(match)[0]
     run_context = RunContext(inputs=inputs, seed=0)
     made = headroom.oracles({"RND001": codes})
-    assert sorted(made) == ["oracle_alive", "oracle_home_all", "oracle_home_visible", "oracle_restart",
-                            "oracle_restart_run"], sorted(made)
+    assert sorted(made) == ["oracle_alive", "oracle_home_all", "oracle_home_gaps", "oracle_home_visible",
+                            "oracle_restart", "oracle_restart_run"], sorted(made)
     live, home = (codes == H) | (codes == A), codes == H
     seen = inputs.atd.ball_present
     assert 0 < (live & seen).sum() < live.sum(), "the check needs live frames with the ball seen and not seen"
@@ -499,8 +522,8 @@ def test_headroom_restores_the_registry():
             on_gaps(write_text(root, "again.toml", HMM), root)
         finally:
             benchmark_run.evaluate_configs = real
-        assert seen_inside == [["oracle_alive", "oracle_home_all", "oracle_home_visible", "oracle_restart",
-                                "oracle_restart_run"]], seen_inside
+        assert seen_inside == [["oracle_alive", "oracle_home_all", "oracle_home_gaps", "oracle_home_visible",
+                                "oracle_restart", "oracle_restart_run"]], seen_inside
 
         expect_error(ValueError, lambda: on_gaps(write_text(root, "fails.toml", FAILS_MID_RUN), root),
                      "hmm", "switch_team")
@@ -743,3 +766,85 @@ def test_headroom_command_line_prints_the_table_and_the_report_lines():
         assert code == 1 and shown.getvalue().startswith("FAILED") and "nearest_player" in shown.getvalue(), (
             code, shown.getvalue())
         assert headroom.DEFAULT_PROFILE == benchmark_run.DEFAULT_PROFILE
+
+
+# -- the plus_ variants and the gaps oracle (P18) ---------------------------------------------------------------------
+
+def test_headroom_gaps_oracle_speaks_only_where_the_ball_is_missing():
+    """oracle_home_gaps: 1 on the truth's H and 0 on its A, on the frames where the degraded ball is missing; NaN else.
+
+    The complement of oracle_home_visible within the live frames: together they are oracle_home_all. alive is NaN. The
+    controls are that both the missing and the seen live frames exist, so a swapped condition cannot pass.
+    """
+    match = random_match("RND001")
+    atd = benchmark_run.make_atd(match, "gaps", 0, synthetic_calibration())
+    inputs = match_inputs.MatchInputs(match, atd, profile="gaps", seed=0)
+    codes = truth.truth_codes(match)[0]
+    live = (codes == H) | (codes == A)
+    seen = np.asarray(inputs.atd.ball_present)
+    assert (live & seen).any() and (live & ~seen).any(), "the check needs live frames with the ball seen and missing"
+    made = headroom.oracles({"RND001": codes})
+    run_context = RunContext(inputs=inputs, seed=0)
+    evidence = made["oracle_home_gaps"](run_context)
+    check_evidence(dataclasses.replace(evidence, name="oracle_home_gaps"), inputs.n_frames)
+    assert np.array_equal(~np.isnan(evidence.home), live & ~seen), "it must speak exactly where the ball is missing"
+    assert np.array_equal(evidence.home[live & ~seen], np.where(codes[live & ~seen] == H, 1.0, 0.0))
+    assert np.isnan(evidence.alive).all()
+    visible, everywhere = made["oracle_home_visible"](run_context).home, made["oracle_home_all"](run_context).home
+    assert np.array_equal(np.where(np.isnan(visible), evidence.home, visible), everywhere, equal_nan=True)
+
+
+def test_headroom_plus_variants_add_the_oracles_after_the_configs_own_sources():
+    """A config with no nearest_player (main.toml's shape) gets the plus_ variants; the classic ones still refuse it.
+
+    The stems are <stem>__<suffix> in PLUS_VARIANTS' order; the evidence is the config's own kinds, oracle_alive if
+    the variant is an alive one, then the added oracle, the added ones at weight 1.0, and seed, scope, decoder and
+    refiners are the config's.
+    """
+    suffixes = [suffix for suffix, *_ in headroom.PLUS_VARIANTS]
+    assert tuple(suffixes) == PLUS_STEMS, suffixes
+    with tempfile.TemporaryDirectory() as root:
+        config = load_config(write_text(root, "two.toml", TWO_SOURCES))
+        texts = headroom.variant_texts(config, variants=suffixes)
+        assert [stem for stem, _ in texts] == [config.stem + "__" + suffix for suffix in suffixes]
+        own = [component.kind for component in config.evidence]
+        with oracles_registered():
+            for (stem, text), (suffix, alive, kind, _) in zip(texts, headroom.PLUS_VARIANTS):
+                variant = load_config(write_text(root, stem + ".toml", text))
+                assert [c.kind for c in variant.evidence] == own + (["oracle_alive"] if alive else []) + [kind], suffix
+                assert list(variant.evidence[:len(own)]) == list(config.evidence), suffix
+                assert all(c.weight == 1.0 for c in variant.evidence[len(own):]), suffix
+                assert (variant.seed, variant.scope, variant.decoder, variant.refine) == (
+                    config.seed, config.scope, config.decoder, config.refine), suffix
+        headroom.check_config(config, suffixes)
+        expect_error(benchmark_run.BenchmarkError, lambda: headroom.check_config(config), "nearest_player")
+        assert headroom.variant_specs(None) == headroom.variant_specs(STEMS), "variants=None is still the classic five"
+
+
+def test_headroom_plus_variants_add_and_classic_ones_still_replace():
+    """With a nearest_player, home_all puts the oracle in its place; plus_home_all keeps it and appends the oracle."""
+    with tempfile.TemporaryDirectory() as root:
+        base = load_config(write_text(root, "hmm_free.toml", HMM))
+        texts = dict(headroom.variant_texts(base, variants=("home_all", "plus_home_all", "alive_plus_home_gaps")))
+        with oracles_registered():
+            kinds = {stem: [c.kind for c in load_config(write_text(root, stem + ".toml", text)).evidence]
+                     for stem, text in texts.items()}
+        assert kinds == {"hmm_free__home_all": ["oracle_home_all"],
+                         "hmm_free__plus_home_all": ["nearest_player", "oracle_home_all"],
+                         "hmm_free__alive_plus_home_gaps": ["nearest_player", "oracle_alive", "oracle_home_gaps"]}, kinds
+
+
+def test_headroom_alive_plus_home_all_is_perfect():
+    """alive_plus_home_all scores 1.0 on all three metrics, though the config keeps its own source; plus_home_gaps not.
+
+    The kept source is soft (confidence 0.9, about 2.2 nats): a hard 0 / 1 nearest_player is as loud as the oracle, 13.8
+    nats at eps 1e-6, and where it is wrong the two tie.
+    """
+    soft = HMM.replace('kind = "nearest_player"', 'kind = "nearest_player"' + chr(10) + 'confidence = 0.9')
+    with tempfile.TemporaryDirectory() as root:
+        result = on_gaps(write_text(root, "hmm_free.toml", soft), root,
+                         variants=["alive_plus_home_all", "plus_home_gaps"])
+        pooled = pooled_of(result)
+        perfect = pooled["hmm_free__alive_plus_home_all"]
+        assert perfect["spell_f1_mean"] == perfect["macro_f1"] == perfect["alive_dead_f1"] == 1.0, perfect
+        assert pooled["hmm_free__plus_home_gaps"]["macro_f1"] < 1.0, pooled["hmm_free__plus_home_gaps"]
