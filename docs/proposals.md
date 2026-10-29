@@ -34,6 +34,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P02](#p02--inspect-the-ground-truths-conventions-on-the-public-window-to-understand-and-never-to-tune) | Inspect the GT's conventions on the public window, to understand and never to tune | boundary timing | S | bounded since the 23 Oct rule: understanding only; so far the pipeline's own lag on DFL, 1 to 2 frames, within noise (R012) | partly done → A11, R012 (inspection only; a person may watch to understand) |
 | [P16](#p16--metricas-sample-games-in-our-ground-truth-providers-conventions) | Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing | boundary timing, grain | M | medium | idea |
 | [P17](#p17--the-restart-team-channel) | Restart-team channel: who restarts after a stoppage, from the players' arrangement | facts 3, 5 (the hold points at the old team after most stoppages) | S–M | ceiling +0.0198 raw (A12); delivered +0.0040 raw at best, bar not met (R014) | dropped → R014, R014b (the source and the decoder's restart states stay, off by default) |
+| [P18](#p18--the-offpitch-profile-dfls-ball-hidden-off-the-pitch-as-ours-is-and-p05-retrained-on-it) | offpitch profile: DFL's ball hidden off the pitch as ours is, and P05 retrained on it | T39 (P05 overstated by the visible out-of-play ball) | M | A13: a perfect dead-ball source adds +0.029 raw on tracking; main.toml on offpitch 0.5509 raw / 0.5296 coarse; hiding the out-of-play ball cost today's P05 0.013 alive/dead F1 (R015) | dropped → R015, R015b (our tracker's off-pitch ball cannot be reproduced by a simple rule; code removed) |
 | [P03](#p03--one-command-deterministic-cached) | One-command, deterministic, cached pipeline | reproducibility | S–M | enabling | done → R001 |
 | [P04](#p04--sticky-ownership-from-controlled-touches) | Sticky ownership from controlled touches | facts 3, 5 | S | high: +0.1421 raw at the chosen decoder (R010) | done → R008, R010; rule re-chosen → R013 |
 | [P05](#p05--a-real-dead-ball-detector) | Dead-ball detector | fact 4 | M | high: +0.1661 raw at the chosen decoder, on a benchmark that overstates it (R010, T38, T39) | done → R009, R010 |
@@ -258,6 +259,25 @@ by default. None of the four has been started, and each needs its own protocol d
    logit(c), or the next grid repeats the problem. Run this only if item 1 does not settle it.
 4. **Smart Tagging's set-piece tags as a type hint (P08).** Left out of P17 on purpose. They are automatic, but P01's
    matches have no Smart Tagging, so there is no benchmark to choose their weight on.
+
+*Added 29 Oct:* [A13](results.md) part 1 sizes where `main.toml`'s remaining spellF1 is on the benchmark, and it points
+at the team side: a perfect team where the ball is seen is worth +0.19 raw, and in the gaps +0.18 raw, against +0.029 for
+a perfect dead-ball source (`tracking`, 7 wins in 7 each). P18 was started on 29 Oct, for the dead-ball side's transfer
+gap (T39), and it was dropped (R015, R015b), see [After P18](#after-p18).
+
+### After P18
+
+Written on 29 Oct from [A13](results.md), [R015](results.md) and [R015b](results.md). `main.toml` is unchanged (sha256
+`0ebdfbec...`).
+
+1. **A13: on the benchmark the team side holds the remaining score.** A perfect team where the ball is seen is worth
+   +0.194 raw and +0.231 coarse, where it is missing +0.176 and +0.108, everywhere +0.340 and +0.355, against +0.029 and
+   +0.039 for a perfect dead-ball source (`tracking` v3; `context` agrees). The decoder's own ceiling is 0.918 raw and
+   0.969 coarse.
+2. **R015 is a lead, not a measurement,** that the visible out-of-play ball overstates P05 only a little: alive/dead F1
+   goes from 0.9731 to 0.9600 with it hidden, and the profile failed a gate. R015b closed the profile.
+3. **So the next work goes to who has the ball:** where it is seen (P04's touch rule is chosen; P11, touch and pass
+   events) and in the gaps (P07, which never saw our teams). Each needs its own declared protocol before its runs.
 
 ---
 
@@ -656,6 +676,46 @@ is missing at 39.8% of the predicted stoppages' ends and 20.2% of their restarts
 - Our match has no restart types to measure against: a type read off its video by a person would be a hand label (T27).
 - Smart Tagging's set-piece tags are left out on purpose: they would be a P08 follow-up, with no benchmark to choose
   their weight on.
+
+### P18 — The offpitch profile: DFL's ball hidden off the pitch as ours is, and P05 retrained on it
+
+**Status: dropped → [R015](results.md), [R015b](results.md) (our tracker's off-pitch ball cannot be reproduced by a simple
+rule; code removed).** Tian's rule at the pause of 29 Oct: if the v2 profile failed, P18 would be dropped. It failed R015b's
+feasibility check, and the offpitch code was removed in `7b555eb` (recoverable from `fb33b38`). [A13](results.md) part 1
+stays; part 2 and R016 never ran. What it leaves is in [After P18](#after-p18).
+
+**Why.** T39. P05's boosted trees are the largest single contributor to `main.toml` (+0.1661 raw at R010's decoder), and
+the docs say the benchmark overstates them for our match by an amount it cannot measure. The trees split first on where
+the ball is: past a line, last or next seen past a line, at a restart spot. DFL's tracker keeps the ball while it is out
+of play and ours loses it there: the ball is past a line on 17.68% of DFL's at-risk rows against 4.07% of ours (R005,
+R009). The model learned a cue that is mostly absent on our match. Belief (a) was that the current P05 relies heavily on the
+visible out-of-play ball, so it should lose clearly when that ball is hidden. A13 adds the other half: on the benchmark a perfect
+dead-ball source is worth only +0.029 raw to `main.toml` (alive/dead F1 is already 0.973), which is what a near-perfect
+P05 on a ball that is visible out of play would produce.
+
+**What.**
+- **A13** (done, part 1): the headroom of `main.toml` with oracles added to its own evidence (`plus_` variants), on
+  `tracking` and `context`. Part 2, on `offpitch`, was not run.
+- **R015** (done): a benchmark profile, `offpitch` v1, in which `tracking` v3's ball is also hidden once it is
+  more than m past a line (until it is back on the pitch), and a share q of the transplanted gaps is dropped. m is fitted
+  once so that the share of visible ball frames past a line equals ours (0.0407), and q so that the missing share equals
+  ours; both are frozen (m 0.2 m, q 0.430). Tian reopened R005's ruling against a mask for the ball off the pitch on
+  2026-10-29 for this separate profile, because the parameter is fitted to a statistic of visible frames. `main.toml` on
+  it scores 0.5509 raw and 0.5296 coarse (0.5430 and 0.5593 on `tracking`; alive/dead F1 0.9731 to 0.9600).
+- **R015b** (done): a v2 rule, the ball hidden while more than m past a line and moving, found again at rest, swept once on
+  label-free statistics. Its share past a line stays at 0.258 to 0.262 at every margin, against ours 0.0407. P18 dropped.
+- **R016** (never ran): retrain P05 on `offpitch`.
+
+**What it cannot settle.**
+- What stays unobservable on our match is how long our ball spends out of play in total. `offpitch` assumes it is like
+  DFL's; the assumption is written in R015.
+- A profile is a model of our tracking, not our tracking: the gates and checks say where it differs (R015: median gap,
+  the near-line onset share and the ball visible on dead frames).
+- What R015 and R015b found: two profiles that hide the out-of-play ball were tried. v1 matched our share past a line and
+  made the gaps too long (median 15.04 s against 10.74); v2 could not reach the share at any margin (0.258 to 0.262
+  against 0.0407). Our tracker's off-pitch ball is not reproduced by a simple rule, and where it is during our own gaps
+  is not observable. With the ball hidden by v1, today's P05 lost 0.013 alive/dead F1 (0.9731 to 0.9600), a lead, not a
+  measurement, that belief (a) is weak, since the profile failed a gate.
 
 ## Cheap signals worth checking
 

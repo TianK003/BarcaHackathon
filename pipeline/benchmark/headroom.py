@@ -9,7 +9,7 @@ A decoder can only be as good as the evidence it is given, and the evidence we h
 is missing on 41% of graded frames, and with it visible the nearest player's team is wrong 22% of the time (A01, A02).
 Before building a dead-ball detector (P05) or a possession model (P04) it is worth knowing how much of the score each
 could ever deliver, to a decoder that is already there. This runs CONFIG on the benchmark beside five variants of it
-whose evidence is built from the benchmark's own truth, perfectly, and the runner's table says by how much each beats
+(and, by name, more: see "The variants are configs") whose evidence is built from the benchmark's own truth, perfectly, and the runner's table says by how much each beats
 it:
 
     CONFIG                      the reference, run from its own file as it is
@@ -27,6 +27,9 @@ The oracles
 * oracle_home_visible: home is 1 where the truth is H and 0 where it is A, on the frames where the tracking has the ball
   (run.inputs.atd.ball_present, which a degraded profile has made as it is in our match); NaN elsewhere. alive is NaN.
 * oracle_home_all: the same on every H and A frame. alive is NaN.
+* oracle_home_gaps: the same on the H and A frames where the tracking has no ball (~run.inputs.atd.ball_present), NaN
+  where it has. alive is NaN. With oracle_home_visible it makes oracle_home_all; alone it is what a perfect source would
+  add where the ball cannot say anything.
 * oracle_restart (P17): home is the team that restarts after each stoppage, for the RESTART_TAIL (50) frames from the
   first live frame after a D run, cut short where the truth next changes team; 1 for H, 0 for A. A D run at a block's
   start (the kick-off) counts; one followed by X, or running to the block's end, restarts nothing. NaN elsewhere, and
@@ -66,11 +69,23 @@ refuses. They are read by the pipeline's own loader like any config: the benchma
 what the submission pipeline does. The writer handles the flat tables that a Config holds, str, int, float and bool, and
 refuses a parameter of another kind by name (toml_value) before any file is written.
 
---variants picks others, or a subset, by suffix (VARIANT_NAMES: the five above, then restart and restart_run). The two
+--variants picks others, or a subset, by suffix (VARIANT_NAMES: the five above, then restart and restart_run, then the six plus_ ones). The two
 restart variants replace nothing: <stem>__restart is CONFIG's evidence plus oracle_restart at weight 1.0, and
 <stem>__restart_run the same with oracle_restart_run: what a perfect "which team restarts" source would be worth
 (P17). Only a variant that replaces the home source needs one, so a config with none (main.toml) can have the
 restart variants and is refused the others, by name. Without --variants it is the classic five, as always.
+
+The plus_ variants (PLUS_VARIANTS) are the home variants that replace nothing: <stem>__plus_home_visible, __plus_home_gaps
+and __plus_home_all are CONFIG's evidence with the oracle appended at weight 1.0, and __alive_plus_home_visible, _gaps
+and _all the same with oracle_alive added first. They are for a config with several home sources (main.toml has
+controlled_touch and shape_possession and no nearest_player), which the classic variants refuse because there is no
+single source to replace. Adding is close to replacing where the oracle speaks, and the oracle is the better measure of
+what is left: it carries about 13.8 nats a frame at eps 1e-6 and weight 1, against at most about 2.6 for any real source
+the config has, so the decoder follows it; where it is silent (NaN) the config's own sources decide, which is what
+plus_home_gaps and plus_home_visible each leave to them on the other side of the ball's presence. A config's own sources
+stay in the decode as they are, so the headroom is that of this config as it is. A source that is itself hard (a
+nearest_player with confidence 1.0 is 13.8 nats too) ties with the oracle where it is wrong, and the variant falls short
+of the truth by that much.
 
 Reports are written only with --write (write=True), for the five variants and not for CONFIG: <stem>__<variant>.json
 under <data dir>/runs/benchmark/<profile>/, with the suffixes of the runner's own rule for a subset of matches, the
@@ -141,7 +156,25 @@ RESTART_VARIANTS = (
     ("restart_run", "oracle_restart_run",
      "a perfect restart team held for the whole possession that follows (oracle_restart_run added)"),
 )
-VARIANT_NAMES = tuple(suffix for suffix, *_ in VARIANTS) + tuple(suffix for suffix, *_ in RESTART_VARIANTS)
+# The plus_ variants: (suffix of the stem, alive oracle added, home oracle added, what it measures). They replace nothing,
+# the oracle is appended after the config's own sources (and after oracle_alive), so a config with several home sources,
+# none of them nearest_player (main.toml), can have them.
+PLUS_VARIANTS = (
+    ("plus_home_visible", False, "oracle_home_visible",
+     "a perfect possessor where the ball is seen, added to the config's own sources (oracle_home_visible added)"),
+    ("plus_home_gaps", False, "oracle_home_gaps",
+     "a perfect possessor only where the ball is missing, added to the config's own sources (oracle_home_gaps added)"),
+    ("plus_home_all", False, "oracle_home_all",
+     "a perfect possessor on every live frame, added to the config's own sources (oracle_home_all added)"),
+    ("alive_plus_home_visible", True, "oracle_home_visible",
+     "a perfect dead-ball detector and a perfect possessor where the ball is seen, both added"),
+    ("alive_plus_home_gaps", True, "oracle_home_gaps",
+     "a perfect dead-ball detector and a perfect possessor where the ball is missing, both added"),
+    ("alive_plus_home_all", True, "oracle_home_all",
+     "both, whole, added to the config's own sources: where an oracle speaks it outweighs them, so about the truth"),
+)
+VARIANT_NAMES = (tuple(suffix for suffix, *_ in VARIANTS) + tuple(suffix for suffix, *_ in RESTART_VARIANTS)
+                 + tuple(suffix for suffix, *_ in PLUS_VARIANTS))
 BARE_KEY = re.compile(r"[A-Za-z0-9_-]+\Z")               # a TOML key that needs no quotes
 ESCAPES = {"\n": "\\n", "\t": "\\t", "\r": "\\r", "\b": "\\b", "\f": "\\f", '"': '\\"', "\\": "\\\\"}
 
@@ -205,7 +238,7 @@ def restart_home(codes, graded, tail):
 
 
 def oracles(codes_of):
-    """{kind: compute} for the five oracle sources, reading the truth from `codes_of`.
+    """{kind: compute} for the six oracle sources, reading the truth from `codes_of`.
 
     `codes_of` maps a match id to its truth codes (answers); it is read when a source is computed, by run.inputs.game,
     so it may be filled while the run goes (LoadedMatches does). A source for a match that is not in it raises
@@ -235,20 +268,24 @@ def oracles(codes_of):
             return Evidence(alive=no_opinion(len(codes)), home=restart_home(codes, run_context.inputs.graded, tail))
         return compute
 
-    def home_oracle(kind, visible):
+    def home_oracle(kind, where):
+        # where: "visible" (the ball is present), "gaps" (it is missing) or None (everywhere)
         def compute(run_context):
             codes = truth_of(kind, run_context)
             speaks = (codes == H) | (codes == A)
-            if visible:
+            if where == "visible":
                 speaks &= run_context.inputs.atd.ball_present
+            elif where == "gaps":
+                speaks &= ~run_context.inputs.atd.ball_present
             home = no_opinion(len(codes))
             home[speaks] = np.where(codes[speaks] == H, 1.0, 0.0)
             return Evidence(alive=no_opinion(len(codes)), home=home)
         return compute
 
     return {ALIVE_ORACLE: oracle_alive,
-            "oracle_home_visible": home_oracle("oracle_home_visible", True),
-            "oracle_home_all": home_oracle("oracle_home_all", False),
+            "oracle_home_visible": home_oracle("oracle_home_visible", "visible"),
+            "oracle_home_gaps": home_oracle("oracle_home_gaps", "gaps"),
+            "oracle_home_all": home_oracle("oracle_home_all", None),
             "oracle_restart": restart_oracle("oracle_restart", RESTART_TAIL),
             "oracle_restart_run": restart_oracle("oracle_restart_run", None)}
 
@@ -295,6 +332,7 @@ def variant_specs(variants=None):
     """
     classic = {suffix: (suffix, alive, home, None, meaning) for suffix, alive, home, meaning in VARIANTS}
     restart = {suffix: (suffix, False, None, kind, meaning) for suffix, kind, meaning in RESTART_VARIANTS}
+    plus = {suffix: (suffix, alive, None, kind, meaning) for suffix, alive, kind, meaning in PLUS_VARIANTS}
     if variants is None:
         return list(classic.values())
     chosen = []
@@ -303,7 +341,7 @@ def variant_specs(variants=None):
             raise run.BenchmarkError("variant {!r} is not one of: {}".format(suffix, ", ".join(VARIANT_NAMES)))
         if suffix in [name for name, *_ in chosen]:
             raise run.BenchmarkError("variant {!r} is asked for twice".format(suffix))
-        chosen.append(classic.get(suffix) or restart[suffix])
+        chosen.append(classic.get(suffix) or restart.get(suffix) or plus[suffix])
     return chosen
 
 
@@ -321,7 +359,7 @@ def check_config(config, variants=None):
             "in it would be read as one of the report's parts (<name>.coarse.m-<ids>.s<n>.json), so rename {} without "
             "a dot".format(config.stem, run.shown(config.path)))
     if any(home is not None for _, _, home, _, _ in variant_specs(variants)):
-        home_source(config)     # only a variant that replaces it needs one: the restart variants add to the evidence
+        home_source(config)     # only a variant that replaces it needs one: the restart and plus_ variants add
 
 
 def home_source(config):
@@ -559,8 +597,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Run CONFIG on the benchmark beside variants of it whose evidence is the truth (an oracle "
                     "dead-ball detector, an oracle possessor, both): what a perfect source would be worth to it. "
-                    "CONFIG is the reference of the comparisons; the home variants need it to have one nearest_player "
-                    "source.")
+                    "CONFIG is the reference of the comparisons; the classic home variants need it to have one "
+                    "nearest_player source, the restart and plus_ ones do not.")
     parser.add_argument("config", metavar="CONFIG",
                         help="a TOML config (a nearest_player source is needed only for the classic variants), e.g. "
                              "pipeline/benchmark/configs/nearest_w50.toml")
@@ -572,8 +610,8 @@ def main(argv=None):
     parser.add_argument("--matches", nargs="+", metavar="ID", help="the matches to run, in this order (default: all 7)")
     parser.add_argument("--data-dir", help="the data bundle (default: data/, or $MTAH_DATA_DIR)")
     parser.add_argument("--variants", nargs="+", metavar="SUFFIX", choices=VARIANT_NAMES,
-                        help="the variants to run, of {} (default: the first five; the restart ones need no "
-                             "nearest_player)".format(", ".join(VARIANT_NAMES)))
+                        help="the variants to run, of {} (default: the first five; the restart and plus_ ones need "
+                             "no nearest_player)".format(", ".join(VARIANT_NAMES)))
     parser.add_argument("--write", action="store_true",
                         help="also write the reports of the variants, not CONFIG's (default: print only)")
     args = parser.parse_args(argv)
