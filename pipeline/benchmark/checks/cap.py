@@ -563,9 +563,9 @@ def test_tracking_with_no_low_count_frame_is_the_players_without_the_cap():
     no frame to act on is the walk, the episodes, the slots, the speeds and the smoothing, and nothing else. They are
     the players of version 3's slot rule (a slot is free from the row after its tracklet stopped), not version 1's or
     2's, which let a tracklet take a slot on the row it was freed: the check is the cap nested in the same code, and is
-    not a comparison with an older version's output. The profile's version is 3 and the gaps, clean, context and
-    offpitch ones' are 1."""
-    assert degrade.PROFILES == {"clean": 1, "gaps": 1, "tracking": 3, "context": 1, "offpitch": 1}
+    not a comparison with an older version's output. The profile's version is 3 and the gaps, clean and context ones'
+    are 1."""
+    assert degrade.PROFILES == {"clean": 1, "gaps": 1, "tracking": 3, "context": 1}
     for match in (steady_match(rows=(240, 200), teams=FULL_SQUAD, substitutions=True), steady_match()):
         view = degrade.tracking_view(match)
         for level in (22, 19):

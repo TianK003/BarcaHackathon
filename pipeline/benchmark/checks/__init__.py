@@ -21,11 +21,6 @@ module of its topic:
                  chance (c, the scale, the cap, 0 where a feature is undefined), the class, third and durations read at
                  the at-risk frame, the counts of the record on hand-built halves, and the odds rescale of the scale
                  (synthetic; with --data our real Calibration on a downloaded DFL match)
-    offpitch.py  the offpitch profile of the degrader: the off-pitch mask with hysteresis on hand-built line distances
-                 (the boundaries, a frame without a ball, a half that ends off the pitch, a walk that never flickers),
-                 the thinning of whole interior gaps, the line distance in metres on the match's own pitch, the mask as
-                 the documentation builds it, tracking's players and (at no thinning and no margin) its ball, no truth,
-                 the draws, and the refusal while its constants are unfitted (synthetic only)
     tracking.py  the tracking profile of the degrader: tracklets and slots (walks, lowest free slot, no overlap, the
                  degenerate case equal to gaps, the lost share on long runs), the wrong-team episodes, the NaN-speed
                  runs, the smoothing, and that the profiles nest (synthetic; with --dfl that no pool of slots runs out
@@ -76,14 +71,6 @@ module of its topic:
                  scikit-learn says of the held-out match; exact, LF, bounded; retraining gives identical bytes), the
                  report (aggregates, worked out frame by frame, the stop rule, no match scored in sample), and
                  touch_agreement on a hand-built scene (synthetic only)
-    offpitch_ruler.py
-                 the past-the-line ruler (offpitch.line_stats, beyond_distances) on hand-built frames, the line
-                 distance as one quantity in degrade, hazard, calibration and the ruler, the kick-off spans against
-                 calibration.measure's rule, the one-time fit of m and q (documented values on a hand-built match, ties,
-                 the single refit, the sweeps against the profile's own ball, the refusals, constants_from, the
-                 command), the offpitch profile's fidelity (its gates, its near-line check, its information, the same
-                 figures as the fit's), and with --data our match's cached target, aggregates only (synthetic, and ours
-                 with --data)
     harness.py   the harness itself: what it collects, how it reports NOT RUN, the console set-up, and that no check
                  module imports another one
     common.py    what several modules share, and no checks of its own: the synthetic DFL match, the random one
@@ -110,7 +97,7 @@ what two of them share goes to common.py (test_a_check_module_imports_no_other_c
 
 from pipeline.benchmark.checks import (
     calibration, cap, choose, context, conventions, dead_ball, degrade, dfl, dfl_events, fidelity, harness, hazard, headroom,
-    inputs, offpitch, offpitch_ruler, restarts, run, score, shape, sources, tracking, touch, truth)
+    inputs, restarts, run, score, shape, sources, tracking, touch, truth)
 
 MODULES = (sources, dfl, dfl_events, truth, inputs, score, run, choose, hazard, calibration, degrade, cap, tracking, context,
-           offpitch, fidelity, headroom, offpitch_ruler, touch, dead_ball, conventions, restarts, shape, harness)
+           fidelity, headroom, touch, dead_ball, conventions, restarts, shape, harness)

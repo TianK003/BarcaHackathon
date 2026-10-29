@@ -21,9 +21,6 @@ as bad as ours, and fidelity.py measures with the Calibration's own statistics f
               than our shortest tracklet (MIN_PIECE_FRAMES) and the walk's tracked spans rescaled once (TRACKED_SCALE),
               all three below. Version 1, which R004 measured, had none of the three, and its three fidelity gates
               about how many slots are present were pending (they are gates now: fidelity.PENDING_GATES is empty).
-    offpitch  the tracking profile's players, exactly, and its ball's transplanted gaps, thinned, with the ball hidden
-              from when it is more than a margin past a line until it is back on the pitch, as ours is lost out of
-              play (below).
 
 The version of a profile (PROFILES) is part of what a report says about its tracking: change what a profile does and
 bump it, so that two reports of different tracking never carry one version.
@@ -101,50 +98,6 @@ own match (hazard.py): the chance, on each frame, that the next frame starts a g
   window of ours, so both follow our camera, and here the cap reads a window of ours and the gaps are drawn from the
   play. The hazard is a logistic model of six features fitted on 143 onsets of one match, and DFL tracks the ball out
   of play, so frames that ours has no ball for are at risk here at the rate that the model gives their features.
-
-The offpitch profile (version 1; offpitch_masks, OFFPITCH_MARGIN_M, OFFPITCH_DROP_PROB). DFL's tracker keeps the ball
-while it is out of play; ours loses it there. The ball is past a line on 17.68% of DFL's at-risk rows and on 4.07% of
-ours (R005, R009), and P05's dead-ball model, trained on the tracking profile, splits first on where the ball is: past a
-line, last or next seen past a line. It learned a cue that our match mostly does not show (T39), and the tracking
-profile cannot say by how much that flatters it. This profile is the tracking profile exactly (the same players, the
-cap's draws included, and the same transplant draws) with two changes to the ball, on each half's span from its
-kick-off, in this order:
-
-* Thinning (q, OFFPITCH_DROP_PROB; thin_mask). Each interior gap of the transplanted mask (a run of True that touches
-  neither end of the span; an edge gap is cut by the span, as calibration.ball_stats counts it) is dropped whole, its
-  frames given DFL's ball back, with probability q: one uniform per interior gap, in time order, from rng_for(seed,
-  match_index, "thinning", half) (thinning_uniforms: a component of its own, the last, so that no earlier draw moves).
-  An edge gap is never dropped. The transplanted mask already has our missing share, our losses out of play included,
-  so the off-pitch mask on top of it counts those twice and the profile's missing share would be above ours: q takes
-  it back down. The same uniforms serve every q, so a larger q drops a superset of a smaller one's gaps.
-* Off the pitch (m, OFFPITCH_MARGIN_M), with hysteresis (offpitch_mask). The ball is hidden from the first frame on
-  which DFL's clean ball is more than m metres past a touch or goal line (line_distance_m below -m: min(x, L - x, y,
-  W - y) in metres on the match's own pitch, as hazard.features and calibration.ball_stats measure it) until the first
-  later frame on which it is back on the pitch (a line distance of at least 0: a ball on a line is in play), which is
-  visible again. Our tracker, once it has lost the ball off the pitch, finds it again when play comes back on. A
-  frame-by-frame rule would make a ball held or rolling near -m flicker between hidden and visible, gaps and
-  reappearances of a frame or two that ours does not have (gaps under 2 s hold 0.1% of our missing frames), and the
-  hysteresis needs no parameter beyond m. A frame that DFL has no ball for neither starts nor ends a stretch, and a
-  half that ends with the ball off the pitch stays hidden to its end. It draws nothing.
-
-The mask is the union of the two, and the ball is taken out by the profile's shared _remove_ball (x and y together, the
-speed NaN everywhere). The players are tracking's byte for byte, the cap's included: the cap reads the transplant's
-choice (cap_limits), which thinning does not change. So a difference between a config's scores on tracking and on
-offpitch is the ball's doing, and at q = 0 and an infinite margin the ball is tracking's too.
-
-The two constants are fitted once, on label-free statistics, then frozen, as TRACKED_SCALE and HAZARD_SCALE were: m so
-that the share of the visible ball frames that are past a line (line distance below 0), pooled over the 7 matches and 3
-seeds, is ours (the same statistic on our kick-off spans), searched at q = 0; then q so that the pooled missing share is
-the Calibration's, at that m; then the first share once more, and m refitted once at that q if it has moved by more than
-0.005 (offpitch.py fit, R015). Until they are pinned (OFFPITCH_FIT holds the fit's record) the profile is refused.
-
-What it assumes. m is fitted to a statistic of the frames where our ball IS seen, which is measurable. How long our ball
-spends out of play in all is not (where our ball is during our gaps is unobservable), and the profile assumes that it is
-like DFL's. R005 (2026-10-23) rejected a mask for the ball off the pitch as a mechanism whose parameter cannot be
-measured on ours; Tian reopened that ruling on 2026-10-29 for this separate profile, on the ground that m is fitted to
-the share of the visible frames past a line. The other remedy that R005 rejected, thinning the context hazard beyond a
-line towards our near-line share, is not reopened: this profile has no hazard, and its near-line onset share is a check,
-not a gate. tracking v3 stays the default.
 
 The tracklets (tracking). In ours a slot is not a player: it is a tracklet, a stretch of one slot being present, which
 ends when the tracker loses the player and is taken over by whoever it finds next (T15). DFL has one column per player.
@@ -269,12 +222,6 @@ of the span, the rows where DFL has no ball, the NaN-feature rows (a ball and a 
 rows, the gaps drawn (onsets) and the frames they take (missing_frames), the at-risk rows (a ball after the mask, every
 feature defined, not the half's last row) and the at-risk rows within SPEED_STEPS frames after a gap. No frame.
 
-The record of the offpitch profile's ball (info["ball"]) holds m (margin_m), q (drop_prob) and the Transplant of each
-half, and, per half and in all, counts: the rows of the span, the transplanted mask's interior gaps, the gaps dropped
-and the frames they gave back (frames_restored; the off-pitch mask may hide some of them again), the off-pitch stretches
-and their frames (offpitch_frames; some may be in the transplanted mask already), and the frames of the final mask
-(missing_frames; not counting the rows that DFL has no ball for outside it). No frame.
-
 The record of what was drawn (info["players"]) holds counts and shares: the parameters (d, the mean tracked and lost
 span, the scale, the targets, the smoothing window, the scale of the tracked spans as tracked_scale and the shortest
 piece as min_piece_frames), per half the tracklets, the slots used, the frames on the pitch and the lost ones, the
@@ -300,21 +247,17 @@ CLEAN = "clean"
 GAPS = "gaps"
 TRACKING = "tracking"
 CONTEXT = "context"
-OFFPITCH = "offpitch"
 # name -> version of how its tracking is made (reports say it). tracking 3: a slot is free from the row after its
 # tracklet.
-PROFILES = {CLEAN: 1, GAPS: 1, TRACKING: 3, CONTEXT: 1, OFFPITCH: 1}
+PROFILES = {CLEAN: 1, GAPS: 1, TRACKING: 3, CONTEXT: 1}
 # The version of the tracking profile that the context profile's players are built from: its players ARE tracking's, by
 # the same code and the same draws, so a new version of tracking's players is a new version of context's. Pinned to
 # PROFILES[TRACKING] by a check, recorded in context's info and in the reports of a context run (profile_record).
 CONTEXT_TRACKING_VERSION = 3
-# The same for the offpitch profile: its players, and the transplant draws its ball starts from, are tracking's.
-OFFPITCH_TRACKING_VERSION = 3
 # The streams of random numbers, by the part of the degradation that draws them. The number is the stream's place in the
 # key of rng_for, so it never changes for a component and a new component takes the next one. The transplant, the
-# tracklets, the wrong-team episodes and the NaN-speed runs are drawn so far; the hazard's is the context profile's and
-# the thinning's the offpitch profile's.
-COMPONENTS = {"transplant": 0, "tracklets": 1, "wrong_team": 2, "speed_nan": 3, "hazard": 4, "thinning": 5}
+# tracklets, the wrong-team episodes and the NaN-speed runs are drawn so far; the hazard's is the context profile's.
+COMPONENTS = {"transplant": 0, "tracklets": 1, "wrong_team": 2, "speed_nan": 3, "hazard": 4}
 TAIL_FRAMES = 7500                  # a mask that runs out goes round the last 300 s of the source (25 Hz)
 INDEX_BYTES = 4                     # an id outside the registry has the first 4 bytes of its sha256 as match_index
 CAP = 18                            # d is taken over the frames with MORE than this many slots present (not the tail)
@@ -358,25 +301,6 @@ CONTEXT_COUNTS = ("rows", "ball_missing_rows", "nan_feature_rows", "capped_rows"
 # / 0.5003] = 0.6986, 0.699 to three decimals (2026-10-23, Task 17, R005). It is frozen: never touch it again because of
 # a gate, a WARN or a score.
 HAZARD_SCALE = 0.699
-# The offpitch profile's two constants (offpitch_masks): m, the margin in metres past a line beyond which the ball is
-# hidden until it is back on the pitch, and q, the chance that an interior gap of the transplanted mask is dropped. They
-# calibrate two label-free statistics, the share of the visible ball frames past a line and the missing share, and are
-# fitted ONCE by `offpitch.py fit` (R015), then pinned here with the fit's record (OFFPITCH_FIT: its scalars, which the
-# two follow from) and frozen. None is not fitted yet, and the profile refuses to be made (_offpitch_constants).
-# Fitted on 2026-10-29 (R015), over the 7 DFL matches x seeds 0-2 pooled by sums (3,007,932 rows from the kick-offs),
-# against our target 0.040721223 (3,740 of 91,844 visible frames past a line, offpitch.py target, key 55d73a4cdb45983a)
-# and the Calibration's missing share 0.410965669 (sha256 65b0c191...): m = 0.2 m gives 0.041424766 past a line (73,308
-# of 1,769,666 visible frames; 0.1 m gives 0.0182 and 0.3 m 0.0800), and at it q = 0.430 gives a missing share of
-# 0.411666886; the share past a line at (0.2, 0.430) stays within 0.005 of the target, so m is not refitted. It is
-# frozen: never touch it again because of a gate, a WARN or a score.
-OFFPITCH_MARGIN_M = 0.2
-OFFPITCH_DROP_PROB = 0.43
-OFFPITCH_FIT = {"margin_m": 0.2, "drop_prob": 0.43, "target_share": 0.040721223, "share_at_fit": 0.041424766,
-                "missing_target": 0.410965669, "missing_at_fit": 0.411666886, "refit": False, "seeds": 3,
-                "rows": 3007932, "date": "2026-10-29", "entry": "R015"}
-# The counts of the offpitch profile's info["ball"], per half and in all.
-OFFPITCH_COUNTS = ("interior_gaps", "gaps_dropped", "frames_restored", "offpitch_stretches", "offpitch_frames",
-                   "missing_frames", "rows")
 # s, the scale of the wrong-team onsets (episode_pieces). It calibrates a label-free statistic: the observable share of
 # frames with a team in surplus (calibration.player_stats). That is less than the share of frames in an episode: a
 # team shows more than 11 slots only while the other team's 11 are all tracked, and an episode of the other team at the
@@ -1258,10 +1182,10 @@ def _players_record(view, parameters, records, counts):
 def degrade(view, profile, calibration, seed):
     """(Atd, info): the tracking of `view` as `profile` makes it under `seed`, and what was drawn to make it.
 
-    `calibration` is the Calibration of BAR-ATH (calibration.load()): the gaps, tracking, context and offpitch profiles
-    need it, the clean one does not use it. The Atd has the BAR-ATH cache's own layout (inputs.clean_atd), every array
-    read-only, and the length of the match; the tracking, context and offpitch profiles' have 46 slots (slot_team) where
-    the clean and gaps profiles' have one per DFL player.
+    `calibration` is the Calibration of BAR-ATH (calibration.load()): the gaps, tracking and context profiles need it,
+    the clean one does not use it. The Atd has the BAR-ATH cache's own layout (inputs.clean_atd), every array read-only,
+    and the length of the match; the tracking and context profiles' have 46 slots (slot_team) where the others have one
+    per DFL player.
     `info` is JSON-ready and holds no frame of anybody: {"profile", "version", "seed", "match_id", "match_index"} and,
     for gaps and tracking, "transplants" ({half: {"source_half", "offset", "frames"}}) and "mask_share": the share of
     the frames that the transplant covers where the transplanted mask says the ball is missing. It is the mask's
@@ -1269,14 +1193,11 @@ def degrade(view, profile, calibration, seed):
     "players": the parameters and the counts of the tracklets, episodes and NaN runs (_players_record). For context,
     the same "players" (the tracking profile's, byte for byte), "tracking_version" (the version of tracking's players
     that they are built from: CONTEXT_TRACKING_VERSION), "transplants" (the draws that its cap reads: no mask is
-    transplanted) and "ball": the scale, c and the counts of the hazard's draws (_context_ball). For offpitch, the same
-    "players", "tracking_version" (OFFPITCH_TRACKING_VERSION), "transplants" (tracking's, which its ball's mask starts
-    from), "ball" (m, q, the Transplants and the counts of offpitch_masks) and "mask_share" (the share of the spans'
-    rows that its masks take). ValueError for a profile that is not in PROFILES, for a seed that is not a whole number
-    of at least 0, for a profile that needs the Calibration without one (or, for tracking, without the fields it reads:
-    calibrated_parameters; for context, without CONTEXT_FIELDS, or with a hazard that does not go: its hazard_go is
-    False, A08), for offpitch while its constants are not fitted (_offpitch_constants), and for a pool of slots with no
-    free slot (choose_tracklets).
+    transplanted) and "ball": the scale, c and the counts of the hazard's draws (_context_ball). ValueError for
+    a profile that is not in PROFILES, for a seed that is not a whole number of at least 0, for a profile that needs
+    the Calibration without one (or, for tracking, without the fields it reads: calibrated_parameters; for context,
+    without CONTEXT_FIELDS, or with a hazard that does not go: its hazard_go is False, A08), and for a pool of slots
+    with no free slot (choose_tracklets).
     """
     if profile not in PROFILES:
         raise ValueError("profile {!r} is not one of: {}".format(profile, ", ".join(sorted(PROFILES))))
@@ -1288,8 +1209,8 @@ def degrade(view, profile, calibration, seed):
         return atd, info
     if calibration is None:
         raise ValueError("profile {!r} takes its ball gaps{} from our own match, so it needs the Calibration; pass "
-                         "calibration.load()".format(profile, " and its tracklets" if profile in (
-                             TRACKING, CONTEXT, OFFPITCH) else ""))
+                         "calibration.load()".format(profile, " and its tracklets" if profile in (TRACKING, CONTEXT)
+                                                      else ""))
     if profile == CONTEXT:
         absent = [name for name in CONTEXT_FIELDS if not hasattr(calibration, name)]
         if absent:
@@ -1303,12 +1224,6 @@ def degrade(view, profile, calibration, seed):
                              "them by nothing that ours learned. Use the {} profile (the default), or measure again "
                              "with calibration.load(rebuild=True) and read A08 before trusting this one".format(
                                  profile, calibration_module.HAZARD_GO_AUC, TRACKING))
-    elif profile == OFFPITCH:
-        masks, info["ball"] = offpitch_masks(view, calibration, seed, *_offpitch_constants())
-        ball_xy, ball_speed = _remove_ball(view, atd, masks)
-        info["transplants"] = {half: dict(record) for half, record in info["ball"]["transplants"].items()}
-        rows = info["ball"]["rows"]
-        info["mask_share"] = info["ball"]["missing_frames"] / rows if rows else None
     else:
         ball_xy, ball_speed, info["transplants"], info["mask_share"] = _gap_ball(view, atd, calibration, seed)
     if profile == GAPS:
@@ -1322,26 +1237,20 @@ def degrade(view, profile, calibration, seed):
             info["tracking_version"] = CONTEXT_TRACKING_VERSION
             info["transplants"] = _transplant_records(view, calibration, seed)
             ball_xy, ball_speed, info["ball"], info["mask_share"] = _context_ball(view, atd, xy, calibration, seed)
-        elif profile == OFFPITCH:
-            info["tracking_version"] = OFFPITCH_TRACKING_VERSION
     degraded = Atd(players_xy=players[0], players_speed=players[1], ball_xy=ball_xy, ball_speed=ball_speed,
                    slot_team=players[2])
     return degraded, info
 
 
 def profile_record(profile):
-    """{"name", "version"} of a profile as the reports of a run state it; context's and offpitch's also have
-    "tracking_version".
+    """{"name", "version"} of a profile as the reports of a run state it; context's also has "tracking_version".
 
-    That is the version of the tracking profile that their players are built from (CONTEXT_TRACKING_VERSION,
-    OFFPITCH_TRACKING_VERSION): a report of a context or offpitch run says it beside the profile's own, so that it names
-    the players' version as well as the ball's. KeyError for a name that is not in PROFILES (the callers have
-    checked)."""
+    That is the version of the tracking profile that context's players are built from (CONTEXT_TRACKING_VERSION): a
+    report of a context run says it beside the profile's own, so that it names the players' version as well as the
+    ball's. KeyError for a name that is not in PROFILES (the callers have checked)."""
     record = {"name": profile, "version": PROFILES[profile]}
     if profile == CONTEXT:
         record["tracking_version"] = CONTEXT_TRACKING_VERSION
-    elif profile == OFFPITCH:
-        record["tracking_version"] = OFFPITCH_TRACKING_VERSION
     return record
 
 
@@ -1492,177 +1401,3 @@ def _context_ball(view, atd, players_xy, calibration, seed):
     record = {"scale": float(HAZARD_SCALE), "c": round(float(calibration.hazard_c), DECIMALS), **totals,
               "halves": {half: halves[half] for half in sorted(halves)}}
     return ball_xy, ball_speed, record, totals["missing_frames"] / totals["rows"]
-
-
-# -- the offpitch profile's ball --------------------------------------------------------------------------------------
-
-def line_distance_m(ball_xy, pitch):
-    """(n,) float64, read-only: min(x, L - x, y, W - y) in metres of each row of a normalised ball; NaN where it is
-    missing.
-
-    `ball_xy` is (n, 2), normalised 0-1 as a TrackingView's, and `pitch` the match's own (length, width) in metres: x
-    is scaled by the length and y by the width (the pitch is not square, and DFL's pitches are not all one size). The
-    distance to the nearest touch or goal line, negative past it; a ball on a line is at 0, in play. The same quantity
-    as hazard.features' line_distance_m and calibration.ball_stats', on the same metres (the normalised position times
-    the pitch). A row with either coordinate NaN is NaN. ValueError, naming the argument, for a ball that is not (n, 2)
-    and a pitch that is not two positive finite lengths.
-    """
-    xy = np.asarray(ball_xy, dtype=np.float64)
-    if xy.ndim != 2 or xy.shape[1] != 2:
-        raise ValueError("line_distance_m: ball_xy must be (n, 2), the ball's normalised position on each row, got "
-                         "shape {}".format(xy.shape))
-    length, width = _pitch_m("line_distance_m", pitch)
-    x, y = xy[:, 0] * length, xy[:, 1] * width
-    line = np.minimum.reduce([x, length - x, y, width - y])
-    line.setflags(write=False)
-    return line
-
-
-def offpitch_mask(line_m, margin_m):
-    """(n,) bool, read-only: True on the frames that the off-pitch rule hides, with hysteresis.
-
-    `line_m` is the line distance of each frame in metres (line_distance_m), NaN where there is no ball. A stretch is
-    hidden from each frame with line_m < -margin_m (more than the margin past a line; exactly -margin_m is not past it)
-    up to, not including, the next later frame with line_m >= 0 (back on the pitch; a ball on a line is), and to the end
-    if none comes. Every other frame is as the frame before it: a ball between the line and the margin, or a frame with
-    no ball (NaN, which neither starts nor ends a stretch), stays visible outside a stretch and hidden inside one. The
-    first frame starts visible. Vectorised: the last frame back on the pitch and the last frame past the margin, each
-    as a running maximum of its index, and hidden where the second is later. `margin_m` is at least 0 (an infinite
-    margin hides nothing). ValueError, naming the argument, for a line_m that is not 1-D and a margin_m that is not a
-    number of metres at least 0.
-    """
-    line = np.asarray(line_m, dtype=np.float64)
-    if line.ndim != 1:
-        raise ValueError("offpitch_mask: line_m must be 1-D, the line distance of each frame in metres, got shape {}"
-                         .format(line.shape))
-    margin = _margin("offpitch_mask", margin_m)
-    index = np.arange(line.size)
-    last_in = np.maximum.accumulate(np.where(line >= 0, index, -1))
-    last_far = np.maximum.accumulate(np.where(line < -margin, index, -1))
-    hidden = last_far > last_in
-    hidden.setflags(write=False)
-    return hidden
-
-
-def thin_mask(mask, uniforms, drop_prob):
-    """(n,) bool, read-only: `mask` with each of its interior gaps dropped whole where its uniform is below `drop_prob`.
-
-    A gap is a maximal run of True (True: the ball is missing); an interior one touches neither index 0 nor n - 1, and
-    an edge gap, which the span cuts, is never dropped. `uniforms` holds one number per interior gap, in time order (k
-    of them: thinning_uniforms), and gap i is dropped (its frames set to False) iff uniforms[i] < drop_prob, so a
-    drop_prob of 0 drops nothing and 1 every interior gap. The result is a fresh array and a subset of `mask`.
-    ValueError, naming the argument, for a mask that is not a 1-D bool array, uniforms that are not one per interior
-    gap, and a drop_prob that is not a probability.
-    """
-    flags = np.asarray(mask)
-    if flags.dtype != np.bool_ or flags.ndim != 1:
-        raise ValueError("thin_mask: mask must be a 1-D bool array (True where the ball is missing), it is {} with "
-                         "shape {}".format(flags.dtype, flags.shape))
-    first, stop = _runs(flags)
-    interior = (first > 0) & (stop < flags.size)
-    draws = np.asarray(uniforms, dtype=np.float64)
-    if draws.shape != (int(interior.sum()),):
-        raise ValueError("thin_mask: uniforms must hold one number per interior gap of the mask, {} of them, and has "
-                         "shape {}".format(int(interior.sum()), draws.shape))
-    dropped = draws < _drop_prob("thin_mask", drop_prob)
-    edges = np.zeros(flags.size + 1, dtype=np.int64)
-    edges[first[interior][dropped]] += 1                # the runs are disjoint, so no index is hit twice
-    edges[stop[interior][dropped]] -= 1
-    out = flags & (np.cumsum(edges[:-1]) == 0)
-    out.setflags(write=False)
-    return out
-
-
-def thinning_uniforms(view, half, seed, n_gaps):
-    """(n_gaps,) float64, read-only: the thinning's uniforms of one half, rng_for(seed, view.match_index, "thinning",
-    half).random(n_gaps).
-
-    One per interior gap of the half's transplanted mask, in time order (thin_mask). The fit of q (offpitch.py) reads
-    the same uniforms for every q it tries, so that the profile and the fit agree on which gaps a q drops. ValueError
-    for an n_gaps that is not a whole number of at least 0."""
-    draws = rng_for(seed, view.match_index, "thinning", half).random(_whole("n_gaps", n_gaps))
-    draws.setflags(write=False)
-    return draws
-
-
-def offpitch_masks(view, calibration, seed, margin_m, drop_prob):
-    """({half: (n,) bool read-only}, record): the offpitch profile's ball masks, and what was drawn and hidden.
-
-    On each half's span from its kick-off (_span, n = stop - kick-off rows), in this order: the transplant of
-    tracking's draws (choose_transplant and transplant, exactly as _gap_ball reads them), thinned (thin_mask, with the
-    half's thinning_uniforms and `drop_prob`), then ORed with offpitch_mask at `margin_m` of the line distance of the
-    CLEAN DFL ball (view.ball_xy) in metres on view.pitch. True where the ball is missing. `record` is JSON-ready and
-    holds no frame: margin_m, drop_prob, transplants ({half: {"source_half", "offset", "frames"}}), and per half
-    ("halves") and in all the counts of OFFPITCH_COUNTS: the interior gaps of the transplanted mask, the gaps dropped,
-    the frames they held (frames_restored), the off-pitch stretches and their frames, the final mask's frames
-    (missing_frames) and the rows. ValueError, naming the argument, for a margin_m or a drop_prob out of range; as
-    choose_transplant for a half the view has no block for and a Calibration with no mask.
-    """
-    margin, q = _margin("offpitch_masks", margin_m), _drop_prob("offpitch_masks", drop_prob)
-    ball = np.asarray(view.ball_xy, dtype=np.float64)
-    masks, transplants, halves = {}, {}, {}
-    for half, _, _ in view.graded:
-        kickoff, stop = _span(view, half)
-        choice = choose_transplant(view, half, calibration, seed)
-        base = transplant(calibration.ball_masks[choice.source_half], stop - kickoff, choice.offset)
-        first, last = _runs(base)
-        interior = int(((first > 0) & (last < base.size)).sum())
-        thinned = thin_mask(base, thinning_uniforms(view, half, seed, interior), q)
-        off = offpitch_mask(line_distance_m(ball[kickoff:stop], view.pitch), margin)
-        mask = thinned | off
-        mask.setflags(write=False)
-        masks[half] = mask
-        transplants[half] = {"source_half": choice.source_half, "offset": choice.offset, "frames": stop - kickoff}
-        halves[half] = {"interior_gaps": interior, "gaps_dropped": int(first.size - _runs(thinned)[0].size),
-                        "frames_restored": int(base.sum()) - int(thinned.sum()),
-                        "offpitch_stretches": int(_runs(off)[0].size), "offpitch_frames": int(off.sum()),
-                        "missing_frames": int(mask.sum()), "rows": stop - kickoff}
-    totals = {name: sum(halves[half][name] for half in halves) for name in OFFPITCH_COUNTS}
-    record = {"margin_m": margin, "drop_prob": q,
-              "transplants": {half: transplants[half] for half in sorted(transplants)}, **totals,
-              "halves": {half: halves[half] for half in sorted(halves)}}
-    return masks, record
-
-
-def _offpitch_constants():
-    """(OFFPITCH_MARGIN_M, OFFPITCH_DROP_PROB), read when the profile is made; ValueError while any of the two, or the
-    fit's record OFFPITCH_FIT, is None (not fitted yet)."""
-    unfitted = [name for name, value in (("OFFPITCH_MARGIN_M", OFFPITCH_MARGIN_M),
-                                         ("OFFPITCH_DROP_PROB", OFFPITCH_DROP_PROB), ("OFFPITCH_FIT", OFFPITCH_FIT))
-                if value is None]
-    if unfitted:
-        raise ValueError("profile {!r} is not fitted yet: degrade.{} {} None. Its margin and drop probability are "
-                         "fitted once, on label-free statistics, by `python pipeline/benchmark/offpitch.py fit` "
-                         "(R015), and pinned in degrade.py with the fit's record; until then the profile cannot be "
-                         "made. Use the {} profile (the default)".format(
-                             OFFPITCH, " and degrade.".join(unfitted), "is" if len(unfitted) == 1 else "are",
-                             TRACKING))
-    return OFFPITCH_MARGIN_M, OFFPITCH_DROP_PROB
-
-
-def _margin(function, value):
-    """`value` as a float of metres, at least 0 (inf allowed: nothing is past it); ValueError naming the function and
-    margin_m otherwise."""
-    if isinstance(value, bool) or not isinstance(value, (int, float, np.integer, np.floating)) or not value >= 0:
-        raise ValueError("{}: margin_m must be a number of metres, at least 0 (the margin past a line beyond which the "
-                         "ball is hidden), got {!r}".format(function, value))
-    return float(value)
-
-
-def _drop_prob(function, value):
-    """`value` as a float in [0, 1]; ValueError naming the function and drop_prob otherwise."""
-    if isinstance(value, bool) or not isinstance(value, (int, float, np.integer, np.floating)) or not 0 <= value <= 1:
-        raise ValueError("{}: drop_prob must be a probability, at least 0 and at most 1 (the chance that an interior "
-                         "gap is dropped), got {!r}".format(function, value))
-    return float(value)
-
-
-def _pitch_m(function, pitch):
-    """(length, width) as two positive finite floats; ValueError naming the function and pitch otherwise."""
-    try:
-        length, width = (float(side) for side in pitch)
-    except (TypeError, ValueError):
-        raise ValueError("{}: pitch must be (length, width) in metres, got {!r}".format(function, pitch)) from None
-    if not (math.isfinite(length) and math.isfinite(width) and length > 0 and width > 0):
-        raise ValueError("{}: pitch must be two positive finite lengths in metres, got {!r}".format(function, pitch))
-    return length, width
