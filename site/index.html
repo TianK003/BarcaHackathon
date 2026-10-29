@@ -401,6 +401,11 @@ select, input[type="search"] {
   font-size: 11.5px; padding: 1px 8px; cursor: pointer;
 }
 .copy:hover { background: var(--hover); }
+pre.layout {
+  margin: 0 0 8px; padding: 8px 10px; background: var(--surface-2); border: 1px dashed var(--line-2); border-radius: 8px;
+  white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12.5px; line-height: 1.45;
+}
+pre.layout code { background: transparent; padding: 0; }
 
 /* How it works */
 .prose { max-width: 80ch; }
@@ -537,7 +542,8 @@ const DATA = {
     {
       label: "main.toml on the benchmark", hero: true, value: "0.5430", unit: "raw", second: "0.5593 coarse",
       text: "Pooled spellF1 on the P01 benchmark: 7 DFL matches degraded to look like ours (profile `tracking` v3, 3 seeds). Chosen by [R013](../docs/results.md) on 2026-10-26.",
-      note: "The organisers' smooth50 baseline on the same yardstick: **0.2018** raw (`nearest_w50`) and **0.2226** coarse (`nearest_w125`, the best yardstick under the coarse truth)."
+      note: "The organisers' smooth50 baseline on the same benchmark (`nearest_w50`): **0.2018** raw and **0.1842** coarse. The best yardstick under the coarse truth is `nearest_w125`, at **0.2226**.",
+      flag: "A benchmark of other matches, not a full-match forecast. It overstates the dead-ball model for our match by an amount it cannot measure (T38, T39)."
     },
     {
       label: "Full-match floor to beat", value: "0.2433", unit: "spellF1",
@@ -575,7 +581,7 @@ const DATA = {
     joinNote: "evidence cut into the two graded halves, each decoded on its own",
     text: [
       "`main.toml` is P04 + P05 + P07 + P02, as R013 left them. `controlled_touch` (radius 1.5 m, `max_rel_speed` 6 m/s, `min_frames` 1, hold 0.60, confidence 0.93) and `shape_possession` (weight 0.2 on every graded frame, `min_prob` 0.02) give `home`; the gradient-boosted `dead_ball_model` (weight 1.0) gives `alive`.",
-      "The `hmm` decodes each graded half on its own (`switch_team` 4, `switch_dead` 32, `min_possession` 35, `min_dead` 25), and `shift_edges` moves the edges (team +1, into_dead −2, out_of_dead 0 frames). Every constant was chosen on the benchmark by a rule declared before its run, or is a measurement or a fixed rule. On our match it predicts `D` on 35.9% of the graded frames and 410 possessions (R013's label-free checks)."
+      "The `hmm` decodes each graded half on its own (`switch_team` 4, `switch_dead` 32, `min_possession` 35, `min_dead` 25), and `shift_edges` moves the edges (team +1, into_dead −2, out_of_dead 0 frames). Every constant was chosen on the benchmark by a rule declared before its run, or is a measurement or a fixed rule, and every choice but one had no window-derived value in any candidate. The exception (“After R013”): R009 chose the dead-ball source and its weight with window-derived values present, and R013 declared them out of scope, so they were not re-chosen without them. On our match it predicts `D` on 35.9% of the graded frames and 410 possessions (R013's label-free checks)."
     ]
   },
 
@@ -584,7 +590,7 @@ const DATA = {
     { title: "Who has the ball in the gaps", text: "A13: +0.176 raw / +0.108 coarse. P07's shape model never saw our teams; P09's camera aim is a feature for it and P13 pre-trains on external data. Each needs its own protocol declared before its runs." },
     { title: "The grain of our truth (P16)", text: "Every re-tune since R007 split the two truths, and R013 is +0.0267 raw but level coarse. Metrica's sample games, in our provider's conventions, are how to learn which truth ours resembles." },
     { title: "Decide how much of the gain to believe", text: "A decision, not a run: the benchmark (with the T38, T39 and R011 caveats) and the label-free checks. Settle it before the freeze on 13 Nov." },
-    { title: "The deliverables", text: "Upload a safety CSV (`main.toml`'s file), regenerate it from a clean clone on a second machine, make the repo public as the last step, and condense the technical document. See [Work to do](#work)." }
+    { title: "The deliverables", text: "Regenerate `main.toml`'s file from a clean clone on a second machine, make the repo public as the last step, and condense the technical document. Our advice, not a rule: upload that file early as a safety copy, since the form keeps the last response before the deadline and an early upload is insurance. See [Work to do](#work)." }
   ],
 
   headroom: {
@@ -771,7 +777,7 @@ const DATA = {
       what: "P05's fixed rules on the 30 play features: the ball beyond a line, still at a restart spot, a collective slowdown, a kick-off formation. Thresholds from the laws of the game, values measured (R009); the boosted trees beat it.",
       entries: "P05: R009", built: ["2026-10-25", "R009"], retuned: null },
     { name: "dead_ball_model", stage: "evidence", status: "main", channel: "alive",
-      what: "P05: gradient-boosted trees on 30 play features (where the ball is against the lines and the restart spots, how the players move, the set-piece shapes), trained on the 7 DFL matches degraded as `tracking` v3; a prior-corrected P(alive), and 0.001 before a half's kick-off. Not re-tuned since R010 (R013 declared it out of scope).",
+      what: "P05: gradient-boosted trees on 30 play features (where the ball is against the lines and the restart spots, how the players move, the set-piece shapes), trained on the 7 DFL matches degraded as `tracking` v3; a prior-corrected P(alive), and 0.001 before a half's kick-off. **Not re-tuned since R010, and that matters:** R009 chose the source and its weight with window-derived values in every candidate (`nearest_player` at 0.78, A01), and R013 declared them out of scope, so this is the one choice in `main.toml` never re-confirmed without the window's values (“After R013”).",
       params: "model `dead_ball_hgb.json` · weight 1.0",
       entries: "P05: R009 (24 configs), R010", built: ["2026-10-25", "R009"], retuned: ["2026-10-25", "R010"] },
     { name: "shape_possession", stage: "evidence", status: "main", channel: "home",
@@ -799,7 +805,7 @@ const DATA = {
       what: "Writes the CSV in binary mode with LF endings (to a temporary file, then renamed), reads it back through the official `read_label_csv` and `validate_submission`, and writes `data/runs/<name>.json` (config, commit, dirty flag, versions, source hashes, sha256). Refuses any path git could commit.",
       entries: "P03, R001", built: ["2026-10-22", "R001"], retuned: null },
     { name: "profile tracking v3", stage: "benchmark", status: "main", label: "default profile",
-      what: "Our own missing-ball masks transplanted (their pattern, not their clock), our tracklets in 46 slots, wrong-team slots, NaN-speed runs, 5-frame smoothing and our low-count frames. All 8 fidelity gates pass and none of the 10 checks warns.",
+      what: "Our own missing-ball masks transplanted (their pattern, not their clock), our tracklets in 46 slots, wrong-team slots, NaN-speed runs, 5-frame smoothing and our low-count frames. All eight gates and all ten checks pass (R004c).",
       entries: "R004 (v1), R004b (v2), R004c (v3)", built: ["2026-10-23", "R004c"], retuned: null },
     { name: "profiles clean and gaps", stage: "benchmark", status: "baseline", label: "reference",
       what: "`clean`: DFL as it is, the benchmark's floor. `gaps`: our ball masks transplanted, players untouched. Both kept for comparison.",
@@ -952,7 +958,7 @@ const DATA = {
     ],
     validate: [
       "**P01's benchmark.** The seven DFL/IDSSE open matches (two Bundesliga, five 2. Bundesliga; CC BY 4.0). Their truth is built as ours is: `D` where `BallStatus` is dead, else the team in `BallPossession`. Configs run through the pipeline's own components and are scored by the official scorer, half by half.",
-      "**Degraded to look like ours.** `tracking` v3, the default since R004c: our own missing-ball masks transplanted (their pattern, not their clock), our tracklets in 46 slots, wrong-team slots, NaN speeds, smoothing and low-count frames. `fidelity.py` checks 8 gates and 10 WARNs, and all pass. `context` (R005) places the gaps by the play and is a sensitivity check only.",
+      "**Degraded to look like ours.** `tracking` v3, the default since R004c: our own missing-ball masks transplanted (their pattern, not their clock), our tracklets in 46 slots, wrong-team slots, NaN speeds, smoothing and low-count frames. On it, `fidelity.py` finds all eight gates and all ten checks pass (R004c). `context` (R005) places the gaps by the play, fails two of its gates and is a sensitivity check only, never the default.",
       "**Two truths.** Raw is DFL's flag (437 possessions a match, median 3.7 s); coarse absorbs every possession under 5 s that sits between two of the other team. Our grain is unknown, so read both, and treat a disagreement as a warning (T33).",
       "**Uncertainty.** 90% t-intervals over the seven per-match deltas, the exact sign-flip test (the smallest possible p is 2/128 = 0.0156) and wins of seven; never a bootstrap. A degradation seed moves a pooled spellF1 by up to about 0.015.",
       "**The bar and the rule.** Each experiment declares its values, objective, selection rule and bar in docs/results.md before its runs. The usual rule (`choose.py`): the best pooled raw spellF1, ties within 0.005, then the best coarse, with a leave-one-match-out estimate. P06's bar: a delta above 0 with p ≤ 0.05 against `nearest_w50` raw and `nearest_w125` coarse.",
@@ -1037,7 +1043,7 @@ const DATA = {
   /* ---------- Work to do ---------- */
   deliverables: [
     { title: "CSV uploaded (`<team_name>.csv`)", status: "todo", label: "not yet",
-      text: "The submission log is empty. Upload a safety file early: the form keeps only the last response before the deadline. Validate the exact file and log every upload in [docs/results.md](../docs/results.md).",
+      text: "The submission log is empty. Validate the exact file and log every upload in [docs/results.md](../docs/results.md). Our advice, not a rule: upload `main.toml`'s file early as a safety copy; the form keeps the last response before the deadline, so an early upload is insurance.",
       cmds: ["python pipeline/run.py pipeline/configs/main.toml --out ../<team_name>.csv", "python evaluation/validate_submission.py ../<team_name>.csv"] },
     { title: "Public repo URL", status: "todo", label: "private",
       text: "The repository is private and must be made public by 17 Nov, as a deliberate final step. It must hold the source, pinned dependencies, install and run instructions, and the command that regenerates the CSV." },
@@ -1069,6 +1075,34 @@ const DATA = {
   ],
 
   /* ---------- Reference ---------- */
+  firstDay: {
+    intro: "From [CLAUDE.md](../CLAUDE.md), “Commands” and “Data setup”. Team standard: Python 3.11.9.",
+    steps: [
+      { title: "Create the venv and install the pins",
+        text: "On macOS/Linux: `python3.11 -m venv .venv`, then `.venv/bin/python` in place of `.venv/Scripts/python`.",
+        cmds: [
+          { cmd: "py -3.11 -m venv .venv" },
+          { cmd: ".venv/Scripts/python -m pip install -r requirements-starter.txt", note: "numpy, pandas + kloppy==3.18.0, matplotlib, notebook" },
+          { cmd: ".venv/Scripts/python -m pip install -r requirements-pipeline.txt", note: "exact pins of what `pipeline/` imports" },
+          { cmd: ".venv/Scripts/python -m pip install -r requirements-benchmark.txt", note: "the same + lxml, scikit-learn: `pipeline/benchmark/`" }
+        ] },
+      { title: "Put the data bundle in place",
+        text: "Gated behind enrolment and the T&C. It stays on our machines: nothing under `data/` is ever committed, and none of it goes to an LLM. `games.py` expects these names (`MTAH_DATA_DIR` relocates the bundle; the download's zip prefix and the mp4 renames are in CLAUDE.md, “Data setup”):",
+        layout: "data/tactical/BAR-ATH_tactical{.mp4,_atd.xml,_atd.txt,_homography.csv,_smart_tagging.xml}\ndata/broadcast/BAR-ATH_broadcast{.mp4,_atd.xml,_atd.txt,_homography.csv}" },
+      { title: "Fetch the benchmark's seven DFL matches",
+        text: "Once, before any benchmark run: 21 files, 2.6 GB, into `data/external/dfl/`, every size and md5 checked.",
+        cmds: [ { cmd: "python pipeline/benchmark/sources.py" } ] },
+      { title: "Run main.toml and the selftests",
+        cmds: [
+          { cmd: "python pipeline/run.py pipeline/configs/main.toml", note: "the first run parses the ATD into the cache (~15 s)" },
+          { cmd: "python pipeline/selftest.py", note: "contract checks on synthetic data (seconds)" },
+          { cmd: "python pipeline/selftest.py --data", note: "+ the four baselines rebuilt byte for byte" },
+          { cmd: "python pipeline/benchmark/selftest.py", note: "the benchmark's checks" }
+        ] },
+      { title: "Claim a proposal before you start",
+        text: "Put your name in its status in [docs/proposals.md](../docs/proposals.md) (“doing (name)”) before you start, and read [docs/traps.md](../docs/traps.md) before debugging something strange." }
+    ]
+  },
   rules: [
     "**Match data never reaches an LLM, Claude included.** Nothing under `data/` is read, printed or pasted; only aggregates (scores, counts, shapes, pass/fail) leave a local process.",
     "**Never commit match data** or derived data that could rebuild it (frame-level exports, clipped video). The repo will be public; `.gitignore` covers `data/*`, `*.mp4` and `evaluation/results/*.csv`.",
@@ -1108,7 +1142,7 @@ const DATA = {
     { term: "possession", def: "A maximal run of `H` or of `A` inside a graded half. `D` runs are stoppages, so `H H D D H H` is two possessions." },
     { term: "spellF1", def: "The ranking metric: predicted possessions matched one-to-one to true ones (same team, greedy by temporal IoU), F1 averaged over IoU 0.3 to 0.7. `X` is forward-filled with the last label in the half (back-filled at its start)." },
     { term: "macroF1", def: "The tie-break, scored frame by frame; an `X` on a graded frame counts as a miss." },
-    { term: "graded halves", def: "Frames 11,185–90,651 and 110,808–190,197 of the tactical video. Everything else is ungraded, so `X` there is free. The 2nd half is graded from 2,934 frames before its kick-off, all `D`." },
+    { term: "graded halves", def: "Frames 11,185–90,651 and 110,808–190,197 of the tactical video; everything else is ungraded, so `X` there is free. The 2nd half is graded from frame 110,808 but kicks off at 113,742, so those 2,934 frames are all `D`." },
     { term: "public window", def: "The 5 published minutes of ground truth (frames 11,185–18,684, 17 possessions): for checking that the pipeline is correct, “not training data and not a tuning set” (`f8f2629`)." },
     { term: "benchmark (P01)", def: "The seven DFL/IDSSE open matches with their tracking degraded to look like ours, run through our own components and scored by the official scorer. Every choice between versions is made here." },
     { term: "raw vs coarse truth", def: "Raw: DFL's flags as they are (437 possessions a match, median 3.7 s). Coarse: every possession under 5 s that sits between two possessions of the other team absorbed. Our grain is unknown, so read both (T33)." },
@@ -1872,7 +1906,18 @@ const DATA = {
     const traps = trapList(DATA.topTraps);
     const docs = h("ul", { class: "docmap" }, DATA.docs.map(d => h("li", {}, h("a", { href: d.href, text: d.label }), h("span", { html: md(d.text) }))));
 
+    const fd = DATA.firstDay;
+    const firstDay = h("article", { class: "card" },
+      h("div", { class: "section-head", style: "margin-bottom:10px" }, h("h3", { text: "First day" }), h("p", { html: md(fd.intro) })),
+      h("ol", { class: "exp-steps" }, fd.steps.map(s => h("li", {},
+        h("strong", { html: md(s.title) }),
+        s.text ? h("p", { html: md(s.text) }) : null,
+        s.layout ? h("pre", { class: "layout" }, h("code", { text: s.layout })) : null,
+        s.cmds ? s.cmds.map(c => cmdBlock(c.cmd, c.note)) : null))),
+      h("p", { class: "small muted", html: md(DATA.commandsNote) }));
+
     p.append(
+      h("div", { class: "section" }, firstDay),
       h("div", { class: "section two even" },
         h("article", { class: "card" }, h("h3", { text: "Hard rules", style: "margin-bottom:10px" }), rules,
           h("p", { class: "small muted", style: "margin-top:10px", html: md("Condensed from [CLAUDE.md](../CLAUDE.md) and RULES.md; when in doubt, read those.") })),
