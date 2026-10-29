@@ -60,7 +60,8 @@ aggregates only, never raw data rows.
   deadline. Update the status when you start or finish one.
 - `docs/results.md` — every experiment (`R…`) and analysis (`A…`): commit, command, public-window and validation
   scores, verdict. Log failures too, and every upload in its submission log. A01–A03 hold measurements that should
-  shape any design; A05–A09 and R002–R005 are the benchmark's (P01, done; the default is R004c's).
+  shape any design; A05–A09 and R002–R005 are the benchmark's (P01, done; the default is R004c's); A13 says where
+  `main.toml`'s remaining spellF1 is (who has the ball, not the dead ball).
 - `docs/traps.md` — pitfalls `T01…`. Add one whenever something costs real time.
 - `docs/technical_document.md` — the draft of deliverable 3. Update it when a pipeline decision lands.
 
@@ -161,7 +162,8 @@ keeps that convention: its scripts swap their own folder on `sys.path` for the r
   against our match), `score` + `run` (pooled spellF1, 90% t-intervals, sign-flip test, reports in
   `data/runs/benchmark/`), `choose` (a grid's declared rule and its leave-one-match-out estimate, from the reports),
   `restarts` (the stoppages' anatomy, the restart vote's stats, its configs), `dfl_events` (the DFL restart events,
-  diagnostics) and `checks/` (what `selftest.py` runs). Degradations are fitted once per version on
+  diagnostics), `headroom` (a config beside variants whose evidence is the truth: what a perfect source would add;
+  its `plus_` variants measure `main.toml` itself, A13) and `checks/` (what `selftest.py` runs). Degradations are fitted once per version on
   label-free statistics of our tracking, then frozen, never tuned towards a score (T26, T37). The Calibration and every
   degraded `Atd` hold BAR-ATH's masks and counts: print none of it, and write no CSV of BAR-ATH labels.
 

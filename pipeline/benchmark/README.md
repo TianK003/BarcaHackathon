@@ -535,7 +535,8 @@ on what the evidence could give this config and its penalties, and not an estima
   run. A file that already holds exactly the bytes is not written again, not even touched: the texts are the same under
   both truths, so the raw and the coarse run can go side by side, which they could not if each replaced files that the
   other has open (Windows refuses that). A parameter that is not a str, int, float or bool (the flat tables that
-  `Config` holds) is refused by name before any file is written, and so is a config without one `nearest_player`. What
+  `Config` holds) is refused by name before any file is written, and so is a config without one `nearest_player` when a
+  classic home variant is asked for (`alive`, the restart and the `plus_` variants need none). What
   only the runner knows (an unknown profile, say) is refused by it, after the variants are written.
 - **Reports** are written only with `--write`, and only for the variants run, as the runner writes them
   (`<stem>__<variant>[.<truth>][.m-<ids>][.s<n>].json` under `<data dir>/runs/benchmark/<profile>/`). `CONFIG`'s own

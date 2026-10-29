@@ -311,4 +311,4 @@ already built.
 | P09 camera aim | — | a feature for P07, not a source on its own |
 | P10 referee whistle | `alive` | audio confirmed, starts at t = 0 (A04) |
 | P13 / P14 / P15 | via better inputs or pre-trained models | |
-| P17 restart-team channel | `home`, from each restart on, or over each stoppage for the decoder's restart states | `restart_team` (built; its confidences and adoption are R014's, the restart states' R014b's) |
+| P17 restart-team channel | `home`, from each restart on, or over each stoppage for the decoder's restart states | `restart_team` (built; its confidences and adoption are R014's, the restart states' R014b's; P17 dropped, neither met its bar, so it stays in the code, off by default) |
