@@ -541,8 +541,8 @@ on what the evidence could give this config and its penalties, and not an estima
   report is `run.py`'s to write: it holds the comparison with whichever configs it was run beside, which a headroom run
   cannot reproduce, so a headroom run never writes or replaces it.
 
-**`--variants` (P17).** `--variants NAME ...` picks the variants to run, by suffix, from the five above and two more:
-`restart` and `restart_run`. Without it the five run, as always. The two restart variants replace nothing, so they need
+**`--variants` (P17).** `--variants NAME ...` picks the variants to run, by suffix, from the five above, two more:
+`restart` and `restart_run`, and the six `plus_` ones below. Without it the five run, as always. The two restart variants replace nothing, so they need
 no `nearest_player` (`main.toml` has none), and the others are refused for a config without one, by name. Each adds an
 oracle to CONFIG's own evidence at weight 1, and both read the truth by closure like the rest:
 
@@ -557,6 +557,27 @@ oracle to CONFIG's own evidence at weight 1, and both read the truth by closure 
 
 ```
 .venv/Scripts/python pipeline/benchmark/headroom.py pipeline/configs/main.toml --variants restart restart_run --truth raw --write
+```
+
+**The `plus_` variants (P18).** For a config with several home sources and no `nearest_player` (`main.toml` has
+`controlled_touch` and `shape_possession`), the classic home variants have nothing single to replace. The `plus_`
+variants replace nothing either: each is CONFIG's own evidence, then `oracle_alive` if the name starts with `alive_`,
+then one home oracle at weight 1. `--variants` takes their suffixes:
+
+| suffix | evidence added to CONFIG's own |
+|---|---|
+| `plus_home_visible` | `oracle_home_visible`: the true possessor where the tracking has the ball |
+| `plus_home_gaps` | `oracle_home_gaps`: the true possessor only where the ball is missing (`~atd.ball_present`), NaN where it is seen; with the visible one it makes `oracle_home_all` |
+| `plus_home_all` | `oracle_home_all`: the true possessor on every live frame |
+| `alive_plus_home_visible`, `alive_plus_home_gaps`, `alive_plus_home_all` | the same, with `oracle_alive` added before the home oracle |
+
+Adding is close to replacing where the oracle speaks: it carries about 13.8 nats a frame at the default `eps` against at
+most about 2.6 for a real source, so the decoder follows it, and where it is silent the config's own sources decide.
+`alive_plus_home_all` still reproduces the truth. A config that has a `nearest_player` keeps it under `plus_`, and the
+classic variants still replace it; neither changes the other.
+
+```
+.venv/Scripts/python pipeline/benchmark/headroom.py pipeline/configs/main.toml --variants plus_home_visible plus_home_gaps plus_home_all --truth raw --write
 ```
 
 Read it as an upper bound and a loose one: no real detector is perfect, and these two do not need the ball, which a
