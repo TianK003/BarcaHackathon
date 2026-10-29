@@ -303,7 +303,7 @@ const DATA = {
     cmd: "git fetch upstream && git log main..upstream/main"
   },
 
-  summary: "**The labels must come from an algorithm.** **No hand labels on the provided match**, for any purpose: not for the submission, not to train a model and not to validate one. **The 5 public minutes are a correctness check**, never training or tuning data. **No private ground truth, and no human-produced data about this match** from any source. **The repository must regenerate the exact file**, not approximately. **Never give the match data to a third-party or cloud LLM**, and **never publish the data** or anything that would reconstruct it.",
+  summary: "**The labels must come from an algorithm.** **No hand labels on the provided match**, for any purpose: not for the submission, not to train a model and not to validate one. **The 5 public minutes are a correctness check**, never training or tuning data. **No private ground truth, and no human-produced data about this match** from any source. **The repository must regenerate the exact file**, not approximately. **Never give the match data to a third-party or cloud LLM**, and **never publish the data** or anything that would reconstruct it. **Anything we use must be accessible to the organisers**, who can inspect it, **and explained in the technical document**. If an approach sits near a line, **ask the organisers before building on it**.",
 
   line: {
     title: "Learning from the provided match: the exact line",
@@ -350,7 +350,7 @@ const DATA = {
     { title: "Training, tuning or choosing anything on the 5 public minutes",
       rule: "The published window checks that the pipeline is correct. It is not training data and not a tuning set, and since 23 Oct (`f8f2629`) that is a rule, not advice. Why: it holds 17 possessions, and it picks the wrong baseline. `smooth125` scores 0.4242 there against `smooth50`'s 0.3256, while the full match says 0.2242 against 0.2433.",
       quote: { text: "They are not training data and not a tuning set.", cite: "RULES.md §2 · FAQ: “Can I train or tune a model on the 5 public minutes? No.”" },
-      means: ["Every hyperparameter is chosen on the benchmark of other matches (P01), never on the window.", "Constants once derived from the window (`nearest_player` 0.78, `ball_presence` 0.2 / 0.585) stay out of submission configs.", "`--score` reports the window as a check; “one missed possession moves spellF1 by roughly six points here” (EVALUATION.md)."],
+      means: ["Every hyperparameter is chosen on the benchmark of other matches (P01), never on the window.", "Constants once derived from the window (`nearest_player` 0.78, `ball_presence` 0.2 / 0.585) stay out of submission configs (team practice).", "`--score` reports the window as a check; “one missed possession moves spellF1 by roughly six points here” (EVALUATION.md)."],
       sources: [["RULES.md §2", "../RULES.md#2-use-the-private-ground-truth-or-any-human-produced-data-about-the-game"], ["FAQ tune", "../FAQ.md#can-i-train-or-tune-a-model-on-the-5-public-minutes"], ["EVALUATION.md", "../EVALUATION.md#the-public-window-is-not-a-leaderboard"]] },
     { title: "Human-produced data about this match, from any source",
       rule: "External data must be about other games. Anything a person produced about this match is out, whoever published it.",
@@ -393,7 +393,7 @@ const DATA = {
     { title: "Learning on the provided match without human labels",
       rule: "Label-free learning on the match itself is allowed: unsupervised or self-supervised methods, or pseudo-labels an algorithm produced, as long as no person decided any of them. What stays forbidden: human labels, the public 5 minutes as training or tuning data, and anything derived from the private ground truth.",
       quote: { text: "Learning without human labels — unsupervised or self-supervised methods, or pseudo-labels produced by an algorithm, provided no person decided any of them.", cite: "RULES.md §1, What remains fine" },
-      means: ["Self-supervised features learned from our own match's tracking: allowed.", "P07's original plan, training on frames where P04's algorithm is confident (pseudo-labels): allowed, since no person decides them.", "A person “just fixing a few” pseudo-labels turns them into hand labels: not allowed."],
+      means: ["Self-supervised features learned from our own match's tracking: allowed.", "P07's original plan, training on frames where P04's algorithm is confident (pseudo-labels): allowed, since no person decides them.", "Our reading: a person who hand-fixes even a few of those pseudo-labels has decided them, which makes them hand labels, and that is not allowed."],
       sources: [["RULES.md §1", "../RULES.md#1-annotate-the-data-by-hand"]] },
     { title: "Watching the video and inspecting the data",
       rule: "To understand the data, debug the pipeline and design features.",
