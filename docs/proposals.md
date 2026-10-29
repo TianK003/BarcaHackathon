@@ -34,6 +34,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P02](#p02--inspect-the-ground-truths-conventions-on-the-public-window-to-understand-and-never-to-tune) | Inspect the GT's conventions on the public window, to understand and never to tune | boundary timing | S | bounded since the 23 Oct rule: understanding only; so far the pipeline's own lag on DFL, 1 to 2 frames, within noise (R012) | partly done → A11, R012 (inspection only; a person may watch to understand) |
 | [P16](#p16--metricas-sample-games-in-our-ground-truth-providers-conventions) | Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing | boundary timing, grain | M | medium | idea |
 | [P17](#p17--the-restart-team-channel) | Restart-team channel: who restarts after a stoppage, from the players' arrangement | facts 3, 5 (the hold points at the old team after most stoppages) | S–M | ceiling +0.0198 raw (A12); delivered +0.0040 raw at best, bar not met (R014) | dropped → R014, R014b (the source and the decoder's restart states stay, off by default) |
+| [P18](#p18--the-offpitch-profile-dfls-ball-hidden-off-the-pitch-as-ours-is-and-p05-retrained-on-it) | offpitch profile: DFL's ball hidden off the pitch as ours is, and P05 retrained on it | T39 (P05 overstated by the visible out-of-play ball) | M | A13: a perfect dead-ball source adds +0.029 raw on tracking; main.toml on offpitch 0.5509 raw / 0.5296 coarse | doing (Tian) — paused after R015 (a fidelity gate fails) |
 | [P03](#p03--one-command-deterministic-cached) | One-command, deterministic, cached pipeline | reproducibility | S–M | enabling | done → R001 |
 | [P04](#p04--sticky-ownership-from-controlled-touches) | Sticky ownership from controlled touches | facts 3, 5 | S | high: +0.1421 raw at the chosen decoder (R010) | done → R008, R010; rule re-chosen → R013 |
 | [P05](#p05--a-real-dead-ball-detector) | Dead-ball detector | fact 4 | M | high: +0.1661 raw at the chosen decoder, on a benchmark that overstates it (R010, T38, T39) | done → R009, R010 |
@@ -258,6 +259,11 @@ by default. None of the four has been started, and each needs its own protocol d
    logit(c), or the next grid repeats the problem. Run this only if item 1 does not settle it.
 4. **Smart Tagging's set-piece tags as a type hint (P08).** Left out of P17 on purpose. They are automatic, but P01's
    matches have no Smart Tagging, so there is no benchmark to choose their weight on.
+
+*Added 29 Oct:* [A13](results.md) part 1 sizes where `main.toml`'s remaining spellF1 is on the benchmark, and it points
+at the team side: a perfect team where the ball is seen is worth +0.19 raw, and in the gaps +0.18 raw, against +0.029 for
+a perfect dead-ball source (`tracking`, 7 wins in 7 each). P18 was started on 29 Oct, for the dead-ball side's transfer
+gap (T39).
 
 ---
 
@@ -656,6 +662,40 @@ is missing at 39.8% of the predicted stoppages' ends and 20.2% of their restarts
 - Our match has no restart types to measure against: a type read off its video by a person would be a hand label (T27).
 - Smart Tagging's set-piece tags are left out on purpose: they would be a P08 follow-up, with no benchmark to choose
   their weight on.
+
+### P18 — The offpitch profile: DFL's ball hidden off the pitch as ours is, and P05 retrained on it
+
+**Status: doing (Tian), on branch `p18-offpitch`. Paused after [R015](results.md) for Tian's decision: the profile's
+fidelity has a failing gate (its median gap is 15.04 s against ours 10.74, +-1.5), and nothing is fixed or refitted
+without Tian.** [A13](results.md) part 1 is done, and R016 (P05 retrained) has not started.
+
+**Why.** T39. P05's boosted trees are the largest single contributor to `main.toml` (+0.1661 raw at R010's decoder), and
+the docs say the benchmark overstates them for our match by an amount it cannot measure. The trees split first on where
+the ball is: past a line, last or next seen past a line, at a restart spot. DFL's tracker keeps the ball while it is out
+of play and ours loses it there: the ball is past a line on 17.68% of DFL's at-risk rows against 4.07% of ours (R005,
+R009). The model learned a cue that is mostly absent on our match. A13 adds the other half: on the benchmark a perfect
+dead-ball source is worth only +0.029 raw to `main.toml` (alive/dead F1 is already 0.973), which is what a near-perfect
+P05 on a ball that is visible out of play would produce.
+
+**What.**
+- **A13** (done, part 1): the headroom of `main.toml` with oracles added to its own evidence (`plus_` variants), on
+  `tracking` and `context`. Part 2 on `offpitch` follows R016.
+- **R015** (done, paused): a benchmark profile, `offpitch` v1, in which `tracking` v3's ball is also hidden once it is
+  more than m past a line (until it is back on the pitch), and a share q of the transplanted gaps is dropped. m is fitted
+  once so that the share of visible ball frames past a line equals ours (0.0407), and q so that the missing share equals
+  ours; both are frozen (m 0.2 m, q 0.430). Tian reopened R005's ruling against a mask for the ball off the pitch on
+  2026-10-29 for this separate profile, because the parameter is fitted to a statistic of visible frames. `main.toml` on
+  it scores 0.5509 raw and 0.5296 coarse (0.5430 and 0.5593 on `tracking`; alive/dead F1 0.9731 to 0.9600).
+- **R016** (not started, after Tian's go): retrain P05 on `offpitch`, with one candidate and a bar declared before any
+  run; adopt it into `main.toml` only if the bar is met.
+
+**What it cannot settle.**
+- What stays unobservable on our match is how long our ball spends out of play in total. `offpitch` assumes it is like
+  DFL's; the assumption is written in R015.
+- A profile is a model of our tracking, not our tracking: the gates and checks say where it differs (R015: median gap,
+  the near-line onset share and the ball visible on dead frames).
+- Part (a) of the belief, that the current P05 relies on the visible out-of-play ball, is weak on R015's evidence (a loss
+  of 0.013 alive/dead F1), so a retrained model has little to recover unless the failing gate changes that reading.
 
 ## Cheap signals worth checking
 

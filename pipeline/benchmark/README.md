@@ -148,6 +148,7 @@ tuned towards a gate, a WARN or a score (T26, T37).
 | `gaps` | 1 | missing where **ours** was: our own missing-ball masks, transplanted onto each half with their pattern and not their clock (below); its speed is NaN everywhere (T31) | untouched |
 | `tracking` | 3 | `gaps`'s, byte for byte | broken into tracklets of ours and given 46 slots, 24 home and 22 away, as ours are; a wrong-team slot now and then (10.5% of frames), NaN speeds in runs (7.8% of the slot-frames), 5-frame smoothing; **since version 2** only the players nearest the ball are tracked where ours has few (the cap), no piece is shorter than 8 frames, and the walk's spans are rescaled once (below). **since version 3** a slot is taken by a new tracklet only from the row after its last one stopped, and the scale is derived again (below); this is the default profile. Version 1 (R004) had none of the three of version 2, and versions 1 and 2 had the slot handovers that version 3 removes (R004c) |
 | `context` | 1 | missing where our tracker loses it: a hazard fitted on our own match (A08) places the gaps by the ball's distance to a line, its speed, the players within 3 m of it (a crowd raises the hazard) and the minute of the half, with our gap lengths (`HAZARD_SCALE` 0.699, rescaled once). **It fails two of its gates**, the near-line share badly (its gaps start within 2 m of a line 56% of the time, against 28% of ours) and the missing share narrowly (R005), so it is **not the default**, and is kept for the agreement check between generators | `tracking`'s, draw for draw (`test_context_players_equal_tracking`) |
+| `offpitch` | 1 | `tracking` v3's, and also hidden once DFL's clean ball is more than m metres past a line, until it is back on the pitch (hysteresis, no draw), with a share q of the transplanted gaps dropped whole to keep the missing share at ours: `OFFPITCH_MARGIN_M` 0.2 and `OFFPITCH_DROP_PROB` 0.43, fitted once by `offpitch.py` on label-free statistics of our match and frozen (R015). **It fails one gate**, the median gap (15.04 s against 10.74, +-1.5), and two checks WARN, so it is **not the default** and is a sensitivity check like `context` | `tracking` v3's, byte for byte |
 
 **The transplant.** `Calibration.ball_masks[half]` is our match's missing-ball mask of each half, from its kick-off to
 the end of its graded block (M frames: 79,467 for the first half and 76,456 for the second, A07; `calibration.py`; the
@@ -594,6 +595,37 @@ than in the pooled number alone. Nothing here is a config to submit. The checks 
 `test_headroom_loads_each_match_once_and_keeps_none`,
 `test_headroom_writes_the_variants_reports_only_when_asked_and_never_the_references` and
 `test_headroom_command_line_prints_the_table_and_the_report_lines`, all in `checks/headroom.py` and all synthetic.
+
+## The offpitch profile and its fit
+
+`offpitch` (P18, R015) answers T39: DFL's tracker keeps the ball while it is out of play and ours loses it there, so a
+dead-ball model looks better on the benchmark than on our match. The profile hides DFL's ball past a line, the way ours
+is lost. It is `tracking` v3 with two changes to the ball (`degrade.py`): each interior gap of the transplanted mask is
+dropped whole with probability q (the `"thinning"` draw stream), and the ball is hidden from the first frame more than m
+metres past a touch or goal line until the first later frame back on the pitch. The players are `tracking`'s, byte for
+byte, so a score's difference between the two profiles is the ball's.
+
+`offpitch.py` holds the ruler, our target and the one-time fit. It prints aggregates only:
+
+```
+.venv/Scripts/python pipeline/benchmark/offpitch.py target [--rebuild] [--data-dir D]
+.venv/Scripts/python pipeline/benchmark/offpitch.py fit [--seeds 3] [--matches ID ...] [--data-dir D] [--out PATH]
+```
+
+- **The target.** `line_stats` is the share of ball-visible frames whose line distance is below 0, on the kick-off
+  spans, one function for our match and for the degraded benchmark matches. For BAR-ATH it is 0.040721223 (3,740 of
+  91,844 visible frames), cached as JSON under `data/cache/benchmark/offpitch/` (gitignored), outside the Calibration's
+  digest.
+- **The fit.** m is the value on a 0.0 to 10.0 m grid (0.1 m steps) whose share past a line, at q = 0, is closest to the
+  target; q is then the value on 0.000 to 0.500 (steps of 0.005) whose missing share equals the Calibration's; the share
+  is measured once more at (m, q), and m is refitted once only if it moved by more than 0.005. It was fitted once, at m =
+  0.2 m and q = 0.430 with no refit, and frozen in `degrade.py` with its record. It is never refitted because of a gate, a
+  WARN or a score (T37).
+- **Its fidelity** (`fidelity.py --profile offpitch`): `tracking`'s eight gates plus `beyond_line_share` (+-0.01 of the
+  target). 8 of 9 pass; the median gap fails (R015). Checks for the near-line onset share, the distance quantiles and the
+  ball visible on dead frames print beside them.
+- **Status.** A sensitivity check, not the default (`DEFAULT_PROFILE` stays `tracking`). It assumes our ball's total time
+  out of play is like DFL's, which our match cannot show.
 
 ## Restarts: how the stoppages end
 
