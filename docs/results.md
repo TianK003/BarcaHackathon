@@ -5961,6 +5961,10 @@ this declaration's commit; it writes aggregates only (`data/runs/tag_stats/stats
   least 5% of ball-missing graded frames; otherwise it adds nothing where it matters).
 - **Dead part:** point dead share >= 0.60, the lower 90% bound >= 0.50, and a lift >= 1.5 over the base rate.
 
+A part whose point share, lower bound, coverage or lift is undefined (no eligible frame, or a base rate of 0) fails its
+bar; a bootstrap draw with no eligible frame is dropped (`tag_stats.py`), and `per_code` counts a frame covered by two tags
+of a code twice (it is diagnosis for R017b, not the bar).
+
 **The strength in the decoder.** No benchmark can decide it, since DFL has no tags. If a part passes, two configs are
 run on BAR-ATH: `main.toml` plus the passing parts at `spread = "frame"`, weight 0.2 (`home` = c_team or 1 - c_team on
 every voted frame, `alive` = 1 - c_dead on every dead-voted frame; 0.2 by analogy with P07, the other team source that
