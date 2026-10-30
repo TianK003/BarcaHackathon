@@ -35,11 +35,11 @@ not: it ignores `alive`, gives `D` only where the ball is missing, and keeps wha
 Its four parameters were chosen on the benchmark of section 5 by protocols declared before the runs. The first
 choice, 8, 32, 75 and 1 for `nearest_player` and `ball_presence`, did not clear its bar (R006, R007). R010 chose 4, 32,
 25 and 25 for the first two sources below, and R011 added P07's source with the decoder as it was. R013 chose
-`switch_team` and `min_possession` again with all three sources and the touch rule it re-chose first: `switch_team` 4,
+`switch_team` and `min_possession` again with the three sources of that day and the touch rule it re-chose first: `switch_team` 4,
 `switch_dead` 32, `min_possession` 35 and `min_dead` 25 (the last two kept from R010, where the score was flat along
 them).
 
-**The evidence** (P04, P05 and P07, `pipeline/evidence/`). Three sources. `controlled_touch` (P04) gives `home`: it
+**The evidence** (P04, P05, P07 and P08, `pipeline/evidence/`). Four sources. `controlled_touch` (P04) gives `home`: it
 votes for a team at 0.93 inside the episodes where that team controls the ball, and weakly (0.60) for the last
 controlling team on the other frames where the ball is visible (the rule's constants are R013's, re-chosen on the
 benchmark with none of the window-derived values in any candidate). It says nothing where the ball is missing, and so a
@@ -50,11 +50,14 @@ the ball where it is visible and the players where it is not. `shape_possession`
 players alone: boosted trees on 26 features of how the two teams stand and move (how far up the pitch each is and how
 wide, its velocity along its attack, its shares in the two end thirds), none of which reads the ball, trained on the
 seven benchmark matches with the ball hidden and read symmetrically in the two teams. It is the only source of `home`
-where the ball is missing (40.7% of the graded frames), and at weight 0.2 it speaks on every graded frame (R011).
+that reads no ball (R011), and at weight 0.2 it speaks on every graded frame; where the ball is missing (40.7% of the
+graded frames) it shares the vote with `smart_tagging`. `smart_tagging` (P08, R017) gives `home` from Smart Tagging's
+automatic phase tags (see section 2) and votes on 49.9% of the ball-gap frames.
 `nearest_player` (the baselines' team source) and `ball_presence` (P06's first `alive` source) stay in the pipeline and
-are not in the submission. **`main.toml` is these three sources, the decoder and the shift below** (R010 to R013): P04
-and P05 together, P07 on top of them, and R013's re-chosen touch rule and decoder each meet the benchmark's bar, and
-section 6 says what that does and does not show. The file has not been uploaded.
+are not in the submission. **`main.toml` is these four sources, the decoder and the shift below** (R010 to R013, then R017): P04
+and P05 together, P07 on top of them, and R013's re-chosen touch rule and decoder each meet the benchmark's bar; P08
+was adopted at Tian's pick of its strength after its team votes passed a label-free bar (R017). Section 6 says what
+that does and does not show. The file has not been uploaded.
 
 **The shift** (P02, `pipeline/refine/shift_edges.py`). After the decoder, each kind of edge of a half is moved by a
 whole number of frames: a change of team 1 frame later, a change into `D` 2 frames earlier, a change out of `D` not at
@@ -71,7 +74,7 @@ coarse truth), inside the noise (section 5).
 | asset | used? | how — or why it was dropped |
 |---|---|---|
 | Tactical ATD (players, ball, speeds) | yes | The input of every source: the players' positions, the team of each slot and the ball, with every speed computed from successive positions (T31). For P02 it also gives the label-free events that A11 times our truth's changes against: a team's first controlled touch, the ball first seen beyond a line, where the ball is lost and where it moves after standing still, where the dead-ball model's `alive` crosses 0.5. The same events are found on DFL's degraded copy |
-| Smart Tagging | yes, as team votes (P08, R017); also in A11 | The `smart_tagging` source turns the automatic phase tags into a team vote on `home` (a possession-phase tag votes for its team, a defending one for the other, no vote where tags disagree or say nothing), cut at the graded blocks. Its dead votes (`SET PIECES`, `GOALS`) were measured in R017 against `dead_ball_model` (0.409 agreement, bar 0.60) and dropped. Earlier, A11 timed `SET PIECES` intervals against our truth's stoppages (an interval within 5 s of the start of none of the 4 and of the end of 1 of the 4), and they said nothing. The source is `MATCH_ONLY` (DFL has no tags), so the benchmark runs `main.toml` with `--drop-match-only` |
+| Smart Tagging | yes, as team votes (P08, R017); also in A11 | The `smart_tagging` source turns the automatic phase tags into a team vote on `home` (a possession-phase tag votes for its team, a defending one for the other, no vote where tags disagree or say nothing), cut at the graded blocks. Its dead votes (`SET PIECES`, `GOALS`) were measured in R017 against `dead_ball_model` (0.409 agreement, bar 0.60) and dropped, and the set-piece tags are not used as a restart type either. Earlier, A11 timed `SET PIECES` intervals against our truth's stoppages (an interval within 5 s of the start of none of the 4 and of the end of 1 of the 4), and they said nothing. The source is `MATCH_ONLY` (DFL has no tags), so the benchmark runs `main.toml` with `--drop-match-only` |
 | Tactical homography | only in A03 | The pitch point under the image centre (the inverse homography of the centre pixel) was compared with the ATD ball over the graded frames: the camera's aim is a coarse zone prior for long ball gaps, not a position (A03). No source of the pipeline reads it (P09, which would, is an idea) |
 | Tactical video (frames, audio) | only its structure (A04) | `ffprobe` read the stream information (H.264, 1920×1080, 25 fps, 199,319 frames; AAC audio from t = 0), and no value of the file was read (A04). No source of the pipeline reads it (P10, the whistle in the audio, and P14, the ball in the frames, are ideas), and no LLM may see it, so what needs it is left to a person (A11) |
 | Broadcast video, ATD, homography | not used | The broadcast runs on its own 164,488-frame timeline (cuts, replays) and no mapping to the tactical frames is provided (T09), so the pipeline loads none of it. A04 read its structure only: the mp4 is one frame shorter than its ATD, and 34.2% of its homography rows are NaN. Aligning it is P15, an idea |
@@ -101,8 +104,10 @@ second.
 
 Not in the list, and why: the public 5 minutes are published by the organisers, derived from Metrica's corrected
 tracking, and are used to check only (never to train, fit or choose); the Smart Tagging is generated automatically by
-Metrica "without manual review" (FAQ.md), so nobody labelled it, and no source of the pipeline reads it; and we produce
-no pseudo-labels that a model is trained on (the shape model learns from DFL's flag, not from the touch rule). We
+Metrica "without manual review" (FAQ.md), so nobody labelled it. It is read: the `smart_tagging` source turns its tags
+into team votes (P08, R017), and its one constant measured on this match, `c_team` 0.76, is the tags' agreement with
+our own touch-rule pseudo-labels (an algorithm made them and no person decided any, so allowed; declared in R017).
+We produce no pseudo-labels that a model is trained on (the shape model learns from DFL's flag, not from the touch rule). We
 labelled nothing by hand on any game.
 
 No frame of this match was hand-labelled, none of its tracking was corrected by hand, and no human-produced data about
@@ -672,9 +677,16 @@ classes balance exactly and the model has no prior to subtract and no notion of 
 - **Seven matches, five of them Fortuna Düsseldorf's home games.** The sample is small, so the intervals are wide, and
   not independent, so even they may be too narrow; the smallest sign-flip p is 0.0156. Two matches have a team down to
   10 players, so statistics on how many players are tracked are measured at full strength only (T36).
-- **No video, audio, homography or Smart Tagging.** Whatever uses them (P08, P09, P10, P14, P15) is checked on the
+- **No video, audio or homography, and Smart Tagging only as a vote.** Whatever uses them (P09, P10, P14, P15) is checked on the
   public window for correctness only, with its strength fixed by a declared constant, or simulated from the
-  benchmark's truth with noise measured on our match (A03).
+  benchmark's truth with noise measured on our match (A03). P08 was not checked on the public window before its
+  adoption, and its strength (weight 0.2, spread `frame`) was Tian's pick between two declared options: no constant came
+  from the window. After the adoption `selftest.py --data` scored the window as a correctness check (macroF1 0.6986,
+  spellF1 0.4000, against R013's 0.7152 and 0.4649; one possession moves spellF1 by about 0.06 there), and those figures
+  chose nothing (T01).
+- **P08's weight and spread are untested.** The weight (0.2) and the spread (`frame`) of `smart_tagging` rest on no
+  benchmark, because DFL has no tags; they are Tian's pick (R017), and the benchmark runs `main.toml` with
+  `--drop-match-only`, so its scores do not include the source.
 - **DFL tracks the ball out of play, and ours does not.** We tried two profiles that hide it (R015, R015b) and dropped
   both. One matched our share of visible frames past a line (0.0414 against 0.0407) but made the gaps too long (median
   15.04 s against 10.74); the other could not reach the share at all (0.258 to 0.262). With the ball hidden by the first,
@@ -845,7 +857,7 @@ python3.11 -m venv .venv                     # Windows: py -3.11 -m venv .venv
 .venv/bin/python evaluation/validate_submission.py evaluation/results/main.csv
 ```
 
-Expected sha256 of `main.csv` (R013): `0ebdfbeca72ae2d09eb7aaa377037415696a5dacb95e29003741e0f57d5dbc5d` (the run prints
+Expected sha256 of `main.csv` (R017): `7ba575c0982aacb9765b39c406e4ff5c9ddb82ca37cfa2b7f101417431fc3d7c` (the run prints
 it; the same with `OPENBLAS_NUM_THREADS=1`). The first run parses the tracking into `data/cache/` once. Every run then
 computes the play features and the shape features and walks the trees: about 17 s in all with the cache warm (the run of
 25 Oct that wrote R011's file: 0.5 s for the inputs, 14.9 s for the evidence, 0.9 s for the decoder and 0.8 s for the

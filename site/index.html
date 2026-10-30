@@ -692,13 +692,13 @@ const DATA = {
       text: "`baseline_smooth50`, the organisers' published full-match score (R000c). We never see full-match scores ourselves, and benchmark scores are not our leaderboard's."
     },
     {
-      label: "Public window (5 min, 17 possessions)", value: "0.4649", unit: "spellF1", second: "macroF1 0.7152",
-      text: "`main.toml` predicts 20 possessions there against 17.",
+      label: "Public window (5 min, 17 possessions)", value: "0.4000", unit: "spellF1", second: "macroF1 0.6986",
+      text: "`main.toml` as adopted by R017 (R013's file scored 0.4649 and 0.7152, with 20 possessions).",
       flag: "Correctness check only, never used to choose anything (rule `f8f2629`, T01)."
     },
     {
       label: "Submission", value: "Not uploaded", badge: "todo",
-      text: "The submission log in [docs/results.md](../docs/results.md) is empty. `main.toml` writes sha256 `0ebdfbec…` (R013; the same file as `r013_retune.toml`)."
+      text: "The submission log in [docs/results.md](../docs/results.md) is empty. `main.toml` writes sha256 `7ba575c0…` (R017: R013's file plus `smart_tagging`; `r013_retune.toml` writes R013's, `r017_frame.toml` this one)."
     }
   ],
 
@@ -720,11 +720,11 @@ const DATA = {
     ],
     decoder: { name: "hmm", params: "4 / 32 / 35 / 25, per half", p: "P06" },
     refine: { name: "shift_edges", params: "team +1 · into D −2 · out of D 0", p: "P02" },
-    output: { name: "main.csv", params: "sha256 0ebdfbec…" },
+    output: { name: "main.csv", params: "sha256 7ba575c0…" },
     joinNote: "evidence cut into the two graded halves, each decoded on its own",
     text: [
       "`main.toml` is P04 + P05 + P07 + P02, as R013 left them, plus P08's Smart Tagging team votes (R017: `smart_tagging`, c_team 0.76, per frame, weight 0.2, Tian's pick, untested on a benchmark). `controlled_touch` (radius 1.5 m, `max_rel_speed` 6 m/s, `min_frames` 1, hold 0.60, confidence 0.93) and `shape_possession` (weight 0.2 on every graded frame, `min_prob` 0.02) give `home`; the gradient-boosted `dead_ball_model` (weight 1.0) gives `alive`.",
-      "The `hmm` decodes each graded half on its own (`switch_team` 4, `switch_dead` 32, `min_possession` 35, `min_dead` 25), and `shift_edges` moves the edges (team +1, into_dead −2, out_of_dead 0 frames). Every constant was chosen on the benchmark by a rule declared before its run, or is a measurement or a fixed rule, and every choice but one had no window-derived value in any candidate. The exception (“After R013”): R009 chose the dead-ball source and its weight with window-derived values present, and R013 declared them out of scope, so they were not re-chosen without them. On our match it predicts `D` on 35.9% of the graded frames and 410 possessions (R013's label-free checks)."
+      "The `hmm` decodes each graded half on its own (`switch_team` 4, `switch_dead` 32, `min_possession` 35, `min_dead` 25), and `shift_edges` moves the edges (team +1, into_dead −2, out_of_dead 0 frames). Every constant was chosen on the benchmark by a rule declared before its run, or is a measurement or a fixed rule, and every choice but one had no window-derived value in any candidate. The exception (“After R013”): R009 chose the dead-ball source and its weight with window-derived values present, and R013 declared them out of scope, so they were not re-chosen without them. On our match it predicts `D` on 35.9% of the graded frames and 413 possessions (R017's label-free checks). The exception to the benchmark's choosing is P08: `smart_tagging`'s weight (0.2) and spread (per frame) are Tian's pick between two declared strengths, untested on any benchmark because DFL has no tags."
     ]
   },
 
@@ -986,7 +986,7 @@ const DATA = {
   /* ---------- Models: every model a pipeline stage runs. Numbers from docs/results.md (R008–R013, A13) and from
      reading the committed JSON models (split shares and first trees: aggregates of models fitted on public DFL data). ---------- */
   models: {
-    intro: "Every model a stage of `main.toml` runs, in the order the data meets them. Two are learned (boosted trees, trained on the seven DFL matches only), one is probabilistic (the HMM decoder), two are fixed rules. Nothing is fitted or chosen on our match.",
+    intro: "Every model a stage of `main.toml` runs, in the order the data meets them. Two are learned (boosted trees, trained on the seven DFL matches only), one is probabilistic (the HMM decoder), three are fixed rules. Nothing is fitted on our match; the one constant measured on it, `smart_tagging`'s c_team, is the tags' agreement with our own algorithmic pseudo-labels (no person labelled anything), and its weight is Tian's pick.",
     kinds: {
       learned: { label: "learned · boosted trees", cls: "info", glyph: "◆" },
       probabilistic: { label: "probabilistic · HMM", cls: "rule", glyph: "◇" },
@@ -1503,7 +1503,7 @@ const DATA = {
     { date: "2026-10-25", title: "P02 timing conventions and shift_edges adopted", entries: "A11, R012", outcome: "adopted", stages: ["refine", "benchmark"],
       text: "A11, a lead and not a measurement: our `D` looks 2.5–3 s longer than DFL's flag would draw it, and our team flips about a second before the new team's first controlled touch. R012 shifts the edges by the pipeline's own lag on DFL (+1, −2, 0): +0.0005 raw, inside noise, adopted by its declared rule." },
     { date: "2026-10-26", title: "R013: the touch rule and the decoder re-chosen without the window's values", entries: "R013", outcome: "adopted", stages: ["evidence", "decode", "refine"],
-      text: "Stage A (192 configs) and Stage C (144 configs) on `main.toml`'s own evidence: +0.0267 raw (p 0.0156, 7 wins in 7), +0.0001 coarse; 0.5430 raw / 0.5593 coarse. Today's `main.toml`, sha256 `0ebdfbec…`." },
+      text: "Stage A (192 configs) and Stage C (144 configs) on `main.toml`'s own evidence: +0.0267 raw (p 0.0156, 7 wins in 7), +0.0001 coarse; 0.5430 raw / 0.5593 coarse. R013's `main.toml`, sha256 `0ebdfbec…`; R017 later added a vote on top." },
     { date: "2026-10-26", title: "P17 restart-team channel dropped", entries: "A12, R014, R014b", outcome: "dropped", stages: ["evidence", "decode"],
       text: "A12: a perfect 2 s restart vote is worth +0.0198 raw. The vote after the restart delivered +0.0040 raw (R014, p 0.0938) and restart states in the decoder +0.0003 (R014b): neither met the bar of +0.005 with p ≤ 0.05. The code stays, off by default." },
     { date: "2026-10-29", title: "A13: the headroom of main.toml", entries: "A13", outcome: "analysis", stages: ["benchmark", "evidence"],
@@ -1511,7 +1511,9 @@ const DATA = {
     { date: "2026-10-29", title: "P18 offpitch profile dropped", entries: "R015, R015b", outcome: "dropped", stages: ["benchmark"],
       text: "Hiding DFL's out-of-play ball: v1 failed the median-gap gate (15.04 s against 10.74 s) and cost today's P05 0.013 alive/dead F1; v2 could not reach our share past a line (0.258–0.262 against 0.0407). Code removed in `7b555eb`; `main.toml` unchanged." },
     { date: "2026-10-29", title: "A14: a video ball detector, debated and measured before building", entries: "A14, P14, P19–P22", outcome: "analysis", stages: ["inputs", "benchmark"],
-      text: "The ball is about 6 px wide in the tactical video, smaller than a ViT patch (T46), and the tracker loses it inside the image, not at its edge. On the benchmark a perfect ball in our gaps is worth +0.10 raw but +0.02 coarse; both sides' declared rules say no full build. P19–P22 were added for the team side." }
+      text: "The ball is about 6 px wide in the tactical video, smaller than a ViT patch (T46), and the tracker loses it inside the image, not at its edge. On the benchmark a perfect ball in our gaps is worth +0.10 raw but +0.02 coarse; both sides' declared rules say no full build. P19–P22 were added for the team side." },
+    { date: "2026-10-30", title: "P08 smart_tagging team votes adopted", entries: "P08, R017", outcome: "adopted", stages: ["evidence"],
+      text: "The tags' team votes agree with our own touch-rule pseudo-labels at 0.761 (bar 0.75, passed); the dead votes agree with `dead_ball_model` at 0.409 (bar 0.60) and were dropped. Strength per frame at weight 0.2, at Tian's pick, untested on any benchmark (DFL has no tags). `main.toml`, sha256 `7ba575c0…`; the public window, a correctness check seen after the pick: macroF1 0.6986, spellF1 0.4000." }
   ],
   outcomes: {
     adopted: { label: "adopted", cls: "ok", glyph: "✓" },
@@ -1542,7 +1544,8 @@ const DATA = {
       { id: "R010", spell: "0.4686", macro: "0.6996", poss: "18" },
       { id: "R011", spell: "0.4000", macro: "0.7151", poss: "20" },
       { id: "R012", spell: "0.4000", macro: "0.7159", poss: "20" },
-      { id: "R013", spell: "0.4649", macro: "0.7152", poss: "20" }
+      { id: "R013", spell: "0.4649", macro: "0.7152", poss: "20" },
+      { id: "R017", spell: "0.4000", macro: "0.6986", poss: "—" }
     ]
   },
 
@@ -1556,7 +1559,7 @@ const DATA = {
     { title: "Technical document (`<team_name>.pdf` or `.md`)", status: "doing", label: "draft",
       text: "[docs/technical_document.md](../docs/technical_document.md) is a long draft for “a few pages”, still with placeholders ([Team name], the five names, the repo URL, the commit and the sha256). Condense it." },
     { title: "Clean-clone reproduction on a second machine", status: "todo", label: "not done",
-      text: "Regenerate the file from a clean clone, ideally on a second machine, and compare the sha256 with `0ebdfbec…` (T21)." },
+      text: "Regenerate the file from a clean clone, ideally on a second machine, and compare the sha256 with `7ba575c0…` (T21)." },
     { title: "Pinned dependencies", status: "done", label: "done",
       text: "[requirements-pipeline.txt](../requirements-pipeline.txt) pins what the pipeline imports (numpy 2.4.6, pandas 3.0.6; Python 3.11.9)." }
   ],

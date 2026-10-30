@@ -36,7 +36,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R014b | 2026-10-26 | restart states in the decoder (P17, Phase 2b): `restart_team` span `stoppage_end` with `hmm` `restart_source`, `switch_restart` {4, 8, 16, inf} x `use_ball` {false, true}, 8 configs | — | — | — | 0.5433 raw and 0.5589 coarse for `r014b_s04_b1`, against `main.toml`'s 0.5430 and 0.5593 | bar not met (+0.0003 raw, p 0.8125); not adopted; P17 dropped |
 | R015 | 2026-10-29 | the `offpitch` profile (P18): `tracking` v3 with DFL's ball hidden once it is more than m past a line and a share q of the transplanted gaps dropped, m and q fitted once on label-free statistics of our match, its fidelity, and `main.toml` on it | — | — | — | 0.5509 raw and 0.5296 coarse for `main.toml` on `offpitch`, against 0.5430 and 0.5593 on `tracking` (a difference between two profiles) | `offpitch` v1 frozen (m 0.2 m, q 0.430); 8 of 9 gates pass, median gap fails (15.04 s against 10.74); main.toml 0.5509 raw / 0.5296 coarse on it; P18 dropped after R015b |
 | R015b | 2026-10-29 | the `offpitch` v2 rule (the ball hidden while it is more than m past a line and moving, found again at rest), swept once on the benchmark's label-free fidelity statistics before anything was built | — | — | — | — | v2 cannot reach our share past a line at any margin (0.258 to 0.262 against 0.0407); P18 dropped, offpitch code removed (7b555eb) |
-| R017 | 2026-10-30 | Smart Tagging's votes (P08) against our own pseudo-labels on BAR-ATH: team agreement with `controlled_touch` episodes and dead agreement with `dead_ball_model`, the two parts' bars, and two strengths (`frame` 0.2, `tag` 1.0) for Tian's pick | — | — | — | — | team votes adopted per frame (0.761); dead votes dropped (0.409) |
+| R017 | 2026-10-30 | Smart Tagging's votes (P08) against our own pseudo-labels on BAR-ATH: team agreement with `controlled_touch` episodes and dead agreement with `dead_ball_model`, the two parts' bars, and two strengths (`frame` 0.2, `tag` 1.0) for Tian's pick | 0.6986 | 0.4000 | — | — (DFL has no tags; `main.toml --drop-match-only` reproduces R013's 0.5430 raw, 0.5593 coarse) | team votes adopted per frame (0.761); dead votes dropped (0.409) |
 
 ### The four yardsticks on every profile, in one table
 
@@ -5988,7 +5988,9 @@ declaration before its measurement; if it fails again the source is removed from
 dropped. A part that passes is not retried.
 
 **Part 2, the measurement and the verdict** (2026-10-30). Everything below applies part 1 as written. The public window
-was not scored: nothing was adopted, and it chooses nothing. Logs hold aggregates only.
+was not scored for the verdict, and it chooses nothing. After the adoption, `selftest.py --data` scored it as a correctness
+check: macroF1 0.6986, spellF1 0.4000 (R013: 0.7152, 0.4649). They were seen after Tian's pick and chose nothing (T01;
+one possession moves spellF1 about 0.06 on that window). Logs hold aggregates only.
 
 **The runs.**
 - Measurement: `python pipeline/benchmark/tag_stats.py`, at commit `cefb8b0` (part 1 and the source, committed before the
@@ -6073,6 +6075,10 @@ Adoption checks (commit 56916f2, 2026-10-30):
   four committed baselines rebuilt byte for byte.
 - `python pipeline/benchmark/run.py pipeline/configs/main.toml --drop-match-only --truth both`: dropped
   `smart_tagging` (the benchmark has no tags) and reproduced R013's 0.5430 raw and 0.5593 coarse.
+- The declared label-free checks pass: `D` 35.93% against R013's 35.92%, no `X`, 187 and 226 possessions in the two
+  halves (413 in all, against R013's 192 and 218), the same sha256 on two runs.
+- The public window, a correctness check seen after the pick (T01): macroF1 0.6986, spellF1 0.4000 (R013: 0.7152,
+  0.4649); it chose nothing.
 
 ## Submission log
 
