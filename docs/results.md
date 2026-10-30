@@ -36,7 +36,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R014b | 2026-10-26 | restart states in the decoder (P17, Phase 2b): `restart_team` span `stoppage_end` with `hmm` `restart_source`, `switch_restart` {4, 8, 16, inf} x `use_ball` {false, true}, 8 configs | — | — | — | 0.5433 raw and 0.5589 coarse for `r014b_s04_b1`, against `main.toml`'s 0.5430 and 0.5593 | bar not met (+0.0003 raw, p 0.8125); not adopted; P17 dropped |
 | R015 | 2026-10-29 | the `offpitch` profile (P18): `tracking` v3 with DFL's ball hidden once it is more than m past a line and a share q of the transplanted gaps dropped, m and q fitted once on label-free statistics of our match, its fidelity, and `main.toml` on it | — | — | — | 0.5509 raw and 0.5296 coarse for `main.toml` on `offpitch`, against 0.5430 and 0.5593 on `tracking` (a difference between two profiles) | `offpitch` v1 frozen (m 0.2 m, q 0.430); 8 of 9 gates pass, median gap fails (15.04 s against 10.74); main.toml 0.5509 raw / 0.5296 coarse on it; P18 dropped after R015b |
 | R015b | 2026-10-29 | the `offpitch` v2 rule (the ball hidden while it is more than m past a line and moving, found again at rest), swept once on the benchmark's label-free fidelity statistics before anything was built | — | — | — | — | v2 cannot reach our share past a line at any margin (0.258 to 0.262 against 0.0407); P18 dropped, offpitch code removed (7b555eb) |
-| R018 | 2026-10-30 | the referee's whistle (P10): a hand-built 2 to 4 kHz band-pass detector on the tactical audio, its feasibility gate and its bar against `main.toml`'s own decoded stoppages | — | — | — | — | part 1 run: gate FAILED; R018b declared (part 2) |
+| R018 | 2026-10-30 | the referee's whistle (P10): a hand-built 2 to 4 kHz band-pass detector on the tactical audio, its feasibility gate and its bar against `main.toml`'s own decoded stoppages | — | — | — | — | dropped (R018, R018b: gate failed, ratio 1.52 / 1.51) |
 
 ### The four yardsticks on every profile, in one table
 
@@ -5999,10 +5999,27 @@ are (0.01 dB). The public window is not used.
 
 **If R018b's gate fails, P10 is dropped and its code removed**, as P18 was (R015b). There is no further retry.
 
+**Part 2, the feasibility result** (2026-10-30, `python pipeline/benchmark/whistle_stats.py feasibility` at commit `a08e381`,
+aggregates only). The gate **FAILED**.
+- `main.toml` sha256 raw `ad8d8b6c…`, LF `0970f2de…`, both matching the declaration; the features' sha256 `a3d80f77…`, the same
+  as the earlier decodes;
+- tonal threshold 24.76 dB (the match's 98th percentile);
+- 55 detections, 25 in half 1 and 30 in half 2 (gate 1 passes, 10 to 120 per half);
+- share near a decoded stoppage 0.564 against a control of 0.373, ratio 1.51, where the gate needs at least 2 (gate 3 fails;
+  gate 2, at least 50%, passes);
+- 29 of the 55 detections have a feature within 0.5 dB of a threshold.
+
+Reading: with 340 marginal detections (R018) or 55 strong ones (R018b), detected whistles sit near a decoded stoppage about 1.5
+times as often as the same detections shifted in time. The signal is real but too weak for the declared 2 times, and a stricter
+threshold does not sharpen it.
+
+**Verdict: P10 dropped; code removed, recoverable from `a08e381`.** R018 part 1's rule applies: R018b was the one retry.
+
 | ID | status |
 |---|---|
 | R018 part 2 | feasibility gate failed (340 detections; 0.624 vs 0.410, ratio 1.52) |
-| R018b part 1 | declared, not run |
+| R018b part 1 | declared, run |
+| R018b part 2 | feasibility gate failed (55 detections; 0.564 vs 0.373, ratio 1.51); P10 dropped, code removed |
 
 ## Submission log
 
