@@ -6167,6 +6167,23 @@ the T38 warning that the benchmark may overstate P09. R019's veto already includ
 proposed to Tian for a decision first. If that also fails, P09 is dropped and its code removed. The pause (the research
 bar) applies in any case: the gates' results go to Tian before any retraining.
 
+**Amended before any run (2026-10-30).** Nothing had been run when these were written (the first run is Task E.3's
+step 7, after this commit); they add to the declaration above and change none of its tolerances:
+- **The decoder of `dead`.** The gates' D is `main.toml` decoded with its match-only sources dropped
+  (`run.drop_match_only`, the sources that declare MATCH_ONLY: the Smart Tagging and the whistle, which a DFL match does
+  not have), on both sides, BAR-ATH and DFL, so that one decoder and the same code serve both. The names dropped are
+  printed and kept in the report (`dropped_match_only`).
+- **Only `tracking` decides.** Under `--profile tracking` a failed gate gives exit code 1. Under `--profile context`
+  (a sensitivity profile, R005) the four gates are printed as information and never set the exit code; what is asked of
+  `context` is the WARN.
+- **One camera per selection.** Reports in one `choose.py` selection must share the camera digest (`camera` is in
+  choose's SAME), so that two selections never compare configs served different simulated cameras.
+- **Pooling.** DFL is pooled by frames across matches x seeds (the pooled rows are measured once), so a longer match
+  weighs more; it is not a mean over matches.
+- **Which models decode DFL.** On DFL the decoded D uses each match's held-out (out-of-fold) models, `folds[inputs.game]`,
+  as the benchmark's runs do; BAR-ATH uses `full`. The two sides' decoders differ by that, as everywhere in the benchmark
+  (T38, T39), and the gate's tolerance is not changed for it.
+
 **What follows, not governed here.** Parts 2 and 3 (the shape model v2 and the benchmark's bar over the candidates at
 weights {0.2, 0.3, 0.5}) are declared when Task E.4 starts, before their runs.
 
