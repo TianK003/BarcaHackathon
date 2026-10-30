@@ -236,7 +236,8 @@ def main(argv=None):
                         help="the grid's configs by name, in the declared tie order (the first wins a tie that is left)")
     parser.add_argument("--reference", required=True, help="the config every delta is taken against, e.g. main")
     parser.add_argument("--profile", default=run.DEFAULT_PROFILE, help=run.profile_help())
-    parser.add_argument("--band", type=float, default=TIE_BAND, help="the tie band (default {})".format(TIE_BAND))
+    parser.add_argument("--band", type=float, default=None,
+                        help="the tie band (default {} for spellF1; required with --metric macro)".format(TIE_BAND))
     parser.add_argument("--metric", choices=sorted(METRICS), default="spell",
                         help="the objective: pooled spellF1 (default) or macroF1; the band is in its units")
     parser.add_argument("--top", type=int, help="show only this many rows of the table, the best raw first")
@@ -246,6 +247,11 @@ def main(argv=None):
     reconfigure = getattr(sys.stdout, "reconfigure", None)      # the table says Δ, which a Windows console's code page
     if reconfigure is not None:                                 # cannot print; a replaced stdout may not have it
         reconfigure(encoding="utf-8")
+    if args.band is None:
+        if args.metric == "macro":
+            print("FAILED    a macroF1 grid must name its band with --band: the default {} is spellF1's".format(TIE_BAND))
+            return 1
+        args.band = TIE_BAND
     try:
         choice = choose(args.stems, args.reference, profile=args.profile, band=args.band, metric=args.metric,
                         data_dir=args.data_dir)

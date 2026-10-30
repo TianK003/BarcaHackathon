@@ -118,6 +118,21 @@ def test_choose_selects_on_macro_when_asked():
         expect_error(choose.ChooseError, lambda: chosen(root, stems, metric="accuracy"), "metric")
 
 
+def test_choose_cli_makes_a_macro_grid_name_its_band():
+    """--metric macro without --band is refused before any report is read (0.005 is spellF1's band); with it, accepted."""
+    import contextlib
+    import io
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        code = choose.main(["x", "--reference", "x", "--metric", "macro"])
+    assert code == 1 and "band" in out.getvalue(), (code, out.getvalue())
+    for argv in (["x", "--reference", "x", "--metric", "macro", "--band", "0.002"], ["x", "--reference", "x"]):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            choose.main(argv)                   # no reports exist here: it fails on those, not on the band
+        assert "must name its band" not in out.getvalue(), argv
+
+
 def halves_of(root, stem, truth):
     path = benchmark_run.report_path(root, "gaps", stem, truth, sorted(synthetic_matches()), SEEDS)
     with open(path, encoding="utf-8") as stream:
