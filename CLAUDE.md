@@ -86,6 +86,8 @@ python pipeline/benchmark/sources.py [--verify] [--data-dir D]   # P01: fetch (o
 python pipeline/benchmark/run.py CONFIG [CONFIG ...]    # configs on the benchmark; the first is the reference
 python pipeline/benchmark/run.py CONFIG ... --truth coarse   # the same under the coarse truth; read both together
 python pipeline/benchmark/run.py CONFIG ... --truth both     # both truths from one decode: the two runs' reports
+python pipeline/benchmark/run.py CONFIG ... --drop-match-only   # needed for main.toml: drops (and reports) its
+                                                        # match-only sources (Smart Tagging), which DFL cannot serve
 python pipeline/benchmark/choose.py --reference main STEM ...   # a grid's declared rule on its reports, + LOMO
 python pipeline/benchmark/fidelity.py --profile tracking --seeds 3   # gates + WARNs: the copy against our match
 python pipeline/benchmark/train_shape.py [--verify|--report]   # P07: train the shape model as JSON; --verify, --report
@@ -144,8 +146,10 @@ keeps that convention: its scripts swap their own folder on `sys.path` for the r
   `data/cache/atd_tactical/`) → `evidence` (per-frame `alive`/`home` probabilities, NaN = no opinion) → `decode` (one
   block per graded half) → `refine` → `output` (LF CSV, official validation, manifest in `data/runs/`). Components are
   plain functions in each stage's `REGISTRY` (`evidence` holds `nearest_player`, `ball_presence`, `controlled_touch`,
-  `dead_ball_rules`, `dead_ball_model`, `shape_possession` and `restart_team`, the last three reading the trained JSON
-  models in `pipeline/models/`; `restart_team` is a restart-team vote, measured but not in `main.toml`, P17; `decode`
+  `dead_ball_rules`, `smart_tagging`, `dead_ball_model`, `shape_possession` and `restart_team`, the last three reading
+  the trained JSON models in `pipeline/models/`; `smart_tagging` is Smart Tagging's team votes, in `main.toml` since
+  R017 (P08), and declares `MATCH_ONLY`, so the benchmark runs `main.toml` with `--drop-match-only`; `restart_team` is
+  a restart-team vote, measured but not in `main.toml`, P17; `decode`
   holds `majority_vote` and `hmm` (which can decode restart states, `restart_source`, off by default);
   `refine` holds `shift_edges`), chosen by TOML configs in `pipeline/configs/` and checked against their signatures
   before any data loads. `configs/smooth50_repro.toml` must rebuild `baseline_smooth50.csv` byte for byte — run
@@ -163,7 +167,9 @@ keeps that convention: its scripts swap their own folder on `sys.path` for the r
   `data/runs/benchmark/`), `choose` (a grid's declared rule and its leave-one-match-out estimate, from the reports),
   `restarts` (the stoppages' anatomy, the restart vote's stats, its configs), `dfl_events` (the DFL restart events,
   diagnostics), `headroom` (a config beside variants whose evidence is the truth: what a perfect source would add;
-  its `plus_` variants measure `main.toml` itself, A13) and `checks/` (what `selftest.py` runs). Degradations are fitted once per version on
+  its `plus_` variants measure `main.toml` itself, A13), `tag_stats` (Smart Tagging's votes against our own
+  pseudo-labels on BAR-ATH, R017), `label_diff` (how a config changes BAR-ATH's labels, aggregates only) and `checks/`
+  (what `selftest.py` runs). Degradations are fitted once per version on
   label-free statistics of our tracking, then frozen, never tuned towards a score (T26, T37). The Calibration and every
   degraded `Atd` hold BAR-ATH's masks and counts: print none of it, and write no CSV of BAR-ATH labels.
 
