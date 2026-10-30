@@ -47,7 +47,7 @@ from pipeline.selftest import beside_ball, expect_error, kinematics_atd, kinemat
 H, A, D, X = pm.H, pm.A, pm.D, pm.X
 REACH = 125                                     # 5 s at 25 Hz
 PUBLIC_TRANSITIONS = (1300, 1500, 1620, 2000, 2050, 2400)     # four digits, so that a printed frame is found
-MAX_PUBLIC_LINES = 20                           # what the public mode may print: a summary, never a table of rows
+MAX_PUBLIC_LINES = 60                           # what the public mode may print: a summary, never a table of rows
 RAW_CONFIG = os.path.join(conventions.ROOT, "pipeline", "benchmark", "configs", "nearest_w0.toml")   # the raw label
 
 
@@ -717,7 +717,29 @@ def test_conventions_public_prints_aggregates_only():
         assert [(row["from"], row["to"], row["type"]) for row in rows] == [
             ("H", "A", "team"), ("A", "D", "into_dead"), ("D", "H", "out_of_dead"), ("H", "D", "into_dead"),
             ("D", "A", "out_of_dead"), ("A", "H", "team")]
-        assert list(rows[0]) == ["frame", "from", "to", "type"] + list(conventions.DETECTORS)
+        assert list(rows[0]) == ["frame", "from", "to", "type"] + list(conventions.DETECTORS) + list(
+            conventions.DESCRIPTORS), "the descriptors' columns follow the detectors'"
+        for row in rows:
+            assert row["ball_seen"] in ("True", "False", ""), row["ball_seen"]
+            if row["type"] != "team":
+                assert row["old_near_m"] == row["new_near_m"] == row["new_nearer"] == "", "a team change only"
+        # the descriptor lines of the printout: one per (type, descriptor), n and a share or a median, never a change's
+        # frame or a quartile of fewer than MIN_SHOWN values
+        described = [line for line in lines if line.startswith("describe")]
+        assert len(described) == len(conventions.TYPES) * len(conventions.DESCRIPTORS), described
+        assert all(re.match(r"describe\s+(team|into_dead|out_of_dead)\s+(\w+)\s", line) for line in described)
+        assert not any(re.search(r"\d{4}", line) for line in described), "no frame number in a descriptor line"
+        for kind in conventions.TYPES:
+            for name in conventions.DESCRIPTORS:
+                if name in conventions.BOOLEAN_DESCRIPTORS:
+                    continue
+                cell = document["descriptors"][kind][name]
+                line = next(l for l in described if l.split()[1:3] == [kind, name])
+                assert cell["n"] < conventions.MIN_SHOWN, "the scene's cells are small"
+                if cell["n"]:
+                    assert line.split()[-2:] == ["-", "-"], (kind, name, line)
+        assert set(document["descriptors"]) == set(conventions.TYPES)
+        assert set(document["descriptor_values"]) == set(conventions.TYPES), "the values stay in the file for compare"
         for row in rows:
             expected = PUBLIC_EXACT[int(row["frame"])]
             for name in conventions.DETECTORS:
@@ -1898,3 +1920,77 @@ def test_conventions_descriptor_summary():
         pass
     else:
         raise AssertionError("a row for every change, or an error that says so")
+
+
+def descriptor_document(values):
+    """A document with only the descriptor values given: {type: {descriptor: [values]}}, the rest empty."""
+    return {"source": "x", "fps": 25, "cells": {}, "descriptor_values": {
+        kind: {name: list(values.get(kind, {}).get(name, [])) for name in conventions.DESCRIPTORS}
+        for kind in conventions.TYPES}}
+
+
+def test_conventions_compare_descriptor_gaps():
+    """A gap is the public share or median minus DFL's, with the design's bootstrap; a small cell hides its bounds."""
+    public_lines = [-10.0, -12.0, -11.0, -9.0, -13.0, -10.0]
+    public = descriptor_document({"team": {"ball_seen": [True] * 8 + [False] * 2, "line_m": public_lines,
+                                           "ball_speed": [4.0, 6.0, 5.0]},
+                                  "into_dead": {"line_m": [-1.0]}})
+    dfl = descriptor_document({"team": {"ball_seen": [True] * 6 + [False] * 4, "line_m": [-4.0] * 20 + [-6.0] * 20,
+                                        "ball_speed": [2.0, 3.0, 4.0]},
+                               "into_dead": {"line_m": [-3.0, -5.0]}})
+    rows = conventions.compare(public, dfl)
+    gaps = rows["descriptor_gaps"]
+    assert list(rows) == [] and gaps is rows.descriptor_gaps, "the lag rows are as before: no cells, so no row"
+    assert set(gaps) == set(conventions.TYPES) and all(set(gaps[kind]) == set(conventions.DESCRIPTORS) for kind in gaps)
+    seen = gaps["team"]["ball_seen"]
+    assert math.isclose(seen["public"], 0.8) and math.isclose(seen["dfl"], 0.6) and math.isclose(seen["gap"], 0.2)
+    wanted = conventions.bootstrap_gap([True] * 8 + [False] * 2, [True] * 6 + [False] * 4, share=True)
+    assert (seen["gap"], seen["low"], seen["high"]) == wanted and seen["low"] <= seen["gap"] <= seen["high"]
+    line_m = gaps["team"]["line_m"]
+    assert line_m["public"] == -10.5 and line_m["dfl"] == -5.0 and line_m["gap"] == -5.5
+    assert (line_m["gap"], line_m["low"], line_m["high"]) == conventions.bootstrap_gap(
+        public_lines, [-4.0] * 20 + [-6.0] * 20), "the median's procedure, the file's seed"
+    empty = gaps["out_of_dead"]["line_m"]
+    assert empty["public"] is None and empty["gap"] is None and empty["low"] is None and empty["n_public"] == 0
+    # the printout hides the bounds of fewer than MIN_SHOWN public values and keeps those of five or more
+    lines = conventions.render_compare(rows)
+    small = next(l for l in lines if l.split()[:2] == ["team", "ball_speed"])
+    assert "excludes 0: " in small and "[" not in small, small
+    tiny = next(l for l in lines if l.split()[:2] == ["into_dead", "line_m"])
+    assert "excludes 0: " in tiny and "[" not in tiny, tiny
+    big = next(l for l in lines if l.split()[:2] == ["team", "line_m"])
+    assert "excludes" not in big and "[" in big, big
+    assert "{:.2f}".format(line_m["low"]) in big and "{:.2f}".format(line_m["high"]) in big
+    # a file made before the descriptors has none to compare
+    older = {"source": "x", "fps": 25, "cells": {}}
+    assert conventions.compare(older, dfl)["descriptor_gaps"] == {}
+    assert conventions.compare(public, older)["descriptor_gaps"] == {}
+    assert not any(l.startswith("type         descriptor") for l in conventions.render_compare(
+        conventions.compare(older, dfl)))
+
+
+def test_conventions_dfl_pools_descriptors_by_rows():
+    """Two matches' rows pooled give the summary of their union, which is not the mean of their summaries."""
+    def row(speed):
+        return {**dict.fromkeys(conventions.DESCRIPTORS), "ball_seen": True, "ball_speed": speed}
+    first = ([(10, A, H, "team")] * 3, [row(1.0), row(2.0), row(3.0)])
+    second = ([(20, H, A, "team")], [row(100.0)])
+    changes, rows = conventions.pool_descriptors([first, second])
+    assert changes == first[0] + second[0] and rows == first[1] + second[1]
+    pooled = conventions.summarise_descriptors(changes, rows)
+    assert pooled["team"]["ball_speed"] == {"n": 4, "median": 2.5, "p25": 1.75, "p75": 27.25}
+    medians = [conventions.summarise_descriptors(*part)["team"]["ball_speed"]["median"] for part in (first, second)]
+    assert pooled["team"]["ball_speed"]["median"] != sum(medians) / 2, "pooled by rows, not a median of medians"
+    # measure() pools the same way over matches and seeds, and the document carries the summary and the values
+    result = measured(seeds=2)
+    document = conventions.dfl_document(result)
+    assert set(document["descriptors"]) == set(conventions.TYPES) == set(document["descriptor_values"])
+    assert sum(document["descriptors"][kind]["ball_seen"]["n"] for kind in conventions.TYPES) > 0
+    assert json.loads(json.dumps(document)) == document, "JSON-ready"
+    assert all(len(values) == document["descriptors"][kind][name]["n"]
+               for kind, names in document["descriptor_values"].items() for name, values in names.items())
+    one = measured(seeds=1)
+    assert sum(one["descriptors"][kind]["ball_seen"]["n"] for kind in conventions.TYPES) * 2 == sum(
+        document["descriptors"][kind]["ball_seen"]["n"] for kind in conventions.TYPES), "every seed's rows are pooled"
+    lines = conventions.render_dfl(result)
+    assert sum(1 for l in lines if l.startswith("describe")) == len(conventions.TYPES) * len(conventions.DESCRIPTORS)
