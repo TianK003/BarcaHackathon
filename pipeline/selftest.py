@@ -5376,34 +5376,31 @@ def tag_run(inputs):
 def test_smart_tagging_vote_table():
     from pipeline.evidence import smart_tagging
     for code in smart_tagging.TEAM_CODES:
-        team, dead = smart_tagging.votes(tagged([(code, 20, 30, "Barcelona")]))
-        assert (team[20:30] == 1).all() and (team[:20] == -1).all() and not dead.any(), code
-    team, dead = smart_tagging.votes(tagged([("DEFENDING IN OWN THIRD", 20, 30, "Barcelona"),
-                                             ("DEFENDING IN MIDDLE THIRD", 40, 50, "Atletic Club")]))
+        team = smart_tagging.votes(tagged([(code, 20, 30, "Barcelona")]))
+        assert (team[20:30] == 1).all() and (team[:20] == -1).all(), code
+    team = smart_tagging.votes(tagged([("DEFENDING IN OWN THIRD", 20, 30, "Barcelona"),
+                                       ("DEFENDING IN MIDDLE THIRD", 40, 50, "Atletic Club")]))
     assert (team[20:30] == 0).all() and (team[40:50] == 1).all(), "a defending tag votes for the other team"
-    team, dead = smart_tagging.votes(tagged([("DEFENSIVE TRANSITION", 20, 30, "Atletic Club")]))
+    team = smart_tagging.votes(tagged([("DEFENSIVE TRANSITION", 20, 30, "Atletic Club")]))
     assert (team[20:30] == 1).all(), "a defensive transition of the away team is the home team's ball"
-    team, dead = smart_tagging.votes(tagged([("SET PIECES", 20, 30, "N/A"), ("GOALS", 40, 45, "Barcelona")]))
-    assert dead[20:30].all() and dead[40:45].all() and int(dead.sum()) == 15, "set pieces and goals are dead"
-    assert (team[20:30] == -1).all(), "a dead tag with N/A gives no team vote"
-    assert (team[40:45] == -1).all(), "a dead tag gives no team vote, whatever its team"
-    team, dead = smart_tagging.votes(tagged([("PRESSING", 20, 30, "Barcelona"), ("BUILD UP", 40, 50, "N/A"),
-                                             ("BUILD UP", 50, 55, None)]))
-    assert (team == -1).all() and not dead.any(), "an unknown code, N/A or a missing team gives nothing"
-    team, dead = smart_tagging.votes(tagged([(" build up ", 20, 30, " BARCELONA ", " team "),
-                                             ("set pieces", 40, 50, None)]))
-    assert (team[20:30] == 1).all() and dead[40:50].all(), "case and spaces do not matter"
+    team = smart_tagging.votes(tagged([("SET PIECES", 20, 30, "Barcelona"), ("GOALS", 40, 45, "Barcelona")]))
+    assert (team == -1).all(), "set pieces and goals are not voted on at all (R017 dropped the dead votes)"
+    team = smart_tagging.votes(tagged([("PRESSING", 20, 30, "Barcelona"), ("BUILD UP", 40, 50, "N/A"),
+                                       ("BUILD UP", 50, 55, None)]))
+    assert (team == -1).all(), "an unknown code, N/A or a missing team gives nothing"
+    team = smart_tagging.votes(tagged([(" build up ", 20, 30, " BARCELONA ", " team ")]))
+    assert (team[20:30] == 1).all(), "case and spaces do not matter"
 
 
 def test_smart_tagging_overlaps():
     from pipeline.evidence import smart_tagging
     inputs = tagged([("BUILD UP", 20, 40, "Barcelona"), ("PROGRESSION", 30, 50, "Barcelona")])
-    team, _ = smart_tagging.votes(inputs)
+    team = smart_tagging.votes(inputs)
     assert (team[20:50] == 1).all(), "agreeing overlapping tags agree"
     evidence = smart_tagging.compute(tag_run(inputs), c_team=0.8)
     assert np.allclose(evidence.home[20:50], 0.8), "two agreeing tags are one vote in frame mode, not more"
     inputs = tagged([("BUILD UP", 20, 40, "Barcelona"), ("BUILD UP", 30, 50, "Atletic Club")])
-    team, _ = smart_tagging.votes(inputs)
+    team = smart_tagging.votes(inputs)
     assert (team[20:30] == 1).all() and (team[30:40] == -2).all() and (team[40:50] == 0).all(), team[18:52]
     evidence = smart_tagging.compute(tag_run(inputs), c_team=0.8)
     assert np.isnan(evidence.home[30:40]).all() and not np.isnan(evidence.home[20:30]).any(), "NaN on the overlap only"
@@ -5415,24 +5412,24 @@ def test_smart_tagging_overlaps():
 def test_smart_tagging_cut_at_graded_blocks():
     from pipeline.evidence import smart_tagging
     inputs = tagged([("BUILD UP", 5, 15, "Barcelona"), ("BUILD UP", 62, 78, "Barcelona"),
-                     ("SET PIECES", 55, 65, None), ("BUILD UP", 20, 30, "Barcelona")])
-    team, dead = smart_tagging.votes(inputs)
+                     ("BUILD UP", 55, 65, "Barcelona"), ("BUILD UP", 20, 30, "Barcelona")])
+    team = smart_tagging.votes(inputs)
     assert (team[10:15] == 1).all() and (team[:10] == -1).all(), "a tag crossing a block's start is cut there"
     assert (team[60:80] == -1).all(), "a tag inside the halftime gap leaves nothing"
-    assert dead[55:60].all() and not dead[60:].any(), "a tag crossing a block's end is cut there"
-    team, _ = smart_tagging.votes(tagged([("BUILD UP", 20, 30, "Barcelona")]))
+    assert (team[55:60] == 1).all() and (team[60:62] == -1).all(), "a tag crossing a block's end is cut there"
+    team = smart_tagging.votes(tagged([("BUILD UP", 20, 30, "Barcelona")]))
     assert int((team == 1).sum()) == 10 and team[29] == 1 and team[30] == -1, "end_frame is exclusive"
-    inputs = tagged([("BUILD UP", 5, 15, "Barcelona"), ("SET PIECES", 55, 65, None)])
+    inputs = tagged([("BUILD UP", 5, 15, "Barcelona"), ("BUILD UP", 55, 65, "Atletic Club")])
     spans = smart_tagging.tag_spans(inputs)
-    assert spans == [("team", 1, 10, 15), ("dead", None, 55, 60)], spans
+    assert spans == [("team", 1, 10, 15), ("team", 0, 55, 60)], spans
     evidence = smart_tagging.compute(tag_run(inputs), c_team=0.8, spread="tag")
     expected = 1.0 / (1.0 + math.exp(-math.log(4.0) / 5))
     assert np.allclose(evidence.home[10:15], expected, atol=1e-12), "n_tag counts the frames inside the blocks only"
     outside = np.ones(140, dtype=bool)
     outside[10:60] = outside[80:130] = False
     for mode in ("frame", "tag"):
-        evidence = smart_tagging.compute(tag_run(inputs), c_team=0.8, c_dead=0.9, spread=mode)
-        assert np.isnan(evidence.home[outside]).all() and np.isnan(evidence.alive[outside]).all(), mode
+        evidence = smart_tagging.compute(tag_run(inputs), c_team=0.8, spread=mode)
+        assert np.isnan(evidence.home[outside]).all() and np.isnan(evidence.alive).all(), mode
         assert evidence.home.shape == (140,) and evidence.alive.dtype == np.float64, mode
 
 
@@ -5440,26 +5437,22 @@ def test_smart_tagging_tag_spread_sums_to_one_observation():
     from pipeline.evidence import smart_tagging
     for c in (0.6, 0.8, 0.95):
         inputs = tagged([("BUILD UP", 20, 45, "Barcelona"), ("SET PIECES", 80, 100, None)])
-        evidence = smart_tagging.compute(tag_run(inputs), c_team=c, c_dead=c, spread="tag")
+        evidence = smart_tagging.compute(tag_run(inputs), c_team=c, spread="tag")
         home = evidence.home[20:45]
         assert abs(float(np.sum(np.log(home / (1 - home)))) - math.log(c / (1 - c))) < 1e-12, c
-        alive = evidence.alive[80:100]
-        assert abs(float(np.sum(np.log((1 - alive) / alive))) - math.log(c / (1 - c))) < 1e-12, c
-        assert np.isnan(evidence.alive[20:45]).all() and np.isnan(evidence.home[80:100]).all()
+        assert np.isnan(evidence.alive).all() and np.isnan(evidence.home[80:100]).all()
     inputs = tagged([("BUILD UP", 20, 40, "Barcelona"), ("PROGRESSION", 30, 50, "Barcelona")])
     evidence = smart_tagging.compute(tag_run(inputs), c_team=0.8, spread="tag")
     assert evidence.home[35] > evidence.home[25], "in tag mode two agreeing tags add their observations"
-    only_team = smart_tagging.compute(tag_run(inputs), c_dead=0.9)
-    assert np.isnan(only_team.home).all() and np.isnan(only_team.alive).all(), "no dead tags, no dead votes"
 
 
 def test_smart_tagging_rejects_bad_parameters():
     from pipeline.evidence import smart_tagging
     run = tag_run(tagged([("BUILD UP", 20, 30, "Barcelona")]))
-    expect_error(ValueError, lambda: smart_tagging.compute(run), "c_team", "c_dead")
+    expect_error(TypeError, lambda: smart_tagging.compute(run), "c_team")
+    expect_error(TypeError, lambda: smart_tagging.compute(run, c_team=0.8, c_dead=0.9), "c_dead")
     for bad in (0.5, 1.2, True, "0.8", 0.0, float("nan")):
         expect_error(ValueError, lambda bad=bad: smart_tagging.compute(run, c_team=bad), "c_team", "smart_tagging")
-        expect_error(ValueError, lambda bad=bad: smart_tagging.compute(run, c_dead=bad), "c_dead", "smart_tagging")
     expect_error(ValueError, lambda: smart_tagging.compute(run, c_team=0.8, spread="x"), "spread", "frame")
     assert smart_tagging.compute(run, c_team=1.0).home[25] == 1.0, "c = 1 is allowed"
 

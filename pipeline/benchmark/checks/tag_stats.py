@@ -1,7 +1,7 @@
 """Checks of tag_stats (pipeline/benchmark/tag_stats.py): the Smart Tagging votes against our own pseudo-labels.
 
-The agreements decide whether the votes enter the pipeline (R017), so every figure is worked out here by hand on a
-small scene: the share, the two coverages, the base rate and the lift, the tag-level bootstrap (every draw of one right
+The agreement decided whether the votes entered the pipeline (R017), so every figure is worked out here by hand on a
+small scene: the share, the two coverages, the tag-level bootstrap (every draw of one right
 tag and one wrong tag is 0, 0.5 or 1, which a frame-level bootstrap would not give), and the printout, which holds
 codes, counts and shares and no frame (CLAUDE.md, hard rules). No check reads data.
 """
@@ -87,43 +87,24 @@ def test_tag_stats_bootstrap_keeps_a_tags_pieces_together():
     assert set(np.round(draws, 12)) == {0.0, round(2 / 3, 12), 1.0}, "draws are {}".format(sorted(set(draws)))
 
 
-def test_tag_stats_dead_agreement_and_lift():
-    graded, _ = scene()
-    dead = np.zeros(N, dtype=bool)
-    dead[1000:1100] = True                      # tag 1: the model says dead on 1000-1080 (80 of 100)
-    dead[2000:2100] = True                      # tag 2: the model says dead on all 100
-    alive_p = np.full(N, np.nan)
-    alive_p[graded] = 0.9
-    alive_p[1000:1080] = 0.1
-    alive_p[2000:2100] = 0.1
-    alive_p[1300:1600] = 0.2                    # model-dead frames outside the tags: 300 + 100
-    alive_p[2400:2500] = 0.2
-    tags = [("dead", None, [(1000, 1100)]), ("dead", None, [(2000, 2100)])]
-    out = tag_stats.dead_agreement(dead, alive_p, tags, graded, draws=200)
-    assert out["n"] == 200 and out["share"] == 180 / 200, "n, share are {}, {}".format(out["n"], out["share"])
-    assert out["base"] == (80 + 100 + 300 + 100) / 1200, "base is {}".format(out["base"])
-    assert abs(out["lift"] - out["share"] / out["base"]) < 1e-12, "lift is {}".format(out["lift"])
-    assert out["low"] <= out["share"] <= out["high"], "the interval holds the point: {}".format(out)
-
-
 def test_tag_stats_per_code_is_aggregates():
     tagged = [{"code": "build up", "start_frame": 1000, "end_frame": 1100, "tags": {"Team": "Barcelona"}},
               {"code": "BUILD UP", "start_frame": 1200, "end_frame": 1300, "tags": {"Team": "Atletic Club"}},
               {"code": "SET PIECES", "start_frame": 1500, "end_frame": 1700, "tags": {}},
-              {"code": "OTHER", "start_frame": 1100, "end_frame": 1200, "tags": {}}]
+              {"code": "OTHER", "start_frame": 1100, "end_frame": 1200, "tags": {}},
+              {"code": "LONG BALL", "start_frame": 1550, "end_frame": 1700, "tags": {"Team": "Barcelona"}}]
     inputs = type("Stub", (), {})()
     inputs.smart_tagging = tagged
     inputs.graded = list(BLOCKS)
     _, touch, _ = team_scene()
-    alive_p = np.full(N, 0.9)
-    alive_p[1500:1550] = 0.1
-    rows = tag_stats.per_code(inputs, touch, alive_p)
+    touch = touch.copy()
+    touch[1550:1600] = 0.93                     # a home episode under LONG BALL (cut at the block's end, 1600)
+    rows = tag_stats.per_code(inputs, touch)
     by = {row["code"]: row for row in rows}
-    assert set(by) == {"BUILD UP", "SET PIECES", "OTHER"}, "codes are {}".format(sorted(by))
+    assert set(by) == {"BUILD UP", "LONG BALL"}, "only the team codes are listed: {}".format(sorted(by))
     assert by["BUILD UP"]["frames"] == 200 and by["BUILD UP"]["share"] == 150 / 200, by["BUILD UP"]
-    assert by["SET PIECES"]["frames"] == 100 and by["SET PIECES"]["share"] == 50 / 100, \
-        "the tag is cut at the block's end: {}".format(by["SET PIECES"])
-    assert by["OTHER"]["share"] is None, "a code that does not vote has no share: {}".format(by["OTHER"])
+    assert by["LONG BALL"]["frames"] == 50 and by["LONG BALL"]["share"] == 1.0, \
+        "the tag is cut at the block's end: {}".format(by["LONG BALL"])
     assert all(set(row) == {"code", "frames", "share"} for row in rows), "rows hold code, frames and share only"
 
 
@@ -146,14 +127,9 @@ def test_tag_stats_prints_aggregates_only():
     team, touch, tags = team_scene()
     graded, missing = scene(ball_missing=[(1000, 1500)])
     team_out = tag_stats.team_agreement(team, touch, tags, graded=graded, ball_missing=missing, draws=50)
-    alive_p = np.full(N, 0.9)
-    alive_p[1000:1100] = 0.1
-    dead = np.zeros(N, dtype=bool)
-    dead[1000:1100] = True
-    dead_out = tag_stats.dead_agreement(dead, alive_p, [("dead", None, [(1000, 1100)])], graded, draws=50)
     rows = [{"code": "BUILD UP", "frames": 200, "share": 0.75}]
-    text = "\n".join(tag_stats.render(team_out, dead_out, rows))
+    text = "\n".join(tag_stats.render(team_out, rows))
     numbers = [token for token in text.replace("\n", " ").replace(",", " ").split() if token.isdigit()]
     scene_frames = {str(frame) for frame in range(1000, N)}
     assert not scene_frames & set(numbers), "a frame of the scene is printed: {}".format(scene_frames & set(numbers))
-    assert "BUILD UP" in text and "c_team" in text and "c_dead" in text, "the figures are printed"
+    assert "BUILD UP" in text and "c_team" in text and "c_dead" not in text, "the figures are printed"
