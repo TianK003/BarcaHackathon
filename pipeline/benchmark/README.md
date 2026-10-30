@@ -494,7 +494,6 @@ renamed over the old report; the same inputs, seed and versions give the same by
 | `profile`, `seeds`, `truth` | the profile's `name` and `version` (and for `context` `tracking_version`, the version of tracking's players that it is built from), the seeds run, and `{name, min_s}` of the truth |
 | `sensitivity_only` | only in the report of a profile that is a sensitivity check and not the yardstick (`context`): why, as `run.SENSITIVITY_ONLY` says it; absent for the others |
 | `calibration` | `{sha256, version}` of the Calibration the tracking was degraded with (`calibration.digest`); null for `clean`, which degrades nothing |
-| `camera` | `{sha256}` of the eight constants of the CameraFit that each match's `camera_aim` was simulated from (`camera.digest`, P09: a follower of our ball fitted on our camera, driven by the match's clean ball; its statistics are not in it); null for `clean`, which serves no camera. `choose.py` refuses to compare reports whose camera differs |
 | `matches` | per match, in match-id order whatever order they were run in: `id`, `frames`, `graded_frames`, `fps`, `carried_frames` (frames the truth had to carry: 0), and `sources`: the size and sha256 of the two DFL files it was made from (null if the match was not read through the cache, with `sources_reason`) |
 | `git`, `environment` | the commit and whether the tree was dirty; the Python, numpy and lxml versions and the platform |
 | `pooled`, `per_match` | the scores of all halves, and of each match: `spell_f1_mean`, `spell_f1` at each IoU, `macro_f1`, `alive_dead_f1`, `n_gt`, `n_pred`, `halves` |
@@ -953,8 +952,7 @@ The checks live in `pipeline/benchmark/checks/`, one module per topic, listed in
 `__init__.py` says what each holds): `sources`, `dfl`, `truth`, `inputs`, `score`, `run`, `choose` (choose.py's), `hazard`,
 `calibration`, `degrade`, `cap`, `tracking`, `context`, `fidelity`, `headroom` (the Headroom section's), `touch` (touch_stats's),
 `dead_ball` (the Dead-ball model section's), `conventions` (the Conventions section's), `shape` (the Shape model
-section's), `camera` (P09's camera: the follower's fit, the simulated aim and its serving) and `harness` (the harness
-itself). The profiles' are `degrade` (the transplant worked out exactly,
+section's) and `harness` (the harness itself). The profiles' are `degrade` (the transplant worked out exactly,
 determinism, what the `gaps` profile touches and what it does not, no truth, the order of the matches), `tracking`
 (the tracklets, the episodes, the NaN-speed runs and the smoothing worked out exactly, and how it nests in `gaps`),
 `cap` (the low-count tail's cap, its shortest-piece rule and the scale of the tracked spans), `context` (what the

@@ -126,9 +126,6 @@ def test_match_inputs_hold_no_truth():
     inputs = match_inputs.MatchInputs(match, match_inputs.clean_atd(match))
     inputs.half_of_frame, inputs.graded_mask, inputs.atd.players_present, inputs.atd.ball_present
     assert leaks(inputs, match) == [], leaks(inputs, match)
-    served = match_inputs.MatchInputs(match, match_inputs.clean_atd(match), camera_aim=np.full(match.n_frames, 50.0))
-    served.camera_aim
-    assert leaks(served, match) == [], leaks(served, match)
 
     # The detector detects: a held match, a held flag array, a held mask and a held truth are each found.
     for name, value in (("match", match), ("status", np.array(match.ball_status)),
@@ -142,26 +139,6 @@ def test_match_inputs_hold_no_truth():
     kept = set(vars(match_inputs.MatchInputs(match, match_inputs.clean_atd(match))))
     held_back = {name for name in kept if "ball" in name or "possession" in name or name in ("match", "truth")}
     assert not held_back, sorted(kept)
-
-
-def test_match_inputs_camera_aim_served_or_unavailable():
-    """A benchmark match has a camera only when one is given: served read-only as float64, else AssetUnavailable."""
-    match = random_match()
-    atd = match_inputs.clean_atd(match)
-    bare = match_inputs.MatchInputs(match, atd)
-    message = expect_error(match_inputs.AssetUnavailable, lambda: bare.camera_aim, "camera_aim", "P01")
-    assert message == ASSET_MESSAGE.format("camera_aim"), message
-    given = np.linspace(20.0, 80.0, match.n_frames).astype(np.float32)
-    served = match_inputs.MatchInputs(match, atd, camera_aim=given).camera_aim
-    assert served.dtype == np.float64 and not served.flags.writeable, (served.dtype, served.flags.writeable)
-    assert np.allclose(served, given)
-    given[0] = -1.0                                           # a copy: the caller's array does not reach the inputs
-    assert served[0] != -1.0, "the inputs must hold their own copy"
-    expect_error(ValueError, lambda: match_inputs.MatchInputs(match, atd, camera_aim=given[:-1]), "camera_aim")
-    # The no-truth walk covers it: a served camera_aim is no leak.
-    inputs = match_inputs.MatchInputs(match, atd, camera_aim=np.full(match.n_frames, 52.0))
-    inputs.camera_aim
-    assert leaks(inputs, match) == [], leaks(inputs, match)
 
 
 class Holder:

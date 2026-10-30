@@ -110,15 +110,6 @@ class Inputs:
         return Homography(matrices=matrices, error=error, valid=valid)
 
     @functools.cached_property
-    def camera_aim(self):
-        """(n,) metres along the pitch under the tactical video's image centre (pipeline.inputs.camera), read-only.
-        NaN where the homography is not valid. A property of the video, so a benchmark match has one only if given."""
-        from pipeline.inputs import camera
-        aim = camera.aim_x(self.homography.matrices, self.homography.valid, self.pitch[0])
-        aim.flags.writeable = False
-        return aim
-
-    @functools.cached_property
     def smart_tagging(self):
         """The Smart Tagging intervals as starter/load_smart_tagging.load returns them: dicts with code, tags and
         start_frame/end_frame (half-open). Automatic phases, not possessions (docs/traps.md T17)."""

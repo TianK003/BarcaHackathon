@@ -33,7 +33,7 @@ from xml.sax.saxutils import quoteattr
 import numpy as np
 
 import possession_metrics as pm
-from pipeline.benchmark import degrade, dfl, hazard, headroom, truth
+from pipeline.benchmark import degrade, dfl, hazard, truth
 from pipeline.selftest import make_synthetic_bundle, synthetic_inputs, write_text
 
 # Params
@@ -558,21 +558,6 @@ def context_calibration(**more):
     return dataclasses.replace(tracking_calibration(), hazard_go=True, **made_up_hazard(**more))
 
 
-# -- a camera fit without our data -------------------------------------------------------------------------------------
-
-def synthetic_camera_fit(**more):
-    """A hand-made CameraFit (pipeline/benchmark/camera.py): what every non-clean run is served its simulated aim from.
-
-    The runner and the trainers load our camera's fit (camera.load_fit) for a degraded profile unless they are given
-    one, and that reads BAR-ATH's homography: a synthetic check gives this one instead. A follower 5 frames behind the
-    ball, smoothed with tau 3, at a + b x = 4 + 0.9 x, AR(1) noise of phi 0.8 and sigma 1.5 m, clipped to [10, 90]
-    metres; `more` replaces any of them. Its numbers mean nothing about any camera."""
-    from pipeline.benchmark import camera
-    fields = dict(lag=5, tau=3.0, a=4.0, b=0.9, phi=0.8, sigma=1.5, lo=10.0, hi=90.0, stats={"made_up": True})
-    fields.update(more)
-    return camera.CameraFit(**fields)
-
-
 # -- what the tracking profile's checks share with the cap's ----------------------------------------------------------
 
 def without_new_parts(calibration, **more):
@@ -871,35 +856,3 @@ def real_match(match_id):
     match = dfl.load_match(match_id)
     LOAD_SECONDS[match_id] = time.perf_counter() - started
     return match
-
-
-# -- a match-only source, for the checks of drop_match_only ----------------------------------------------------------
-
-@contextlib.contextmanager
-def match_only_source(needs_homography=False):
-    """A temporary evidence kind, "probe_match_only", whose module says MATCH_ONLY = True; the registry as it was after.
-
-    It has no opinion anywhere, or, with `needs_homography`, asks for the video's homography (which a benchmark match
-    does not have) and raises AssetUnavailable, as the Smart Tagging would.
-    """
-    from pipeline import evidence as evidence_stage
-    from pipeline.contracts import Evidence, no_opinion
-
-    def compute(run):
-        if needs_homography:
-            run.inputs.homography
-        return Evidence(alive=no_opinion(run.inputs.n_frames), home=no_opinion(run.inputs.n_frames))
-
-    module = types.ModuleType("pipeline.evidence._probe_match_only")
-    module.MATCH_ONLY = True
-    compute.__module__ = module.__name__
-    sys.modules[module.__name__] = module
-    try:
-        with headroom.registered(evidence_stage.REGISTRY, probe_match_only=compute):
-            yield
-    finally:
-        del sys.modules[module.__name__]
-
-
-PROBE_CONFIG = ('scope = "halves"\n\n[[evidence]]\nkind = "nearest_player"\n\n[[evidence]]\n'
-                'kind = "probe_match_only"\nname = "{name}"\n\n[decoder]\nkind = "majority_vote"\nhalf_width = 2\n')

@@ -99,10 +99,6 @@ class MatchInputs(Inputs):
     metres, so `metres` gives DFL distances), graded (a list of (half, start, stop), half-open), kickoffs (the first
     row of each half), rebuild (False) and atd_status ("benchmark"). `atd` and `atd_manifest` are properties.
 
-    `camera_aim` (P09) is the one video asset a benchmark match can have: a (n,) array of metres, simulated from the
-    tracking by a camera model, given at construction and served read-only as float64 (a copy). Without one it raises
-    AssetUnavailable like the homography.
-
     What `cache_dir` and the manifest do NOT identify. They name the match, the profile and the seed, and nothing of how
     the degraded tracking was made: no version of the profile (degrade.PROFILES) and no digest of the Calibration
     (calibration.digest) go into either, so the folder of tracking v2 is the folder of v3, and a Calibration measured
@@ -114,18 +110,11 @@ class MatchInputs(Inputs):
     match's, and every score computed from it would be quietly wrong.
     """
 
-    def __init__(self, match, atd, profile="clean", seed=0, data_dir=None, camera_aim=None):
+    def __init__(self, match, atd, profile="clean", seed=0, data_dir=None):
         if atd.n_frames != match.n_frames:
             raise ValueError("{}: the Atd has {} rows and the match has {}; the tracking served must be the match's "
                              "own (clean_atd(match), or a degraded copy of it)".format(
                                  match.match_id, atd.n_frames, match.n_frames))
-        if camera_aim is not None:
-            camera_aim = np.array(camera_aim, dtype=np.float64)     # our own copy: the caller's array stays theirs
-            if camera_aim.shape != (match.n_frames,):
-                raise ValueError("{}: camera_aim has shape {} and the match has {} frames".format(
-                    match.match_id, camera_aim.shape, match.n_frames))
-            camera_aim.flags.writeable = False
-        self._camera_aim = camera_aim
         self.game = match.match_id
         self.data_dir = data_dir or games.DATA_DIR
         self.profile = profile
@@ -166,13 +155,6 @@ class MatchInputs(Inputs):
     @property
     def homography(self):
         raise AssetUnavailable(ASSET_MESSAGE.format("homography"))
-
-    @property
-    def camera_aim(self):
-        """The pitch point under the image centre, (n,) metres, when one was given (a simulated camera); else raises."""
-        if self._camera_aim is None:
-            raise AssetUnavailable(ASSET_MESSAGE.format("camera_aim"))
-        return self._camera_aim
 
     @property
     def smart_tagging(self):

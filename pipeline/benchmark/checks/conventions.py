@@ -35,8 +35,8 @@ from pipeline import output
 from pipeline.benchmark import conventions, train_dead_ball, truth
 from pipeline.benchmark import inputs as match_inputs
 from pipeline.benchmark import run as benchmark_run
-from pipeline.benchmark.checks.common import (leaks, read, synthetic_calibration, synthetic_camera_fit,
-                                              synthetic_matches, tracked_match, tracking_calibration)
+from pipeline.benchmark.checks.common import (leaks, read, synthetic_calibration, synthetic_matches, tracked_match,
+                                              tracking_calibration)
 from pipeline.config import load_config
 from pipeline.contracts import RunContext
 from pipeline.evidence import dead_ball_model, kinematics, play_features
@@ -490,7 +490,7 @@ def failing_scene(error):
 
 def measured(**more):
     options = dict(profile="gaps", seeds=1, truth="raw", matches=synthetic_matches(),
-                   calibration=synthetic_calibration(), camera_fit=synthetic_camera_fit(), log=quiet)
+                   calibration=synthetic_calibration(), log=quiet)
     options.update(more)
     return conventions.measure(**options)
 
@@ -501,8 +501,8 @@ def test_conventions_never_pass_truth():
     served, spied = [], []
     real_served, real_events = train_dead_ball.served_inputs, conventions.events
 
-    def serving(match, profile, seed, calibration, data_dir, camera_fit=None):
-        inputs = real_served(match, profile, seed, calibration, data_dir, camera_fit=camera_fit)
+    def serving(match, profile, seed, calibration, data_dir):
+        inputs = real_served(match, profile, seed, calibration, data_dir)
         served.append((match.match_id, profile, seed))
         return inputs
 
@@ -518,8 +518,7 @@ def test_conventions_never_pass_truth():
     assert served == [(match_id, "gaps", seed) for match_id in matches for seed in (0, 1)], served
     assert len(spied) == len(served), "one set of events per match and seed"
     assert all(found_ == [[] for _ in matches] for found_ in spied), spied
-    inputs = train_dead_ball.served_inputs(matches["RND001"], "gaps", 0, synthetic_calibration(), None,
-                                           camera_fit=synthetic_camera_fit())
+    inputs = train_dead_ball.served_inputs(matches["RND001"], "gaps", 0, synthetic_calibration(), None)
     assert leaks(inputs, matches["RND001"]) == []
 
 
@@ -535,7 +534,7 @@ def test_conventions_runs_under_the_tracking_profile():
     conventions.events = spy
     try:
         result = conventions.measure(profile="tracking", seeds=2, matches=matches, calibration=tracking_calibration(),
-                                     camera_fit=synthetic_camera_fit(), log=quiet)
+                                     log=quiet)
     finally:
         conventions.events = real
     assert seen == [0] * 4, seen
@@ -560,8 +559,7 @@ def test_conventions_dfl_pools_by_lags_and_reads_the_chosen_truth():
         trans = conventions.transitions_of(codes, runs)
         tables = []
         for seed in (0, 1):
-            inputs = train_dead_ball.served_inputs(match, "gaps", seed, synthetic_calibration(), None,
-                                                   camera_fit=synthetic_camera_fit())
+            inputs = train_dead_ball.served_inputs(match, "gaps", seed, synthetic_calibration(), None)
             tables.append(conventions.lags(trans, conventions.events(inputs), runs, match.fps))
         per_match[match_id] = conventions.pool(tables)
         expected.append(per_match[match_id])
@@ -914,7 +912,7 @@ def test_conventions_main_runs_the_dfl_mode_and_writes_its_file():
     def synthetic(**options):
         seen.append(options)
         return real(**dict(options, matches=synthetic_matches(), calibration=synthetic_calibration(), log=quiet,
-                           match_ids=None, camera_fit=synthetic_camera_fit()))
+                           match_ids=None))
     with tempfile.TemporaryDirectory(prefix="conv") as root:
         conventions.measure = synthetic
         try:
@@ -1457,8 +1455,7 @@ def test_latency_dfl_pools_by_lags_and_reads_the_chosen_truth():
     matches = synthetic_matches()
     config = load_config(RAW_CONFIG)
     result = conventions.measure_latency(config, profile="gaps", seeds=2, matches=matches,
-                                         calibration=synthetic_calibration(), camera_fit=synthetic_camera_fit(),
-                                         log=quiet)
+                                         calibration=synthetic_calibration(), log=quiet)
     assert result["config"] == "nearest_w0" and result["profile"] == "gaps" and result["truth"] == "raw"
     assert result["seeds"] == [0, 1] and result["matches"] == ["RND001", "RND002"] and result["fps"] == 25
     per_match = {}
@@ -1467,8 +1464,7 @@ def test_latency_dfl_pools_by_lags_and_reads_the_chosen_truth():
         runs = [(start, stop) for _, start, stop in match.graded]
         cells = []
         for seed in (0, 1):
-            inputs = train_dead_ball.served_inputs(match, "gaps", seed, synthetic_calibration(), None,
-                                                   camera_fit=synthetic_camera_fit())
+            inputs = train_dead_ball.served_inputs(match, "gaps", seed, synthetic_calibration(), None)
             cells.append(conventions.latency_cells(codes, benchmark_run.predict(config, inputs)[0], runs))
         per_match[match_id] = conventions.pool(cells)
     assert result["per_match"] == per_match
@@ -1476,8 +1472,7 @@ def test_latency_dfl_pools_by_lags_and_reads_the_chosen_truth():
     assert all(cell["found"] == len(cell["lags"]) for cell in result["cells"].values())
     assert any(cell["found"] for cell in result["cells"].values()), "nothing was matched anywhere: nothing was compared"
     coarse = conventions.measure_latency(config, profile="gaps", seeds=2, truth="coarse", matches=matches,
-                                         calibration=synthetic_calibration(), camera_fit=synthetic_camera_fit(),
-                                         log=quiet)
+                                         calibration=synthetic_calibration(), log=quiet)
     assert coarse["truth"] == "coarse" and coarse["cells"]["team"]["n"] < result["cells"]["team"]["n"]
     assert coarse["cells"]["into_dead"]["n"] == result["cells"]["into_dead"]["n"]
     # the document, its file name, and what it refuses before a match is loaded
@@ -1500,13 +1495,11 @@ def test_latency_dfl_pools_by_lags_and_reads_the_chosen_truth():
         expect_error(benchmark_run.BenchmarkError,
                      lambda options=options: conventions.measure_latency(
                          config, **dict(dict(profile="gaps", seeds=1, matches=matches,
-                                             calibration=synthetic_calibration(), camera_fit=synthetic_camera_fit(),
-                                             log=quiet), **options)), word)
+                                             calibration=synthetic_calibration(), log=quiet), **options)), word)
     whole_file = load_config(os.path.join(conventions.ROOT, "pipeline", "configs", "smooth50_repro.toml"))
     expect_error(benchmark_run.BenchmarkError,
                  lambda: conventions.measure_latency(whole_file, profile="gaps", seeds=1, matches=matches,
-                                                     calibration=synthetic_calibration(),
-                                                     camera_fit=synthetic_camera_fit(), log=quiet),
+                                                     calibration=synthetic_calibration(), log=quiet),
                  "smooth50_repro", "halves")
 
 
@@ -1523,7 +1516,7 @@ def test_latency_dfl_never_passes_truth():
     benchmark_run.predict = spy
     try:
         conventions.measure_latency(config, profile="gaps", seeds=2, matches=matches, calibration=calibration,
-                                    camera_fit=synthetic_camera_fit(), log=quiet)
+                                    log=quiet)
     finally:
         benchmark_run.predict = real
     assert len(spied) == 4 and all(found_ == [[] for _ in matches] for found_ in spied), spied
@@ -1586,7 +1579,7 @@ def test_latency_main_writes_each_file_and_refuses_a_missing_one():
         def synthetic(config, **options):
             seen.append((config.stem, options))
             return real(config, **dict(options, matches=synthetic_matches(), calibration=synthetic_calibration(),
-                                       log=quiet, match_ids=None, camera_fit=synthetic_camera_fit()))
+                                       log=quiet, match_ids=None))
         conventions.measure_latency = synthetic
         try:
             buffer = io.StringIO()

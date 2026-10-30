@@ -14,8 +14,7 @@ import tempfile
 
 from pipeline.benchmark import choose, score
 from pipeline.benchmark import run as benchmark_run
-from pipeline.benchmark.checks.common import (synthetic_calibration, synthetic_camera_fit, synthetic_matches,
-                                              yardstick_path)
+from pipeline.benchmark.checks.common import synthetic_calibration, synthetic_matches, yardstick_path
 from pipeline.selftest import expect_error, quiet
 
 # Params
@@ -26,8 +25,7 @@ SEEDS = 2
 def written(root, paths, seeds=SEEDS):
     """evaluate_truths on the gaps profile, both truths, with the reports written under `root`; the results."""
     results = benchmark_run.evaluate_truths(paths, profile="gaps", matches=synthetic_matches(), seeds=seeds,
-                                            calibration=synthetic_calibration(), camera_fit=synthetic_camera_fit(),
-                                            data_dir=root, log=quiet)
+                                            calibration=synthetic_calibration(), data_dir=root, log=quiet)
     for result in results.values():
         benchmark_run.write_reports(result, data_dir=root)
     return results
@@ -160,30 +158,3 @@ def test_choose_refuses_missing_stale_and_mixed_reports():
         benchmark_run.write_json(path, report)
         expect_error(choose.ChooseError, lambda: chosen(root, ["nearest_w25"]), "nearest_w25", "calibration")
         expect_error(choose.ChooseError, lambda: chosen(root, ["nearest_w25", "nearest_w25"]), "each once")
-
-
-def test_choose_refuses_reports_of_two_cameras():
-    """Reports whose simulated camera differs (P09: another fit, or none at all) are of different runs, and refused;
-    reports from before P09, which have no `camera` key, compare as None and are still read together."""
-    assert "camera" in choose.SAME
-    with tempfile.TemporaryDirectory() as root:
-        written(root, [yardstick_path(50), yardstick_path(25)])
-        assert chosen(root, ["nearest_w25"])["chosen"] == "nearest_w25", "one run, one camera: chosen"
-        path = benchmark_run.report_path(root, "gaps", "nearest_w25", "coarse", sorted(synthetic_matches()), SEEDS)
-        with open(path, encoding="utf-8") as stream:
-            report = json.load(stream)
-        report["camera"]["sha256"] = "0" * 64                       # as if simulated with another camera fit
-        benchmark_run.write_json(path, report)
-        expect_error(choose.ChooseError, lambda: chosen(root, ["nearest_w25"]), "nearest_w25", "camera",
-                     "different runs")
-        del report["camera"]                                         # a report from before P09 beside one after it
-        benchmark_run.write_json(path, report)
-        expect_error(choose.ChooseError, lambda: chosen(root, ["nearest_w25"]), "nearest_w25", "camera")
-        for stem in ("nearest_w50", "nearest_w25"):                  # every report from before P09: None == None
-            for truth in benchmark_run.TRUTHS:
-                path = benchmark_run.report_path(root, "gaps", stem, truth, sorted(synthetic_matches()), SEEDS)
-                with open(path, encoding="utf-8") as stream:
-                    report = json.load(stream)
-                report.pop("camera", None)
-                benchmark_run.write_json(path, report)
-        assert chosen(root, ["nearest_w25"])["chosen"] == "nearest_w25", "reports without the key are one run"

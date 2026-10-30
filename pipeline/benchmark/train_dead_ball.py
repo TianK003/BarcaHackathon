@@ -124,15 +124,10 @@ MAX_PROBLEMS = 20                             # --verify lists at most this many
 
 # -- the rows ---------------------------------------------------------------------------------------------------------
 
-def served_inputs(match, profile, seed, calibration, data_dir, camera_fit=None):
-    """The MatchInputs that the pipeline's components are given for `match`: degraded tracking and no truth.
-
-    Off the clean profile the inputs also have the simulated camera's camera_aim (P09), as the runner serves it:
-    simulated from `camera_fit`, or from camera.load_fit(data_dir) when none is given (run.camera_fit_for, whose
-    refusals apply). A caller that serves many matches gets the fit once and hands it down, as gather does."""
-    camera_fit = run.camera_fit_for(profile, camera_fit, data_dir)
+def served_inputs(match, profile, seed, calibration, data_dir):
+    """The MatchInputs that the pipeline's components are given for `match`: degraded tracking and no truth."""
     return match_inputs.MatchInputs(match, make_atd(match, profile, seed, calibration), profile=profile, seed=seed,
-                                    data_dir=data_dir, camera_aim=run.served_aim(match, profile, seed, camera_fit))
+                                    data_dir=data_dir)
 
 
 def rows(inputs, codes, stride):
@@ -157,15 +152,13 @@ class Gathered:
         self.data, self.calibration_sha256, self.dfl_sources, self.seeds = data, calibration_sha256, dfl_sources, seeds
 
 
-def gather(profile, seeds, stride, matches=None, calibration=None, data_dir=None, match_ids=None, log=None,
-           camera_fit=None):
+def gather(profile, seeds, stride, matches=None, calibration=None, data_dir=None, match_ids=None, log=None):
     """Gathered: the rows of every match under every seed of `profile`, served as the pipeline serves them.
 
     `matches` is {id: DflMatch} to use instead of loading the seven from `data_dir` (the checks pass synthetic ones);
     `calibration` is the Calibration that a degraded profile takes its masks from, measured or read from its cache when
-    none is given, and `camera_fit` the CameraFit its camera_aim is simulated from, the same way (camera.load_fit).
-    BenchmarkError for an unknown profile, fewer than two matches (a fold needs another match to be fitted on), a
-    calibration or a camera fit given to the clean profile, which degrades nothing and so must not suggest it was used.
+    none is given. BenchmarkError for an unknown profile, fewer than two matches (a fold needs another match to be
+    fitted on), a calibration given to the clean profile, which degrades nothing and so must not suggest it was used.
     """
     seeds = _whole("seeds", seeds, 1)
     _whole("stride", stride, 1)
@@ -178,10 +171,8 @@ def gather(profile, seeds, stride, matches=None, calibration=None, data_dir=None
                              "matches, got {}".format(len(ids)))
     if profile == run.CLEAN and calibration is not None:
         raise BenchmarkError("train_dead_ball: profile {!r} takes no calibration, and one was given".format(profile))
-    run.check_camera_fit(profile, camera_fit)
     if profile != run.CLEAN and calibration is None:
         calibration = calibration_module.load(data_dir=data_dir)
-    camera_fit = run.camera_fit_for(profile, camera_fit, data_dir)
     seed_list = [0] if profile == run.CLEAN else list(range(seeds))
     log = log or (lambda text: None)
 
@@ -195,7 +186,7 @@ def gather(profile, seeds, stride, matches=None, calibration=None, data_dir=None
         codes, _ = truths.truth_codes(match)
         parts = []
         for seed in seed_list:
-            inputs = served_inputs(match, profile, seed, calibration, data_dir, camera_fit=camera_fit)
+            inputs = served_inputs(match, profile, seed, calibration, data_dir)
             parts.append(rows(inputs, codes, stride))
             if seed == seed_list[0]:
                 recorded = inputs.atd_manifest["sources"]
@@ -333,12 +324,11 @@ def build(kind, gathered, profile, stride):
             "full": fitted(ids)}
 
 
-def train(kind, *, profile, seeds, stride, matches=None, calibration=None, data_dir=None, log=None, camera_fit=None):
+def train(kind, *, profile, seeds, stride, matches=None, calibration=None, data_dir=None, log=None):
     """The artifact for `kind`: gather the rows, then fit every fold and `full` (see the module docstring)."""
     if kind not in MODELS:
         raise ValueError("train_dead_ball: unknown model {!r}; use one of: {}".format(kind, ", ".join(MODELS)))
-    gathered = gather(profile, seeds, stride, matches=matches, calibration=calibration, data_dir=data_dir, log=log,
-                      camera_fit=camera_fit)
+    gathered = gather(profile, seeds, stride, matches=matches, calibration=calibration, data_dir=data_dir, log=log)
     return build(kind, gathered, profile, stride)
 
 
@@ -552,18 +542,15 @@ def rule_values(counts):
     return values
 
 
-def measure_rules(profile, seeds, matches=None, calibration=None, data_dir=None, match_ids=None, log=None,
-                  camera_fit=None):
+def measure_rules(profile, seeds, matches=None, calibration=None, data_dir=None, match_ids=None, log=None):
     """The counts of `count_triggers`, summed over every match and seed of `profile`."""
     seeds = _whole("seeds", seeds, 1)
     if profile not in run.PROFILES:
         raise BenchmarkError("train_dead_ball: profile {!r} is not one of: {}".format(profile,
                                                                                       ", ".join(sorted(run.PROFILES))))
     ids = run.resolve_match_ids(match_ids, matches)
-    run.check_camera_fit(profile, camera_fit)
     if profile != run.CLEAN and calibration is None:
         calibration = calibration_module.load(data_dir=data_dir)
-    camera_fit = run.camera_fit_for(profile, camera_fit, data_dir)
     seed_list = [0] if profile == run.CLEAN else list(range(seeds))
     log = log or (lambda text: None)
     total = {"alive": 0, "dead": 0, **{trigger: (0, 0) for trigger in TRIGGERS}}
@@ -571,8 +558,7 @@ def measure_rules(profile, seeds, matches=None, calibration=None, data_dir=None,
         match = matches[match_id] if matches is not None else dfl.load_match(match_id, data_dir=data_dir)
         codes, _ = truths.truth_codes(match)
         for seed in seed_list:
-            counts = count_triggers(served_inputs(match, profile, seed, calibration, data_dir, camera_fit=camera_fit),
-                                    codes)
+            counts = count_triggers(served_inputs(match, profile, seed, calibration, data_dir), codes)
             for key in total:
                 total[key] = (tuple(a + b for a, b in zip(total[key], counts[key])) if key in TRIGGERS
                               else total[key] + counts[key])

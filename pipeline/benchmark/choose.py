@@ -47,9 +47,7 @@ from pipeline.benchmark import run, score  # noqa: E402
 TIE_BAND = 0.005                 # spellF1: the configs within this of the best raw score are tied (R008 to R013)
 SPELL = "spell_f1_mean"
 METRICS = {"spell": SPELL, "macro": "macro_f1"}      # the objective's name -> the scalar of score.pooled that it is
-# What every report of one selection must share. `camera` is the digest of the simulated camera (P09); a report from
-# before P09 has no such key and compares as None, so that reports of one run, old or new, are still read together.
-SAME = ("matches", "seeds", "profile", "calibration", "camera")
+SAME = ("matches", "seeds", "profile", "calibration")    # what every report of one selection must share
 
 
 class ChooseError(ValueError):
@@ -108,7 +106,7 @@ def choose(stems, reference, profile=run.DEFAULT_PROFILE, band=TIE_BAND, data_di
     first = reports[(reference, "raw")]
     for (stem, truth), report in reports.items():
         for key in SAME:
-            if report.get(key) != first.get(key):
+            if report[key] != first[key]:
                 raise ChooseError("{} ({} truth) differs from {} in its {}; the reports are of different runs".format(
                     stem, truth, reference, key))
     scores = {key: halves(report) for key, report in reports.items()}

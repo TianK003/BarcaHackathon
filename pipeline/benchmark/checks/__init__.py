@@ -64,12 +64,6 @@ module of its topic:
                  stoppages, the pooling over matches and seeds, and that the truth never reaches the pipeline;
                  also `stats` (the confidences), `events` (the calls against DFL's restart events) and `configs`
                  (R014's and R014b's generated configs) (synthetic only)
-    camera.py    P09's camera: the smoother on a hand-worked series, the follower's fit giving back the constants of
-                 data it made (and its arithmetic recomputed another way), the simulated aim (the same bytes per match
-                 and seed, the follower on the clean ball plus the declared generator's noise, NaN off the graded
-                 blocks, clipped, no truth read), the gates' statistics on a hand-built scene, the fit's cache and that
-                 it is aggregates only, and the runner and the trainers serving the aim off the clean profile with no
-                 score moved (synthetic only)
     shape.py     P07's shape-possession trainer: the rows (every stride-th alive frame, 1 for H), the augmentation that
                  balances the classes exactly and mirrors every row, P05's settings with no monotone constraint, the
                  exported trees against scikit-learn's raw score, the same bytes on 1 and 4 threads, the folds that
@@ -105,8 +99,8 @@ what two of them share goes to common.py (test_a_check_module_imports_no_other_c
 """
 
 from pipeline.benchmark.checks import (
-    calibration, camera, cap, choose, context, conventions, dead_ball, degrade, dfl, dfl_events, fidelity, harness, hazard,
-    headroom, inputs, label_diff, restarts, run, score, shape, sources, tracking, touch, truth)
+    calibration, cap, choose, context, conventions, dead_ball, degrade, dfl, dfl_events, fidelity, harness, hazard, headroom,
+    inputs, label_diff, restarts, run, score, shape, sources, tracking, touch, truth)
 
 MODULES = (sources, dfl, dfl_events, truth, inputs, score, run, choose, hazard, calibration, degrade, cap, tracking, context,
-           fidelity, headroom, touch, dead_ball, conventions, restarts, shape, camera, label_diff, harness)
+           fidelity, headroom, touch, dead_ball, conventions, restarts, shape, label_diff, harness)

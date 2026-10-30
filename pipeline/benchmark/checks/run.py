@@ -34,19 +34,17 @@ import possession_metrics as pm
 from pipeline.benchmark import calibration, degrade, dfl, score, sources, truth
 from pipeline.benchmark import inputs as match_inputs
 from pipeline.benchmark import run as benchmark_run
-from pipeline.benchmark.checks.common import (MIN_AGREEMENT, PROBE_CONFIG, context_calibration, loading, match_only_source,
-                                              random_match, read,
-                                              real_match, strict_json, synthetic_calibration, synthetic_camera_fit,
-                                              synthetic_matches, tracking_calibration, whole_positions,
-                                              write_synthetic_dfl, yardstick_path)
+from pipeline.benchmark.checks.common import (MIN_AGREEMENT, context_calibration, loading, random_match, read,
+                                              real_match, strict_json, synthetic_calibration, synthetic_matches,
+                                              tracking_calibration, whole_positions, write_synthetic_dfl,
+                                              yardstick_path)
 from pipeline.config import ConfigError, load_config
 from pipeline.selftest import P06_TRIAL_CONFIG, expect_error, quiet, write_text
 
 # Params
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-REPORT_KEYS = {"calibration", "camera", "config", "dropped_match_only", "environment", "git", "halves", "labels",
-               "matches", "per_match", "pooled", "possessions_per_graded_minute", "profile", "seeds", "t_interval",
-               "truth", "versus"}
+REPORT_KEYS = {"calibration", "config", "dropped_match_only", "environment", "git", "halves", "labels", "matches", "per_match", "pooled",
+               "possessions_per_graded_minute", "profile", "seeds", "t_interval", "truth", "versus"}
 HALF_KEYS = {"match_id", "half", "seed", "n_gt", "n_pred", "tp", "confusion"}
 ROUNDING = 1e-9                         # reports round their floats to 9 decimals
 HASH_SEEDS = ("1", "2", "3")            # PYTHONHASHSEED of the three subprocesses of the determinism checks
@@ -103,10 +101,8 @@ def evaluate_clean(*arguments, **keywords):
 
 def evaluate_gaps(*arguments, **keywords):
     """benchmark_run.evaluate_configs on the gaps profile unless one is named: the profile that the synthetic
-    Calibration of the bundle can serve (it has our masks and none of the tracking profile's figures). Its camera is
-    the hand-made one of common.synthetic_camera_fit unless one is given, so that no check loads ours."""
+    Calibration of the bundle can serve (it has our masks and none of the tracking profile's figures)."""
     keywords.setdefault("profile", "gaps")
-    keywords.setdefault("camera_fit", synthetic_camera_fit())
     return benchmark_run.evaluate_configs(*arguments, **keywords)
 
 
@@ -167,7 +163,6 @@ def test_runner_end_to_end_synthetic():
             assert set(report) == REPORT_KEYS, (stem, sorted(set(report) ^ REPORT_KEYS))
             assert report["profile"] == {"name": "clean", "version": 1} and report["seeds"] == [0], stem
             assert report["truth"] == {"name": "raw", "min_s": None} and report["calibration"] is None, stem
-            assert report["camera"] is None, "clean serves no camera"
             assert set(report["git"]) == {"commit", "dirty"}
             assert set(report["environment"]) == {"python", "numpy", "lxml", "platform"}
             assert report["environment"]["numpy"] == np.__version__
@@ -350,8 +345,7 @@ def test_runner_scores_both_truths_from_one_decode():
         lines = []
         try:
             both = benchmark_run.evaluate_truths(paths, profile="gaps", matches=matches, seeds=2,
-                                                 calibration=synthetic_calibration(),
-                                                 camera_fit=synthetic_camera_fit(), data_dir=root,
+                                                 calibration=synthetic_calibration(), data_dir=root,
                                                  log=lines.append)
         finally:
             benchmark_run._codes = original
@@ -543,6 +537,36 @@ def test_runner_names_unavailable_source():
     # The pipeline's own message, through the inputs, is the one that is quoted.
     expect_error(match_inputs.AssetUnavailable, lambda: match_inputs.MatchInputs(
         matches["RND001"], match_inputs.clean_atd(matches["RND001"])).homography, "homography", "P01")
+
+
+@contextlib.contextmanager
+def match_only_source(needs_homography=False):
+    """A temporary evidence kind, "probe_match_only", whose module says MATCH_ONLY = True; the registry as it was after.
+
+    It has no opinion anywhere, or, with `needs_homography`, asks for the video's homography (which a benchmark match
+    does not have) and raises AssetUnavailable, as the Smart Tagging and the whistle would.
+    """
+    from pipeline import evidence as evidence_stage
+    from pipeline.contracts import Evidence, no_opinion
+
+    def compute(run):
+        if needs_homography:
+            run.inputs.homography
+        return Evidence(alive=no_opinion(run.inputs.n_frames), home=no_opinion(run.inputs.n_frames))
+
+    module = types.ModuleType("pipeline.evidence._probe_match_only")
+    module.MATCH_ONLY = True
+    compute.__module__ = module.__name__
+    sys.modules[module.__name__] = module
+    try:
+        with registered(evidence_stage.REGISTRY, probe_match_only=compute):
+            yield
+    finally:
+        del sys.modules[module.__name__]
+
+
+PROBE_CONFIG = ('scope = "halves"\n\n[[evidence]]\nkind = "nearest_player"\n\n[[evidence]]\n'
+                'kind = "probe_match_only"\nname = "{name}"\n\n[decoder]\nkind = "majority_vote"\nhalf_width = 2\n')
 
 
 def test_drop_match_only_removes_exactly_the_flagged_sources():
@@ -837,9 +861,9 @@ def test_runner_default_profile_is_tracking_and_runs_it():
     with tempfile.TemporaryDirectory() as root:
         lines = []
         default = benchmark_run.evaluate_configs(paths, seeds=2, matches=matches, calibration=cal, data_dir=root,
-                                                 log=lines.append, camera_fit=synthetic_camera_fit())
+                                                 log=lines.append)
         named = benchmark_run.evaluate_configs(paths, profile="tracking", seeds=2, matches=matches, calibration=cal,
-                                               data_dir=root, log=quiet, camera_fit=synthetic_camera_fit())
+                                               data_dir=root, log=quiet)
         assert default["profile"] == {"name": "tracking", "version": 3}
         assert [entry["report"] for entry in default["configs"]] == [entry["report"] for entry in named["configs"]]
         assert all(entry["report"]["profile"] == {"name": "tracking", "version": 3} for entry in default["configs"])
@@ -852,8 +876,7 @@ def test_runner_default_profile_is_tracking_and_runs_it():
 def run_on(profile, cal, paths, root, lines, seeds=1):
     """evaluate_configs on `profile` with the synthetic matches and `cal`, its printout collected in `lines`."""
     return benchmark_run.evaluate_configs(paths, profile=profile, seeds=seeds, matches=synthetic_matches(),
-                                          calibration=cal, camera_fit=synthetic_camera_fit(), data_dir=root,
-                                          log=lines.append)
+                                          calibration=cal, data_dir=root, log=lines.append)
 
 
 def test_runner_labels_context_as_sensitivity_only_and_says_where_each_profiles_gaps_come_from():
@@ -926,8 +949,7 @@ def test_runner_report_is_in_match_id_order_whatever_order_the_matches_are_given
             for order in (["RND001", "RND002"], ["RND002", "RND001"]):
                 out = os.path.join(root, profile + "_" + "_".join(order))
                 result = benchmark_run.evaluate_configs(paths, profile=profile, seeds=seeds, match_ids=order,
-                                                        matches=matches, calibration=cal, data_dir=root, log=quiet,
-                                                        camera_fit=None if cal is None else synthetic_camera_fit())
+                                                        matches=matches, calibration=cal, data_dir=root, log=quiet)
                 written[tuple(order)] = {os.path.relpath(path, out): read(path, "rb")
                                          for path in benchmark_run.write_reports(result, data_dir=out)}
                 assert [record["id"] for record in result["matches"]] == ["RND001", "RND002"], (profile, order)
@@ -1089,8 +1111,7 @@ CROSS_PROCESS_CALIBRATIONS = {"gaps": synthetic_calibration, "tracking": trackin
 
 def cross_process_run(root, out, paths, profile="clean", calibration=None):
     """What each process of the determinism checks does: evaluate on `profile` with `calibration`, and write to its own
-    folder. The clean profile takes none; a degraded one is refused without one, and serves the hand-made camera of
-    common.synthetic_camera_fit, which each process makes for itself (the report holds its digest)."""
+    folder. The clean profile takes none; a degraded one is refused without one."""
     configs = [yardstick_path(width) for width in (50, 0, 125)]
     if profile == "clean":
         result = evaluate_clean(configs, matches=cross_process_matches(root, paths), data_dir=root, log=quiet)
@@ -1099,7 +1120,6 @@ def cross_process_run(root, out, paths, profile="clean", calibration=None):
             raise ValueError("profile {!r} needs a Calibration; pass CROSS_PROCESS_CALIBRATIONS[{!r}]()".format(
                 profile, profile))
         result = benchmark_run.evaluate_configs(configs, profile=profile, seeds=2, calibration=calibration,
-                                                camera_fit=synthetic_camera_fit(),
                                                 matches=cross_process_matches(root, paths), data_dir=root, log=quiet)
     return benchmark_run.write_reports(result, data_dir=out)
 

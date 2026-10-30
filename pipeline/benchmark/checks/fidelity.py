@@ -24,8 +24,7 @@ from pipeline.benchmark import inputs as match_inputs
 from pipeline.benchmark import truth as truths
 from pipeline.benchmark.checks.common import (brute_force_agreement, context_calibration, loading, random_match,
                                               read, steady_match, strict_json, synthetic_calibration,
-                                              synthetic_camera_fit, synthetic_matches, tracking_calibration,
-                                              yardstick_path)
+                                              synthetic_matches, tracking_calibration, yardstick_path)
 from pipeline.contracts import D
 from pipeline.selftest import expect_error, quiet
 
@@ -140,8 +139,7 @@ def test_fidelity_report_synthetic():
         # The yardsticks' outputs against the runner's own reports of the same runs: possessions per graded minute and
         # the D share, from counts made by the scoring path instead of pipeline.output.summarise.
         scored = run.evaluate_configs([yardstick_path(width) for width in WIDTHS], profile="gaps", seeds=SEEDS,
-                                      matches=matches, calibration=cal, camera_fit=synthetic_camera_fit(),
-                                      data_dir=root, log=quiet)
+                                      matches=matches, calibration=cal, data_dir=root, log=quiet)
         for width, entry in zip(WIDTHS, scored["configs"]):
             report = entry["report"]
             assert abs(by_name["possessions_per_min:nearest_w{}".format(width)]["measured"]

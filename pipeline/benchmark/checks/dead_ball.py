@@ -30,8 +30,8 @@ import numpy as np
 from pipeline.benchmark import hazard
 from pipeline.benchmark.calibration import digest as calibration_digest
 from pipeline.benchmark import train_dead_ball as trainer
-from pipeline.benchmark.checks.common import (leaks, random_match, synthetic_calibration, synthetic_camera_fit,
-                                              tracked_match, tracking_calibration)
+from pipeline.benchmark.checks.common import (leaks, random_match, synthetic_calibration, tracked_match,
+                                              tracking_calibration)
 from pipeline.evidence import dead_ball_model, play_features
 from pipeline.selftest import expect_error
 
@@ -179,11 +179,10 @@ def test_trainer_folds_exclude_the_held_out_match():
     trainer.fit = recording_fit(calls)
     try:
         artifact = trainer.train("hgb", profile="gaps", seeds=2, stride=7, matches=matches,
-                                 calibration=synthetic_calibration(), camera_fit=synthetic_camera_fit())
+                                 calibration=synthetic_calibration())
     finally:
         trainer.fit = real
-    data = trainer.gather("gaps", 2, 7, matches=matches, calibration=synthetic_calibration(),
-                          camera_fit=synthetic_camera_fit()).data
+    data = trainer.gather("gaps", 2, 7, matches=matches, calibration=synthetic_calibration()).data
     assert sorted(data) == list(FOLD_IDS)
     assert sorted(artifact["folds"]) == list(FOLD_IDS) and artifact["full"]["rows"] == sum(
         len(y) for _, y in data.values())
@@ -240,16 +239,14 @@ def test_trainer_never_passes_truth():
         trainer.fit = recording_fit(calls)
         try:
             trainer.train("hgb", profile="tracking", seeds=1, stride=9, calibration=tracking_calibration(),
-                          matches={"RND001": match, "RND002": tracked_match("RND002", 1)},
-                          camera_fit=synthetic_camera_fit())
+                          matches={"RND001": match, "RND002": tracked_match("RND002", 1)})
         finally:
             trainer.fit = real_fit
     finally:
         play_features.features = real
     assert seen, "the trainer never asked for features"
     assert all(found == [] for found in seen), seen
-    inputs = trainer.served_inputs(match, "tracking", 0, tracking_calibration(), None,
-                                   camera_fit=synthetic_camera_fit())
+    inputs = trainer.served_inputs(match, "tracking", 0, tracking_calibration(), None)
     assert leaks(inputs, match) == []
 
 
@@ -297,7 +294,7 @@ def test_provenance_holds_versions_and_hashes_and_no_commit():
     try:
         calibration = synthetic_calibration()
         gapped = trainer.train("logistic", profile="gaps", seeds=1, stride=11, matches=three_matches(),
-                               calibration=calibration, camera_fit=synthetic_camera_fit())
+                               calibration=calibration)
     finally:
         trainer.fit = real
     assert gapped["provenance"]["calibration_sha256"] == calibration_digest(calibration)

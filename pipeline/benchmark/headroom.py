@@ -541,7 +541,7 @@ def toml_value(value, where):
 # -- the run ----------------------------------------------------------------------------------------------------------
 
 def run_headroom(config_path, *, profile=DEFAULT_PROFILE, seeds=None, truth="raw", match_ids=None, matches=None,
-                 calibration=None, data_dir=None, log=print, write=False, variants=None, camera_fit=None):
+                 calibration=None, data_dir=None, log=print, write=False, variants=None):
     """Run CONFIG and its variants (the classic five, or `variants`, names from VARIANT_NAMES) through evaluate_configs;
     its result (CONFIG is the reference).
 
@@ -556,9 +556,8 @@ def run_headroom(config_path, *, profile=DEFAULT_PROFILE, seeds=None, truth="raw
     run or have variants made of it (scope = "file", a dot in its name, no or several nearest_player sources, a
     parameter that cannot be written, an unknown truth): all of these before any file is written. What only the
     runner knows is refused by it, after the variants are written, because it loads them: an unknown profile or match,
-    a repeated match, a number of seeds below 1, a calibration or a camera fit that does not suit the profile. The files
-    are a few small configs in a fixed folder, rewritten by the next run, and no report is written for a run that was
-    refused.
+    a repeated match, a number of seeds below 1, a calibration that does not suit the profile. The files are a few
+    small configs in a fixed folder, rewritten by the next run, and no report is written for a run that was refused.
     """
     if truth not in run.TRUTHS:
         raise run.BenchmarkError("truth {!r} is not one of: {}".format(truth, ", ".join(run.TRUTHS)))
@@ -582,7 +581,7 @@ def run_headroom(config_path, *, profile=DEFAULT_PROFILE, seeds=None, truth="raw
     with registered(evidence_stage.REGISTRY, **oracles(codes_of)):
         result = run.evaluate_configs([config.path] + [path for _, path in written], profile=profile, seeds=seeds,
                                       match_ids=match_ids, matches=served, calibration=calibration, truth=truth,
-                                      data_dir=data_dir, log=log, camera_fit=camera_fit)
+                                      data_dir=data_dir, log=log)
     if write:
         # The variants' reports only: CONFIG is the reference, and a report of it written here would replace the
         # runner's own, which has the `versus` block of the run that it was in.

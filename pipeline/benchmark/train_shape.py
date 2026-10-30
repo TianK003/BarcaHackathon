@@ -154,16 +154,14 @@ def rows(inputs, codes, stride):
     return X[frames], (codes[frames] == HOME).astype(np.int64)
 
 
-def gather(profile, seeds, stride, matches=None, calibration=None, data_dir=None, match_ids=None, log=None,
-           camera_fit=None):
+def gather(profile, seeds, stride, matches=None, calibration=None, data_dir=None, match_ids=None, log=None):
     """Gathered: the rows of every match under every seed of `profile`, served as the pipeline serves them.
 
     `matches` is {id: DflMatch} to use instead of loading the seven from `data_dir` (the checks pass synthetic ones);
     `calibration` is the Calibration that a degraded profile takes its masks from, measured or read from its cache when
-    none is given, and `camera_fit` the CameraFit its camera_aim is simulated from, the same way (camera.load_fit).
-    BenchmarkError for an unknown profile, fewer than two matches (a fold needs another match to be fitted on), a match
-    filed under another id than its own, and a calibration or a camera fit given to the clean profile, which degrades
-    nothing and so must not suggest it was used.
+    none is given. BenchmarkError for an unknown profile, fewer than two matches (a fold needs another match to be
+    fitted on), a match filed under another id than its own, and a calibration given to the clean profile, which
+    degrades nothing and so must not suggest it was used.
     """
     seeds = _whole("seeds", seeds, 1)
     _whole("stride", stride, 1)
@@ -172,9 +170,7 @@ def gather(profile, seeds, stride, matches=None, calibration=None, data_dir=None
     if len(ids) < 2:
         raise BenchmarkError("train_shape: a fold is fitted on the other matches, so it needs at least two matches, "
                              "got {}".format(len(ids)))
-    run.check_camera_fit(profile, camera_fit)
     calibration = _calibration_for(profile, calibration, data_dir)
-    camera_fit = run.camera_fit_for(profile, camera_fit, data_dir)
     seed_list = _seed_list(profile, seeds)
     log = log or (lambda text: None)
 
@@ -185,7 +181,7 @@ def gather(profile, seeds, stride, matches=None, calibration=None, data_dir=None
         codes, _ = truths.truth_codes(match)
         parts = []
         for seed in seed_list:
-            inputs = served_inputs(match, profile, seed, calibration, data_dir, camera_fit=camera_fit)
+            inputs = served_inputs(match, profile, seed, calibration, data_dir)
             parts.append(rows(inputs, codes, stride))
             if seed == seed_list[0]:
                 recorded = inputs.atd_manifest["sources"]
@@ -259,10 +255,9 @@ def build(gathered, profile, stride):
             "full": fitted(ids)}
 
 
-def train(profile, seeds, stride, matches=None, calibration=None, data_dir=None, log=None, camera_fit=None):
+def train(profile, seeds, stride, matches=None, calibration=None, data_dir=None, log=None):
     """The artifact: gather the rows, then fit every fold and `full` (see the module docstring)."""
-    gathered = gather(profile, seeds, stride, matches=matches, calibration=calibration, data_dir=data_dir, log=log,
-                      camera_fit=camera_fit)
+    gathered = gather(profile, seeds, stride, matches=matches, calibration=calibration, data_dir=data_dir, log=log)
     return build(gathered, profile, stride)
 
 
@@ -339,7 +334,7 @@ def stop_rule_fires(log_loss):
     return not log_loss < STOP_LOSS
 
 
-def report(artifact, profile, seeds, matches=None, calibration=None, data_dir=None, camera_fit=None):
+def report(artifact, profile, seeds, matches=None, calibration=None, data_dir=None):
     """Aggregates of each fold model on its own held-out match, all seeds pooled, and the same pooled over the matches.
 
     {profile, seeds, ln2, per_match: {id: cell}, pooled: cell, stop_rule: {threshold, log_loss, fires}} where a cell is
@@ -361,9 +356,7 @@ def report(artifact, profile, seeds, matches=None, calibration=None, data_dir=No
         raise BenchmarkError("train_shape: the artifact has no fold for {}; the source would score that match with "
                              "`full`, which saw it, and the numbers would be in sample; retrain with `python {}`"
                              .format(", ".join(absent), "pipeline/benchmark/train_shape.py"))
-    run.check_camera_fit(profile, camera_fit)
     calibration = _calibration_for(profile, calibration, data_dir)
-    camera_fit = run.camera_fit_for(profile, camera_fit, data_dir)
     seed_list = _seed_list(profile, seeds)
 
     tallies = {}
@@ -374,7 +367,7 @@ def report(artifact, profile, seeds, matches=None, calibration=None, data_dir=No
             match = matches[match_id] if matches is not None else dfl.load_match(match_id, data_dir=data_dir)
             _own_id(match, match_id)
             codes, _ = truths.truth_codes(match)
-            tallies[match_id] = _tally(match, codes, profile, seed_list, calibration, data_dir, path, camera_fit)
+            tallies[match_id] = _tally(match, codes, profile, seed_list, calibration, data_dir, path)
             del match, codes
     pooled = _empty_tally()
     for tally in tallies.values():
@@ -403,14 +396,14 @@ def _add(total, part):
     total["silent"] += part["silent"]
 
 
-def _tally(match, codes, profile, seed_list, calibration, data_dir, path, camera_fit):
+def _tally(match, codes, profile, seed_list, calibration, data_dir, path):
     """The sums of one match under every seed, scored by the model at `path`, which is the fold of the match."""
     codes = np.asarray(codes)
     alive = (codes == HOME) | (codes == AWAY)
     is_home = codes == HOME
     tally = _empty_tally()
     for seed in seed_list:
-        inputs = served_inputs(match, profile, seed, calibration, data_dir, camera_fit=camera_fit)
+        inputs = served_inputs(match, profile, seed, calibration, data_dir)
         home = shape_possession.compute(RunContext(inputs=inputs, seed=0), model=path, scope="all").home
         spoken = ~np.isnan(home)
         part = _empty_tally()
