@@ -19,7 +19,8 @@ results.md gives a benchmark score) and to `ledger`, check the numbers against `
 
 ## Open it
 
-Each of the three pages is one self-contained file (inline CSS, JavaScript and SVG) that makes no network requests, so any of these
+Each of the three pages is one self-contained file (inline CSS, JavaScript and SVG) that makes no network
+requests, so any of these
 work:
 
 - double-click `site/index.html`;

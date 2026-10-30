@@ -36,12 +36,9 @@
   --lab-a: #c93c3b;
   --lab-d: #8d8c85;
   --ok-bg: #e2f3e2; --ok-fg: #0b5a0b;
-  --off-bg: #e9ecf0; --off-fg: #3a4758;
-  --ref-bg: #eeeeea; --ref-fg: #45443f;
   --bad-bg: #f7e4e2; --bad-fg: #8a2a24;
   --plan-bg: #fbeed2; --plan-fg: #6e4700;
   --info-bg: #e2edfb; --info-fg: #17508f;
-  --rule-bg: #ece9fb; --rule-fg: #45389e;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 @media (prefers-color-scheme: dark) {
@@ -68,13 +65,10 @@
     --lab-a: #d65a59;
     --lab-d: #6d6c66;
     --ok-bg: #16301a; --ok-fg: #93dc93;
-    --off-bg: #262b32; --off-fg: #b7c3d4;
-    --ref-bg: #2b2b29; --ref-fg: #c9c8be;
     --bad-bg: #3b1e1c; --bad-fg: #f1a8a2;
     --plan-bg: #3a2e12; --plan-fg: #f3c96c;
     --info-bg: #162a43; --info-fg: #95c1f3;
-    --rule-bg: #2a2548; --rule-fg: #c0b7f6;
-    --shadow: none;
+      --shadow: none;
   }
 }
 :root[data-theme="dark"] {
@@ -100,12 +94,9 @@
   --lab-a: #d65a59;
   --lab-d: #6d6c66;
   --ok-bg: #16301a; --ok-fg: #93dc93;
-  --off-bg: #262b32; --off-fg: #b7c3d4;
-  --ref-bg: #2b2b29; --ref-fg: #c9c8be;
   --bad-bg: #3b1e1c; --bad-fg: #f1a8a2;
   --plan-bg: #3a2e12; --plan-fg: #f3c96c;
   --info-bg: #162a43; --info-fg: #95c1f3;
-  --rule-bg: #2a2548; --rule-fg: #c0b7f6;
   --shadow: none;
 }
 
@@ -181,8 +172,6 @@ footer { border-top: 1px solid var(--line); margin-top: 24px; padding: 16px 0 28
 }
 td .badge { white-space: normal; }
 .ok { --b-bg: var(--ok-bg); --b-fg: var(--ok-fg); }
-.off { --b-bg: var(--off-bg); --b-fg: var(--off-fg); }
-.ref { --b-bg: var(--ref-bg); --b-fg: var(--ref-fg); }
 .bad { --b-bg: var(--bad-bg); --b-fg: var(--bad-fg); }
 .info { --b-bg: var(--info-bg); --b-fg: var(--info-fg); }
 
@@ -197,11 +186,12 @@ td .badge { white-space: normal; }
 .legend .k { display: inline-flex; align-items: center; gap: 6px; }
 .k-dot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; border: 2px solid var(--ink-2); box-sizing: border-box; }
 .k-dot.filled { background: var(--ink-2); }
-.k-line { width: 20px; height: 0; display: inline-block; border-top: 2px solid var(--ink-2); }
-.k-line.dash { border-top-style: dashed; border-top-width: 1.5px; }
-.k-sw { width: 14px; height: 3px; display: inline-block; border-radius: 2px; }
-.k-sw.s1 { background: var(--s1); }
-.k-sw.s2 { background: var(--s2); }
+.k-line { width: 20px; height: 0; display: inline-block; border-top: 1.5px dashed var(--ink-2); }
+.k-mk { width: 11px; height: 11px; display: inline-block; }
+.k-mk.circ { border-radius: 50%; }
+.k-mk.dia { transform: rotate(45deg) scale(0.85); }
+.k-mk.s1 { background: var(--s1); }
+.k-mk.s2 { background: var(--s2); }
 .chart { width: 100%; position: relative; }
 .chart svg { display: block; overflow: visible; max-width: 100%; }
 .chart text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
@@ -308,12 +298,12 @@ const DATA = {
 
   /* One point per entry that scored main.toml, or a candidate against it, on the benchmark. adopted: false = tried, not adopted.
      dr / dc = Δ spellF1 over the previous adopted point (raw / coarse): the entry's own pooled difference where it states one;
-     R001 has none (the first yardstick); R007's coarse, R010's coarse, R014's and R014b's coarse are the difference of the two scores. */
+     R001 has none (the first yardstick); R007's are as stated over the yardsticks (coarse over `nearest_w125`); R010's coarse, R014's and R014b's coarse are the difference of the two scores. */
   points: [
     { id: "R001", date: "2026-10-22", raw: 0.2018, coarse: 0.1842, adopted: true, dr: null, dc: null, prop: "P03",
       what: "Pipeline skeleton: the `nearest_w50` yardstick", note: "The first yardstick. Under the coarse truth the best yardstick is `nearest_w125`, 0.2226." },
-    { id: "R007", date: "2026-10-25", raw: 0.2053, coarse: 0.1967, adopted: false, dr: 0.0035, dc: 0.0125, prop: "P06",
-      what: "P06's hmm with the old sources (8/32/75/1)", note: "Bar not met; not adopted. The hmm alone does not beat the yardsticks by enough." },
+    { id: "R007", date: "2026-10-25", raw: 0.2053, coarse: 0.1967, adopted: false, dr: 0.0036, dc: -0.0259, prop: "P06",
+      what: "P06's hmm with the old sources (8/32/75/1)", note: "Bar not met; not adopted. The hmm alone does not beat the yardsticks by enough. Both deltas are the entry's own, over `nearest_w50` raw and `nearest_w125` coarse (the bar's yardsticks), not over the previous point." },
     { id: "R010", date: "2026-10-25", raw: 0.4217, coarse: 0.4556, adopted: true, dr: 0.2199, dc: 0.2714, prop: "P04 + P05 + P06",
       what: "P04 controlled touches + P05 dead-ball model + the hmm (4/32/25/25)", note: "Bar met under both truths (+0.2199 raw over `nearest_w50`, +0.2330 coarse over `nearest_w125`, 7 wins in 7). The coarse delta here is the difference from R001's coarse score." },
     { id: "R011", date: "2026-10-25", raw: 0.5159, coarse: 0.5591, adopted: true, dr: 0.0942, dc: 0.1035, prop: "P07",
@@ -367,8 +357,8 @@ const DATA = {
       why: "Bar not met (p 0.8125). P17 dropped." },
     { prop: "P18", feature: "`offpitch` profile (DFL's ball hidden off the pitch as ours is)", entry: "R015, R015b", date: "2026-10-29", dr: "—", dc: "—", status: "dropped",
       why: "No delta: it is a profile, not a feature (`main.toml` on it: 0.5509 raw, 0.5296 coarse, against 0.5430 and 0.5593 on `tracking`). v1 fails a gate; v2 cannot reach our share past a line (0.258 to 0.262 against 0.0407); code removed." },
-    { prop: "P12", feature: "`free_x`: abstain where the posterior is low", entry: "R016", date: "2026-10-30", dr: "—", dc: "—", status: "dropped",
-      why: "results.md records no spellF1 for it. Its bar is on macroF1, and every threshold lowered macroF1; spellF1 cannot gain from it." },
+    { prop: "P12", feature: "`free_x`: abstain where the posterior is low", entry: "R016", date: "2026-10-30", dr: "+0.0000", dc: "+0.0000", status: "dropped",
+      why: "spellF1 is unchanged on all seven matches under both truths (it reproduces R013); the bar is on macroF1, and every threshold lowered macroF1." },
     { prop: "P08", feature: "Smart Tagging team votes, weight 0.2", entry: "R017", date: "2026-10-30", dr: "—", dc: "—", status: "unbenchmarked",
       why: "Adopted per frame (agreement with our touch-rule pseudo-labels 0.761, bar 0.75); the dead votes (0.409, bar 0.60) dropped. DFL has no tags, so there is no benchmark number; `--drop-match-only` reproduces R013." },
     { prop: "P10", feature: "Referee's whistle from the audio", entry: "R018, R018b", date: "2026-10-30", dr: "—", dc: "—", status: "dropped",
@@ -379,6 +369,7 @@ const DATA = {
   statuses: {
     adopted: { label: "adopted", cls: "ok", glyph: "✓" },
     dropped: { label: "dropped", cls: "bad", glyph: "✕" },
+    tried: { label: "tried, not adopted", cls: "bad", glyph: "✕" },
     unbenchmarked: { label: "adopted, not benchmarkable", cls: "info", glyph: "◎" }
   },
 
@@ -508,7 +499,8 @@ const DATA = {
   const state = { mode: "raw", sel: -1 };
   let chartBox, legendBox, detailBox, lastW = 0;
 
-  function selectPoint(i) {
+  function selectPoint(i, announce) {
+    detailBox.setAttribute("aria-live", announce ? "polite" : "off");
     state.sel = i;
     chartBox.querySelectorAll(".c-group").forEach((g, j) => g.classList.toggle("on", j === i));
     drawDetail();
@@ -517,14 +509,16 @@ const DATA = {
   function drawLegend() {
     const m = state.mode;
     legendBox.replaceChildren(...[
-      m !== "coarse" ? h("span", { class: "k" }, h("span", { class: "k-sw s1" }), "raw truth") : null,
-      m !== "raw" ? h("span", { class: "k" }, h("span", { class: "k-sw s2" }), "coarse truth") : null,
+      m !== "coarse" ? h("span", { class: "k" }, h("span", { class: "k-mk circ s1" }), "raw truth (circles)") : null,
+      m !== "raw" ? h("span", { class: "k" }, h("span", { class: "k-mk dia s2" }), "coarse truth (diamonds)") : null,
       h("span", { class: "k" }, h("span", { class: "k-dot filled" }), "adopted into `main.toml` (step line)".replace(/`/g, "")),
       h("span", { class: "k" }, h("span", { class: "k-dot" }), "tried, not adopted"),
-      h("span", { class: "k" }, h("span", { class: "k-line dash" }), "yardstick (floor's analogue)")].filter(Boolean));
+      h("span", { class: "k" }, h("span", { class: "k-line" }), "yardstick (floor's analogue)")].filter(Boolean));
   }
 
   function drawChart(force) {
+    const ae = document.activeElement;
+    const focusIdx = chartBox.contains(ae) ? Array.from(chartBox.querySelectorAll(".c-group")).indexOf(ae) : -1;
     const W = Math.max(280, Math.floor(chartBox.clientWidth || 0));
     if (!force && W === lastW) return;
     lastW = W;
@@ -583,28 +577,29 @@ const DATA = {
       // A delta label on the first series only, when there is room.
       const k0 = series[0];
       const dv = k0 === "raw" ? p.dr : p.dc;
-      if (step >= 50 && dv != null) {
+      if (step >= 52 && dv != null) {
         const top = Math.min(...series.map(k => Y(p[k])));
-        g.append(s("text", { class: "c-val", x: X(i), y: top - 12, "text-anchor": "middle" }, signed(dv, 3)));
+        g.append(s("text", { class: "c-val", x: X(i), y: top - 12, "text-anchor": "middle" }, signed(dv, 4)));
       }
       g.append(s("text", { class: "c-xt", x: X(i), y: H - m.b + 18, "text-anchor": "middle" }, p.id));
       if (step >= 60) g.append(s("text", { class: "c-xd", x: X(i), y: H - m.b + 32, "text-anchor": "middle" }, p.date.slice(5)));
-      g.addEventListener("click", () => selectPoint(i));
+      g.addEventListener("click", () => selectPoint(i, true));
       g.addEventListener("mouseenter", () => selectPoint(i));
-      g.addEventListener("focus", () => selectPoint(i));
+      g.addEventListener("focus", () => selectPoint(i, true));
       g.addEventListener("keydown", ev => {
-        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); selectPoint(i); }
+        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); selectPoint(i, true); }
       });
       svg.append(g);
     });
     chartBox.replaceChildren(svg);
+    if (focusIdx >= 0) { const g2 = chartBox.querySelectorAll(".c-group")[focusIdx]; if (g2) g2.focus({ preventScroll: true }); }
   }
 
   function drawDetail() {
     const p = DATA.points[state.sel];
     detailBox.replaceChildren(
       h("div", { class: "d-top" }, h("span", { class: "d-id", text: p.id }), h("span", { class: "muted small", text: p.date }),
-        badge(p.adopted ? "adopted" : "dropped"), h("span", { class: "muted small", text: p.prop })),
+        badge(p.adopted ? "adopted" : "tried"), h("span", { class: "muted small", text: p.prop })),
       h("p", { class: "d-what", html: md(p.what) }),
       h("div", { class: "d-nums" },
         h("span", { text: "raw " + f4(p.raw) + (p.dr == null ? " (first yardstick)" : " (" + signed(p.dr, 4) + ")") }),
@@ -615,7 +610,7 @@ const DATA = {
   function chart() {
     chartBox = h("div", { class: "chart", id: "chart-box" });
     legendBox = h("div", { class: "legend" });
-    detailBox = h("div", { class: "detail", "aria-live": "polite" });
+    detailBox = h("div", { class: "detail", "aria-live": "off" });
     const lastAdopted = DATA.points.map(p => p.adopted).lastIndexOf(true);
     state.sel = lastAdopted;
     const chips = h("div", { class: "chips", role: "group", "aria-label": "Truth" });
