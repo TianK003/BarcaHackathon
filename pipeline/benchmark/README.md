@@ -894,6 +894,13 @@ to understand how our truth flips, and never tuned on: it is "not training data 
   over matches and seeds by the lags themselves. **`compare`** prints the public median beside DFL's, with the gap's 90%
   bootstrap interval (2,000 draws of the public lags, seeded per cell, DFL's median taken as it is). A11 has the
   figures.
+- **The descriptors** (A15) sit beside the lags: at each change frame the ball seen on it and within 1 s, its speed
+  from the positions, its distance inside the line, and for a team change the nearest old-team and new-team slot and
+  whether the new one is nearer. They go into both documents (`descriptors`, summarised by type; `descriptor_values`,
+  the values `compare` resamples), into `compare` as `descriptor_gaps` (public minus DFL: a share for the yes/no ones,
+  a median for the numbers, with the same 90% bootstrap), and into the person's CSV after the detectors' columns. They
+  are for inspection only, they set nothing, and a printout of BAR-ATH hides quartiles and bounds below `MIN_SHOWN`
+  values as it does for the lags.
 - **What a printout of BAR-ATH may show.** A cell with fewer than `MIN_SHOWN` = 5 changes found prints n, the share
   found and the median only, and of an interval only whether it excludes 0, since the quartiles of two to four values
   fix every one of them. DFL's printouts are in full, and the JSON files keep every value.

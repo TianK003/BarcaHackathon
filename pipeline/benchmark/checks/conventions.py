@@ -47,7 +47,7 @@ from pipeline.selftest import beside_ball, expect_error, kinematics_atd, kinemat
 H, A, D, X = pm.H, pm.A, pm.D, pm.X
 REACH = 125                                     # 5 s at 25 Hz
 PUBLIC_TRANSITIONS = (1300, 1500, 1620, 2000, 2050, 2400)     # four digits, so that a printed frame is found
-MAX_PUBLIC_LINES = 20                           # what the public mode may print: a summary, never a table of rows
+MAX_PUBLIC_LINES = 60                           # what the public mode may print: a summary, never a table of rows
 RAW_CONFIG = os.path.join(conventions.ROOT, "pipeline", "benchmark", "configs", "nearest_w0.toml")   # the raw label
 
 
@@ -717,7 +717,29 @@ def test_conventions_public_prints_aggregates_only():
         assert [(row["from"], row["to"], row["type"]) for row in rows] == [
             ("H", "A", "team"), ("A", "D", "into_dead"), ("D", "H", "out_of_dead"), ("H", "D", "into_dead"),
             ("D", "A", "out_of_dead"), ("A", "H", "team")]
-        assert list(rows[0]) == ["frame", "from", "to", "type"] + list(conventions.DETECTORS)
+        assert list(rows[0]) == ["frame", "from", "to", "type"] + list(conventions.DETECTORS) + list(
+            conventions.DESCRIPTORS), "the descriptors' columns follow the detectors'"
+        for row in rows:
+            assert row["ball_seen"] in ("True", "False", ""), row["ball_seen"]
+            if row["type"] != "team":
+                assert row["old_near_m"] == row["new_near_m"] == row["new_nearer"] == "", "a team change only"
+        # the descriptor lines of the printout: one per (type, descriptor), n and a share or a median, never a change's
+        # frame or a quartile of fewer than MIN_SHOWN values
+        described = [line for line in lines if line.startswith("describe")]
+        assert len(described) == len(conventions.TYPES) * len(conventions.DESCRIPTORS), described
+        assert all(re.match(r"describe\s+(team|into_dead|out_of_dead)\s+(\w+)\s", line) for line in described)
+        assert not any(re.search(r"\d{4}", line) for line in described), "no frame number in a descriptor line"
+        for kind in conventions.TYPES:
+            for name in conventions.DESCRIPTORS:
+                if name in conventions.BOOLEAN_DESCRIPTORS:
+                    continue
+                cell = document["descriptors"][kind][name]
+                line = next(l for l in described if l.split()[1:3] == [kind, name])
+                assert cell["n"] < conventions.MIN_SHOWN, "the scene's cells are small"
+                if cell["n"]:
+                    assert line.split()[-2:] == ["-", "-"], (kind, name, line)
+        assert set(document["descriptors"]) == set(conventions.TYPES)
+        assert set(document["descriptor_values"]) == set(conventions.TYPES), "the values stay in the file for compare"
         for row in rows:
             expected = PUBLIC_EXACT[int(row["frame"])]
             for name in conventions.DETECTORS:
@@ -1817,3 +1839,158 @@ def test_the_public_latency_file_is_tied_to_the_csv_it_was_read_from():
             os.remove(public_json)
             with contextlib.redirect_stdout(io.StringIO()):
                 assert conventions.main(shift) == 0
+
+
+# -- the descriptors of the tracking at each change -------------------------------------------------------------------
+
+def descriptor_scene(n=400, ball_frames=None, graded=None):
+    """A scene whose ball runs along x at 0.2 m a frame (5 m/s) at y = 2 m, two metres from a touch line.
+
+    The ball is seen on `ball_frames` only (default every frame). Slot 0 (home) stands 3 m from the ball's x = 60 m
+    point, slot 1 (away) 6 m from it, slot 3 (away) 40 m, slot 2 (home) 90 m away: the nearest of each team to the
+    ball when it is at (60, 2), which is frame 100.
+    """
+    frames = np.arange(n)
+    ball = np.column_stack([40.0 + 0.2 * frames, np.full(n, 2.0)])
+    seen = np.ones(n, dtype=bool) if ball_frames is None else np.isin(frames, ball_frames)
+    ball[~seen] = np.nan
+    fixed = {0: (63.0, 2.0), 1: (60.0, 8.0), 2: (0.0, 60.0), 3: (60.0, 42.0)}
+    slots = {slot: np.tile(at, (n, 1)) for slot, at in fixed.items()}
+    return scene(n, ball, slots=slots, graded=graded)
+
+
+def test_conventions_descriptors_on_a_hand_built_scene():
+    assert conventions.DESCRIPTORS == ("ball_seen", "ball_seen_1s", "ball_speed", "line_m", "old_near_m", "new_near_m",
+                                       "new_nearer"), "the descriptors are the brief's seven, in its order"
+    inputs = descriptor_scene()
+    rows = conventions.describe(inputs, [(100, A, H, "team"), (100, H, A, "team"), (100, H, D, "into_dead")])
+    assert len(rows) == 3 and all(tuple(row) == conventions.DESCRIPTORS for row in rows), "one dict per change"
+    gained, lost, dead = rows
+    assert gained["ball_seen"] is True and gained["ball_seen_1s"] is True
+    assert math.isclose(gained["ball_speed"], 5.0, abs_tol=1e-6), "0.2 m a frame at 25 Hz, from the positions"
+    assert math.isclose(gained["line_m"], -2.0, abs_tol=1e-9), "2 m inside the touch line is minus two"
+    assert math.isclose(gained["old_near_m"], 6.0, abs_tol=1e-9) and math.isclose(gained["new_near_m"], 3.0, abs_tol=1e-9)
+    assert gained["new_nearer"] is True
+    assert math.isclose(lost["old_near_m"], 3.0, abs_tol=1e-9) and math.isclose(lost["new_near_m"], 6.0, abs_tol=1e-9)
+    assert lost["new_nearer"] is False, "the new team (away) is the farther one"
+    assert dead["ball_seen"] is True and math.isclose(dead["line_m"], -2.0, abs_tol=1e-9)
+    assert dead["old_near_m"] is None and dead["new_near_m"] is None and dead["new_nearer"] is None, (
+        "the team descriptors apply to a change of team only")
+
+    # no ball on the change frame, seen 20 frames later: the one-second window sees it, the frame does not
+    inputs = descriptor_scene(ball_frames=[f for f in range(400) if f < 190 or f >= 220])
+    row, = conventions.describe(inputs, [(200, A, H, "team")])
+    assert row["ball_seen"] is False and row["ball_speed"] is None and row["line_m"] is None
+    assert row["ball_seen_1s"] is True, "the ball is seen at 220, 20 frames on"
+    assert row["old_near_m"] is None and row["new_near_m"] is None and row["new_nearer"] is None, (
+        "a team change needs the ball seen on the change frame")
+
+    # the window never reads across the block's edge
+    first = [f for f in range(400) if f < 197]          # seen up to the first block's end only
+    row, = conventions.describe(descriptor_scene(ball_frames=first, graded=[(0, 200), (200, 400)]),
+                                [(210, D, H, "out_of_dead")])
+    assert row["ball_seen_1s"] is False, "frames 185-199 are in the other block"
+    later = [f for f in range(400) if f >= 204]
+    row, = conventions.describe(descriptor_scene(ball_frames=later, graded=[(0, 200), (200, 400)]),
+                                [(190, H, D, "into_dead")])
+    assert row["ball_seen_1s"] is False, "frames 204-215 are in the other block"
+
+
+def test_conventions_descriptor_summary():
+    changes = [(10, A, H, "team"), (20, H, A, "team"), (30, A, H, "team"), (40, A, D, "into_dead"),
+               (50, D, H, "out_of_dead")]
+
+    def row(seen, speed, nearer):
+        return {"ball_seen": seen, "ball_seen_1s": True, "ball_speed": speed, "line_m": None, "old_near_m": None,
+                "new_near_m": None, "new_nearer": nearer}
+
+    rows = [row(True, 1.0, True), row(False, None, None), row(True, 5.0, False), row(True, 3.0, None), row(False, 2.0, None)]
+    summary = conventions.summarise_descriptors(changes, rows)
+    team = summary["team"]
+    assert team["ball_seen"] == {"n": 3, "share": 2 / 3}, "a boolean gives n and share"
+    assert team["new_nearer"] == {"n": 2, "share": 0.5}, "n leaves out the None rows"
+    assert team["ball_speed"] == {"n": 2, "median": 3.0, "p25": 2.0, "p75": 4.0}, "numpy's linear quartiles of 1 and 5"
+    assert team["line_m"] == {"n": 0, "median": None, "p25": None, "p75": None}, "nothing to summarise is None, not NaN"
+    assert summary["into_dead"]["ball_speed"]["median"] == 3.0 and summary["out_of_dead"]["ball_seen"]["share"] == 0.0
+    assert summary["into_dead"]["ball_seen_1s"] == {"n": 1, "share": 1.0}
+    assert set(summary) == set(conventions.TYPES), "every type has its cells, as in the lag table"
+    try:
+        conventions.summarise_descriptors(changes, rows[:2])
+    except conventions.ConventionsError:
+        pass
+    else:
+        raise AssertionError("a row for every change, or an error that says so")
+
+
+def descriptor_document(values):
+    """A document with only the descriptor values given: {type: {descriptor: [values]}}, the rest empty."""
+    return {"source": "x", "fps": 25, "cells": {}, "descriptor_values": {
+        kind: {name: list(values.get(kind, {}).get(name, [])) for name in conventions.DESCRIPTORS}
+        for kind in conventions.TYPES}}
+
+
+def test_conventions_compare_descriptor_gaps():
+    """A gap is the public share or median minus DFL's, with the design's bootstrap; a small cell hides its bounds."""
+    public_lines = [-10.0, -12.0, -11.0, -9.0, -13.0, -10.0]
+    public = descriptor_document({"team": {"ball_seen": [True] * 8 + [False] * 2, "line_m": public_lines,
+                                           "ball_speed": [4.0, 6.0, 5.0]},
+                                  "into_dead": {"line_m": [-1.0]}})
+    dfl = descriptor_document({"team": {"ball_seen": [True] * 6 + [False] * 4, "line_m": [-4.0] * 20 + [-6.0] * 20,
+                                        "ball_speed": [2.0, 3.0, 4.0]},
+                               "into_dead": {"line_m": [-3.0, -5.0]}})
+    rows = conventions.compare(public, dfl)
+    gaps = rows["descriptor_gaps"]
+    assert list(rows) == [] and gaps is rows.descriptor_gaps, "the lag rows are as before: no cells, so no row"
+    assert set(gaps) == set(conventions.TYPES) and all(set(gaps[kind]) == set(conventions.DESCRIPTORS) for kind in gaps)
+    seen = gaps["team"]["ball_seen"]
+    assert math.isclose(seen["public"], 0.8) and math.isclose(seen["dfl"], 0.6) and math.isclose(seen["gap"], 0.2)
+    wanted = conventions.bootstrap_gap([True] * 8 + [False] * 2, [True] * 6 + [False] * 4, share=True)
+    assert (seen["gap"], seen["low"], seen["high"]) == wanted and seen["low"] <= seen["gap"] <= seen["high"]
+    line_m = gaps["team"]["line_m"]
+    assert line_m["public"] == -10.5 and line_m["dfl"] == -5.0 and line_m["gap"] == -5.5
+    assert (line_m["gap"], line_m["low"], line_m["high"]) == conventions.bootstrap_gap(
+        public_lines, [-4.0] * 20 + [-6.0] * 20), "the median's procedure, the file's seed"
+    empty = gaps["out_of_dead"]["line_m"]
+    assert empty["public"] is None and empty["gap"] is None and empty["low"] is None and empty["n_public"] == 0
+    # the printout hides the bounds of fewer than MIN_SHOWN public values and keeps those of five or more
+    lines = conventions.render_compare(rows)
+    small = next(l for l in lines if l.split()[:2] == ["team", "ball_speed"])
+    assert "excludes 0: " in small and "[" not in small, small
+    tiny = next(l for l in lines if l.split()[:2] == ["into_dead", "line_m"])
+    assert "excludes 0: " in tiny and "[" not in tiny, tiny
+    big = next(l for l in lines if l.split()[:2] == ["team", "line_m"])
+    assert "excludes" not in big and "[" in big, big
+    assert "{:.2f}".format(line_m["low"]) in big and "{:.2f}".format(line_m["high"]) in big
+    # a file made before the descriptors has none to compare
+    older = {"source": "x", "fps": 25, "cells": {}}
+    assert conventions.compare(older, dfl)["descriptor_gaps"] == {}
+    assert conventions.compare(public, older)["descriptor_gaps"] == {}
+    assert not any(l.startswith("type         descriptor") for l in conventions.render_compare(
+        conventions.compare(older, dfl)))
+
+
+def test_conventions_dfl_pools_descriptors_by_rows():
+    """Two matches' rows pooled give the summary of their union, which is not the mean of their summaries."""
+    def row(speed):
+        return {**dict.fromkeys(conventions.DESCRIPTORS), "ball_seen": True, "ball_speed": speed}
+    first = ([(10, A, H, "team")] * 3, [row(1.0), row(2.0), row(3.0)])
+    second = ([(20, H, A, "team")], [row(100.0)])
+    changes, rows = conventions.pool_descriptors([first, second])
+    assert changes == first[0] + second[0] and rows == first[1] + second[1]
+    pooled = conventions.summarise_descriptors(changes, rows)
+    assert pooled["team"]["ball_speed"] == {"n": 4, "median": 2.5, "p25": 1.75, "p75": 27.25}
+    medians = [conventions.summarise_descriptors(*part)["team"]["ball_speed"]["median"] for part in (first, second)]
+    assert pooled["team"]["ball_speed"]["median"] != sum(medians) / 2, "pooled by rows, not a median of medians"
+    # measure() pools the same way over matches and seeds, and the document carries the summary and the values
+    result = measured(seeds=2)
+    document = conventions.dfl_document(result)
+    assert set(document["descriptors"]) == set(conventions.TYPES) == set(document["descriptor_values"])
+    assert sum(document["descriptors"][kind]["ball_seen"]["n"] for kind in conventions.TYPES) > 0
+    assert json.loads(json.dumps(document)) == document, "JSON-ready"
+    assert all(len(values) == document["descriptors"][kind][name]["n"]
+               for kind, names in document["descriptor_values"].items() for name, values in names.items())
+    one = measured(seeds=1)
+    assert sum(one["descriptors"][kind]["ball_seen"]["n"] for kind in conventions.TYPES) * 2 == sum(
+        document["descriptors"][kind]["ball_seen"]["n"] for kind in conventions.TYPES), "every seed's rows are pooled"
+    lines = conventions.render_dfl(result)
+    assert sum(1 for l in lines if l.startswith("describe")) == len(conventions.TYPES) * len(conventions.DESCRIPTORS)
