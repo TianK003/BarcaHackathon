@@ -36,6 +36,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R014b | 2026-10-26 | restart states in the decoder (P17, Phase 2b): `restart_team` span `stoppage_end` with `hmm` `restart_source`, `switch_restart` {4, 8, 16, inf} x `use_ball` {false, true}, 8 configs | — | — | — | 0.5433 raw and 0.5589 coarse for `r014b_s04_b1`, against `main.toml`'s 0.5430 and 0.5593 | bar not met (+0.0003 raw, p 0.8125); not adopted; P17 dropped |
 | R015 | 2026-10-29 | the `offpitch` profile (P18): `tracking` v3 with DFL's ball hidden once it is more than m past a line and a share q of the transplanted gaps dropped, m and q fitted once on label-free statistics of our match, its fidelity, and `main.toml` on it | — | — | — | 0.5509 raw and 0.5296 coarse for `main.toml` on `offpitch`, against 0.5430 and 0.5593 on `tracking` (a difference between two profiles) | `offpitch` v1 frozen (m 0.2 m, q 0.430); 8 of 9 gates pass, median gap fails (15.04 s against 10.74); main.toml 0.5509 raw / 0.5296 coarse on it; P18 dropped after R015b |
 | R015b | 2026-10-29 | the `offpitch` v2 rule (the ball hidden while it is more than m past a line and moving, found again at rest), swept once on the benchmark's label-free fidelity statistics before anything was built | — | — | — | — | v2 cannot reach our share past a line at any margin (0.258 to 0.262 against 0.0407); P18 dropped, offpitch code removed (7b555eb) |
+| R017 | 2026-10-30 | Smart Tagging's votes (P08) against our own pseudo-labels on BAR-ATH: team agreement with `controlled_touch` episodes and dead agreement with `dead_ball_model`, the two parts' bars, and two strengths (`frame` 0.2, `tag` 1.0) for Tian's pick | — | — | — | — | declared, not run |
 
 ### The four yardsticks on every profile, in one table
 
@@ -5902,6 +5903,87 @@ It is recoverable from `fb33b38`. After it, the benchmark's `selftest.py` passed
 186 of 186, and `main.toml`'s sha256 `0ebdfbec...` is unchanged. What stays: `headroom.py`'s `plus_` variants and the
 gaps-only team oracle (A13, `5ab0e89`). R016 never ran, A13 part 2 (on `offpitch`) never ran, and `main.toml` is unchanged.
 What it leaves is in [After P18](proposals.md#after-p18) and T45.
+
+### R017 — Smart Tagging's votes against our own pseudo-labels: the bar, and the strength in the decoder (2026-10-30, Tian)
+Proposal: P08 · Commit: part 1 (this declaration) is committed before any measurement it governs; the measurement's
+commits are in part 2.
+
+**Part 1, declared before any measurement** (2026-10-30). Nothing below was chosen from a score of this entry, and no
+number of this match has been seen: the source (`pipeline/evidence/smart_tagging.py`) and the measurement
+(`pipeline/benchmark/tag_stats.py`) are built and unit-tested on synthetic data only.
+
+**Why.** Smart Tagging carries 638 automatic phase intervals of our match (T17): not possessions and not ground truth.
+Their codes say who attacks or defends, and that play is stopped (set pieces, goals), which is information about the
+ball-missing stretches where `controlled_touch` is blind. There is no truth to score them against and no benchmark (DFL
+has no tags), so the only honest bar is agreement with the two pseudo-labels of our own pipeline that are already
+trusted. The measured agreements become the votes' confidences, so the bar decides whether the source enters at all.
+
+**The votes**, fixed from what the codes mean (P08's table), never from agreement with any truth. Codes are upper-cased
+and tag values matched case-insensitively (T17):
+
+| codes | vote |
+|---|---|
+| `BUILD UP`, `PROGRESSION`, `CREATING CHANCES`, `BALL IN FINAL THIRD`, `BALL IN THE BOX`, `PLAYERS IN THE BOX`, `ATTACKING TRANSITION`, `LONG BALL` | `home`: the tagged team has it |
+| `DEFENDING IN ... THIRD`, `DEFENSIVE TRANSITION` | `home`: the other team has it |
+| `SET PIECES`, `GOALS` | `alive`: dead |
+| any other code | no vote |
+
+`Team` `Barcelona` is home, `Atletic Club` (sic) is away, `N/A` gives no team vote (a set-piece tag with `N/A` still gives
+its dead vote). Where tags disagree on a frame's team, that frame gets no team vote; agreeing tags give one vote, not
+two. Outside the graded blocks the source says NaN. The source declares `MATCH_ONLY`: a DFL match raises
+`AssetUnavailable`, and it is never run on the benchmark.
+
+**The pseudo-labels** (no human label of this match, none decided by a person):
+- **Team:** the kept episodes of `controlled_touch` with `conventions.TOUCH`'s parameters (radius 2.0 m, max_rel_speed
+  6.0 m/s, min_frames 3, confidence 0.99, hold 0.5), so `home` is a number exactly on the kept frames, as
+  `train_shape.touch_agreement` takes them. An episode is a home episode when `home` >= 0.5.
+- **Dead:** `dead_ball_model` with `main.toml`'s own `[[evidence]]` entry's parameters, read from the config and not
+  copied (the model only: that entry has no `min_prob`, so the source's default applies; weight 1.0). Dead is P(alive)
+  < 0.5.
+
+**The measurement.** `python pipeline/benchmark/tag_stats.py` (HEAVY: it loads BAR-ATH), run once by the controller on
+this declaration's commit; it writes aggregates only (`data/runs/tag_stats/stats.json`).
+- **Team agreement:** among the graded frames inside a kept episode where the tags give a team vote (no vote and
+  disagreement excluded), the share where the vote names the episode's team. Also the coverage of graded frames and of
+  ball-missing graded frames (`coverage_gaps`).
+- **Dead agreement:** among the frames of `SET PIECES` and `GOALS` tags where the model has an opinion, the share where
+  P(alive) < 0.5; the same share over all graded frames with an opinion is the base rate, and the lift is their ratio.
+- **The intervals:** a 90% bootstrap (5th and 95th percentile) that resamples whole tags (`smart_tagging.tags`), never
+  frames, since a tag's frames are one phase and strongly autocorrelated; 2000 draws, `default_rng` seeds (17, 0) for
+  the team part and (17, 1) for the dead part. A frame covered by several tags is given to the first, so nothing is
+  counted twice.
+- **Per code:** code name, n frames and share, as aggregates (the retry's information).
+- **The values:** c_team and c_dead are `towards_half` (P05's rounding, two decimals towards 0.5) of the measured point
+  shares. They are required parameters of the source, so its code holds no number of its own.
+
+**The bar.** Two independent parts, each adopted or not on its own:
+- **Team part:** point agreement >= 0.75, the lower 90% bound >= 0.70, and `coverage_gaps` >= 0.05 (team votes on at
+  least 5% of ball-missing graded frames; otherwise it adds nothing where it matters).
+- **Dead part:** point dead share >= 0.60, the lower 90% bound >= 0.50, and a lift >= 1.5 over the base rate.
+
+**The strength in the decoder.** No benchmark can decide it, since DFL has no tags. If a part passes, two configs are
+run on BAR-ATH: `main.toml` plus the passing parts at `spread = "frame"`, weight 0.2 (`home` = c_team or 1 - c_team on
+every voted frame, `alive` = 1 - c_dead on every dead-voted frame; 0.2 by analogy with P07, the other team source that
+spans long windows), and at `spread = "tag"`, weight 1.0 (one observation per tag, each frame getting sigmoid(logit(c) /
+n), so the decoder sums them back to logit(c)). Tian sees, for each, the aggregates of `label_diff` against `main.toml`:
+the `D` share, the possessions per half, the share of graded frames whose label changed, and how many of those lie in
+ball gaps. **Tian picks one, or neither, before `main.toml` changes. Nothing is chosen from a score.**
+
+**Label-free checks on BAR-ATH** for the final config, before adopting: two runs give the same sha256; the `D` share is
+within 1 point of `main.toml`'s; the number of possessions per half is reported; no `X` in a graded block. The public
+window is scored only as a correctness check (are the votes the right way round?), never to choose, and may not weigh in
+(T01).
+
+**The reference.** `pipeline/configs/main.toml` is unchanged by this entry; its sha256 on the committed (LF) file,
+`git show HEAD:pipeline/configs/main.toml | sha256sum`, at this declaration is
+`0970f2de4b97ceec27660559ebc37b1a0dcbfcf1bfced08d016f1f9d4503181a` (R013's last change; the submission log's
+`0ebdfbec...` is the sha256 of the CSV it produces, not of the config).
+
+**If a part fails.** One retry is allowed (R017b), informed by which codes disagree (`per_code`), with its own
+declaration before its measurement; if it fails again the source is removed from the code, as P18 was, and P08 closes as
+dropped. A part that passes is not retried.
+
+**Part 2, the measurement and the verdict.** Not run yet.
 
 ## Submission log
 
