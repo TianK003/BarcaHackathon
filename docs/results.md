@@ -36,7 +36,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R014b | 2026-10-26 | restart states in the decoder (P17, Phase 2b): `restart_team` span `stoppage_end` with `hmm` `restart_source`, `switch_restart` {4, 8, 16, inf} x `use_ball` {false, true}, 8 configs | — | — | — | 0.5433 raw and 0.5589 coarse for `r014b_s04_b1`, against `main.toml`'s 0.5430 and 0.5593 | bar not met (+0.0003 raw, p 0.8125); not adopted; P17 dropped |
 | R015 | 2026-10-29 | the `offpitch` profile (P18): `tracking` v3 with DFL's ball hidden once it is more than m past a line and a share q of the transplanted gaps dropped, m and q fitted once on label-free statistics of our match, its fidelity, and `main.toml` on it | — | — | — | 0.5509 raw and 0.5296 coarse for `main.toml` on `offpitch`, against 0.5430 and 0.5593 on `tracking` (a difference between two profiles) | `offpitch` v1 frozen (m 0.2 m, q 0.430); 8 of 9 gates pass, median gap fails (15.04 s against 10.74); main.toml 0.5509 raw / 0.5296 coarse on it; P18 dropped after R015b |
 | R015b | 2026-10-29 | the `offpitch` v2 rule (the ball hidden while it is more than m past a line and moving, found again at rest), swept once on the benchmark's label-free fidelity statistics before anything was built | — | — | — | — | v2 cannot reach our share past a line at any margin (0.258 to 0.262 against 0.0407); P18 dropped, offpitch code removed (7b555eb) |
-| R017 | 2026-10-30 | Smart Tagging's votes (P08) against our own pseudo-labels on BAR-ATH: team agreement with `controlled_touch` episodes and dead agreement with `dead_ball_model`, the two parts' bars, and two strengths (`frame` 0.2, `tag` 1.0) for Tian's pick | — | — | — | — | declared, not run |
+| R017 | 2026-10-30 | Smart Tagging's votes (P08) against our own pseudo-labels on BAR-ATH: team agreement with `controlled_touch` episodes and dead agreement with `dead_ball_model`, the two parts' bars, and two strengths (`frame` 0.2, `tag` 1.0) for Tian's pick | — | — | — | — | team part passed (0.761), dead part failed (0.409); strength pending Tian |
 
 ### The four yardsticks on every profile, in one table
 
@@ -5987,7 +5987,79 @@ window is scored only as a correctness check (are the votes the right way round?
 declaration before its measurement; if it fails again the source is removed from the code, as P18 was, and P08 closes as
 dropped. A part that passes is not retried.
 
-**Part 2, the measurement and the verdict.** Not run yet.
+**Part 2, the measurement and the verdict** (2026-10-30). Everything below applies part 1 as written. The public window
+was not scored: nothing was adopted, and it chooses nothing. Logs hold aggregates only.
+
+**The runs.**
+- Measurement: `python pipeline/benchmark/tag_stats.py`, at commit `cefb8b0` (part 1 and the source, committed before the
+  run); the log ends `EXIT=0`.
+- Strength comparison: `python pipeline/benchmark/label_diff.py pipeline/configs/main.toml pipeline/configs/r017_frame.toml
+  pipeline/configs/r017_tag.toml`, at commit `1125ad9`; the log ends `EXIT=0`. Both configs are `main.toml` plus the team
+  vote only (the dead part failed).
+
+**The measurement.**
+
+| part | n frames | point share | 90% interval | other |
+|---|---|---|---|---|
+| team | 26,383 | 0.761 | [0.723, 0.795] | coverage 0.589 of graded frames, 0.499 of ball-missing graded frames |
+| dead | 56,898 | 0.409 | [0.280, 0.508] | base rate 0.364, lift 1.124 |
+
+Per code (frames covered, and the share that agrees with the part's pseudo-label: team agreement for the team codes, dead
+agreement for `SET PIECES` and `GOALS`; a frame covered by two tags of a code counts twice here, as declared):
+
+| code | frames | share |
+|---|---|---|
+| `ATTACKING TRANSITION` | 9,291 | 0.729 |
+| `BALL IN FINAL THIRD` | 67,095 | 0.697 |
+| `BALL IN THE BOX` | 31,654 | 0.634 |
+| `BUILD UP` | 11,011 | 0.867 |
+| `CREATING CHANCES` | 22,500 | 0.630 |
+| `DEFENDING IN ATTACKING THIRD` | 11,011 | 0.867 |
+| `DEFENDING IN DEFENSIVE THIRD` | 22,500 | 0.630 |
+| `DEFENDING IN MIDDLE THIRD` | 31,118 | 0.839 |
+| `DEFENSIVE TRANSITION` | 9,291 | 0.729 |
+| `GOALS` | 16,503 | 0.785 |
+| `LONG BALL` | 9,433 | 0.649 |
+| `PLAYERS IN THE BOX` | 75,736 | 0.596 |
+| `PROGRESSION` | 31,118 | 0.839 |
+| `SET PIECES` | 47,037 | 0.263 |
+
+The would-be values: c_team 0.76 and c_dead 0.41 (`towards_half`, two decimals).
+
+**The bar.**
+- **Team part: passes.** Point 0.761 >= 0.75, lower bound 0.723 >= 0.70, `coverage_gaps` 0.499 >= 0.05. c_team = 0.76.
+- **Dead part: fails.** Point 0.409 < 0.60, lower bound 0.280 < 0.50, lift 1.124 < 1.5. All three conditions fail.
+
+**The strength comparison** (against `main.toml`, graded frames):
+
+| config | frames changed | of them in ball gaps | D share | possessions half 1 | half 2 | D onsets |
+|---|---|---|---|---|---|---|
+| main | | | 35.92% | 192 | 218 | 106 |
+| `r017_frame.toml` (`frame`, weight 0.2) | 2.28% | 56.3% | 35.93% | 187 | 226 | 108 (16 moved, 1 lost, median move +1.0 frames) |
+| `r017_tag.toml` (`tag`, weight 1.0) | 0.03% | 2.1% | 35.92% | 191 | 218 | 106 (0 moved) |
+
+No `X` appears in either config (0.00% before and after).
+
+**Verdict.**
+- **Team part:** passes the bar, so the source may enter. The strength is Tian's to pick: `frame` at weight 0.2, `tag` at
+  weight 1.0, or neither. `main.toml` is unchanged until he does, and nothing is chosen from a score.
+- **Dead part: no R017b.** `SET PIECES` tags span the restart and the play after it, so only 0.263 of their frames are
+  dead; that is the code with the most frames (47,037) and it drags the share down. A `GOALS`-only retry would add almost
+  nothing: P05 already calls 78.5% of those frames dead, over a handful of goal stoppages. A code subset chosen after
+  this measurement would also be judged on the data that chose it. The dead-vote path was removed from the code (commit
+  `668b868`; recoverable from `cefb8b0`).
+
+**Reading.**
+- `frame` is not small. It votes only on the team channel, yet it changes 2.28% of graded frames (56% of them in ball
+  gaps, where it is meant to act), moves 16 `D` onsets (median +1 frame) and shifts the possession counts (half 1:
+  192 to 187, half 2: 218 to 226). A team vote that moves dead-ball onsets does so through the decoder's joint states,
+  not through its own evidence.
+- `tag` changes 0.03% of graded frames: at one observation per tag it is close to a no-op, which is its lesson too: a
+  weight-1.0 sum of one observation per tag barely competes with the evidence on every frame.
+- Neither config has a score here. There is no benchmark for tags (DFL has none), so what `frame` adds or loses in
+  `spellF1` is unmeasured, and the team agreement of 0.761 is against our own pseudo-labels, not a truth.
+
+**Tian's pick: pending**
 
 ## Submission log
 
