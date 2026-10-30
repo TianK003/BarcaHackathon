@@ -36,6 +36,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R014b | 2026-10-26 | restart states in the decoder (P17, Phase 2b): `restart_team` span `stoppage_end` with `hmm` `restart_source`, `switch_restart` {4, 8, 16, inf} x `use_ball` {false, true}, 8 configs | — | — | — | 0.5433 raw and 0.5589 coarse for `r014b_s04_b1`, against `main.toml`'s 0.5430 and 0.5593 | bar not met (+0.0003 raw, p 0.8125); not adopted; P17 dropped |
 | R015 | 2026-10-29 | the `offpitch` profile (P18): `tracking` v3 with DFL's ball hidden once it is more than m past a line and a share q of the transplanted gaps dropped, m and q fitted once on label-free statistics of our match, its fidelity, and `main.toml` on it | — | — | — | 0.5509 raw and 0.5296 coarse for `main.toml` on `offpitch`, against 0.5430 and 0.5593 on `tracking` (a difference between two profiles) | `offpitch` v1 frozen (m 0.2 m, q 0.430); 8 of 9 gates pass, median gap fails (15.04 s against 10.74); main.toml 0.5509 raw / 0.5296 coarse on it; P18 dropped after R015b |
 | R015b | 2026-10-29 | the `offpitch` v2 rule (the ball hidden while it is more than m past a line and moving, found again at rest), swept once on the benchmark's label-free fidelity statistics before anything was built | — | — | — | — | v2 cannot reach our share past a line at any margin (0.258 to 0.262 against 0.0407); P18 dropped, offpitch code removed (7b555eb) |
+| R018 | 2026-10-30 | the referee's whistle (P10): a hand-built 2 to 4 kHz band-pass detector on the tactical audio, its feasibility gate and its bar against `main.toml`'s own decoded stoppages | — | — | — | — | declared, not run |
 
 ### The four yardsticks on every profile, in one table
 
@@ -5902,6 +5903,65 @@ It is recoverable from `fb33b38`. After it, the benchmark's `selftest.py` passed
 186 of 186, and `main.toml`'s sha256 `0ebdfbec...` is unchanged. What stays: `headroom.py`'s `plus_` variants and the
 gaps-only team oracle (A13, `5ab0e89`). R016 never ran, A13 part 2 (on `offpitch`) never ran, and `main.toml` is unchanged.
 What it leaves is in [After P18](proposals.md#after-p18) and T45.
+
+### R018 — The referee's whistle: a hand-built band-pass detector, its feasibility gate and its bar (2026-10-30, Tian)
+
+Proposal: P10 · Commit: part 1 (this declaration, the detector `pipeline/evidence/whistle.py` and the statistics
+`pipeline/benchmark/whistle_stats.py`) is committed before any run of the detector on the match; the runs are in part 2.
+
+**Part 1, declared before any run** (2026-10-30). Nothing below was chosen from a score, from a stoppage or from the
+audio of this entry; the audio has not been decoded when this is written.
+
+**Belief.** A referee's whistle is a sustained tone at 2 to 4 kHz, well above most crowd noise. Play is dead in the moment
+after a whistle: either it has just been stopped, or it is about to be restarted by a kick that takes at least half a
+second to follow the whistle. So detected whistles should sit near a stoppage far more often than random times do.
+**Falsified if** the detections are near a decoded stoppage no more often than the same detections shifted in time (for
+example crowd whistling).
+
+**The detector** (`whistle.detect`, constants in its `# Params`, argued in its docstring). Features per video frame
+(`pipeline/inputs/audio.py`, rounded to 0.01 dB): `tonal_db` and `band_db`. A frame is tonal when `tonal_db >= 15.0` and
+`band_db >= 3.0`; a whistle is a run of at least 5 graded frames (0.2 s); w is the run's first frame; no run crosses a
+block's edge. The source's dead window after a whistle is 12 frames (0.5 s), declared here and used in part 2's source. No
+constant is changed after a run, except by the retry below.
+
+**The pseudo-labels.** `main.toml`'s own decoded `D` on BAR-ATH, as `main.toml` stands at this declaration: sha256
+`ad8d8b6c2f25a1d0713eb3c8e3bbf7f14eb5928d9fa6bf12ee5b455c106284bd` (`sha256sum pipeline/configs/main.toml`; the command
+prints it, and a different hash at the run means the run does not apply this declaration). P05 sees a foul only when the
+players slow down, about a second after the whistle, so a detection is **near a stoppage** when a decoded `D` frame lies in
+[w - 25, w + 50] frames (-1 s to +2 s) inside w's graded block. It is never measured on the exact frames after the whistle,
+which would count the most useful whistles (the ones P05 is late for) against it. No ground truth, no event data, no hand
+label: the only reference is our own decoder.
+
+**The control.** The same detections shifted circularly inside their own half by 5, 10 ... 60 s (12 offsets); the control's
+share is the mean over the offsets.
+
+**The feasibility gate** (`whistle_stats.py feasibility`). Proceed to the source only if all three hold:
+1. detections per half are between 10 and 120;
+2. at least 50% of the detections are near a decoded stoppage;
+3. that share is at least 2 times the control's.
+
+**The bar** for adoption, on the built source (`whistle_stats.py bar`): the share near a decoded stoppage is at least 0.70,
+its lower 90% bound (2,000 bootstrap draws over the detections, `default_rng([18, 0])`) is at least 0.60, and it is at least
+1.5 times the control's.
+
+**The strength in the decoder.** If the bar passes, the source's two strengths (`spread = "frame"` at weight 1.0, and
+`spread = "event"`) are run on BAR-ATH, the aggregates (`label_diff`: the share of labels changed, how many in gaps, `D`
+onsets moved and their median move) go to Tian, and Tian picks before `main.toml` changes. The source's confidence c_whistle
+is the precision measured here (the share near a stoppage), rounded towards 0.5 (`train_dead_ball.towards_half`).
+
+**Label-free checks on BAR-ATH.** As P08's: the audio decode is deterministic across two runs (the same feature-cache
+sha256); the number of detections with a feature within 0.5 dB of its threshold is reported (the ones a different ffmpeg
+build could flip), as an aggregate. Only counts, shares, quartiles, hashes and pass/fail leave the machine; no sample, spectrum
+or per-frame feature is printed or written.
+
+**The retry.** If the gate fails, one retry is allowed with one changed detector (R018b), declared in its own part before it
+runs. If R018b also fails, P10 is dropped and its code removed, as P18 was (R015b). The public window chooses nothing.
+
+**The public window.** It is not used here at all.
+
+| ID | status |
+|---|---|
+| R018 part 1 | declared, not run |
 
 ## Submission log
 
