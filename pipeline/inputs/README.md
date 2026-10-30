@@ -15,6 +15,7 @@ run. Here it is parsed once into a cache and reloaded in about a second.
 | `BAR-ATH_tactical_atd.txt` + `_atd.xml` | `inputs.atd` — `Atd` arrays, see below |
 | `BAR-ATH_tactical_homography.csv` | `inputs.homography` — `matrices (n, 3, 3)`, `error (n,)`, `valid (n,)` |
 | `BAR-ATH_tactical_smart_tagging.xml` | `inputs.smart_tagging` — list of `{code, tags, start_frame, end_frame, …}` |
+| `BAR-ATH_tactical.mp4` (audio track) | `inputs.audio_features` — `(n, 2)` float64, `tonal_db` and `band_db` of the 2–4 kHz band per frame ([audio.py](audio.py)) |
 | `games.py` (constants, no file) | `n_frames` 199,319 · `fps` 25 · `pitch` (105.3, 68.0) m · `graded` · `half_of_frame` · `graded_mask` · `kickoffs` |
 
 Everything is **lazy**: `Inputs()` reads nothing, and an asset is loaded the first time someone asks for it. A run
@@ -27,6 +28,7 @@ that never touches the homography never pays for it.
 | ATD | `frame_id` 1…199,319 | `frame_id - 1` | `atd_cache.parse` (checks ids are exactly 1…n in order) |
 | Homography | `frame` 0…199,318 | as is | `Inputs.homography` (checks row count and frame column) |
 | Smart Tagging | seconds from the first frame | `round(s * 25)` | `starter/load_smart_tagging.load` |
+| Audio | seconds from the first frame | `round(t * 25)`, no offset ([A04](../../docs/results.md)) | `audio.py`: row k is the 1024-sample window centred on frame k's own 640 samples at 16 kHz |
 | Broadcast anything | its own 164,488-frame timeline | **no mapping exists** | not loaded — see [T09](../../docs/traps.md) |
 
 Graded frames (`inputs.graded`, half-open): 1st half `11,185–90,651`, 2nd half `110,808–190,197`. The 2nd half is
@@ -77,6 +79,20 @@ Two properties are worth knowing because the regression depends on them:
 - **Structure checked before parsing.** pandas pads a *short* line with NaN, which would silently read as "no ball".
   So the separators are counted first (`:` 2 per line, `;` 45, `,` 94), and the file is refused if any total is
   off.
+
+### Audio cache
+
+| | |
+|---|---|
+| where | `<data dir>/cache/audio/<key>/features.npy` + `manifest.json`, and `source_hashes.json` beside the keys |
+| key | sha256 of the mp4's sha256 and `FEATURE_VERSION`, sample rate, hop, window, band, neighbours; the mp4's hash is remembered by (size, mtime), so the 1.6 GB is hashed once |
+| first run | one ffmpeg decode (the pinned `imageio-ffmpeg` binary, mono 16 kHz float32, single thread), read in 60 s chunks; minutes, heavy |
+| later runs | load the array, check its sha256 against the manifest |
+| rebuilt when | the video's bytes or any keyed parameter change, or the array is missing, the wrong length, or fails its hash |
+
+The features are rounded to 0.01 dB and chunk-independent (a frame is the same FFT of the same samples however the
+signal is split), so two decodes give the same hash. A video without an audio stream raises, naming the file. The
+benchmark's `MatchInputs.audio_features` raises `AssetUnavailable`: the DFL data has no video.
 
 ## Adding an asset
 

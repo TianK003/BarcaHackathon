@@ -160,6 +160,10 @@ class MatchInputs(Inputs):
     def smart_tagging(self):
         raise AssetUnavailable(ASSET_MESSAGE.format("smart_tagging"))
 
+    @property
+    def audio_features(self):
+        raise AssetUnavailable(ASSET_MESSAGE.format("audio_features"))
+
 
 def _dfl_cache_manifest(match, data_dir):
     """(its manifest, None) if the match's DFL cache under `data_dir` is of this match, else ({}, the reason why not).

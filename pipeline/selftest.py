@@ -19,6 +19,8 @@ No test framework, on purpose: the repository has none (CLAUDE.md), and a plain 
 """
 
 import argparse
+import hashlib
+import json
 import os
 import sys
 import tempfile
@@ -173,6 +175,135 @@ def test_config_duplicate_evidence_name():
 def test_config_bad_scope():
     from pipeline.config import ConfigError
     expect_error(ConfigError, lambda: load_test_config('scope = "match"\n' + MINIMAL_CONFIG), "match", "halves")
+
+
+# -- audio features (P10) -----------------------------------------------------------------------------------------------
+
+def _tone_in_noise(seconds, start_s, stop_s, amplitude=0.2, noise=0.02, seed=1018):
+    """A 16 kHz mono float32 signal: white noise, plus a 3 kHz tone between start_s and stop_s."""
+    from pipeline.inputs import audio
+    rng = np.random.default_rng([0, seed])
+    n = int(seconds * audio.SAMPLE_RATE)
+    signal = noise * rng.standard_normal(n)
+    first, last = int(start_s * audio.SAMPLE_RATE), int(stop_s * audio.SAMPLE_RATE)
+    t = np.arange(first, last) / audio.SAMPLE_RATE
+    signal[first:last] += amplitude * np.sin(2 * np.pi * 3000.0 * t)
+    return signal.astype(np.float32)
+
+
+def _ffmpeg(*arguments):
+    import subprocess
+    import imageio_ffmpeg
+    done = subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+                           *arguments], capture_output=True)
+    assert done.returncode == 0, done.stderr.decode("utf-8", "replace")
+
+
+def test_audio_features_tone_against_noise():
+    from pipeline.inputs import audio
+    frames = 100
+    quiet = _tone_in_noise(4.0, 0, 0)
+    loud = _tone_in_noise(4.0, 0, 4.0)
+    assert audio.features_from_samples(quiet, frames).shape == (frames, 2)
+    base = audio.features_from_samples(quiet, frames)
+    tone = audio.features_from_samples(loud, frames)
+    assert base.dtype == np.float64 and np.isfinite(tone).all()
+    for column, name in enumerate(audio.FEATURE_NAMES):
+        gap = np.median(tone[10:90, column]) - np.median(base[10:90, column])
+        assert gap > 10.0, "{} rises only {:.1f} dB with a 3 kHz tone".format(name, gap)
+    assert np.array_equal(tone, np.round(tone, 2)), "rounded to 0.01 dB"
+    silent = audio.features_from_samples(np.zeros(16000, dtype=np.float32), 25)
+    assert np.isfinite(silent).all(), "silence stays finite (the floor inside the logs)"
+
+
+def test_audio_features_frame_alignment():
+    from pipeline.inputs import audio
+    signal = _tone_in_noise(4.0, 2.0, 3.0)
+    features = audio.features_from_samples(signal, 100)
+    noise_level = features[5:40, 0].max()
+    first = int(np.flatnonzero(features[:, 0] > noise_level + 3.0)[0])
+    assert abs(first - 50) <= 1, "the tone starts at t = 2.0 s = frame 50, first seen at frame {}".format(first)
+    short = audio.features_from_samples(signal[:16000], 100)
+    assert short.shape == (100, 2) and np.isfinite(short).all(), "frames past the signal's end are zero-padded"
+
+
+def test_audio_features_chunks_equal_one_pass():
+    import io
+    from unittest import mock
+    from pipeline.inputs import audio
+    signal = _tone_in_noise(3.7, 1.1, 2.3)
+    frames = 92
+    expected = audio.features_from_samples(signal, frames)
+    with mock.patch.object(audio, "CHUNK_S", 1):
+        chunks = list(audio.read_in_chunks(io.BytesIO(signal.astype("<f4").tobytes() + b"\x00")))
+    assert len(chunks) == 4 and sum(len(c) for c in chunks) == len(signal), "more than two one-second chunks"
+    assert audio.features_from_stream(chunks, frames).tobytes() == expected.tobytes(), "chunked == one pass"
+    ragged = np.array_split(signal, [1, 700, 701, 5000, 33333])
+    assert audio.features_from_stream(ragged, frames).tobytes() == expected.tobytes(), "any split gives the same"
+
+
+def test_audio_decode_end_to_end():
+    from pipeline.inputs import audio
+    with tempfile.TemporaryDirectory() as folder:
+        path = os.path.join(folder, "clip.mp4")
+        _ffmpeg("-f", "lavfi", "-i", "color=c=black:s=64x64:r=25:d=4",
+                "-f", "lavfi", "-i", "anoisesrc=d=4:c=white:a=0.02:r=16000:seed=3",
+                "-f", "lavfi", "-i", "sine=frequency=3000:duration=1:sample_rate=16000,"
+                                     "adelay=2000,apad=whole_dur=4",
+                "-filter_complex", "[1:a][2:a]amix=inputs=2:duration=longest:normalize=0[a]",
+                "-map", "0:v", "-map", "[a]", "-c:v", "mpeg4", "-c:a", "aac", "-t", "4", path)
+        features = audio.decode_features(path, 100)
+        assert features.shape == (100, 2) and features.dtype == np.float64 and np.isfinite(features).all()
+        quiet = features[10:40, 0].max()
+        loud = features[55:70, 0].min()
+        assert loud > quiet + 3.0, "the tone (frames 50-75) stands out: {:.1f} against {:.1f} dB".format(loud, quiet)
+        first = int(np.flatnonzero(features[:, 0] > quiet + 3.0)[0])
+        assert 46 <= first <= 54, "AAC's priming delay may move the onset a few frames, not more: " + str(first)
+
+
+def test_audio_decode_without_audio_stream():
+    from pipeline.inputs import audio
+    with tempfile.TemporaryDirectory() as folder:
+        path = os.path.join(folder, "silent_video.mp4")
+        _ffmpeg("-f", "lavfi", "-i", "color=c=black:s=64x64:r=25:d=1", "-c:v", "mpeg4", path)
+        expect_error(ValueError, lambda: audio.decode_features(path, 25), "silent_video.mp4", "no audio stream")
+
+
+def test_audio_cache_key_and_reuse():
+    from unittest import mock
+    from pipeline.inputs import audio
+    with tempfile.TemporaryDirectory() as folder:
+        path = os.path.join(folder, "clip.mp4")
+        _ffmpeg("-f", "lavfi", "-i", "color=c=black:s=64x64:r=25:d=2",
+                "-f", "lavfi", "-i", "sine=frequency=3000:duration=2", "-c:v", "mpeg4", "-c:a", "aac", "-t", "2", path)
+        cache = os.path.join(folder, "cache")
+        first = audio.load_or_build(path, 50, cache)
+        folders = [name for name in os.listdir(os.path.join(cache, "audio"))
+                   if os.path.isdir(os.path.join(cache, "audio", name))]
+        assert len(folders) == 1 and len(folders[0]) == 64, "one folder named by a sha256 key"
+        with open(os.path.join(cache, "audio", folders[0], "manifest.json"), encoding="utf-8") as handle:
+            manifest = json.load(handle)
+        assert manifest["features_sha256"] == hashlib.sha256(first.tobytes()).hexdigest()
+        assert not first.flags.writeable
+
+        with mock.patch.object(audio, "decode_features", side_effect=AssertionError("ffmpeg ran again")):
+            again = audio.load_or_build(path, 50, cache)
+        assert np.array_equal(first, again), "a second call reads the cache"
+
+        with mock.patch.object(audio, "FEATURE_VERSION", audio.FEATURE_VERSION + 1):
+            rebuilt = audio.load_or_build(path, 50, cache)
+        assert len([n for n in os.listdir(os.path.join(cache, "audio"))
+                    if os.path.isdir(os.path.join(cache, "audio", n))]) == 2, "a new version is a new key"
+        assert np.array_equal(first, rebuilt), "and decoding is deterministic"
+        expect_error(ValueError, lambda: audio.load_or_build(path, 0, cache), "n_frames")
+
+
+def test_match_inputs_have_no_audio():
+    from pipeline.benchmark import inputs as match_inputs
+    from pipeline.benchmark.checks.common import random_match
+    match = random_match()
+    inputs = match_inputs.MatchInputs(match, match_inputs.clean_atd(match))
+    expect_error(match_inputs.AssetUnavailable, lambda: inputs.audio_features, "audio_features", "P01")
 
 
 def test_match_only_reads_the_module_flag():
