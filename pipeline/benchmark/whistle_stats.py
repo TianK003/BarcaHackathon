@@ -213,7 +213,7 @@ def render_bar(out, verdict):
     ]
 
 
-def near_threshold(features, first, stop):
+def near_threshold(features, first, stop, tonal_db):
     """How many detections have a feature within NEAR_DB of its threshold on a frame of the blast or the one after it.
 
     These are the detections a different ffmpeg build, resampling by another rounding, could flip (design 5.D).
@@ -222,7 +222,7 @@ def near_threshold(features, first, stop):
     count = 0
     for a, b in zip(first, stop):
         seen = features[a:min(b + 1, len(features))]
-        if (np.abs(seen[:, 0] - whistle.TONAL_DB) <= NEAR_DB).any() or \
+        if (np.abs(seen[:, 0] - tonal_db) <= NEAR_DB).any() or \
                 (np.abs(seen[:, 1] - whistle.BAND_DB) <= NEAR_DB).any():
             count += 1
     return count
@@ -252,8 +252,11 @@ def main(argv=None):
         features = inputs.audio_features
         feature_sha = hashlib.sha256(np.ascontiguousarray(features).tobytes()).hexdigest()
         print("features     sha256 {}".format(feature_sha))
+        tonal_db = whistle.tonal_threshold(features, inputs.graded_mask)
+        print("tonal threshold  {:.2f} dB (the {}th percentile of tonal_db over the graded frames)".format(
+            tonal_db, whistle.TONAL_QUANTILE))
         first, stop = whistle.runs(features, inputs.graded_mask)
-        flippable = near_threshold(features, first, stop)
+        flippable = near_threshold(features, first, stop, tonal_db)
         if args.mode == "feasibility":
             out = feasibility(first, dead, inputs.graded)
             verdict = gate(out)
@@ -268,7 +271,7 @@ def main(argv=None):
         data_dir = args.data_dir or os.environ.get("MTAH_DATA_DIR") or os.path.join(ROOT, "data")
         folder = os.path.join(data_dir, "runs", "whistle")
         os.makedirs(folder, exist_ok=True)
-        report = {"mode": args.mode, "config": CONFIG, "config_sha256": sha, "feature_sha256": feature_sha, "near_threshold": flippable,
+        report = {"mode": args.mode, "config": CONFIG, "config_sha256": sha, "feature_sha256": feature_sha, "near_threshold": flippable, "tonal_threshold_db": tonal_db,
                   "verdict": verdict, "figures": public(out)}
         with open(os.path.join(folder, args.mode + ".json"), "w", newline="\n") as handle:
             json.dump(report, handle, indent=2, sort_keys=True)

@@ -318,14 +318,39 @@ def test_whistle_detect_runs():
 
     blast(10, 14)                     # 4 frames: too short
     blast(20, 25)                     # 5 frames: detected
-    blast(30, 40, tonal=14.99)        # the tonal score just under its threshold
+    blast(30, 40, tonal=19.99)        # the tonal score just under the match's threshold (20.0: the loudest frames)
     blast(50, 60, band=2.99)          # the band just under its
-    blast(70, 75, tonal=15.0, band=3.0)     # both exactly at their thresholds: detected (>=)
+    blast(70, 75, tonal=20.0, band=3.0)     # both exactly at their thresholds: detected (>=)
     blast(95, 105)                    # runs out of the block at 100: 5 graded frames, detected
     blast(112, 125)                   # starts before the graded block at 120: 5 graded frames, first at 120
     blast(185, 195)                   # to the block's edge at 190: 5 graded frames
-    found = whistle.detect(features, graded)
+    quiet = np.round(np.arange(200) % 100 / 100.0 - 50.0, 2)   # a quiet floor, spread so the percentile is defined
+    features[:, 0] = np.where(features[:, 0] == -50.0, quiet, features[:, 0])
+    found = whistle.detect(features, graded)   # the match's 98th percentile of tonal_db, over its graded frames
     assert found.dtype == np.int64 and found.tolist() == [20, 70, 95, 120, 185], found.tolist()
+    # the threshold is the percentile of the graded frames' tonal_db, rounded to 0.01 dB; ungraded frames do not count
+    rng = np.random.default_rng(3)
+    rand = np.zeros((1000, 2))
+    rand[:, 0] = np.round(rng.normal(0.0, 5.0, 1000), 2)
+    mask = np.zeros(1000, dtype=bool)
+    mask[100:900] = True
+    rand[:100, 0] = 500.0                  # loud, but not graded: must not move the threshold
+    expected = round(float(np.percentile(rand[100:900, 0], 98.0)), 2)
+    assert whistle.tonal_threshold(rand, mask) == expected and whistle.TONAL_QUANTILE == 98.0
+    assert whistle.tonal_threshold(np.array([[1.0, 0.0], [2.0, 0.0], [3.0, 0.0], [4.0, 0.0], [5.0, 0.0]]),
+                                   np.ones(5, dtype=bool)) == 4.92, "np.percentile's linear interpolation, hand-checked"
+    # detections use it: the run at and above the threshold is found, and a louder match raises the bar
+    flat = np.zeros((300, 2))
+    flat[:, 1] = 10.0
+    flat[:, 0] = np.round(np.linspace(0.0, 1.0, 300), 2)
+    gm = np.ones(300, dtype=bool)
+    thr = whistle.tonal_threshold(flat, gm)
+    on = np.flatnonzero(flat[:, 0] >= thr)
+    assert len(on) >= whistle.MIN_FRAMES and whistle.detect(flat, gm).tolist() == [int(on[0])]
+    louder = flat.copy()
+    louder[:5, 0] = 50.0
+    assert whistle.tonal_threshold(louder, gm) >= thr
+    expect_error(ValueError, lambda: whistle.tonal_threshold(flat, np.zeros(300, dtype=bool)), "graded")
     # a run across two touching-but-separate blocks splits at the gap
     graded2 = np.zeros(n, dtype=bool)
     graded2[0:50] = graded2[60:100] = True
