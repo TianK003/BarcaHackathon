@@ -36,7 +36,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R014b | 2026-10-26 | restart states in the decoder (P17, Phase 2b): `restart_team` span `stoppage_end` with `hmm` `restart_source`, `switch_restart` {4, 8, 16, inf} x `use_ball` {false, true}, 8 configs | — | — | — | 0.5433 raw and 0.5589 coarse for `r014b_s04_b1`, against `main.toml`'s 0.5430 and 0.5593 | bar not met (+0.0003 raw, p 0.8125); not adopted; P17 dropped |
 | R015 | 2026-10-29 | the `offpitch` profile (P18): `tracking` v3 with DFL's ball hidden once it is more than m past a line and a share q of the transplanted gaps dropped, m and q fitted once on label-free statistics of our match, its fidelity, and `main.toml` on it | — | — | — | 0.5509 raw and 0.5296 coarse for `main.toml` on `offpitch`, against 0.5430 and 0.5593 on `tracking` (a difference between two profiles) | `offpitch` v1 frozen (m 0.2 m, q 0.430); 8 of 9 gates pass, median gap fails (15.04 s against 10.74); main.toml 0.5509 raw / 0.5296 coarse on it; P18 dropped after R015b |
 | R015b | 2026-10-29 | the `offpitch` v2 rule (the ball hidden while it is more than m past a line and moving, found again at rest), swept once on the benchmark's label-free fidelity statistics before anything was built | — | — | — | — | v2 cannot reach our share past a line at any margin (0.258 to 0.262 against 0.0407); P18 dropped, offpitch code removed (7b555eb) |
-| R016 | 2026-10-30 | `free_x` (P12) on `main.toml`: `X` inside `H` and `A` runs where the decoded label's posterior is below a threshold, over 0.25, 0.35, 0.45, 0.55, 4 configs | — | — | — | — | declared, not run |
+| R016 | 2026-10-30 | `free_x` (P12) on `main.toml`: `X` inside `H` and `A` runs where the decoded label's posterior is below a threshold, over 0.25, 0.35, 0.45, 0.55, 4 configs | — | — | — | — | bar not met; free_x dropped |
 
 ### The four yardsticks on every profile, in one table
 
@@ -5975,6 +5975,52 @@ is not uploaded.
 **If the bar is not met.** One knowledge-informed retry, R016b, is declared before its runs (a different grid, chosen from
 what R016 shows about the posterior's calibration, never from a window score). If that fails too, P12's `free_x` code is
 removed.
+
+**Part 2, the runs and the verdict** (2026-10-30). Commit of the runs: `c909e2f` (the declaration and the configs, unchanged
+since part 1). The controller ran, in one throttled process (profile `tracking` v3, 3 seeds 0 to 2, seven matches):
+
+```bash
+python pipeline/benchmark/run.py pipeline/configs/main.toml pipeline/benchmark/configs/nearest_w50.toml pipeline/benchmark/configs/nearest_w125.toml pipeline/benchmark/configs/r016/r016_t025.toml pipeline/benchmark/configs/r016/r016_t035.toml pipeline/benchmark/configs/r016/r016_t045.toml pipeline/benchmark/configs/r016/r016_t055.toml --truth both
+python pipeline/benchmark/choose.py --reference main --metric macro --band 0.002 r016_t025 r016_t035 r016_t045 r016_t055
+```
+
+**Reference check.** `main` reproduced R013: spellF1 0.5430 raw and 0.5593 coarse, alive/dead F1 0.9731. The two nearest-player
+baselines came out at `nearest_w50` 0.2018 raw (0.1842 coarse) and `nearest_w125` 0.2226 coarse,
+and the coarse `nearest_w125` figure is R004c's 0.2226 to the last digit.
+
+**The choice table** (`choose.py`, objective pooled raw macroF1, tie band 0.002; deltas are over `main`, positive is better):
+
+| config | raw spellF1 | coarse spellF1 | raw macroF1 | coarse macroF1 | alive/dead F1 | possessions / min | D share | raw Δ | p | wins | coarse Δ | p | wins |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `main` | 0.5430 | 0.5593 | 0.8895 | 0.8878 | 0.9731 | 3.13 | 44.6% |  |  |  |  |  |  |
+| **`r016_t025`** | 0.5430 | 0.5593 | 0.8893 | 0.8868 | 0.9702 | 3.13 | 44.6% | -0.0003 | 0.0625 | 1 | -0.0009 | 0.0156 | 0 |
+| `r016_t035` | 0.5430 | 0.5593 | 0.8891 | 0.8865 | 0.9692 | 3.13 | 44.6% | -0.0004 | 0.0312 | 1 | -0.0013 | 0.0156 | 0 |
+| `r016_t045` | 0.5430 | 0.5593 | 0.8889 | 0.8862 | 0.9680 | 3.13 | 44.6% | -0.0006 | 0.0312 | 1 | -0.0016 | 0.0156 | 0 |
+| `r016_t055` | 0.5430 | 0.5593 | 0.8887 | 0.8858 | 0.9663 | 3.13 | 44.6% | -0.0008 | 0.0312 | 1 | -0.0020 | 0.0156 | 0 |
+
+The rule tied all four within 0.002 and, by its tie order, chose `r016_t025` (the lowest threshold, the fewest `X`).
+Against `main`: raw macroF1 -0.0003 (mean per match -0.0003, 90% interval [-0.0005, -0.0000], p 0.0625, 1 win, 6 losses),
+coarse -0.0009 (p 0.0156, 0 wins, 7 losses). Leave-one-match-out picked `r016_t025` in all seven folds.
+
+**The bar** (at least +0.002 raw pooled macroF1 with p at most 0.05): **not met.** The chosen config is 0.0003 below `main`,
+not 0.002 above it.
+
+**The veto.** It did not fire: every spellF1 delta is exactly +0.0000 under both truths, in all seven matches, as
+constructed (no bug), and the largest coarse macroF1 delta, -0.0020 at t055, is not below -0.002. Alive/dead F1 fell from
+0.9731 to 0.9702, 0.9692, 0.9680 and 0.9663: reported as declared, not a veto. Possessions per minute (3.13) and the D share
+(44.6%) are unchanged.
+
+**Verdict: bar not met; `free_x` dropped, `main.toml` unchanged.** All four thresholds lose macroF1, and the loss grows
+with the threshold (raw -0.0003 to -0.0008, coarse -0.0009 to -0.0020), so it shrinks monotonically toward 0 as fewer `X`
+are written. The expectation stated in part 1 holds in its strong form: the HMM's least confident frames are still right
+more often than F1/2 of the time, so no threshold of this signal can gain.
+
+**Rulings (the controller's, binding).**
+1. **No R016b.** The retry that part 1 allowed is not run. Every threshold lowers macroF1 and the loss falls to 0 only as
+   `X` disappears, so a different grid of the same signal would rest on hope, not on knowledge.
+2. **The idea's code is removed completely** (Tian's rule), in the commit after this entry: `pipeline/refine/free_x.py`, its
+   registry line, its checks (with `FREE_X_ABSENT_SHA256`) and `pipeline/benchmark/configs/r016/`. It is recoverable from
+   `c909e2f`. `choose.py --metric` stays, as a general benchmark option.
 
 ## Submission log
 

@@ -48,7 +48,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P09](#p09--camera-aim-as-a-coarse-ball-zone-prior) | Camera aim as a coarse ball-zone prior | fact 1 | S | low–medium | idea |
 | [P10](#p10--referee-whistle-from-the-audio-track) | Referee whistle from the audio track | fact 4 | S–M | medium (audio confirmed, A04) | idea |
 | [P11](#p11--touch-and-pass-events-to-place-boundaries) | Touch and pass events to place boundaries | fact 5 | M–L | medium–high | idea |
-| [P12](#p12--metric-aware-post-processing) | Metric-aware post-processing | fact 5 | S | medium | partly done → R012 (the shift; see its list for the rest) |
+| [P12](#p12--metric-aware-post-processing) | Metric-aware post-processing | fact 5 | S | medium | done → R012 (shift adopted), R016 (free X measured and dropped) |
 | [P13](#p13--learn-from-external-labelled-tracking-data) | Pre-train on external labelled tracking data | facts 1, 2 | L (M on top of P01) | medium–high | idea |
 | [P14](#p14--recover-the-ball-from-the-video) | Recover the ball from the video | facts 1, 2 | L | A14: a perfect ball in our gaps is worth +0.10 raw but +0.02 coarse; a real detector perhaps +0.025 to +0.04 raw | not built → A14 (not a ViT: the ball is 6 px, T46; a half-day zero-shot test may run, [After A14](#after-a14)) |
 | [P15](#p15--broadcast-tracking-as-a-second-opinion) | Broadcast tracking as a second opinion | facts 1, 4 | L | medium | idea |
@@ -958,6 +958,8 @@ used.
 
 ### P12 — Metric-aware post-processing
 
+**Status: done → [R012](results.md) (shift adopted), [R016](results.md) (free X measured and dropped).** R016's bar was not met: every threshold of `free_x` lowered macroF1 (raw -0.0003 to -0.0008, coarse -0.0009 to -0.0020), no retry, code removed (recoverable from `c909e2f`).
+
 **Why.** Cheap last-mile gains on the ranking metric.
 
 **What.**
@@ -967,7 +969,7 @@ used.
   lag on DFL, team +1, into `D` -2, out of `D` 0 frames.*
 - Write explicit `D`, never `X`, before kick-offs and once the ball is out ([T02](traps.md)).
 - Use `X` only inside possessions where the label is genuinely uncertain. It is free on spellF1 and only touches the
-  macroF1 tie-break.
+  macroF1 tie-break. *Measured as `free_x` (R016) and dropped: the decoder's least confident frames are still right more often than F1/2.*
 
 ## Bigger bets
 
