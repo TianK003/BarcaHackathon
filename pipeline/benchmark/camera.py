@@ -52,6 +52,19 @@ correlation, the median and p90 along-pitch error at that lag, and the aim's med
 alive ones (a gate) and in ball gaps over ball-visible frames (a WARN). A ratio of medians does not depend on the frame
 rate, so two cameras at different rates can be compared by it.
 
+The gates (Task E.3, `camera.py gates`). Declared in the design (section 5.E) and in R019 part 1a before the first
+simulation, and never tuned towards: the simulated camera on the benchmark's degraded copies (`--profile`, default
+tracking, 7 matches x seeds) against ours, each by measure(). Four gates, each a tolerance on the difference (GATES):
+the peak lag within 10 frames, the peak correlation within 0.05, the median along-pitch error within 3.0 m, and the
+dead-over-alive speed ratio within 25% of ours (sim / ours - 1). The ratio is the camera's behaviour by the state of
+play, so `dead` is what main.toml decodes as D on both sides, by the pipeline's own functions (run.predict), never the
+truth: ours on BAR-ATH, the simulated one on each served match. The DFL side pools the rows of every (match, seed)
+into one measurement (a median of the pooled frames, not a median of medians), each in its own blocks so that no pair
+crosses two of them. The WARN (WARNS) is the gap-over-visible speed ratio, with the same 25% band as information: it
+never fails the command, since tracking places its gaps blind to the play (T38) and the simulated camera keeps moving
+through them. A statistic that cannot be measured on either side fails its gate (nothing says it passed). The report
+goes to <data dir>/runs/camera/gates_<profile>.json: aggregates only.
+
 The digest. digest(fit) is what a report (and so choose.py's SAME) names the camera by: the sha256 of the eight
 constants the simulator uses (lag, tau, a, b, phi, sigma, lo, hi), and nothing of `stats`, so that a change to what
 measure() reports never makes two runs of the same simulated camera look different.
@@ -70,20 +83,27 @@ is kept, cached, printed or returned by load_fit, so the fit and its file may be
 data rule of P09). The arrays it is fitted from are the match's and are dropped once it is made.
 """
 
+import argparse
 import dataclasses
 import hashlib
 import json
 import math
 import numbers
 import os
+import sys
 import zlib
 from dataclasses import dataclass, field
 
-import numpy as np
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if __name__ == "__main__":
+    # Run by path: swap pipeline/benchmark/ for the repository root, as run.py does, so that `import pipeline` resolves.
+    sys.path[0] = ROOT
 
-from pipeline.benchmark import calibration as calibration_module
-from pipeline.benchmark.inputs import clean_atd
-from pipeline.inputs import camera as aim_module
+import numpy as np  # noqa: E402
+
+from pipeline.benchmark import calibration as calibration_module  # noqa: E402
+from pipeline.benchmark.inputs import clean_atd  # noqa: E402
+from pipeline.inputs import camera as aim_module  # noqa: E402
 
 # Params
 FIT_VERSION = 1                 # bump to refit every cache at once; an edit to this file does that already (the key)
@@ -99,7 +119,6 @@ DECIMALS = 9                    # the fit's floats are rounded to this, so that 
 CACHE_FOLDER = ("cache", "benchmark", "camera")     # <data dir>/cache/benchmark/camera/<key digest>/fit.json
 FIT_FILE = "fit.json"
 MIN_PAIRS = 3                   # a regression or a correlation needs at least this many frames
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # The code a fit depends on, by its path from the repository's root: its sha256 (CRLF read as LF) is in the cache key.
 SOURCES = ("pipeline/benchmark/camera.py", "pipeline/inputs/camera.py", "pipeline/evidence/kinematics.py",
            "starter/load_homography.py", "pipeline/inputs/__init__.py")
@@ -587,3 +606,198 @@ def _ratio(numerator, denominator):
 def _round(value):
     """A summary number as a plain float rounded to DECIMALS (BLAS summation order varies by machine)."""
     return round(float(value), DECIMALS) + 0.0
+
+
+# -- the fidelity gates -----------------------------------------------------------------------------------------------
+
+# Params
+# (name, statistic, kind, tolerance): "abs" is |simulated - ours| <= tolerance, "rel" is |simulated / ours - 1| <= it.
+GATES = (
+    ("peak_lag", "peak_lag", "abs", 10.0),                          # frames
+    ("peak_corr", "peak_corr", "abs", 0.05),
+    ("median_err", "median_err", "abs", 3.0),                       # metres
+    ("speed_ratio_dead_alive", "speed_ratio_dead_alive", "rel", 0.25),
+)
+WARNS = (("speed_ratio_gap_visible", "speed_ratio_gap_visible", "rel", 0.25),)    # information: never a failure
+NO_CAMERA_PROFILES = ("clean",)        # clean's ball is DFL's own, with no gap: there is nothing to hold against ours
+DEFAULT_PROFILE = "tracking"
+DEFAULT_SEEDS = 3
+CONFIG = "pipeline/configs/main.toml"  # whose decoded D is the state of play on both sides
+REPORT_FOLDER = ("runs", "camera")     # <data dir>/runs/camera/gates_<profile>.json
+
+
+def compare(ours, simulated):
+    """{"gates", "warns", "passed"}: the declared tolerances applied to two measure() dicts, ours and simulated.
+
+    Each entry is {name, ours, simulated, delta, tolerance, kind, status}; delta is simulated - ours ("abs") or
+    simulated / ours - 1 ("rel"), rounded to DECIMALS so that a value exactly on a tolerance passes whatever the
+    floating point says. A gate's status is "pass" or "FAIL" (FAIL as well when either side is None, or ours is 0
+    under "rel": nothing was shown to hold); a WARN's is "ok", "WARN" or "n/a" (not measurable), and never fails.
+    `passed` is whether no gate failed.
+    """
+    def entry(spec, outside, inside):
+        name, stat, kind, tolerance = spec
+        mine, theirs = ours.get(stat), simulated.get(stat)
+        delta = None
+        if mine is not None and theirs is not None:
+            if kind == "abs":
+                delta = _round(theirs - mine)
+            elif mine != 0:
+                delta = _round(theirs / mine - 1.0)
+        status = outside if delta is None or abs(delta) > tolerance else inside
+        return {"name": name, "ours": mine, "simulated": theirs, "delta": delta, "tolerance": tolerance, "kind": kind,
+                "status": status}
+    gates = [entry(spec, "FAIL", "pass") for spec in GATES]
+    warns = [entry(spec, "WARN", "ok") for spec in WARNS]
+    for item in warns:
+        if item["delta"] is None:
+            item["status"] = "n/a"
+    return {"gates": gates, "warns": warns, "passed": all(item["status"] == "pass" for item in gates)}
+
+
+def pool(parts):
+    """measure() of many (aim, ball_x, ball_seen, dead, blocks) parts as one: the rows pooled, not the medians.
+
+    Every part is laid after the one before, with its blocks shifted by the rows before it, so no pair, difference or
+    count crosses two parts (measure keeps all of them inside a block); `dead` must be given by each. ValueError for
+    no part. Used for DFL's matches x seeds."""
+    parts = list(parts)
+    if not parts:
+        raise ValueError("pool: there is no part to measure; give at least one (aim, ball_x, ball_seen, dead, blocks)")
+    blocks, offset = [], 0
+    for aim, _, _, _, spans in parts:
+        blocks.extend((half, start + offset, stop + offset) for half, start, stop in spans)
+        offset += len(aim)
+    columns = [np.concatenate([np.asarray(part[index]) for part in parts]) for index in range(4)]
+    return measure(columns[0], columns[1], columns[2], columns[3], blocks)
+
+
+def decoded_part(config, inputs, aim, run_module):
+    """One (aim, ball_x, ball_seen, dead, blocks) part: `inputs`' ball as the pipeline reads it, `aim`, and `dead`
+    where `config` decodes D on `inputs` (run.predict: pseudo-labels, no truth is reachable from the inputs)."""
+    from pipeline.evidence import kinematics
+    import possession_metrics as pm
+    codes, _ = run_module.predict(config, inputs)
+    track = kinematics.ball_track(inputs)
+    return (np.asarray(aim, dtype=np.float64), np.array(track.xy_m[:, 0]), np.array(track.visible),
+            np.asarray(codes) == pm.D, list(inputs.graded))
+
+
+def ours_stats(config, inputs):
+    """measure() on BAR-ATH: its own aim, its ball as served, and `config`'s decoded D (aggregates only)."""
+    from pipeline.benchmark import run
+    aim, ball_x, seen, dead, blocks = decoded_part(config, inputs, inputs.camera_aim, run)
+    return measure(aim, ball_x, seen, dead, blocks)
+
+
+def simulated_stats(config, profile, seeds, matches, calibration, camera_fit, data_dir, log=print):
+    """measure() pooled over `matches` ([(id, DflMatch or None to load)]) x seeds 0 .. seeds - 1 on `profile`'s copies.
+
+    Each (match, seed) is served as the runner serves it (make_atd, simulated_aim, MatchInputs) and decoded by
+    `config`; one at a time, keeping only the five arrays of the part."""
+    from pipeline.benchmark import dfl, run
+    from pipeline.benchmark import inputs as match_inputs
+    parts = []
+    for match_id, match in matches:
+        if match is None:
+            match = dfl.load_match(match_id, data_dir=data_dir)
+        for seed in range(seeds):
+            atd = run.make_atd(match, profile, seed, calibration)
+            aim = simulated_aim(match, seed, camera_fit)
+            inputs = match_inputs.MatchInputs(match, atd, profile=profile, seed=seed, data_dir=data_dir,
+                                              camera_aim=aim)
+            parts.append(decoded_part(config, inputs, aim, run))
+            log("simulated {} seed {}".format(match_id, seed))
+    return pool(parts)
+
+
+def report(profile=DEFAULT_PROFILE, seeds=DEFAULT_SEEDS, match_ids=None, matches=None, calibration=None,
+           camera_fit=None, config_path=CONFIG, ours=None, data_dir=None, log=print):
+    """The camera's gates on `profile`: a JSON-ready dict of the two measurements, the gates and the WARN.
+
+    `ours` is BAR-ATH's measure() dict, or None to measure it (Inputs(data_dir), the config's decoded D); `matches` is
+    {id: DflMatch} to use instead of loading, `calibration` and `camera_fit` stand in for the cached ones. Returns
+    {"profile", "seeds", "matches", "config", "camera" (digest and the fit's constants), "ours", "simulated", "gates",
+    "warns", "passed"}. run.BenchmarkError for a profile that has no camera to compare (clean) or is not one, and for
+    seeds below 1.
+    """
+    from pipeline.benchmark import run
+    from pipeline.config import load_config
+    run._check_profile(profile)
+    if profile in NO_CAMERA_PROFILES:
+        raise run.BenchmarkError("profile {!r} degrades nothing, so its ball has no gaps for the camera to be held "
+                                 "against ours; use one of: {}".format(
+                                     profile, ", ".join(sorted(set(run.PROFILES) - set(NO_CAMERA_PROFILES)))))
+    if isinstance(seeds, bool) or not isinstance(seeds, int) or seeds < 1:
+        raise run.BenchmarkError("seeds must be a whole number of at least 1, got {!r}".format(seeds))
+    ids = run.resolve_match_ids(match_ids, matches)
+    config = load_config(config_path)
+    if calibration is None:
+        calibration = calibration_module.load(data_dir=data_dir)
+    camera_fit = run.camera_fit_for(profile, camera_fit, data_dir)
+    if ours is None:
+        from pipeline.inputs import Inputs
+        ours = ours_stats(config, Inputs(data_dir=data_dir))
+    served = [(match_id, None if matches is None else matches[match_id]) for match_id in ids]
+    simulated = simulated_stats(config, profile, seeds, served, calibration, camera_fit, data_dir, log=log)
+    result = compare(ours, simulated)
+    result.update(profile=profile, seeds=seeds, matches=sorted(ids), config=config.stem,
+                  camera={"sha256": digest(camera_fit), "fit": {name: getattr(camera_fit, name) for name in CONSTANTS}},
+                  ours=ours, simulated=simulated)
+    return result
+
+
+def report_path(data_dir, profile):
+    """<data dir>/runs/camera/gates_<profile>.json."""
+    from games import DATA_DIR
+    return os.path.join(data_dir or DATA_DIR, *REPORT_FOLDER, "gates_{}.json".format(profile))
+
+
+def _figure(value, signed=False):
+    return "n/a" if value is None else ("{:+.4g}" if signed else "{:.4g}").format(value)
+
+
+def render(result):
+    """The printed lines: one per gate and WARN, figures only."""
+    lines = ["camera gates on {} ({} seeds, {} matches, {} decoded)".format(
+        result["profile"], result["seeds"], len(result["matches"]), result["config"]),
+        "camera    {}".format(result["camera"]["sha256"][:12])]
+    for kind, items in (("gate", result["gates"]), ("warn", result["warns"])):
+        for item in items:
+            band = ("+-{}".format(item["tolerance"]) if item["kind"] == "abs"
+                    else "+-{:.0%} of ours".format(item["tolerance"]))
+            lines.append("{:<5} {:<24} ours {:>8}  sim {:>8}  delta {:>9}  {:<16} {}".format(
+                kind, item["name"], _figure(item["ours"]), _figure(item["simulated"]),
+                _figure(item["delta"], signed=True), band, item["status"]))
+    lines.append("result    {}".format("PASS" if result["passed"] else "FAIL"))
+    return lines
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="The simulated camera's fidelity against ours (HEAVY: loads BAR-ATH "
+                                                 "and the 7 DFL matches; exit 1 if a gate fails).")
+    commands = parser.add_subparsers(dest="command", required=True)
+    gates = commands.add_parser("gates", help="the four gates and the WARN, written to runs/camera/")
+    gates.add_argument("--profile", default=DEFAULT_PROFILE,
+                       help="the profile to measure (default {})".format(DEFAULT_PROFILE))
+    gates.add_argument("--seeds", type=int, default=DEFAULT_SEEDS,
+                       help="seeds per match (default {})".format(DEFAULT_SEEDS))
+    gates.add_argument("--data-dir", help="the data bundle (default: data/, or $MTAH_DATA_DIR)")
+    args = parser.parse_args(argv)
+    from pipeline.benchmark import run
+    from pipeline.config import ConfigError
+    try:
+        result = report(args.profile, seeds=args.seeds, data_dir=args.data_dir)
+        path = report_path(args.data_dir, args.profile)
+        run.write_json(path, run.plain(result))
+    except (ConfigError, run.BenchmarkError, OSError) as error:
+        print("FAILED    {}".format(error))
+        return 1
+    for line in render(result):
+        print(line)
+    print("report    {}".format(run.shown(path)))
+    return 0 if result["passed"] else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

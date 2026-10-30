@@ -15,6 +15,8 @@ camera_aim, with no truth in it:
   NaN off the graded blocks, clipped, and blind to the truth (test_camera_simulation_is_deterministic_per_seed,
   test_camera_simulation_reads_no_truth);
 * the gates' statistics are exact on a scene built by hand (test_camera_measure_on_a_hand_built_scene);
+* the fidelity gates apply the declared tolerances, the DFL side pools rows and not medians, and the report is the
+  pooled measurement of the served matches against ours (test_camera_gates_*);
 * the fit, its cache and what it prints are aggregates only (test_camera_fit_prints_aggregates_only);
 * the runner and the trainers serve the aim off the clean profile and not on it, the report names the fit, and no
   existing config's score moves (test_runner_serves_camera_aim_off_clean, test_trainer_serves_camera_aim_off_clean).
@@ -39,7 +41,7 @@ from pipeline.benchmark import camera, degrade, score, train_dead_ball, truth
 from pipeline.benchmark import inputs as match_inputs
 from pipeline.benchmark import run as benchmark_run
 from pipeline.benchmark.checks.common import (leaks, random_match, synthetic_calibration, synthetic_camera_fit,
-                                              synthetic_matches, yardstick_path)
+                                              synthetic_matches, tracking_calibration, yardstick_path)
 from pipeline.config import load_config
 from pipeline.inputs import Homography
 from pipeline.selftest import expect_error, make_synthetic_bundle, quiet, synthetic_inputs, write_text
@@ -578,3 +580,101 @@ def test_trainer_serves_camera_aim_off_clean():
     expected = [(match_id, seed, camera.simulated_aim(other, seed, fit).tobytes())
                 for match_id, other in sorted(synthetic_matches().items()) for seed in (0, 1)]
     assert seen == expected, [(match_id, seed) for match_id, seed, _ in seen]
+
+
+# -- the fidelity gates -----------------------------------------------------------------------------------------------
+
+def test_camera_gates_apply_the_declared_tolerances():
+    """Each gate on either side of its tolerance (and exactly on it) gives pass / FAIL as declared: peak_lag +-10
+    frames, peak_corr +-0.05, median_err +-3.0 m, speed_ratio_dead_alive +-25% of ours; an unmeasured statistic fails
+    its gate; the WARN (speed_ratio_gap_visible) never fails, whatever its figures; and a failed gate sets passed to
+    False."""
+    ours = {"peak_lag": 40, "peak_corr": 0.50, "median_err": 8.0, "speed_ratio_dead_alive": 0.80,
+            "speed_ratio_gap_visible": 0.58}
+    base = dict(ours)
+
+    def status(name, **changed):
+        result = camera.compare(ours, {**base, **changed})
+        return {item["name"]: item["status"] for item in result["gates"]}[name], result
+
+    assert [(g[0], g[2], g[3]) for g in camera.GATES] == [
+        ("peak_lag", "abs", 10.0), ("peak_corr", "abs", 0.05), ("median_err", "abs", 3.0),
+        ("speed_ratio_dead_alive", "rel", 0.25)], camera.GATES
+    for name, inside, edge, outside in (
+            ("peak_lag", 49, 50, 51),
+            ("peak_corr", 0.54, 0.55, 0.56),
+            ("median_err", 10.9, 11.0, 11.1),
+            ("speed_ratio_dead_alive", 0.99, 1.0, 1.01)):
+        for value in (inside, edge):                       # on the tolerance passes: the rounding makes it exact
+            assert status(name, **{name: value})[0] == "pass", (name, value)
+        assert status(name, **{name: outside})[0] == "FAIL", (name, outside)
+    for name, below in (("peak_lag", 29), ("peak_corr", 0.44), ("median_err", 4.9), ("speed_ratio_dead_alive", 0.59)):
+        assert status(name, **{name: below})[0] == "FAIL", (name, below)       # either side of ours
+    assert status("speed_ratio_dead_alive", speed_ratio_dead_alive=0.6)[0] == "pass"    # -25% exactly
+
+    state, result = status("peak_lag")
+    assert state == "pass" and result["passed"] and all(g["status"] == "pass" for g in result["gates"]), result
+    assert result["warns"][0]["status"] == "ok" and result["warns"][0]["delta"] == 0.0, result["warns"]
+    state, result = status("peak_lag", peak_lag=80)
+    assert not result["passed"], "one failed gate fails the whole"
+
+    # None on either side fails (nothing was shown to hold); the WARN is n/a and does not fail.
+    for name in ("peak_lag", "peak_corr", "median_err", "speed_ratio_dead_alive"):
+        assert status(name, **{name: None})[0] == "FAIL", name
+        assert camera.compare({**ours, name: None}, base)["gates"][[g[0] for g in camera.GATES].index(name)][
+            "status"] == "FAIL", name
+    assert camera.compare({**ours, "speed_ratio_dead_alive": 0.0}, base)["passed"] is False, "ours 0: no ratio"
+    # The WARN never fails: far outside its band, it is a WARN, and passed is untouched; not measurable, it is n/a.
+    far = camera.compare(ours, {**base, "speed_ratio_gap_visible": 5.0})
+    assert far["warns"][0]["status"] == "WARN" and far["passed"], far
+    gone = camera.compare(ours, {**base, "speed_ratio_gap_visible": None})
+    assert gone["warns"][0]["status"] == "n/a" and gone["passed"], gone
+
+
+def test_camera_gates_pool_the_rows_of_every_match_and_seed():
+    """pool measures one long series in which each part keeps its own blocks: the speed's median is that of all the rows
+    (a part of many slow frames and a part of few fast ones give the slow one, not the middle of two medians), and a
+    single part gives exactly measure()'s own figures; no part is refused."""
+    n = 200
+    slow = np.arange(n) * 0.04                 # 1 m/s at 25 Hz
+    fast = np.arange(40) * 0.4                 # 10 m/s
+    seen_slow, seen_fast = np.ones(n, dtype=bool), np.ones(40, dtype=bool)
+    dead_slow, dead_fast = np.zeros(n, dtype=bool), np.zeros(40, dtype=bool)
+    parts = [(slow, slow, seen_slow, dead_slow, [(1, 0, n)]), (fast, fast, seen_fast, dead_fast, [(1, 0, 40)])]
+    pooled = camera.pool(parts)
+    assert abs(pooled["speed_alive_mps"] - 1.0) < 1e-9, pooled["speed_alive_mps"]    # not the 5.5 of the two medians
+    alone = camera.pool(parts[:1])
+    assert alone == camera.measure(slow, slow, seen_slow, dead_slow, [(1, 0, n)]), alone
+    expect_error(ValueError, lambda: camera.pool([]), "part")
+
+
+def test_camera_gates_report_end_to_end_on_synthetic_matches():
+    """report() on two synthetic matches: ours given, the simulated side pooled over matches x seeds from the served
+    inputs, the gates and the WARN in the result, the file written by main's path, clean refused, no truth anywhere."""
+    matches, cal, fit = synthetic_matches(), tracking_calibration(), synthetic_camera_fit()
+    ours = {"peak_lag": 5, "peak_corr": 0.9, "median_err": 2.0, "speed_ratio_dead_alive": 1.0,
+            "speed_ratio_gap_visible": 1.0}
+    path = yardstick_path(50)
+    lines = []
+    result = camera.report("tracking", seeds=2, matches=matches, calibration=cal, camera_fit=fit, config_path=path,
+                           ours=ours, log=lines.append)
+    assert result["matches"] == sorted(matches) and result["seeds"] == 2 and result["profile"] == "tracking"
+    assert result["camera"]["sha256"] == camera.digest(fit), result["camera"]
+    assert result["ours"] == ours and result["gates"] == camera.compare(ours, result["simulated"])["gates"]
+    assert len(lines) == len(matches) * 2, lines
+    again = camera.report("tracking", seeds=2, matches=matches, calibration=cal, camera_fit=fit, config_path=path,
+                          ours=ours, log=quiet)
+    assert again == result, "the same bytes for the same inputs"
+    one = camera.report("tracking", seeds=1, matches=matches, calibration=cal, camera_fit=fit, config_path=path,
+                        ours=ours, log=quiet)
+    assert one["simulated"] != result["simulated"], "the seeds are pooled in"
+    text = "\n".join(camera.render(result))
+    assert ("PASS" in text or "FAIL" in text) and "speed_ratio_gap_visible" in text, text
+    with tempfile.TemporaryDirectory() as root:
+        target = camera.report_path(root, "tracking")
+        assert target.replace("\\", "/").endswith("/runs/camera/gates_tracking.json"), target
+    expect_error(benchmark_run.BenchmarkError, lambda: camera.report(
+        "clean", matches=matches, camera_fit=None, config_path=path, ours=ours, log=quiet), "clean")
+    expect_error(benchmark_run.BenchmarkError, lambda: camera.report(
+        "tracking", seeds=0, matches=matches, calibration=cal, camera_fit=fit, config_path=path, ours=ours,
+        log=quiet), "seeds")
