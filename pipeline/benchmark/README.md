@@ -730,7 +730,7 @@ thousandths (144 files).
 
 ```
 .venv/Scripts/python pipeline/benchmark/choose.py --reference main STEM [STEM ...] [--profile P] [--band 0.005]
-                                                  [--top N] [--data-dir D] [--out PATH]
+                                                  [--metric spell|macro] [--top N] [--data-dir D] [--out PATH]
 choice = choose.choose(stems, reference="main")
 ```
 
@@ -743,8 +743,15 @@ estimate that R008 to R011 worked out by hand: for each match, the selection rep
 objective alone, and the whole rule on six-match means) and the chosen config's score on the held-out match against
 the reference's. Every number is computed from the reports' halves with `score.py`, so it is the runner's. A report is
 refused if its config file has changed since it was written, and reports of different runs (matches, seeds, profile or
-Calibration) are refused together. The checks are `test_choose_applies_the_rule_and_matches_the_runner` and
-`test_choose_refuses_missing_stale_and_mixed_reports` (`checks/choose.py`, synthetic).
+Calibration) are refused together.
+
+`--metric macro` (`metric="macro"`, P12) judges the grid on pooled macroF1 in place of spellF1, for a refiner that can
+only move macroF1 (`free_x`, R016): the raw macroF1 selects, the coarse macroF1 breaks a tie, the Δs, p and wins in the
+table and the `versus` lines are macroF1's, the lomo averages each match's macroF1, and the table's header names the
+metric. The band is in the metric's units, so such a grid declares it (R016 passes `--band 0.002`); the default stays
+0.005, and every other field is unchanged. The checks are `test_choose_applies_the_rule_and_matches_the_runner`,
+`test_choose_selects_on_macro_when_asked` and `test_choose_refuses_missing_stale_and_mixed_reports`
+(`checks/choose.py`, synthetic).
 
 ## Dead-ball model
 

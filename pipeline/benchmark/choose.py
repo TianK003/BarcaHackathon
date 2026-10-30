@@ -1,7 +1,7 @@
 """choose: apply a grid's declared selection rule to the benchmark's written reports, and estimate it out of sample.
 
     python pipeline/benchmark/choose.py --reference main CONFIG_STEM [CONFIG_STEM ...] [--profile tracking]
-                                        [--band 0.005] [--data-dir D] [--out PATH]
+                                        [--band 0.005] [--metric spell|macro] [--data-dir D] [--out PATH]
 
     choice = choose(stems, reference="main")      # {"rows", "tied", "chosen", "versus", "lomo", ...}
 
@@ -22,6 +22,10 @@ It reads only the reports that pipeline/benchmark/run.py wrote (<data dir>/runs/
 its numbers are the runner's. A report is refused if its config file has changed since it was written (the report
 holds the config's text), or if two reports differ in their matches, seeds, profile or Calibration: a selection over
 reports of different runs would compare different things. The reports hold DFL's counts and no frame of BAR-ATH.
+
+`metric="macro"` (--metric macro, P12) applies the same rule to pooled macroF1 in place of spellF1: the raw macroF1
+chooses, the coarse macroF1 breaks a tie, the deltas, p and wins (rows, versus and lomo) are macroF1's, and each
+match's score in the lomo is its macroF1. The band is in macroF1's units, so a grid judged on it names its band.
 """
 
 import argparse
@@ -42,6 +46,7 @@ from pipeline.benchmark import run, score  # noqa: E402
 # Params
 TIE_BAND = 0.005                 # spellF1: the configs within this of the best raw score are tied (R008 to R013)
 SPELL = "spell_f1_mean"
+METRICS = {"spell": SPELL, "macro": "macro_f1"}      # the objective's name -> the scalar of score.pooled that it is
 SAME = ("matches", "seeds", "profile", "calibration")    # what every report of one selection must share
 
 
@@ -79,14 +84,19 @@ def halves(report):
                             confusion=tuple(tuple(row) for row in half["confusion"])) for half in report["halves"]]
 
 
-def choose(stems, reference, profile=run.DEFAULT_PROFILE, band=TIE_BAND, data_dir=None, match_ids=None, seeds=None):
+def choose(stems, reference, profile=run.DEFAULT_PROFILE, band=TIE_BAND, data_dir=None, match_ids=None, seeds=None,
+           metric="spell"):
     """The rule applied to `stems` (in the declared tie order) against `reference`; see the module docstring.
 
     Returns {"reference", "profile", "matches", "seeds", "rows", "best", "tied", "chosen", "versus", "lomo"}: one row
     per stem (and the reference) with its pooled scores under both truths, its alive/dead F1, possessions per graded
-    minute, D share and per-match spellF1; the best raw stem, the tied stems and the chosen one; the chosen config
-    against the reference under each truth (score.compare); and the two leave-one-match-out rules.
+    minute, D share and per-match score (of `metric`); the best raw stem, the tied stems and the chosen one; the
+    chosen config against the reference under each truth (score.compare); and the two leave-one-match-out rules.
+    `metric` is the objective, "spell" (pooled spellF1, the default) or "macro" (pooled macroF1): it picks the rows'
+    score that selects, what score.compare compares and what the lomo averages; every other field is unchanged.
     """
+    if metric not in METRICS:
+        raise ChooseError("metric must be one of {}; got {!r}".format(sorted(METRICS), metric))
     stems = list(stems)
     if not stems or len(set(stems)) < len(stems):
         raise ChooseError("name one or more configs, each once; got {}".format(stems))
@@ -107,7 +117,7 @@ def choose(stems, reference, profile=run.DEFAULT_PROFILE, band=TIE_BAND, data_di
         for truth in run.TRUTHS:
             pooled = score.pooled(scores[(stem, truth)])
             row[truth] = {"spell": pooled[SPELL], "macro": pooled["macro_f1"],
-                          "per_match": {match_id: entry[SPELL]
+                          "per_match": {match_id: entry[METRICS[metric]]
                                         for match_id, entry in score.per_match(scores[(stem, truth)]).items()}}
         raw = reports[(stem, "raw")]
         row["alive_dead"] = raw["pooled"]["alive_dead_f1"]
@@ -115,17 +125,19 @@ def choose(stems, reference, profile=run.DEFAULT_PROFILE, band=TIE_BAND, data_di
         row["d_share"] = raw["labels"]["predicted"]["D"]
         rows[stem] = row
 
-    best, tied, chosen = _select(stems, {stem: rows[stem]["raw"]["spell"] for stem in stems},
-                                 {stem: rows[stem]["coarse"]["spell"] for stem in stems}, band)
-    versus = {truth: score.compare(scores[(reference, truth)], scores[(chosen, truth)]) for truth in run.TRUTHS}
+    best, tied, chosen = _select(stems, {stem: rows[stem]["raw"][metric] for stem in stems},
+                                 {stem: rows[stem]["coarse"][metric] for stem in stems}, band)
+    versus = {truth: score.compare(scores[(reference, truth)], scores[(chosen, truth)], metric=METRICS[metric])
+              for truth in run.TRUTHS}
     for truth in run.TRUTHS:
         for stem in names:
             if stem != reference:
-                fields = score.compare(scores[(reference, truth)], scores[(stem, truth)])
+                fields = score.compare(scores[(reference, truth)], scores[(stem, truth)], metric=METRICS[metric])
                 rows[stem][truth].update(delta=fields["pooled_delta"], p=fields["p_sign_flip"], wins=fields["wins"])
-    return {"reference": reference, "profile": first["profile"], "matches": [m["id"] for m in first["matches"]],
-            "seeds": first["seeds"], "band": band, "rows": rows, "order": stems, "best": best, "tied": tied,
-            "chosen": chosen, "versus": versus, "lomo": lomo(stems, reference, rows, band)}
+    return {"reference": reference, "metric": metric, "profile": first["profile"],
+            "matches": [m["id"] for m in first["matches"]], "seeds": first["seeds"], "band": band, "rows": rows,
+            "order": stems, "best": best, "tied": tied, "chosen": chosen, "versus": versus,
+            "lomo": lomo(stems, reference, rows, band)}
 
 
 def _select(stems, raw, coarse, band):
@@ -172,12 +184,12 @@ def lomo(stems, reference, rows, band=TIE_BAND):
 
 def render(choice, rows_shown=None):
     """The lines: the table (every row, or the `rows_shown` best by raw score), the choice, its deltas, the lomo."""
-    rows, reference = choice["rows"], choice["reference"]
-    order = sorted(choice["order"], key=lambda stem: -rows[stem]["raw"]["spell"])
+    rows, reference, metric = choice["rows"], choice["reference"], choice["metric"]
+    order = sorted(choice["order"], key=lambda stem: -rows[stem]["raw"][metric])
     shown = order if rows_shown is None else order[:rows_shown]
-    lines = ["profile {} {}   matches {}   seeds {}   reference {}   tie band {}".format(
+    lines = ["profile {} {}   matches {}   seeds {}   reference {}   metric {}F1   tie band {}".format(
         choice["profile"]["name"], choice["profile"]["version"], len(choice["matches"]),
-        ",".join(str(seed) for seed in choice["seeds"]), reference, choice["band"]), "",
+        ",".join(str(seed) for seed in choice["seeds"]), reference, metric, choice["band"]), "",
         "| config | raw spellF1 | coarse spellF1 | raw macroF1 | coarse macroF1 | alive/dead F1 | possessions / min | "
         "D share | raw Δ | p | wins | coarse Δ | p | wins |", "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for stem in [reference] + [stem for stem in shown if stem != reference]:
@@ -194,10 +206,10 @@ def render(choice, rows_shown=None):
                 cells += ["{:+.4f}".format(row[truth]["delta"]), "{:.4f}".format(row[truth]["p"]),
                           str(row[truth]["wins"])]
         lines.append("| " + " | ".join(cells) + " |")
-    lines += ["", "best raw  {} {:.4f}".format(choice["best"], rows[choice["best"]]["raw"]["spell"]),
+    lines += ["", "best raw  {} {:.4f}".format(choice["best"], rows[choice["best"]]["raw"][metric]),
               "tied      {} within {} of it: {}".format(len(choice["tied"]), choice["band"], ", ".join(
-                  "{} ({:.4f} raw, {:.4f} coarse)".format(stem, rows[stem]["raw"]["spell"],
-                                                          rows[stem]["coarse"]["spell"]) for stem in choice["tied"])),
+                  "{} ({:.4f} raw, {:.4f} coarse)".format(stem, rows[stem]["raw"][metric],
+                                                          rows[stem]["coarse"][metric]) for stem in choice["tied"])),
               "chosen    {}".format(choice["chosen"])]
     for truth in run.TRUTHS:
         fields = choice["versus"][truth]
@@ -225,6 +237,8 @@ def main(argv=None):
     parser.add_argument("--reference", required=True, help="the config every delta is taken against, e.g. main")
     parser.add_argument("--profile", default=run.DEFAULT_PROFILE, help=run.profile_help())
     parser.add_argument("--band", type=float, default=TIE_BAND, help="the tie band (default {})".format(TIE_BAND))
+    parser.add_argument("--metric", choices=sorted(METRICS), default="spell",
+                        help="the objective: pooled spellF1 (default) or macroF1; the band is in its units")
     parser.add_argument("--top", type=int, help="show only this many rows of the table, the best raw first")
     parser.add_argument("--data-dir", help="the data bundle (default: data/, or $MTAH_DATA_DIR)")
     parser.add_argument("--out", help="also write the selection as JSON here")
@@ -233,7 +247,8 @@ def main(argv=None):
     if reconfigure is not None:                                 # cannot print; a replaced stdout may not have it
         reconfigure(encoding="utf-8")
     try:
-        choice = choose(args.stems, args.reference, profile=args.profile, band=args.band, data_dir=args.data_dir)
+        choice = choose(args.stems, args.reference, profile=args.profile, band=args.band, metric=args.metric,
+                        data_dir=args.data_dir)
     except (ChooseError, ValueError, OSError) as error:
         print("FAILED    {}".format(error))
         return 1
