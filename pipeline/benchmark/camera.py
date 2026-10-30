@@ -62,7 +62,10 @@ truth: ours on BAR-ATH, the simulated one on each served match. The DFL side poo
 into one measurement (a median of the pooled frames, not a median of medians), each in its own blocks so that no pair
 crosses two of them. The WARN (WARNS) is the gap-over-visible speed ratio, with the same 25% band as information: it
 never fails the command, since tracking places its gaps blind to the play (T38) and the simulated camera keeps moving
-through them. A statistic that cannot be measured on either side fails its gate (nothing says it passed). The report
+through them. Only `--profile tracking` decides the exit code: under any other (context, a sensitivity profile, R005)
+the four gates are printed as information and the command exits 0. `dead` comes from main.toml with its match-only
+sources dropped (run.drop_match_only), on both sides, so that one decoder serves BAR-ATH and DFL; the names dropped
+are printed and kept in the report. A statistic that cannot be measured on either side fails its gate (nothing says it passed). The report
 goes to <data dir>/runs/camera/gates_<profile>.json: aggregates only.
 
 The digest. digest(fit) is what a report (and so choose.py's SAME) names the camera by: the sha256 of the eight
@@ -96,8 +99,12 @@ from dataclasses import dataclass, field
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if __name__ == "__main__":
-    # Run by path: swap pipeline/benchmark/ for the repository root, as run.py does, so that `import pipeline` resolves.
+    # Run by path: swap pipeline/benchmark/ for the repository root so that `import pipeline` resolves, and run the
+    # package's own module. Defining everything here as __main__ would make a second CameraFit, `__main__.CameraFit`,
+    # which the runner's `isinstance(fit, pipeline.benchmark.camera.CameraFit)` would refuse (the class-identity trap).
     sys.path[0] = ROOT
+    from pipeline.benchmark.camera import main
+    sys.exit(main())
 
 import numpy as np  # noqa: E402
 
@@ -621,19 +628,21 @@ GATES = (
 WARNS = (("speed_ratio_gap_visible", "speed_ratio_gap_visible", "rel", 0.25),)    # information: never a failure
 NO_CAMERA_PROFILES = ("clean",)        # clean's ball is DFL's own, with no gap: there is nothing to hold against ours
 DEFAULT_PROFILE = "tracking"
+DECISIVE_PROFILES = ("tracking",)      # only this profile's gates set the exit code; the others print them as information
 DEFAULT_SEEDS = 3
 CONFIG = "pipeline/configs/main.toml"  # whose decoded D is the state of play on both sides
 REPORT_FOLDER = ("runs", "camera")     # <data dir>/runs/camera/gates_<profile>.json
 
 
-def compare(ours, simulated):
+def compare(ours, simulated, decisive=True):
     """{"gates", "warns", "passed"}: the declared tolerances applied to two measure() dicts, ours and simulated.
 
     Each entry is {name, ours, simulated, delta, tolerance, kind, status}; delta is simulated - ours ("abs") or
     simulated / ours - 1 ("rel"), rounded to DECIMALS so that a value exactly on a tolerance passes whatever the
     floating point says. A gate's status is "pass" or "FAIL" (FAIL as well when either side is None, or ours is 0
     under "rel": nothing was shown to hold); a WARN's is "ok", "WARN" or "n/a" (not measurable), and never fails.
-    `passed` is whether no gate failed.
+    `passed` is whether no gate failed. `decisive` (default True) says whether the gates decide: the result holds it, and
+    a caller that exits on `passed` exits only when it is True (the sensitivity profiles print the same figures).
     """
     def entry(spec, outside, inside):
         name, stat, kind, tolerance = spec
@@ -652,7 +661,8 @@ def compare(ours, simulated):
     for item in warns:
         if item["delta"] is None:
             item["status"] = "n/a"
-    return {"gates": gates, "warns": warns, "passed": all(item["status"] == "pass" for item in gates)}
+    return {"gates": gates, "warns": warns, "decisive": bool(decisive),
+            "passed": all(item["status"] == "pass" for item in gates)}
 
 
 def pool(parts):
@@ -731,7 +741,9 @@ def report(profile=DEFAULT_PROFILE, seeds=DEFAULT_SEEDS, match_ids=None, matches
     if isinstance(seeds, bool) or not isinstance(seeds, int) or seeds < 1:
         raise run.BenchmarkError("seeds must be a whole number of at least 1, got {!r}".format(seeds))
     ids = run.resolve_match_ids(match_ids, matches)
-    config = load_config(config_path)
+    config, dropped = run.drop_match_only(load_config(config_path))
+    log("decoder   {} without its match-only sources: {}".format(
+        config.stem, ", ".join(dropped) if dropped else "none dropped"))
     if calibration is None:
         calibration = calibration_module.load(data_dir=data_dir)
     camera_fit = run.camera_fit_for(profile, camera_fit, data_dir)
@@ -740,8 +752,9 @@ def report(profile=DEFAULT_PROFILE, seeds=DEFAULT_SEEDS, match_ids=None, matches
         ours = ours_stats(config, Inputs(data_dir=data_dir))
     served = [(match_id, None if matches is None else matches[match_id]) for match_id in ids]
     simulated = simulated_stats(config, profile, seeds, served, calibration, camera_fit, data_dir, log=log)
-    result = compare(ours, simulated)
+    result = compare(ours, simulated, decisive=profile in DECISIVE_PROFILES)
     result.update(profile=profile, seeds=seeds, matches=sorted(ids), config=config.stem,
+                  dropped_match_only=list(dropped),
                   camera={"sha256": digest(camera_fit), "fit": {name: getattr(camera_fit, name) for name in CONSTANTS}},
                   ours=ours, simulated=simulated)
     return result
@@ -761,6 +774,7 @@ def render(result):
     """The printed lines: one per gate and WARN, figures only."""
     lines = ["camera gates on {} ({} seeds, {} matches, {} decoded)".format(
         result["profile"], result["seeds"], len(result["matches"]), result["config"]),
+        "dropped   match-only sources: {}".format(", ".join(result["dropped_match_only"]) or "none"),
         "camera    {}".format(result["camera"]["sha256"][:12])]
     for kind, items in (("gate", result["gates"]), ("warn", result["warns"])):
         for item in items:
@@ -769,13 +783,17 @@ def render(result):
             lines.append("{:<5} {:<24} ours {:>8}  sim {:>8}  delta {:>9}  {:<16} {}".format(
                 kind, item["name"], _figure(item["ours"]), _figure(item["simulated"]),
                 _figure(item["delta"], signed=True), band, item["status"]))
-    lines.append("result    {}".format("PASS" if result["passed"] else "FAIL"))
+    if result["decisive"]:
+        lines.append("result    {}".format("PASS" if result["passed"] else "FAIL"))
+    else:
+        lines.append("result    information only: profile {} does not decide (the gates are {}; exit code 0)".format(
+            result["profile"], "all within tolerance" if result["passed"] else "not all within tolerance"))
     return lines
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="The simulated camera's fidelity against ours (HEAVY: loads BAR-ATH "
-                                                 "and the 7 DFL matches; exit 1 if a gate fails).")
+                                                 "and the 7 DFL matches; exit 1 if a tracking gate fails).")
     commands = parser.add_subparsers(dest="command", required=True)
     gates = commands.add_parser("gates", help="the four gates and the WARN, written to runs/camera/")
     gates.add_argument("--profile", default=DEFAULT_PROFILE,
@@ -783,7 +801,12 @@ def main(argv=None):
     gates.add_argument("--seeds", type=int, default=DEFAULT_SEEDS,
                        help="seeds per match (default {})".format(DEFAULT_SEEDS))
     gates.add_argument("--data-dir", help="the data bundle (default: data/, or $MTAH_DATA_DIR)")
+    commands.add_parser("where", help="print the module that defines CameraFit (the check that a run by path is the "
+                                      "package's own module)")
     args = parser.parse_args(argv)
+    if args.command == "where":
+        print(CameraFit.__module__)
+        return 0
     from pipeline.benchmark import run
     from pipeline.config import ConfigError
     try:
@@ -796,8 +819,5 @@ def main(argv=None):
     for line in render(result):
         print(line)
     print("report    {}".format(run.shown(path)))
-    return 0 if result["passed"] else 1
+    return 0 if result["passed"] or not result["decisive"] else 1
 
-
-if __name__ == "__main__":
-    sys.exit(main())

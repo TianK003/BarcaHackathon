@@ -32,12 +32,15 @@ import io
 import json
 import math
 import os
+import subprocess
+import sys
 import tempfile
+import types
 import zlib
 
 import numpy as np
 
-from pipeline.benchmark import camera, degrade, score, train_dead_ball, truth
+from pipeline.benchmark import camera, degrade, headroom, score, train_dead_ball, truth
 from pipeline.benchmark import inputs as match_inputs
 from pipeline.benchmark import run as benchmark_run
 from pipeline.benchmark.checks.common import (leaks, random_match, synthetic_calibration, synthetic_camera_fit,
@@ -661,7 +664,7 @@ def test_camera_gates_report_end_to_end_on_synthetic_matches():
     assert result["matches"] == sorted(matches) and result["seeds"] == 2 and result["profile"] == "tracking"
     assert result["camera"]["sha256"] == camera.digest(fit), result["camera"]
     assert result["ours"] == ours and result["gates"] == camera.compare(ours, result["simulated"])["gates"]
-    assert len(lines) == len(matches) * 2, lines
+    assert len(lines) == len(matches) * 2 + 1 and lines[0].startswith("decoder"), lines
     again = camera.report("tracking", seeds=2, matches=matches, calibration=cal, camera_fit=fit, config_path=path,
                           ours=ours, log=quiet)
     assert again == result, "the same bytes for the same inputs"
@@ -678,3 +681,87 @@ def test_camera_gates_report_end_to_end_on_synthetic_matches():
     expect_error(benchmark_run.BenchmarkError, lambda: camera.report(
         "tracking", seeds=0, matches=matches, calibration=cal, camera_fit=fit, config_path=path, ours=ours,
         log=quiet), "seeds")
+
+
+def test_camera_gates_run_by_path_is_the_package_module():
+    """`python pipeline/benchmark/camera.py` runs pipeline.benchmark.camera's own main, so the CameraFit the runner hands
+    to simulated_aim is the class it tests for (run as __main__, the file would define a second one, and the isinstance
+    refused the fit after BAR-ATH had loaded). Run in a subprocess, by path, from another folder."""
+    path = os.path.join(REPOSITORY, "pipeline", "benchmark", "camera.py")
+    with tempfile.TemporaryDirectory() as elsewhere:
+        done = subprocess.run([sys.executable, "-I", path, "where"], cwd=elsewhere, capture_output=True, text=True,
+                              timeout=120)
+        assert done.returncode == 0, done.stderr
+        assert done.stdout.strip() == "pipeline.benchmark.camera", done.stdout
+        helped = subprocess.run([sys.executable, "-I", path, "gates", "--help"], cwd=elsewhere, capture_output=True,
+                                text=True, timeout=120)
+        assert helped.returncode == 0 and "--profile" in helped.stdout, helped.stderr
+
+
+PROBE_CONFIG = ('scope = "halves"\n\n[[evidence]]\nkind = "nearest_player"\n\n[[evidence]]\n'
+                'kind = "probe_match_only"\nname = "{name}"\n\n[decoder]\nkind = "majority_vote"\nhalf_width = 2\n')
+
+
+@contextlib.contextmanager
+def match_only_source():
+    """A temporary evidence kind, "probe_match_only", that declares MATCH_ONLY and asks for the video's homography
+    (which a benchmark match does not have), as the Smart Tagging and the whistle would; the registry as it was after."""
+    from pipeline import evidence as evidence_stage
+    from pipeline.contracts import Evidence, no_opinion
+
+    def compute(run):
+        run.inputs.homography
+        return Evidence(alive=no_opinion(run.inputs.n_frames), home=no_opinion(run.inputs.n_frames))
+
+    module = types.ModuleType("pipeline.evidence._probe_match_only_camera")
+    module.MATCH_ONLY = True
+    compute.__module__ = module.__name__
+    sys.modules[module.__name__] = module
+    try:
+        with headroom.registered(evidence_stage.REGISTRY, probe_match_only=compute):
+            yield
+    finally:
+        del sys.modules[module.__name__]
+
+
+def test_camera_gates_decode_without_match_only_sources_on_both_sides():
+    """The gates' decoder is the config with its match-only sources dropped: a config with a source that needs the
+    homography (which a benchmark match lacks) runs on the synthetic matches, report() names what it dropped, and the
+    printout says so; the same config without the drop is refused by the runner, so the drop is what lets it run."""
+    matches, cal, fit = synthetic_matches(), tracking_calibration(), synthetic_camera_fit()
+    ours = {"peak_lag": 5, "peak_corr": 0.9, "median_err": 2.0, "speed_ratio_dead_alive": 1.0,
+            "speed_ratio_gap_visible": 1.0}
+    with tempfile.TemporaryDirectory() as root, match_only_source():
+        config = write_text(root, "probe.toml", PROBE_CONFIG.format(name="whistle_probe"))
+        lines = []
+        result = camera.report("tracking", seeds=1, matches=matches, calibration=cal, camera_fit=fit,
+                               config_path=config, ours=ours, log=lines.append)
+        assert result["dropped_match_only"] == ["whistle_probe"], result["dropped_match_only"]
+        assert any("whistle_probe" in line for line in lines) and any(
+            "whistle_probe" in line for line in camera.render(result)), lines
+        expect_error(benchmark_run.BenchmarkError, lambda: benchmark_run.evaluate_configs(
+            [config], profile="tracking", seeds=1, matches=matches, calibration=cal, camera_fit=fit, data_dir=root,
+            log=quiet), "whistle_probe")
+
+
+def test_camera_gates_only_tracking_decides_the_exit_code():
+    """Under tracking a failed gate gives exit 1; under context the same figures are printed as information and the
+    exit code is 0 (the WARN is what context is asked); compare() carries the flag."""
+    ours = {"peak_lag": 5, "peak_corr": 0.9, "median_err": 2.0, "speed_ratio_dead_alive": 1.0,
+            "speed_ratio_gap_visible": 1.0}
+    failing = dict(ours, peak_lag=80)
+    assert camera.DECISIVE_PROFILES == ("tracking",)
+    assert camera.compare(ours, failing)["decisive"] is True
+    assert camera.compare(ours, failing, decisive=False)["decisive"] is False
+    for profile, exit_code in (("tracking", 1), ("context", 0)):
+        stub = {**camera.compare(ours, failing, decisive=profile == "tracking"), "profile": profile, "seeds": 1,
+                "matches": ["a"], "config": "x", "dropped_match_only": [], "camera": {"sha256": "0" * 64},
+                "ours": ours, "simulated": failing}
+        with tempfile.TemporaryDirectory() as root, spying(camera, "report", lambda *args, **kwargs: stub), (
+                contextlib.redirect_stdout(io.StringIO())):
+            code = camera.main(["gates", "--profile", profile, "--data-dir", root])
+        assert code == exit_code, (profile, code)
+    informational = {**camera.compare(ours, failing, decisive=False), "profile": "context", "seeds": 1,
+                     "matches": ["a"], "config": "x", "dropped_match_only": [], "camera": {"sha256": "0" * 64}}
+    text = "\n".join(camera.render(informational))
+    assert "result    information only" in text and "result    PASS" not in text and "result    FAIL" not in text, text
