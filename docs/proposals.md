@@ -44,9 +44,9 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P05](#p05--a-real-dead-ball-detector) | Dead-ball detector | fact 4 | M | high: +0.1661 raw at the chosen decoder, on a benchmark that overstates it (R010, T38, T39) | done → R009, R010 |
 | [P06](#p06--global-decoding-per-half-hmm--hidden-semi-markov) | Global decoder (HMM / semi-Markov) per half | fact 5 | M | high | done → R006–R007, A10; decoder re-chosen → R010, R013 |
 | [P07](#p07--possession-without-the-ball-team-shape-and-movement) | Possession without the ball: team shape | fact 1 | M | high: +0.0942 raw at the chosen decoder, on a benchmark whose gain is not a forecast for our match (R011) | done → R011; weight re-chosen → R013 |
-| [P08](#p08--smart-tagging-as-soft-evidence) | Smart Tagging as soft evidence | facts 1, 4 | S | medium | idea |
+| [P08](#p08--smart-tagging-as-soft-evidence) | Smart Tagging as soft evidence | facts 1, 4 | S | medium | done → R017 (team votes adopted per frame, weight 0.2; dead votes measured and dropped) |
 | [P09](#p09--camera-aim-as-a-coarse-ball-zone-prior) | Camera aim as a coarse ball-zone prior | fact 1 | S | low–medium | idea |
-| [P10](#p10--referee-whistle-from-the-audio-track) | Referee whistle from the audio track | fact 4 | S–M | medium (audio confirmed, A04) | idea |
+| [P10](#p10--referee-whistle-from-the-audio-track) | Referee whistle from the audio track | fact 4 | S–M | medium (audio confirmed, A04) | dropped → R018, R018b (whistles near stoppages 1.5× chance, below the declared 2×; code removed) |
 | [P11](#p11--touch-and-pass-events-to-place-boundaries) | Touch and pass events to place boundaries | fact 5 | M–L | medium–high | idea |
 | [P12](#p12--metric-aware-post-processing) | Metric-aware post-processing | fact 5 | S | medium | done → R012 (shift adopted), R016 (free X measured and dropped) |
 | [P13](#p13--learn-from-external-labelled-tracking-data) | Pre-train on external labelled tracking data | facts 1, 2 | L (M on top of P01) | medium–high | idea |
@@ -62,7 +62,7 @@ One track per person; swap freely.
 | Validation | P01 (done 23 Oct, R002–R005), P02 (done 30 Oct, A11, R012, A15) | P12 (done 30 Oct: R012 shift adopted; free X dropped by R016) | re-validate every candidate on P01 |
 | Pipeline and decoder | P03 | P06 (done 25 Oct, R006–R007, A10) | P06 is tuned on P01 (R007); then [After P06](#after-p06); `main.toml` is P04 + P05 (R010), then P07 (R011) and P02's shift (R012); [After P04 and P05](#after-p04-and-p05), then [After P07 and P02](#after-p07-and-p02); its item 1 done 26 Oct (R013: the touch rule and the decoder re-chosen); then [After R013](#after-r013) |
 | Ball visible | P04 (done 25 Oct, R008, R010) | P11 | P11 |
-| Dead ball | P05 (done 25 Oct, R009, R010) | P08 | P10 |
+| Dead ball | P05 (done 25 Oct, R009, R010) | P08 (done 30 Oct, R017: team votes adopted per frame, dead votes dropped) | P10 (dropped 30 Oct, R018, R018b) |
 | Ball missing | P07 (done 25 Oct, R011) | P09 | P13 or P14 spike → go / no-go |
 
 Week 4: feature freeze **Fri 13 Nov**; regenerate the file from a clean clone on a second machine; finish the
@@ -311,7 +311,7 @@ unchanged (sha256 `0ebdfbec...`).
    - P21's step 0: do our identity swaps cluster at the ball? A14 already bounds all of the benchmark's player
      degradation at 0.013 for `main.toml`.
    - P22(a), the label-shift prior.
-   - P10 with a pretrained audio tagger.
+   - ~~P10 with a pretrained audio tagger.~~ Dropped (R018, R018b): only the hand-built band-pass was tried, the tagger was not.
 5. **P16 still decides more than any of these.** Every ball-rich change so far has split the two truths: R010's decoder,
    R013's touch rule, and now A14's ball. Knowing our truth's grain says which of them helps on our match.
 
@@ -660,6 +660,10 @@ ball). What comes next is in [After P07 and P02](#after-p07-and-p02).
 
 ### P08 — Smart Tagging as soft evidence
 
+**Status: done → [R017](results.md) (team votes adopted per frame, weight 0.2; dead votes measured and dropped).** The team
+votes passed their declared bar (0.761 agreement with our own controlled-touch pseudo-labels) and entered `main.toml` at
+Tian's pick of strength (2026-10-30); the dead votes failed theirs (0.409) and were removed from the code.
+
 **Why.** There are 638 automatic tags, each naming a team: free evidence exactly where the ball is missing.
 
 **What.** Turn each tag into a per-frame vote:
@@ -913,6 +917,9 @@ its ~1.4 s (35-frame) lag. The median error is 12 m, and across the pitch it say
 This gives a zone, not a position: feed it to P07 and P06, never to nearest-player logic.
 
 ### P10 — Referee whistle from the audio track
+
+**Status: dropped → [R018](results.md), [R018b](results.md) (whistles near stoppages 1.5× chance, below the declared 2×;
+code removed).** Both feasibility gates failed (ratio 1.52, then 1.51); the code was removed in `fc9dbed`, where it is recoverable from `a08e381`.
 
 **Why.** Fouls and offsides stop play without the ball leaving the pitch, and the tracking only sees players slow
 down a second later. A whistle marks a sharp `D` onset, and it also starts free kicks and kick-offs.

@@ -19,6 +19,7 @@ No test framework, on purpose: the repository has none (CLAUDE.md), and a plain 
 """
 
 import argparse
+import math
 import os
 import sys
 import tempfile
@@ -175,6 +176,10 @@ def test_config_bad_scope():
     expect_error(ConfigError, lambda: load_test_config('scope = "match"\n' + MINIMAL_CONFIG), "match", "halves")
 
 
+# The sources of REGISTRY that need an asset only our match has. Add the next such source here.
+MATCH_ONLY_KINDS = {"smart_tagging"}
+
+
 def test_match_only_reads_the_module_flag():
     """match_only(kind) is the MATCH_ONLY of the module that defines the source, False where it declares none.
 
@@ -184,7 +189,8 @@ def test_match_only_reads_the_module_flag():
     import types
     from pipeline import evidence
     for kind in evidence.REGISTRY:
-        assert evidence.match_only(kind) is False, "no source of today's REGISTRY is match-only: " + kind
+        assert evidence.match_only(kind) is (kind in MATCH_ONLY_KINDS), (
+            "only " + ", ".join(sorted(MATCH_ONLY_KINDS)) + " of today's REGISTRY is match-only: " + kind)
 
     module = types.ModuleType("pipeline.evidence._probe_match_only")
     module.MATCH_ONLY = True
@@ -5351,6 +5357,114 @@ def test_data_main_config_deterministic():
         print("      main.toml: {} possessions in the graded halves; public window macroF1 {:.4f} spellF1 {:.4f} "
               "(correctness only, T01)".format(first.summary["possessions"], scores["macro_f1"],
                                                scores["spell_f1_mean"]))
+
+
+# -- smart_tagging ----------------------------------------------------------------------------------------------------
+
+def tagged(items, graded=((1, 10, 60), (2, 80, 130)), n_frames=140):
+    """A stand-in Inputs holding a hand-built tag list: items are (code, start, stop, team-or-None[, group key])."""
+    from types import SimpleNamespace
+    tags = []
+    for item in items:
+        code, start, stop, team = item[:4]
+        key = item[4] if len(item) > 4 else "Team"
+        tags.append({"code": code, "start_frame": start, "end_frame": stop, "start_s": start / 25.0,
+                     "end_s": stop / 25.0, "tags": {} if team is None else {key: team}})
+    return SimpleNamespace(smart_tagging=tags, graded=[tuple(block) for block in graded], n_frames=n_frames)
+
+
+def tag_run(inputs):
+    from types import SimpleNamespace
+    return SimpleNamespace(inputs=inputs)
+
+
+def test_smart_tagging_vote_table():
+    from pipeline.evidence import smart_tagging
+    for code in smart_tagging.TEAM_CODES:
+        team = smart_tagging.votes(tagged([(code, 20, 30, "Barcelona")]))
+        assert (team[20:30] == 1).all() and (team[:20] == -1).all(), code
+    team = smart_tagging.votes(tagged([("DEFENDING IN OWN THIRD", 20, 30, "Barcelona"),
+                                       ("DEFENDING IN MIDDLE THIRD", 40, 50, "Atletic Club")]))
+    assert (team[20:30] == 0).all() and (team[40:50] == 1).all(), "a defending tag votes for the other team"
+    team = smart_tagging.votes(tagged([("DEFENSIVE TRANSITION", 20, 30, "Atletic Club")]))
+    assert (team[20:30] == 1).all(), "a defensive transition of the away team is the home team's ball"
+    team = smart_tagging.votes(tagged([("SET PIECES", 20, 30, "Barcelona"), ("GOALS", 40, 45, "Barcelona")]))
+    assert (team == -1).all(), "set pieces and goals are not voted on at all (R017 dropped the dead votes)"
+    team = smart_tagging.votes(tagged([("PRESSING", 20, 30, "Barcelona"), ("BUILD UP", 40, 50, "N/A"),
+                                       ("BUILD UP", 50, 55, None)]))
+    assert (team == -1).all(), "an unknown code, N/A or a missing team gives nothing"
+    team = smart_tagging.votes(tagged([(" build up ", 20, 30, " BARCELONA ", " team ")]))
+    assert (team[20:30] == 1).all(), "case and spaces do not matter"
+
+
+def test_smart_tagging_overlaps():
+    from pipeline.evidence import smart_tagging
+    inputs = tagged([("BUILD UP", 20, 40, "Barcelona"), ("PROGRESSION", 30, 50, "Barcelona")])
+    team = smart_tagging.votes(inputs)
+    assert (team[20:50] == 1).all(), "agreeing overlapping tags agree"
+    evidence = smart_tagging.compute(tag_run(inputs), c_team=0.8)
+    assert np.allclose(evidence.home[20:50], 0.8), "two agreeing tags are one vote in frame mode, not more"
+    inputs = tagged([("BUILD UP", 20, 40, "Barcelona"), ("BUILD UP", 30, 50, "Atletic Club")])
+    team = smart_tagging.votes(inputs)
+    assert (team[20:30] == 1).all() and (team[30:40] == -2).all() and (team[40:50] == 0).all(), team[18:52]
+    evidence = smart_tagging.compute(tag_run(inputs), c_team=0.8)
+    assert np.isnan(evidence.home[30:40]).all() and not np.isnan(evidence.home[20:30]).any(), "NaN on the overlap only"
+    assert np.allclose(evidence.home[40:50], 0.2), "an away vote is 1 - c"
+    tag = smart_tagging.compute(tag_run(inputs), c_team=0.8, spread="tag")
+    assert np.isnan(tag.home[30:40]).all(), "disagreeing tags are NaN in tag mode too"
+
+
+def test_smart_tagging_cut_at_graded_blocks():
+    from pipeline.evidence import smart_tagging
+    inputs = tagged([("BUILD UP", 5, 15, "Barcelona"), ("BUILD UP", 62, 78, "Barcelona"),
+                     ("BUILD UP", 55, 65, "Barcelona"), ("BUILD UP", 20, 30, "Barcelona")])
+    team = smart_tagging.votes(inputs)
+    assert (team[10:15] == 1).all() and (team[:10] == -1).all(), "a tag crossing a block's start is cut there"
+    assert (team[60:80] == -1).all(), "a tag inside the halftime gap leaves nothing"
+    assert (team[55:60] == 1).all() and (team[60:62] == -1).all(), "a tag crossing a block's end is cut there"
+    team = smart_tagging.votes(tagged([("BUILD UP", 20, 30, "Barcelona")]))
+    assert int((team == 1).sum()) == 10 and team[29] == 1 and team[30] == -1, "end_frame is exclusive"
+    inputs = tagged([("BUILD UP", 5, 15, "Barcelona"), ("BUILD UP", 55, 65, "Atletic Club")])
+    spans = smart_tagging.tag_spans(inputs)
+    assert spans == [("team", 1, 10, 15), ("team", 0, 55, 60)], spans
+    evidence = smart_tagging.compute(tag_run(inputs), c_team=0.8, spread="tag")
+    expected = 1.0 / (1.0 + math.exp(-math.log(4.0) / 5))
+    assert np.allclose(evidence.home[10:15], expected, atol=1e-12), "n_tag counts the frames inside the blocks only"
+    outside = np.ones(140, dtype=bool)
+    outside[10:60] = outside[80:130] = False
+    for mode in ("frame", "tag"):
+        evidence = smart_tagging.compute(tag_run(inputs), c_team=0.8, spread=mode)
+        assert np.isnan(evidence.home[outside]).all() and np.isnan(evidence.alive).all(), mode
+        assert evidence.home.shape == (140,) and evidence.alive.dtype == np.float64, mode
+
+
+def test_smart_tagging_tag_spread_sums_to_one_observation():
+    from pipeline.evidence import smart_tagging
+    for c in (0.6, 0.8, 0.95):
+        inputs = tagged([("BUILD UP", 20, 45, "Barcelona"), ("SET PIECES", 80, 100, None)])
+        evidence = smart_tagging.compute(tag_run(inputs), c_team=c, spread="tag")
+        home = evidence.home[20:45]
+        assert abs(float(np.sum(np.log(home / (1 - home)))) - math.log(c / (1 - c))) < 1e-12, c
+        assert np.isnan(evidence.alive).all() and np.isnan(evidence.home[80:100]).all()
+    inputs = tagged([("BUILD UP", 20, 40, "Barcelona"), ("PROGRESSION", 30, 50, "Barcelona")])
+    evidence = smart_tagging.compute(tag_run(inputs), c_team=0.8, spread="tag")
+    assert evidence.home[35] > evidence.home[25], "in tag mode two agreeing tags add their observations"
+
+
+def test_smart_tagging_rejects_bad_parameters():
+    from pipeline.evidence import smart_tagging
+    run = tag_run(tagged([("BUILD UP", 20, 30, "Barcelona")]))
+    expect_error(TypeError, lambda: smart_tagging.compute(run), "c_team")
+    expect_error(TypeError, lambda: smart_tagging.compute(run, c_team=0.8, c_dead=0.9), "c_dead")
+    for bad in (0.5, 1.2, True, "0.8", 0.0, float("nan")):
+        expect_error(ValueError, lambda bad=bad: smart_tagging.compute(run, c_team=bad), "c_team", "smart_tagging")
+    expect_error(ValueError, lambda: smart_tagging.compute(run, c_team=0.8, spread="x"), "spread", "frame")
+    assert smart_tagging.compute(run, c_team=1.0).home[25] == 1.0, "c = 1 is allowed"
+
+
+def test_smart_tagging_is_match_only():
+    from pipeline import evidence
+    assert evidence.match_only("smart_tagging") is True, "the tags exist for our match only"
 
 
 # -- runner -----------------------------------------------------------------------------------------------------------

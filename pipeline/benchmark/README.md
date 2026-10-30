@@ -17,6 +17,7 @@ python pipeline/benchmark/choose.py --reference main STEM ...   # a grid's decla
 python pipeline/benchmark/fidelity.py         # how far the degraded profile looks like our match (gates, warnings)
 python pipeline/benchmark/headroom.py CONFIG  # a config beside five variants whose evidence is the truth itself
 python pipeline/benchmark/label_diff.py REFERENCE CONFIG ...  # how configs change BAR-ATH's labels beside a reference, aggregates only (heavy)
+python pipeline/benchmark/tag_stats.py        # P08: Smart Tagging's votes against our own pseudo-labels (R017), aggregates only (heavy)
 python pipeline/benchmark/touch_stats.py      # P04's control rule measured: coverage, agreement, flip lags, confidence
 python pipeline/benchmark/train_dead_ball.py --model hgb   # P05: train the dead-ball model (folds + full) as JSON
 python pipeline/benchmark/train_shape.py [--verify|--report]   # P07: train the shape model (folds + full) as JSON
@@ -509,7 +510,7 @@ building P05 or P04 it is worth knowing how much of the score each could ever de
 the benchmark beside five variants of it whose evidence is the truth itself:
 
 ```
-.venv/Scripts/python pipeline/benchmark/headroom.py CONFIG [--profile P] [--seeds N] [--truth raw|coarse] [--matches ID ...] [--data-dir D] [--write]
+.venv/Scripts/python pipeline/benchmark/headroom.py CONFIG [--profile P] [--seeds N] [--truth raw|coarse] [--matches ID ...] [--data-dir D] [--drop-match-only] [--write]
 ```
 
 `CONFIG` is the reference, run from its own file as it is, and needs exactly one `nearest_player` source only for the
@@ -592,6 +593,11 @@ classic variants still replace it; neither changes the other.
 .venv/Scripts/python pipeline/benchmark/headroom.py pipeline/configs/main.toml --variants plus_home_visible plus_home_gaps plus_home_all --truth raw --write
 ```
 
+Since R017 `main.toml` has a match-only source (`smart_tagging`: DFL has no tags), so headroom on it needs
+`--drop-match-only`, as `run.py` does: `headroom.py pipeline/configs/main.toml --drop-match-only --variants plus_home_visible
+plus_home_gaps plus_home_all`. The flag goes to the runner for CONFIG and every variant, and the output names what it dropped;
+the headroom is then that of `main.toml` without the tags.
+
 Read it as an upper bound and a loose one: no real detector is perfect, and these two do not need the ball, which a
 real one would. It says where not to spend time (a small gap is a small prize) and in which order to think about the
 work. Run it under both truths and read the two together, as for any comparison, and across the seven matches rather
@@ -606,6 +612,7 @@ than in the pooled number alone. Nothing here is a config to submit. The checks 
 `test_headroom_loads_each_match_once_and_keeps_none`,
 `test_headroom_writes_the_variants_reports_only_when_asked_and_never_the_references`,
 `test_headroom_command_line_prints_the_table_and_the_report_lines`,
+`test_headroom_command_line_drops_match_only_sources_when_asked`,
 `test_headroom_gaps_oracle_speaks_only_where_the_ball_is_missing`,
 `test_headroom_plus_variants_add_the_oracles_after_the_configs_own_sources`,
 `test_headroom_plus_variants_add_and_classic_ones_still_replace`, `test_headroom_alive_plus_home_all_is_perfect` and,

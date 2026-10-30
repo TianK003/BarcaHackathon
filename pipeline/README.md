@@ -123,8 +123,10 @@ half_width = 50
 
 | config | what it is |
 |---|---|
-| [`main.toml`](configs/main.toml) | the team's current pipeline, i.e. the file we would submit today (not uploaded): `controlled_touch` (1.5 m, 6 m/s, 1 frame, hold 0.60) and `shape_possession` (weight 0.2, every graded frame) for `home`, the gradient-boosted `dead_ball_model` for `alive`, the `hmm` decoder (4 / 32 / 35 / 25) and `shift_edges` (team +1, into_dead -2, out_of_dead 0). P05 was chosen in R009 and R010 and P07's model in R011; R013 chose the touch rule, `switch_team`, `min_possession` and P07's weight again with no window-derived value in any candidate, and re-derived the shift by R012's rule, all on the benchmark (it overstates P05 for our match, T38, T39, and its gains are not a forecast for it) |
-| [`r013_retune.toml`](configs/r013_retune.toml) | R013's final config, written when it was chosen; it writes the same CSV as `main.toml` (the same sha256) |
+| [`main.toml`](configs/main.toml) | the team's current pipeline, i.e. the file we would submit today (not uploaded): `controlled_touch` (1.5 m, 6 m/s, 1 frame, hold 0.60), `shape_possession` (weight 0.2, every graded frame) and `smart_tagging` (P08: Smart Tagging's team votes, c_team 0.76, per frame, weight 0.2) for `home`, the gradient-boosted `dead_ball_model` for `alive`, the `hmm` decoder (4 / 32 / 35 / 25) and `shift_edges` (team +1, into_dead -2, out_of_dead 0). P05 was chosen in R009 and R010 and P07's model in R011; R013 chose the touch rule, `switch_team`, `min_possession` and P07's weight again with no window-derived value in any candidate, and re-derived the shift by R012's rule, all on the benchmark; R017 then added `smart_tagging` at Tian's pick of its strength (untested on any benchmark, DFL has no tags, so the benchmark runs this file with `--drop-match-only`) (it overstates P05 for our match, T38, T39, and its gains are not a forecast for it) |
+| [`r017_frame.toml`](configs/r017_frame.toml) | R017's adopted config, written when it was chosen: R013's file plus `smart_tagging` per frame at weight 0.2; it is the named copy of `main.toml` and writes the same CSV (sha256 `7ba575c0…`) |
+| [`r017_tag.toml`](configs/r017_tag.toml) | R017's other strength, not adopted: `smart_tagging` at one observation per tag, weight 1.0 |
+| [`r013_retune.toml`](configs/r013_retune.toml) | R013's final config, written when it was chosen; it writes the file `main.toml` wrote before R017 (sha256 `0ebdfbec…`) |
 | [`p02_shift.toml`](configs/p02_shift.toml) | R012's choice, written when it was chosen: R011's config plus the shift; it writes the file `main.toml` wrote before R013 |
 | [`p07_shape.toml`](configs/p07_shape.toml) | R011's choice, written when it was chosen: R010's config plus `shape_possession`; it writes the file `main.toml` wrote before R012 added the shift |
 | [`p45_hmm.toml`](configs/p45_hmm.toml) | R010's chosen config, written when it was chosen: `controlled_touch`, `dead_ball_model` and the `hmm`; it writes the file `main.toml` wrote before R011 |
@@ -307,16 +309,17 @@ pipeline/
 ├── selftest.py          synthetic contract checks; --data for the byte-exact regression
 ├── configs/             main.toml (current pipeline), smooth50_repro.toml (regression), p06_hmm.toml (P06),
 │                        p45_hmm.toml (P04 + P05, R010), p07_shape.toml (+ P07, R011),
-│                        p02_shift.toml (+ P02's shift, R012), r013_retune.toml (R013: main.toml's file)
+│                        p02_shift.toml (+ P02's shift, R012), r013_retune.toml (R013's file, main.toml's
+│                        before R017), r017_frame.toml (R017: main.toml's file), r017_tag.toml (R017, not adopted)
 ├── inputs/              stage 1: Inputs, the ATD cache                       README.md
 ├── evidence/            stage 2: REGISTRY, nearest_player, ball_presence,    README.md
 │                        controlled_touch, dead_ball_rules, dead_ball_model,
-│                        shape_possession (and trees.py, shape_features.py)
+│                        shape_possession (and trees.py, shape_features.py), smart_tagging
 ├── models/              the trained models, JSON (no pickles): the dead-ball
 │                        ones (P05) and the shape one (P07)
 ├── decode/              stage 3: REGISTRY, majority_vote, hmm                README.md
 ├── refine/              stage 4: REGISTRY, shift_edges                       README.md
 ├── output/              stage 5: write, validate, summarise, score, manifest README.md
-└── benchmark/           validation (P01): degraded DFL matches; headroom.py  README.md
+└── benchmark/           validation (P01): degraded DFL matches; headroom.py, tag_stats.py  README.md
                          train_shape.py (P07), conventions.py (P02)
 ```
