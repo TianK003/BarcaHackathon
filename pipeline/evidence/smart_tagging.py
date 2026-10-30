@@ -88,7 +88,7 @@ def compute(run, *, c_team=None, c_dead=None, spread="frame"):
     towards = {_HOME: np.zeros(n_frames), _AWAY: np.zeros(n_frames), None: np.zeros(n_frames)}
     covered = {_HOME: np.zeros(n_frames, dtype=bool), _AWAY: np.zeros(n_frames, dtype=bool),
                None: np.zeros(n_frames, dtype=bool)}
-    for kind, side, pieces in _tags(inputs):
+    for kind, side, pieces in tags(inputs):
         c = c_team if kind == "team" else c_dead
         if c is None:
             continue
@@ -127,14 +127,14 @@ def votes(inputs):
 def tag_spans(inputs):
     """[(kind, side, start, stop), ...]: every tag that votes, cut at the graded blocks (a tag across both blocks gives
     two spans). kind is "team" or "dead"; side is 1 (home), 0 (away) for a team vote and None for a dead one."""
-    return [(kind, side, start, stop) for kind, side, pieces in _tags(inputs) for start, stop in pieces]
+    return [(kind, side, start, stop) for kind, side, pieces in tags(inputs) for start, stop in pieces]
 
 
-def _tags(inputs):
+def tags(inputs):
     """[(kind, side, [(start, stop), ...]), ...]: one entry per voting tag, its pieces inside the graded blocks."""
     found = []
     for tag in inputs.smart_tagging:
-        kind, side = _vote(tag)
+        kind, side = tag_vote(tag)
         if kind is None:
             continue
         pieces = []
@@ -147,7 +147,7 @@ def _tags(inputs):
     return found
 
 
-def _vote(tag):
+def tag_vote(tag):
     """(kind, side) of one tag: ("dead", None), ("team", 1 or 0), or (None, None) where it says nothing."""
     code = str(tag["code"]).strip().upper()
     if code in DEAD_CODES:
