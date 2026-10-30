@@ -1562,6 +1562,81 @@ t-interval [+0.0944, +0.1084], sign-flip p 0.0156, 7 wins in 7; from +0.0848 to 
   advocate's own rule says drop (coarse is below +0.02, by 0.0003), and the critic's says no go. P14 is therefore not
   built now: [After A14](proposals.md#after-a14) and P14's status say what may still run.
 
+### A15 — Descriptors of our truth's changes against DFL's (2026-10-30, Tian)
+
+Proposal: P02 · Commit: `88ce602` (branch `p02-measurements`) · Extends [A11](#a11--our-ground-truths-timing-against-dfls-from-tracking-events-2026-10-25-tian) · Commands, with the data directory at the main checkout's `data/`:
+
+```bash
+python pipeline/benchmark/conventions.py public
+python pipeline/benchmark/conventions.py dfl --profile tracking --seeds 3 --truth raw       # and --truth coarse
+python pipeline/benchmark/conventions.py compare --profile tracking --truth raw             # and --truth coarse
+```
+
+Public: the 20 changes of the public truth (12 of `team`, 4 `into_dead`, 4 `out_of_dead`), on our real tracking.
+Validation: 7 DFL matches x 3 degradation seeds, profile `tracking` version 3, under the raw and the coarse truth.
+A11 timed each change against detector events. This entry describes what the tracking shows around each change (ball
+seen, ball speed, the nearest slots' distances), from `Inputs` alone, and compares the public window with DFL. It is a
+measurement and not a score: nothing is decoded, tuned or shifted. Aggregates only, copied from the `compare` logs.
+
+Descriptors: `ball_seen` and `ball_seen_1s` are the shares of changes with the ball visible at the change and within
+1 s; `ball_speed` (m/s) and `line_m` (m, signed distance to the line) are medians; `old_near_m` and `new_near_m` are the
+median distances (m) of the old and the new team's nearest slot to the ball; `new_nearer` is the share of changes where
+the new team's slot is the nearer. Gap = public minus DFL; intervals are 90% bootstrap intervals of the public values,
+and with fewer than 5 public values only whether the interval excludes 0 is printed.
+
+**Team changes** (12 public; DFL n = 7,053 raw, 2,847 coarse; 4,167 and 1,646 for the distances):
+
+| descriptor | public | DFL raw | gap (raw) | DFL coarse | gap (coarse) |
+|---|---|---|---|---|---|
+| `ball_seen` | 100% | 59% | 41% [41%, 41%] | 58% | 42% [42%, 42%] |
+| `ball_seen_1s` | 100% | 63% | 37% [37%, 37%] | 63% | 37% [37%, 37%] |
+| `ball_speed` | 6.54 | 5.43 | 1.10 [-1.73, 3.02] | 5.86 | 0.67 [-2.16, 2.59] |
+| `line_m` | -7.48 | -12.20 | 4.72 [-0.27, 7.12] | -11.39 | 3.91 [-1.09, 6.31] |
+| `old_near_m` | 3.69 | 2.14 | 1.56 [0.09, 2.65] | 2.22 | 1.47 [-0.00, 2.56] |
+| `new_near_m` | 2.68 | 0.64 | 2.05 [1.16, 2.74] | 0.63 | 2.06 [1.17, 2.75] |
+| `new_nearer` | 58% | 87% | -29% [-54%, -4%] | 89% | -30% [-55%, -5%] |
+
+**Into `D`** (4 public; DFL n = 2,130; 1,247 for speed and line; 3 public changes have a ball speed and line; the
+nearest-slot descriptors have no value on either side's public changes):
+
+| descriptor | public | DFL (raw and coarse) | gap | interval |
+|---|---|---|---|---|
+| `ball_seen` | 75% | 59% | 16% | excludes 0: no |
+| `ball_seen_1s` | 100% | 63% | 37% | excludes 0: yes |
+| `ball_speed` | 9.42 | 1.57 | 7.86 | excludes 0: yes |
+| `line_m` | -6.45 | 0.28 | -6.73 | excludes 0: no |
+
+**Out of `D`** (4 public; DFL n = 2,097; 1,233 for speed and line):
+
+| descriptor | public | DFL (raw and coarse) | gap | interval |
+|---|---|---|---|---|
+| `ball_seen` | 100% | 59% | 41% | excludes 0: yes |
+| `ball_seen_1s` | 100% | 62% | 38% | excludes 0: yes |
+| `ball_speed` | 5.33 | 38.01 | -32.68 | excludes 0: yes |
+| `line_m` | -3.67 | -2.01 | -1.66 | excludes 0: no |
+
+The DFL figures for `into_dead` and `out_of_dead` are the same under both truths (the coarse truth only merges
+possessions, so those changes do not move). Only the team rows differ between the two truths.
+
+**What they suggest (leads, not measurements; 12, 4 and 4 public changes).**
+- At team changes the new team's nearest slot is further from the ball than on DFL (2.68 m against 0.64 m, interval
+  excludes 0 under both truths) and is less often nearer than the old team's (58% against 87 to 89%). That fits A11's
+  lead that our truth flips before the new team's first controlled touch, when the ball has not yet reached the new
+  team. It is the same direction as A11's `touch_start` lag, from a second descriptor.
+- The old team's slot is also further on ours (3.69 m against 2.14 m), so the ball is further from everybody at our
+  changes: a loose ball in transit, not a challenge.
+- The into and out of `D` rows hold too few changes to say more than that the ball is seen more often on ours.
+
+Confounds, which keep these from being read as a convention:
+- The public window is the best-covered block of the match, while `tracking` v3 places its gaps blind to play (T38):
+  `ball_seen` at 100% against 59% is coverage, not convention.
+- DFL tracks the ball out of play (T39), so its ball-speed and line descriptors behave differently at restarts. A DFL
+  `out_of_dead` median ball speed of 38.01 m/s suggests that DFL's restart placement jumps (the ball is moved to the
+  spot), so that row says more about the provider than about the convention.
+- Four changes are not a distribution: the intervals for `into_dead` and `out_of_dead` are of values, not statistics.
+
+Inspection only (RULES.md, `f8f2629`, T27): nothing is set from these numbers; a timing constant comes from other games (P16).
+
 ## Experiments
 
 Copy this template for each run, and add a scoreboard row for anything worth comparing.
