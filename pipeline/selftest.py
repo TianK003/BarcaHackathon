@@ -19,8 +19,6 @@ No test framework, on purpose: the repository has none (CLAUDE.md), and a plain 
 """
 
 import argparse
-import hashlib
-import json
 import os
 import sys
 import tempfile
@@ -180,7 +178,7 @@ def test_config_bad_scope():
 def test_match_only_reads_the_module_flag():
     """match_only(kind) is the MATCH_ONLY of the module that defines the source, False where it declares none.
 
-    A source that needs an asset only our match has (the Smart Tagging) says so once, in its own module,
+    A source that needs an asset only our match has (the Smart Tagging, the whistle) says so once, in its own module,
     and the benchmark runner reads it from there: the flag is not repeated in a config or in a list that could drift.
     """
     import types

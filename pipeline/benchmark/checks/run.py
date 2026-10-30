@@ -544,7 +544,7 @@ def match_only_source(needs_homography=False):
     """A temporary evidence kind, "probe_match_only", whose module says MATCH_ONLY = True; the registry as it was after.
 
     It has no opinion anywhere, or, with `needs_homography`, asks for the video's homography (which a benchmark match
-    does not have) and raises AssetUnavailable, as the Smart Tagging would.
+    does not have) and raises AssetUnavailable, as the Smart Tagging and the whistle would.
     """
     from pipeline import evidence as evidence_stage
     from pipeline.contracts import Evidence, no_opinion

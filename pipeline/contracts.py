@@ -12,7 +12,7 @@ a plain function; what it receives and returns is defined here and nowhere else:
 Why evidence is two numbers per frame and not three
 ---------------------------------------------------
 The ground truth is built in two steps: D where the ball is dead, otherwise the team that has it (CLAUDE.md). Most
-sources we plan to add answer only one of those questions -- a dead-ball detector (P05) says
+sources we plan to add answer only one of those questions -- a dead-ball detector (P05) or a whistle (P10) says
 nothing about which team, nearest-player control (P04) or team shape (P07) says nothing about whether play is
 live. So a source reports
 

@@ -81,7 +81,7 @@ Two properties are worth knowing because the regression depends on them:
 ## Adding an asset
 
 1. Add a lazy `functools.cached_property` to `Inputs` that returns arrays with **n_frames rows**, aligned here.
-2. If it is slow to load (video frames, a broadcast alignment), cache it under `self.cache_dir` with a
+2. If it is slow to load (video frames, audio features, a broadcast alignment), cache it under `self.cache_dir` with a
    manifest keyed by the source file's sha256, the way `atd_cache.py` does.
 3. Check the alignment you rely on — row count, first frame, frame order — and raise with a sentence if it fails.
 4. Make the arrays read-only, add a row to the tables above, and log any measurement in

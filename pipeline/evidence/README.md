@@ -266,7 +266,7 @@ already built.
 4. Check it — `python pipeline/run.py pipeline/configs/<experiment>.toml --score` prints its coverage of the graded
    frames and how often it agrees with the ground truth: `home` on frames the GT calls `H`/`A`, `alive` on every
    graded frame. Then log the run in [docs/results.md](../../docs/results.md).
-5. If the source needs an asset only our match has (the Smart Tagging), set `MATCH_ONLY = True` at the top
+5. If the source needs an asset only our match has (the Smart Tagging, the whistle), set `MATCH_ONLY = True` at the top
    level of its module: `evidence.match_only(kind)` reads it, and the benchmark's `--drop-match-only` then runs a config
    without the source, naming it in the report, since a DFL match cannot serve it.
 
