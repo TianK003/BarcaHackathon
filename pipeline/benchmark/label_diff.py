@@ -10,8 +10,11 @@ is judged by what it does to the labels of the match it can be run on, and the l
 same question of a decoder change. With no truth to score against, the honest figures are how much of the output moves
 and where: the share of graded frames whose label differs, how many of those are frames where the ball is not seen (a
 change there is the new source speaking where the tracking cannot), the dead-ball and abstention shares, the possessions
-per half (the scorer's definition: a maximal run of H or of A inside a graded block, an X ends the run) and the dead
-balls' onsets, which a timing source moves without adding or removing any.
+per half (the scorer's definition: a maximal run of H or of A inside a graded block, read after the scorer's own fill
+of abstentions, so that H X H is one possession) and the dead
+balls' onsets, which a timing source moves without adding or removing any. Possessions and onsets are counted on the
+codes with X forward-filled inside each graded block (pm.fill_abstentions, as the temporal metrics see them); the shares
+and the changed frames are counted on the raw codes, where an X is a label.
 
 A D onset is the first frame of a D run inside a block. A reference onset moved if the nearest new onset within
 MATCH_WINDOW frames (the nearer, the earlier on a tie) is at a different frame; with none that near it is `lost`, and
@@ -109,9 +112,11 @@ def diff(reference_codes, codes, inputs):
     n_changed = int(changed.sum())
     ball_missing = np.isnan(np.asarray(inputs.atd.ball_xy)[graded]).any(axis=1)
 
-    ref_onsets, new_onsets = _d_onsets(reference_codes, inputs.graded), _d_onsets(codes, inputs.graded)
+    spans = [(start, stop) for _, start, stop in inputs.graded]
+    filled_ref, filled_new = pm.fill_abstentions(reference_codes, spans), pm.fill_abstentions(codes, spans)
+    ref_onsets, new_onsets = _d_onsets(filled_ref, inputs.graded), _d_onsets(filled_new, inputs.graded)
     moves, lost = _moves(ref_onsets, new_onsets)
-    before, after = _possessions(reference_codes, inputs.graded), _possessions(codes, inputs.graded)
+    before, after = _possessions(filled_ref, inputs.graded), _possessions(filled_new, inputs.graded)
     return {
         "d_share": [float((ref == D).sum()) / n, float((new == D).sum()) / n],
         "x_share": [float((ref == X).sum()) / n, float((new == X).sum()) / n],
@@ -143,7 +148,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(
         description="How configs change BAR-ATH's labels beside a reference config's, in aggregates (HEAVY: runs "
                     "every config on the real match, writes no CSV).")
-    parser.add_argument("reference", metavar="REFERENCE", help="the reference TOML config, e.g. pipeline/configs/main.toml")
+    parser.add_argument("reference", metavar="REFERENCE",
+                        help="the reference TOML config, e.g. pipeline/configs/main.toml")
     parser.add_argument("configs", nargs="+", metavar="CONFIG", help="the TOML configs to compare with it")
     parser.add_argument("--data-dir", help="the data bundle (default: data/, or $MTAH_DATA_DIR)")
     args = parser.parse_args(argv)

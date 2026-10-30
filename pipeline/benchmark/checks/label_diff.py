@@ -44,8 +44,8 @@ def scene(ball_missing=()):
 
 
 def test_label_diff_on_hand_built_codes():
-    # 1200 graded frames. Changed: 1200..1230 (D to... ref D 1200-1300 vs new H until 1230 then D: 30 frames),
-    # 1300..1330 (ref D->A, new D: 30), 1500..1520 (ref H, new X: 20), 2150..2250 (ref A, new H: 100).
+    # 1200 graded frames. Changed frames: 1200-1230 (ref D, new H: 30), 1300-1330 (ref A, new D: 30),
+    # 1500-1520 (ref H, new X: 20), 2150-2250 (ref A, new H: 100).
     inputs = scene(ball_missing=[(1200, 1215), (2150, 2160)])
     out = label_diff.diff(codes_of(REFERENCE), codes_of(NEW), inputs)
     changed = 30 + 30 + 20 + 100
@@ -54,8 +54,8 @@ def test_label_diff_on_hand_built_codes():
         "changed_in_gaps_share is {}".format(out["changed_in_gaps_share"])
     assert out["d_share"] == [(100 + 50 + 200) / 1200, (100 + 50 + 200) / 1200], "d_share is {}".format(out["d_share"])
     assert out["x_share"] == [0.0, 20 / 1200], "x_share is {}".format(out["x_share"])
-    # reference: H A H | A A -> half 1: H, A, H = 3; half 2: A (2000-2100), A (2150-2400) = 2.
-    # new: half 1: H, A, H (X breaks the second A? no: A 1330-1500, then X, then H) = 3; half 2: A, H, A = 3.
+    # Possessions, X filled: reference half 1 H A H = 3, half 2 A A = 2; new half 1 H A H = 3 (the X after the A is
+    # filled with A), half 2 A H A = 3.
     assert out["possessions"] == {1: [3, 3], 2: [2, 3]}, "possessions are {}".format(out["possessions"])
     onsets = out["d_onsets"]
     # reference onsets 1200, 2100, 2400; new 1230, 2100, 2400: one moved, by +30
@@ -78,7 +78,9 @@ def test_label_diff_moves_are_matched_within_50_frames_and_signed():
 
 
 def test_label_diff_refuses_codes_of_the_wrong_length():
-    expect_error(ValueError, lambda: label_diff.diff(codes_of(REFERENCE), codes_of(NEW)[:-1], scene()), "codes must have one code per frame")
+    short = codes_of(NEW)[:-1]
+    expect_error(ValueError, lambda: label_diff.diff(codes_of(REFERENCE), short, scene()),
+                 "codes must have one code per frame")
 
 
 def test_label_diff_prints_aggregates_only():
@@ -89,3 +91,17 @@ def test_label_diff_prints_aggregates_only():
     scene_frames = {str(frame) for frame in range(1000, N)}
     assert not scene_frames & set(numbers), "a frame of the scene is printed: {}".format(scene_frames & set(numbers))
     assert "moved" in text and "possessions" in text, "the figures are printed"
+
+
+def test_label_diff_counts_as_the_scorer_does_with_x_filled():
+    # An X inside a run does not split it: H X H is one possession and D X D one dead ball, as pm.fill_abstentions has
+    # it. The raw shares still count the X as a label.
+    ref = codes_of([(1000, 1300, H), (1300, 1400, D), (1400, 1600, A), (2000, 2600, H)])
+    new = codes_of([(1000, 1100, H), (1100, 1120, X), (1120, 1300, H), (1300, 1340, D), (1340, 1360, X),
+                    (1360, 1400, D), (1400, 1600, A), (2000, 2600, H)])
+    out = label_diff.diff(ref, new, scene())
+    assert out["possessions"] == {1: [2, 2], 2: [1, 1]}, "possessions are {}".format(out["possessions"])
+    onsets = out["d_onsets"]
+    assert (onsets["ref"], onsets["new"], onsets["moved"]) == (1, 1, 0), "D X D is one onset: {}".format(onsets)
+    assert out["x_share"] == [0.0, 40 / 1200], "x_share stays raw: {}".format(out["x_share"])
+    assert abs(out["changed_share"] - 40 / 1200) < 1e-12, "changed_share stays raw: {}".format(out["changed_share"])
