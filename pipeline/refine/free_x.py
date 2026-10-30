@@ -9,8 +9,8 @@ Why
 ---
 `spellF1` forward-fills an X with the last label before it (docs/results.md, `possession_metrics.fill_abstentions`), so
 an X inside a run of H or A leaves every possession exactly as it was, and only `macroF1` sees it: it counts the frame
-as a miss instead of a guess. A guess is worth making when it is right more often than not, and the decoder's posterior says which frames
-are not (the design, section 5.B, argues the exact bar). So this refiner turns the frames below the
+as a miss instead of a guess. A guess is worth making when it is right more often than not, and the decoder's
+posterior says which frames are not (the design, section 5.B, argues the exact bar). So this refiner turns the frames below the
 threshold into X, and the threshold is for a declared rule on the benchmark to set: the code ships with none.
 
 Which frames
@@ -67,8 +67,8 @@ def refine(ctx, decoded, *, threshold, margin=MARGIN):
                          "before shift_edges, which drops it")
     labels = decoded.labels
     if posterior.shape != (len(labels), 3):
-        raise ValueError("free_x: the posterior must have one row of P(H), P(A), P(D) per frame, shape {}, got {}".format(
-            (len(labels), 3), posterior.shape))
+        raise ValueError("free_x: the posterior must have one row of P(H), P(A), P(D) per frame, shape {}, got "
+                         "{}".format((len(labels), 3), posterior.shape))
     freed = freeable(labels, margin)
     freed &= posterior[np.arange(len(labels)), np.minimum(labels, D)] < threshold
     return Decoded(labels=np.where(freed, X, labels).astype(np.int8), posterior=posterior)
