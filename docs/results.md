@@ -37,7 +37,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R015 | 2026-10-29 | the `offpitch` profile (P18): `tracking` v3 with DFL's ball hidden once it is more than m past a line and a share q of the transplanted gaps dropped, m and q fitted once on label-free statistics of our match, its fidelity, and `main.toml` on it | — | — | — | 0.5509 raw and 0.5296 coarse for `main.toml` on `offpitch`, against 0.5430 and 0.5593 on `tracking` (a difference between two profiles) | `offpitch` v1 frozen (m 0.2 m, q 0.430); 8 of 9 gates pass, median gap fails (15.04 s against 10.74); main.toml 0.5509 raw / 0.5296 coarse on it; P18 dropped after R015b |
 | R015b | 2026-10-29 | the `offpitch` v2 rule (the ball hidden while it is more than m past a line and moving, found again at rest), swept once on the benchmark's label-free fidelity statistics before anything was built | — | — | — | — | v2 cannot reach our share past a line at any margin (0.258 to 0.262 against 0.0407); P18 dropped, offpitch code removed (7b555eb) |
 | R016 | 2026-10-30 | `free_x` (P12) on `main.toml`: `X` inside `H` and `A` runs where the decoded label's posterior is below a threshold, over 0.25, 0.35, 0.45, 0.55, 4 configs | — | — | — | — | bar not met; free_x dropped |
-| R019 | 2026-10-30 | P09: the camera's aim in the shape model; part 1a: the camera's fit and fidelity gates (peak lag +-10 frames, peak correlation +-0.05, median error +-3.0 m, dead/alive speed ratio +-25%; the gap/visible ratio a WARN), declared before the first simulation | - | - | - | - | declared, not run |
+| R019 | 2026-10-30 | P09: the camera's aim in the shape model; part 1a: the camera's fit and fidelity gates (peak lag +-10 frames, peak correlation +-0.05, median error +-3.0 m, dead/alive speed ratio +-25%; the gap/visible ratio a WARN), declared before the first simulation; part 2a: the gates run | - | - | - | - | `tracking` FAIL: peak correlation 0.9115 vs ours 0.843, dead/alive speed ratio 0.575 vs 0.128 (the simulated camera never stands still); retry or drop is Tian's call |
 
 ### The four yardsticks on every profile, in one table
 
@@ -6187,6 +6187,53 @@ step 7, after this commit); they add to the declaration above and change none of
 
 **What follows, not governed here.** Parts 2 and 3 (the shape model v2 and the benchmark's bar over the candidates at
 weights {0.2, 0.3, 0.5}) are declared when Task E.4 starts, before their runs.
+
+#### Part 2a — the gates' results (run 2026-10-30)
+
+Run at `bc35178` on branch `p09-camera-aim`: `python pipeline/benchmark/camera.py gates --profile tracking --seeds 3`,
+then the same with `--profile context`, 7 matches x seeds 0 to 2. The branch's `main.toml` decoded `dead` on both sides
+and had no match-only source to drop (it predates P08's adoption). Reports: `data/runs/camera/gates_<profile>.json`.
+
+**The fit** (camera digest `e4adfed3e482`): lag 0 frames, tau 50 frames, a 23.314 m, b 0.5793, phi 0.999971,
+sigma 0.0674 m, lo 9.53 m, hi 93.88 m. 74,694 settled frames, R squared 0.719, residual sd 8.78 m. Both lag and tau are
+on an edge of the declared grid: lag 0 is the smallest lag searched and tau 50 the largest smoother.
+
+**The gates** (ours: 94,214 pairs; simulated: 1,747,071 pairs on `tracking`, 1,709,934 on `context`):
+
+| gate | ours | `tracking` sim | delta | result | `context` sim | delta | result (information) |
+|---|---|---|---|---|---|---|---|
+| 1 peak lag (frames) | 37 | 40 | +3 | pass | 41 | +4 | pass |
+| 2 peak correlation | 0.843 | 0.9115 | +0.0685 | **FAIL** | 0.9002 | +0.0572 | FAIL |
+| 3 median error (m) | 11.65 | 12.69 | +1.04 | pass | 11.84 | +0.19 | pass |
+| 4 speed ratio dead / alive | 0.1277 | 0.5754 | +351% | **FAIL** | 0.5786 | +353% | FAIL |
+| WARN speed ratio gap / visible | 0.1671 | 0.9829 | +488% | WARN | 0.8751 | +424% | WARN |
+
+The aim's median speed (m/s), the four numbers behind the two ratios:
+
+| | alive | dead | ball seen | ball not seen |
+|---|---|---|---|---|
+| ours | 0.298 | 0.038 | 0.254 | 0.043 |
+| simulated, `tracking` | 1.951 | 1.123 | 1.516 | 1.490 |
+| simulated, `context` | 1.947 | 1.127 | 1.595 | 1.396 |
+
+Part 1a quoted A03's gap/visible speeds (0.58 / 1.22); those came from A03's own measurement, and the gates compare
+`measure()` with `measure()` on both sides.
+
+**What the numbers say** (readings, not measured causes):
+- The simulated camera never stands still. While play is alive it moves at 6.5 times our camera's median speed, while it
+  is dead at 30 times. With phi this near 1 the noise's innovation is the residual's frame-to-frame change, and its
+  median step alone is 0.6745 x 0.0674 m a frame, 1.14 m/s, about four times our camera's median speed in play. Our
+  camera nearly stops whenever play is dead (0.04 m/s) or our ball is unseen (0.04 m/s); the follower plus that noise
+  cannot.
+- The simulated aim correlates 0.07 more with its ball than ours does. Two plausible readings: the served ball is a copy
+  of the very ball the simulated camera follows, while ours is a tracker's estimate of the ball our camera follows; and
+  with phi at 0.99997 the noise's correlation time (about 34,000 frames, 23 minutes) is half a graded block, so within a
+  block it covers less than its stationary variance.
+- For P09's premise: on frames without our ball the aim's position still says where our camera points, but the camera
+  barely moves there, so a velocity of the aim (`aim_vel`, Task E.4) would be near zero on most of them.
+
+**Status: `tracking` FAIL on gates 2 and 4** (`context`, information only: the same two). Under part 1a's retry rule, Tian
+decides between one retry with a single declared change and the drop. No shape model has been retrained.
 
 ## Submission log
 
