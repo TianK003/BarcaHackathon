@@ -52,6 +52,7 @@ BAR = {"share_near": 0.70, "low": 0.60, "ratio": 1.5}
 SEED = (18, 0)
 NEAR_DB = 0.5                               # a feature this close to its threshold is one a different ffmpeg could flip
 CONFIG = "pipeline/configs/main.toml"
+CRLF, LF = b"\r\n", b"\n"                   # the config's hash is printed raw and with CRLF read as LF (the blob's)
 
 
 def _bounds(w, blocks):
@@ -117,7 +118,10 @@ def feasibility(w, dead, blocks, *, offsets_s=OFFSETS_S):
     """The feasibility figures (module docstring). "lags" holds the signed per-detection lags: `public` drops them."""
     w = np.asarray(w, dtype=np.int64)
     if not len(w):
-        raise ValueError("there are no detections to measure")
+        # no detection is a failed gate, on file: the counts are zero and the statistics are undefined
+        return {"per_half": {int(half): 0 for half, _, _ in blocks}, "n": 0, "share_near": None,
+                "control_share_near": None, "ratio": None, "lag_to_edge": {"q1": None, "median": None, "q3": None},
+                "lags": []}
     near = _near_each(w, dead, blocks)
     index, _, _ = _bounds(w, blocks)
     share = float(near.mean())
@@ -140,7 +144,7 @@ def bar(w, dead, blocks, *, draws=2000, seed=SEED, offsets_s=OFFSETS_S):
     """share_near with a 90% bootstrap over detections (low, high), the control's share and the ratio."""
     w = np.asarray(w, dtype=np.int64)
     if not len(w):
-        raise ValueError("there are no detections to measure")
+        return {"n": 0, "share_near": None, "low": None, "high": None, "control_share_near": None, "ratio": None}
     near = _near_each(w, dead, blocks)
     rng = np.random.default_rng(list(seed))
     means = near[rng.integers(0, len(near), size=(int(draws), len(near)))].mean(axis=1)
@@ -154,20 +158,25 @@ def gate(out):
     """R018's feasibility gate on `feasibility`'s figures: {"pass", "checks"} (each declared condition, by name)."""
     low, high = GATE["per_half"]
     checks = {"per_half": all(low <= n <= high for n in out["per_half"].values()),
-              "share_near": out["share_near"] >= GATE["share_near"],
+              "share_near": out["share_near"] is not None and out["share_near"] >= GATE["share_near"],
               "ratio": out["ratio"] is not None and out["ratio"] >= GATE["ratio"]}
     return {"pass": all(checks.values()), "checks": checks}
 
 
 def bar_verdict(out):
     """R018's bar on `bar`'s figures: {"pass", "checks"}."""
-    checks = {"share_near": out["share_near"] >= BAR["share_near"], "low": out["low"] >= BAR["low"],
+    checks = {"share_near": out["share_near"] is not None and out["share_near"] >= BAR["share_near"],
+              "low": out["low"] is not None and out["low"] >= BAR["low"],
               "ratio": out["ratio"] is not None and out["ratio"] >= BAR["ratio"]}
     return {"pass": all(checks.values()), "checks": checks}
 
 
 def _q(value):
     return "n/a" if value is None else "{:+.1f}".format(value)
+
+
+def _share(value):
+    return "n/a" if value is None else "{:.3f}".format(value)
 
 
 def _ratio_text(out):
@@ -185,8 +194,8 @@ def render_feasibility(out, verdict):
     return [
         "detections   {} ({})".format(out["n"], "   ".join(
             "half {}: {}".format(half, n) for half, n in sorted(out["per_half"].items()))),
-        "share near   {:.3f}   control {:.3f}   ratio {}".format(out["share_near"], out["control_share_near"],
-                                                                 _ratio_text(out)),
+        "share near   {}   control {}   ratio {}".format(_share(out["share_near"]), _share(out["control_share_near"]),
+                                                         _ratio_text(out)),
         "lag to edge  quartiles {} / {} / {} frames (signed, edge minus whistle)".format(
             _q(lag["q1"]), _q(lag["median"]), _q(lag["q3"])),
         _verdict_text("gate", verdict),
@@ -197,8 +206,9 @@ def render_bar(out, verdict):
     """The printed lines of the bar's figures: shares and pass/fail."""
     return [
         "detections   {}".format(out["n"]),
-        "share near   {:.3f}   90% bootstrap {:.3f} to {:.3f}   control {:.3f}   ratio {}".format(
-            out["share_near"], out["low"], out["high"], out["control_share_near"], _ratio_text(out)),
+        "share near   {}   90% bootstrap {} to {}   control {}   ratio {}".format(
+            _share(out["share_near"]), _share(out["low"]), _share(out["high"]), _share(out["control_share_near"]),
+            _ratio_text(out)),
         _verdict_text("bar", verdict),
     ]
 
@@ -231,12 +241,17 @@ def main(argv=None):
     try:
         path = os.path.join(ROOT, CONFIG)
         with open(path, "rb") as handle:
-            sha = hashlib.sha256(handle.read()).hexdigest()
-        print("config       {} sha256 {}".format(CONFIG, sha))
+            raw_bytes = handle.read()
+        # both, so that a CRLF working copy (Windows) and the committed LF blob can each be matched to the declaration
+        sha = {"raw": hashlib.sha256(raw_bytes).hexdigest(),
+               "LF": hashlib.sha256(raw_bytes.replace(CRLF, LF)).hexdigest()}
+        print("config       {} sha256 raw {} LF {}".format(CONFIG, sha["raw"], sha["LF"]))
         inputs = Inputs(data_dir=args.data_dir)
         codes, _ = run.predict(load_config(path), inputs)
         dead = np.asarray(codes) == pm.D
         features = inputs.audio_features
+        feature_sha = hashlib.sha256(np.ascontiguousarray(features).tobytes()).hexdigest()
+        print("features     sha256 {}".format(feature_sha))
         first, stop = whistle.runs(features, inputs.graded_mask)
         flippable = near_threshold(features, first, stop)
         if args.mode == "feasibility":
@@ -253,7 +268,7 @@ def main(argv=None):
         data_dir = args.data_dir or os.environ.get("MTAH_DATA_DIR") or os.path.join(ROOT, "data")
         folder = os.path.join(data_dir, "runs", "whistle")
         os.makedirs(folder, exist_ok=True)
-        report = {"mode": args.mode, "config": CONFIG, "config_sha256": sha, "near_threshold": flippable,
+        report = {"mode": args.mode, "config": CONFIG, "config_sha256": sha, "feature_sha256": feature_sha, "near_threshold": flippable,
                   "verdict": verdict, "figures": public(out)}
         with open(os.path.join(folder, args.mode + ".json"), "w", newline="\n") as handle:
             json.dump(report, handle, indent=2, sort_keys=True)

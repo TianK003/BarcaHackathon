@@ -92,3 +92,23 @@ def test_whistle_stats_prints_aggregates_only():
     assert not scene_frames & set(numbers), "a frame of the scene is printed: {}".format(scene_frames & set(numbers))
     assert "share" in text, "the figures are printed"
     assert "lags" not in whistle_stats.public(out), "the per-detection lags are not written to the report"
+
+
+def test_whistle_stats_undefined_ratio_and_no_detection_are_recorded_fails():
+    assert whistle_stats._ratio(0.5, 0.0) is None, "a zero control has no ratio"
+    assert whistle_stats._ratio(0.5, 0.25) == 2.0
+    good = {"share_near": 0.9, "low": 0.8, "high": 0.95, "ratio": None}
+    assert whistle_stats.bar_verdict(good)["pass"] is False, "no ratio, no pass"
+    dead = dead_of(DEAD_RUNS)
+    none = np.array([], dtype=np.int64)
+    out = whistle_stats.feasibility(none, dead, BLOCKS)
+    assert out["per_half"] == {1: 0, 2: 0} and out["n"] == 0, out
+    assert out["share_near"] is None and out["ratio"] is None and out["lag_to_edge"]["median"] is None
+    verdict = whistle_stats.gate(out)
+    assert verdict["pass"] is False and verdict["checks"]["per_half"] is False, verdict
+    text = " ".join(whistle_stats.render_feasibility(out, verdict))
+    assert "FAIL" in text and "n/a" in text, text
+    out = whistle_stats.bar(none, dead, BLOCKS)
+    assert out["n"] == 0 and out["low"] is None, out
+    assert whistle_stats.bar_verdict(out)["pass"] is False
+    assert "FAIL" in " ".join(whistle_stats.render_bar(out, whistle_stats.bar_verdict(out)))
