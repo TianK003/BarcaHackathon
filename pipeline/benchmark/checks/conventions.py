@@ -1817,3 +1817,84 @@ def test_the_public_latency_file_is_tied_to_the_csv_it_was_read_from():
             os.remove(public_json)
             with contextlib.redirect_stdout(io.StringIO()):
                 assert conventions.main(shift) == 0
+
+
+# -- the descriptors of the tracking at each change -------------------------------------------------------------------
+
+def descriptor_scene(n=400, ball_frames=None, graded=None):
+    """A scene whose ball runs along x at 0.2 m a frame (5 m/s) at y = 2 m, two metres from a touch line.
+
+    The ball is seen on `ball_frames` only (default every frame). Slot 0 (home) stands 3 m from the ball's x = 60 m
+    point, slot 1 (away) 6 m from it, slot 3 (away) 40 m, slot 2 (home) 90 m away: the nearest of each team to the
+    ball when it is at (60, 2), which is frame 100.
+    """
+    frames = np.arange(n)
+    ball = np.column_stack([40.0 + 0.2 * frames, np.full(n, 2.0)])
+    seen = np.ones(n, dtype=bool) if ball_frames is None else np.isin(frames, ball_frames)
+    ball[~seen] = np.nan
+    fixed = {0: (63.0, 2.0), 1: (60.0, 8.0), 2: (0.0, 60.0), 3: (60.0, 42.0)}
+    slots = {slot: np.tile(at, (n, 1)) for slot, at in fixed.items()}
+    return scene(n, ball, slots=slots, graded=graded)
+
+
+def test_conventions_descriptors_on_a_hand_built_scene():
+    assert conventions.DESCRIPTORS == ("ball_seen", "ball_seen_1s", "ball_speed", "line_m", "old_near_m", "new_near_m",
+                                       "new_nearer"), "the descriptors are the brief's seven, in its order"
+    inputs = descriptor_scene()
+    rows = conventions.describe(inputs, [(100, A, H, "team"), (100, H, A, "team"), (100, H, D, "into_dead")])
+    assert len(rows) == 3 and all(tuple(row) == conventions.DESCRIPTORS for row in rows), "one dict per change"
+    gained, lost, dead = rows
+    assert gained["ball_seen"] is True and gained["ball_seen_1s"] is True
+    assert math.isclose(gained["ball_speed"], 5.0, abs_tol=1e-6), "0.2 m a frame at 25 Hz, from the positions"
+    assert math.isclose(gained["line_m"], -2.0, abs_tol=1e-9), "2 m inside the touch line is minus two"
+    assert math.isclose(gained["old_near_m"], 6.0, abs_tol=1e-9) and math.isclose(gained["new_near_m"], 3.0, abs_tol=1e-9)
+    assert gained["new_nearer"] is True
+    assert math.isclose(lost["old_near_m"], 3.0, abs_tol=1e-9) and math.isclose(lost["new_near_m"], 6.0, abs_tol=1e-9)
+    assert lost["new_nearer"] is False, "the new team (away) is the farther one"
+    assert dead["ball_seen"] is True and math.isclose(dead["line_m"], -2.0, abs_tol=1e-9)
+    assert dead["old_near_m"] is None and dead["new_near_m"] is None and dead["new_nearer"] is None, (
+        "the team descriptors apply to a change of team only")
+
+    # no ball on the change frame, seen 20 frames later: the one-second window sees it, the frame does not
+    inputs = descriptor_scene(ball_frames=[f for f in range(400) if f < 190 or f >= 220])
+    row, = conventions.describe(inputs, [(200, A, H, "team")])
+    assert row["ball_seen"] is False and row["ball_speed"] is None and row["line_m"] is None
+    assert row["ball_seen_1s"] is True, "the ball is seen at 220, 20 frames on"
+    assert row["old_near_m"] is None and row["new_near_m"] is None and row["new_nearer"] is None, (
+        "a team change needs the ball seen on the change frame")
+
+    # the window never reads across the block's edge
+    first = [f for f in range(400) if f < 197]          # seen up to the first block's end only
+    row, = conventions.describe(descriptor_scene(ball_frames=first, graded=[(0, 200), (200, 400)]),
+                                [(210, D, H, "out_of_dead")])
+    assert row["ball_seen_1s"] is False, "frames 185-199 are in the other block"
+    later = [f for f in range(400) if f >= 204]
+    row, = conventions.describe(descriptor_scene(ball_frames=later, graded=[(0, 200), (200, 400)]),
+                                [(190, H, D, "into_dead")])
+    assert row["ball_seen_1s"] is False, "frames 204-215 are in the other block"
+
+
+def test_conventions_descriptor_summary():
+    changes = [(10, A, H, "team"), (20, H, A, "team"), (30, A, H, "team"), (40, A, D, "into_dead"),
+               (50, D, H, "out_of_dead")]
+
+    def row(seen, speed, nearer):
+        return {"ball_seen": seen, "ball_seen_1s": True, "ball_speed": speed, "line_m": None, "old_near_m": None,
+                "new_near_m": None, "new_nearer": nearer}
+
+    rows = [row(True, 1.0, True), row(False, None, None), row(True, 5.0, False), row(True, 3.0, None), row(False, 2.0, None)]
+    summary = conventions.summarise_descriptors(changes, rows)
+    team = summary["team"]
+    assert team["ball_seen"] == {"n": 3, "share": 2 / 3}, "a boolean gives n and share"
+    assert team["new_nearer"] == {"n": 2, "share": 0.5}, "n leaves out the None rows"
+    assert team["ball_speed"] == {"n": 2, "median": 3.0, "p25": 2.0, "p75": 4.0}, "numpy's linear quartiles of 1 and 5"
+    assert team["line_m"] == {"n": 0, "median": None, "p25": None, "p75": None}, "nothing to summarise is None, not NaN"
+    assert summary["into_dead"]["ball_speed"]["median"] == 3.0 and summary["out_of_dead"]["ball_seen"]["share"] == 0.0
+    assert summary["into_dead"]["ball_seen_1s"] == {"n": 1, "share": 1.0}
+    assert set(summary) == set(conventions.TYPES), "every type has its cells, as in the lag table"
+    try:
+        conventions.summarise_descriptors(changes, rows[:2])
+    except conventions.ConventionsError:
+        pass
+    else:
+        raise AssertionError("a row for every change, or an error that says so")

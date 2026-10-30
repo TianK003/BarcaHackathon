@@ -207,6 +207,9 @@ MIN_GAP = 3                         # frames: a median of L' smaller in size tha
 GAP_SEED = (2, 0)                   # default_rng(GAP_SEED), the design's, for the interval of the median of L'
 SHIFT_DFL = ("tracking", "raw")     # the profile and truth that s_b is read from: the benchmark's default
 SHIFT_COARSE = ("tracking", "coarse")   # reported beside it when its latency file is there, never used (T33)
+DESCRIPTORS = ("ball_seen", "ball_seen_1s", "ball_speed", "line_m", "old_near_m", "new_near_m", "new_nearer")
+BOOLEAN_DESCRIPTORS = ("ball_seen", "ball_seen_1s", "new_nearer")   # summarised by a share, the others by quartiles
+NEAR_S = 1                          # ball_seen_1s: the ball is looked for this many seconds either side of a change
 
 
 def _typed_changes():
@@ -367,6 +370,87 @@ def _tag_end(inputs):
 
 _DETECTORS = {"touch_start": _touch_start, "line_out": _line_out, "ball_lost": _ball_lost, "ball_moves": _ball_moves,
               "model_dead": _model_dead, "model_alive": _model_alive, "tag_start": _tag_start, "tag_end": _tag_end}
+
+
+# -- the descriptors --------------------------------------------------------------------------------------------------
+
+def describe(inputs, changes):
+    """[{descriptor: value}]: what the tracking shows at each of `changes` (as transitions_of gives them), in order.
+
+    The keys are DESCRIPTORS. The truth enters through the change frames alone, exactly as for the lags: a person (and
+    P16) can then set the numbers of one source beside another's without either having read a label. With c the
+    change's frame, the first of the new label:
+
+    - ball_seen: the ball has a position on c; ball_seen_1s: on any frame of [c - 1 s, c + 1 s] inside c's block (the
+      window never reads across a block's edge, where the ball's coverage is another half's);
+    - ball_speed: metres a second on c from the ball's positions (kinematics.ball_track, never the ATD's own channel,
+      T31), None where the ball is not seen or has no derivative there; line_m: kinematics.outside_m on c, negative
+      inside the pitch;
+    - old_near_m / new_near_m: metres from the ball to the nearest present slot of the old / new team (by slot_team,
+      a slot's team being the slot's, T32), and new_nearer: new_near_m < old_near_m. All three are for a `team` change
+      only and need the ball seen on c (and a slot of each team present), else they are None.
+
+    A value is None wherever the descriptor does not apply or cannot be computed, never NaN. Floats are Python floats
+    and booleans Python bools. Nothing is printed: the rows hold frame-level values of a match, so the caller
+    summarises them (summarise_descriptors) before anything is shown.
+    """
+    ball = kinematics.ball_track(inputs)
+    players = kinematics.player_track(inputs)
+    blocks = kinematics.blocks(inputs)
+    home = np.asarray(inputs.atd.slot_team) == 0
+    reach = round(NEAR_S * inputs.fps)
+    rows = []
+    for frame, before, after, kind in changes:
+        row = dict.fromkeys(DESCRIPTORS)
+        seen = bool(ball.visible[frame])
+        row["ball_seen"] = seen
+        for start, stop in blocks:
+            if start <= frame < stop:
+                row["ball_seen_1s"] = bool(ball.visible[max(start, frame - reach):min(stop, frame + reach + 1)].any())
+                break
+        if seen:
+            speed = float(ball.speed[frame])
+            row["ball_speed"] = speed if np.isfinite(speed) else None
+            row["line_m"] = float(kinematics.outside_m(ball.xy_m[frame], inputs.pitch))
+            if kind == "team":
+                near = {}
+                dist = kinematics.ball_distances(players.xy_m[frame][None], ball.xy_m[frame][None])[0]
+                for code, mine in ((before, home if before == pm.H else ~home), (after, home if after == pm.H else ~home)):
+                    here = dist[mine & players.present[frame]]
+                    near[code] = float(here.min()) if here.size else None
+                row["old_near_m"], row["new_near_m"] = near[before], near[after]
+                if None not in (row["old_near_m"], row["new_near_m"]):
+                    row["new_nearer"] = row["new_near_m"] < row["old_near_m"]
+        rows.append(row)
+    return rows
+
+
+def summarise_descriptors(changes, rows):
+    """{type: {descriptor: cell}}: the descriptors of `rows` (describe's, one per change) summarised by type.
+
+    A boolean descriptor's cell is {"n", "share"} (the share of True), a numeric one's {"n", "median", "p25", "p75"}
+    (numpy's linear percentiles); n counts the rows where the value is not None, and the rest of the cell is None where
+    n is 0. Every type in TYPES has its cells, as in the lag table, also where there is no change of it.
+    ConventionsError when `rows` is not one row per change.
+    """
+    if len(rows) != len(changes):
+        raise ConventionsError("conventions: summarise_descriptors needs one row for each change, got {} rows for {} "
+                               "changes".format(len(rows), len(changes)))
+    out = {}
+    for kind in TYPES:
+        mine = [row for (_, _, _, k), row in zip(changes, rows) if k == kind]
+        cells = {}
+        for name in DESCRIPTORS:
+            values = [row[name] for row in mine if row[name] is not None]
+            if name in BOOLEAN_DESCRIPTORS:
+                cells[name] = {"n": len(values), "share": sum(values) / len(values) if values else None}
+            elif values:
+                p25, median, p75 = (float(v) for v in np.percentile(values, [25, 50, 75]))
+                cells[name] = {"n": len(values), "median": median, "p25": p25, "p75": p75}
+            else:
+                cells[name] = {"n": 0, "median": None, "p25": None, "p75": None}
+        out[kind] = cells
+    return out
 
 
 # -- the lags ---------------------------------------------------------------------------------------------------------
