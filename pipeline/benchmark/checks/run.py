@@ -25,7 +25,6 @@ import re
 import subprocess
 import sys
 import tempfile
-import types
 import weakref
 
 import numpy as np
@@ -34,8 +33,8 @@ import possession_metrics as pm
 from pipeline.benchmark import calibration, degrade, dfl, score, sources, truth
 from pipeline.benchmark import inputs as match_inputs
 from pipeline.benchmark import run as benchmark_run
-from pipeline.benchmark.checks.common import (MIN_AGREEMENT, context_calibration, loading, random_match, read,
-                                              real_match, strict_json, synthetic_calibration, synthetic_matches,
+from pipeline.benchmark.checks.common import (MIN_AGREEMENT, PROBE_CONFIG, context_calibration, loading, match_only_source,
+                                              random_match, read, real_match, registered, strict_json, synthetic_calibration, synthetic_matches,
                                               tracking_calibration, whole_positions, write_synthetic_dfl,
                                               yardstick_path)
 from pipeline.config import ConfigError, load_config
@@ -104,18 +103,6 @@ def evaluate_gaps(*arguments, **keywords):
     Calibration of the bundle can serve (it has our masks and none of the tracking profile's figures)."""
     keywords.setdefault("profile", "gaps")
     return benchmark_run.evaluate_configs(*arguments, **keywords)
-
-
-@contextlib.contextmanager
-def registered(registry, **components):
-    """The components in `registry` (a stage's REGISTRY) while the block runs, and the registry as it was after it."""
-    before = dict(registry)
-    registry.update(components)
-    try:
-        yield
-    finally:
-        registry.clear()
-        registry.update(before)
 
 
 def independent_halves(match, config_path, data_dir, raw=None):
@@ -537,36 +524,6 @@ def test_runner_names_unavailable_source():
     # The pipeline's own message, through the inputs, is the one that is quoted.
     expect_error(match_inputs.AssetUnavailable, lambda: match_inputs.MatchInputs(
         matches["RND001"], match_inputs.clean_atd(matches["RND001"])).homography, "homography", "P01")
-
-
-@contextlib.contextmanager
-def match_only_source(needs_homography=False):
-    """A temporary evidence kind, "probe_match_only", whose module says MATCH_ONLY = True; the registry as it was after.
-
-    It has no opinion anywhere, or, with `needs_homography`, asks for the video's homography (which a benchmark match
-    does not have) and raises AssetUnavailable, as the Smart Tagging and the whistle would.
-    """
-    from pipeline import evidence as evidence_stage
-    from pipeline.contracts import Evidence, no_opinion
-
-    def compute(run):
-        if needs_homography:
-            run.inputs.homography
-        return Evidence(alive=no_opinion(run.inputs.n_frames), home=no_opinion(run.inputs.n_frames))
-
-    module = types.ModuleType("pipeline.evidence._probe_match_only")
-    module.MATCH_ONLY = True
-    compute.__module__ = module.__name__
-    sys.modules[module.__name__] = module
-    try:
-        with registered(evidence_stage.REGISTRY, probe_match_only=compute):
-            yield
-    finally:
-        del sys.modules[module.__name__]
-
-
-PROBE_CONFIG = ('scope = "halves"\n\n[[evidence]]\nkind = "nearest_player"\n\n[[evidence]]\n'
-                'kind = "probe_match_only"\nname = "{name}"\n\n[decoder]\nkind = "majority_vote"\nhalf_width = 2\n')
 
 
 def test_drop_match_only_removes_exactly_the_flagged_sources():

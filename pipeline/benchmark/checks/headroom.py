@@ -33,8 +33,8 @@ from pipeline import evidence as evidence_stage
 from pipeline.benchmark import headroom, truth
 from pipeline.benchmark import inputs as match_inputs
 from pipeline.benchmark import run as benchmark_run
-from pipeline.benchmark.checks.common import (loading, random_match, read, synthetic_calibration, synthetic_matches,
-                                              yardstick_path)
+from pipeline.benchmark.checks.common import (PROBE_CONFIG, loading, match_only_source, random_match, read,
+                                              synthetic_calibration, synthetic_matches, yardstick_path)
 from pipeline.config import Component, load_config
 from pipeline.contracts import A, D, H, X, RunContext, check_evidence
 from pipeline.selftest import expect_error, quiet, write_text
@@ -766,6 +766,32 @@ def test_headroom_command_line_prints_the_table_and_the_report_lines():
         assert code == 1 and shown.getvalue().startswith("FAILED") and "nearest_player" in shown.getvalue(), (
             code, shown.getvalue())
         assert headroom.DEFAULT_PROFILE == benchmark_run.DEFAULT_PROFILE
+
+
+def test_headroom_command_line_drops_match_only_sources_when_asked():
+    """--drop-match-only reaches the runner: a config with a match-only source (main.toml's Smart Tagging) runs with it.
+
+    The probe source is match-only and asks for the video's homography, which a benchmark match does not have. Without
+    the flag the command fails with a sentence that names the flag (exit 1); with it the run succeeds (exit 0), the
+    variants are made from the config as written, and the output says what was dropped.
+    """
+    def serve(match_id):
+        return random_match(match_id, seed=len(match_id))
+
+    with match_only_source(needs_homography=True), tempfile.TemporaryDirectory() as root, loading(serve):
+        path = write_text(root, "uses_tags.toml", PROBE_CONFIG.format(name="tags"))
+        arguments = [path, "--profile", "clean", "--matches", "J03WOH", "--data-dir", root, "--variants", "alive"]
+        shown = io.StringIO()
+        with contextlib.redirect_stdout(shown):
+            code = headroom.main(arguments)
+        assert code == 1 and "--drop-match-only" in shown.getvalue(), (code, shown.getvalue())
+
+        shown = io.StringIO()
+        with contextlib.redirect_stdout(shown):
+            code = headroom.main(arguments + ["--drop-match-only"])
+        out = shown.getvalue()
+        assert code == 0, out
+        assert "match-only" in out and "tags" in out and "uses_tags__alive" in out, out
 
 
 # -- the plus_ variants and the gaps oracle (P18) ---------------------------------------------------------------------

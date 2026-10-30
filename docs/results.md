@@ -37,6 +37,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R015 | 2026-10-29 | the `offpitch` profile (P18): `tracking` v3 with DFL's ball hidden once it is more than m past a line and a share q of the transplanted gaps dropped, m and q fitted once on label-free statistics of our match, its fidelity, and `main.toml` on it | — | — | — | 0.5509 raw and 0.5296 coarse for `main.toml` on `offpitch`, against 0.5430 and 0.5593 on `tracking` (a difference between two profiles) | `offpitch` v1 frozen (m 0.2 m, q 0.430); 8 of 9 gates pass, median gap fails (15.04 s against 10.74); main.toml 0.5509 raw / 0.5296 coarse on it; P18 dropped after R015b |
 | R015b | 2026-10-29 | the `offpitch` v2 rule (the ball hidden while it is more than m past a line and moving, found again at rest), swept once on the benchmark's label-free fidelity statistics before anything was built | — | — | — | — | v2 cannot reach our share past a line at any margin (0.258 to 0.262 against 0.0407); P18 dropped, offpitch code removed (7b555eb) |
 | R016 | 2026-10-30 | `free_x` (P12) on `main.toml`: `X` inside `H` and `A` runs where the decoded label's posterior is below a threshold, over 0.25, 0.35, 0.45, 0.55, 4 configs | — | — | — | — | bar not met; free_x dropped |
+| R017 | 2026-10-30 | Smart Tagging's votes (P08) against our own pseudo-labels on BAR-ATH: team agreement with `controlled_touch` episodes and dead agreement with `dead_ball_model`, the two parts' bars, and two strengths (`frame` 0.2, `tag` 1.0) for Tian's pick | 0.6986 | 0.4000 | — | — (DFL has no tags; `main.toml --drop-match-only` reproduces R013's 0.5430 raw, 0.5593 coarse) | team votes adopted per frame (0.761); dead votes dropped (0.409) |
 
 ### The four yardsticks on every profile, in one table
 
@@ -6107,6 +6108,182 @@ more often than F1/2 of the time, so no threshold of this signal can reach the b
    registry line, its checks (with `FREE_X_ABSENT_SHA256`) and `pipeline/benchmark/configs/r016/`. It is recoverable from
    `c909e2f`. `choose.py --metric` stays, as a general benchmark option.
 
+### R017 — Smart Tagging's votes against our own pseudo-labels: the bar, and the strength in the decoder (2026-10-30, Tian)
+Proposal: P08 · Commit: part 1 (this declaration) is committed before any measurement it governs; the measurement's
+commits are in part 2.
+
+**Part 1, declared before any measurement** (2026-10-30). Nothing below was chosen from a score of this entry, and no
+number of this match has been seen: the source (`pipeline/evidence/smart_tagging.py`) and the measurement
+(`pipeline/benchmark/tag_stats.py`) are built and unit-tested on synthetic data only.
+
+**Why.** Smart Tagging carries 638 automatic phase intervals of our match (T17): not possessions and not ground truth.
+Their codes say who attacks or defends, and that play is stopped (set pieces, goals), which is information about the
+ball-missing stretches where `controlled_touch` is blind. There is no truth to score them against and no benchmark (DFL
+has no tags), so the only honest bar is agreement with the two pseudo-labels of our own pipeline that are already
+trusted. The measured agreements become the votes' confidences, so the bar decides whether the source enters at all.
+
+**The votes**, fixed from what the codes mean (P08's table), never from agreement with any truth. Codes are upper-cased
+and tag values matched case-insensitively (T17):
+
+| codes | vote |
+|---|---|
+| `BUILD UP`, `PROGRESSION`, `CREATING CHANCES`, `BALL IN FINAL THIRD`, `BALL IN THE BOX`, `PLAYERS IN THE BOX`, `ATTACKING TRANSITION`, `LONG BALL` | `home`: the tagged team has it |
+| `DEFENDING IN ... THIRD`, `DEFENSIVE TRANSITION` | `home`: the other team has it |
+| `SET PIECES`, `GOALS` | `alive`: dead |
+| any other code | no vote |
+
+`Team` `Barcelona` is home, `Atletic Club` (sic) is away, `N/A` gives no team vote (a set-piece tag with `N/A` still gives
+its dead vote). Where tags disagree on a frame's team, that frame gets no team vote; agreeing tags give one vote, not
+two. Outside the graded blocks the source says NaN. The source declares `MATCH_ONLY`: a DFL match raises
+`AssetUnavailable`, and it is never run on the benchmark.
+
+**The pseudo-labels** (no human label of this match, none decided by a person):
+- **Team:** the kept episodes of `controlled_touch` with `conventions.TOUCH`'s parameters (radius 2.0 m, max_rel_speed
+  6.0 m/s, min_frames 3, confidence 0.99, hold 0.5), so `home` is a number exactly on the kept frames, as
+  `train_shape.touch_agreement` takes them. An episode is a home episode when `home` >= 0.5.
+- **Dead:** `dead_ball_model` with `main.toml`'s own `[[evidence]]` entry's parameters, read from the config and not
+  copied (the model only: that entry has no `min_prob`, so the source's default applies; weight 1.0). Dead is P(alive)
+  < 0.5.
+
+**The measurement.** `python pipeline/benchmark/tag_stats.py` (HEAVY: it loads BAR-ATH), run once by the controller on
+this declaration's commit; it writes aggregates only (`data/runs/tag_stats/stats.json`).
+- **Team agreement:** among the graded frames inside a kept episode where the tags give a team vote (no vote and
+  disagreement excluded), the share where the vote names the episode's team. Also the coverage of graded frames and of
+  ball-missing graded frames (`coverage_gaps`).
+- **Dead agreement:** among the frames of `SET PIECES` and `GOALS` tags where the model has an opinion, the share where
+  P(alive) < 0.5; the same share over all graded frames with an opinion is the base rate, and the lift is their ratio.
+- **The intervals:** a 90% bootstrap (5th and 95th percentile) that resamples whole tags (`smart_tagging.tags`), never
+  frames, since a tag's frames are one phase and strongly autocorrelated; 2000 draws, `default_rng` seeds (17, 0) for
+  the team part and (17, 1) for the dead part. A frame covered by several tags is given to the first, so nothing is
+  counted twice.
+- **Per code:** code name, n frames and share, as aggregates (the retry's information).
+- **The values:** c_team and c_dead are `towards_half` (P05's rounding, two decimals towards 0.5) of the measured point
+  shares. They are required parameters of the source, so its code holds no number of its own.
+
+**The bar.** Two independent parts, each adopted or not on its own:
+- **Team part:** point agreement >= 0.75, the lower 90% bound >= 0.70, and `coverage_gaps` >= 0.05 (team votes on at
+  least 5% of ball-missing graded frames; otherwise it adds nothing where it matters).
+- **Dead part:** point dead share >= 0.60, the lower 90% bound >= 0.50, and a lift >= 1.5 over the base rate.
+
+A part whose point share, lower bound, coverage or lift is undefined (no eligible frame, or a base rate of 0) fails its
+bar; a bootstrap draw with no eligible frame is dropped (`tag_stats.py`), and `per_code` counts a frame covered by two tags
+of a code twice (it is diagnosis for R017b, not the bar).
+
+**The strength in the decoder.** No benchmark can decide it, since DFL has no tags. If a part passes, two configs are
+run on BAR-ATH: `main.toml` plus the passing parts at `spread = "frame"`, weight 0.2 (`home` = c_team or 1 - c_team on
+every voted frame, `alive` = 1 - c_dead on every dead-voted frame; 0.2 by analogy with P07, the other team source that
+spans long windows), and at `spread = "tag"`, weight 1.0 (one observation per tag, each frame getting sigmoid(logit(c) /
+n), so the decoder sums them back to logit(c)). Tian sees, for each, the aggregates of `label_diff` against `main.toml`:
+the `D` share, the possessions per half, the share of graded frames whose label changed, and how many of those lie in
+ball gaps. **Tian picks one, or neither, before `main.toml` changes. Nothing is chosen from a score.**
+
+**Label-free checks on BAR-ATH** for the final config, before adopting: two runs give the same sha256; the `D` share is
+within 1 point of `main.toml`'s; the number of possessions per half is reported; no `X` in a graded block. The public
+window is scored only as a correctness check (are the votes the right way round?), never to choose, and may not weigh in
+(T01).
+
+**The reference.** `pipeline/configs/main.toml` is unchanged by this entry; its sha256 on the committed (LF) file,
+`git show HEAD:pipeline/configs/main.toml | sha256sum`, at this declaration is
+`0970f2de4b97ceec27660559ebc37b1a0dcbfcf1bfced08d016f1f9d4503181a` (R013's last change; the submission log's
+`0ebdfbec...` is the sha256 of the CSV it produces, not of the config).
+
+**If a part fails.** One retry is allowed (R017b), informed by which codes disagree (`per_code`), with its own
+declaration before its measurement; if it fails again the source is removed from the code, as P18 was, and P08 closes as
+dropped. A part that passes is not retried.
+
+**Part 2, the measurement and the verdict** (2026-10-30). Everything below applies part 1 as written. The public window
+was not scored for the verdict, and it chooses nothing. After the adoption, `selftest.py --data` scored it as a correctness
+check: macroF1 0.6986, spellF1 0.4000 (R013: 0.7152, 0.4649). They were seen after Tian's pick and chose nothing (T01;
+one possession moves spellF1 about 0.06 on that window). Logs hold aggregates only.
+
+**The runs.**
+- Measurement: `python pipeline/benchmark/tag_stats.py`, at commit `cefb8b0` (part 1 and the source, committed before the
+  run); the log ends `EXIT=0`.
+- Strength comparison: `python pipeline/benchmark/label_diff.py pipeline/configs/main.toml pipeline/configs/r017_frame.toml
+  pipeline/configs/r017_tag.toml`, at commit `1125ad9`; the log ends `EXIT=0`. Both configs are `main.toml` plus the team
+  vote only (the dead part failed).
+
+**The measurement.**
+
+| part | n frames | point share | 90% interval | other |
+|---|---|---|---|---|
+| team | 26,383 | 0.761 | [0.723, 0.795] | coverage 0.589 of graded frames, 0.499 of ball-missing graded frames |
+| dead | 56,898 | 0.409 | [0.280, 0.508] | base rate 0.364, lift 1.124 |
+
+Per code (frames covered, and the share that agrees with the part's pseudo-label: team agreement for the team codes, dead
+agreement for `SET PIECES` and `GOALS`; a frame covered by two tags of a code counts twice here, as declared):
+
+| code | frames | share |
+|---|---|---|
+| `ATTACKING TRANSITION` | 9,291 | 0.729 |
+| `BALL IN FINAL THIRD` | 67,095 | 0.697 |
+| `BALL IN THE BOX` | 31,654 | 0.634 |
+| `BUILD UP` | 11,011 | 0.867 |
+| `CREATING CHANCES` | 22,500 | 0.630 |
+| `DEFENDING IN ATTACKING THIRD` | 11,011 | 0.867 |
+| `DEFENDING IN DEFENSIVE THIRD` | 22,500 | 0.630 |
+| `DEFENDING IN MIDDLE THIRD` | 31,118 | 0.839 |
+| `DEFENSIVE TRANSITION` | 9,291 | 0.729 |
+| `GOALS` | 16,503 | 0.785 |
+| `LONG BALL` | 9,433 | 0.649 |
+| `PLAYERS IN THE BOX` | 75,736 | 0.596 |
+| `PROGRESSION` | 31,118 | 0.839 |
+| `SET PIECES` | 47,037 | 0.263 |
+
+The would-be values: c_team 0.76 and c_dead 0.41 (`towards_half`, two decimals).
+
+**The bar.**
+- **Team part: passes.** Point 0.761 >= 0.75, lower bound 0.723 >= 0.70, `coverage_gaps` 0.499 >= 0.05. c_team = 0.76.
+- **Dead part: fails.** Point 0.409 < 0.60, lower bound 0.280 < 0.50, lift 1.124 < 1.5. All three conditions fail.
+
+**The strength comparison** (against `main.toml`, graded frames):
+
+| config | frames changed | of them in ball gaps | D share | possessions half 1 | half 2 | D onsets |
+|---|---|---|---|---|---|---|
+| main | | | 35.92% | 192 | 218 | 106 |
+| `r017_frame.toml` (`frame`, weight 0.2) | 2.28% | 56.3% | 35.93% | 187 | 226 | 108 (16 moved, 1 lost, median move +1.0 frames) |
+| `r017_tag.toml` (`tag`, weight 1.0) | 0.03% | 2.1% | 35.92% | 191 | 218 | 106 (0 moved) |
+
+No `X` appears in either config (0.00% before and after).
+
+**Verdict.**
+- **Team part:** passes the bar, so the source may enter. The strength is Tian's to pick: `frame` at weight 0.2, `tag` at
+  weight 1.0, or neither. `main.toml` is unchanged until Tian does, and nothing is chosen from a score.
+- **Dead part: no R017b.** Only 0.263 of the `SET PIECES` frames are dead, which is consistent with those tags spanning the
+  restart and the play after it (a reading, not a measurement); of the two dead codes it is the larger (47,037 frames,
+  against 16,503 for `GOALS`) and it drags the share down. A `GOALS`-only retry would add almost
+  nothing: P05 already calls 78.5% of those frames dead, over the log's 16,503 `GOALS` frames. A code subset chosen after
+  this measurement would also be judged on the data that chose it. The dead-vote path was removed from the code (commit
+  `668b868`; recoverable from `cefb8b0`).
+
+**Reading.**
+- `frame` is not small. It votes only on the team channel, yet it changes 2.28% of graded frames (56% of them in ball
+  gaps, where it is meant to act), moves 16 `D` onsets (median +1 frame) and shifts the possession counts (half 1:
+  192 to 187, half 2: 218 to 226). A team vote that moves dead-ball onsets does so presumably through the decoder's joint states,
+  not through its own evidence.
+- `tag` changes 0.03% of graded frames: at one observation per tag it is close to a no-op, which is its lesson too: a
+  weight-1.0 sum of one observation per tag barely competes with the evidence on every frame.
+- The paired attack and defence codes (`BUILD UP` and `DEFENDING IN ATTACKING THIRD`, and so on) share frames and
+  shares by construction: one tag's vote is read from each side, so the per-code table counts each such tag twice.
+- Neither config has a score here. There is no benchmark for tags (DFL has none), so what `frame` adds or loses in
+  `spellF1` is unmeasured, and the team agreement of 0.761 is against our own pseudo-labels, not a truth.
+
+**Tian's pick (2026-10-30): per frame (`r017_frame`), adopted into `main.toml`**
+
+Adoption checks (commit 56916f2, 2026-10-30):
+
+- `python pipeline/run.py pipeline/configs/main.toml`: valid, 199,319 rows, sha256
+  `7ba575c0982aacb9765b39c406e4ff5c9ddb82ca37cfa2b7f101417431fc3d7c`, 413 possessions in the graded halves.
+- `python evaluation/validate_submission.py evaluation/results/main.csv`: valid.
+- `python pipeline/selftest.py --data`: 193 of 193 passed, including `main.toml` run twice to the same sha256 and the
+  four committed baselines rebuilt byte for byte.
+- `python pipeline/benchmark/run.py pipeline/configs/main.toml --drop-match-only --truth both`: dropped
+  `smart_tagging` (the benchmark has no tags) and reproduced R013's 0.5430 raw and 0.5593 coarse.
+- The declared label-free checks pass: `D` 35.93% against R013's 35.92%, no `X`, 187 and 226 possessions in the two
+  halves (413 in all, against R013's 192 and 218), the same sha256 on two runs.
+- The public window, a correctness check seen after the pick (T01): macroF1 0.6986, spellF1 0.4000 (R013: 0.7152,
+  0.4649); it chose nothing.
+
 ## Submission log
 
 The form keeps only the last response before the deadline, so log every upload.
@@ -6137,6 +6314,10 @@ frame / hold 0.60 + P05 `dead_ball_model` hgb + P07 `shape_possession` at 0.2, s
 
 R014 and R014b (2026-10-26) left `main.toml` unchanged: neither met its bar, so it still produces sha256
 `0ebdfbeca72ae2d09eb7aaa377037415696a5dacb95e29003741e0f57d5dbc5d` (R013's). It has NOT been uploaded.
+
+`main.toml` was rewritten a fifth time by R017 (2026-10-30): P08 `smart_tagging` (per frame, `r017_frame`) adopted.
+It now produces sha256 `7ba575c0982aacb9765b39c406e4ff5c9ddb82ca37cfa2b7f101417431fc3d7c` (commit 56916f2). It was
+NOT uploaded.
 
 Before each upload:
 1. Regenerate the file from a clean clone, ideally on a second machine, and compare the sha256 ([T21](traps.md)).

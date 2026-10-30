@@ -1,7 +1,7 @@
 """Headroom: what a perfect dead-ball detector, or a perfect possessor, would be worth to a config.
 
     python pipeline/benchmark/headroom.py CONFIG [--profile P] [--seeds N] [--truth raw|coarse] [--matches ID ...]
-                                          [--data-dir D] [--write]
+                                          [--data-dir D] [--drop-match-only] [--write]
 
     result = run_headroom(config_path, profile=..., truth=..., write=False)   # evaluate_configs' result, for 6 configs
 
@@ -541,7 +541,7 @@ def toml_value(value, where):
 # -- the run ----------------------------------------------------------------------------------------------------------
 
 def run_headroom(config_path, *, profile=DEFAULT_PROFILE, seeds=None, truth="raw", match_ids=None, matches=None,
-                 calibration=None, data_dir=None, log=print, write=False, variants=None):
+                 calibration=None, data_dir=None, log=print, write=False, variants=None, drop_match_only=False):
     """Run CONFIG and its variants (the classic five, or `variants`, names from VARIANT_NAMES) through evaluate_configs;
     its result (CONFIG is the reference).
 
@@ -550,7 +550,8 @@ def run_headroom(config_path, *, profile=DEFAULT_PROFILE, seeds=None, truth="raw
     first into <data dir>/runs/benchmark/headroom/configs/ (write_variants), always, since the runner reads them as
     configs, and only where the file does not already hold the same bytes; `log` receives a line for each, then the
     runner's progress and table. `matches` is {id: DflMatch} to use instead of loading (the checks pass synthetic ones);
-    its truth is made at once.
+    its truth is made at once. `drop_match_only` is the runner's: each config, the variants too, runs without its
+    match-only sources (main.toml's Smart Tagging), which the benchmark cannot serve.
 
     What is refused, and when. ConfigError for a config that does not load, and BenchmarkError for one that cannot be
     run or have variants made of it (scope = "file", a dot in its name, no or several nearest_player sources, a
@@ -581,7 +582,7 @@ def run_headroom(config_path, *, profile=DEFAULT_PROFILE, seeds=None, truth="raw
     with registered(evidence_stage.REGISTRY, **oracles(codes_of)):
         result = run.evaluate_configs([config.path] + [path for _, path in written], profile=profile, seeds=seeds,
                                       match_ids=match_ids, matches=served, calibration=calibration, truth=truth,
-                                      data_dir=data_dir, log=log)
+                                      data_dir=data_dir, log=log, drop_match_only=drop_match_only)
     if write:
         # The variants' reports only: CONFIG is the reference, and a report of it written here would replace the
         # runner's own, which has the `versus` block of the run that it was in.
@@ -612,12 +613,16 @@ def main(argv=None):
     parser.add_argument("--variants", nargs="+", metavar="SUFFIX", choices=VARIANT_NAMES,
                         help="the variants to run, of {} (default: the first five; the restart and plus_ ones need "
                              "no nearest_player)".format(", ".join(VARIANT_NAMES)))
+    parser.add_argument("--drop-match-only", action="store_true",
+                        help="run CONFIG and its variants without their match-only sources (as run.py's flag does), "
+                             "e.g. main.toml's smart_tagging, which a DFL match cannot serve")
     parser.add_argument("--write", action="store_true",
                         help="also write the reports of the variants, not CONFIG's (default: print only)")
     args = parser.parse_args(argv)
     try:
         run_headroom(args.config, profile=args.profile, seeds=args.seeds, truth=args.truth, match_ids=args.matches,
-                     data_dir=args.data_dir, write=args.write, variants=args.variants)
+                     data_dir=args.data_dir, write=args.write, variants=args.variants,
+                     drop_match_only=args.drop_match_only)
     except (ConfigError, run.BenchmarkError, OSError) as error:
         # The expected failures get a sentence (as in run.py): a config to fix, a profile or match that does not exist,
         # data not downloaded yet. Anything else is a bug and keeps its traceback.
