@@ -287,7 +287,7 @@ implements.
   and is allowed (A11, section 6).
 - **Abstentions (`X`):** The decoder never abstains inside a graded half, and the runner writes `X` on the ungraded
   frames, where it is free: the chosen file has none inside a graded block (R010 to R013). It can return the posterior
-  of each state per frame, which shows where an `X` would be free (inside a possession), but no refiner reads it yet.
+  of each state per frame. A free-`X` refiner built on it was measured in R016 and dropped (macroF1 fell at every threshold).
 - **Edge timing, where each rule flips against our ground truth, and the shift (A11, R012, T40):** The back-dating,
   the hold and the `D` onset follow DFL's flag, so we timed every change of the public truth (12 of team, 4 into `D`, 4
   out of it) against label-free events on our tracking, and the same events against the seven DFL matches' flags on

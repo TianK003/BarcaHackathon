@@ -9,6 +9,8 @@ To add one: write pipeline/evidence/<name>.py with a compute() function, add one
 decoder sees it.
 """
 
+import sys
+
 import numpy as np
 
 from pipeline.contracts import A, D, H, X
@@ -27,6 +29,19 @@ REGISTRY = {
     "restart_team": restart_team.compute,
     "shape_possession": shape_possession.compute,
 }
+
+
+def match_only(kind):
+    """True when the source `kind` declares MATCH_ONLY = True in its module: it needs an asset only our match has.
+
+    The Smart Tagging and the whistle are such assets: a DFL match served to the benchmark has neither, so a config
+    that uses them cannot be benchmarked as it is. The source says so once, in its own module, and the benchmark
+    runner's --drop-match-only reads it here, so the list of such sources cannot drift from the sources themselves.
+    A module without the attribute is not match-only. KeyError names an unknown kind.
+    """
+    if kind not in REGISTRY:
+        raise KeyError("{!r} is not an evidence kind; the kinds are: {}".format(kind, ", ".join(sorted(REGISTRY))))
+    return getattr(sys.modules[REGISTRY[kind].__module__], "MATCH_ONLY", False) is True
 
 
 def describe(evidence, graded_mask, gt_codes=None):

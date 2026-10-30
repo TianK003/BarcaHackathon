@@ -31,7 +31,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | ID | proposal | attacks | effort | impact | status |
 |---|---|---|---|---|---|
 | [P01](#p01--a-validation-set-we-can-trust) | Validation set we can trust: other matches, degraded to look like ours | deciding anything at all | M | enabling | done → R002–R005 |
-| [P02](#p02--inspect-the-ground-truths-conventions-on-the-public-window-to-understand-and-never-to-tune) | Inspect the GT's conventions on the public window, to understand and never to tune | boundary timing | S | bounded since the 23 Oct rule: understanding only; so far the pipeline's own lag on DFL, 1 to 2 frames, within noise (R012) | partly done → A11, R012 (inspection only; a person may watch to understand) |
+| [P02](#p02--inspect-the-ground-truths-conventions-on-the-public-window-to-understand-and-never-to-tune) | Inspect the GT's conventions on the public window, to understand and never to tune | boundary timing | S | bounded since the 23 Oct rule: understanding only; so far the pipeline's own lag on DFL, 1 to 2 frames, within noise (R012) | done → A11, R012, A15 (inspection only; a person may watch to understand) |
 | [P16](#p16--metricas-sample-games-in-our-ground-truth-providers-conventions) | Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing | boundary timing, grain | M | medium | idea |
 | [P17](#p17--the-restart-team-channel) | Restart-team channel: who restarts after a stoppage, from the players' arrangement | facts 3, 5 (the hold points at the old team after most stoppages) | S–M | ceiling +0.0198 raw (A12); delivered +0.0040 raw at best, bar not met (R014) | dropped → R014, R014b (the source and the decoder's restart states stay, off by default) |
 | [P18](#p18--the-offpitch-profile-dfls-ball-hidden-off-the-pitch-as-ours-is-and-p05-retrained-on-it) | offpitch profile: DFL's ball hidden off the pitch as ours is, and P05 retrained on it | T39 (P05 overstated by the visible out-of-play ball) | M | A13: a perfect dead-ball source adds +0.029 raw on tracking; main.toml on offpitch 0.5509 raw / 0.5296 coarse; hiding the out-of-play ball cost today's P05 0.013 alive/dead F1 (R015) | dropped → R015, R015b (our tracker's off-pitch ball cannot be reproduced by a simple rule; code removed) |
@@ -48,7 +48,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P09](#p09--camera-aim-as-a-coarse-ball-zone-prior) | Camera aim as a coarse ball-zone prior | fact 1 | S | low–medium | idea |
 | [P10](#p10--referee-whistle-from-the-audio-track) | Referee whistle from the audio track | fact 4 | S–M | medium (audio confirmed, A04) | idea |
 | [P11](#p11--touch-and-pass-events-to-place-boundaries) | Touch and pass events to place boundaries | fact 5 | M–L | medium–high | idea |
-| [P12](#p12--metric-aware-post-processing) | Metric-aware post-processing | fact 5 | S | medium | partly done → R012 (the shift; see its list for the rest) |
+| [P12](#p12--metric-aware-post-processing) | Metric-aware post-processing | fact 5 | S | medium | done → R012 (shift adopted), R016 (free X measured and dropped) |
 | [P13](#p13--learn-from-external-labelled-tracking-data) | Pre-train on external labelled tracking data | facts 1, 2 | L (M on top of P01) | medium–high | idea |
 | [P14](#p14--recover-the-ball-from-the-video) | Recover the ball from the video | facts 1, 2 | L | A14: a perfect ball in our gaps is worth +0.10 raw but +0.02 coarse; a real detector perhaps +0.025 to +0.04 raw | not built → A14 (not a ViT: the ball is 6 px, T46; a half-day zero-shot test may run, [After A14](#after-a14)) |
 | [P15](#p15--broadcast-tracking-as-a-second-opinion) | Broadcast tracking as a second opinion | facts 1, 4 | L | medium | idea |
@@ -59,7 +59,7 @@ One track per person; swap freely.
 
 | track | week 1 (→ Oct 27) | week 2 (→ Nov 3) | week 3 (→ Nov 10) |
 |---|---|---|---|
-| Validation | P01 (done 23 Oct, R002–R005), P02 (partly done 25 Oct, A11, R012) | P12 | re-validate every candidate on P01 |
+| Validation | P01 (done 23 Oct, R002–R005), P02 (done 30 Oct, A11, R012, A15) | P12 (done 30 Oct: R012 shift adopted; free X dropped by R016) | re-validate every candidate on P01 |
 | Pipeline and decoder | P03 | P06 (done 25 Oct, R006–R007, A10) | P06 is tuned on P01 (R007); then [After P06](#after-p06); `main.toml` is P04 + P05 (R010), then P07 (R011) and P02's shift (R012); [After P04 and P05](#after-p04-and-p05), then [After P07 and P02](#after-p07-and-p02); its item 1 done 26 Oct (R013: the touch rule and the decoder re-chosen); then [After R013](#after-r013) |
 | Ball visible | P04 (done 25 Oct, R008, R010) | P11 | P11 |
 | Dead ball | P05 (done 25 Oct, R009, R010) | P08 | P10 |
@@ -431,9 +431,11 @@ bundle's rules. Cite it in the technical document.
 
 ### P02 — Inspect the ground truth's conventions on the public window, to understand and never to tune
 
-**Status: partly done → A11, R012 (inspection only; a person may watch to understand):
+**Status: done → A11, R012, A15 (inspection only; a person may watch to understand):
 [A11](results.md#a11--our-ground-truths-timing-against-dfls-from-tracking-events-2026-10-25-tian),
-[R012](results.md).** *Changed 23 Oct 2026 (`f8f2629`):* this proposal began as "learn our GT's timing conventions from
+[R012](results.md),
+[A15](results.md#a15--descriptors-of-our-truths-changes-against-dfls-2026-10-30-tian).**
+*Changed 23 Oct 2026 (`f8f2629`):* this proposal began as "learn our GT's timing conventions from
 the public window". The organisers' rule now says those 5 minutes are for checking that the pipeline is correct and are
 "not training data and not a tuning set", so P02 is inspection: it measures and watches to understand how our truth
 flips and to design features, and it fixes no constant. Its two findings stand as findings (A11 was inspection and
@@ -456,7 +458,7 @@ python pipeline/benchmark/conventions.py public     # writes data/runs/conventio
 ```
 
 with one row per change (its frame in the tactical video, the label before and after, the type, and each detector's
-lag). No LLM reads that file, and nothing is written from it but aggregates (A11, "How a person can extend it"; T27
+lag, and now the descriptor columns of A15). No LLM reads that file, and nothing is written from it but aggregates (A11, "How a person can extend it"; T27
 allows watching and inspecting to understand, and never turning what was seen into labels, corrections, or rules and
 constants tied to specific frames).
 
@@ -740,7 +742,7 @@ P05 on a ball that is visible out of play would produce.
   it scores 0.5509 raw and 0.5296 coarse (0.5430 and 0.5593 on `tracking`; alive/dead F1 0.9731 to 0.9600).
 - **R015b** (done): a v2 rule, the ball hidden while more than m past a line and moving, found again at rest, swept once on
   label-free statistics. Its share past a line stays at 0.258 to 0.262 at every margin, against ours 0.0407. P18 dropped.
-- **R016** (never ran): retrain P05 on `offpitch`.
+- **R016** (never ran): retrain P05 on `offpitch`. The P18 retrain was never run and its number was reassigned to P12's free X on 30 Oct.
 
 **What it cannot settle.**
 - What stays unobservable on our match is how long our ball spends out of play in total. `offpitch` assumes it is like
@@ -958,16 +960,18 @@ used.
 
 ### P12 — Metric-aware post-processing
 
+**Status: done → [R012](results.md) (shift adopted), [R016](results.md) (free X measured and dropped).** R016's bar was not met: every threshold of `free_x` lowered macroF1 (raw -0.0003 to -0.0008, coarse -0.0009 to -0.0020), no retry, code removed (recoverable from `c909e2f`).
+
 **Why.** Cheap last-mile gains on the ranking metric.
 
 **What.**
-- Drop possession blips shorter than m frames, and `D` blips inside possessions. Validate m on P01's benchmark: the
+- Drop possession blips shorter than m frames, and `D` blips inside possessions. *Covered elsewhere: blips by the hmm decoder's `min_possession` 35 and `min_dead` 25 (R007, R013).* Validate m on P01's benchmark: the
   public GT's genuine 0.76 s and 1.32 s possessions show that short ones exist, and do not set m.
 - Shift transitions by the measured mean latency. *Done as `shift_edges` (P02, R012): minus the pipeline's own median
   lag on DFL, team +1, into `D` -2, out of `D` 0 frames.*
-- Write explicit `D`, never `X`, before kick-offs and once the ball is out ([T02](traps.md)).
+- Write explicit `D`, never `X`, before kick-offs and once the ball is out ([T02](traps.md)). *Covered elsewhere: before kick-offs by the pre-kick-off rule (P(alive) 0.001, R009).*
 - Use `X` only inside possessions where the label is genuinely uncertain. It is free on spellF1 and only touches the
-  macroF1 tie-break.
+  macroF1 tie-break. *Measured as `free_x` (R016) and dropped: the decoder's least confident frames are still right more often than F1/2.*
 
 ## Bigger bets
 

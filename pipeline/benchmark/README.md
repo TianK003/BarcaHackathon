@@ -16,6 +16,7 @@ python pipeline/benchmark/run.py CONFIG ...   # configs -> scores, intervals, co
 python pipeline/benchmark/choose.py --reference main STEM ...   # a grid's declared rule applied to its reports, + LOMO
 python pipeline/benchmark/fidelity.py         # how far the degraded profile looks like our match (gates, warnings)
 python pipeline/benchmark/headroom.py CONFIG  # a config beside five variants whose evidence is the truth itself
+python pipeline/benchmark/label_diff.py REFERENCE CONFIG ...  # how configs change BAR-ATH's labels beside a reference, aggregates only (heavy)
 python pipeline/benchmark/touch_stats.py      # P04's control rule measured: coverage, agreement, flip lags, confidence
 python pipeline/benchmark/train_dead_ball.py --model hgb   # P05: train the dead-ball model (folds + full) as JSON
 python pipeline/benchmark/train_shape.py [--verify|--report]   # P07: train the shape model (folds + full) as JSON
@@ -100,6 +101,7 @@ not touch `dfl.py`, so the caches are not rebuilt.
 | `--truth raw\|coarse\|both` | the truth to score against (below). Default `raw`. `both` decodes each config once and scores the codes against each truth (`evaluate_truths`): the two reports and tables are exactly those of a raw and a coarse run (`test_runner_scores_both_truths_from_one_decode`), in about half the time, because the decoder and not the scoring is what a config's time goes on (R013). |
 | `--data-dir D` | the data bundle (default `data/`, or `$MTAH_DATA_DIR`). |
 | `--no-write` | print only. |
+| `--drop-match-only` | drop, from every config, the evidence sources that declare `MATCH_ONLY` (below). |
 
 A run takes about 10 s on the clean profile with the caches warm (one cached load per match, a second or so per config);
 the gaps profile runs each config once for each of its seeds. Everything that can be refused is refused before the first
@@ -108,6 +110,13 @@ match is loaded, with a sentence that names what to change: no config, a config 
 dot, two configs with the same name, an unknown profile, truth or match, a calibration that is not one.
 A source that needs something a benchmark match does not have (the video's homography, the Smart Tagging) stops the run
 with its config, its name and kind and the asset named; it is never scored as zeros.
+A source that needs an asset only our match has (the Smart Tagging, the whistle) declares `MATCH_ONLY = True` in its own
+module (`evidence.match_only(kind)` reads it), and its error then ends with a hint to run with `--drop-match-only`. That
+flag runs each config without such sources (`run.drop_match_only`), never silently: the printed block names what was
+dropped, and every report carries `dropped_match_only` (a list of source names, `[]` when nothing was dropped; a report
+from before the flag has no such key, and `choose.py` never reads it). The report still quotes the config as written,
+so its numbers are those of the config without those sources and say so only through that field. `conventions.py
+latency CONFIG dfl` takes the same flag.
 
 ### The yardsticks
 
@@ -731,7 +740,7 @@ thousandths (144 files).
 
 ```
 .venv/Scripts/python pipeline/benchmark/choose.py --reference main STEM [STEM ...] [--profile P] [--band 0.005]
-                                                  [--top N] [--data-dir D] [--out PATH]
+                                                  [--metric spell|macro] [--top N] [--data-dir D] [--out PATH]
 choice = choose.choose(stems, reference="main")
 ```
 
@@ -744,8 +753,15 @@ estimate that R008 to R011 worked out by hand: for each match, the selection rep
 objective alone, and the whole rule on six-match means) and the chosen config's score on the held-out match against
 the reference's. Every number is computed from the reports' halves with `score.py`, so it is the runner's. A report is
 refused if its config file has changed since it was written, and reports of different runs (matches, seeds, profile or
-Calibration) are refused together. The checks are `test_choose_applies_the_rule_and_matches_the_runner` and
-`test_choose_refuses_missing_stale_and_mixed_reports` (`checks/choose.py`, synthetic).
+Calibration) are refused together.
+
+`--metric macro` (`metric="macro"`, P12) judges the grid on pooled macroF1 in place of spellF1, for a refiner that can
+only move macroF1 (`free_x`, since removed, R016): the raw macroF1 selects, the coarse macroF1 breaks a tie, the Δs, p and wins in the
+table and the `versus` lines are macroF1's, the lomo averages each match's macroF1, and the table's header names the
+metric. The band is in the metric's units, so such a grid declares it (R016 passes `--band 0.002`); the default stays
+0.005, and every other field is unchanged. The checks are `test_choose_applies_the_rule_and_matches_the_runner`,
+`test_choose_selects_on_macro_when_asked` and `test_choose_refuses_missing_stale_and_mixed_reports`
+(`checks/choose.py`, synthetic).
 
 ## Dead-ball model
 
@@ -879,6 +895,13 @@ to understand how our truth flips, and never tuned on: it is "not training data 
   over matches and seeds by the lags themselves. **`compare`** prints the public median beside DFL's, with the gap's 90%
   bootstrap interval (2,000 draws of the public lags, seeded per cell, DFL's median taken as it is). A11 has the
   figures.
+- **The descriptors** (A15) sit beside the lags: at each change frame the ball seen on it and within 1 s, its speed
+  from the positions, its distance inside the line, and for a team change the nearest old-team and new-team slot and
+  whether the new one is nearer. They go into both documents (`descriptors`, summarised by type; `descriptor_values`,
+  the values `compare` resamples), into `compare` as `descriptor_gaps` (public minus DFL: a share for the yes/no ones,
+  a median for the numbers, with the same 90% bootstrap), and into the person's CSV after the detectors' columns. They
+  are for inspection only, they set nothing, and a printout of BAR-ATH hides quartiles and bounds below `MIN_SHOWN`
+  values as it does for the lags.
 - **What a printout of BAR-ATH may show.** A cell with fewer than `MIN_SHOWN` = 5 changes found prints n, the share
   found and the median only, and of an interval only whether it excludes 0, since the quartiles of two to four values
   fix every one of them. DFL's printouts are in full, and the JSON files keep every value.

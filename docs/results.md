@@ -36,6 +36,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R014b | 2026-10-26 | restart states in the decoder (P17, Phase 2b): `restart_team` span `stoppage_end` with `hmm` `restart_source`, `switch_restart` {4, 8, 16, inf} x `use_ball` {false, true}, 8 configs | — | — | — | 0.5433 raw and 0.5589 coarse for `r014b_s04_b1`, against `main.toml`'s 0.5430 and 0.5593 | bar not met (+0.0003 raw, p 0.8125); not adopted; P17 dropped |
 | R015 | 2026-10-29 | the `offpitch` profile (P18): `tracking` v3 with DFL's ball hidden once it is more than m past a line and a share q of the transplanted gaps dropped, m and q fitted once on label-free statistics of our match, its fidelity, and `main.toml` on it | — | — | — | 0.5509 raw and 0.5296 coarse for `main.toml` on `offpitch`, against 0.5430 and 0.5593 on `tracking` (a difference between two profiles) | `offpitch` v1 frozen (m 0.2 m, q 0.430); 8 of 9 gates pass, median gap fails (15.04 s against 10.74); main.toml 0.5509 raw / 0.5296 coarse on it; P18 dropped after R015b |
 | R015b | 2026-10-29 | the `offpitch` v2 rule (the ball hidden while it is more than m past a line and moving, found again at rest), swept once on the benchmark's label-free fidelity statistics before anything was built | — | — | — | — | v2 cannot reach our share past a line at any margin (0.258 to 0.262 against 0.0407); P18 dropped, offpitch code removed (7b555eb) |
+| R016 | 2026-10-30 | `free_x` (P12) on `main.toml`: `X` inside `H` and `A` runs where the decoded label's posterior is below a threshold, over 0.25, 0.35, 0.45, 0.55, 4 configs | — | — | — | — | bar not met; free_x dropped |
 | R019 | 2026-10-30 | P09: the camera's aim in the shape model; part 1a: the camera's fit and fidelity gates (peak lag +-10 frames, peak correlation +-0.05, median error +-3.0 m, dead/alive speed ratio +-25%; the gap/visible ratio a WARN), declared before the first simulation | - | - | - | - | declared, not run |
 
 ### The four yardsticks on every profile, in one table
@@ -1475,7 +1476,7 @@ the interval is that of the per-match deltas.
 - **On the benchmark the dead-ball side is nearly exhausted.** A perfect `alive` adds only +0.029 to +0.045 spellF1, and
   alive/dead F1 is already 0.970 to 0.973. This is the T39 caveat in numbers: the benchmark's P05 is near-perfect partly
   because DFL tracks the ball out of play. R015 tried it: with the out-of-play ball hidden, today's P05 lost 0.013
-  alive/dead F1 (0.9731 to 0.9600), a lead only since the profile failed a gate; R016 never ran (R015b).
+  alive/dead F1 (0.9731 to 0.9600), a lead only since the profile failed a gate; R016 never ran (R015b; the P18 retrain's number, reassigned on 30 Oct).
 - **The team is where the score is.** A perfect team where the ball is seen adds +0.19 to +0.24; in the gaps +0.10 to
   +0.18 (more under the raw truth than the coarse one); on every live frame +0.33 to +0.35. A10, with the old decoder,
   had the possessor where seen worth +0.15 raw.
@@ -1562,6 +1563,91 @@ t-interval [+0.0944, +0.1084], sign-flip p 0.0156, 7 wins in 7; from +0.0848 to 
   or Δcoarse ≤ +0.01; test B only in the grey zone; go at Δraw ≥ +0.07 with Δcoarse ≥ +0.03. At +0.1016 and +0.0197, the
   advocate's own rule says drop (coarse is below +0.02, by 0.0003), and the critic's says no go. P14 is therefore not
   built now: [After A14](proposals.md#after-a14) and P14's status say what may still run.
+
+### A15 — Descriptors of our truth's changes against DFL's (2026-10-30, Tian)
+
+Proposal: P02 · Commit: `88ce602` (branch `p02-measurements`) · Extends [A11](#a11--our-ground-truths-timing-against-dfls-from-tracking-events-2026-10-25-tian) · Commands, with the data directory at the main checkout's `data/`:
+
+```bash
+python pipeline/benchmark/conventions.py public
+python pipeline/benchmark/conventions.py dfl --profile tracking --seeds 3 --truth raw       # and --truth coarse
+python pipeline/benchmark/conventions.py compare --profile tracking --truth raw             # and --truth coarse
+```
+
+Public: the 20 changes of the public truth (12 of `team`, 4 `into_dead`, 4 `out_of_dead`), on our real tracking.
+Validation: 7 DFL matches x 3 degradation seeds, profile `tracking` version 3, under the raw and the coarse truth.
+A11 timed each change against detector events. This entry describes what the tracking shows around each change (ball
+seen, ball speed, the nearest slots' distances), from `Inputs` alone, and compares the public window with DFL. It is a
+measurement and not a score: nothing is decoded, tuned or shifted. Aggregates only, copied from the `compare` logs.
+
+Descriptors: `ball_seen` and `ball_seen_1s` are the shares of changes with the ball visible at the change and within
+1 s; `ball_speed` (m/s) and `line_m` (m, signed distance to the line) are medians; `old_near_m` and `new_near_m` are the
+median distances (m) of the old and the new team's nearest slot to the ball; `new_nearer` is the share of changes where
+the new team's slot is the nearer. Gap = public minus DFL; intervals are 90% bootstrap intervals of the public values,
+and with fewer than 5 public values only whether the interval excludes 0 is printed.
+
+**Team changes** (12 public; DFL n = 7,053 raw, 2,847 coarse, counting changes times seeds: 2,351 changes times 3 seeds; 4,167 and 1,646 for the distances):
+
+| descriptor | public | DFL raw | gap (raw) | DFL coarse | gap (coarse) |
+|---|---|---|---|---|---|
+| `ball_seen` | 100% | 59% | 41% [41%, 41%] | 58% | 42% [42%, 42%] |
+| `ball_seen_1s` | 100% | 63% | 37% [37%, 37%] | 63% | 37% [37%, 37%] |
+| `ball_speed` | 6.54 | 5.43 | 1.10 [-1.73, 3.02] | 5.86 | 0.67 [-2.16, 2.59] |
+| `line_m` | -7.48 | -12.20 | 4.72 [-0.27, 7.12] | -11.39 | 3.91 [-1.09, 6.31] |
+| `old_near_m` | 3.69 | 2.14 | 1.56 [0.09, 2.65] | 2.22 | 1.47 [-0.00, 2.56] |
+| `new_near_m` | 2.68 | 0.64 | 2.05 [1.16, 2.74] | 0.63 | 2.06 [1.17, 2.75] |
+| `new_nearer` | 58% | 87% | -29% [-54%, -4%] | 89% | -30% [-55%, -5%] |
+
+**Into `D`** (4 public; DFL n = 2,130; 1,247 for speed and line; 3 public changes have a ball speed and line; the
+nearest-slot descriptors have no value on either side's public changes):
+
+| descriptor | public | DFL (raw and coarse) | gap | interval |
+|---|---|---|---|---|
+| `ball_seen` | 75% | 59% | 16% | excludes 0: no |
+| `ball_seen_1s` | 100% | 63% | 37% | excludes 0: yes |
+| `ball_speed` | 9.42 | 1.57 | 7.86 | excludes 0: yes |
+| `line_m` | -6.45 | 0.28 | -6.73 | excludes 0: no |
+
+**Out of `D`** (4 public; DFL n = 2,097; 1,233 for speed and line):
+
+| descriptor | public | DFL (raw and coarse) | gap | interval |
+|---|---|---|---|---|
+| `ball_seen` | 100% | 59% | 41% | excludes 0: yes |
+| `ball_seen_1s` | 100% | 62% | 38% | excludes 0: yes |
+| `ball_speed` | 5.33 | 38.01 | -32.68 | excludes 0: yes |
+| `line_m` | -3.67 | -2.01 | -1.66 | excludes 0: no |
+
+The zero-width intervals on the all-True public cells (12 of 12 and 4 of 4 changes seen) and their "excludes 0: yes"
+are artefacts: a percentile bootstrap of a 100% share has no spread, so read those cells as the gap itself, not as a
+test.
+
+The DFL figures for `into_dead` and `out_of_dead` are the same under both truths (the coarse truth only merges
+possessions, so those changes do not move). Only the team rows differ between the two truths.
+
+**What they suggest (leads, not measurements; 12, 4 and 4 public changes).**
+- At team changes the new team's nearest slot is further from the ball than on DFL (2.68 m against 0.64 m, interval
+  excludes 0 under both truths) and is less often nearer than the old team's (58% against 87 to 89%). That is
+  compatible with A11's lead that our truth flips before the new team's first controlled touch, when the ball has not
+  yet reached the new team. It is the same direction as A11's `touch_start` lag, though `touch_start` is also built on
+  ball-slot distances, so it is not independent evidence.
+- The old team's slot is also further on ours (3.69 m against 2.14 m), which suggests the ball is further from
+  everybody at our changes, possibly a loose ball in transit rather than a challenge. The interval is thin: the
+  coarse `old_near_m` interval [-0.00, 2.56] touches 0 and the raw one only just excludes it ([0.09, 2.65]).
+- The into and out of `D` rows hold too few changes to say more than that the ball may be seen more often on ours (the
+  `into_dead` `ball_seen` interval holds 0).
+
+Confounds, which keep these from being read as a convention:
+- The public window is the best-covered block of the match, while `tracking` v3 places its gaps blind to play (T38):
+  `ball_seen` at 100% against 59% is most likely coverage, not convention.
+- `tracking` v3 hides DFL's ball but keeps DFL's positions exact, so our own (unmeasured) ball and slot position error
+  is absent from DFL's copy. It would inflate both `new_near_m` and `old_near_m` and pull `new_nearer` towards 50%,
+  which matches the team observations with no convention at all.
+- DFL tracks the ball out of play (T39), so its ball-speed and line descriptors behave differently at restarts. A DFL
+  `out_of_dead` median ball speed of 38.01 m/s suggests that DFL's restart placement jumps (the ball is moved to the
+  spot), so that row says more about the provider than about the convention.
+- Four changes are not a distribution: the intervals for `into_dead` and `out_of_dead` are of values, not statistics.
+
+Inspection only (RULES.md, `f8f2629`, T27): nothing is set from these numbers; a timing constant comes from other games (P16).
 
 ## Experiments
 
@@ -5901,8 +5987,126 @@ set. The window's dead-ball visible share is 0.6637.
 `run.py` and the checks are restored to their state at `5ab0e89`, and `offpitch.py` and its two check modules are deleted.
 It is recoverable from `fb33b38`. After it, the benchmark's `selftest.py` passed 402 checks, `pipeline/selftest.py --data`
 186 of 186, and `main.toml`'s sha256 `0ebdfbec...` is unchanged. What stays: `headroom.py`'s `plus_` variants and the
-gaps-only team oracle (A13, `5ab0e89`). R016 never ran, A13 part 2 (on `offpitch`) never ran, and `main.toml` is unchanged.
+gaps-only team oracle (A13, `5ab0e89`). R016 never ran (its number was reassigned to P12's free X on 30 Oct), A13 part 2 (on `offpitch`) never ran, and `main.toml` is unchanged.
 What it leaves is in [After P18](proposals.md#after-p18) and T45.
+
+### R016 — The free_x refiner (P12): 4 thresholds, the choice, the bar and the veto (2026-10-30, Tian)
+Proposal: P12 · Commit: part 1 (this declaration and the 4 configs) is committed before any run of it; the commits of the
+runs are in part 2.
+
+**Part 1, declared before any run** (2026-10-30). Nothing below was chosen from a score of this entry. R016 was once
+declared in outline and never ran (R015b); this is its declaration.
+
+**Why.** Where the HMM's posterior for the decoded label is low, the label is often wrong. Writing `X` there turns a false
+positive into nothing, at the cost of a true positive where the label was right. To first order, abstaining on a frame
+predicted as class k changes F1_k by (F1_k - 2p) / (2TP + FP + FN), where p is the chance the label is right, so it
+gains only where p < F1_k / 2: about 0.3 to 0.45 for our classes. The grid sits there, provided the posterior is roughly
+calibrated; if it is overconfident a higher threshold may be needed, so the grid reaches 0.55. spellF1 cannot change if
+`X` never sits within a margin of a run's edges, because spellF1 forward-fills `X` with the label before it, which is the
+run's own label; only macroF1 can move.
+
+**Expectation, stated now.** The decoded label's posterior is rarely below 0.45, so the gain is likely small. macroF1 only
+breaks exact spellF1 ties, so even a pass is worth little to the ranking. Tian chose to build it anyway, and the bar
+decides. **Falsified if** no threshold gives a pooled macroF1 gain on the benchmark above the bar.
+
+**Candidates.** `main.toml` (sha256 of the committed file `0970f2de4b97ceec27660559ebc37b1a0dcbfcf1bfced08d016f1f9d4503181a`;
+the Windows working copy with CRLF line ends hashes to `ad8d8b6c2f25a1d0713eb3c8e3bbf7f14eb5928d9fa6bf12ee5b455c106284bd`)
+with `posterior = true` in `[decoder]` and one `[[refine]]` `free_x`, `margin` 3, before `shift_edges`, over `threshold`
+in {0.25, 0.35, 0.45, 0.55}: four configs, `pipeline/benchmark/configs/r016/r016_t025.toml`, `r016_t035.toml`,
+`r016_t045.toml`, `r016_t055.toml`. `margin` 3 is a fixed rule: more than `shift_edges`' largest move (2), so a shifted
+edge never reaches an `X`.
+
+**What is not re-chosen.** Everything else in `main.toml` (the touch rule, the dead-ball model, P07's weight, the decoder
+4/32/35/25, the shift +1 / -2 / 0; R013 and R012 chose them); `margin`; `free_x` acts on `H` and `A` runs only.
+
+**The runs.** The reference is `main.toml` as it is (with `--drop-match-only` if C or D has merged by then). Profile
+`tracking` v3, 3 seeds, all seven matches, `--truth both`, one process:
+
+```bash
+python pipeline/benchmark/run.py pipeline/configs/main.toml pipeline/benchmark/configs/r016/r016_t025.toml pipeline/benchmark/configs/r016/r016_t035.toml pipeline/benchmark/configs/r016/r016_t045.toml pipeline/benchmark/configs/r016/r016_t055.toml --truth both
+python pipeline/benchmark/choose.py --reference main --metric macro --band 0.002 r016_t025 r016_t035 r016_t045 r016_t055
+```
+
+`main` must reproduce R013's figures to the last digit (0.5430 raw and 0.5593 coarse spellF1, alive/dead F1 0.9731).
+
+**The selection** (R008 to R014's rule, `choose.py --reference main --metric macro` on the reports). The objective is pooled
+raw macroF1 on `tracking`, with a tie band of 0.002. Among the tied configs the best pooled coarse macroF1 wins. Any tie
+left over goes to the lowest threshold, which writes the fewest `X`; so the stems are given to `choose.py` in the order
+`r016_t025 r016_t035 r016_t045 r016_t055`. The band must be passed explicitly (`--band 0.002`), because the tool's default is 0.005. **Nothing is added after the results**: a choice on an edge of the grid is
+reported as one, and the grid is not extended in this entry.
+
+**The bar.** The chosen config is adopted only if its `tracking` raw pooled macroF1 delta over `main.toml` is at least
++0.002 with an exact sign-flip p of at most 0.05.
+
+**The veto.** It is not adopted if either of these holds:
+- any pooled spellF1 delta is non-zero (raw or coarse). It is zero by construction, so a non-zero one means a bug;
+- the pooled coarse macroF1 delta is below -0.002.
+
+Alive/dead F1 is not a veto here: it counts an `X` on an alive frame as a miss by definition, and it does not rank. Its
+delta is reported.
+
+**Label-free checks on BAR-ATH, before adopting.**
+- Two runs of the final config give the same sha256.
+- The share of graded frames written `X` is reported.
+- The `D` share is unchanged.
+- R014's standing check "no `X` in a graded block" is replaced, for this config only, by "`X` only inside `H` and `A`
+  runs, beyond the margin".
+
+The public window is a correctness check only (T01) and may not weigh in.
+
+**Adoption.** If the bar is met, the veto does not fire and the checks pass, the final config becomes
+`pipeline/configs/main.toml` and is kept as `pipeline/configs/r016_free_x.toml`; its sha256 goes to the submission log; it
+is not uploaded.
+
+**If the bar is not met.** One knowledge-informed retry, R016b, is declared before its runs (a different grid, chosen from
+what R016 shows about the posterior's calibration, never from a window score). If that fails too, P12's `free_x` code is
+removed.
+
+**Part 2, the runs and the verdict** (2026-10-30). Commit of the runs: `c909e2f` (the declaration and the configs, unchanged
+since part 1). The controller ran, in one throttled process (profile `tracking` v3, 3 seeds 0 to 2, seven matches):
+
+```bash
+python pipeline/benchmark/run.py pipeline/configs/main.toml pipeline/benchmark/configs/nearest_w50.toml pipeline/benchmark/configs/nearest_w125.toml pipeline/benchmark/configs/r016/r016_t025.toml pipeline/benchmark/configs/r016/r016_t035.toml pipeline/benchmark/configs/r016/r016_t045.toml pipeline/benchmark/configs/r016/r016_t055.toml --truth both
+python pipeline/benchmark/choose.py --reference main --metric macro --band 0.002 r016_t025 r016_t035 r016_t045 r016_t055
+```
+
+**Reference check.** `main` reproduced R013: spellF1 0.5430 raw and 0.5593 coarse, alive/dead F1 0.9731. The two nearest-player
+baselines came out at `nearest_w50` 0.2018 raw (0.1842 coarse) and `nearest_w125` 0.2226 coarse,
+and the coarse `nearest_w125` figure is R004c's 0.2226 to the last digit.
+
+**The choice table** (`choose.py`, objective pooled raw macroF1, tie band 0.002; deltas are over `main`, positive is better):
+
+| config | raw spellF1 | coarse spellF1 | raw macroF1 | coarse macroF1 | alive/dead F1 | possessions / min | D share | raw Δ | p | wins | coarse Δ | p | wins |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `main` | 0.5430 | 0.5593 | 0.8895 | 0.8878 | 0.9731 | 3.13 | 44.6% |  |  |  |  |  |  |
+| **`r016_t025`** | 0.5430 | 0.5593 | 0.8893 | 0.8868 | 0.9702 | 3.13 | 44.6% | -0.0003 | 0.0625 | 1 | -0.0009 | 0.0156 | 0 |
+| `r016_t035` | 0.5430 | 0.5593 | 0.8891 | 0.8865 | 0.9692 | 3.13 | 44.6% | -0.0004 | 0.0312 | 1 | -0.0013 | 0.0156 | 0 |
+| `r016_t045` | 0.5430 | 0.5593 | 0.8889 | 0.8862 | 0.9680 | 3.13 | 44.6% | -0.0006 | 0.0312 | 1 | -0.0016 | 0.0156 | 0 |
+| `r016_t055` | 0.5430 | 0.5593 | 0.8887 | 0.8858 | 0.9663 | 3.13 | 44.6% | -0.0008 | 0.0312 | 1 | -0.0020 | 0.0156 | 0 |
+
+The rule tied all four within 0.002 and, by its tie order, chose `r016_t025` (the lowest threshold, the fewest `X`).
+Against `main`: raw macroF1 -0.0003 (mean per match -0.0003, 90% interval [-0.0005, -0.0000], p 0.0625, 1 win, 6 losses),
+coarse -0.0009 (p 0.0156, 0 wins, 7 losses). Leave-one-match-out picked `r016_t025` in all seven folds.
+
+**The bar** (at least +0.002 raw pooled macroF1 with p at most 0.05): **not met.** The chosen config is 0.0003 below `main`,
+not 0.002 above it.
+
+**The veto.** It did not fire: every spellF1 delta is exactly +0.0000 under both truths, in all seven matches, as
+constructed (no bug), and the largest coarse macroF1 delta, -0.00197 at t055, is not below -0.002. Alive/dead F1 fell from
+0.9731 to 0.9702, 0.9692, 0.9680 and 0.9663: reported as declared, not a veto. Possessions per minute (3.13) and the D share
+(44.6%) are unchanged.
+
+**Verdict: bar not met; `free_x` dropped, `main.toml` unchanged.** All four thresholds lose macroF1, and the loss grows
+with the threshold (raw -0.0003 to -0.0008, coarse -0.0009 to -0.0020), so it shrinks monotonically toward 0 as fewer `X`
+are written. The expectation stated in part 1 holds in its strong form: the HMM's least confident frames are still right
+more often than F1/2 of the time, so no threshold of this signal can reach the bar (nothing below 0.25 was tested; the trend is monotone towards 0).
+
+**Rulings (the controller's, binding).**
+1. **No R016b.** The retry that part 1 allowed is not run. Every threshold lowers macroF1 and the loss falls to 0 only as
+   `X` disappears, so a different grid of the same signal would rest on hope, not on knowledge.
+2. **The idea's code is removed completely** (Tian's rule), in the commit after this entry: `pipeline/refine/free_x.py`, its
+   registry line, its checks (with `FREE_X_ABSENT_SHA256`) and `pipeline/benchmark/configs/r016/`. It is recoverable from
+   `c909e2f`. `choose.py --metric` stays, as a general benchmark option.
 
 ### R019 — The camera's aim in the shape model, with a simulated camera on DFL (2026-10-30, Tian)
 

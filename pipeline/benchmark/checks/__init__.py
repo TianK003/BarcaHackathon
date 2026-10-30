@@ -77,6 +77,9 @@ module of its topic:
                  scikit-learn says of the held-out match; exact, LF, bounded; retraining gives identical bytes), the
                  report (aggregates, worked out frame by frame, the stop rule, no match scored in sample), and
                  touch_agreement on a hand-built scene (synthetic only)
+    label_diff.py
+                 label_diff: the shares, possessions per half, changes in ball gaps and moved D onsets worked out on
+                 hand-built codes, and that the printout holds figures and no frame (synthetic only)
     harness.py   the harness itself: what it collects, how it reports NOT RUN, the console set-up, and that no check
                  module imports another one
     common.py    what several modules share, and no checks of its own: the synthetic DFL match, the random one
@@ -102,8 +105,8 @@ what two of them share goes to common.py (test_a_check_module_imports_no_other_c
 """
 
 from pipeline.benchmark.checks import (
-    calibration, camera, cap, choose, context, conventions, dead_ball, degrade, dfl, dfl_events, fidelity, harness,
-    hazard, headroom, inputs, restarts, run, score, shape, sources, tracking, touch, truth)
+    calibration, camera, cap, choose, context, conventions, dead_ball, degrade, dfl, dfl_events, fidelity, harness, hazard,
+    headroom, inputs, label_diff, restarts, run, score, shape, sources, tracking, touch, truth)
 
 MODULES = (sources, dfl, dfl_events, truth, inputs, score, run, choose, hazard, calibration, degrade, cap, tracking, context,
-           fidelity, headroom, touch, dead_ball, conventions, restarts, shape, camera, harness)
+           fidelity, headroom, touch, dead_ball, conventions, restarts, shape, camera, label_diff, harness)

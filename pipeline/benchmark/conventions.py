@@ -29,6 +29,15 @@ flags. Where a detector's lag is the same on both, it is the detector's own bias
 frames before it crosses the line does so in every match); where the public window's lag differs from DFL's, that is
 a convention of our truth that DFL's does not share, which `compare` puts as a gap with a 90% bootstrap interval.
 
+The descriptors (describe, summarise_descriptors; P02, A15). Beside each lag, what the tracking shows at the change
+frame itself: whether the ball is seen on it and within a second of it, its speed from the positions, how far it is
+inside the line, and for a `team` change the distance of the nearest slot of the old and of the new team and whether
+the new one is nearer (DESCRIPTORS). They are summarised by type (a share of True for the yes/no ones, the median and
+quartiles for the numbers), put in the `public` and `dfl` documents, set side by side by `compare` as a gap with the
+same bootstrap, and written as columns of the person's `public_transitions.csv`. They are inspection only: a person
+and P16 read them to see what a convention looks like in the tracking, and no constant, threshold or rule is set
+from them. DFL pools the rows of every match and seed before summarising, never a median of medians.
+
 The changes of the truth (transitions_of). Inside each block of the truth (on the public window the runs of
 pm.valid_runs, on a DFL match its graded halves), every frame whose code differs from the one before, typed by what
 changed: `team` (H to A or A to H), `into_dead` (H or A to D) and `out_of_dead` (D to H or A). A change into or out of X
@@ -207,6 +216,9 @@ MIN_GAP = 3                         # frames: a median of L' smaller in size tha
 GAP_SEED = (2, 0)                   # default_rng(GAP_SEED), the design's, for the interval of the median of L'
 SHIFT_DFL = ("tracking", "raw")     # the profile and truth that s_b is read from: the benchmark's default
 SHIFT_COARSE = ("tracking", "coarse")   # reported beside it when its latency file is there, never used (T33)
+DESCRIPTORS = ("ball_seen", "ball_seen_1s", "ball_speed", "line_m", "old_near_m", "new_near_m", "new_nearer")
+BOOLEAN_DESCRIPTORS = ("ball_seen", "ball_seen_1s", "new_nearer")   # summarised by a share, the others by quartiles
+NEAR_S = 1                          # ball_seen_1s: the ball is looked for this many seconds either side of a change
 
 
 def _typed_changes():
@@ -369,6 +381,110 @@ _DETECTORS = {"touch_start": _touch_start, "line_out": _line_out, "ball_lost": _
               "model_dead": _model_dead, "model_alive": _model_alive, "tag_start": _tag_start, "tag_end": _tag_end}
 
 
+# -- the descriptors --------------------------------------------------------------------------------------------------
+
+def describe(inputs, changes):
+    """[{descriptor: value}]: what the tracking shows at each of `changes` (as transitions_of gives them), in order.
+
+    The keys are DESCRIPTORS. The truth enters through the change frames alone, exactly as for the lags: a person (and
+    P16) can then set the numbers of one source beside another's without either having read a label. With c the
+    change's frame, the first of the new label:
+
+    - ball_seen: the ball has a position on c; ball_seen_1s: on any frame of [c - 1 s, c + 1 s] inside c's block (the
+      window never reads across a block's edge, where the ball's coverage is another half's);
+    - ball_speed: metres a second on c from the ball's positions (kinematics.ball_track, never the ATD's own channel,
+      T31), None where the ball is not seen or has no derivative there; line_m: kinematics.outside_m on c, negative
+      inside the pitch;
+    - old_near_m / new_near_m: metres from the ball to the nearest present slot of the old / new team (by slot_team,
+      a slot's team being the slot's, T32), and new_nearer: new_near_m < old_near_m. All three are for a `team` change
+      only and need the ball seen on c (and a slot of each team present), else they are None.
+
+    A value is None wherever the descriptor does not apply or cannot be computed, never NaN. Floats are Python floats
+    and booleans Python bools. Nothing is printed: the rows hold frame-level values of a match, so the caller
+    summarises them (summarise_descriptors) before anything is shown.
+    """
+    ball = kinematics.ball_track(inputs)
+    players = kinematics.player_track(inputs)
+    blocks = kinematics.blocks(inputs)
+    home = np.asarray(inputs.atd.slot_team) == 0
+    reach = round(NEAR_S * inputs.fps)
+    rows = []
+    for frame, before, after, kind in changes:
+        row = dict.fromkeys(DESCRIPTORS)
+        seen = bool(ball.visible[frame])
+        row["ball_seen"] = seen
+        for start, stop in blocks:
+            if start <= frame < stop:
+                row["ball_seen_1s"] = bool(ball.visible[max(start, frame - reach):min(stop, frame + reach + 1)].any())
+                break
+        if seen:
+            speed = float(ball.speed[frame])
+            row["ball_speed"] = speed if np.isfinite(speed) else None
+            row["line_m"] = float(kinematics.outside_m(ball.xy_m[frame], inputs.pitch))
+            if kind == "team":
+                near = {}
+                dist = kinematics.ball_distances(players.xy_m[frame][None], ball.xy_m[frame][None])[0]
+                for code, mine in ((before, home if before == pm.H else ~home), (after, home if after == pm.H else ~home)):
+                    here = dist[mine & players.present[frame]]
+                    near[code] = float(here.min()) if here.size else None
+                row["old_near_m"], row["new_near_m"] = near[before], near[after]
+                if None not in (row["old_near_m"], row["new_near_m"]):
+                    row["new_nearer"] = row["new_near_m"] < row["old_near_m"]
+        rows.append(row)
+    return rows
+
+
+def summarise_descriptors(changes, rows):
+    """{type: {descriptor: cell}}: the descriptors of `rows` (describe's, one per change) summarised by type.
+
+    A boolean descriptor's cell is {"n", "share"} (the share of True), a numeric one's {"n", "median", "p25", "p75"}
+    (numpy's linear percentiles); n counts the rows where the value is not None, and the rest of the cell is None where
+    n is 0. Every type in TYPES has its cells, as in the lag table, also where there is no change of it.
+    ConventionsError when `rows` is not one row per change.
+    """
+    if len(rows) != len(changes):
+        raise ConventionsError("conventions: summarise_descriptors needs one row for each change, got {} rows for {} "
+                               "changes".format(len(rows), len(changes)))
+    out = {}
+    for kind in TYPES:
+        mine = [row for (_, _, _, k), row in zip(changes, rows) if k == kind]
+        cells = {}
+        for name in DESCRIPTORS:
+            values = [row[name] for row in mine if row[name] is not None]
+            if name in BOOLEAN_DESCRIPTORS:
+                cells[name] = {"n": len(values), "share": sum(values) / len(values) if values else None}
+            elif values:
+                p25, median, p75 = (float(v) for v in np.percentile(values, [25, 50, 75]))
+                cells[name] = {"n": len(values), "median": median, "p25": p25, "p75": p75}
+            else:
+                cells[name] = {"n": 0, "median": None, "p25": None, "p75": None}
+        out[kind] = cells
+    return out
+
+
+
+def descriptor_values(changes, rows):
+    """{type: {descriptor: [value]}}: the values of describe's `rows` by type, None left out (the bootstrap's input).
+
+    The rows of the file (like the lags of a cell) that compare resamples. They are frame-level values of a match, so
+    they stay in the gitignored JSON and are never printed. ConventionsError as for summarise_descriptors.
+    """
+    if len(rows) != len(changes):
+        raise ConventionsError("conventions: descriptor_values needs one row for each change, got {} rows for {} "
+                               "changes".format(len(rows), len(changes)))
+    return {kind: {name: [row[name] for (_, _, _, k), row in zip(changes, rows) if k == kind and row[name] is not None]
+                   for name in DESCRIPTORS} for kind in TYPES}
+
+
+def pool_descriptors(parts):
+    """(changes, rows) of several [(changes, rows)] put one after the other: pooled by rows, never by medians."""
+    changes, rows = [], []
+    for part_changes, part_rows in parts:
+        changes += list(part_changes)
+        rows += list(part_rows)
+    return changes, rows
+
+
 # -- the lags ---------------------------------------------------------------------------------------------------------
 
 def transition_lags(transitions, events, runs, fps):
@@ -520,14 +636,17 @@ def public(inputs, gt_path, data_dir=None, log=print):
     found = events(inputs)
     rows = transition_lags(changes, found, runs, fps)
     table = lags(changes, found, runs, fps)
+    described = describe(inputs, changes)
     document = {"source": "public", "gt": os.path.basename(gt_path), "fps": fps, "runs": len(runs),
                 "transitions": {kind: sum(1 for change in changes if change[3] == kind) for kind in TYPES},
                 "events": {name: int(len(entry["frames"])) for name, entry in found.items()},
                 "cells": {cell_name(*key): cell for key, cell in table.items()},
-                "summary": {cell_name(*key): row for key, row in summarise(table, fps).items()}}
+                "summary": {cell_name(*key): row for key, row in summarise(table, fps).items()},
+                "descriptors": summarise_descriptors(changes, described),
+                "descriptor_values": descriptor_values(changes, described)}
     folder = os.path.join(data_dir or inputs.data_dir, *FOLDER)
     os.makedirs(folder, exist_ok=True)
-    _write_transitions(os.path.join(folder, PUBLIC_TRANSITIONS), changes, rows, list(found))
+    _write_transitions(os.path.join(folder, PUBLIC_TRANSITIONS), changes, rows, list(found), described)
     run.write_json(os.path.join(folder, PUBLIC_LAGS), document)
     for line in render_public(document):
         log(line)
@@ -537,14 +656,17 @@ def public(inputs, gt_path, data_dir=None, log=print):
     return document
 
 
-def _write_transitions(path, changes, rows, names):
-    """One row per change: frame, from, to, type, then each detector's lag (blank: not applicable, or none found)."""
+def _write_transitions(path, changes, rows, names, described=None):
+    """One row per change: frame, from, to, type, each detector's lag, then each descriptor (blank: not applicable, or
+    none found; a boolean is True or False). `described` is describe's rows, one per change, or None for no columns."""
+    extra = DESCRIPTORS if described is not None else ()
     with open(path, "w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle, lineterminator="\n")
-        writer.writerow(["frame", "from", "to", "type"] + names)
-        for (frame, before, after, kind), row in zip(changes, rows):
+        writer.writerow(["frame", "from", "to", "type"] + names + list(extra))
+        for i, ((frame, before, after, kind), row) in enumerate(zip(changes, rows)):
             writer.writerow([frame, pm.LABELS[before], pm.LABELS[after], kind]
-                            + ["" if row.get(name) is None else row[name] for name in names])
+                            + ["" if row.get(name) is None else row[name] for name in names]
+                            + ["" if described[i][name] is None else described[i][name] for name in extra])
 
 
 def render_public(document):
@@ -554,6 +676,8 @@ def render_public(document):
                                                          for kind in TYPES),
         ", ".join("{} {}".format(name, count) for name, count in document["events"].items()))]
     lines += _summary_lines("public", document["summary"], document["fps"], limit=True)
+    if document.get("descriptors"):
+        lines += _descriptor_lines("public", document["descriptors"], limit=True)
     return lines
 
 
@@ -579,6 +703,34 @@ def _summary_lines(label, summary, fps, limit=False):
         lines.append("{:<10}-: fewer than {} changes found, so only the median is printed (a quartile would be a lag)"
                      .format("", MIN_SHOWN))
     return lines
+
+
+def _descriptor_lines(label, descriptors, limit=False):
+    """One line per (type, descriptor) of a summarise_descriptors result: n, then the share (a boolean) or the median
+    and quartiles (a number). With `limit` (BAR-ATH's) the quartiles of 1 to MIN_SHOWN - 1 values are a "-"."""
+    lines = ["{:<10}{:<13}{:<13}{:>5}{:>8}{:>8}{:>8}{:>8}".format(label, "type", "descriptor", "n", "share", "median",
+                                                                   "p25", "p75")]
+    for kind in TYPES:
+        for name in DESCRIPTORS:
+            cell = descriptors[kind][name]
+            if name in BOOLEAN_DESCRIPTORS:
+                columns = [_pct(cell["share"]), "", "", ""]
+            else:
+                hidden = limit and 0 < cell["n"] < MIN_SHOWN
+                columns = ["", _number(cell["median"])] + ["-" if hidden else _number(cell[key])
+                                                           for key in ("p25", "p75")]
+            lines.append("{:<10}{:<13}{:<13}{:>5}{:>8}{:>8}{:>8}{:>8}".format("describe", kind, name, cell["n"],
+                                                                              *columns))
+    lines.append("{:<10}descriptors of the tracking at the change frame (metres, a share for the yes/no ones); a "
+                 "person's inspection, never an input".format(""))
+    if limit:
+        lines.append("{:<10}-: fewer than {} values, so only the median is printed (a quartile would be a value)"
+                     .format("", MIN_SHOWN))
+    return lines
+
+
+def _number(value):
+    return "n/a" if value is None else "{:.2f}".format(value)
 
 
 def _pct(value):
@@ -660,14 +812,16 @@ def measure(*, profile=DEFAULT_PROFILE, seeds=None, truth="raw", match_ids=None,
     Each match is loaded (dfl.load_match, or taken from `matches`, {id: DflMatch}), its truth read beside the inputs
     (the raw truth, or the coarse one that absorbs short possessions) to find the changes, and for every seed served
     through train_dead_ball.served_inputs (the tracking as the pipeline sees it, no flag) the events are computed and
-    timed. Returns {"profile", "truth", "seeds", "matches", "fps", "table", "per_match"}: `table` is the pooled lag
-    table and `per_match` {id: table}, each pooled over seeds. The runner's BenchmarkError for a profile, seeds,
+    timed, and described (describe). Returns {"profile", "truth", "seeds", "matches", "fps", "table", "per_match",
+    "descriptors", "descriptor_values"}: `table` is the pooled lag table and `per_match` {id: table}, each pooled over
+    seeds; the descriptors are those of the rows of every match and seed put together (pool_descriptors), summarised
+    once, never a median of the matches' medians. The runner's BenchmarkError for a profile, seeds,
     truth or match it refuses, before a match is loaded.
     """
     ids, seed_list, calibration, camera_fit = _plan(profile, seeds, truth, match_ids, matches, calibration, data_dir,
                                                     camera_fit)
 
-    per_match, rates = {}, []
+    per_match, rates, described = {}, [], []
     for match_id in ids:
         match = matches[match_id] if matches is not None else dfl.load_match(match_id, data_dir=data_dir)
         rates.append(match.fps)
@@ -677,6 +831,7 @@ def measure(*, profile=DEFAULT_PROFILE, seeds=None, truth="raw", match_ids=None,
         for seed in seed_list:
             inputs = train_dead_ball.served_inputs(match, profile, seed, calibration, data_dir, camera_fit=camera_fit)
             tables.append(lags(changes, events(inputs), blocks, match.fps))
+            described.append((changes, describe(inputs, changes)))
             del inputs
         per_match[match_id] = pool(tables)
         log("match     {}   {} changes, {} seeds".format(match_id, len(changes), len(seed_list)))
@@ -684,8 +839,11 @@ def measure(*, profile=DEFAULT_PROFILE, seeds=None, truth="raw", match_ids=None,
     if any(rate != rates[0] for rate in rates):
         raise run.BenchmarkError("the matches have different frame rates ({}); lags in frames cannot be pooled".format(
             ", ".join(str(rate) for rate in rates)))
+    pooled_changes, pooled_rows = pool_descriptors(described)
     return {"profile": profile, "truth": truth, "seeds": seed_list, "matches": sorted(ids), "fps": rates[0],
-            "table": pool([per_match[match_id] for match_id in ids]), "per_match": per_match}
+            "table": pool([per_match[match_id] for match_id in ids]), "per_match": per_match,
+            "descriptors": summarise_descriptors(pooled_changes, pooled_rows),
+            "descriptor_values": descriptor_values(pooled_changes, pooled_rows)}
 
 
 def dfl_document(result):
@@ -695,6 +853,7 @@ def dfl_document(result):
             "matches": result["matches"], "fps": fps,
             "cells": {cell_name(*key): cell for key, cell in result["table"].items()},
             "summary": {cell_name(*key): row for key, row in summarise(result["table"], fps).items()},
+            "descriptors": result["descriptors"], "descriptor_values": result["descriptor_values"],
             "per_match": {match_id: {cell_name(*key): row for key, row in summarise(table, fps).items()}
                           for match_id, table in sorted(result["per_match"].items())}}
 
@@ -718,6 +877,8 @@ def render_dfl(result):
     for key in cells:
         lines.append("{:<10}{:<13}{:<13}".format("", *key) + "".join(
             "{:>9}".format(_frames(summaries[match_id][key]["median"])) for match_id in ids))
+    if result.get("descriptors"):
+        lines += _descriptor_lines("pooled", result["descriptors"])
     lines.append("{:<10}profile {}, truth {}, seeds {}".format("", result["profile"], result["truth"],
                                                                result["seeds"]))
     return lines
@@ -725,37 +886,77 @@ def render_dfl(result):
 
 # -- compare ----------------------------------------------------------------------------------------------------------
 
-def bootstrap_gap(public_lags, dfl_lags, draws=BOOTSTRAP_DRAWS, seed=BOOTSTRAP_SEED):
+def bootstrap_gap(public_lags, dfl_lags, draws=BOOTSTRAP_DRAWS, seed=BOOTSTRAP_SEED, share=False):
     """(gap, low, high): the median of the public lags minus DFL's, and the 90% bootstrap interval of that gap.
 
     `draws` samples of the public lags, with replacement and as many as there are, from a generator seeded with `seed`
     (default_rng([2, 1]) by design), each with its median, minus DFL's median as it is; the interval is the 5th and the
     95th percentile of those. (None, None, None) if either list is empty. Seeded afresh on every call, so a result
-    depends on its two lists and nothing else.
+    depends on its two lists and nothing else. With `share` the statistic is the mean (the share of True of a boolean
+    list) instead of the median, with the same draws.
     """
+    statistic = np.mean if share else np.median
     if not len(public_lags) or not len(dfl_lags):
         return None, None, None
     public_lags = np.asarray(public_lags, dtype=np.float64)
-    reference = float(np.median(dfl_lags))
+    reference = float(statistic(np.asarray(dfl_lags, dtype=np.float64)))
     rng = np.random.default_rng(list(seed))
-    medians = np.median(public_lags[rng.integers(0, len(public_lags), size=(draws, len(public_lags)))], axis=1)
+    medians = statistic(public_lags[rng.integers(0, len(public_lags), size=(draws, len(public_lags)))], axis=1)
     low, high = (float(value) for value in np.percentile(medians - reference, PERCENTILES))
-    return float(np.median(public_lags)) - reference, low, high
+    return float(statistic(public_lags)) - reference, low, high
+
+
+class Comparison(list):
+    """compare's result: the list of lag rows, carrying `descriptor_gaps` (also read as result["descriptor_gaps"])."""
+
+    descriptor_gaps = None
+
+    def __getitem__(self, key):
+        return self.descriptor_gaps if key == "descriptor_gaps" else super().__getitem__(key)
+
+
+def descriptor_gaps(public_document, dfl_document):
+    """{type: {descriptor: {public, dfl, gap, low, high, n_public, n_dfl}}}: the descriptors of the two documents.
+
+    `public` and `dfl` are the share of True (a boolean descriptor) or the median (a number) of the values in the
+    documents' descriptor_values, `gap` the public one minus DFL's, with the 90% interval of bootstrap_gap over the
+    public values (the median's procedure, or the mean's for a share). Everything but n is None where either side has
+    no value. The bounds are kept here and hidden by the printout below MIN_SHOWN public values. {} when either
+    document has no descriptor_values (a file made before the descriptors).
+    """
+    mine, theirs = public_document.get("descriptor_values"), dfl_document.get("descriptor_values")
+    if mine is None or theirs is None:
+        return {}
+    out = {}
+    for kind in TYPES:
+        out[kind] = {}
+        for name in DESCRIPTORS:
+            share = name in BOOLEAN_DESCRIPTORS
+            values = {"public": mine[kind][name], "dfl": theirs[kind][name]}
+            gap, low, high = bootstrap_gap(values["public"], values["dfl"], share=share)
+            stat = np.mean if share else np.median
+            out[kind][name] = {**{side: float(stat(np.asarray(v, dtype=np.float64))) if len(v) else None
+                                  for side, v in values.items()},
+                               "gap": gap, "low": low, "high": high,
+                               "n_public": len(values["public"]), "n_dfl": len(values["dfl"])}
+    return out
 
 
 def compare(public_document, dfl_document):
     """[{type, detector, public, dfl, gap, low, high}]: each cell's public summary beside DFL's, in the design's order.
 
     `public` and `dfl` are summarise's row (None where that source has no such cell: a detector DFL cannot run), `gap`
-    the public median minus DFL's with the interval of bootstrap_gap. ConventionsError if the two documents were made
-    at different frame rates.
+    the public median minus DFL's with the interval of bootstrap_gap. The list also carries `descriptor_gaps`
+    (descriptor_gaps()), as result["descriptor_gaps"]. ConventionsError if the two documents were made at different
+    frame rates.
     """
     if public_document["fps"] != dfl_document["fps"]:
         raise ConventionsError("conventions: the public lags are at {} fps and DFL's at {} fps; lags in frames of "
                                "different lengths cannot be set side by side".format(public_document["fps"],
                                                                                      dfl_document["fps"]))
     fps = public_document["fps"]
-    rows = []
+    rows = Comparison()
+    rows.descriptor_gaps = descriptor_gaps(public_document, dfl_document)
     for kind in TYPES:
         for name in DETECTORS:
             key = cell_name(kind, name)
@@ -787,6 +988,26 @@ def render_compare(rows):
                  "DFL's, with a 90% bootstrap interval of the public lags ({} draws)".format(BOOTSTRAP_DRAWS))
     lines.append("with fewer than {} changes found on the public side the bounds would be lags, so only whether the "
                  "interval excludes 0 is printed".format(MIN_SHOWN))
+    gaps = getattr(rows, "descriptor_gaps", None)
+    if gaps:
+        lines.append("{:<13}{:<13}{:>6}{:>8}{:>9}{:>9}{:>9}   {}".format(
+            "type", "descriptor", "n", "dfl n", "public", "dfl", "gap", "90% interval of the gap"))
+        for kind in TYPES:
+            for name in DESCRIPTORS:
+                row = gaps[kind][name]
+                number = _pct if name in BOOLEAN_DESCRIPTORS else _number
+                if row["low"] is None or row["high"] is None:
+                    interval = "n/a"
+                elif row["n_public"] < MIN_SHOWN:
+                    interval = "excludes 0: {}".format("yes" if row["low"] > 0 or row["high"] < 0 else "no")
+                else:
+                    interval = "[{}, {}]".format(number(row["low"]), number(row["high"]))
+                lines.append("{:<13}{:<13}{:>6}{:>8}{:>9}{:>9}{:>9}   {}".format(
+                    kind, name, row["n_public"], row["n_dfl"], number(row["public"]), number(row["dfl"]),
+                    number(row["gap"]), interval))
+        lines.append("descriptors: the share of True or the median, public minus DFL's; the bounds of fewer than {} "
+                     "public values would be values, so only whether the interval excludes 0 is printed".format(
+                         MIN_SHOWN))
     return lines
 
 
@@ -1382,6 +1603,10 @@ def build_parser():
             source.add_argument("--seeds", type=int, default=DEFAULT_SEEDS,
                                 help="degradation seeds per match (default {})".format(DEFAULT_SEEDS))
             source.add_argument("--matches", nargs="+", metavar="ID", help="the matches to run (default: all 7)")
+            source.add_argument("--drop-match-only", action="store_true",
+                                help="drop the evidence sources that need an asset a benchmark match does not have "
+                                     "(MATCH_ONLY) before measuring; the latency file then belongs to the config "
+                                     "without them")
     shift = commands.add_parser(
         "shift", help="P02's declared shift rule (g, read from the public window, is retired and shown for reference "
                       "only): the table, shift_<config>.json and the out-of-fold CSV",
@@ -1426,6 +1651,9 @@ def main(argv=None):
             if args.source == "public":
                 latency_public(config, args.gt or default_gt(), data_dir)
             else:
+                if args.drop_match_only:
+                    config, dropped = run.drop_match_only(config)
+                    print("dropped   match-only sources: {}".format(", ".join(dropped) or "none"))
                 result = measure_latency(config, profile=args.profile, seeds=args.seeds, truth=args.truth,
                                          match_ids=args.matches, data_dir=args.data_dir)
                 path = latency_path(data_dir, config.stem, "dfl", args.profile, args.truth, args.matches, args.seeds)

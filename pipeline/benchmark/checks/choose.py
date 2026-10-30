@@ -33,9 +33,9 @@ def written(root, paths, seeds=SEEDS):
     return results
 
 
-def chosen(root, stems, seeds=SEEDS, band=choose.TIE_BAND):
+def chosen(root, stems, seeds=SEEDS, band=choose.TIE_BAND, metric="spell"):
     return choose.choose(stems, "nearest_w50", profile="gaps", band=band, data_dir=root,
-                         match_ids=sorted(synthetic_matches()), seeds=seeds)
+                         match_ids=sorted(synthetic_matches()), seeds=seeds, metric=metric)
 
 
 def test_choose_applies_the_rule_and_matches_the_runner():
@@ -79,6 +79,66 @@ def test_choose_applies_the_rule_and_matches_the_runner():
                 for truth in benchmark_run.TRUTHS:
                     delta = rows[top][truth]["per_match"][held] - rows["nearest_w50"][truth]["per_match"][held]
                     assert choice["lomo"][name][truth]["deltas"][held] == delta, (name, held, truth)
+
+
+def test_choose_selects_on_macro_when_asked():
+    """metric="macro" selects, compares and averages on macroF1; the default stays spellF1; a bad metric is refused."""
+    stems = ["nearest_w25", "nearest_w0", "nearest_w125"]
+    with tempfile.TemporaryDirectory() as root:
+        written(root, [yardstick_path(width) for width in WIDTHS])
+        before = chosen(root, stems, band=0.0)
+        loser = min(stems, key=lambda stem: before["rows"][stem]["raw"]["spell"])
+        # Rewrite the confusion of the worst spellF1 config's reports to a perfect one: spellF1 reads the tp counts and
+        # is untouched, macroF1 reads the confusion and now ranks that config first, under both truths.
+        for truth in benchmark_run.TRUTHS:
+            path = benchmark_run.report_path(root, "gaps", loser, truth, sorted(synthetic_matches()), SEEDS)
+            with open(path, encoding="utf-8") as stream:
+                report = json.load(stream)
+            for half in report["halves"]:
+                half["confusion"] = [[100 if i == j else 0 for j in range(len(half["confusion"][0]))]
+                                     for i in range(len(half["confusion"]))]
+            benchmark_run.write_json(path, report)
+        spell = chosen(root, stems, band=0.0)
+        macro = chosen(root, stems, band=0.0, metric="macro")
+        assert spell["chosen"] != loser and spell["chosen"] == before["chosen"], (
+            "the default must still pick on spellF1")
+        assert spell["metric"] == "spell" and macro["metric"] == "macro"
+        assert macro["chosen"] == loser == max(stems, key=lambda s: macro["rows"][s]["raw"]["macro"]), macro["chosen"]
+        assert macro["best"] == loser and macro["tied"] == [loser]
+        scores = {truth: {stem: halves_of(root, stem, truth) for stem in ["nearest_w50"] + stems}
+                  for truth in benchmark_run.TRUTHS}
+        for truth in benchmark_run.TRUTHS:
+            expected = score.compare(scores[truth]["nearest_w50"], scores[truth][loser], metric="macro_f1")
+            for key in ("pooled_delta", "mean_delta", "p_sign_flip", "wins"):
+                assert macro["versus"][truth][key] == expected[key], (truth, key)
+            assert macro["rows"][loser][truth]["delta"] == expected["pooled_delta"], truth
+        assert macro["versus"]["raw"]["pooled_delta"] != spell["versus"]["raw"]["pooled_delta"]
+        per_match = score.per_match(scores["raw"][loser])
+        assert macro["rows"][loser]["raw"]["per_match"] == {m: e["macro_f1"] for m, e in per_match.items()}
+        assert macro["lomo"]["objective"]["picks"] == {m: loser for m in per_match}, "lomo must use macroF1 too"
+        assert any("metric macroF1" in line for line in choose.render(macro)), "the header must name the metric"
+        expect_error(choose.ChooseError, lambda: chosen(root, stems, metric="accuracy"), "metric")
+
+
+def test_choose_cli_makes_a_macro_grid_name_its_band():
+    """--metric macro without --band is refused before any report is read (0.005 is spellF1's band); with it, accepted."""
+    import contextlib
+    import io
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        code = choose.main(["x", "--reference", "x", "--metric", "macro"])
+    assert code == 1 and "band" in out.getvalue(), (code, out.getvalue())
+    for argv in (["x", "--reference", "x", "--metric", "macro", "--band", "0.002"], ["x", "--reference", "x"]):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            choose.main(argv)                   # no reports exist here: it fails on those, not on the band
+        assert "must name its band" not in out.getvalue(), argv
+
+
+def halves_of(root, stem, truth):
+    path = benchmark_run.report_path(root, "gaps", stem, truth, sorted(synthetic_matches()), SEEDS)
+    with open(path, encoding="utf-8") as stream:
+        return choose.halves(json.load(stream))
 
 
 def test_choose_refuses_missing_stale_and_mixed_reports():
