@@ -80,9 +80,9 @@ moves boundaries by its own offsets with them. A refiner placed after `shift_edg
 
 | refiner | what it does | check it against |
 |---|---|---|
-| drop short blips | remove possession runs shorter than *m* frames, and `D` blips inside a possession | the public GT has real possessions of 0.76 s and 1.32 s — *m* must be validated, not guessed ([T04](../../docs/traps.md)) |
-| explicit `D` at restarts | `D`, never `X`, before kick-offs and once the ball is out — an `X` there is forward-filled into a long fake possession | [T02](../../docs/traps.md); kick-off frames are in `ctx.run.inputs.kickoffs`, but detect the stoppage from data (P05) rather than writing labels from constants |
-| free `X` | abstain inside a possession where the decoder is unsure — free on `spellF1`, a small cost on `macroF1` | needs the decoder's `posterior`; never abstain across a hand-over ([EVALUATION.md](../../EVALUATION.md)) |
+| drop short blips (covered elsewhere: the hmm decoder's `min_possession` 35 and `min_dead` 25, R007, R013) | remove possession runs shorter than *m* frames, and `D` blips inside a possession | the public GT has real possessions of 0.76 s and 1.32 s — *m* must be validated, not guessed ([T04](../../docs/traps.md)) |
+| explicit `D` at restarts (covered elsewhere: the pre-kick-off rule gives P(alive) 0.001, R009) | `D`, never `X`, before kick-offs and once the ball is out — an `X` there is forward-filled into a long fake possession | [T02](../../docs/traps.md); kick-off frames are in `ctx.run.inputs.kickoffs`, but detect the stoppage from data (P05) rather than writing labels from constants |
+| ~~free `X`~~ | measured as `free_x` in R016 and dropped: abstaining inside a possession where the decoder is unsure lowered macroF1 at every threshold (the posterior's least confident frames are still right more than F1/2 of the time), code removed, recoverable from `c909e2f` | [R016](../../docs/results.md) |
 | snap to touches (P11) | move a boundary to the touch or pass event nearest to it | the shortest public possessions tolerate 0.3–1.5 s of *total* boundary error (A01) |
 
 ## Adding a refiner

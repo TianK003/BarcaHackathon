@@ -48,7 +48,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P09](#p09--camera-aim-as-a-coarse-ball-zone-prior) | Camera aim as a coarse ball-zone prior | fact 1 | S | low–medium | idea |
 | [P10](#p10--referee-whistle-from-the-audio-track) | Referee whistle from the audio track | fact 4 | S–M | medium (audio confirmed, A04) | idea |
 | [P11](#p11--touch-and-pass-events-to-place-boundaries) | Touch and pass events to place boundaries | fact 5 | M–L | medium–high | idea |
-| [P12](#p12--metric-aware-post-processing) | Metric-aware post-processing | fact 5 | S | medium | partly done → R012 (the shift; see its list for the rest) |
+| [P12](#p12--metric-aware-post-processing) | Metric-aware post-processing | fact 5 | S | medium | done → R012 (shift adopted), R016 (free X measured and dropped) |
 | [P13](#p13--learn-from-external-labelled-tracking-data) | Pre-train on external labelled tracking data | facts 1, 2 | L (M on top of P01) | medium–high | idea |
 | [P14](#p14--recover-the-ball-from-the-video) | Recover the ball from the video | facts 1, 2 | L | A14: a perfect ball in our gaps is worth +0.10 raw but +0.02 coarse; a real detector perhaps +0.025 to +0.04 raw | not built → A14 (not a ViT: the ball is 6 px, T46; a half-day zero-shot test may run, [After A14](#after-a14)) |
 | [P15](#p15--broadcast-tracking-as-a-second-opinion) | Broadcast tracking as a second opinion | facts 1, 4 | L | medium | idea |
@@ -59,7 +59,7 @@ One track per person; swap freely.
 
 | track | week 1 (→ Oct 27) | week 2 (→ Nov 3) | week 3 (→ Nov 10) |
 |---|---|---|---|
-| Validation | P01 (done 23 Oct, R002–R005), P02 (partly done 25 Oct, A11, R012) | P12 | re-validate every candidate on P01 |
+| Validation | P01 (done 23 Oct, R002–R005), P02 (partly done 25 Oct, A11, R012) | P12 (done 30 Oct: R012 shift adopted; free X dropped by R016) | re-validate every candidate on P01 |
 | Pipeline and decoder | P03 | P06 (done 25 Oct, R006–R007, A10) | P06 is tuned on P01 (R007); then [After P06](#after-p06); `main.toml` is P04 + P05 (R010), then P07 (R011) and P02's shift (R012); [After P04 and P05](#after-p04-and-p05), then [After P07 and P02](#after-p07-and-p02); its item 1 done 26 Oct (R013: the touch rule and the decoder re-chosen); then [After R013](#after-r013) |
 | Ball visible | P04 (done 25 Oct, R008, R010) | P11 | P11 |
 | Dead ball | P05 (done 25 Oct, R009, R010) | P08 | P10 |
@@ -740,7 +740,7 @@ P05 on a ball that is visible out of play would produce.
   it scores 0.5509 raw and 0.5296 coarse (0.5430 and 0.5593 on `tracking`; alive/dead F1 0.9731 to 0.9600).
 - **R015b** (done): a v2 rule, the ball hidden while more than m past a line and moving, found again at rest, swept once on
   label-free statistics. Its share past a line stays at 0.258 to 0.262 at every margin, against ours 0.0407. P18 dropped.
-- **R016** (never ran): retrain P05 on `offpitch`.
+- **R016** (never ran): retrain P05 on `offpitch`. The P18 retrain was never run and its number was reassigned to P12's free X on 30 Oct.
 
 **What it cannot settle.**
 - What stays unobservable on our match is how long our ball spends out of play in total. `offpitch` assumes it is like
@@ -958,16 +958,18 @@ used.
 
 ### P12 — Metric-aware post-processing
 
+**Status: done → [R012](results.md) (shift adopted), [R016](results.md) (free X measured and dropped).** R016's bar was not met: every threshold of `free_x` lowered macroF1 (raw -0.0003 to -0.0008, coarse -0.0009 to -0.0020), no retry, code removed (recoverable from `c909e2f`).
+
 **Why.** Cheap last-mile gains on the ranking metric.
 
 **What.**
-- Drop possession blips shorter than m frames, and `D` blips inside possessions. Validate m on P01's benchmark: the
+- Drop possession blips shorter than m frames, and `D` blips inside possessions. *Covered elsewhere: blips by the hmm decoder's `min_possession` 35 and `min_dead` 25 (R007, R013).* Validate m on P01's benchmark: the
   public GT's genuine 0.76 s and 1.32 s possessions show that short ones exist, and do not set m.
 - Shift transitions by the measured mean latency. *Done as `shift_edges` (P02, R012): minus the pipeline's own median
   lag on DFL, team +1, into `D` -2, out of `D` 0 frames.*
-- Write explicit `D`, never `X`, before kick-offs and once the ball is out ([T02](traps.md)).
+- Write explicit `D`, never `X`, before kick-offs and once the ball is out ([T02](traps.md)). *Covered elsewhere: before kick-offs by the pre-kick-off rule (P(alive) 0.001, R009).*
 - Use `X` only inside possessions where the label is genuinely uncertain. It is free on spellF1 and only touches the
-  macroF1 tie-break.
+  macroF1 tie-break. *Measured as `free_x` (R016) and dropped: the decoder's least confident frames are still right more often than F1/2.*
 
 ## Bigger bets
 
