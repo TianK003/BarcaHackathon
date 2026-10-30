@@ -42,6 +42,8 @@ module of its topic:
                  on every real match (synthetic, and the downloaded matches with --dfl)
     choose.py    choose: a grid's rule worked out by hand from the runner's results, its deltas the runner's, the
                  leave-one-match-out picks in a plain loop, and the reports it refuses (synthetic only)
+    tag_stats.py tag_stats: the agreement of Smart Tagging's votes with our own pseudo-labels, from synthetic votes
+                 and episodes (synthetic only)
     headroom.py  the headroom runner: its six configs in order, the oracles that carry the truth and nothing else, that
                  they are in no production registry and the registry is as it was after a run (raised or not), the
                  variants as files that read back as the config with the oracles in, the coarse truth reaching them,

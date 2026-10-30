@@ -22,7 +22,8 @@ vote.
 
 Tags overlap, and two phases can name two teams. Two tags that agree are one opinion about the frame, not two: in
 "frame" the frame carries c, however many agreeing tags cover it. Two that disagree leave the frame without an
-opinion (NaN): the source does not guess which phase is the one that matters. 
+opinion (NaN): the source does not guess which phase is the one that matters.
+
 Cut at the graded blocks. Everything is cut to the half-open graded blocks (inputs.graded), so a tag across a block's
 start or a stretch in the halftime gap votes on nothing outside the blocks, and `end_frame` is exclusive.
 
@@ -151,8 +152,8 @@ def tag_vote(tag):
 
 def _confidence(name, value):
     if isinstance(value, (bool, np.bool_)) or not isinstance(value, numbers.Real) or not 0.5 < value <= 1.0:
-        raise ValueError("smart_tagging: {} must be a confidence in (0.5, 1.0] (0.5 would say nothing; leave it out "
-                         "and the channel does not vote), got {!r}".format(name, value))
+        raise ValueError("smart_tagging: {} must be a confidence in (0.5, 1.0] (0.5 would say nothing), "
+                         "got {!r}".format(name, value))
     return float(value)
 
 

@@ -176,7 +176,8 @@ def test_config_bad_scope():
     expect_error(ConfigError, lambda: load_test_config('scope = "match"\n' + MINIMAL_CONFIG), "match", "halves")
 
 
-MATCH_ONLY_KINDS = {"smart_tagging"}   # the sources of REGISTRY that need an asset only our match has; extend it with the next
+# The sources of REGISTRY that need an asset only our match has. Add the next such source here.
+MATCH_ONLY_KINDS = {"smart_tagging"}
 
 
 def test_match_only_reads_the_module_flag():
@@ -188,7 +189,8 @@ def test_match_only_reads_the_module_flag():
     import types
     from pipeline import evidence
     for kind in evidence.REGISTRY:
-        assert evidence.match_only(kind) is (kind in MATCH_ONLY_KINDS),             "only " + ", ".join(sorted(MATCH_ONLY_KINDS)) + " of today's REGISTRY is match-only: " + kind
+        assert evidence.match_only(kind) is (kind in MATCH_ONLY_KINDS), (
+            "only " + ", ".join(sorted(MATCH_ONLY_KINDS)) + " of today's REGISTRY is match-only: " + kind)
 
     module = types.ModuleType("pipeline.evidence._probe_match_only")
     module.MATCH_ONLY = True

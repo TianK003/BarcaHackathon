@@ -1,12 +1,14 @@
-# R017 (P08): main.toml plus Smart Tagging's team votes, at the frame strength (a per-frame vote, weight 0.2).
+# R017 (P08, Smart Tagging's team votes): the named copy of main.toml as R017 adopted it, at the frame strength (a
+# per-frame vote, weight 0.2).
 #
 #   python pipeline/run.py pipeline/configs/r017_frame.toml
 #
 # One extra [[evidence]], kind = "smart_tagging" with c_team = 0.76 (R017's measured agreement with the kept
 # controlled_touch episodes, rounded towards 0.5), spread = "frame" and weight 0.2. The dead votes were measured in R017
-# and dropped. Everything else is main.toml's. A candidate for Tian's pick, not the file we would submit today.
+# and dropped. Everything else is R013's (r013_retune.toml). Tian picked this strength (2026-10-30), and main.toml is
+# this file; it writes the same CSV.
 
-description = "P04 + P05 + P07 + P02, re-chosen by R013: controlled_touch 1.5 m / 6.0 m/s / 1 frame / hold 0.60 (confidence 0.93) + dead_ball_model (hgb, pipeline/models/dead_ball_hgb.json) at weight 1.0 + shape_possession (hgb, pipeline/models/shape_possession_hgb.json) at weight 0.2, scope all, min_prob 0.02, hmm 4/32/35/25, decoded per half, then shift_edges team +1 / into_dead -2 / out_of_dead 0 frames. + smart_tagging team votes (R017: c_team 0.76, spread frame, weight 0.2)."
+description = "P04 + P05 + P07 + P08 + P02, re-chosen by R013 (P08 added by R017): controlled_touch 1.5 m / 6.0 m/s / 1 frame / hold 0.60 (confidence 0.93) + dead_ball_model (hgb, pipeline/models/dead_ball_hgb.json) at weight 1.0 + shape_possession (hgb, pipeline/models/shape_possession_hgb.json) at weight 0.2, scope all, min_prob 0.02 + smart_tagging team votes (R017: c_team 0.76, spread frame, weight 0.2), hmm 4/32/35/25, decoded per half, then shift_edges team +1 / into_dead -2 / out_of_dead 0 frames."
 seed = 0
 scope = "halves"
 

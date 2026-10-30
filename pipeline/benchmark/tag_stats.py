@@ -9,7 +9,7 @@ lift 1.124, below the declared bar, so they were dropped and their measurement r
 cefb8b0).
 
 Why. The tags are automatic phase intervals of our match only, not possessions and not ground truth (T17). There is no
-truth to score them against and no benchmark (DFL has no tags), so the only honest bar is agreement with the two
+truth to score them against and no benchmark (DFL has no tags), so the only honest bar is agreement with a
 pseudo-label of our own pipeline that is already trusted: the kept `controlled_touch` episodes (the rule of
 `conventions.TOUCH`, confidence 0.99 and hold 0.5, so that `home` is a number exactly on the kept frames, the way
 `train_shape.touch_agreement` takes them). The agreement becomes the votes' confidence,
