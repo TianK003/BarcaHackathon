@@ -36,6 +36,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R014b | 2026-10-26 | restart states in the decoder (P17, Phase 2b): `restart_team` span `stoppage_end` with `hmm` `restart_source`, `switch_restart` {4, 8, 16, inf} x `use_ball` {false, true}, 8 configs | — | — | — | 0.5433 raw and 0.5589 coarse for `r014b_s04_b1`, against `main.toml`'s 0.5430 and 0.5593 | bar not met (+0.0003 raw, p 0.8125); not adopted; P17 dropped |
 | R015 | 2026-10-29 | the `offpitch` profile (P18): `tracking` v3 with DFL's ball hidden once it is more than m past a line and a share q of the transplanted gaps dropped, m and q fitted once on label-free statistics of our match, its fidelity, and `main.toml` on it | — | — | — | 0.5509 raw and 0.5296 coarse for `main.toml` on `offpitch`, against 0.5430 and 0.5593 on `tracking` (a difference between two profiles) | `offpitch` v1 frozen (m 0.2 m, q 0.430); 8 of 9 gates pass, median gap fails (15.04 s against 10.74); main.toml 0.5509 raw / 0.5296 coarse on it; P18 dropped after R015b |
 | R015b | 2026-10-29 | the `offpitch` v2 rule (the ball hidden while it is more than m past a line and moving, found again at rest), swept once on the benchmark's label-free fidelity statistics before anything was built | — | — | — | — | v2 cannot reach our share past a line at any margin (0.258 to 0.262 against 0.0407); P18 dropped, offpitch code removed (7b555eb) |
+| R016 | 2026-10-30 | `free_x` (P12) on `main.toml`: `X` inside `H` and `A` runs where the decoded label's posterior is below a threshold, over 0.25, 0.35, 0.45, 0.55, 4 configs | — | — | — | — | declared, not run |
 
 ### The four yardsticks on every profile, in one table
 
@@ -5902,6 +5903,78 @@ It is recoverable from `fb33b38`. After it, the benchmark's `selftest.py` passed
 186 of 186, and `main.toml`'s sha256 `0ebdfbec...` is unchanged. What stays: `headroom.py`'s `plus_` variants and the
 gaps-only team oracle (A13, `5ab0e89`). R016 never ran, A13 part 2 (on `offpitch`) never ran, and `main.toml` is unchanged.
 What it leaves is in [After P18](proposals.md#after-p18) and T45.
+
+### R016 — The free_x refiner (P12): 4 thresholds, the choice, the bar and the veto (2026-10-30, Tian)
+Proposal: P12 · Commit: part 1 (this declaration and the 4 configs) is committed before any run of it; the commits of the
+runs are in part 2.
+
+**Part 1, declared before any run** (2026-10-30). Nothing below was chosen from a score of this entry. R016 was once
+declared in outline and never ran (R015b); this is its declaration.
+
+**Why.** Where the HMM's posterior for the decoded label is low, the label is often wrong. Writing `X` there turns a false
+positive into nothing, at the cost of a true positive where the label was right. To first order, abstaining on a frame
+predicted as class k changes F1_k by (F1_k - 2p) / (2TP + FP + FN), where p is the chance the label is right, so it
+gains only where p < F1_k / 2: about 0.3 to 0.45 for our classes. The grid sits there, provided the posterior is roughly
+calibrated; if it is overconfident a higher threshold may be needed, so the grid reaches 0.55. spellF1 cannot change if
+`X` never sits within a margin of a run's edges, because spellF1 forward-fills `X` with the label before it, which is the
+run's own label; only macroF1 can move.
+
+**Expectation, stated now.** The decoded label's posterior is rarely below 0.45, so the gain is likely small. macroF1 only
+breaks exact spellF1 ties, so even a pass is worth little to the ranking. Tian chose to build it anyway, and the bar
+decides. **Falsified if** no threshold gives a pooled macroF1 gain on the benchmark above the bar.
+
+**Candidates.** `main.toml` (sha256 of the committed file `0970f2de4b97ceec27660559ebc37b1a0dcbfcf1bfced08d016f1f9d4503181a`;
+the Windows working copy with CRLF line ends hashes to `ad8d8b6c2f25a1d0713eb3c8e3bbf7f14eb5928d9fa6bf12ee5b455c106284bd`)
+with `posterior = true` in `[decoder]` and one `[[refine]]` `free_x`, `margin` 3, before `shift_edges`, over `threshold`
+in {0.25, 0.35, 0.45, 0.55}: four configs, `pipeline/benchmark/configs/r016/r016_t025.toml`, `r016_t035.toml`,
+`r016_t045.toml`, `r016_t055.toml`. `margin` 3 is a fixed rule: more than `shift_edges`' largest move (2), so a shifted
+edge never reaches an `X`.
+
+**What is not re-chosen.** Everything else in `main.toml` (the touch rule, the dead-ball model, P07's weight, the decoder
+4/32/35/25, the shift +1 / -2 / 0; R013 and R012 chose them); `margin`; `free_x` acts on `H` and `A` runs only.
+
+**The runs.** The reference is `main.toml` as it is (with `--drop-match-only` if C or D has merged by then). Profile
+`tracking` v3, 3 seeds, all seven matches, `--truth both`, one process:
+
+```bash
+python pipeline/benchmark/run.py pipeline/configs/main.toml pipeline/benchmark/configs/r016/r016_t025.toml pipeline/benchmark/configs/r016/r016_t035.toml pipeline/benchmark/configs/r016/r016_t045.toml pipeline/benchmark/configs/r016/r016_t055.toml --truth both
+python pipeline/benchmark/choose.py --reference main --metric macro r016_t025 r016_t035 r016_t045 r016_t055
+```
+
+`main` must reproduce R013's figures to the last digit (0.5430 raw and 0.5593 coarse spellF1, alive/dead F1 0.9731).
+
+**The selection** (R008 to R014's rule, `choose.py --reference main --metric macro` on the reports). The objective is pooled
+raw macroF1 on `tracking`, with a tie band of 0.002. Among the tied configs the best pooled coarse macroF1 wins. Any tie
+left over goes to the lowest threshold, which writes the fewest `X`; so the stems are given to `choose.py` in the order
+`r016_t025 r016_t035 r016_t045 r016_t055`. **Nothing is added after the results**: a choice on an edge of the grid is
+reported as one, and the grid is not extended in this entry.
+
+**The bar.** The chosen config is adopted only if its `tracking` raw pooled macroF1 delta over `main.toml` is at least
++0.002 with an exact sign-flip p of at most 0.05.
+
+**The veto.** It is not adopted if either of these holds:
+- any pooled spellF1 delta is non-zero (raw or coarse). It is zero by construction, so a non-zero one means a bug;
+- the pooled coarse macroF1 delta is below -0.002.
+
+Alive/dead F1 is not a veto here: it counts an `X` on an alive frame as a miss by definition, and it does not rank. Its
+delta is reported.
+
+**Label-free checks on BAR-ATH, before adopting.**
+- Two runs of the final config give the same sha256.
+- The share of graded frames written `X` is reported.
+- The `D` share is unchanged.
+- R014's standing check "no `X` in a graded block" is replaced, for this config only, by "`X` only inside `H` and `A`
+  runs, beyond the margin".
+
+The public window is a correctness check only (T01) and may not weigh in.
+
+**Adoption.** If the bar is met, the veto does not fire and the checks pass, the final config becomes
+`pipeline/configs/main.toml` and is kept as `pipeline/configs/r016_free_x.toml`; its sha256 goes to the submission log; it
+is not uploaded.
+
+**If the bar is not met.** One knowledge-informed retry, R016b, is declared before its runs (a different grid, chosen from
+what R016 shows about the posterior's calibration, never from a window score). If that fails too, P12's `free_x` code is
+removed.
 
 ## Submission log
 
