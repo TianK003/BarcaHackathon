@@ -746,7 +746,7 @@ refused if its config file has changed since it was written, and reports of diff
 Calibration) are refused together.
 
 `--metric macro` (`metric="macro"`, P12) judges the grid on pooled macroF1 in place of spellF1, for a refiner that can
-only move macroF1 (`free_x`, R016): the raw macroF1 selects, the coarse macroF1 breaks a tie, the Δs, p and wins in the
+only move macroF1 (`free_x`, since removed, R016): the raw macroF1 selects, the coarse macroF1 breaks a tie, the Δs, p and wins in the
 table and the `versus` lines are macroF1's, the lomo averages each match's macroF1, and the table's header names the
 metric. The band is in the metric's units, so such a grid declares it (R016 passes `--band 0.002`); the default stays
 0.005, and every other field is unchanged. The checks are `test_choose_applies_the_rule_and_matches_the_runner`,

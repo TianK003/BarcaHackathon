@@ -1475,7 +1475,7 @@ the interval is that of the per-match deltas.
 - **On the benchmark the dead-ball side is nearly exhausted.** A perfect `alive` adds only +0.029 to +0.045 spellF1, and
   alive/dead F1 is already 0.970 to 0.973. This is the T39 caveat in numbers: the benchmark's P05 is near-perfect partly
   because DFL tracks the ball out of play. R015 tried it: with the out-of-play ball hidden, today's P05 lost 0.013
-  alive/dead F1 (0.9731 to 0.9600), a lead only since the profile failed a gate; R016 never ran (R015b).
+  alive/dead F1 (0.9731 to 0.9600), a lead only since the profile failed a gate; R016 never ran (R015b; the P18 retrain's number, reassigned on 30 Oct).
 - **The team is where the score is.** A perfect team where the ball is seen adds +0.19 to +0.24; in the gaps +0.10 to
   +0.18 (more under the raw truth than the coarse one); on every live frame +0.33 to +0.35. A10, with the old decoder,
   had the possessor where seen worth +0.15 raw.
@@ -5901,7 +5901,7 @@ set. The window's dead-ball visible share is 0.6637.
 `run.py` and the checks are restored to their state at `5ab0e89`, and `offpitch.py` and its two check modules are deleted.
 It is recoverable from `fb33b38`. After it, the benchmark's `selftest.py` passed 402 checks, `pipeline/selftest.py --data`
 186 of 186, and `main.toml`'s sha256 `0ebdfbec...` is unchanged. What stays: `headroom.py`'s `plus_` variants and the
-gaps-only team oracle (A13, `5ab0e89`). R016 never ran, A13 part 2 (on `offpitch`) never ran, and `main.toml` is unchanged.
+gaps-only team oracle (A13, `5ab0e89`). R016 never ran (its number was reassigned to P12's free X on 30 Oct), A13 part 2 (on `offpitch`) never ran, and `main.toml` is unchanged.
 What it leaves is in [After P18](proposals.md#after-p18) and T45.
 
 ### R016 — The free_x refiner (P12): 4 thresholds, the choice, the bar and the veto (2026-10-30, Tian)
@@ -6006,14 +6006,14 @@ coarse -0.0009 (p 0.0156, 0 wins, 7 losses). Leave-one-match-out picked `r016_t0
 not 0.002 above it.
 
 **The veto.** It did not fire: every spellF1 delta is exactly +0.0000 under both truths, in all seven matches, as
-constructed (no bug), and the largest coarse macroF1 delta, -0.0020 at t055, is not below -0.002. Alive/dead F1 fell from
+constructed (no bug), and the largest coarse macroF1 delta, -0.00197 at t055, is not below -0.002. Alive/dead F1 fell from
 0.9731 to 0.9702, 0.9692, 0.9680 and 0.9663: reported as declared, not a veto. Possessions per minute (3.13) and the D share
 (44.6%) are unchanged.
 
 **Verdict: bar not met; `free_x` dropped, `main.toml` unchanged.** All four thresholds lose macroF1, and the loss grows
 with the threshold (raw -0.0003 to -0.0008, coarse -0.0009 to -0.0020), so it shrinks monotonically toward 0 as fewer `X`
 are written. The expectation stated in part 1 holds in its strong form: the HMM's least confident frames are still right
-more often than F1/2 of the time, so no threshold of this signal can gain.
+more often than F1/2 of the time, so no threshold of this signal can reach the bar (nothing below 0.25 was tested; the trend is monotone towards 0).
 
 **Rulings (the controller's, binding).**
 1. **No R016b.** The retry that part 1 allowed is not run. Every threshold lowers macroF1 and the loss falls to 0 only as
