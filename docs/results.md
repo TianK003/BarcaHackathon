@@ -37,6 +37,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R015 | 2026-10-29 | the `offpitch` profile (P18): `tracking` v3 with DFL's ball hidden once it is more than m past a line and a share q of the transplanted gaps dropped, m and q fitted once on label-free statistics of our match, its fidelity, and `main.toml` on it | — | — | — | 0.5509 raw and 0.5296 coarse for `main.toml` on `offpitch`, against 0.5430 and 0.5593 on `tracking` (a difference between two profiles) | `offpitch` v1 frozen (m 0.2 m, q 0.430); 8 of 9 gates pass, median gap fails (15.04 s against 10.74); main.toml 0.5509 raw / 0.5296 coarse on it; P18 dropped after R015b |
 | R015b | 2026-10-29 | the `offpitch` v2 rule (the ball hidden while it is more than m past a line and moving, found again at rest), swept once on the benchmark's label-free fidelity statistics before anything was built | — | — | — | — | v2 cannot reach our share past a line at any margin (0.258 to 0.262 against 0.0407); P18 dropped, offpitch code removed (7b555eb) |
 | R018 | 2026-10-30 | the referee's whistle (P10): a hand-built 2 to 4 kHz band-pass detector on the tactical audio, its feasibility gate and its bar against `main.toml`'s own decoded stoppages | — | — | — | — | dropped (R018, R018b: gate failed, ratio 1.52 / 1.51) |
+| R018b | 2026-10-30 | the whistle (P10), the one retry R018 allowed: the tonal threshold set to the match's own 98th percentile of tonal_db, the same gate and bar | — | — | — | — | dropped, code removed (fc9dbed): gate failed, ratio 1.51 (55 detections)
 
 ### The four yardsticks on every profile, in one table
 
@@ -5961,13 +5962,19 @@ runs. If R018b also fails, P10 is dropped and its code removed, as P18 was (R015
 
 | ID | status |
 |---|---|
-| R018 part 1 | declared, not run |
+| R018 part 1 | declared, run (gate failed) |
 
 **Part 2, the feasibility result** (2026-10-30, `whistle_stats.py feasibility`, aggregates only). The gate **FAILED**.
 - 340 detections, 185 in half 1 and 155 in half 2, where the gate allows 10 to 120 per half (gate 1 fails);
 - share near a decoded stoppage 0.624 against a control of 0.410, ratio 1.52, where the gate needs at least 2 (gate 3 fails;
   gate 2, at least 50%, passes);
-- 240 of the 340 detections have a feature within 0.5 dB of a threshold.
+- 240 of the 340 detections have a feature within 0.5 dB of a threshold;
+- the lag from each detection to the nearest decoded stoppage edge (signed, edge minus whistle) has quartiles -253 / +16 / +193 frames.
+
+The run was at commit `6594b31`. `main.toml` sha256 at the run: raw `ad8d8b6c…`, LF `0970f2de…`, matching the declaration; the
+features' sha256 `a3d80f77…`. Determinism check (`p10_decode_check.log`): the features were decoded twice without the cache, with
+the same sha256, shape (199319, 2) and 0 NaN, and the cache built equal to both decodes. That check ran 22:39 to 22:40, before part
+1 was committed at 22:46; it printed only the shape, the NaN count and a hash, so no value shaped a constant.
 
 Reading: the fixed `TONAL_DB = 15` dB sits inside the crowd noise, so the detector fires on it. The retry R018 part 1 allowed
 is R018b, declared next. Nothing else is read into the failure.
@@ -6007,13 +6014,18 @@ aggregates only). The gate **FAILED**.
 - 55 detections, 25 in half 1 and 30 in half 2 (gate 1 passes, 10 to 120 per half);
 - share near a decoded stoppage 0.564 against a control of 0.373, ratio 1.51, where the gate needs at least 2 (gate 3 fails;
   gate 2, at least 50%, passes);
-- 29 of the 55 detections have a feature within 0.5 dB of a threshold.
+- 29 of the 55 detections have a feature within 0.5 dB of a threshold (a rough indicator, not a tested quantity);
+- the lag to the nearest stoppage edge has quartiles -171.5 / +20 / +292.5 frames.
 
-Reading: with 340 marginal detections (R018) or 55 strong ones (R018b), detected whistles sit near a decoded stoppage about 1.5
-times as often as the same detections shifted in time. The signal is real but too weak for the declared 2 times, and a stricter
-threshold does not sharpen it.
+The run was at commit `a08e381`.
 
-**Verdict: P10 dropped; code removed, recoverable from `a08e381`.** R018 part 1's rule applies: R018b was the one retry.
+Reading: with 340 marginal detections (R018) or 55 stronger ones (R018b; 29 of the 55 are within 0.5 dB of a threshold), detected
+whistles sit near a decoded stoppage about 1.5 times as often as the same detections shifted in time. That is consistent with a
+real but weak signal (no test of "real" was declared), too weak for the declared 2 times, and a stricter threshold does not
+sharpen it.
+
+**Verdict: P10 dropped; code removed in `fc9dbed`, recoverable from `a08e381`.** R018 part 1's rule applies: R018b was the one
+retry. After the removal: `pipeline/selftest.py` 185/185, `pipeline/benchmark/selftest.py` 410 checks, `main.toml` unchanged.
 
 | ID | status |
 |---|---|

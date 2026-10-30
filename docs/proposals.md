@@ -311,7 +311,7 @@ unchanged (sha256 `0ebdfbec...`).
    - P21's step 0: do our identity swaps cluster at the ball? A14 already bounds all of the benchmark's player
      degradation at 0.013 for `main.toml`.
    - P22(a), the label-shift prior.
-   - ~~P10 with a pretrained audio tagger.~~ Dropped (R018, R018b).
+   - ~~P10 with a pretrained audio tagger.~~ Dropped (R018, R018b): only the hand-built band-pass was tried, the tagger was not.
 5. **P16 still decides more than any of these.** Every ball-rich change so far has split the two truths: R010's decoder,
    R013's touch rule, and now A14's ball. Knowing our truth's grain says which of them helps on our match.
 
@@ -912,9 +912,8 @@ This gives a zone, not a position: feed it to P07 and P06, never to nearest-play
 
 ### P10 — Referee whistle from the audio track
 
-**Status: dropped → [R018](results.md), [R018b](results.md) (whistles near stoppages 1.5× chance, below the declared 2×; 
-code removed).** Both feasibility gates failed (ratio 1.52, then 1.51); the code was removed in the commit that follows 
-`a08e381`, where it is recoverable.
+**Status: dropped → [R018](results.md), [R018b](results.md) (whistles near stoppages 1.5× chance, below the declared 2×;
+code removed).** Both feasibility gates failed (ratio 1.52, then 1.51); the code was removed in `fc9dbed`, where it is recoverable from `a08e381`.
 
 **Why.** Fouls and offsides stop play without the ball leaving the pitch, and the tracking only sees players slow
 down a second later. A whistle marks a sharp `D` onset, and it also starts free kicks and kick-offs.
