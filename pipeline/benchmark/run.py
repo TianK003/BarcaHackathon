@@ -68,6 +68,13 @@ and not the yardstick, and the help, the printout and the report say so (SENSITI
 needs the Calibration of BAR-ATH (calibration.load, measured once and cached), which evaluate_configs loads unless it is
 given one, and whose digest goes into every report.
 
+The camera (P09). Every profile but clean also serves each match a camera like ours: MatchInputs.camera_aim, the aim
+that camera.simulated_aim(match, seed, fit) gives from the match's clean ball and the CameraFit of our own camera
+(camera.load_fit, fitted once on BAR-ATH and cached), which evaluate_configs loads unless it is given one, and whose
+digest goes into every report ("camera"). Clean serves none, so that a clean run stays DFL's tracking as it is. No
+config that existed before P09 reads the aim, so their scores are what they were
+(test_runner_serves_camera_aim_off_clean).
+
 What the clean profile is. The tracking exactly as DFL gives it: the ball is present on every frame, so nearest_player
 votes everywhere and majority_vote, which takes D only where nobody voted, labels almost nothing D, where the truth has
 41% to 52% of its frames dead. That is expected and is why the degraded profiles exist; it is not a bug of the configs.
@@ -103,7 +110,7 @@ import numpy as np  # noqa: E402
 import games  # noqa: E402
 from pipeline import run as pipeline_run  # noqa: E402  (importing pipeline also puts evaluation/ on sys.path)
 from pipeline.benchmark import calibration as calibration_module  # noqa: E402
-from pipeline.benchmark import degrade, dfl, score, sources  # noqa: E402
+from pipeline.benchmark import camera, degrade, dfl, score, sources  # noqa: E402
 from pipeline.benchmark import inputs as match_inputs  # noqa: E402
 from pipeline.benchmark import truth as truths  # noqa: E402
 from pipeline.config import ConfigError, load_config  # noqa: E402
@@ -194,10 +201,36 @@ def _check_profile(profile):
         raise BenchmarkError("profile {!r} is not one of: {}".format(profile, ", ".join(sorted(PROFILES))))
 
 
+def check_camera_fit(profile, camera_fit):
+    """BenchmarkError for a camera fit that `profile` cannot take: any fit for clean, which serves no camera (it would
+    be ignored, and a report must not suggest that it was used), and anything but a CameraFit for the others."""
+    if profile == CLEAN and camera_fit is not None:
+        raise BenchmarkError("profile {!r} serves no camera, and a camera fit was given: it would be ignored, and a "
+                             "report must not suggest that it was used".format(profile))
+    if camera_fit is not None and not isinstance(camera_fit, camera.CameraFit):
+        raise BenchmarkError("camera_fit must be the CameraFit of our own camera, as camera.load_fit() returns, and it "
+                             "is a {}".format(type(camera_fit).__name__))
+
+
+def camera_fit_for(profile, camera_fit, data_dir):
+    """The CameraFit that a run of `profile` serves its simulated aim from: None for clean, `camera_fit` if one is
+    given, otherwise camera.load_fit(data_dir=data_dir) (BAR-ATH's, from its cache). check_camera_fit's refusals
+    first. A caller that serves many matches calls this once and hands the fit down."""
+    check_camera_fit(profile, camera_fit)
+    if profile == CLEAN:
+        return None
+    return camera_fit if camera_fit is not None else camera.load_fit(data_dir=data_dir)
+
+
+def served_aim(match, profile, seed, camera_fit):
+    """The camera_aim to serve `match` with under `profile` and `seed`: None for clean, else the simulated camera's."""
+    return None if profile == CLEAN else camera.simulated_aim(match, seed, camera_fit)
+
+
 # -- every config on every match --------------------------------------------------------------------------------------
 
 def evaluate_configs(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_ids=None, matches=None,
-                     calibration=None, truth="raw", data_dir=None, log=print):
+                     calibration=None, truth="raw", data_dir=None, log=print, camera_fit=None):
     """Run each config on each match and score it; the result holds a JSON-ready report per config.
 
     `config_paths` are TOML files for pipeline.config.load_config; the first is the reference of the comparisons.
@@ -209,30 +242,34 @@ def evaluate_configs(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_id
     dfl.load_match from `data_dir` (default games.DATA_DIR). `matches` is {id: DflMatch} to use instead of loading (the
     checks pass synthetic ones). `calibration` is the Calibration of BAR-ATH that a degraded profile takes its gaps
     from; none given, calibration.load(data_dir) reads it from its cache or measures it, before the first match; the
-    clean profile degrades nothing and refuses one, so that a report cannot suggest that it was used. `truth` is "raw"
-    or "coarse" (truth.coarse_codes). `log` receives each progress line and then the printed table.
+    clean profile degrades nothing and refuses one, so that a report cannot suggest that it was used. `camera_fit` is
+    the CameraFit of our camera that a degraded profile simulates each match's camera_aim from (P09); none given,
+    camera.load_fit(data_dir) reads it from its cache or fits it, once, after the Calibration; clean serves no camera
+    and refuses one. `truth` is "raw" or "coarse" (truth.coarse_codes). `log` receives each progress line and then the
+    printed table.
 
     Everything that can be refused is, before the first match is loaded: no config, one that does not load (ConfigError,
     from the pipeline's own loader), one with scope = "file", one whose name has a dot, two with the same name, an
-    unknown profile or truth or match, a repeated match, fewer than one seed, a calibration that is not one or that the
-    profile does not take. BenchmarkError says which. A source that needs an asset that a benchmark match does not have
-    (the video's homography, the Smart Tagging) stops the run with its config, its name and kind and the asset named,
-    instead of scoring zeros.
+    unknown profile or truth or match, a repeated match, fewer than one seed, a calibration or a camera fit that is not
+    one or that the profile does not take. BenchmarkError says which. A source that needs an asset that a benchmark
+    match does not have (the video's homography, the Smart Tagging) stops the run with its config, its name and kind and
+    the asset named, instead of scoring zeros.
 
-    Returns {"profile", "seeds", "truth", "matches", "git", "data_dir", "reference", "configs", "rank"}; "configs" is a
-    list in the order given of {"stem", "report", "scores", "seconds"}: the report is what write_reports writes (a
-    function of the config, the profile, the matches and the calibration, with no timing), `scores` the HalfScores it
-    was made from and `seconds` the time spent on the config (printed, never written). "rank" is rank_agreement of the
-    configs, None unless at least two of them are among PUBLISHED_ORDER.
+    Returns {"profile", "seeds", "truth", "matches", "git", "data_dir", "reference", "configs", "calibration", "camera",
+    "rank"}; "configs" is a list in the order given of {"stem", "report", "scores", "seconds"}: the report is what
+    write_reports writes (a function of the config, the profile, the matches, the calibration and the camera fit, with
+    no timing), `scores` the HalfScores it was made from and `seconds` the time spent on the config (printed, never
+    written). "rank" is rank_agreement of the configs, None unless at least two of them are among PUBLISHED_ORDER.
     """
     if truth not in TRUTHS:
         raise BenchmarkError("truth {!r} is not one of: {}".format(truth, ", ".join(TRUTHS)))
     return evaluate_truths(config_paths, profile=profile, seeds=seeds, match_ids=match_ids, matches=matches,
-                           calibration=calibration, truth_names=(truth,), data_dir=data_dir, log=log)[truth]
+                           calibration=calibration, truth_names=(truth,), data_dir=data_dir, log=log,
+                           camera_fit=camera_fit)[truth]
 
 
 def evaluate_truths(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_ids=None, matches=None,
-                    calibration=None, truth_names=TRUTHS, data_dir=None, log=print):
+                    calibration=None, truth_names=TRUTHS, data_dir=None, log=print, camera_fit=None):
     """{truth: result}: evaluate_configs under each of `truth_names`, every config decoded once per match and seed.
 
     Each config's codes on a match and seed are scored against each truth in turn, so a result is exactly what
@@ -257,9 +294,11 @@ def evaluate_truths(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_ids
     if profile != CLEAN and calibration is not None and not isinstance(calibration, calibration_module.Calibration):
         raise BenchmarkError("calibration must be a Calibration of our own match, as calibration.load() returns, and "
                              "it is a {}".format(type(calibration).__name__))
+    check_camera_fit(profile, camera_fit)
     ids = resolve_match_ids(match_ids, matches)
     if profile != CLEAN and calibration is None:
         calibration = calibration_module.load(data_dir=data_dir)
+    camera_fit = camera_fit_for(profile, camera_fit, data_dir)
     data_dir_used = data_dir or games.DATA_DIR
     seed_list = [0] if profile == CLEAN else list(range(seeds))
     if profile == CLEAN and asked_for_seeds and seeds != 1:
@@ -281,7 +320,8 @@ def evaluate_truths(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_ids
                   "carried_frames": int(carried["carried_possession_frames"] + carried["carried_status_frames"])}
         for seed in seed_list:
             atd = make_atd(match, profile, seed, calibration)
-            inputs = match_inputs.MatchInputs(match, atd, profile=profile, seed=seed, data_dir=data_dir)
+            inputs = match_inputs.MatchInputs(match, atd, profile=profile, seed=seed, data_dir=data_dir,
+                                              camera_aim=served_aim(match, profile, seed, camera_fit))
             if seed == seed_list[0]:
                 record["sources"] = inputs.atd_manifest["sources"]
                 record["sources_reason"] = inputs.atd_manifest["sources_reason"]
@@ -310,11 +350,12 @@ def evaluate_truths(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_ids
     profile_info = degrade.profile_record(profile)       # name, version and, for context, tracking's version
     calibration_info = None if profile == CLEAN else {"sha256": calibration_module.digest(calibration),
                                                       "version": calibration_module.CALIBRATION_VERSION}
+    camera_info = None if profile == CLEAN else {"sha256": camera.digest(camera_fit)}
     results = {}
     for name in truth_names:
         truth_info = {"name": name, "min_s": truths.COARSE_MIN_S if name == "coarse" else None}
         results[name] = _result(configs, scores[name], seconds, records, seed_list, profile_info, truth_info, git,
-                                environment, calibration_info, data_dir_used)
+                                environment, calibration_info, data_dir_used, camera_info)
     for name in truth_names:
         for line in render(results[name]):
             log(line)
@@ -322,19 +363,19 @@ def evaluate_truths(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_ids
 
 
 def _result(configs, scores, seconds, records, seed_list, profile_info, truth_info, git, environment,
-            calibration_info, data_dir_used):
+            calibration_info, data_dir_used, camera_info):
     """One truth's result, as evaluate_configs returns it: a report per config, each against the first."""
     reference = configs[0]
     entries = []
     for config in configs:
         versus = None if config is reference else _versus(reference, config, scores)
         report = _report(config, scores[config.stem], records, seed_list, profile_info, truth_info, git, environment,
-                         versus, calibration_info)
+                         versus, calibration_info, camera_info)
         entries.append({"stem": config.stem, "report": report, "scores": scores[config.stem],
                         "seconds": seconds[config.stem]})
     return {"profile": profile_info, "seeds": seed_list, "truth": truth_info, "matches": records, "git": git,
             "data_dir": data_dir_used, "reference": reference.stem, "configs": entries,
-            "calibration": calibration_info,
+            "calibration": calibration_info, "camera": camera_info,
             "rank": rank_agreement({config.stem: score.pooled(scores[config.stem])["spell_f1_mean"]
                                     for config in configs})}
 
@@ -426,7 +467,7 @@ def rank_agreement(pooled_spell_f1):
             "discordant": agreement["discordant"], "tied": agreement["tied"], "pairs": agreement["pairs"]}
 
 
-def _report(config, halves, records, seed_list, profile, truth, git, environment, versus, calibration):
+def _report(config, halves, records, seed_list, profile, truth, git, environment, versus, calibration, camera_info):
     """The JSON-ready report of one config over all its HalfScores: counts, scores, intervals, and nothing timed."""
     per = score.per_match(halves)
     confusion = np.sum([np.array(half.confusion, dtype=np.int64) for half in halves], axis=0)
@@ -455,6 +496,7 @@ def _report(config, halves, records, seed_list, profile, truth, git, environment
         "halves": [dataclasses.asdict(half) for half in halves],
         "versus": versus,
         "calibration": calibration,          # {sha256, version} of the Calibration degraded with; None for clean
+        "camera": camera_info,               # {sha256} of the CameraFit the aim was simulated from; None for clean
     }
     if profile["name"] in SENSITIVITY_ONLY:
         report["sensitivity_only"] = SENSITIVITY_ONLY[profile["name"]]      # only for a profile that is one
@@ -619,6 +661,9 @@ def render(result):
     if result["calibration"] is not None:
         lines.append("calibration   {}... (version {}): {}".format(
             result["calibration"]["sha256"][:12], result["calibration"]["version"], PROVENANCE[profile["name"]]))
+    if result["camera"] is not None:
+        lines.append("camera        {}...: each match's camera_aim is simulated from its clean ball by our camera's "
+                     "follower fit (camera.py, P09)".format(result["camera"]["sha256"][:12]))
     for stem, report, seconds in reports:
         pooled, interval = report["pooled"], report["t_interval"]["spell_f1_mean"]
         rate, labels = report["possessions_per_graded_minute"], report["labels"]

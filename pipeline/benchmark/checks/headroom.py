@@ -33,8 +33,8 @@ from pipeline import evidence as evidence_stage
 from pipeline.benchmark import headroom, truth
 from pipeline.benchmark import inputs as match_inputs
 from pipeline.benchmark import run as benchmark_run
-from pipeline.benchmark.checks.common import (loading, random_match, read, synthetic_calibration, synthetic_matches,
-                                              yardstick_path)
+from pipeline.benchmark.checks.common import (loading, random_match, read, synthetic_calibration,
+                                              synthetic_camera_fit, synthetic_matches, yardstick_path)
 from pipeline.config import Component, load_config
 from pipeline.contracts import A, D, H, X, RunContext, check_evidence
 from pipeline.selftest import expect_error, quiet, write_text
@@ -154,6 +154,7 @@ def on_gaps(path, root, **keywords):
     keywords.setdefault("seeds", 1)
     keywords.setdefault("matches", synthetic_matches())
     keywords.setdefault("calibration", synthetic_calibration())
+    keywords.setdefault("camera_fit", synthetic_camera_fit())
     keywords.setdefault("data_dir", root)
     keywords.setdefault("log", quiet)
     return headroom.run_headroom(path, **keywords)
@@ -611,7 +612,7 @@ def test_headroom_writes_the_variants_reports_only_when_asked_and_never_the_refe
         suffix = ".m-RND001-RND002.s1.json"          # the synthetic matches are not the seven: the runner's own rule
         runner = benchmark_run.evaluate_configs(
             [yardstick_path(50), path], profile="gaps", seeds=1, matches=synthetic_matches(),
-            calibration=synthetic_calibration(), data_dir=root, log=quiet)
+            calibration=synthetic_calibration(), camera_fit=synthetic_camera_fit(), data_dir=root, log=quiet)
         benchmark_run.write_reports(runner)
         reference = os.path.join(folder, "hmm_free" + suffix)
         reference_bytes = read(reference, "rb")

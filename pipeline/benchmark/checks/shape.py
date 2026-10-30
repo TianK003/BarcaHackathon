@@ -47,8 +47,8 @@ from pipeline.benchmark import conventions, sources, train_dead_ball, truth
 from pipeline.benchmark import train_shape as trainer
 from pipeline.benchmark.calibration import digest as calibration_digest
 from pipeline.benchmark.checks.common import (A, H, NotRun, leaks, loading, random_match, strict_json,
-                                              synthetic_calibration, synthetic_matches, tracked_match,
-                                              tracking_calibration)
+                                              synthetic_calibration, synthetic_camera_fit, synthetic_matches,
+                                              tracked_match, tracking_calibration)
 from pipeline.benchmark.run import BenchmarkError
 from pipeline.contracts import RunContext
 from pipeline.evidence import controlled_touch, shape_features, shape_possession, trees
@@ -106,7 +106,7 @@ def planted_match(match_id, seed):
     sign of `n_diff` (the team that is there has the ball): antisymmetric, so that a model can learn it from the rows
     and their mirrors. The `gaps` profile leaves the players as they are, so every seed of it has these features."""
     base = random_match(match_id, seed=seed, rows=PLANTED_ROWS, gap=25)
-    inputs = trainer.served_inputs(base, "gaps", 0, synthetic_calibration(), None)
+    inputs = trainer.served_inputs(base, "gaps", 0, synthetic_calibration(), None, camera_fit=synthetic_camera_fit())
     X = shape_features.features(inputs)[1]
     gap, n_diff = X[:, COLUMN["adv_gap"]], X[:, COLUMN["n_diff"]]
     with np.errstate(invalid="ignore"):
@@ -124,14 +124,15 @@ def planted():
     """(matches, artifact): three planted matches, and the artifact trained on them with the `gaps` profile."""
     matches = {match_id: planted_match(match_id, seed) for seed, match_id in enumerate(FOLD_IDS)}
     artifact = trainer.train("gaps", PLANTED_SEEDS, PLANTED_STRIDE, matches=matches,
-                             calibration=synthetic_calibration())
+                             calibration=synthetic_calibration(), camera_fit=synthetic_camera_fit())
     return matches, artifact
 
 
 @functools.lru_cache(maxsize=1)
 def planted_report():
     matches, artifact = planted()
-    return trainer.report(artifact, "gaps", PLANTED_SEEDS, matches=matches, calibration=synthetic_calibration())
+    return trainer.report(artifact, "gaps", PLANTED_SEEDS, matches=matches, calibration=synthetic_calibration(),
+                          camera_fit=synthetic_camera_fit())
 
 
 def small_artifact():
@@ -255,10 +256,12 @@ def test_shape_trainer_folds_exclude_the_held_out_match():
     real = trainer.fit
     trainer.fit = recording_fit(calls)
     try:
-        artifact = trainer.train("gaps", 2, 7, matches=matches, calibration=synthetic_calibration())
+        artifact = trainer.train("gaps", 2, 7, matches=matches, calibration=synthetic_calibration(),
+                                 camera_fit=synthetic_camera_fit())
     finally:
         trainer.fit = real
-    data = trainer.gather("gaps", 2, 7, matches=matches, calibration=synthetic_calibration()).data
+    data = trainer.gather("gaps", 2, 7, matches=matches, calibration=synthetic_calibration(),
+                          camera_fit=synthetic_camera_fit()).data
     assert sorted(data) == list(FOLD_IDS)
     assert sorted(artifact["folds"]) == list(FOLD_IDS) and artifact["full"]["rows"] == sum(
         len(y) for _, y in data.values())
@@ -299,13 +302,13 @@ def test_shape_trainer_never_passes_truth():
         real_fit = trainer.fit
         trainer.fit = recording_fit([])
         try:
-            trainer.train(profile, 1, 9, calibration=calibration, matches=matches)
+            trainer.train(profile, 1, 9, calibration=calibration, matches=matches, camera_fit=synthetic_camera_fit())
         finally:
             trainer.fit = real_fit
             shape_features.features = real
         assert seen, "the trainer never asked for features"
         assert all(found == [[] for _ in matches] for found in seen), (profile, seen)
-        inputs = trainer.served_inputs(match, profile, 0, calibration, None)
+        inputs = trainer.served_inputs(match, profile, 0, calibration, None, camera_fit=synthetic_camera_fit())
         assert all(leaks(inputs, other) == [] for other in matches.values())
 
 
@@ -318,7 +321,8 @@ def test_shape_trainer_needs_two_matches_and_a_known_profile():
                  "clean", "calibration")
     expect_error(ValueError, lambda: trainer.train("gaps", 1, 5, matches={"RND001": random_match("RND001"),
                                                                            "RND009": random_match("RND001")},
-                                                   calibration=calibration), "RND009", "RND001")
+                                                   calibration=calibration, camera_fit=synthetic_camera_fit()),
+                 "RND009", "RND001")
     for bad in (0, True, 1.5):
         expect_error(ValueError, lambda: trainer.train("clean", bad, 5, matches=three_matches()), "train_shape",
                      "seeds")
@@ -333,7 +337,8 @@ def test_shape_provenance_holds_versions_and_hashes_and_no_commit():
     try:
         clean = trainer.train("clean", 1, 11, matches=three_matches())
         calibration = synthetic_calibration()
-        gapped = trainer.train("gaps", 1, 11, matches=three_matches(), calibration=calibration)
+        gapped = trainer.train("gaps", 1, 11, matches=three_matches(), calibration=calibration,
+                               camera_fit=synthetic_camera_fit())
     finally:
         trainer.fit = real
     provenance = clean["provenance"]
@@ -390,14 +395,15 @@ def test_shape_artifact_round_trip():
         assert loaded == artifact
         shape_possession.load(path)                                                      # and again, from its memo
         data_by_match = trainer.gather("gaps", PLANTED_SEEDS, PLANTED_STRIDE, matches=matches,
-                                       calibration=calibration).data
+                                       calibration=calibration, camera_fit=synthetic_camera_fit()).data
         for held_out in FOLD_IDS:
             others = [name for name in FOLD_IDS if name != held_out]
             Xa, ya = trainer.augment(np.concatenate([data_by_match[name][0] for name in others]),
                                      np.concatenate([data_by_match[name][1] for name in others]))
             estimator = trainer.hgb_estimator(Xa, ya)
             assert artifact["folds"][held_out] == {**trainer.export_hgb(estimator), "prior_home": 0.5}, held_out
-            inputs = trainer.served_inputs(matches[held_out], "gaps", 0, calibration, None)
+            inputs = trainer.served_inputs(matches[held_out], "gaps", 0, calibration, None,
+                                           camera_fit=synthetic_camera_fit())
             assert inputs.game == held_out
             home = shape_possession.compute(RunContext(inputs=inputs, seed=0), model=path, scope="all").home
             X = shape_features.features(inputs)[1]
@@ -412,7 +418,8 @@ def test_shape_artifact_round_trip():
             assert worst <= 1e-12, worst
 
     # retraining gives identical bytes
-    again = trainer.train("gaps", PLANTED_SEEDS, PLANTED_STRIDE, matches=matches, calibration=calibration)
+    again = trainer.train("gaps", PLANTED_SEEDS, PLANTED_STRIDE, matches=matches, calibration=calibration,
+                          camera_fit=synthetic_camera_fit())
     assert trainer.dumps(again) == trainer.dumps(artifact), "retraining wrote different bytes"
     problems, notes = trainer.compare(artifact, again)
     assert problems == [] and notes == []
@@ -567,7 +574,8 @@ def test_shape_report_holds_the_held_out_numbers():
             sums = {"alive": [0, 0.0, 0], "missing": [0, 0.0, 0]}
             silent = touched = agreed = 0
             for seed in range(PLANTED_SEEDS):
-                inputs = trainer.served_inputs(match, "gaps", seed, calibration, None)
+                inputs = trainer.served_inputs(match, "gaps", seed, calibration, None,
+                                               camera_fit=synthetic_camera_fit())
                 home = shape_possession.compute(RunContext(inputs=inputs, seed=0), model=path, scope="all").home
                 present = inputs.atd.ball_present
                 for frame in range(len(codes)):

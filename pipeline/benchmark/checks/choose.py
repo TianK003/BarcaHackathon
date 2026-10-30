@@ -14,7 +14,8 @@ import tempfile
 
 from pipeline.benchmark import choose, score
 from pipeline.benchmark import run as benchmark_run
-from pipeline.benchmark.checks.common import synthetic_calibration, synthetic_matches, yardstick_path
+from pipeline.benchmark.checks.common import (synthetic_calibration, synthetic_camera_fit, synthetic_matches,
+                                              yardstick_path)
 from pipeline.selftest import expect_error, quiet
 
 # Params
@@ -25,7 +26,8 @@ SEEDS = 2
 def written(root, paths, seeds=SEEDS):
     """evaluate_truths on the gaps profile, both truths, with the reports written under `root`; the results."""
     results = benchmark_run.evaluate_truths(paths, profile="gaps", matches=synthetic_matches(), seeds=seeds,
-                                            calibration=synthetic_calibration(), data_dir=root, log=quiet)
+                                            calibration=synthetic_calibration(), camera_fit=synthetic_camera_fit(),
+                                            data_dir=root, log=quiet)
     for result in results.values():
         benchmark_run.write_reports(result, data_dir=root)
     return results

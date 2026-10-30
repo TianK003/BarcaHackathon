@@ -624,11 +624,12 @@ def interval_text(low, high, public_row, minimum=MIN_SHOWN):
 
 # -- the DFL matches --------------------------------------------------------------------------------------------------
 
-def _plan(profile, seeds, truth, match_ids, matches, calibration, data_dir):
-    """(ids, seed list, calibration) for a run over the benchmark matches, or the runner's BenchmarkError.
+def _plan(profile, seeds, truth, match_ids, matches, calibration, data_dir, camera_fit=None):
+    """(ids, seed list, calibration, camera fit) for a run over the benchmark matches, or the runner's BenchmarkError.
 
-    Everything is checked before a match is loaded: the profile, the number of seeds, the truth and the match ids. The
-    calibration is read (calibration_module.load) only for a profile that degrades, and only if none was given.
+    Everything is checked before a match is loaded: the profile, the number of seeds, the truth, the match ids and the
+    camera fit. The calibration is read (calibration_module.load) and the camera fit too (run.camera_fit_for) only for a
+    profile that degrades, and only if none was given.
     """
     run._check_profile(profile)
     seeds = run.DEFAULT_SEEDS if seeds is None else seeds
@@ -636,10 +637,12 @@ def _plan(profile, seeds, truth, match_ids, matches, calibration, data_dir):
         raise run.BenchmarkError("seeds must be a whole number of at least 1, got {!r}".format(seeds))
     if truth not in TRUTHS:
         raise run.BenchmarkError("truth {!r} is not one of: {}".format(truth, ", ".join(TRUTHS)))
+    run.check_camera_fit(profile, camera_fit)
     ids = run.resolve_match_ids(match_ids, matches)
     if profile != run.CLEAN and calibration is None:
         calibration = calibration_module.load(data_dir=data_dir)
-    return ids, ([0] if profile == run.CLEAN else list(range(seeds))), calibration
+    camera_fit = run.camera_fit_for(profile, camera_fit, data_dir)
+    return ids, ([0] if profile == run.CLEAN else list(range(seeds))), calibration, camera_fit
 
 
 def _truth_of(match, truth):
@@ -651,7 +654,7 @@ def _truth_of(match, truth):
 
 
 def measure(*, profile=DEFAULT_PROFILE, seeds=None, truth="raw", match_ids=None, matches=None, calibration=None,
-            data_dir=None, log=print):
+            data_dir=None, log=print, camera_fit=None):
     """The lag tables of the benchmark matches under `profile`, `seeds` and `truth`, pooled and per match.
 
     Each match is loaded (dfl.load_match, or taken from `matches`, {id: DflMatch}), its truth read beside the inputs
@@ -661,7 +664,8 @@ def measure(*, profile=DEFAULT_PROFILE, seeds=None, truth="raw", match_ids=None,
     table and `per_match` {id: table}, each pooled over seeds. The runner's BenchmarkError for a profile, seeds,
     truth or match it refuses, before a match is loaded.
     """
-    ids, seed_list, calibration = _plan(profile, seeds, truth, match_ids, matches, calibration, data_dir)
+    ids, seed_list, calibration, camera_fit = _plan(profile, seeds, truth, match_ids, matches, calibration, data_dir,
+                                                    camera_fit)
 
     per_match, rates = {}, []
     for match_id in ids:
@@ -671,7 +675,7 @@ def measure(*, profile=DEFAULT_PROFILE, seeds=None, truth="raw", match_ids=None,
         changes = transitions_of(codes, blocks)
         tables = []
         for seed in seed_list:
-            inputs = train_dead_ball.served_inputs(match, profile, seed, calibration, data_dir)
+            inputs = train_dead_ball.served_inputs(match, profile, seed, calibration, data_dir, camera_fit=camera_fit)
             tables.append(lags(changes, events(inputs), blocks, match.fps))
             del inputs
         per_match[match_id] = pool(tables)
@@ -948,7 +952,7 @@ def latency_public(config, gt_path, data_dir, tol=TOL, log=print):
 
 
 def measure_latency(config, *, profile=DEFAULT_PROFILE, seeds=None, truth="raw", match_ids=None, matches=None,
-                    calibration=None, tol=TOL, data_dir=None, log=print):
+                    calibration=None, tol=TOL, data_dir=None, log=print, camera_fit=None):
     """The pipeline's latency on the benchmark matches, pooled over matches and seeds, and per match.
 
     Each match is loaded (dfl.load_match, or taken from `matches`, {id: DflMatch}), its truth read beside the inputs
@@ -961,7 +965,8 @@ def measure_latency(config, *, profile=DEFAULT_PROFILE, seeds=None, truth="raw",
     """
     run.check_scope(config)
     tol = _whole(tol, "tol", 0)
-    ids, seed_list, calibration = _plan(profile, seeds, truth, match_ids, matches, calibration, data_dir)
+    ids, seed_list, calibration, camera_fit = _plan(profile, seeds, truth, match_ids, matches, calibration, data_dir,
+                                                    camera_fit)
     per_match, rates = {}, []
     for match_id in ids:
         match = matches[match_id] if matches is not None else dfl.load_match(match_id, data_dir=data_dir)
@@ -969,7 +974,7 @@ def measure_latency(config, *, profile=DEFAULT_PROFILE, seeds=None, truth="raw",
         codes, blocks = _truth_of(match, truth)
         tables = []
         for seed in seed_list:
-            inputs = train_dead_ball.served_inputs(match, profile, seed, calibration, data_dir)
+            inputs = train_dead_ball.served_inputs(match, profile, seed, calibration, data_dir, camera_fit=camera_fit)
             tables.append(latency_cells(codes, run._codes(config, inputs), blocks, tol))
             del inputs
         per_match[match_id] = pool(tables)

@@ -558,6 +558,21 @@ def context_calibration(**more):
     return dataclasses.replace(tracking_calibration(), hazard_go=True, **made_up_hazard(**more))
 
 
+# -- a camera fit without our data -------------------------------------------------------------------------------------
+
+def synthetic_camera_fit(**more):
+    """A hand-made CameraFit (pipeline/benchmark/camera.py): what every non-clean run is served its simulated aim from.
+
+    The runner and the trainers load our camera's fit (camera.load_fit) for a degraded profile unless they are given
+    one, and that reads BAR-ATH's homography: a synthetic check gives this one instead. A follower 5 frames behind the
+    ball, smoothed with tau 3, at a + b x = 4 + 0.9 x, AR(1) noise of phi 0.8 and sigma 1.5 m, clipped to [10, 90]
+    metres; `more` replaces any of them. Its numbers mean nothing about any camera."""
+    from pipeline.benchmark import camera
+    fields = dict(lag=5, tau=3.0, a=4.0, b=0.9, phi=0.8, sigma=1.5, lo=10.0, hi=90.0, stats={"made_up": True})
+    fields.update(more)
+    return camera.CameraFit(**fields)
+
+
 # -- what the tracking profile's checks share with the cap's ----------------------------------------------------------
 
 def without_new_parts(calibration, **more):
