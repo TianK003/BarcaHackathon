@@ -391,6 +391,44 @@ def test_inputs_homography_repr_shows_no_array():
     assert "0.271" not in shown and "1.414" not in shown and "True" not in shown, shown
 
 
+def test_camera_aim_from_a_known_homography():
+    """The pitch point under the image centre: a hand-built H (a scale and an offset, plus a perspective row) puts the
+    centre pixel at a known normalised point, and aim_x returns its x in metres. NaN where the row is not valid."""
+    from pipeline.inputs import camera
+    scale = np.array([[2000.0, 0.0, 100.0], [0.0, 1000.0, 50.0], [0.0, 0.0, 1.0]])
+    shifted = scale.copy()
+    shifted[0, 2] = -400.0                                    # centre pixel at u = (960 + 400) / 2000 = 0.68
+    # A projective row: pixel = (H0 p) / (H2 p); with H2 = (0, 0, 2) every pixel is halved, so the same u needs 2x.
+    projective = 2.0 * scale
+    projective[2, 2] = 2.0
+    matrices = np.stack([scale, shifted, projective, np.full((3, 3), np.nan)])
+    valid = np.array([True, True, True, False])
+    aim = camera.aim_x(matrices, valid, 105.0)
+    assert aim.shape == (4,) and aim.dtype == np.float64, (aim.shape, aim.dtype)
+    expected = np.array([(960.0 - 100.0) / 2000.0, (960.0 + 400.0) / 2000.0, (960.0 - 100.0) / 2000.0]) * 105.0
+    assert np.allclose(aim[:3], expected, atol=1e-9), aim[:3]
+    assert np.isnan(aim[3]), "an invalid row has no aim"
+    # An invalid row is NaN even where its matrix could be solved, and a singular one does not raise.
+    assert np.isnan(camera.aim_x(scale[None], np.array([False]), 105.0)).all()
+    singular = np.zeros((1, 3, 3))
+    assert np.isnan(camera.aim_x(singular, np.array([True]), 105.0)).all(), "a singular matrix has no aim"
+    assert camera.CENTRE == (960.0, 540.0), camera.CENTRE
+
+
+def test_inputs_camera_aim_is_read_only_and_uses_the_pitch_length():
+    """Inputs.camera_aim is aim_x of the homography with the pitch's length, served read-only."""
+    from pipeline.inputs import Homography, Inputs, camera
+    matrices = np.tile(np.array([[2000.0, 0.0, 100.0], [0.0, 1000.0, 50.0], [0.0, 0.0, 1.0]]), (3, 1, 1))
+    inputs = Inputs.__new__(Inputs)
+    inputs.pitch = (105.3, 68.0)
+    inputs.__dict__["homography"] = Homography(matrices=matrices, error=np.zeros(3), valid=np.array([True, True, False]))
+    aim = inputs.camera_aim
+    assert not aim.flags.writeable, "camera_aim must be read-only"
+    assert np.allclose(aim[:2], 0.43 * 105.3) and np.isnan(aim[2]), aim
+    assert inputs.camera_aim is aim, "a cached property"
+    assert camera.aim_x.__module__ == "pipeline.inputs.camera"
+
+
 def test_cache_rebuilt_when_arrays_missing():
     with tempfile.TemporaryDirectory() as root:
         make_synthetic_bundle(root)
