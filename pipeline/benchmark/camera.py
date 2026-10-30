@@ -65,8 +65,8 @@ never fails the command, since tracking places its gaps blind to the play (T38) 
 through them. Only `--profile tracking` decides the exit code: under any other (context, a sensitivity profile, R005)
 the four gates are printed as information and the command exits 0. `dead` comes from main.toml with its match-only
 sources dropped (run.drop_match_only), on both sides, so that one decoder serves BAR-ATH and DFL; the names dropped
-are printed and kept in the report. A statistic that cannot be measured on either side fails its gate (nothing says it passed). The report
-goes to <data dir>/runs/camera/gates_<profile>.json: aggregates only.
+are printed and kept in the report. A statistic that cannot be measured on either side fails its gate (nothing says
+it passed). The report goes to <data dir>/runs/camera/gates_<profile>.json: aggregates only.
 
 The digest. digest(fit) is what a report (and so choose.py's SAME) names the camera by: the sha256 of the eight
 constants the simulator uses (lag, tau, a, b, phi, sigma, lo, hi), and nothing of `stats`, so that a change to what
@@ -628,21 +628,21 @@ GATES = (
 WARNS = (("speed_ratio_gap_visible", "speed_ratio_gap_visible", "rel", 0.25),)    # information: never a failure
 NO_CAMERA_PROFILES = ("clean",)        # clean's ball is DFL's own, with no gap: there is nothing to hold against ours
 DEFAULT_PROFILE = "tracking"
-DECISIVE_PROFILES = ("tracking",)      # only this profile's gates set the exit code; the others print them as information
+DECISIVE_PROFILES = ("tracking",)      # only this profile's gates set the exit code; the others are information
 DEFAULT_SEEDS = 3
 CONFIG = "pipeline/configs/main.toml"  # whose decoded D is the state of play on both sides
 REPORT_FOLDER = ("runs", "camera")     # <data dir>/runs/camera/gates_<profile>.json
 
 
 def compare(ours, simulated, decisive=True):
-    """{"gates", "warns", "passed"}: the declared tolerances applied to two measure() dicts, ours and simulated.
+    """{"gates", "warns", "decisive", "passed"}: the declared tolerances applied to two measure() dicts.
 
     Each entry is {name, ours, simulated, delta, tolerance, kind, status}; delta is simulated - ours ("abs") or
     simulated / ours - 1 ("rel"), rounded to DECIMALS so that a value exactly on a tolerance passes whatever the
     floating point says. A gate's status is "pass" or "FAIL" (FAIL as well when either side is None, or ours is 0
     under "rel": nothing was shown to hold); a WARN's is "ok", "WARN" or "n/a" (not measurable), and never fails.
-    `passed` is whether no gate failed. `decisive` (default True) says whether the gates decide: the result holds it, and
-    a caller that exits on `passed` exits only when it is True (the sensitivity profiles print the same figures).
+    `passed` is whether no gate failed. `decisive` (default True) says whether the gates decide: the result holds it,
+    and a caller that exits on `passed` exits only when it is True (the sensitivity profiles print the same figures).
     """
     def entry(spec, outside, inside):
         name, stat, kind, tolerance = spec
@@ -727,9 +727,10 @@ def report(profile=DEFAULT_PROFILE, seeds=DEFAULT_SEEDS, match_ids=None, matches
 
     `ours` is BAR-ATH's measure() dict, or None to measure it (Inputs(data_dir), the config's decoded D); `matches` is
     {id: DflMatch} to use instead of loading, `calibration` and `camera_fit` stand in for the cached ones. Returns
-    {"profile", "seeds", "matches", "config", "camera" (digest and the fit's constants), "ours", "simulated", "gates",
-    "warns", "passed"}. run.BenchmarkError for a profile that has no camera to compare (clean) or is not one, and for
-    seeds below 1.
+    {"profile", "seeds", "matches", "config", "dropped_match_only" (the match-only sources removed from the config, as
+    names), "camera" (digest and the fit's constants), "ours", "simulated", "gates", "warns", "decisive" (whether
+    `profile` is in DECISIVE_PROFILES: only then does a failed gate fail the command) and "passed"}.
+    run.BenchmarkError for a profile that has no camera to compare (clean) or is not one, and for seeds below 1.
     """
     from pipeline.benchmark import run
     from pipeline.config import load_config

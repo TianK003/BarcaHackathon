@@ -33,7 +33,7 @@ from xml.sax.saxutils import quoteattr
 import numpy as np
 
 import possession_metrics as pm
-from pipeline.benchmark import degrade, dfl, hazard, truth
+from pipeline.benchmark import degrade, dfl, hazard, headroom, truth
 from pipeline.selftest import make_synthetic_bundle, synthetic_inputs, write_text
 
 # Params
@@ -871,3 +871,35 @@ def real_match(match_id):
     match = dfl.load_match(match_id)
     LOAD_SECONDS[match_id] = time.perf_counter() - started
     return match
+
+
+# -- a match-only source, for the checks of drop_match_only ----------------------------------------------------------
+
+@contextlib.contextmanager
+def match_only_source(needs_homography=False):
+    """A temporary evidence kind, "probe_match_only", whose module says MATCH_ONLY = True; the registry as it was after.
+
+    It has no opinion anywhere, or, with `needs_homography`, asks for the video's homography (which a benchmark match
+    does not have) and raises AssetUnavailable, as the Smart Tagging would.
+    """
+    from pipeline import evidence as evidence_stage
+    from pipeline.contracts import Evidence, no_opinion
+
+    def compute(run):
+        if needs_homography:
+            run.inputs.homography
+        return Evidence(alive=no_opinion(run.inputs.n_frames), home=no_opinion(run.inputs.n_frames))
+
+    module = types.ModuleType("pipeline.evidence._probe_match_only")
+    module.MATCH_ONLY = True
+    compute.__module__ = module.__name__
+    sys.modules[module.__name__] = module
+    try:
+        with headroom.registered(evidence_stage.REGISTRY, probe_match_only=compute):
+            yield
+    finally:
+        del sys.modules[module.__name__]
+
+
+PROBE_CONFIG = ('scope = "halves"\n\n[[evidence]]\nkind = "nearest_player"\n\n[[evidence]]\n'
+                'kind = "probe_match_only"\nname = "{name}"\n\n[decoder]\nkind = "majority_vote"\nhalf_width = 2\n')

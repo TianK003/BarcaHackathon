@@ -35,7 +35,6 @@ import os
 import subprocess
 import sys
 import tempfile
-import types
 import zlib
 
 import numpy as np
@@ -43,8 +42,9 @@ import numpy as np
 from pipeline.benchmark import camera, degrade, headroom, score, train_dead_ball, truth
 from pipeline.benchmark import inputs as match_inputs
 from pipeline.benchmark import run as benchmark_run
-from pipeline.benchmark.checks.common import (leaks, random_match, synthetic_calibration, synthetic_camera_fit,
-                                              synthetic_matches, tracking_calibration, yardstick_path)
+from pipeline.benchmark.checks.common import (PROBE_CONFIG, context_calibration, leaks, match_only_source, random_match,
+                                              synthetic_calibration, synthetic_camera_fit, synthetic_matches,
+                                              tracking_calibration, yardstick_path)
 from pipeline.config import load_config
 from pipeline.inputs import Homography
 from pipeline.selftest import expect_error, make_synthetic_bundle, quiet, synthetic_inputs, write_text
@@ -684,44 +684,19 @@ def test_camera_gates_report_end_to_end_on_synthetic_matches():
 
 
 def test_camera_gates_run_by_path_is_the_package_module():
-    """`python pipeline/benchmark/camera.py` runs pipeline.benchmark.camera's own main, so the CameraFit the runner hands
-    to simulated_aim is the class it tests for (run as __main__, the file would define a second one, and the isinstance
-    refused the fit after BAR-ATH had loaded). Run in a subprocess, by path, from another folder."""
+    """`python pipeline/benchmark/camera.py` runs pipeline.benchmark.camera's own main, so the CameraFit the runner
+    hands to simulated_aim is the class it tests for (run as __main__, the file would define a second one, and the
+    isinstance refused the fit after BAR-ATH had loaded). Run in a subprocess, by path, from another folder."""
     path = os.path.join(REPOSITORY, "pipeline", "benchmark", "camera.py")
     with tempfile.TemporaryDirectory() as elsewhere:
-        done = subprocess.run([sys.executable, "-I", path, "where"], cwd=elsewhere, capture_output=True, text=True,
-                              timeout=120)
+        # -E -s: no PYTHON* variables, no user site; sys.path[0] is still the script's folder, as in a real run by path.
+        done = subprocess.run([sys.executable, "-E", "-s", path, "where"], cwd=elsewhere, capture_output=True,
+                              text=True, timeout=120)
         assert done.returncode == 0, done.stderr
         assert done.stdout.strip() == "pipeline.benchmark.camera", done.stdout
-        helped = subprocess.run([sys.executable, "-I", path, "gates", "--help"], cwd=elsewhere, capture_output=True,
-                                text=True, timeout=120)
+        helped = subprocess.run([sys.executable, "-E", "-s", path, "gates", "--help"], cwd=elsewhere,
+                                capture_output=True, text=True, timeout=120)
         assert helped.returncode == 0 and "--profile" in helped.stdout, helped.stderr
-
-
-PROBE_CONFIG = ('scope = "halves"\n\n[[evidence]]\nkind = "nearest_player"\n\n[[evidence]]\n'
-                'kind = "probe_match_only"\nname = "{name}"\n\n[decoder]\nkind = "majority_vote"\nhalf_width = 2\n')
-
-
-@contextlib.contextmanager
-def match_only_source():
-    """A temporary evidence kind, "probe_match_only", that declares MATCH_ONLY and asks for the video's homography
-    (which a benchmark match does not have), as the Smart Tagging and the whistle would; the registry as it was after."""
-    from pipeline import evidence as evidence_stage
-    from pipeline.contracts import Evidence, no_opinion
-
-    def compute(run):
-        run.inputs.homography
-        return Evidence(alive=no_opinion(run.inputs.n_frames), home=no_opinion(run.inputs.n_frames))
-
-    module = types.ModuleType("pipeline.evidence._probe_match_only_camera")
-    module.MATCH_ONLY = True
-    compute.__module__ = module.__name__
-    sys.modules[module.__name__] = module
-    try:
-        with headroom.registered(evidence_stage.REGISTRY, probe_match_only=compute):
-            yield
-    finally:
-        del sys.modules[module.__name__]
 
 
 def test_camera_gates_decode_without_match_only_sources_on_both_sides():
@@ -731,7 +706,7 @@ def test_camera_gates_decode_without_match_only_sources_on_both_sides():
     matches, cal, fit = synthetic_matches(), tracking_calibration(), synthetic_camera_fit()
     ours = {"peak_lag": 5, "peak_corr": 0.9, "median_err": 2.0, "speed_ratio_dead_alive": 1.0,
             "speed_ratio_gap_visible": 1.0}
-    with tempfile.TemporaryDirectory() as root, match_only_source():
+    with tempfile.TemporaryDirectory() as root, match_only_source(needs_homography=True):
         config = write_text(root, "probe.toml", PROBE_CONFIG.format(name="whistle_probe"))
         lines = []
         result = camera.report("tracking", seeds=1, matches=matches, calibration=cal, camera_fit=fit,
@@ -751,6 +726,13 @@ def test_camera_gates_only_tracking_decides_the_exit_code():
             "speed_ratio_gap_visible": 1.0}
     failing = dict(ours, peak_lag=80)
     assert camera.DECISIVE_PROFILES == ("tracking",)
+    # report() itself sets the flag from the profile (a real, unstubbed run on the synthetic matches).
+    matches, config = synthetic_matches(), yardstick_path(50)
+    for profile, calibration, decisive in (("tracking", tracking_calibration(), True),
+                                           ("context", context_calibration(), False)):
+        made = camera.report(profile, seeds=1, matches=matches, calibration=calibration,
+                             camera_fit=synthetic_camera_fit(), config_path=config, ours=ours, log=quiet)
+        assert made["decisive"] is decisive, (profile, made["decisive"])
     assert camera.compare(ours, failing)["decisive"] is True
     assert camera.compare(ours, failing, decisive=False)["decisive"] is False
     for profile, exit_code in (("tracking", 1), ("context", 0)):
