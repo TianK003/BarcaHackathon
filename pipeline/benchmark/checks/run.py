@@ -25,6 +25,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import types
 import weakref
 
 import numpy as np
@@ -42,7 +43,7 @@ from pipeline.selftest import P06_TRIAL_CONFIG, expect_error, quiet, write_text
 
 # Params
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-REPORT_KEYS = {"calibration", "config", "environment", "git", "halves", "labels", "matches", "per_match", "pooled",
+REPORT_KEYS = {"calibration", "config", "dropped_match_only", "environment", "git", "halves", "labels", "matches", "per_match", "pooled",
                "possessions_per_graded_minute", "profile", "seeds", "t_interval", "truth", "versus"}
 HALF_KEYS = {"match_id", "half", "seed", "n_gt", "n_pred", "tp", "confusion"}
 ROUNDING = 1e-9                         # reports round their floats to 9 decimals
@@ -536,6 +537,88 @@ def test_runner_names_unavailable_source():
     # The pipeline's own message, through the inputs, is the one that is quoted.
     expect_error(match_inputs.AssetUnavailable, lambda: match_inputs.MatchInputs(
         matches["RND001"], match_inputs.clean_atd(matches["RND001"])).homography, "homography", "P01")
+
+
+@contextlib.contextmanager
+def match_only_source(needs_homography=False):
+    """A temporary evidence kind, "probe_match_only", whose module says MATCH_ONLY = True; the registry as it was after.
+
+    It has no opinion anywhere, or, with `needs_homography`, asks for the video's homography (which a benchmark match
+    does not have) and raises AssetUnavailable, as the Smart Tagging and the whistle would.
+    """
+    from pipeline import evidence as evidence_stage
+    from pipeline.contracts import Evidence, no_opinion
+
+    def compute(run):
+        if needs_homography:
+            run.inputs.homography
+        return Evidence(alive=no_opinion(run.inputs.n_frames), home=no_opinion(run.inputs.n_frames))
+
+    module = types.ModuleType("pipeline.evidence._probe_match_only")
+    module.MATCH_ONLY = True
+    compute.__module__ = module.__name__
+    sys.modules[module.__name__] = module
+    try:
+        with registered(evidence_stage.REGISTRY, probe_match_only=compute):
+            yield
+    finally:
+        del sys.modules[module.__name__]
+
+
+PROBE_CONFIG = ('scope = "halves"\n\n[[evidence]]\nkind = "nearest_player"\n\n[[evidence]]\n'
+                'kind = "probe_match_only"\nname = "{name}"\n\n[decoder]\nkind = "majority_vote"\nhalf_width = 2\n')
+
+
+def test_drop_match_only_removes_exactly_the_flagged_sources():
+    """drop_match_only keeps the sources that are not match-only, in order, names the others, and keeps text and path.
+
+    The config's text is what its report quotes and what its latency file hashes, so it must stay the file as written;
+    only the evidence that runs changes. A config with no flagged source is returned as it was.
+    """
+    with match_only_source(), tempfile.TemporaryDirectory() as root:
+        config = load_config(write_text(root, "with_probe.toml", PROBE_CONFIG.format(name="tags")))
+        kept, dropped = benchmark_run.drop_match_only(config)
+        assert [component.name for component in kept.evidence] == ["nearest_player"], kept.evidence
+        assert dropped == ("tags",), dropped
+        assert kept.text == config.text and kept.path == config.path and kept.stem == config.stem
+        assert kept.decoder == config.decoder and kept.refine == config.refine and kept.seed == config.seed
+        assert [component.name for component in config.evidence] == ["nearest_player", "tags"], "config is frozen"
+        plain = load_config(yardstick_path(50))
+        again, nothing = benchmark_run.drop_match_only(plain)
+        assert nothing == () and again.evidence == plain.evidence and again == plain, "nothing flagged, nothing changed"
+
+
+def test_runner_without_the_flag_names_it():
+    """A match-only source that a benchmark match cannot serve stops the run, and the message names the flag."""
+    with match_only_source(needs_homography=True), tempfile.TemporaryDirectory() as root:
+        path = write_text(root, "uses_tags.toml", PROBE_CONFIG.format(name="tags"))
+        message = expect_error(benchmark_run.BenchmarkError, lambda: evaluate_clean(
+            [yardstick_path(50), path], matches=synthetic_matches(), data_dir=root, log=quiet),
+            "uses_tags", "tags", "--drop-match-only", "listed in the report")
+        assert "nearest_player" not in message, message
+
+
+def test_runner_with_the_flag_records_the_dropped():
+    """With drop_match_only=True the same config runs, its report names the dropped source, and the others' say [].
+
+    The dropped config decodes as the config without the source would, so its numbers equal those of that config
+    written out plainly; the report still quotes the config as written, with the source in it, so that nobody reads
+    the numbers as the full config's. The printed block says what was dropped.
+    """
+    with match_only_source(needs_homography=True), tempfile.TemporaryDirectory() as root:
+        path = write_text(root, "uses_tags.toml", PROBE_CONFIG.format(name="tags"))
+        plain = write_text(root, "without_tags.toml", PROBE_CONFIG.replace(
+            '[[evidence]]\nkind = "probe_match_only"\nname = "{name}"\n\n', "").format(name="x"))
+        lines = []
+        result = evaluate_clean([yardstick_path(50), path, plain], matches=synthetic_matches(), data_dir=root,
+                                drop_match_only=True, log=lines.append)
+        reports = {entry["stem"]: entry["report"] for entry in result["configs"]}
+        assert reports["uses_tags"]["dropped_match_only"] == ["tags"], reports["uses_tags"]["dropped_match_only"]
+        assert reports["nearest_w50"]["dropped_match_only"] == [] and reports["without_tags"]["dropped_match_only"] == []
+        assert "probe_match_only" in reports["uses_tags"]["config"]["text"], "the report quotes the file as written"
+        assert reports["uses_tags"]["pooled"] == reports["without_tags"]["pooled"], "same evidence, same numbers"
+        printed = "\n".join(lines)
+        assert "dropped" in printed and "tags" in printed and "match-only" in printed, printed
 
 
 def test_runner_a_subset_never_replaces_a_full_report():

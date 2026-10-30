@@ -1377,6 +1377,10 @@ def build_parser():
             source.add_argument("--seeds", type=int, default=DEFAULT_SEEDS,
                                 help="degradation seeds per match (default {})".format(DEFAULT_SEEDS))
             source.add_argument("--matches", nargs="+", metavar="ID", help="the matches to run (default: all 7)")
+            source.add_argument("--drop-match-only", action="store_true",
+                                help="drop the evidence sources that need an asset a benchmark match does not have "
+                                     "(MATCH_ONLY) before measuring; the latency file then belongs to the config "
+                                     "without them")
     shift = commands.add_parser(
         "shift", help="P02's declared shift rule (g, read from the public window, is retired and shown for reference "
                       "only): the table, shift_<config>.json and the out-of-fold CSV",
@@ -1421,6 +1425,9 @@ def main(argv=None):
             if args.source == "public":
                 latency_public(config, args.gt or default_gt(), data_dir)
             else:
+                if args.drop_match_only:
+                    config, dropped = run.drop_match_only(config)
+                    print("dropped   match-only sources: {}".format(", ".join(dropped) or "none"))
                 result = measure_latency(config, profile=args.profile, seeds=args.seeds, truth=args.truth,
                                          match_ids=args.matches, data_dir=args.data_dir)
                 path = latency_path(data_dir, config.stem, "dfl", args.profile, args.truth, args.matches, args.seeds)

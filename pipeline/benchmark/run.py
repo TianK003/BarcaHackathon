@@ -101,6 +101,7 @@ if __name__ == "__main__":
 import numpy as np  # noqa: E402
 
 import games  # noqa: E402
+from pipeline import evidence as evidence_stage  # noqa: E402
 from pipeline import run as pipeline_run  # noqa: E402  (importing pipeline also puts evaluation/ on sys.path)
 from pipeline.benchmark import calibration as calibration_module  # noqa: E402
 from pipeline.benchmark import degrade, dfl, score, sources  # noqa: E402
@@ -130,6 +131,9 @@ METRICS = (("spell_f1_mean", "spellF1"), ("macro_f1", "macroF1"))   # what a com
 # printout and the report of a run on it say so (R005: context fails two of its gates).
 SENSITIVITY_ONLY = {"context": "fails two of its gates (R005), the near-line share badly and the missing share "
                                "narrowly: a sensitivity check, not the yardstick"}
+# What _unavailable adds when the source that asked for the missing asset is one that declares MATCH_ONLY.
+DROP_HINT = (" Run with --drop-match-only to benchmark the config without its match-only sources (they are "
+             "listed in the report).")
 # Where a degraded profile's tracking comes from in our Calibration, as the printout names it beside the digest.
 PROVENANCE = {
     "gaps": "the ball's gaps are our match's, transplanted (calibration.py)",
@@ -197,7 +201,7 @@ def _check_profile(profile):
 # -- every config on every match --------------------------------------------------------------------------------------
 
 def evaluate_configs(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_ids=None, matches=None,
-                     calibration=None, truth="raw", data_dir=None, log=print):
+                     calibration=None, truth="raw", data_dir=None, log=print, drop_match_only=False):
     """Run each config on each match and score it; the result holds a JSON-ready report per config.
 
     `config_paths` are TOML files for pipeline.config.load_config; the first is the reference of the comparisons.
@@ -210,7 +214,10 @@ def evaluate_configs(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_id
     checks pass synthetic ones). `calibration` is the Calibration of BAR-ATH that a degraded profile takes its gaps
     from; none given, calibration.load(data_dir) reads it from its cache or measures it, before the first match; the
     clean profile degrades nothing and refuses one, so that a report cannot suggest that it was used. `truth` is "raw"
-    or "coarse" (truth.coarse_codes). `log` receives each progress line and then the printed table.
+    or "coarse" (truth.coarse_codes). `log` receives each progress line and then the printed table. `drop_match_only`
+    (default False) removes, from every config, the evidence sources that declare MATCH_ONLY (evidence.match_only: they
+    need an asset a benchmark match does not have), runs what is left, and records the removed names in each report's
+    "dropped_match_only" and in the printed block; see drop_match_only().
 
     Everything that can be refused is, before the first match is loaded: no config, one that does not load (ConfigError,
     from the pipeline's own loader), one with scope = "file", one whose name has a dot, two with the same name, an
@@ -228,11 +235,12 @@ def evaluate_configs(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_id
     if truth not in TRUTHS:
         raise BenchmarkError("truth {!r} is not one of: {}".format(truth, ", ".join(TRUTHS)))
     return evaluate_truths(config_paths, profile=profile, seeds=seeds, match_ids=match_ids, matches=matches,
-                           calibration=calibration, truth_names=(truth,), data_dir=data_dir, log=log)[truth]
+                           calibration=calibration, truth_names=(truth,), data_dir=data_dir, log=log,
+                           drop_match_only=drop_match_only)[truth]
 
 
 def evaluate_truths(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_ids=None, matches=None,
-                    calibration=None, truth_names=TRUTHS, data_dir=None, log=print):
+                    calibration=None, truth_names=TRUTHS, data_dir=None, log=print, drop_match_only=False):
     """{truth: result}: evaluate_configs under each of `truth_names`, every config decoded once per match and seed.
 
     Each config's codes on a match and seed are scored against each truth in turn, so a result is exactly what
@@ -245,7 +253,7 @@ def evaluate_truths(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_ids
     truth_names = tuple(truth_names) if isinstance(truth_names, (list, tuple)) else (truth_names,)
     if not truth_names or any(name not in TRUTHS for name in truth_names) or len(set(truth_names)) < len(truth_names):
         raise BenchmarkError("truths {!r}: name one or more of {}, each once".format(truth_names, ", ".join(TRUTHS)))
-    configs = _load_configs(config_paths)
+    configs, dropped = _load_configs(config_paths, drop_match_only)
     _check_profile(profile)
     asked_for_seeds = seeds is not None
     seeds = DEFAULT_SEEDS if seeds is None else seeds
@@ -314,7 +322,7 @@ def evaluate_truths(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_ids
     for name in truth_names:
         truth_info = {"name": name, "min_s": truths.COARSE_MIN_S if name == "coarse" else None}
         results[name] = _result(configs, scores[name], seconds, records, seed_list, profile_info, truth_info, git,
-                                environment, calibration_info, data_dir_used)
+                                environment, calibration_info, data_dir_used, dropped)
     for name in truth_names:
         for line in render(results[name]):
             log(line)
@@ -322,14 +330,14 @@ def evaluate_truths(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_ids
 
 
 def _result(configs, scores, seconds, records, seed_list, profile_info, truth_info, git, environment,
-            calibration_info, data_dir_used):
+            calibration_info, data_dir_used, dropped):
     """One truth's result, as evaluate_configs returns it: a report per config, each against the first."""
     reference = configs[0]
     entries = []
     for config in configs:
         versus = None if config is reference else _versus(reference, config, scores)
         report = _report(config, scores[config.stem], records, seed_list, profile_info, truth_info, git, environment,
-                         versus, calibration_info)
+                         versus, calibration_info, dropped[config.stem])
         entries.append({"stem": config.stem, "report": report, "scores": scores[config.stem],
                         "seconds": seconds[config.stem]})
     return {"profile": profile_info, "seeds": seed_list, "truth": truth_info, "matches": records, "git": git,
@@ -339,13 +347,34 @@ def _result(configs, scores, seconds, records, seed_list, profile_info, truth_in
                                     for config in configs})}
 
 
-def _load_configs(config_paths):
-    """[Config] for the paths, in order: loaded by the pipeline's own loader, each decoded per half, names unique."""
+def drop_match_only(config):
+    """(config without its match-only evidence, the names of what was removed, in config order).
+
+    A source declares MATCH_ONLY in its own module (evidence.match_only) when it needs an asset that only our match
+    has, the Smart Tagging or the whistle: a DFL match has neither, so a config that uses one cannot be benchmarked as
+    it is, and the runner says so instead of scoring zeros. This is the explicit way round it: the same config
+    without those sources, never silently. `text` and `path` are kept as written, so a report quotes the file that was
+    given (and a latency file hashes it); only the evidence that runs changes, and the names removed go in the report,
+    so that nobody reads its numbers as the full config's. A config with nothing flagged is returned as it was.
+    """
+    flagged = [component for component in config.evidence if evidence_stage.match_only(component.kind)]
+    if not flagged:
+        return config, ()
+    kept = tuple(component for component in config.evidence if component not in flagged)
+    return dataclasses.replace(config, evidence=kept), tuple(component.name for component in flagged)
+
+
+def _load_configs(config_paths, drop_match_only_sources=False):
+    """([Config], {stem: names dropped}): loaded by the pipeline's own loader, each decoded per half, names unique.
+
+    With `drop_match_only_sources` each config is passed through drop_match_only; the dict is then the names removed
+    from each, () for a config that lost none and for every config when the flag is off.
+    """
     config_paths = list(config_paths)
     if not config_paths:
         raise BenchmarkError("no config given; name at least one CONFIG.toml, and put the one to beat first (the "
                              "others are compared with it)")
-    configs, paths = [], {}
+    configs, paths, dropped = [], {}, {}
     for path in config_paths:
         config = load_config(path)
         check_scope(config)
@@ -362,8 +391,12 @@ def _load_configs(config_paths):
             raise BenchmarkError("{} and {} have the same name, {}, so they would write the same report; rename one"
                                  .format(shown(where), shown(config.path), config.stem))
         paths[config.stem] = config.path
+        if drop_match_only_sources:
+            config, dropped[config.stem] = drop_match_only(config)
+        else:
+            dropped[config.stem] = ()
         configs.append(config)
-    return configs
+    return configs, dropped
 
 
 def resolve_match_ids(match_ids, matches):
@@ -398,9 +431,12 @@ def _unavailable(config, inputs, error):
         try:
             pipeline_run.compute_evidence(dataclasses.replace(config, evidence=(component,)), run_context)
         except match_inputs.AssetUnavailable as own:
+            # The hint only for a source that declares MATCH_ONLY: with the flag on it would already be gone, and
+            # for any other source the flag would not help.
+            hint = DROP_HINT if evidence_stage.match_only(component.kind) else ""
             return ("{}: the evidence source {!r} (kind {!r}) asked for an asset that a benchmark match does not have, "
-                    "so this config cannot be benchmarked as it is. {}".format(config.stem, component.name,
-                                                                                component.kind, own))
+                    "so this config cannot be benchmarked as it is. {}{}".format(config.stem, component.name,
+                                                                                  component.kind, own, hint))
     refiners = "".join(", refiner {!r}".format(component.kind) for component in config.refine)
     return ("{}: no evidence source asked for it on its own, so it was the decoder {!r}{} that asked for an asset a "
             "benchmark match does not have. {}".format(config.stem, config.decoder.kind, refiners, error))
@@ -426,7 +462,8 @@ def rank_agreement(pooled_spell_f1):
             "discordant": agreement["discordant"], "tied": agreement["tied"], "pairs": agreement["pairs"]}
 
 
-def _report(config, halves, records, seed_list, profile, truth, git, environment, versus, calibration):
+def _report(config, halves, records, seed_list, profile, truth, git, environment, versus, calibration,
+            dropped=()):
     """The JSON-ready report of one config over all its HalfScores: counts, scores, intervals, and nothing timed."""
     per = score.per_match(halves)
     confusion = np.sum([np.array(half.confusion, dtype=np.int64) for half in halves], axis=0)
@@ -439,6 +476,7 @@ def _report(config, halves, records, seed_list, profile, truth, git, environment
         intervals[metric] = {"n": len(per), "level": LEVEL, "mean": mean, "low": low, "high": high}
     report = {
         "config": {"path": shown(config.path), "text": config.text.replace("\r\n", "\n")},
+        "dropped_match_only": list(dropped),    # what --drop-match-only removed; [] if nothing, or the flag is off
         "profile": profile,
         "seeds": list(seed_list),
         "matches": records,
@@ -623,7 +661,11 @@ def render(result):
         pooled, interval = report["pooled"], report["t_interval"]["spell_f1_mean"]
         rate, labels = report["possessions_per_graded_minute"], report["labels"]
         lines += ["",
-                  "config    {}".format(stem),
+                  "config    {}".format(stem)]
+        if report["dropped_match_only"]:
+            lines.append("          dropped         match-only sources: {} (--drop-match-only; the numbers below are "
+                         "those of the config without them)".format(", ".join(report["dropped_match_only"])))
+        lines += [
                   "          pooled          spellF1 {}   macroF1 {}   alive/dead F1 {}".format(
                       _number(pooled["spell_f1_mean"]), _number(pooled["macro_f1"]), _number(pooled["alive_dead_f1"])),
                   "          per match       spellF1 mean {}   {}".format(
@@ -741,11 +783,15 @@ def main(argv=None):
                              "both from one decode (the reports and tables of the two runs)")
     parser.add_argument("--data-dir", help="the data bundle (default: data/, or $MTAH_DATA_DIR)")
     parser.add_argument("--no-write", action="store_true", help="print only; write no report")
+    parser.add_argument("--drop-match-only", action="store_true",
+                        help="drop the evidence sources that need an asset a benchmark match does not have "
+                             "(MATCH_ONLY), and record them in the report")
     args = parser.parse_args(argv)
 
     try:
         results = evaluate_truths(args.configs, profile=args.profile, seeds=args.seeds, match_ids=args.matches,
-                                  truth_names=TRUTHS if args.truth == BOTH else (args.truth,), data_dir=args.data_dir)
+                                  truth_names=TRUTHS if args.truth == BOTH else (args.truth,), data_dir=args.data_dir,
+                                  drop_match_only=args.drop_match_only)
         paths = [] if args.no_write else [path for result in results.values() for path in write_reports(result)]
     except (ConfigError, BenchmarkError, OSError) as error:
         # The expected failures get a sentence: a config to fix, a profile or match that does not exist, a source that

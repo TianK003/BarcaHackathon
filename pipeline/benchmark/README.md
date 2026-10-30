@@ -100,6 +100,7 @@ not touch `dfl.py`, so the caches are not rebuilt.
 | `--truth raw\|coarse\|both` | the truth to score against (below). Default `raw`. `both` decodes each config once and scores the codes against each truth (`evaluate_truths`): the two reports and tables are exactly those of a raw and a coarse run (`test_runner_scores_both_truths_from_one_decode`), in about half the time, because the decoder and not the scoring is what a config's time goes on (R013). |
 | `--data-dir D` | the data bundle (default `data/`, or `$MTAH_DATA_DIR`). |
 | `--no-write` | print only. |
+| `--drop-match-only` | drop, from every config, the evidence sources that declare `MATCH_ONLY` (below). |
 
 A run takes about 10 s on the clean profile with the caches warm (one cached load per match, a second or so per config);
 the gaps profile runs each config once for each of its seeds. Everything that can be refused is refused before the first
@@ -108,6 +109,13 @@ match is loaded, with a sentence that names what to change: no config, a config 
 dot, two configs with the same name, an unknown profile, truth or match, a calibration that is not one.
 A source that needs something a benchmark match does not have (the video's homography, the Smart Tagging) stops the run
 with its config, its name and kind and the asset named; it is never scored as zeros.
+A source that needs an asset only our match has (the Smart Tagging, the whistle) declares `MATCH_ONLY = True` in its own
+module (`evidence.match_only(kind)` reads it), and its error then ends with a hint to run with `--drop-match-only`. That
+flag runs each config without such sources (`run.drop_match_only`), never silently: the printed block names what was
+dropped, and every report carries `dropped_match_only` (a list of source names, `[]` when nothing was dropped; a report
+from before the flag has no such key, and `choose.py` never reads it). The report still quotes the config as written,
+so its numbers are those of the config without those sources and say so only through that field. `conventions.py
+latency CONFIG dfl` takes the same flag.
 
 ### The yardsticks
 
