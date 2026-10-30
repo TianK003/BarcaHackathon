@@ -87,8 +87,8 @@ Two properties are worth knowing because the regression depends on them:
 4. Make the arrays read-only, add a row to the tables above, and log any measurement in
    [docs/results.md](../../docs/results.md).
 
-Proposals that will add assets here: P10 (audio track, `round(t * 25)`, no offset — A04), P14 (detected ball),
-P15 (broadcast alignment). Decoding video must be frame-exact ([T23](../../docs/traps.md)).
+Proposals that will add assets here: P14 (detected ball), P15 (broadcast alignment). P10's audio track was added and
+removed again (dropped, R018, R018b; recoverable from `a08e381`). Decoding video must be frame-exact ([T23](../../docs/traps.md)).
 
 ## Traps this stage absorbs
 

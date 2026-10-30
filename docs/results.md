@@ -38,6 +38,8 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R015b | 2026-10-29 | the `offpitch` v2 rule (the ball hidden while it is more than m past a line and moving, found again at rest), swept once on the benchmark's label-free fidelity statistics before anything was built | — | — | — | — | v2 cannot reach our share past a line at any margin (0.258 to 0.262 against 0.0407); P18 dropped, offpitch code removed (7b555eb) |
 | R016 | 2026-10-30 | `free_x` (P12) on `main.toml`: `X` inside `H` and `A` runs where the decoded label's posterior is below a threshold, over 0.25, 0.35, 0.45, 0.55, 4 configs | — | — | — | — | bar not met; free_x dropped |
 | R017 | 2026-10-30 | Smart Tagging's votes (P08) against our own pseudo-labels on BAR-ATH: team agreement with `controlled_touch` episodes and dead agreement with `dead_ball_model`, the two parts' bars, and two strengths (`frame` 0.2, `tag` 1.0) for Tian's pick | 0.6986 | 0.4000 | — | — (DFL has no tags; `main.toml --drop-match-only` reproduces R013's 0.5430 raw, 0.5593 coarse) | team votes adopted per frame (0.761); dead votes dropped (0.409) |
+| R018 | 2026-10-30 | the referee's whistle (P10): a hand-built 2 to 4 kHz band-pass detector on the tactical audio, its feasibility gate and its bar against `main.toml`'s own decoded stoppages | — | — | — | — | dropped (R018, R018b: gate failed, ratio 1.52 / 1.51) |
+| R018b | 2026-10-30 | the whistle (P10), the one retry R018 allowed: the tonal threshold set to the match's own 98th percentile of tonal_db, the same gate and bar | — | — | — | — | dropped, code removed (fc9dbed): gate failed, ratio 1.51 (55 detections) |
 
 ### The four yardsticks on every profile, in one table
 
@@ -6283,6 +6285,134 @@ Adoption checks (commit 56916f2, 2026-10-30):
   halves (413 in all, against R013's 192 and 218), the same sha256 on two runs.
 - The public window, a correctness check seen after the pick (T01): macroF1 0.6986, spellF1 0.4000 (R013: 0.7152,
   0.4649); it chose nothing.
+
+### R018 — The referee's whistle: a hand-built band-pass detector, its feasibility gate and its bar (2026-10-30, Tian)
+
+Proposal: P10 · Commit: part 1 (this declaration, the detector `pipeline/evidence/whistle.py` and the statistics
+`pipeline/benchmark/whistle_stats.py`) is committed before any run of the detector on the match; the runs are in part 2.
+
+**Part 1, declared before any run** (2026-10-30). Nothing below was chosen from a score, from a stoppage or from the
+audio of this entry; the audio has not been decoded when this is written.
+
+**Belief.** A referee's whistle is a sustained tone at 2 to 4 kHz, well above most crowd noise. Play is dead in the moment
+after a whistle: either it has just been stopped, or it is about to be restarted by a kick that takes at least half a
+second to follow the whistle. So detected whistles should sit near a stoppage far more often than random times do.
+**Falsified if** the detections are near a decoded stoppage no more often than the same detections shifted in time (for
+example crowd whistling).
+
+**The detector** (`whistle.detect`, constants in its `# Params`, argued in its docstring). Features per video frame
+(`pipeline/inputs/audio.py`, rounded to 0.01 dB): `tonal_db` and `band_db`. A frame is tonal when `tonal_db >= 15.0` and
+`band_db >= 3.0`; a whistle is a run of at least 5 graded frames (0.2 s); w is the run's first frame; no run crosses a
+block's edge. The source's dead window after a whistle is 12 frames (0.5 s), declared here and used in part 2's source. No
+constant is changed after a run, except by the retry below.
+
+**The pseudo-labels.** `main.toml`'s own decoded `D` on BAR-ATH, as `main.toml` stands at this declaration: sha256
+`ad8d8b6c2f25a1d0713eb3c8e3bbf7f14eb5928d9fa6bf12ee5b455c106284bd` (`sha256sum pipeline/configs/main.toml`; the command
+prints it, and a different hash at the run means the run does not apply this declaration). P05 sees a foul only when the
+players slow down, about a second after the whistle, so a detection is **near a stoppage** when a decoded `D` frame lies in
+[w - 25, w + 50] frames (-1 s to +2 s) inside w's graded block. It is never measured on the exact frames after the whistle,
+which would count the most useful whistles (the ones P05 is late for) against it. No ground truth, no event data, no hand
+label: the only reference is our own decoder.
+
+**The control.** The same detections shifted circularly inside their own half by 5, 10 ... 60 s (12 offsets); the control's
+share is the mean over the offsets.
+
+**The feasibility gate** (`whistle_stats.py feasibility`). Proceed to the source only if all three hold:
+1. detections per half are between 10 and 120;
+2. at least 50% of the detections are near a decoded stoppage;
+3. that share is at least 2 times the control's.
+
+**The bar** for adoption, on the built source (`whistle_stats.py bar`): the share near a decoded stoppage is at least 0.70,
+its lower 90% bound (2,000 bootstrap draws over the detections, `default_rng([18, 0])`) is at least 0.60, and it is at least
+1.5 times the control's.
+
+**The strength in the decoder.** If the bar passes, the source's two strengths (`spread = "frame"` at weight 1.0, and
+`spread = "event"`) are run on BAR-ATH, the aggregates (`label_diff`: the share of labels changed, how many in gaps, `D`
+onsets moved and their median move) go to Tian, and Tian picks before `main.toml` changes. The source's confidence c_whistle
+is the precision measured here (the share near a stoppage), rounded towards 0.5 (`train_dead_ball.towards_half`).
+
+**Label-free checks on BAR-ATH.** As P08's: the audio decode is deterministic across two runs (the same feature-cache
+sha256); the number of detections with a feature within 0.5 dB of its threshold is reported (the ones a different ffmpeg
+build could flip), as an aggregate. Only counts, shares, quartiles, hashes and pass/fail leave the machine; no sample, spectrum
+or per-frame feature is printed or written.
+
+**The retry.** If the gate fails, one retry is allowed with one changed detector (R018b), declared in its own part before it
+runs. If R018b also fails, P10 is dropped and its code removed, as P18 was (R015b). The public window chooses nothing.
+
+**The public window.** It is not used here at all.
+
+| ID | status |
+|---|---|
+| R018 part 1 | declared, run (gate failed) |
+
+**Part 2, the feasibility result** (2026-10-30, `whistle_stats.py feasibility`, aggregates only). The gate **FAILED**.
+- 340 detections, 185 in half 1 and 155 in half 2, where the gate allows 10 to 120 per half (gate 1 fails);
+- share near a decoded stoppage 0.624 against a control of 0.410, ratio 1.52, where the gate needs at least 2 (gate 3 fails;
+  gate 2, at least 50%, passes);
+- 240 of the 340 detections have a feature within 0.5 dB of a threshold;
+- the lag from each detection to the nearest decoded stoppage edge (signed, edge minus whistle) has quartiles -253 / +16 / +193 frames.
+
+The run was at commit `6594b31`. `main.toml` sha256 at the run: raw `ad8d8b6c…`, LF `0970f2de…`, matching the declaration; the
+features' sha256 `a3d80f77…`. Determinism check (`p10_decode_check.log`): the features were decoded twice without the cache, with
+the same sha256, shape (199319, 2) and 0 NaN, and the cache built equal to both decodes. That check ran 22:39 to 22:40, before part
+1 was committed at 22:46; it printed only the shape, the NaN count and a hash, so no value shaped a constant.
+
+Reading: the fixed `TONAL_DB = 15` dB sits inside the crowd noise, so the detector fires on it. The retry R018 part 1 allowed
+is R018b, declared next. Nothing else is read into the failure.
+
+### R018b — The whistle's tonal threshold from the match's own duty cycle (2026-10-30, Tian)
+
+Proposal: P10 · The one retry allowed by R018 part 1.
+
+**Part 1, declared before any run** (2026-10-30), before any code of it is written.
+
+**The single change.** The tonal threshold is no longer a fixed 15 dB. It is the 98th percentile of `tonal_db` over the graded
+frames of the match, computed at run time from the features alone (`np.percentile(features[graded, 0], 98.0)`); no label, no
+stoppage and no score enters it.
+
+**The duty-cycle argument.** A referee whistles roughly 30 to 50 times a half, each for under a second, so at most about 2% of
+graded frames carry a whistle. A threshold that passes 2% of the frames passes about as many frames as whistles can occupy, and
+no more; R018's fixed threshold passed far more and so fired on crowd noise.
+
+**Everything else is unchanged**, by reference to R018 part 1: `BAND_DB` 3.0, `MIN_FRAMES` 5, `WINDOW_FRAMES` 12, the
+pseudo-labels (`main.toml`, sha256 as declared there), the near-a-stoppage window [w - 25, w + 50], the control, the
+feasibility gate (10 to 120 detections per half; at least 50% near a decoded stoppage; at least 2 times the control's share),
+the bar and the strength in the decoder. The comparison is `>=` against the computed threshold, which is rounded as the features
+are (0.01 dB). The public window is not used.
+
+**The gate** is R018 part 1's, unchanged: all three conditions must hold to proceed to the source.
+
+**Reported.** The computed threshold value (dB) is reported as an aggregate, with the number of detections near it (within
+0.5 dB of the tonal threshold or of `BAND_DB`) as in R018.
+
+**If R018b's gate fails, P10 is dropped and its code removed**, as P18 was (R015b). There is no further retry.
+
+**Part 2, the feasibility result** (2026-10-30, `python pipeline/benchmark/whistle_stats.py feasibility` at commit `a08e381`,
+aggregates only). The gate **FAILED**.
+- `main.toml` sha256 raw `ad8d8b6c…`, LF `0970f2de…`, both matching the declaration; the features' sha256 `a3d80f77…`, the same
+  as the earlier decodes;
+- tonal threshold 24.76 dB (the match's 98th percentile);
+- 55 detections, 25 in half 1 and 30 in half 2 (gate 1 passes, 10 to 120 per half);
+- share near a decoded stoppage 0.564 against a control of 0.373, ratio 1.51, where the gate needs at least 2 (gate 3 fails;
+  gate 2, at least 50%, passes);
+- 29 of the 55 detections have a feature within 0.5 dB of a threshold (a rough indicator, not a tested quantity);
+- the lag to the nearest stoppage edge has quartiles -171.5 / +20 / +292.5 frames.
+
+The run was at commit `a08e381`.
+
+Reading: with 340 marginal detections (R018) or 55 stronger ones (R018b; 29 of the 55 are within 0.5 dB of a threshold), detected
+whistles sit near a decoded stoppage about 1.5 times as often as the same detections shifted in time. That is consistent with a
+real but weak signal (no test of "real" was declared), too weak for the declared 2 times, and a stricter threshold does not
+sharpen it.
+
+**Verdict: P10 dropped; code removed in `fc9dbed`, recoverable from `a08e381`.** R018 part 1's rule applies: R018b was the one
+retry. After the removal: `pipeline/selftest.py` 185/185, `pipeline/benchmark/selftest.py` 410 checks, `main.toml` unchanged.
+
+| ID | status |
+|---|---|
+| R018 part 2 | feasibility gate failed (340 detections; 0.624 vs 0.410, ratio 1.52) |
+| R018b part 1 | declared, run |
+| R018b part 2 | feasibility gate failed (55 detections; 0.564 vs 0.373, ratio 1.51); P10 dropped, code removed |
 
 ## Submission log
 
