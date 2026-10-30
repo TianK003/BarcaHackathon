@@ -32,7 +32,7 @@ min_frames = 10
 
 ## What is here now
 
-Two refiners. `shift_edges` ([`shift_edges.py`](shift_edges.py), P02). It moves each kind of edge of a decoded block by
+One refiner, `shift_edges` ([`shift_edges.py`](shift_edges.py), P02). It moves each kind of edge of a decoded block by
 a fixed number of frames, in case our edges turn out to be systematically early or late against the truth, and not by
 the same amount for every kind.
 
@@ -76,27 +76,13 @@ the noise: the entry is there because the rule said so, not because it is shown 
 `labels`, and `boundaries(labels)` lists them as `(positions, types)`. They are public because P02's measuring tool
 moves boundaries by its own offsets with them. A refiner placed after `shift_edges` sees the shifted labels.
 
-`free_x` ([`free_x.py`](free_x.py), P12) writes `X` inside `H` and `A` runs where the decoder's posterior for the decoded
-label is below `threshold`, and never within `margin` frames (default 3, more than `shift_edges`' largest move in
-`main.toml`) of a run's edge, so a stoppage or a hand-over is never abstained across. `spellF1` forward-fills an `X`
-with the run's own label, so it cannot change; only `macroF1` can. It needs the decoder's posterior (`posterior = true`
-in `[decoder]`) and must come before `shift_edges`, which drops it. It ships with no threshold: R016's rule on the
-benchmark picks one, and no config carries `free_x` until it does.
-
-```toml
-[[refine]]
-kind = "free_x"
-threshold = 0.5    # an X where the posterior of the decoded label is below this
-margin = 3         # frames from a run's edge where no X is written
-```
-
 ## Other candidates (P12, then P11)
 
 | refiner | what it does | check it against |
 |---|---|---|
 | drop short blips | remove possession runs shorter than *m* frames, and `D` blips inside a possession | the public GT has real possessions of 0.76 s and 1.32 s — *m* must be validated, not guessed ([T04](../../docs/traps.md)) |
 | explicit `D` at restarts | `D`, never `X`, before kick-offs and once the ball is out — an `X` there is forward-filled into a long fake possession | [T02](../../docs/traps.md); kick-off frames are in `ctx.run.inputs.kickoffs`, but detect the stoppage from data (P05) rather than writing labels from constants |
-| ~~free `X`~~ | written as `free_x` (above), threshold not chosen yet (R016): abstain inside a possession where the decoder is unsure — free on `spellF1`, a small cost on `macroF1` | needs the decoder's `posterior`; never abstain across a hand-over ([EVALUATION.md](../../EVALUATION.md)) |
+| ~~free `X`~~ | measured as `free_x` in R016 and dropped: abstaining inside a possession where the decoder is unsure lowered macroF1 at every threshold (the posterior's least confident frames are still right more than F1/2 of the time), code removed, recoverable from `c909e2f` | [R016](../../docs/results.md) |
 | snap to touches (P11) | move a boundary to the touch or pass event nearest to it | the shortest public possessions tolerate 0.3–1.5 s of *total* boundary error (A01) |
 
 ## Adding a refiner

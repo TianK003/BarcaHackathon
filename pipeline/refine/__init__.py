@@ -9,20 +9,17 @@ the decoder's, so a refiner cannot change the length of a block or invent a labe
     kind = "..."         # key in REGISTRY below
     # every other key is passed as a keyword argument
 
-Two refiners are registered. shift_edges (P02) moves each kind of edge by a fixed number of frames and ships with no
-value of its own (every default is 0, the identity). free_x (P12) writes X inside H and A runs where the decoder's
-posterior for its label is low: spellF1 cannot change, only macroF1, and it needs `posterior = true` and a place before
-shift_edges. The others stay unwritten until something measured asks
+One refiner is registered: shift_edges (P02), which moves each kind of edge by a fixed number of frames and ships
+with no value of its own (every default is 0, the identity). The others stay unwritten until something measured asks
 for them: every rule that belongs here trades one kind of error for another (docs/traps.md T03-T05), and the right
 setting has to come from validation (P01), not from a guess. pipeline/refine/README.md lists the candidates -- P12's
 metric-aware clean-ups and P11's boundary snapping -- and what each must be checked against.
 """
 
-from pipeline.refine import free_x, shift_edges
+from pipeline.refine import shift_edges
 
 # Params
 # kind (as written in a config) -> refine function. One line per refiner.
 REGISTRY = {
-    "free_x": free_x.refine,
     "shift_edges": shift_edges.refine,
 }
