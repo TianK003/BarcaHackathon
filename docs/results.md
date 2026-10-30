@@ -6042,7 +6042,7 @@ No `X` appears in either config (0.00% before and after).
 
 **Verdict.**
 - **Team part:** passes the bar, so the source may enter. The strength is Tian's to pick: `frame` at weight 0.2, `tag` at
-  weight 1.0, or neither. `main.toml` is unchanged until he does, and nothing is chosen from a score.
+  weight 1.0, or neither. `main.toml` is unchanged until Tian does, and nothing is chosen from a score.
 - **Dead part: no R017b.** Only 0.263 of the `SET PIECES` frames are dead, which is consistent with those tags spanning the
   restart and the play after it (a reading, not a measurement); of the two dead codes it is the larger (47,037 frames,
   against 16,503 for `GOALS`) and it drags the share down. A `GOALS`-only retry would add almost
@@ -6064,7 +6064,15 @@ No `X` appears in either config (0.00% before and after).
 
 **Tian's pick (2026-10-30): per frame (`r017_frame`), adopted into `main.toml`**
 
-Adoption checks: pending (controller's runs)
+Adoption checks (commit 56916f2, 2026-10-30):
+
+- `python pipeline/run.py pipeline/configs/main.toml`: valid, 199,319 rows, sha256
+  `7ba575c0982aacb9765b39c406e4ff5c9ddb82ca37cfa2b7f101417431fc3d7c`, 413 possessions in the graded halves.
+- `python evaluation/validate_submission.py evaluation/results/main.csv`: valid.
+- `python pipeline/selftest.py --data`: 193 of 193 passed, including `main.toml` run twice to the same sha256 and the
+  four committed baselines rebuilt byte for byte.
+- `python pipeline/benchmark/run.py pipeline/configs/main.toml --drop-match-only --truth both`: dropped
+  `smart_tagging` (the benchmark has no tags) and reproduced R013's 0.5430 raw and 0.5593 coarse.
 
 ## Submission log
 
@@ -6096,6 +6104,10 @@ frame / hold 0.60 + P05 `dead_ball_model` hgb + P07 `shape_possession` at 0.2, s
 
 R014 and R014b (2026-10-26) left `main.toml` unchanged: neither met its bar, so it still produces sha256
 `0ebdfbeca72ae2d09eb7aaa377037415696a5dacb95e29003741e0f57d5dbc5d` (R013's). It has NOT been uploaded.
+
+`main.toml` was rewritten a fifth time by R017 (2026-10-30): P08 `smart_tagging` (per frame, `r017_frame`) adopted.
+It now produces sha256 `7ba575c0982aacb9765b39c406e4ff5c9ddb82ca37cfa2b7f101417431fc3d7c` (commit 56916f2). It was
+NOT uploaded.
 
 Before each upload:
 1. Regenerate the file from a clean clone, ideally on a second machine, and compare the sha256 ([T21](traps.md)).
