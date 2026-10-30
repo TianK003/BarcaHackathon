@@ -712,7 +712,8 @@ const DATA = {
   today: {
     home: [
       { name: "controlled_touch", channel: "home", params: "1.5 m · 6 m/s · 1 frame · hold 0.60", p: "P04" },
-      { name: "shape_possession", channel: "home", params: "weight 0.2 · every graded frame", p: "P07" }
+      { name: "shape_possession", channel: "home", params: "weight 0.2 · every graded frame", p: "P07" },
+      { name: "smart_tagging", channel: "home", params: "c_team 0.76 · per frame · weight 0.2", p: "P08" }
     ],
     alive: [
       { name: "dead_ball_model", channel: "alive", params: "boosted trees · weight 1.0", p: "P05" }
@@ -722,7 +723,7 @@ const DATA = {
     output: { name: "main.csv", params: "sha256 0ebdfbec…" },
     joinNote: "evidence cut into the two graded halves, each decoded on its own",
     text: [
-      "`main.toml` is P04 + P05 + P07 + P02, as R013 left them. `controlled_touch` (radius 1.5 m, `max_rel_speed` 6 m/s, `min_frames` 1, hold 0.60, confidence 0.93) and `shape_possession` (weight 0.2 on every graded frame, `min_prob` 0.02) give `home`; the gradient-boosted `dead_ball_model` (weight 1.0) gives `alive`.",
+      "`main.toml` is P04 + P05 + P07 + P02, as R013 left them, plus P08's Smart Tagging team votes (R017: `smart_tagging`, c_team 0.76, per frame, weight 0.2, Tian's pick, untested on a benchmark). `controlled_touch` (radius 1.5 m, `max_rel_speed` 6 m/s, `min_frames` 1, hold 0.60, confidence 0.93) and `shape_possession` (weight 0.2 on every graded frame, `min_prob` 0.02) give `home`; the gradient-boosted `dead_ball_model` (weight 1.0) gives `alive`.",
       "The `hmm` decodes each graded half on its own (`switch_team` 4, `switch_dead` 32, `min_possession` 35, `min_dead` 25), and `shift_edges` moves the edges (team +1, into_dead −2, out_of_dead 0 frames). Every constant was chosen on the benchmark by a rule declared before its run, or is a measurement or a fixed rule, and every choice but one had no window-derived value in any candidate. The exception (“After R013”): R009 chose the dead-ball source and its weight with window-derived values present, and R013 declared them out of scope, so they were not re-chosen without them. On our match it predicts `D` on 35.9% of the graded frames and 410 possessions (R013's label-free checks)."
     ]
   },
@@ -759,7 +760,7 @@ const DATA = {
   assets: [
     { name: "tactical ATD", status: "main", note: "used" },
     { name: "homography", status: "off", note: "unused by main.toml" },
-    { name: "Smart Tagging", status: "off", note: "unused (P08)" },
+    { name: "Smart Tagging", status: "main", note: "team votes (P08, R017)" },
     { name: "broadcast", status: "dropped", note: "no mapping" }
   ],
 
@@ -785,9 +786,9 @@ const DATA = {
     {
       id: "evidence", num: "2", name: "evidence", short: "each source gives an opinion on every frame, never a label",
       built: "R001 · 2026-10-22; sources since",
-      summary: "Each source reads the whole match and gives an opinion on every frame; it never decides a label. Deciding (weighing the sources, keeping possessions as intervals, paying for every change) is the decoder's job, so a new source plugs in without touching it and a better decoder improves every source at once. `main.toml` runs three: `controlled_touch` and `shape_possession` for `home`, `dead_ball_model` for `alive`.",
+      summary: "Each source reads the whole match and gives an opinion on every frame; it never decides a label. Deciding (weighing the sources, keeping possessions as intervals, paying for every change) is the decoder's job, so a new source plugs in without touching it and a better decoder improves every source at once. `main.toml` runs four: `controlled_touch`, `shape_possession` and `smart_tagging` for `home`, `dead_ball_model` for `alive`.",
       contract: "**Out:** one `Evidence(alive, home)` per source, float64 per frame in [0, 1], NaN = no opinion. `alive` = P(ball in play); `home` = P(home has it | in play). Read together: P(H) = alive·home, P(A) = alive·(1 − home), P(D) = 1 − alive.",
-      planned: [{ title: "A13 says where", text: "The team side holds the remaining score: a perfect team where the ball is seen is worth +0.194 raw and in the gaps +0.176, a perfect dead ball only +0.029." }, "P19", "P20", "P22", "P11", "P08", "P09", "P13"],
+      planned: [{ title: "A13 says where", text: "The team side holds the remaining score: a perfect team where the ball is seen is worth +0.194 raw and in the gaps +0.176, a perfect dead ball only +0.029." }, "P19", "P20", "P22", "P11", "P09", "P13"],
       traps: ["T12", "T14", "T38", "T39"],
       files: [
         { label: "evidence/README.md", href: "../pipeline/evidence/README.md" },
@@ -992,7 +993,7 @@ const DATA = {
       rule: { label: "rule · fixed constants", cls: "ref", glyph: "▢" }
     },
     map: [
-      { stage: "evidence", title: "2 evidence", text: "Each source gives an opinion on every frame, never a label.", ids: ["controlled_touch", "shape_possession", "dead_ball_model"] },
+      { stage: "evidence", title: "2 evidence", text: "Each source gives an opinion on every frame, never a label.", ids: ["controlled_touch", "shape_possession", "smart_tagging", "dead_ball_model"] },
       { stage: "decode", title: "3 decode", text: "One label a frame, a whole half at a time.", ids: ["hmm"] },
       { stage: "refine", title: "4 refine", text: "Metric-aware clean-ups.", ids: ["shift_edges"] }
     ],
@@ -1139,6 +1140,41 @@ const DATA = {
           { cmd: "python pipeline/benchmark/train_shape.py --verify", note: "retrain on DFL and compare with the committed JSON" },
           { cmd: "python pipeline/benchmark/train_shape.py --report", note: "the held-out scores per match (the chart above)" }
         ]
+      },
+      {
+        id: "smart_tagging", p: "P08", stage: "evidence", channel: "home", kind: "rule",
+        question: "Which team does the organisers' automatic tagging say is in possession, where the ball is missing?",
+        oneLine: "A fixed rule: each automatic phase tag names a team, and its code says whether that team attacks or defends, so the tag is a weak per-frame vote for who has the ball. Nothing is learned.",
+        intuition: [
+          "The Smart Tagging has 638 automatic phase intervals, each naming `Barcelona`, `Atletic Club` or `N/A`. A possession-phase code (`BUILD UP`, `PROGRESSION`, `BALL IN FINAL THIRD` and so on) votes for the tagged team, a defending code (`DEFENDING IN … THIRD`, `DEFENSIVE TRANSITION`) for the other one; `N/A` gives no vote, and so does a frame where the tags disagree.",
+          "Phases are not possessions (T17), so the vote is weak. Its confidence is not tuned: 0.76 is the agreement of the votes with our own controlled-touch pseudo-labels on this match (R017). The dead votes (`SET PIECES`, `GOALS`) agreed with `dead_ball_model` on only 0.409 of their frames and were dropped."
+        ],
+        reads: "The match's Smart Tagging intervals, converted to frames (`round(seconds × 25)`), and nothing of the tracking.",
+        params: "`c_team` 0.76 · `spread` frame · `weight` 0.2",
+        built: [
+          "R017 measured the agreement against the kept `controlled_touch` episodes (0.761, 90% interval 0.723 to 0.795) and the bar passed; the weight and the per-frame spread were Tian's pick of two declared strengths (2026-10-30), untested on any benchmark because DFL has no tags.",
+          "`MATCH_ONLY`: only our match has the tags, so the benchmark runs `main.toml` with `--drop-match-only`."
+        ],
+        decoderTitle: "Where it runs",
+        decoder: "On a frame with a vote, `home` is 0.76 (or 0.24) at weight 0.2: log(0.76 / 0.24) × 0.2 = **0.23 nats** a frame between `H` and `A`. Elsewhere NaN, no opinion.",
+        kpis: [
+          { v: "0.761", l: "team agreement with touch episodes", n: "our own pseudo-labels, not a truth (R017)" },
+          { v: "0.409", l: "dead agreement, bar 0.60", n: "the dead votes were dropped (R017)" },
+          { v: "2.28%", l: "of graded frames changed", n: "against the same config without it (R017)" },
+          { v: "unmeasured", l: "spellF1 effect", n: "there is no benchmark for tags" }
+        ],
+        limits: [
+          "Its weight and spread are a pick, not a measurement, and no score of ours says what it adds or costs.",
+          "Tags mark a window of a few seconds around an event, not the instant, so the vote lags and leads a turnover (T17).",
+          "Only our match has it, so nothing about it is validated on the benchmark."
+        ],
+        files: [
+          { label: "smart_tagging.py", href: "../pipeline/evidence/smart_tagging.py" },
+          { label: "tag_stats.py", href: "../pipeline/benchmark/tag_stats.py" },
+          { label: "r017_frame.toml", href: "../pipeline/configs/r017_frame.toml" },
+          { label: "evidence/README.md", href: "../pipeline/evidence/README.md" }
+        ],
+        run: [{ cmd: "python pipeline/benchmark/tag_stats.py", note: "the agreement of the tags' votes with our own pseudo-labels (R017)" }]
       },
       {
         id: "dead_ball_model", p: "P05", stage: "evidence", channel: "alive", kind: "learned",
@@ -1310,8 +1346,7 @@ const DATA = {
     { id: "P05", anchor: "p05--a-real-dead-ball-detector", title: "Dead-ball detector", attacks: "fact 4", effort: "M", impact: "high: +0.1661 raw at the chosen decoder, on a benchmark that overstates it (R010, T38, T39)", status: "done", note: "done → R009, R010" },
     { id: "P06", anchor: "p06--global-decoding-per-half-hmm--hidden-semi-markov", title: "Global decoder (HMM / semi-Markov) per half", attacks: "fact 5", effort: "M", impact: "high", status: "done", note: "done → R006–R007, A10; decoder re-chosen → R010, R013" },
     { id: "P07", anchor: "p07--possession-without-the-ball-team-shape-and-movement", title: "Possession without the ball: team shape", attacks: "fact 1", effort: "M", impact: "high: +0.0942 raw at the chosen decoder, not a forecast for our match (R011)", status: "done", note: "done → R011; weight re-chosen → R013" },
-    { id: "P08", anchor: "p08--smart-tagging-as-soft-evidence", title: "Smart Tagging as soft evidence", attacks: "facts 1, 4", effort: "S", impact: "medium", status: "idea", stage: "evidence",
-      next: "Turn each of the 638 automatic tags into a per-frame vote fixed beforehand by what its code means (`Barcelona` → H, `Atletic Club` → A, `N/A` → no vote). DFL has no Smart Tagging, so the weight is a declared constant and the window only checks the votes read the right way round." },
+    { id: "P08", anchor: "p08--smart-tagging-as-soft-evidence", title: "Smart Tagging as soft evidence", attacks: "facts 1, 4", effort: "S", impact: "medium", status: "done", note: "done → R017 (team votes adopted per frame, weight 0.2; dead votes measured and dropped)" },
     { id: "P09", anchor: "p09--camera-aim-as-a-coarse-ball-zone-prior", title: "Camera aim as a coarse ball-zone prior", attacks: "fact 1", effort: "S", impact: "low–medium", status: "idea", stage: "evidence",
       next: "The aim follows the ball's along-pitch position (corr 0.84) about 35 frames late, median error 12 m, nothing across the pitch (A03): features for P07 and P06, never for nearest-player logic." },
     { id: "P10", anchor: "p10--referee-whistle-from-the-audio-track", title: "Referee whistle from the audio track", attacks: "fact 4", effort: "S–M", impact: "medium (audio confirmed, A04)", status: "idea", stage: "evidence",
