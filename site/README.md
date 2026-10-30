@@ -9,9 +9,17 @@ each means for us, our stricter team practices kept apart from the rules, a self
 says when it was last checked against the organisers' repo; re-check with
 `git fetch upstream && git log main..upstream/main` and update its DATA when they change a rule.
 
+`progress.html` is the third page: pooled benchmark spellF1 by entry as one chart (adopted entries filled and joined
+by a step line, the running `main.toml`; candidates not adopted hollow), the feature ledger (every measured proposal,
+the drops included), the public window as a correctness check only, and how to add a point. Its DATA holds `points`
+(one per entry that scored `main.toml` on the benchmark), `ledger` (one row per measured proposal, always), `features`
+(final statuses, which the cards count) and `publicWindow`. When a lane finishes, append its entry to `points` (only if
+results.md gives a benchmark score) and to `ledger`, check the numbers against `docs/results.md`, and bump `asOf` and
+`footer`. A dash in the ledger means results.md has no benchmark number; never invent one.
+
 ## Open it
 
-Each page is one self-contained file (inline CSS, JavaScript and SVG) that makes no network requests, so any of these
+Each of the three pages is one self-contained file (inline CSS, JavaScript and SVG) that makes no network requests, so any of these
 work:
 
 - double-click `site/index.html`;

@@ -566,6 +566,7 @@ const DATA = {
     $("#footer").textContent = DATA.footer;
     const jump = $("#jump");
     jump.append(h("a", { class: "home", href: DATA.home.href, text: DATA.home.label }));
+    jump.append(h("a", { href: "progress.html", text: "Progress" }));
     SECTIONS.forEach(([id, label]) => jump.append(h("a", { href: "#" + id, text: label })));
 
     const main = $("#main");

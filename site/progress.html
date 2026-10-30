@@ -1,0 +1,710 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Progress</title>
+<meta name="description" content="The team's progress page: the benchmark spellF1 of main.toml by entry, the feature that moved it, and the ledger of every feature measured, adopted or dropped.">
+<script>
+  // Apply a remembered theme before first paint. Storage can be blocked (file://, private mode), so guard it.
+  try {
+    var t = localStorage.getItem("mtah-theme");
+    if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+  } catch (e) {}
+</script>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f4f4f1;
+  --surface: #ffffff;
+  --surface-2: #f8f8f6;
+  --ink: #0b0b0b;
+  --ink-2: #47463f;
+  --muted: #66655f;
+  --line: #e3e2dc;
+  --line-2: #cfcec6;
+  --axis: #a9a8a0;
+  --grid: #ebeae4;
+  --accent: #1f6fcf;
+  --accent-soft: rgba(42, 120, 214, 0.18);
+  --focus: #1f6fcf;
+  --hover: rgba(11, 11, 11, 0.045);
+  --code-bg: #f0efea;
+  --s1: #2a78d6;
+  --s2: #eb6834;
+  --lab-h: #2a78d6;
+  --lab-a: #c93c3b;
+  --lab-d: #8d8c85;
+  --ok-bg: #e2f3e2; --ok-fg: #0b5a0b;
+  --off-bg: #e9ecf0; --off-fg: #3a4758;
+  --ref-bg: #eeeeea; --ref-fg: #45443f;
+  --bad-bg: #f7e4e2; --bad-fg: #8a2a24;
+  --plan-bg: #fbeed2; --plan-fg: #6e4700;
+  --info-bg: #e2edfb; --info-fg: #17508f;
+  --rule-bg: #ece9fb; --rule-fg: #45389e;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0f0f0e;
+    --surface: #1a1a19;
+    --surface-2: #212120;
+    --ink: #f0efec;
+    --ink-2: #c9c8be;
+    --muted: #a3a29a;
+    --line: #2e2e2b;
+    --line-2: #44443f;
+    --axis: #5d5c56;
+    --grid: #2a2a28;
+    --accent: #5d9fe9;
+    --accent-soft: rgba(57, 135, 229, 0.28);
+    --focus: #7db3ef;
+    --hover: rgba(255, 255, 255, 0.06);
+    --code-bg: #262624;
+    --s1: #3987e5;
+    --s2: #d95926;
+    --lab-h: #3987e5;
+    --lab-a: #d65a59;
+    --lab-d: #6d6c66;
+    --ok-bg: #16301a; --ok-fg: #93dc93;
+    --off-bg: #262b32; --off-fg: #b7c3d4;
+    --ref-bg: #2b2b29; --ref-fg: #c9c8be;
+    --bad-bg: #3b1e1c; --bad-fg: #f1a8a2;
+    --plan-bg: #3a2e12; --plan-fg: #f3c96c;
+    --info-bg: #162a43; --info-fg: #95c1f3;
+    --rule-bg: #2a2548; --rule-fg: #c0b7f6;
+    --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0f0f0e;
+  --surface: #1a1a19;
+  --surface-2: #212120;
+  --ink: #f0efec;
+  --ink-2: #c9c8be;
+  --muted: #a3a29a;
+  --line: #2e2e2b;
+  --line-2: #44443f;
+  --axis: #5d5c56;
+  --grid: #2a2a28;
+  --accent: #5d9fe9;
+  --accent-soft: rgba(57, 135, 229, 0.28);
+  --focus: #7db3ef;
+  --hover: rgba(255, 255, 255, 0.06);
+  --code-bg: #262624;
+  --s1: #3987e5;
+  --s2: #d95926;
+  --lab-h: #3987e5;
+  --lab-a: #d65a59;
+  --lab-d: #6d6c66;
+  --ok-bg: #16301a; --ok-fg: #93dc93;
+  --off-bg: #262b32; --off-fg: #b7c3d4;
+  --ref-bg: #2b2b29; --ref-fg: #c9c8be;
+  --bad-bg: #3b1e1c; --bad-fg: #f1a8a2;
+  --plan-bg: #3a2e12; --plan-fg: #f3c96c;
+  --info-bg: #162a43; --info-fg: #95c1f3;
+  --rule-bg: #2a2548; --rule-fg: #c0b7f6;
+  --shadow: none;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  overflow-x: hidden;
+}
+a { color: var(--accent); text-underline-offset: 2px; }
+a:hover { text-decoration-thickness: 2px; }
+code, pre, kbd {
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 0.86em;
+}
+code { background: var(--code-bg); padding: 1px 4px; border-radius: 4px; overflow-wrap: anywhere; }
+h1, h2, h3, h4 { line-height: 1.25; margin: 0; }
+h2 { font-size: 20px; font-weight: 650; }
+h3 { font-size: 16px; font-weight: 650; }
+h4 { font-size: 13px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+p { margin: 0 0 10px; }
+ul, ol { margin: 0; padding-left: 20px; }
+li { margin: 4px 0; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.wrap { max-width: 1200px; margin: 0 auto; padding: 0 16px; }
+@media (min-width: 720px) { .wrap { padding: 0 24px; } }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.num { font-variant-numeric: tabular-nums; }
+
+
+/* Header: the same look as index.html and rules.html */
+.top { background: var(--surface); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 20; }
+.top-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 12px; }
+.brand h1 { font-size: 17px; font-weight: 700; }
+.brand p { margin: 2px 0 0; font-size: 12.5px; color: var(--muted); }
+.theme-btn {
+  flex: none; border: 1px solid var(--line-2); background: var(--surface-2); border-radius: 999px;
+  padding: 5px 12px; font-size: 13px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center;
+}
+.theme-btn:hover { background: var(--hover); }
+.jump { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; margin-top: 8px; }
+.jump::-webkit-scrollbar { display: none; }
+.jump a {
+  flex: none; padding: 9px 10px 10px; font-size: 14px; font-weight: 600; color: var(--muted); text-decoration: none;
+  border-bottom: 2px solid transparent; white-space: nowrap;
+}
+.jump a:hover { color: var(--ink); border-bottom-color: var(--accent); }
+.jump a.home { color: var(--accent); }
+.jump a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--accent); }
+main { padding: 20px 0 8px; }
+footer { border-top: 1px solid var(--line); margin-top: 24px; padding: 16px 0 28px; font-size: 13px; color: var(--muted); }
+
+.block { margin: 0 0 30px; scroll-margin-top: 110px; }
+.block-head { display: flex; align-items: baseline; justify-content: space-between; gap: 6px 14px; flex-wrap: wrap; margin-bottom: 12px; }
+.block-head p { margin: 0; color: var(--muted); font-size: 13.5px; max-width: 72ch; }
+
+/* Cards, badges */
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; box-shadow: var(--shadow); min-width: 0; }
+.cards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.kpi-label { font-size: 13px; font-weight: 600; color: var(--ink-2); margin-bottom: 6px; }
+.kpi-value { font-size: 34px; font-weight: 650; line-height: 1.1; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.kpi-second { font-size: 15px; font-weight: 600; color: var(--ink-2); margin: 4px 0 0; font-variant-numeric: tabular-nums; }
+.kpi-text { font-size: 13px; color: var(--muted); margin: 8px 0 0; }
+.badge {
+  display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 650; line-height: 1.5;
+  padding: 0 8px; border-radius: 999px; background: var(--b-bg); color: var(--b-fg); vertical-align: middle;
+}
+td .badge { white-space: normal; }
+.ok { --b-bg: var(--ok-bg); --b-fg: var(--ok-fg); }
+.off { --b-bg: var(--off-bg); --b-fg: var(--off-fg); }
+.ref { --b-bg: var(--ref-bg); --b-fg: var(--ref-fg); }
+.bad { --b-bg: var(--bad-bg); --b-fg: var(--bad-fg); }
+.info { --b-bg: var(--info-bg); --b-fg: var(--info-fg); }
+
+/* The chart */
+.controls { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-bottom: 8px; }
+.controls .lbl { font-size: 13px; color: var(--ink-2); font-weight: 600; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.fchip { border: 1px solid var(--line-2); background: var(--surface); border-radius: 999px; padding: 2px 12px; font-size: 13px; cursor: pointer; }
+.fchip[aria-pressed="true"] { background: var(--info-bg); color: var(--info-fg); border-color: transparent; font-weight: 650; }
+.fchip[aria-pressed="false"] { color: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--ink-2); margin: 4px 0 8px; }
+.legend .k { display: inline-flex; align-items: center; gap: 6px; }
+.k-dot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; border: 2px solid var(--ink-2); box-sizing: border-box; }
+.k-dot.filled { background: var(--ink-2); }
+.k-line { width: 20px; height: 0; display: inline-block; border-top: 2px solid var(--ink-2); }
+.k-line.dash { border-top-style: dashed; border-top-width: 1.5px; }
+.k-sw { width: 14px; height: 3px; display: inline-block; border-radius: 2px; }
+.k-sw.s1 { background: var(--s1); }
+.k-sw.s2 { background: var(--s2); }
+.chart { width: 100%; position: relative; }
+.chart svg { display: block; overflow: visible; max-width: 100%; }
+.chart text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+.c-grid { stroke: var(--grid); stroke-width: 1; }
+.c-axis { stroke: var(--axis); stroke-width: 1; }
+.c-tick { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.c-axt { fill: var(--muted); font-size: 11.5px; }
+.c-val { fill: var(--ink-2); font-size: 11px; font-variant-numeric: tabular-nums; }
+.c-ref { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 5 4; fill: none; }
+.c-reflbl { fill: var(--muted); font-size: 11.5px; }
+.c-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.l1 { stroke: var(--s1); }
+.l2 { stroke: var(--s2); }
+.m-fill1 { fill: var(--s1); stroke: var(--surface); stroke-width: 2; }
+.m-fill2 { fill: var(--s2); stroke: var(--surface); stroke-width: 2; }
+.m-hol1 { fill: var(--surface); stroke: var(--s1); stroke-width: 2; }
+.m-hol2 { fill: var(--surface); stroke: var(--s2); stroke-width: 2; }
+.c-wash { fill: transparent; }
+.c-group { cursor: pointer; }
+.c-group:hover .c-wash, .c-group.on .c-wash { fill: var(--hover); }
+.c-group:focus { outline: none; }
+.c-group:focus-visible .c-wash { stroke: var(--focus); stroke-width: 2; }
+.c-group.on .c-xt { fill: var(--ink); font-weight: 700; }
+.c-xt { fill: var(--ink-2); font-size: 11.5px; }
+.c-xd { fill: var(--muted); font-size: 10.5px; }
+.detail { margin-top: 10px; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 8px; padding: 10px 12px; background: var(--surface-2); }
+.detail .d-top { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-bottom: 4px; }
+.detail .d-id { font-weight: 700; }
+.detail .d-what { font-weight: 600; margin: 0 0 6px; }
+.detail .d-nums { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.detail .d-note { margin: 6px 0 0; font-size: 13px; color: var(--ink-2); }
+.cap { font-size: 13px; color: var(--muted); margin: 10px 0 0; max-width: 90ch; }
+details.twin { margin-top: 10px; }
+details.twin summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--ink-2); }
+
+/* Tables */
+.tbl-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+tbody tr:hover td { background: var(--hover); }
+tr.dim td { color: var(--ink-2); }
+@media (max-width: 760px) {
+  table.resp thead { display: none; }
+  table.resp, table.resp tbody, table.resp tr, table.resp td { display: block; width: 100%; }
+  table.resp tr { border-bottom: 1px solid var(--line); padding: 8px 0; }
+  table.resp td { border: 0; padding: 3px 0; display: grid; grid-template-columns: 96px 1fr; gap: 8px; text-align: left; }
+  table.resp td::before { content: attr(data-label); font-size: 11.5px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; padding-top: 2px; }
+  table.resp td.n { text-align: left; white-space: normal; }
+}
+.warn { font-size: 13.5px; background: var(--plan-bg); color: var(--plan-fg); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
+.steps { margin: 0; padding-left: 20px; }
+.steps li { margin: 6px 0; }
+pre { background: var(--code-bg); padding: 10px 12px; border-radius: 8px; overflow-x: auto; margin: 10px 0 0; font-size: 12.5px; }
+@media (forced-colors: active) { .badge, .fchip, .detail { border: 1px solid CanvasText; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="top-row">
+      <div class="brand">
+        <h1 id="site-title"></h1>
+        <p id="site-sub"></p>
+      </div>
+      <button type="button" class="theme-btn" id="theme-btn" aria-label="Switch theme"><span aria-hidden="true" id="theme-icon"></span><span id="theme-text"></span></button>
+    </div>
+    <nav class="jump" id="jump" aria-label="Pages and sections"></nav>
+  </div>
+</header>
+
+<main class="wrap" id="main"></main>
+
+<footer><div class="wrap" id="footer"></div></footer>
+
+<script>
+"use strict";
+
+/* ===========================================================================================================
+   DATA: every fact on this page. Update facts here, never in the markup or the rendering code below.
+   docs/results.md is the source of truth; this page only repeats it. Never paste a data row.
+   Text fields understand a little markdown: `code`, **bold** and [label](relative/link).
+   To add a point: append one object to `points` (a main.toml benchmark score, adopted or not) and one row to
+   `ledger`; update `features` if a proposal's final status changed; bump asOf and footer.
+   =========================================================================================================== */
+const DATA = {
+  title: "Progress",
+  subtitle: "The benchmark spellF1 of main.toml by entry, and the feature that moved it",
+  asOf: "2026-10-31",
+  footer: "As of 2026-10-31. [docs/results.md](../docs/results.md) is the source of truth; this page only repeats it. Benchmark scores rank versions of our pipeline on other matches; they are not our leaderboard score.",
+  links: [
+    { href: "index.html", label: "← Team overview", cls: "home" },
+    { href: "rules.html", label: "Rules" }
+  ],
+  sections: [["headline", "Where we are"], ["chart", "The chart"], ["ledger", "Feature ledger"], ["window", "Public window"], ["add", "Add a point"]],
+
+  /* The benchmark: pooled spellF1 over 7 DFL matches, `tracking` v3, 3 seeds, both truths. */
+  benchmarkNote: "`tracking` v3, 7 DFL matches, 3 seeds, pooled spellF1; raw and coarse truth.",
+
+  /* The yardstick of the first entry (R001, `nearest_w50`): the benchmark's analogue of the floor `baseline_smooth50`
+     (full-match spellF1 0.2433 on our match). */
+  reference: { raw: 0.2018, coarse: 0.1842, label: "`nearest_w50` yardstick", floorNote: "`baseline_smooth50`'s analogue on the benchmark; it scores 0.2433 on the full match." },
+
+  /* One point per entry that scored main.toml, or a candidate against it, on the benchmark. adopted: false = tried, not adopted.
+     dr / dc = Δ spellF1 over the previous adopted point (raw / coarse): the entry's own pooled difference where it states one;
+     R001 has none (the first yardstick); R007's coarse, R010's coarse, R014's and R014b's coarse are the difference of the two scores. */
+  points: [
+    { id: "R001", date: "2026-10-22", raw: 0.2018, coarse: 0.1842, adopted: true, dr: null, dc: null, prop: "P03",
+      what: "Pipeline skeleton: the `nearest_w50` yardstick", note: "The first yardstick. Under the coarse truth the best yardstick is `nearest_w125`, 0.2226." },
+    { id: "R007", date: "2026-10-25", raw: 0.2053, coarse: 0.1967, adopted: false, dr: 0.0035, dc: 0.0125, prop: "P06",
+      what: "P06's hmm with the old sources (8/32/75/1)", note: "Bar not met; not adopted. The hmm alone does not beat the yardsticks by enough." },
+    { id: "R010", date: "2026-10-25", raw: 0.4217, coarse: 0.4556, adopted: true, dr: 0.2199, dc: 0.2714, prop: "P04 + P05 + P06",
+      what: "P04 controlled touches + P05 dead-ball model + the hmm (4/32/25/25)", note: "Bar met under both truths (+0.2199 raw over `nearest_w50`, +0.2330 coarse over `nearest_w125`, 7 wins in 7). The coarse delta here is the difference from R001's coarse score." },
+    { id: "R011", date: "2026-10-25", raw: 0.5159, coarse: 0.5591, adopted: true, dr: 0.0942, dc: 0.1035, prop: "P07",
+      what: "+ P07 shape_possession at weight 0.2", note: "Bar met, 7 wins in 7; the shape model was trained on other teams' matches, so this gain is not a forecast for our match." },
+    { id: "R012", date: "2026-10-25", raw: 0.5164, coarse: 0.5592, adopted: true, dr: 0.0005, dc: 0.0000, prop: "P02",
+      what: "+ P02 shift_edges (+1 / −2 / 0 frames)", note: "Inside noise (p 0.5000, 4 wins in 7); adopted because its declared rule says so, not because it is shown to help." },
+    { id: "R013", date: "2026-10-26", raw: 0.5430, coarse: 0.5593, adopted: true, dr: 0.0267, dc: 0.0001, prop: "P04 + P06 + P07",
+      what: "Touch rule and decoder re-chosen: today's `main.toml`", note: "Radius 1.5 m, 6 m/s, 1 frame, hold 0.60; hmm 4/32/35/25. Raw +0.0267, p 0.0156, 7 wins in 7; coarse flat (T33)." },
+    { id: "R014", date: "2026-10-26", raw: 0.5470, coarse: 0.5564, adopted: false, dr: 0.0040, dc: -0.0029, prop: "P17",
+      what: "P17's restart vote (`r014_t025_b0`)", note: "Bar not met (+0.0040 raw, p 0.0938); coarse is lower." },
+    { id: "R014b", date: "2026-10-26", raw: 0.5433, coarse: 0.5589, adopted: false, dr: 0.0003, dc: -0.0004, prop: "P17",
+      what: "P17's restart states in the decoder (`r014b_s04_b1`)", note: "Bar not met (+0.0003 raw, p 0.8125); P17 dropped." }
+  ],
+  chartCaption: "Pooled spellF1 of `main.toml` on the benchmark at each entry that scored it. Filled points were adopted and are joined by the step line, which is the running `main.toml`; hollow points are candidates that were tried and not adopted. Points are spaced by entry, not by date. Select a point (hover, tab, tap) for its feature and its change over the previous adopted point. R015 to R019 changed no score on the benchmark and are in the ledger. Today's `main.toml` also carries P08 (R017), which no benchmark can score (DFL has no tags); `--drop-match-only` switches it off and reproduces R013's numbers.",
+
+  /* Each proposal's final status: drives the counts on the cards. P12's shift is counted under P02. */
+  features: [
+    { p: "P02", name: "Edge shift", status: "adopted" },
+    { p: "P04", name: "Controlled touches", status: "adopted" },
+    { p: "P05", name: "Dead-ball model", status: "adopted" },
+    { p: "P06", name: "hmm decoder", status: "adopted" },
+    { p: "P07", name: "Shape possession", status: "adopted" },
+    { p: "P08", name: "Smart Tagging team votes", status: "adopted" },
+    { p: "P09", name: "Camera aim", status: "dropped" },
+    { p: "P10", name: "Referee whistle", status: "dropped" },
+    { p: "P12", name: "Free X", status: "dropped" },
+    { p: "P17", name: "Restart team", status: "dropped" },
+    { p: "P18", name: "Offpitch profile", status: "dropped" }
+  ],
+
+  /* Every measured proposal. dr / dc are shown as the entry states them (R008 to R011 are over the yardsticks, not over the
+     previous point); "—" = results.md has no benchmark number for it. status: adopted | dropped | unbenchmarked. */
+  ledger: [
+    { prop: "P06", feature: "hmm decoder, first grids (old sources)", entry: "R006, R007", date: "2026-10-25", dr: "−0.0066 (R006)", dc: "−0.0526 (R006)", status: "dropped",
+      why: "R006's choice scores 0.1952 raw, below `nearest_w50`; R007's best (0.2053 raw, 0.1967 coarse) misses the bar. The hmm is back in R010 on better sources." },
+    { prop: "P04", feature: "Controlled-touch evidence, 24-config grid", entry: "R008", date: "2026-10-25", dr: "+0.0328", dc: "+0.0206", status: "adopted",
+      why: "Clears both halves of P06's bar alone (7 wins in 7, over `nearest_w50` raw and `nearest_w125` coarse); goes into R010." },
+    { prop: "P05", feature: "Dead-ball model (boosted trees)", entry: "R009", date: "2026-10-25", dr: "+0.1486", dc: "+0.1924", status: "adopted",
+      why: "The largest single gain. The benchmark overstates it for our match: DFL tracks the ball out of play, ours loses it near the lines (T38, T39)." },
+    { prop: "P04 + P05 + P06", feature: "Both together with the hmm re-tuned (4/32/25/25)", entry: "R010", date: "2026-10-25", dr: "+0.2199", dc: "+0.2330", status: "adopted",
+      why: "Bar met under both truths; each source is needed. `main.toml` switched." },
+    { prop: "P07", feature: "Shape possession, weight 0.2", entry: "R011", date: "2026-10-25", dr: "+0.0942", dc: "+0.1035", status: "adopted",
+      why: "Possession without the ball; 7 wins in 7, the `context` veto does not fire. Trained on other teams, not a forecast for our match." },
+    { prop: "P02", feature: "Edge shift (+1 / −2 / 0 frames)", entry: "R012", date: "2026-10-25", dr: "+0.0005", dc: "+0.0000", status: "adopted",
+      why: "Inside noise; adopted by the declared rule, which reads the lag the pipeline has on DFL." },
+    { prop: "P04 + P06 + P07", feature: "Touch rule and decoder re-chosen", entry: "R013", date: "2026-10-26", dr: "+0.0267", dc: "+0.0001", status: "adopted",
+      why: "Today's `main.toml`. Raw +0.0267 (7 wins in 7); coarse flat, the truths disagree on possession length (T33)." },
+    { prop: "P17", feature: "Restart-team vote", entry: "R014", date: "2026-10-26", dr: "+0.0040", dc: "−0.0029", status: "dropped",
+      why: "Bar not met (p 0.0938); the coarse truth goes down." },
+    { prop: "P17", feature: "Restart states in the decoder", entry: "R014b", date: "2026-10-26", dr: "+0.0003", dc: "−0.0004", status: "dropped",
+      why: "Bar not met (p 0.8125). P17 dropped." },
+    { prop: "P18", feature: "`offpitch` profile (DFL's ball hidden off the pitch as ours is)", entry: "R015, R015b", date: "2026-10-29", dr: "—", dc: "—", status: "dropped",
+      why: "No delta: it is a profile, not a feature (`main.toml` on it: 0.5509 raw, 0.5296 coarse, against 0.5430 and 0.5593 on `tracking`). v1 fails a gate; v2 cannot reach our share past a line (0.258 to 0.262 against 0.0407); code removed." },
+    { prop: "P12", feature: "`free_x`: abstain where the posterior is low", entry: "R016", date: "2026-10-30", dr: "—", dc: "—", status: "dropped",
+      why: "results.md records no spellF1 for it. Its bar is on macroF1, and every threshold lowered macroF1; spellF1 cannot gain from it." },
+    { prop: "P08", feature: "Smart Tagging team votes, weight 0.2", entry: "R017", date: "2026-10-30", dr: "—", dc: "—", status: "unbenchmarked",
+      why: "Adopted per frame (agreement with our touch-rule pseudo-labels 0.761, bar 0.75); the dead votes (0.409, bar 0.60) dropped. DFL has no tags, so there is no benchmark number; `--drop-match-only` reproduces R013." },
+    { prop: "P10", feature: "Referee's whistle from the audio", entry: "R018, R018b", date: "2026-10-30", dr: "—", dc: "—", status: "dropped",
+      why: "Gate failed twice (whistles near stoppages 1.52 and 1.51 times chance, against a declared 2); code removed. No benchmark number." },
+    { prop: "P09", feature: "Camera aim in the shape model", entry: "R019", date: "2026-10-30", dr: "—", dc: "—", status: "dropped",
+      why: "The simulated camera failed two of four fidelity gates on `tracking` (peak correlation 0.9115 against ours 0.843; dead/alive speed ratio 0.575 against 0.128); no retry, code removed. No benchmark number." }
+  ],
+  statuses: {
+    adopted: { label: "adopted", cls: "ok", glyph: "✓" },
+    dropped: { label: "dropped", cls: "bad", glyph: "✕" },
+    unbenchmarked: { label: "adopted, not benchmarkable", cls: "info", glyph: "◎" }
+  },
+
+  publicWindow: {
+    caption: "A correctness check only. The window holds **17 possessions**; one possession moves spellF1 by about **0.06**; and nothing is ever chosen, tuned or ranked on it ([T01](../docs/traps.md)). It ranks R011 below R010, the reverse of the benchmark. It is never on the chart.",
+    rows: [
+      { id: "R001", what: "Skeleton (`nearest_w50`)", spell: "0.3256", macro: "0.6207", poss: "26" },
+      { id: "R010", what: "P04 + P05 + hmm", spell: "0.4686", macro: "0.6996", poss: "18" },
+      { id: "R011", what: "+ P07 shape", spell: "0.4000", macro: "0.7151", poss: "20" },
+      { id: "R012", what: "+ P02 shift", spell: "0.4000", macro: "0.7159", poss: "20" },
+      { id: "R013", what: "Touch rule and decoder re-chosen", spell: "0.4649", macro: "0.7152", poss: "20" },
+      { id: "R017", what: "+ P08 team votes (seen after Tian's pick)", spell: "0.4000", macro: "0.6986", poss: "—" }
+    ]
+  },
+
+  addPoint: {
+    intro: "Every finished lane appends one entry to this page, after its entry lands in [docs/results.md](../docs/results.md).",
+    steps: [
+      "Append one object to `points` if the entry scored `main.toml` (or a candidate against it) on the benchmark: `id`, `date`, `raw`, `coarse`, `adopted`, `dr` and `dc` (the change over the previous adopted point), `what` and `note`. An entry with no benchmark score gets no point.",
+      "Append one row to `ledger`, always: the proposal, the feature, the entry, the date, the deltas as the entry states them (`—` where results.md has none), the status and one line of why.",
+      "Update `features` when a proposal's final status changed; the cards count from it.",
+      "Add the public-window scores to `publicWindow.rows` only where results.md records them.",
+      "Check every number against results.md, bump `asOf` and `footer`, open the page and watch the console stay empty."
+    ],
+    example: "{ id: \"R0xx\", date: \"2026-11-01\", raw: 0.0000, coarse: 0.0000, adopted: true, dr: 0.0000, dc: 0.0000,\n  prop: \"P0x\", what: \"+ the feature\", note: \"Bar met; p, wins.\" }"
+  }
+};
+
+(function () {
+  const $ = (sel, root) => (root || document).querySelector(sel);
+  const NS = "http://www.w3.org/2000/svg";
+
+  function esc(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+  function safeHref(u) { return !/^[a-z][a-z0-9+.-]*:/i.test(u) && !/^\/\//.test(u); }
+  function md(s) {
+    if (s == null) return "";
+    let out = esc(s);
+    out = out.replace(/`([^`]+)`/g, "<code>$1</code>");
+    out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    out = out.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, t, u) => safeHref(u.replace(/&amp;/g, "&")) ? '<a href="' + u + '">' + t + "</a>" : t);
+    return out;
+  }
+  function h(tag, attrs) {
+    const e = document.createElement(tag);
+    if (attrs) {
+      for (const k of Object.keys(attrs)) {
+        const v = attrs[k];
+        if (v == null || v === false) continue;
+        if (k === "class") e.className = v;
+        else if (k === "html") e.innerHTML = v;
+        else if (k === "text") e.textContent = v;
+        else if (k.slice(0, 2) === "on") e.addEventListener(k.slice(2), v);
+        else e.setAttribute(k, v === true ? "" : v);
+      }
+    }
+    for (let i = 2; i < arguments.length; i++) add(e, arguments[i]);
+    return e;
+  }
+  function add(e, kid) {
+    if (kid == null || kid === false) return;
+    if (Array.isArray(kid)) { kid.forEach(k => add(e, k)); return; }
+    e.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
+  }
+  function s(tag, attrs) {
+    const e = document.createElementNS(NS, tag);
+    if (attrs) for (const k of Object.keys(attrs)) { const v = attrs[k]; if (v != null && v !== false) e.setAttribute(k, v); }
+    for (let i = 2; i < arguments.length; i++) add(e, arguments[i]);
+    return e;
+  }
+  const f4 = v => v.toFixed(4);
+  const signed = (v, d) => (v > 0 ? "+" : v < 0 ? "−" : "±") + Math.abs(v).toFixed(d);
+  function badge(key) { const st = DATA.statuses[key]; return h("span", { class: "badge " + st.cls }, h("span", { "aria-hidden": "true", text: st.glyph }), st.label); }
+
+  /* ---------- Header, footer, theme ---------- */
+  const mq = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+  function effectiveTheme() {
+    const t = document.documentElement.getAttribute("data-theme");
+    if (t === "light" || t === "dark") return t;
+    return mq && mq.matches ? "dark" : "light";
+  }
+  function updateThemeButton() {
+    const cur = effectiveTheme();
+    $("#theme-icon").textContent = cur === "dark" ? "☀" : "☾";
+    $("#theme-text").textContent = cur === "dark" ? "Light" : "Dark";
+    $("#theme-btn").setAttribute("aria-label", "Switch to " + (cur === "dark" ? "light" : "dark") + " theme");
+  }
+  $("#theme-btn").addEventListener("click", () => {
+    const next = effectiveTheme() === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    try { localStorage.setItem("mtah-theme", next); } catch (e) { /* storage may be blocked */ }
+    updateThemeButton();
+  });
+  if (mq && mq.addEventListener) mq.addEventListener("change", updateThemeButton);
+
+  function sectionHead(id, title, sub) {
+    return h("div", { class: "block-head" }, h("h2", { id: "h-" + id, text: title }), sub ? h("p", { html: md(sub) }) : null);
+  }
+
+  /* ---------- 1. Headline cards ---------- */
+  function headline() {
+    const adopted = DATA.points.filter(p => p.adopted);
+    const first = adopted[0], last = adopted[adopted.length - 1];
+    const nA = DATA.features.filter(f => f.status === "adopted").length;
+    const dropped = DATA.features.filter(f => f.status === "dropped");
+    return h("section", { class: "block", id: "headline", "aria-labelledby": "h-headline" },
+      sectionHead("headline", "Where we are", "As of " + DATA.asOf + ". " + DATA.benchmarkNote),
+      h("div", { class: "cards" },
+        h("div", { class: "card" }, h("div", { class: "kpi-label", text: "`main.toml` on the benchmark, raw truth".replace(/`/g, "") }),
+          h("div", { class: "kpi-value", text: f4(last.raw) }),
+          h("div", { class: "kpi-second", text: f4(last.coarse) + " coarse" }),
+          h("p", { class: "kpi-text", html: md("Entry " + last.id + ", with `--drop-match-only` (P08 off, which no benchmark can score).") })),
+        h("div", { class: "card" }, h("div", { class: "kpi-label", text: "Gain over the first yardstick" }),
+          h("div", { class: "kpi-value", text: signed(last.raw - first.raw, 4) }),
+          h("div", { class: "kpi-second", text: signed(last.coarse - first.coarse, 4) + " coarse" }),
+          h("p", { class: "kpi-text", html: md("From `nearest_w50` (" + f4(first.raw) + " raw, " + f4(first.coarse) + " coarse), the difference of the two scores.") })),
+        h("div", { class: "card" }, h("div", { class: "kpi-label", text: "Features adopted" }),
+          h("div", { class: "kpi-value", text: String(nA) }),
+          h("p", { class: "kpi-text", text: DATA.features.filter(f => f.status === "adopted").map(f => f.p).join(", ") })),
+        h("div", { class: "card" }, h("div", { class: "kpi-label", text: "Tried and dropped" }),
+          h("div", { class: "kpi-value", text: String(dropped.length) }),
+          h("p", { class: "kpi-text", text: dropped.map(f => f.p).join(", ") }))));
+  }
+
+  /* ---------- 2. The chart ---------- */
+  const state = { mode: "raw", sel: -1 };
+  let chartBox, legendBox, detailBox, lastW = 0;
+
+  function selectPoint(i) {
+    state.sel = i;
+    chartBox.querySelectorAll(".c-group").forEach((g, j) => g.classList.toggle("on", j === i));
+    drawDetail();
+  }
+
+  function drawLegend() {
+    const m = state.mode;
+    legendBox.replaceChildren(...[
+      m !== "coarse" ? h("span", { class: "k" }, h("span", { class: "k-sw s1" }), "raw truth") : null,
+      m !== "raw" ? h("span", { class: "k" }, h("span", { class: "k-sw s2" }), "coarse truth") : null,
+      h("span", { class: "k" }, h("span", { class: "k-dot filled" }), "adopted into `main.toml` (step line)".replace(/`/g, "")),
+      h("span", { class: "k" }, h("span", { class: "k-dot" }), "tried, not adopted"),
+      h("span", { class: "k" }, h("span", { class: "k-line dash" }), "yardstick (floor's analogue)")].filter(Boolean));
+  }
+
+  function drawChart(force) {
+    const W = Math.max(280, Math.floor(chartBox.clientWidth || 0));
+    if (!force && W === lastW) return;
+    lastW = W;
+    const pts = DATA.points, n = pts.length;
+    const H = W < 520 ? 330 : 380;
+    const m = { l: 42, r: 14, t: 22, b: 52 };
+    const iw = W - m.l - m.r, ih = H - m.t - m.b;
+    const yMax = 0.6;
+    const X = i => m.l + (i + 0.5) * (iw / n);
+    const Y = v => m.t + ih * (1 - v / yMax);
+    const step = iw / n;
+    const series = state.mode === "both" ? ["raw", "coarse"] : [state.mode];
+    const cls = k => (k === "raw" ? "1" : "2");
+    const svg = s("svg", { width: W, height: H, viewBox: "0 0 " + W + " " + H, role: "group",
+      "aria-label": "Pooled benchmark spellF1 by entry, " + series.join(" and ") + " truth. Select an entry for its feature." });
+
+    for (let v = 0; v <= yMax + 1e-9; v += 0.1) {
+      svg.append(s("line", { class: v === 0 ? "c-axis" : "c-grid", x1: m.l, x2: W - m.r, y1: Y(v), y2: Y(v) }));
+      svg.append(s("text", { class: "c-tick", x: m.l - 6, y: Y(v) + 4, "text-anchor": "end" }, v.toFixed(1)));
+    }
+    svg.append(s("text", { class: "c-axt", x: m.l, y: 11 }, "pooled spellF1"));
+
+    // The yardstick, the floor's analogue.
+    series.forEach((k, si) => {
+      const y = Y(DATA.reference[k]);
+      svg.append(s("line", { class: "c-ref", x1: m.l, x2: W - m.r, y1: y, y2: y }));
+    });
+    const refTxt = DATA.reference.label.replace(/`/g, "") + " " + (state.mode === "both" ? f4(DATA.reference.raw) + " raw, " + f4(DATA.reference.coarse) + " coarse" : f4(DATA.reference[state.mode]));
+    svg.append(s("text", { class: "c-reflbl", x: W - m.r - 2, y: Y(Math.min(DATA.reference.raw, DATA.reference.coarse)) + 16, "text-anchor": "end" }, refTxt));
+
+    // Step lines through the adopted points: the running main.toml, held until the next adopted entry.
+    series.forEach(k => {
+      const ad = pts.map((p, i) => ({ p, i })).filter(o => o.p.adopted);
+      let d = "";
+      ad.forEach((o, j) => {
+        const x = X(o.i), y = Y(o.p[k]);
+        d += j === 0 ? "M" + x + "," + y : "H" + x + "V" + y;
+      });
+      d += "H" + (W - m.r);
+      svg.append(s("path", { class: "c-line l" + cls(k), d }));
+    });
+
+    // Columns: wash, markers, labels, axis text, one focusable group per entry.
+    pts.forEach((p, i) => {
+      const g = s("g", { class: "c-group" + (i === state.sel ? " on" : ""), tabindex: 0, role: "button",
+        "aria-label": p.id + ", " + (p.adopted ? "adopted" : "tried, not adopted") + ": " + p.what.replace(/`/g, "") + ". Raw " + f4(p.raw) + ", coarse " + f4(p.coarse) + "." });
+      g.append(s("rect", { class: "c-wash", x: X(i) - step / 2, y: m.t - 4, width: step, height: ih + m.b + 4 - 6, rx: 4 }));
+      series.forEach(k => {
+        const x = X(i), y = Y(p[k]);
+        const c = cls(k);
+        const mk = k === "raw"
+          ? s("circle", { class: (p.adopted ? "m-fill" : "m-hol") + c, cx: x, cy: y, r: 6 })
+          : s("rect", { class: (p.adopted ? "m-fill" : "m-hol") + c, x: x - 5.5, y: y - 5.5, width: 11, height: 11, rx: 2, transform: "rotate(45 " + x + " " + y + ")" });
+        g.append(mk);
+      });
+      // A delta label on the first series only, when there is room.
+      const k0 = series[0];
+      const dv = k0 === "raw" ? p.dr : p.dc;
+      if (step >= 50 && dv != null) {
+        const top = Math.min(...series.map(k => Y(p[k])));
+        g.append(s("text", { class: "c-val", x: X(i), y: top - 12, "text-anchor": "middle" }, signed(dv, 3)));
+      }
+      g.append(s("text", { class: "c-xt", x: X(i), y: H - m.b + 18, "text-anchor": "middle" }, p.id));
+      if (step >= 60) g.append(s("text", { class: "c-xd", x: X(i), y: H - m.b + 32, "text-anchor": "middle" }, p.date.slice(5)));
+      g.addEventListener("click", () => selectPoint(i));
+      g.addEventListener("mouseenter", () => selectPoint(i));
+      g.addEventListener("focus", () => selectPoint(i));
+      g.addEventListener("keydown", ev => {
+        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); selectPoint(i); }
+      });
+      svg.append(g);
+    });
+    chartBox.replaceChildren(svg);
+  }
+
+  function drawDetail() {
+    const p = DATA.points[state.sel];
+    detailBox.replaceChildren(
+      h("div", { class: "d-top" }, h("span", { class: "d-id", text: p.id }), h("span", { class: "muted small", text: p.date }),
+        badge(p.adopted ? "adopted" : "dropped"), h("span", { class: "muted small", text: p.prop })),
+      h("p", { class: "d-what", html: md(p.what) }),
+      h("div", { class: "d-nums" },
+        h("span", { text: "raw " + f4(p.raw) + (p.dr == null ? " (first yardstick)" : " (" + signed(p.dr, 4) + ")") }),
+        h("span", { text: "coarse " + f4(p.coarse) + (p.dc == null ? "" : " (" + signed(p.dc, 4) + ")") })),
+      h("p", { class: "d-note", html: md(p.note) }));
+  }
+
+  function chart() {
+    chartBox = h("div", { class: "chart", id: "chart-box" });
+    legendBox = h("div", { class: "legend" });
+    detailBox = h("div", { class: "detail", "aria-live": "polite" });
+    const lastAdopted = DATA.points.map(p => p.adopted).lastIndexOf(true);
+    state.sel = lastAdopted;
+    const chips = h("div", { class: "chips", role: "group", "aria-label": "Truth" });
+    [["raw", "Raw"], ["coarse", "Coarse"], ["both", "Both"]].forEach(([k, label]) => {
+      const b = h("button", { type: "button", class: "fchip", "aria-pressed": String(state.mode === k), text: label });
+      b.addEventListener("click", () => {
+        state.mode = k;
+        chips.querySelectorAll("button").forEach((x, j) => x.setAttribute("aria-pressed", String(["raw", "coarse", "both"][j] === k)));
+        drawLegend(); drawChart(true);
+      });
+      chips.append(b);
+    });
+    const twin = h("details", { class: "twin" }, h("summary", { text: "The chart as a table" }),
+      h("div", { class: "tbl-wrap" }, h("table", {},
+        h("thead", {}, h("tr", {}, ["Entry", "Date", "Raw", "Coarse", "Status"].map((t, j) => h("th", { class: j > 1 && j < 4 ? "n" : "", text: t })))),
+        h("tbody", {}, DATA.points.map(p => h("tr", {}, h("td", { text: p.id }), h("td", { text: p.date }), h("td", { class: "n", text: f4(p.raw) }), h("td", { class: "n", text: f4(p.coarse) }),
+          h("td", { text: p.adopted ? "adopted" : "tried, not adopted" })))))));
+    const sec = h("section", { class: "block", id: "chart", "aria-labelledby": "h-chart" },
+      sectionHead("chart", "The benchmark spellF1 by entry", "One point per entry; the feature that produced it is in the card below the chart."),
+      h("div", { class: "card" },
+        h("div", { class: "controls" }, h("span", { class: "lbl", text: "Truth" }), chips),
+        legendBox, chartBox, detailBox,
+        h("p", { class: "cap", html: md(DATA.chartCaption) }), twin));
+    return sec;
+  }
+
+  /* ---------- 3. The ledger ---------- */
+  function ledger() {
+    const rows = DATA.ledger.map(r => h("tr", { class: r.status === "dropped" ? "dim" : "" },
+      h("td", { "data-label": "proposal", text: r.prop }),
+      h("td", { "data-label": "feature" }, h("div", { html: md(r.feature) })),
+      h("td", { "data-label": "entry" }, h("div", { html: md(r.entry.split(", ").map(e => "[" + e + "](../docs/results.md)").join(", ")) })),
+      h("td", { "data-label": "date", class: "n", text: r.date }),
+      h("td", { "data-label": "Δ raw", class: "n", text: r.dr }),
+      h("td", { "data-label": "Δ coarse", class: "n", text: r.dc }),
+      h("td", { "data-label": "status" }, h("div", {}, badge(r.status))),
+      h("td", { "data-label": "why" }, h("div", { html: md(r.why) }))));
+    return h("section", { class: "block", id: "ledger", "aria-labelledby": "h-ledger" },
+      sectionHead("ledger", "Feature ledger", "Every proposal that was measured, the drops included."),
+      h("div", { class: "card" },
+        h("div", { class: "tbl-wrap" }, h("table", { class: "resp" },
+          h("thead", {}, h("tr", {}, ["Proposal", "Feature", "Entry", "Date", "Δ raw", "Δ coarse", "Status", "Why"].map((t, j) => h("th", { class: j === 4 || j === 5 ? "n" : "", text: t })))),
+          h("tbody", {}, rows))),
+        h("p", { class: "cap", html: md("Δ is pooled spellF1 on the benchmark as each entry states it: R008 and R009 over the yardsticks (`nearest_w50` raw, `nearest_w125` coarse), R010 likewise, R011 onwards over the previous adopted `main.toml`. The two R006 deltas are R006's score minus `nearest_w50`'s and `nearest_w125`'s. A dash means [docs/results.md](../docs/results.md) records no benchmark number for the entry; none is invented here.") })));
+  }
+
+  /* ---------- 4. The public window ---------- */
+  function windowPanel() {
+    const w = DATA.publicWindow;
+    return h("section", { class: "block", id: "window", "aria-labelledby": "h-window" },
+      sectionHead("window", "Public window: a correctness check only"),
+      h("div", { class: "warn", role: "note", html: md(w.caption) }),
+      h("div", { class: "card" }, h("div", { class: "tbl-wrap" }, h("table", { class: "resp" },
+        h("thead", {}, h("tr", {}, ["Entry", "What", "spellF1", "macroF1", "Possessions"].map((t, j) => h("th", { class: j > 1 ? "n" : "", text: t })))),
+        h("tbody", {}, w.rows.map(r => h("tr", {},
+          h("td", { "data-label": "entry", text: r.id }), h("td", { "data-label": "what" }, h("div", { html: md(r.what) })),
+          h("td", { "data-label": "spellF1", class: "n", text: r.spell }), h("td", { "data-label": "macroF1", class: "n", text: r.macro }),
+          h("td", { "data-label": "possessions", class: "n", text: r.poss }))))))));
+  }
+
+  /* ---------- 5. How to add a point ---------- */
+  function addPanel() {
+    const a = DATA.addPoint;
+    return h("section", { class: "block", id: "add", "aria-labelledby": "h-add" },
+      sectionHead("add", "How to add a point"),
+      h("div", { class: "card" }, h("p", { html: md(a.intro) }),
+        h("ol", { class: "steps" }, a.steps.map(t => h("li", { html: md(t) }))),
+        h("pre", {}, h("code", { text: a.example }))));
+  }
+
+  /* ---------- Render ---------- */
+  function render() {
+    $("#site-title").textContent = DATA.title;
+    $("#site-sub").textContent = DATA.subtitle;
+    $("#footer").innerHTML = md(DATA.footer);
+    const jump = $("#jump");
+    DATA.links.forEach(l => jump.append(h("a", { class: l.cls || "", href: l.href, text: l.label })));
+    DATA.sections.forEach(([id, label]) => jump.append(h("a", { href: "#" + id, text: label })));
+    const main = $("#main");
+    main.append(headline(), chart(), ledger(), windowPanel(), addPanel());
+    drawLegend();
+    drawChart(true);
+    drawDetail();
+    if (window.ResizeObserver) new ResizeObserver(() => drawChart(false)).observe(chartBox);
+    else window.addEventListener("resize", () => drawChart(false));
+    updateThemeButton();
+  }
+  render();
+})();
+</script>
+</body>
+</html>
