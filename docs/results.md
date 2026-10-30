@@ -1584,7 +1584,7 @@ median distances (m) of the old and the new team's nearest slot to the ball; `ne
 the new team's slot is the nearer. Gap = public minus DFL; intervals are 90% bootstrap intervals of the public values,
 and with fewer than 5 public values only whether the interval excludes 0 is printed.
 
-**Team changes** (12 public; DFL n = 7,053 raw, 2,847 coarse; 4,167 and 1,646 for the distances):
+**Team changes** (12 public; DFL n = 7,053 raw, 2,847 coarse, counting changes times seeds: 2,351 changes times 3 seeds; 4,167 and 1,646 for the distances):
 
 | descriptor | public | DFL raw | gap (raw) | DFL coarse | gap (coarse) |
 |---|---|---|---|---|---|
@@ -1615,21 +1615,31 @@ nearest-slot descriptors have no value on either side's public changes):
 | `ball_speed` | 5.33 | 38.01 | -32.68 | excludes 0: yes |
 | `line_m` | -3.67 | -2.01 | -1.66 | excludes 0: no |
 
+The zero-width intervals on the all-True public cells (12 of 12 and 4 of 4 changes seen) and their "excludes 0: yes"
+are artefacts: a percentile bootstrap of a 100% share has no spread, so read those cells as the gap itself, not as a
+test.
+
 The DFL figures for `into_dead` and `out_of_dead` are the same under both truths (the coarse truth only merges
 possessions, so those changes do not move). Only the team rows differ between the two truths.
 
 **What they suggest (leads, not measurements; 12, 4 and 4 public changes).**
 - At team changes the new team's nearest slot is further from the ball than on DFL (2.68 m against 0.64 m, interval
-  excludes 0 under both truths) and is less often nearer than the old team's (58% against 87 to 89%). That fits A11's
-  lead that our truth flips before the new team's first controlled touch, when the ball has not yet reached the new
-  team. It is the same direction as A11's `touch_start` lag, from a second descriptor.
-- The old team's slot is also further on ours (3.69 m against 2.14 m), so the ball is further from everybody at our
-  changes: a loose ball in transit, not a challenge.
-- The into and out of `D` rows hold too few changes to say more than that the ball is seen more often on ours.
+  excludes 0 under both truths) and is less often nearer than the old team's (58% against 87 to 89%). That is
+  compatible with A11's lead that our truth flips before the new team's first controlled touch, when the ball has not
+  yet reached the new team. It is the same direction as A11's `touch_start` lag, though `touch_start` is also built on
+  ball-slot distances, so it is not independent evidence.
+- The old team's slot is also further on ours (3.69 m against 2.14 m), which suggests the ball is further from
+  everybody at our changes, possibly a loose ball in transit rather than a challenge. The interval is thin: the
+  coarse `old_near_m` interval [-0.00, 2.56] touches 0 and the raw one only just excludes it ([0.09, 2.65]).
+- The into and out of `D` rows hold too few changes to say more than that the ball may be seen more often on ours (the
+  `into_dead` `ball_seen` interval holds 0).
 
 Confounds, which keep these from being read as a convention:
 - The public window is the best-covered block of the match, while `tracking` v3 places its gaps blind to play (T38):
-  `ball_seen` at 100% against 59% is coverage, not convention.
+  `ball_seen` at 100% against 59% is most likely coverage, not convention.
+- `tracking` v3 hides DFL's ball but keeps DFL's positions exact, so our own (unmeasured) ball and slot position error
+  is absent from DFL's copy. It would inflate both `new_near_m` and `old_near_m` and pull `new_nearer` towards 50%,
+  which matches the team observations with no convention at all.
 - DFL tracks the ball out of play (T39), so its ball-speed and line descriptors behave differently at restarts. A DFL
   `out_of_dead` median ball speed of 38.01 m/s suggests that DFL's restart placement jumps (the ball is moved to the
   spot), so that row says more about the provider than about the convention.

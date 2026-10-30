@@ -434,7 +434,8 @@ bundle's rules. Cite it in the technical document.
 **Status: done → A11, R012, A15 (inspection only; a person may watch to understand):
 [A11](results.md#a11--our-ground-truths-timing-against-dfls-from-tracking-events-2026-10-25-tian),
 [R012](results.md),
-[A15](results.md#a15--descriptors-of-our-truths-changes-against-dfls-2026-10-30-tian).** *Changed 23 Oct 2026 (`f8f2629`):* this proposal began as "learn our GT's timing conventions from
+[A15](results.md#a15--descriptors-of-our-truths-changes-against-dfls-2026-10-30-tian).**
+*Changed 23 Oct 2026 (`f8f2629`):* this proposal began as "learn our GT's timing conventions from
 the public window". The organisers' rule now says those 5 minutes are for checking that the pipeline is correct and are
 "not training data and not a tuning set", so P02 is inspection: it measures and watches to understand how our truth
 flips and to design features, and it fixes no constant. Its two findings stand as findings (A11 was inspection and
@@ -457,7 +458,7 @@ python pipeline/benchmark/conventions.py public     # writes data/runs/conventio
 ```
 
 with one row per change (its frame in the tactical video, the label before and after, the type, and each detector's
-lag). No LLM reads that file, and nothing is written from it but aggregates (A11, "How a person can extend it"; T27
+lag, and now the descriptor columns of A15). No LLM reads that file, and nothing is written from it but aggregates (A11, "How a person can extend it"; T27
 allows watching and inspecting to understand, and never turning what was seen into labels, corrections, or rules and
 constants tied to specific frames).
 
