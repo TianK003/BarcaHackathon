@@ -788,7 +788,7 @@ const DATA = {
       built: "R001 · 2026-10-22; sources since",
       summary: "Each source reads the whole match and gives an opinion on every frame; it never decides a label. Deciding (weighing the sources, keeping possessions as intervals, paying for every change) is the decoder's job, so a new source plugs in without touching it and a better decoder improves every source at once. `main.toml` runs four: `controlled_touch`, `shape_possession` and `smart_tagging` for `home`, `dead_ball_model` for `alive`.",
       contract: "**Out:** one `Evidence(alive, home)` per source, float64 per frame in [0, 1], NaN = no opinion. `alive` = P(ball in play); `home` = P(home has it | in play). Read together: P(H) = alive·home, P(A) = alive·(1 − home), P(D) = 1 − alive.",
-      planned: [{ title: "A13 says where", text: "The team side holds the remaining score: a perfect team where the ball is seen is worth +0.194 raw and in the gaps +0.176, a perfect dead ball only +0.029." }, "P19", "P20", "P22", "P11", "P09", "P13"],
+      planned: [{ title: "A13 says where", text: "The team side holds the remaining score: a perfect team where the ball is seen is worth +0.194 raw and in the gaps +0.176, a perfect dead ball only +0.029." }, "P19", "P20", "P22", "P11", "P13"],
       traps: ["T12", "T14", "T38", "T39"],
       files: [
         { label: "evidence/README.md", href: "../pipeline/evidence/README.md" },

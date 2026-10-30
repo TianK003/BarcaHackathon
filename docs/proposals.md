@@ -1049,8 +1049,8 @@ Either the tracker lost its lock or the ball was occluded, and only a detector r
   - A person may watch gap moments to understand them. A tally of what they saw is not a gate.
 - **Training compute:** about 12k crops of 256 px, which is 10 to 25 h on the laptop's CPU: one or two throttled
   nights.
-- **Inference:** on the CPU, at 5 fps inside the graded gaps (about 16k frames), in the zone given by P09's camera aim
-  and the players.
+- **Inference:** on the CPU, at 5 fps inside the graded gaps (about 16k frames), in the zone given by the camera's aim
+  (A03; P09, which computed it, was dropped, R019, and its code is recoverable from 13c36c6) and the players.
   - Link the detections into tracklets with a motion gate, and keep those of at least 0.4 s whose speeds are
     plausible.
   - Project them to the pitch. An airborne ball projects to the wrong ground point, so give it low confidence.

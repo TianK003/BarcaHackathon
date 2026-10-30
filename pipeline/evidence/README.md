@@ -280,8 +280,8 @@ already built.
   legitimate, but they are different claims.
 - **`weight`** (config) is how much the decoder trusts a source. For a probabilistic decoder (P06) it is meant as an
   exponent on the source's likelihood; the stand-in majority vote only approximates that with a weighted mean.
-- **Look anywhere in time.** A source sees the whole match, and we process offline, so looking ahead is fine — P09's
-  camera lags the ball by 35 frames, and P04 back-dates a change to where control began
+- **Look anywhere in time.** A source sees the whole match, and we process offline, so looking ahead is fine — the
+  camera lags the ball by about 35 frames (T18), and P04 back-dates a change to where control began
   ([T03](../../docs/traps.md)). Only decoders and refiners are confined to one half.
 - **Metres before distances** (`inputs.metres`), **direction per half** (`inputs.half_of_frame`; teams swap ends —
   [T16](../../docs/traps.md)), and **slots are tracklets, not players** ([T15](../../docs/traps.md)).
