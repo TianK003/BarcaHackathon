@@ -304,6 +304,14 @@ around a statistic:
 - a mechanism designed after seeing a profile's gates makes those gates less independent of it, so say so beside the
   result.
 
+**T47 — A noise model fitted to a residual's variance and lag-1 autocorrelation can still get the speed wrong.**
+R019's simulated camera followed the DFL ball plus AR(1) noise fitted to our camera's residual (phi near 1). The fit
+was made to those two numbers, but with phi that near 1 the innovation is the residual's frame-to-frame change, with a
+median step of 0.67 sigma a frame (1.14 m/s here). A camera that mostly stands still was simulated as one that never
+does: 1.95 m/s in play and 1.12 m/s dead, against ours 0.30 and 0.04. Fit, or gate, the statistic the feature will read
+(here each state's median speed of the aim); R019's gate 4, a dead/alive ratio, caught it only indirectly. Cost: P09's
+simulator built and then dropped.
+
 **T43 — An oracle that stops where the truth changes measures more than a source can deliver.** A12 sized P17's
 prize with a perfect 2 s vote for the restarting team (+0.0198 raw spellF1), and that vote stopped at the truth's next
 change of team. A real vote has a fixed length and cannot know that change: it keeps pushing after the restarting team's

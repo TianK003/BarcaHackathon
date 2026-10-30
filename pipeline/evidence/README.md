@@ -280,8 +280,8 @@ already built.
   legitimate, but they are different claims.
 - **`weight`** (config) is how much the decoder trusts a source. For a probabilistic decoder (P06) it is meant as an
   exponent on the source's likelihood; the stand-in majority vote only approximates that with a weighted mean.
-- **Look anywhere in time.** A source sees the whole match, and we process offline, so looking ahead is fine — P09's
-  camera lags the ball by 35 frames, and P04 back-dates a change to where control began
+- **Look anywhere in time.** A source sees the whole match, and we process offline, so looking ahead is fine — the
+  camera lags the ball by about 35 frames (T18), and P04 back-dates a change to where control began
   ([T03](../../docs/traps.md)). Only decoders and refiners are confined to one half.
 - **Metres before distances** (`inputs.metres`), **direction per half** (`inputs.half_of_frame`; teams swap ends —
   [T16](../../docs/traps.md)), and **slots are tracklets, not players** ([T15](../../docs/traps.md)).
@@ -312,7 +312,7 @@ already built.
 | P05 dead-ball detector | `alive` (+ `next_home` later) | supersedes `ball_presence`; the ball is visible on 66% of dead frames ([T12](../../docs/traps.md)) |
 | P07 team shape and movement | `home` | for the 41% of frames without a ball: `shape_possession` (done, R011) |
 | P08 Smart Tagging | `home` (done, R017) | phases are not possessions ([T17](../../docs/traps.md)); the dead votes were dropped |
-| P09 camera aim | — | a feature for P07, not a source on its own |
+| P09 camera aim | — | dropped, R019 (the simulated camera failed two fidelity gates; code removed) |
 | P10 referee whistle | `alive` | dropped, R018/R018b (whistles near stoppages 1.5× chance, below the declared 2×; code removed) |
 | P13 / P14 / P15 | via better inputs or pre-trained models | |
 | P17 restart-team channel | `home`, from each restart on, or over each stoppage for the decoder's restart states | `restart_team` (built; its confidences and adoption are R014's, the restart states' R014b's; P17 dropped, neither met its bar, so it stays in the code, off by default) |

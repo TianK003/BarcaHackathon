@@ -40,6 +40,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R017 | 2026-10-30 | Smart Tagging's votes (P08) against our own pseudo-labels on BAR-ATH: team agreement with `controlled_touch` episodes and dead agreement with `dead_ball_model`, the two parts' bars, and two strengths (`frame` 0.2, `tag` 1.0) for Tian's pick | 0.6986 | 0.4000 | — | — (DFL has no tags; `main.toml --drop-match-only` reproduces R013's 0.5430 raw, 0.5593 coarse) | team votes adopted per frame (0.761); dead votes dropped (0.409) |
 | R018 | 2026-10-30 | the referee's whistle (P10): a hand-built 2 to 4 kHz band-pass detector on the tactical audio, its feasibility gate and its bar against `main.toml`'s own decoded stoppages | — | — | — | — | dropped (R018, R018b: gate failed, ratio 1.52 / 1.51) |
 | R018b | 2026-10-30 | the whistle (P10), the one retry R018 allowed: the tonal threshold set to the match's own 98th percentile of tonal_db, the same gate and bar | — | — | — | — | dropped, code removed (fc9dbed): gate failed, ratio 1.51 (55 detections) |
+| R019 | 2026-10-30 | P09: the camera's aim in the shape model; part 1a: the camera's fit and fidelity gates (peak lag +-10 frames, peak correlation +-0.05, median error +-3.0 m, dead/alive speed ratio +-25%; the gap/visible ratio a WARN), declared before the first simulation; part 2a: the gates run | — | — | — | — | dropped 2026-10-31, code removed (8c4c959): `tracking` gates 2 and 4 failed (peak correlation 0.9115 vs ours 0.843, dead/alive speed ratio 0.575 vs 0.128), no retry |
 
 ### The four yardsticks on every profile, in one table
 
@@ -6413,6 +6414,155 @@ retry. After the removal: `pipeline/selftest.py` 185/185, `pipeline/benchmark/se
 | R018 part 2 | feasibility gate failed (340 detections; 0.624 vs 0.410, ratio 1.52) |
 | R018b part 1 | declared, run |
 | R018b part 2 | feasibility gate failed (55 detections; 0.564 vs 0.373, ratio 1.51); P10 dropped, code removed |
+
+### R019 — The camera's aim in the shape model, with a simulated camera on DFL (2026-10-30, Tian)
+
+Proposal: P09 · Design: `docs/superpowers/specs/2026-10-30-p02-p08-p09-p10-p12-design.md` section 5.E · Branch
+`p09-camera-aim`. This entry grows in parts; each part is committed before the run it governs and is never edited after
+a run.
+
+#### Part 1a — the camera's gates (declared before the first simulation)
+
+Status: **declared, not run.** Nothing below has been measured on a DFL match. The fit of our camera and its statistics
+on BAR-ATH are label-free aggregates of our own tracking and homography; the DFL side is public data.
+
+**What is simulated.** A camera like ours on each DFL match, so that a feature built on the aim can be measured with a
+real F1 test. The aim is the pitch point under the image centre (`inputs.camera_aim`, metres along the pitch), and our
+camera is modelled as a follower of our ball, plus noise:
+
+    aim(t) = a + b * lowpass(ball_x, tau)(t - lag) + e(t),     e(t) = phi * e(t - 1) + sigma * z(t)
+
+**The fit's procedure (`camera.fit`, `pipeline/benchmark/camera.py`).**
+- lowpass is a first-order exponential smoother, alpha = 1 / (1 + tau), holding its last value across a missing ball and
+  starting again at each graded block.
+- Search lag in 0 to 80 frames and tau in {0, 5, 10, 20, 35, 50} frames; for each pair `a` and `b` by least squares of
+  the aim at t on the smoothed ball at t - lag. The pair with the smallest residual variance is kept (a tie goes to the
+  smaller lag, then the smaller tau); phi is the residuals' lag-1 autocorrelation and sigma their standard deviation
+  times sqrt(1 - phi^2); lo and hi are the 0.5th and 99.5th percentiles of our aim on the graded frames, to which the
+  simulated aim is clipped. Nothing is random in the fit.
+- **Settled frames.** Our smoother holds its last value through our tracker's gaps while the real camera kept following
+  the real ball, so just after a gap our smoothed ball is stale. A frame's regressor counts only once the smoother has
+  seen at least ceil(3 * tau) visible frames in a row since the last gap (the block's start counts as one; tau 0 needs
+  only the frame itself). The stale part left is then about e^-3 = 5%. Candidates are compared on their own settled
+  frames. Without the rule the fit would be biased towards a small tau and a larger sigma.
+- Cached by the code and data it depends on (`load_fit`), digest of the eight constants (`camera.digest`).
+- The simulator drives the fit with DFL's clean ball (the real camera follows the real ball even where ours loses it),
+  seeded by (seed, match id), NaN off the graded blocks.
+
+**The gates (`python pipeline/benchmark/camera.py gates --profile P --seeds 3`).** The same `measure()` on both sides,
+on the `tracking` v3 copies (7 matches x seeds 0 to 2, rows pooled by frames, never medians of medians), against
+BAR-ATH's own. `dead` is what `main.toml` decodes as D (pipeline functions: `pipeline.benchmark.run.predict` on each
+served DFL match, the same decoding on BAR-ATH), never the truth. Tolerances, declared here and not tuned towards:
+
+| gate | statistic | pass if |
+|---|---|---|
+| 1 | peak lag (lag of the peak correlation of the aim with the ball seen) | \|sim - ours\| <= 10 frames |
+| 2 | peak correlation | \|sim - ours\| <= 0.05 |
+| 3 | median along-pitch error at the peak lag | \|sim - ours\| <= 3.0 m |
+| 4 | speed ratio dead / alive (median aim speed on frames decoded D over frames decoded H or A) | \|sim / ours - 1\| <= 0.25 |
+
+A value exactly on a tolerance passes (differences are rounded to 9 decimals); a statistic that cannot be measured on
+either side fails its gate. Exit code 1 if a gate fails.
+
+**The WARN (not a gate).** `speed_ratio_gap_visible`: the aim's median speed on frames without the ball seen over
+frames with it (ours 0.58 / 1.22, A03), on `tracking` and on `context` (`--profile context`). It is printed with the
+same +-25% band and never fails the command. `tracking` v3 places its gaps blind to the play (T38), so the simulated
+camera keeps moving through them and the ratio will sit near 1 by construction; a large gap between the two profiles is
+the T38 warning that the benchmark may overstate P09. R019's veto already includes `context`.
+
+**The retry rule.** If a gate fails, one retry with a single change, declared (what and why) before it runs, and
+proposed to Tian for a decision first. If that also fails, P09 is dropped and its code removed. The pause (the research
+bar) applies in any case: the gates' results go to Tian before any retraining.
+
+**Amended before any run (2026-10-30).** Nothing had been run when these were written (the first run is Task E.3's
+step 7, after this commit); they add to the declaration above and change none of its tolerances:
+- **The decoder of `dead`.** The gates' D is `main.toml` decoded with its match-only sources dropped
+  (`run.drop_match_only`: any source that declares MATCH_ONLY, since a DFL match lacks the asset it needs; today Smart
+  Tagging (P08, adopted into `main.toml` on main) is the only one, and the whistle (P10) was dropped), on both sides,
+  BAR-ATH and DFL, so that one decoder and the same code serve both. The names dropped are printed and kept in the
+  report (`dropped_match_only`).
+- **Only `tracking` decides.** Under `--profile tracking` a failed gate gives exit code 1. Under `--profile context`
+  (a sensitivity profile, R005) the four gates are printed as information and never set the exit code; what is asked of
+  `context` is the WARN.
+- **One camera per selection.** Reports in one `choose.py` selection must share the camera digest (`camera` is in
+  choose's SAME), so that one selection never compares reports of two camera fits.
+- **Pooling.** DFL is pooled by frames across matches x seeds (the pooled rows are measured once), so a longer match
+  weighs more; it is not a mean over matches.
+- **Which models decode DFL.** On DFL the decoded D uses each match's held-out (out-of-fold) models, `folds[inputs.game]`,
+  as the benchmark's runs do; BAR-ATH uses `full`. The two sides' decoders differ by that, as everywhere in the benchmark
+  (T38, T39), and the gate's tolerance is not changed for it.
+
+**What follows, not governed here.** Parts 2 and 3 (the shape model v2 and the benchmark's bar over the candidates at
+weights {0.2, 0.3, 0.5}) are declared when Task E.4 starts, before their runs.
+
+#### Part 2a — the gates' results (run 2026-10-30)
+
+Run at `bc35178` on branch `p09-camera-aim`: `python pipeline/benchmark/camera.py gates --profile tracking --seeds 3`,
+then the same with `--profile context`, 7 matches x seeds 0 to 2. The branch's `main.toml` decoded `dead` on both sides
+and had no match-only source to drop (it predates P08's adoption). Reports: `data/runs/camera/gates_<profile>.json`.
+
+**The fit** (camera digest `e4adfed3e482`): lag 0 frames, tau 50 frames, a 23.314 m, b 0.5793, phi 0.999971,
+sigma 0.0674 m, lo 9.53 m, hi 93.88 m. 74,694 settled frames, R squared 0.719, residual sd 8.78 m. Both lag and tau are
+on an edge of the declared grid: lag 0 is the smallest lag searched and tau 50 the largest smoother.
+
+**The gates** (ours: 94,214 pairs; simulated: 1,747,071 pairs on `tracking`, 1,709,934 on `context`):
+
+| gate | ours | `tracking` sim | delta | result | `context` sim | delta | result (information) |
+|---|---|---|---|---|---|---|---|
+| 1 peak lag (frames) | 37 | 40 | +3 | pass | 41 | +4 | pass |
+| 2 peak correlation | 0.843 | 0.9115 | +0.0685 | **FAIL** | 0.9002 | +0.0572 | FAIL |
+| 3 median error (m) | 11.65 | 12.69 | +1.04 | pass | 11.84 | +0.19 | pass |
+| 4 speed ratio dead / alive | 0.1277 | 0.5754 | +351% | **FAIL** | 0.5786 | +353% | FAIL |
+| WARN speed ratio gap / visible | 0.1671 | 0.9829 | +488% | WARN | 0.8751 | +424% | WARN |
+
+The aim's median speed (m/s), the four numbers behind the two ratios:
+
+| | alive | dead | ball seen | ball not seen |
+|---|---|---|---|---|
+| ours | 0.298 | 0.038 | 0.254 | 0.043 |
+| simulated, `tracking` | 1.951 | 1.123 | 1.516 | 1.490 |
+| simulated, `context` | 1.947 | 1.127 | 1.595 | 1.396 |
+
+Part 1a quoted A03's gap/visible speeds (0.58 / 1.22); those came from A03's own measurement, and the gates compare
+`measure()` with `measure()` on both sides.
+
+**What the numbers say** (readings, not measured causes):
+- The simulated camera never stands still. While play is alive it moves at 6.5 times our camera's median speed, while it
+  is dead at 30 times. With phi this near 1 the noise's innovation is the residual's frame-to-frame change, and its
+  median step alone is 0.6745 x 0.0674 m a frame, 1.14 m/s, about four times our camera's median speed in play. Our
+  camera nearly stops whenever play is dead (0.04 m/s) or our ball is unseen (0.04 m/s); the follower plus that noise
+  cannot.
+- The simulated aim correlates 0.07 more with its ball than ours does. Two plausible readings: the served ball is a copy
+  of the very ball the simulated camera follows, while ours is a tracker's estimate of the ball our camera follows; and
+  with phi at 0.99997 the noise's correlation time (about 34,000 frames, 23 minutes) is half a graded block, so within a
+  block it covers less than its stationary variance.
+- For P09's premise: on frames without our ball the aim's position still says where our camera points, but the camera
+  barely moves there, so a velocity of the aim (`aim_vel`, Task E.4) would be near zero on most of them.
+
+**Status: `tracking` FAIL on gates 2 and 4** (`context`, information only: the same two). Under part 1a's retry rule, Tian
+decides between one retry with a single declared change and the drop. No shape model has been retrained.
+
+#### Verdict — dropped (2026-10-31)
+
+At the research bar's pause, Tian decided between one retry and the drop: **drop**. The two retries put to Tian, with
+the expected outcome of each, were:
+- widen the fit's grid (lag -80 to 80 frames, tau up to 250 frames, as the fit sat on both edges, lag 0 and tau 50):
+  might fix the correlation, expected not to fix the dead/alive ratio;
+- hold the simulated camera through DFL's dead balls: expected to push the ratio to about 0 (the median over mostly
+  frozen frames), also a fail, and to leave the correlation as it is.
+
+Reasons: no single declared change was expected to pass both failed gates, so a retry would have been a guess, which
+the research bar rules out (T47); and our camera barely moves where our ball is missing (0.04 m/s), so the aim's
+velocity carries little in the very frames P09 was meant to help.
+
+Code removed in `8c4c959` ("P09 dropped: the camera's aim and its simulator removed (recover from 13c36c6)"), which
+puts every file under `pipeline/` back to `bfeee45` (main before P08 and P10): `pipeline/inputs/camera.py`,
+`Inputs.camera_aim`, `MatchInputs(camera_aim=)`, `pipeline/benchmark/camera.py` and its checks, `camera` in
+`choose.py`'s SAME, and the camera's plumbing through `run.py`, `headroom.py`, `train_shape.py`, `train_dead_ball.py`,
+`conventions.py` and `benchmark/inputs.py`. Recover them from `13c36c6`. No shape model was retrained, and R019's parts
+2 and 3 were never declared. Gitignored leftovers on the machine that ran it: `data/runs/camera/` and
+`data/cache/benchmark/camera/`. After the removal: `pipeline/selftest.py` 185/185, `pipeline/benchmark/selftest.py` 416
+checks; after the merge of main: 191/191 and 424 checks. `main.toml` unchanged (`pipeline/` equals main's).
 
 ## Submission log
 
