@@ -74,10 +74,6 @@ module of its topic:
     label_diff.py
                  label_diff: the shares, possessions per half, changes in ball gaps and moved D onsets worked out on
                  hand-built codes, and that the printout holds figures and no frame (synthetic only)
-    whistle_stats.py
-                 P10's whistle statistics: near a stoppage, the circular control inside each half, the lags to a
-                 stoppage's edge, the seeded bootstrap, the gate and the bar, worked out on hand-built detections, and
-                 that the printout holds figures and no frame (synthetic only)
     harness.py   the harness itself: what it collects, how it reports NOT RUN, the console set-up, and that no check
                  module imports another one
     common.py    what several modules share, and no checks of its own: the synthetic DFL match, the random one
@@ -104,7 +100,7 @@ what two of them share goes to common.py (test_a_check_module_imports_no_other_c
 
 from pipeline.benchmark.checks import (
     calibration, cap, choose, context, conventions, dead_ball, degrade, dfl, dfl_events, fidelity, harness, hazard, headroom,
-    inputs, label_diff, restarts, run, score, shape, sources, tracking, touch, truth, whistle_stats)
+    inputs, label_diff, restarts, run, score, shape, sources, tracking, touch, truth)
 
 MODULES = (sources, dfl, dfl_events, truth, inputs, score, run, choose, hazard, calibration, degrade, cap, tracking, context,
-           fidelity, headroom, touch, dead_ball, conventions, restarts, shape, label_diff, whistle_stats, harness)
+           fidelity, headroom, touch, dead_ball, conventions, restarts, shape, label_diff, harness)

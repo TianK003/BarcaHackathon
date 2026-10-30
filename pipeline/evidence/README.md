@@ -266,7 +266,7 @@ already built.
 4. Check it — `python pipeline/run.py pipeline/configs/<experiment>.toml --score` prints its coverage of the graded
    frames and how often it agrees with the ground truth: `home` on frames the GT calls `H`/`A`, `alive` on every
    graded frame. Then log the run in [docs/results.md](../../docs/results.md).
-5. If the source needs an asset only our match has (the Smart Tagging, the whistle), set `MATCH_ONLY = True` at the top
+5. If the source needs an asset only our match has (the Smart Tagging), set `MATCH_ONLY = True` at the top
    level of its module: `evidence.match_only(kind)` reads it, and the benchmark's `--drop-match-only` then runs a config
    without the source, naming it in the report, since a DFL match cannot serve it.
 
@@ -312,6 +312,6 @@ already built.
 | P07 team shape and movement | `home` | for the 41% of frames without a ball: `shape_possession` (done, R011) |
 | P08 Smart Tagging | both | phases are not possessions ([T17](../../docs/traps.md)) |
 | P09 camera aim | — | a feature for P07, not a source on its own |
-| P10 referee whistle | `alive` | audio confirmed, starts at t = 0 (A04) |
+| P10 referee whistle | `alive` | dropped, R018/R018b (whistles near stoppages 1.5× chance, below the declared 2×; code removed) |
 | P13 / P14 / P15 | via better inputs or pre-trained models | |
 | P17 restart-team channel | `home`, from each restart on, or over each stoppage for the decoder's restart states | `restart_team` (built; its confidences and adoption are R014's, the restart states' R014b's; P17 dropped, neither met its bar, so it stays in the code, off by default) |

@@ -110,7 +110,7 @@ match is loaded, with a sentence that names what to change: no config, a config 
 dot, two configs with the same name, an unknown profile, truth or match, a calibration that is not one.
 A source that needs something a benchmark match does not have (the video's homography, the Smart Tagging) stops the run
 with its config, its name and kind and the asset named; it is never scored as zeros.
-A source that needs an asset only our match has (the Smart Tagging, the whistle) declares `MATCH_ONLY = True` in its own
+A source that needs an asset only our match has (the Smart Tagging) declares `MATCH_ONLY = True` in its own
 module (`evidence.match_only(kind)` reads it), and its error then ends with a hint to run with `--drop-match-only`. That
 flag runs each config without such sources (`run.drop_match_only`), never silently: the printed block names what was
 dropped, and every report carries `dropped_match_only` (a list of source names, `[]` when nothing was dropped; a report

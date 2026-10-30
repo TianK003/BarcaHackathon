@@ -351,7 +351,7 @@ def drop_match_only(config):
     """(config without its match-only evidence, the names of what was removed, in config order).
 
     A source declares MATCH_ONLY in its own module (evidence.match_only) when it needs an asset that only our match
-    has, the Smart Tagging or the whistle: a DFL match has neither, so a config that uses one cannot be benchmarked as
+    has, the Smart Tagging: a DFL match has none, so a config that uses it cannot be benchmarked as
     it is, and the runner says so instead of scoring zeros. This is the explicit way round it: the same config
     without those sources, never silently. `text` and `path` are kept as written, so a report quotes the file that was
     given (and a latency file hashes it); only the evidence that runs changes, and the names removed go in the report,

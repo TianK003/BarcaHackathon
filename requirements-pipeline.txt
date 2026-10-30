@@ -8,7 +8,6 @@
 # Linux. (A full `pip freeze` of the team venv would carry Windows-only packages such as pywinpty from the notebook
 # stack.) The notebooks and kloppy stay in requirements-starter.txt. When the pipeline starts importing a new
 # package, pin it here in the same commit.
-imageio-ffmpeg==0.6.0  # the pinned ffmpeg binary that decodes the tactical video's audio (P10)
 numpy==2.4.6
 pandas==3.0.6
 python-dateutil==2.9.0.post0

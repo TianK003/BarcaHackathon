@@ -101,7 +101,7 @@ def test_match_inputs_contract():
     assert np.isnan(evidence.alive).all(), "nearest_player has no opinion on alive vs dead"
 
     # What a BAR-ATH asset is and a benchmark match has none of.
-    for asset in ("homography", "smart_tagging", "audio_features"):
+    for asset in ("homography", "smart_tagging"):
         message = expect_error(match_inputs.AssetUnavailable, lambda: getattr(inputs, asset), asset, "P01")
         assert message == ASSET_MESSAGE.format(asset), message
     assert issubclass(match_inputs.AssetUnavailable, LookupError)

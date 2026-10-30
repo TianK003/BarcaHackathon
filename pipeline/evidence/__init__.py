@@ -34,8 +34,8 @@ REGISTRY = {
 def match_only(kind):
     """True when the source `kind` declares MATCH_ONLY = True in its module: it needs an asset only our match has.
 
-    The Smart Tagging and the whistle are such assets: a DFL match served to the benchmark has neither, so a config
-    that uses them cannot be benchmarked as it is. The source says so once, in its own module, and the benchmark
+    The Smart Tagging is such an asset: a DFL match served to the benchmark has none, so a config
+    that uses it cannot be benchmarked as it is. The source says so once, in its own module, and the benchmark
     runner's --drop-match-only reads it here, so the list of such sources cannot drift from the sources themselves.
     A module without the attribute is not match-only. KeyError names an unknown kind.
     """

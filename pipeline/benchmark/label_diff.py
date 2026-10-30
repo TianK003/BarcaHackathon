@@ -5,7 +5,7 @@
     out = diff(reference_codes, codes, inputs)       # {"d_share", "x_share", "possessions", "changed_share", ...}
     for line in render("config.toml", out): print(line)
 
-Why it exists. A source that cannot be benchmarked (Smart Tagging, the whistle: they exist for our match only, P08, P10)
+Why it exists. A source that cannot be benchmarked (Smart Tagging: it exists for our match only, P08)
 is judged by what it does to the labels of the match it can be run on, and the label-free checks of P12 and P09 ask the
 same question of a decoder change. With no truth to score against, the honest figures are how much of the output moves
 and where: the share of graded frames whose label differs, how many of those are frames where the ball is not seen (a

@@ -3,7 +3,6 @@
     inputs = Inputs()                 # touches nothing yet
     inputs.atd.ball_xy                # parses the ATD once (cached under data/cache/), then reuses it
     inputs.homography.matrices        # per-frame 3x3, checked to be one row per frame
-    inputs.audio_features             # (n, 2) whistle-band dB per frame, decoded once and cached
     inputs.smart_tagging              # the 638 automatic phase intervals, start/end already in frames
 
 Downstream of this module every per-frame array has exactly n_frames rows, and row i is frame i of the tactical
@@ -12,7 +11,6 @@ video -- the submission's own index. The conversions that make that true happen 
     ATD             frame_id 1..199319         -> row frame_id - 1
     homography      frame 0..199318            -> row as is (checked)
     Smart Tagging   seconds from frame 0       -> round(seconds * 25), by starter/load_smart_tagging.py
-    audio           seconds from frame 0       -> round(seconds * 25), no offset (A04), by audio.py
 
 pipeline/inputs/README.md explains the stage; docs/traps.md T08-T11 and T15-T19 are the traps it exists to absorb.
 """
@@ -24,7 +22,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 import games
-from pipeline.inputs import atd_cache, audio
+from pipeline.inputs import atd_cache
 from pipeline.inputs.atd_cache import Atd  # noqa: F401  (re-exported: the type evidence code works with)
 from starter import load_homography, load_smart_tagging
 
@@ -116,14 +114,6 @@ class Inputs:
         """The Smart Tagging intervals as starter/load_smart_tagging.load returns them: dicts with code, tags and
         start_frame/end_frame (half-open). Automatic phases, not possessions (docs/traps.md T17)."""
         return load_smart_tagging.load(self.game, self.data_dir)
-
-    @functools.cached_property
-    def audio_features(self):
-        """(n, 2) float64, columns audio.FEATURE_NAMES: the tactical video's audio as band features, row i = video
-        frame i with no offset (docs/results.md A04). Decoded once with the pinned ffmpeg, then cached under
-        <data dir>/cache/audio/ (pipeline/inputs/audio.py). Read-only."""
-        (video,) = games.require(["video"], self.game, self.data_dir)
-        return audio.load_or_build(video, self.n_frames, self.cache_dir)
 
     # -- the shape of the match ----------------------------------------------------------------------------------------
 
