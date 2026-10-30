@@ -40,7 +40,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R017 | 2026-10-30 | Smart Tagging's votes (P08) against our own pseudo-labels on BAR-ATH: team agreement with `controlled_touch` episodes and dead agreement with `dead_ball_model`, the two parts' bars, and two strengths (`frame` 0.2, `tag` 1.0) for Tian's pick | 0.6986 | 0.4000 | — | — (DFL has no tags; `main.toml --drop-match-only` reproduces R013's 0.5430 raw, 0.5593 coarse) | team votes adopted per frame (0.761); dead votes dropped (0.409) |
 | R018 | 2026-10-30 | the referee's whistle (P10): a hand-built 2 to 4 kHz band-pass detector on the tactical audio, its feasibility gate and its bar against `main.toml`'s own decoded stoppages | — | — | — | — | dropped (R018, R018b: gate failed, ratio 1.52 / 1.51) |
 | R018b | 2026-10-30 | the whistle (P10), the one retry R018 allowed: the tonal threshold set to the match's own 98th percentile of tonal_db, the same gate and bar | — | — | — | — | dropped, code removed (fc9dbed): gate failed, ratio 1.51 (55 detections) |
-| R019 | 2026-10-30 | P09: the camera's aim in the shape model; part 1a: the camera's fit and fidelity gates (peak lag +-10 frames, peak correlation +-0.05, median error +-3.0 m, dead/alive speed ratio +-25%; the gap/visible ratio a WARN), declared before the first simulation; part 2a: the gates run | - | - | - | - | `tracking` FAIL: peak correlation 0.9115 vs ours 0.843, dead/alive speed ratio 0.575 vs 0.128 (the simulated camera never stands still); retry or drop is Tian's call |
+| R019 | 2026-10-30 | P09: the camera's aim in the shape model; part 1a: the camera's fit and fidelity gates (peak lag +-10 frames, peak correlation +-0.05, median error +-3.0 m, dead/alive speed ratio +-25%; the gap/visible ratio a WARN), declared before the first simulation; part 2a: the gates run | - | - | - | - | `tracking` FAIL: peak correlation 0.9115 vs ours 0.843, dead/alive speed ratio 0.575 vs 0.128 (the simulated camera never stands still); dropped 2026-10-31, code removed (8c4c959): gates 2 and 4 failed, no retry |
 
 ### The four yardsticks on every profile, in one table
 
@@ -6541,6 +6541,27 @@ Part 1a quoted A03's gap/visible speeds (0.58 / 1.22); those came from A03's own
 
 **Status: `tracking` FAIL on gates 2 and 4** (`context`, information only: the same two). Under part 1a's retry rule, Tian
 decides between one retry with a single declared change and the drop. No shape model has been retrained.
+
+#### Verdict — dropped (2026-10-31)
+
+At the research bar's pause, Tian decided between one retry and the drop: **drop**. The two retries put to Tian, with
+the expected outcome of each, were:
+- widen the fit's grid (lag -80 to 80 frames, tau up to 250 frames, as the fit sat on both edges, lag 0 and tau 50):
+  might fix the correlation, expected not to fix the dead/alive ratio;
+- hold the simulated camera through DFL's dead balls: expected to push the ratio to about 0 (the median over mostly
+  frozen frames), also a fail, and to leave the correlation as it is.
+
+Reasons: no single declared change was expected to pass both failed gates, so a retry would have been a guess, which
+the research bar rules out; and our camera barely moves where our ball is missing (0.04 m/s), so the aim's velocity
+carries little in the very frames P09 was meant to help (T47).
+
+Code removed in `8c4c959` ("P09 dropped: the camera's aim and its simulator removed (recover from 13c36c6)"), which
+puts every file under `pipeline/` back to `bfeee45` (main before P08 and P10): `pipeline/inputs/camera.py`,
+`Inputs.camera_aim`, `MatchInputs(camera_aim=)`, `pipeline/benchmark/camera.py` and its checks, `camera` in
+`choose.py`'s SAME, and the camera's plumbing through `run.py`, `headroom.py`, `train_shape.py`, `train_dead_ball.py`,
+`conventions.py` and `benchmark/inputs.py`. Recover them from `13c36c6`. No shape model was retrained, and R019's parts
+2 and 3 were never declared. Gitignored leftovers on the machine that ran it: `data/runs/camera/` and
+`data/cache/benchmark/camera/`.
 
 ## Submission log
 

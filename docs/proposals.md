@@ -45,7 +45,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P06](#p06--global-decoding-per-half-hmm--hidden-semi-markov) | Global decoder (HMM / semi-Markov) per half | fact 5 | M | high | done → R006–R007, A10; decoder re-chosen → R010, R013 |
 | [P07](#p07--possession-without-the-ball-team-shape-and-movement) | Possession without the ball: team shape | fact 1 | M | high: +0.0942 raw at the chosen decoder, on a benchmark whose gain is not a forecast for our match (R011) | done → R011; weight re-chosen → R013 |
 | [P08](#p08--smart-tagging-as-soft-evidence) | Smart Tagging as soft evidence | facts 1, 4 | S | medium | done → R017 (team votes adopted per frame, weight 0.2; dead votes measured and dropped) |
-| [P09](#p09--camera-aim-as-a-coarse-ball-zone-prior) | Camera aim as a coarse ball-zone prior | fact 1 | S | low–medium | idea |
+| [P09](#p09--camera-aim-as-a-coarse-ball-zone-prior) | Camera aim as a coarse ball-zone prior | fact 1 | S | low–medium | dropped → R019 (the simulated camera failed two fidelity gates; code removed) |
 | [P10](#p10--referee-whistle-from-the-audio-track) | Referee whistle from the audio track | fact 4 | S–M | medium (audio confirmed, A04) | dropped → R018, R018b (whistles near stoppages 1.5× chance, below the declared 2×; code removed) |
 | [P11](#p11--touch-and-pass-events-to-place-boundaries) | Touch and pass events to place boundaries | fact 5 | M–L | medium–high | idea |
 | [P12](#p12--metric-aware-post-processing) | Metric-aware post-processing | fact 5 | S | medium | done → R012 (shift adopted), R016 (free X measured and dropped) |
@@ -63,7 +63,7 @@ One track per person; swap freely.
 | Pipeline and decoder | P03 | P06 (done 25 Oct, R006–R007, A10) | P06 is tuned on P01 (R007); then [After P06](#after-p06); `main.toml` is P04 + P05 (R010), then P07 (R011) and P02's shift (R012); [After P04 and P05](#after-p04-and-p05), then [After P07 and P02](#after-p07-and-p02); its item 1 done 26 Oct (R013: the touch rule and the decoder re-chosen); then [After R013](#after-r013) |
 | Ball visible | P04 (done 25 Oct, R008, R010) | P11 | P11 |
 | Dead ball | P05 (done 25 Oct, R009, R010) | P08 (done 30 Oct, R017: team votes adopted per frame, dead votes dropped) | P10 (dropped 30 Oct, R018, R018b) |
-| Ball missing | P07 (done 25 Oct, R011) | P09 | P13 or P14 spike → go / no-go |
+| Ball missing | P07 (done 25 Oct, R011) | P09 (dropped 31 Oct, R019) | P13 or P14 spike → go / no-go |
 
 Week 4: feature freeze **Fri 13 Nov**; regenerate the file from a clean clone on a second machine; finish the
 [technical document](technical_document.md); submit **Mon 16 Nov** and keep Tuesday as slack.
@@ -904,6 +904,10 @@ Athletic: the count of possessions moved the other way on BAR-ATH.
 ## Cheap signals worth checking
 
 ### P09 — Camera aim as a coarse ball-zone prior
+
+**Status: dropped → [R019](results.md) (the simulated camera failed two of the four fidelity gates on `tracking`: peak
+correlation and dead/alive speed ratio; Tian chose the drop over a retry, T47; code removed).** The code was removed in
+`8c4c959`, where it is recoverable from `13c36c6`.
 
 **Why.** The tactical camera pans to follow play on every frame, including the long ball gaps. Measured in A03: the
 pitch point under the image centre tracks the ball's along-pitch position with corr 0.84, once the camera is allowed

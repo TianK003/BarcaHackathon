@@ -312,7 +312,7 @@ already built.
 | P05 dead-ball detector | `alive` (+ `next_home` later) | supersedes `ball_presence`; the ball is visible on 66% of dead frames ([T12](../../docs/traps.md)) |
 | P07 team shape and movement | `home` | for the 41% of frames without a ball: `shape_possession` (done, R011) |
 | P08 Smart Tagging | `home` (done, R017) | phases are not possessions ([T17](../../docs/traps.md)); the dead votes were dropped |
-| P09 camera aim | — | a feature for P07, not a source on its own |
+| P09 camera aim | — | dropped, R019 (the simulated camera failed two fidelity gates; code removed) |
 | P10 referee whistle | `alive` | dropped, R018/R018b (whistles near stoppages 1.5× chance, below the declared 2×; code removed) |
 | P13 / P14 / P15 | via better inputs or pre-trained models | |
 | P17 restart-team channel | `home`, from each restart on, or over each stoppage for the decoder's restart states | `restart_team` (built; its confidences and adoption are R014's, the restart states' R014b's; P17 dropped, neither met its bar, so it stays in the code, off by default) |
