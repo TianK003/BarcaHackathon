@@ -2,8 +2,8 @@
 
     fit_ = load_fit()                                 # BAR-ATH, fitted once and cached: constants and aggregates only
     aim = simulated_aim(match, seed, fit_)            # (n,) metres, the aim a camera like ours would have had on DFL
-    stats = measure(aim, ball_x, ball_seen, dead)     # the gates' statistics, the same code for ours and for DFL's
-    digest(fit_)                                      # what a report names it by
+    stats = measure(aim, ball_x, ball_seen, dead, blocks)   # the gates' statistics, one code for ours and DFL's
+    digest(fit_)                                      # what a report names it by: the eight constants
 
 Why a simulated camera. P09's belief is that the tactical camera's aim (pipeline/inputs/camera.py: the pitch point under
 the image centre) says where the ball roughly is along the pitch even while our tracker has lost it, since the operator
@@ -19,12 +19,22 @@ lowpass is a first-order exponential smoother with alpha = 1 / (1 + tau), which 
 ball (the follower cannot follow what it is not given, and our tracker's gaps are long: median 10.7 s, A02) and starts
 again at each graded block. b below 1 is a camera that pans less far than the ball goes, staying short of the goal
 lines, and a is the offset that centres it. fit() searches lag 0..80 frames (0 to 3.2 s) and tau in TAUS, and fits a
-and b by least squares for each pair, on the frames where the aim at t and our ball at t - lag are both there: the smoothed ball is defined through a gap, but
-held, and a frame whose regressor is a held value would measure our tracker's gaps and not the camera. The pair with the
-smallest residual variance is kept (a tie goes to the smaller lag, then the smaller tau), the residuals' lag-1
-autocorrelation is phi and their standard deviation times sqrt(1 - phi^2) is sigma, so that the noise has the
-residuals' variance. lo and hi are the 0.5th and 99.5th percentiles of our aim on the graded frames: the simulated aim
-is clipped to them, since a real camera does not pan past where it ever pointed. Nothing is random in the fit.
+and b by least squares for each pair, on the frames where the aim at t is there and our ball at t - lag is seen and
+settled (below). The pair with the smallest residual variance is kept (a tie goes to the smaller lag, then the smaller
+tau), the residuals' lag-1 autocorrelation is phi and their standard deviation times sqrt(1 - phi^2) is sigma, so
+that the noise has the residuals' variance. lo and hi are the 0.5th and 99.5th percentiles of our aim on the graded
+frames: the simulated aim is clipped to them, since a real camera does not pan past where it ever pointed. Nothing is
+random in the fit.
+
+Settled frames: the fit after our ball's gaps. Our smoother holds its last value through each of our tracker's gaps,
+but the real camera kept following the real ball, so for a while after a gap our smoothed ball still carries the stale
+value and the camera does not: residuals that would bias the fit towards a small tau (whose smoother forgets the
+stale value fastest) and a larger sigma. So for each candidate tau a frame's regressor counts only once the smoother
+has seen at least ceil(SETTLE * tau) visible frames in a row since the last gap (the block's start counts as one,
+since the smoother starts there from nothing while the camera was already following): what is left of the stale value
+is then (tau / (1 + tau)) ** ceil(SETTLE * tau), about e^-3 = 5% of it. tau 0 has no memory and needs only the frame
+itself to be seen. The candidates are then compared on their own settled frames. The simulator needs none of this:
+DFL's clean ball has no gaps to settle from.
 
 The simulator. simulated_aim drives the fitted follower with the match's clean ball, clean_atd(match).ball_xy[:, 0]
 times the pitch's length: the real camera follows the real ball, even where our tracker loses it, so the degraded ball
@@ -42,12 +52,18 @@ correlation, the median and p90 along-pitch error at that lag, and the aim's med
 alive ones (a gate) and in ball gaps over ball-visible frames (a WARN). A ratio of medians does not depend on the frame
 rate, so two cameras at different rates can be compared by it.
 
+The digest. digest(fit) is what a report (and so choose.py's SAME) names the camera by: the sha256 of the eight
+constants the simulator uses (lag, tau, a, b, phi, sigma, lo, hi), and nothing of `stats`, so that a change to what
+measure() reports never makes two runs of the same simulated camera look different.
+
 The cache. load_fit keeps the fit in <data dir>/cache/benchmark/camera/<key digest>/fit.json, with the key that made it:
-the ATD's and the homography's source files (bytes and sha256), the fit's constants (FIT_VERSION, LAGS, TAUS,
-CLIP_PERCENTILES, P90, DECIMALS and the image centre the aim is read at), the sha256 of this file and of
-pipeline/inputs/camera.py, the numpy version, and the match's frames, rate, pitch and graded blocks. A cache is read only if the whole key matches,
-calibration.load's rule, so an edited definition never reuses an old fit; an unreadable cache is absent, and is fitted
-again. The folder name is the first calibration.KEY_DIGITS hex digits of the key's sha256, as the Calibration's is.
+the ATD's and the homography's source files (bytes and sha256), the fit's constants (FIT_VERSION, LAGS, TAUS, SETTLE,
+CLIP_PERCENTILES, P90, DECIMALS and the image centre the aim is read at), the text sha256 of the code it runs
+(SOURCES: this file, the aim's definition, the ball's kinematics, the homography's loader and the inputs that align
+them), the numpy version, and the match's frames, rate, pitch and graded blocks. A cache is read only if the whole key
+matches, calibration.load's rule, so an edited definition never reuses an old fit; an unreadable cache is absent, and is
+fitted again. The folder name is the first calibration.KEY_DIGITS hex digits of the key's sha256, as the Calibration's
+is.
 
 What a fit holds is aggregates of BAR-ATH: eight constants and a short dict of statistics (scalars). Nothing per frame
 is kept, cached, printed or returned by load_fit, so the fit and its file may be printed and committed as they are (the
@@ -73,6 +89,8 @@ from pipeline.inputs import camera as aim_module
 FIT_VERSION = 1                 # bump to refit every cache at once; an edit to this file does that already (the key)
 LAGS = tuple(range(81))         # frames the aim may trail the ball by: 0 to 3.2 s at 25 Hz (the fit and the peak lag)
 TAUS = (0, 5, 10, 20, 35, 50)   # the smoother's time constants tried, in frames: alpha = 1 / (1 + tau)
+SETTLE = 3                      # after a gap, a regressor counts from ceil(SETTLE * tau) visible frames in a row on
+CONSTANTS = ("lag", "tau", "a", "b", "phi", "sigma", "lo", "hi")    # what the simulator uses, and what digest() names
 CLIP_PERCENTILES = (0.5, 99.5)  # the simulated aim is clipped to these percentiles of ours: lo and hi
 SEED_TAG = 9009                 # the simulator's own constant in its generator's seed (T22)
 FPS = 25                        # frames per second of a speed, where none is given (ours and DFL's)
@@ -81,6 +99,10 @@ DECIMALS = 9                    # the fit's floats are rounded to this, so that 
 CACHE_FOLDER = ("cache", "benchmark", "camera")     # <data dir>/cache/benchmark/camera/<key digest>/fit.json
 FIT_FILE = "fit.json"
 MIN_PAIRS = 3                   # a regression or a correlation needs at least this many frames
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# The code a fit depends on, by its path from the repository's root: its sha256 (CRLF read as LF) is in the cache key.
+SOURCES = ("pipeline/benchmark/camera.py", "pipeline/inputs/camera.py", "pipeline/evidence/kinematics.py",
+           "starter/load_homography.py", "pipeline/inputs/__init__.py")
 
 
 @dataclass(frozen=True)
@@ -170,7 +192,8 @@ def fit(aim, ball_x, blocks, fps=FPS):
 
     See the module docstring for the model and the search. ball_x is NaN where the ball is not seen; aim may be NaN
     anywhere (an invalid homography). Frames outside the blocks are not used. Deterministic: no randomness, the grid in
-    a fixed order. ValueError if no (lag, tau) has MIN_PAIRS frames with both, or the regressor never varies.
+    a fixed order. ValueError if no (lag, tau) has MIN_PAIRS settled frames with an aim, or the regressor never
+    varies.
     """
     aim, ball_x = _vector("aim", aim), _vector("ball_x", ball_x)
     if ball_x.shape != aim.shape:
@@ -178,29 +201,32 @@ def fit(aim, ball_x, blocks, fps=FPS):
     spans = _blocks(blocks, aim.size)
     aim_ok, seen = np.isfinite(aim), np.isfinite(ball_x)
     smoothed = {tau: lowpass(ball_x, tau, blocks=spans) for tau in TAUS}
+    runs = _visible_runs(seen, spans)
+    settled = {tau: runs >= max(1, math.ceil(SETTLE * tau)) for tau in TAUS}      # the module docstring's rule
 
     # The scan reads sums over contiguous slices (each block's frames t and t - lag), weighted by the frames used: the
     # same least squares as on the gathered frames, and fast enough to try 486 pairs on a match. The values are centred
     # first (and NaN set to 0, where the weight is 0 anyway), so that the sums of squares do not cancel.
     y0 = _centred(aim)
+    y0_squared = y0 * y0
     x0 = {tau: _centred(values) for tau, values in smoothed.items()}
     x0_squared = {tau: values * values for tau, values in x0.items()}
     best = None
     for lag in LAGS:
         parts = _slices(spans, lag)
-        weights = [(aim_ok[now] & seen[then]).astype(np.float64) for now, then in parts]
-        n = sum(float(weight.sum()) for weight in weights)
-        if n < MIN_PAIRS:
-            continue
-        weighted_y = [weight * y0[now] for weight, (now, _) in zip(weights, parts)]
-        sy = sum(float(values.sum()) for values in weighted_y)
-        syy = sum(float(values @ y0[now]) for values, (now, _) in zip(weighted_y, parts)) - sy * sy / n
         for tau in TAUS:
-            sx = sxx = sxy = 0.0
-            for weight, values, (_, then) in zip(weights, weighted_y, parts):
+            n = sy = syy = sx = sxx = sxy = 0.0
+            for now, then in parts:
+                weight = (aim_ok[now] & settled[tau][then]).astype(np.float64)
+                n += float(weight.sum())
+                sy += float(weight @ y0[now])
+                syy += float(weight @ y0_squared[now])
                 sx += float(weight @ x0[tau][then])
                 sxx += float(weight @ x0_squared[tau][then])
-                sxy += float(values @ x0[tau][then])
+                sxy += float((weight * y0[now]) @ x0[tau][then])
+            if n < MIN_PAIRS:
+                continue
+            syy -= sy * sy / n
             sxx -= sx * sx / n
             sxy -= sx * sy / n
             if not sxx > 0.0:
@@ -209,12 +235,12 @@ def fit(aim, ball_x, blocks, fps=FPS):
             if best is None or variance < best[0]:
                 best = (variance, lag, tau)
     if best is None:
-        raise ValueError("fit: no lag in 0..{} and tau in {} has {} frames with both an aim and a ball seen, with "
-                         "the ball moving; nothing can be fitted".format(LAGS[-1], TAUS, MIN_PAIRS))
+        raise ValueError("fit: no lag in 0..{} and tau in {} has {} frames with an aim and a settled ball, with the "
+                         "ball moving; nothing can be fitted".format(LAGS[-1], TAUS, MIN_PAIRS))
 
     _, lag, tau = best
     now, then = _pairs(spans, lag)
-    keep = aim_ok[now] & seen[then]
+    keep = aim_ok[now] & settled[tau][then]
     now, then = now[keep], then[keep]
     x, y = smoothed[tau][then], aim[now]
     b = float(((x - x.mean()) @ (y - y.mean())) / ((x - x.mean()) @ (x - x.mean())))
@@ -239,13 +265,14 @@ def fit(aim, ball_x, blocks, fps=FPS):
 
 # -- the statistics ---------------------------------------------------------------------------------------------------
 
-def measure(aim, ball_x, ball_seen, dead, blocks=None, fps=FPS):
+def measure(aim, ball_x, ball_seen, dead, blocks, fps=FPS):
     """The gates' statistics of a camera: {name: number or None}, the same code for ours and for a simulated one.
 
     `aim` and `ball_x` are (n,) metres along the pitch, `ball_seen` (n,) bool (the ball as the tracker serves it, not
     the clean one), `dead` (n,) bool of the frames decoded D, or None (the dead/alive entries are then None).
-    `blocks` [(half, start, stop)] keeps every pair and every difference inside one block, and the frames outside them
-    out; None takes the whole array as one block (the caller then sets the aim NaN where it has none).
+    `blocks` [(half, start, stop)], at least one, required: every pair and every difference is kept inside one block,
+    and no frame outside them is ever counted, so that an aim off the graded frames (ours has one through half time)
+    cannot reach a gate for want of a mask.
 
         peak_lag, peak_corr     the lag in LAGS maximising corr(aim(t + lag), ball_x(t)) over frames t with the ball
                                 seen (a tie: the smaller lag), and that correlation; pairs, the frames it was on
@@ -266,7 +293,9 @@ def measure(aim, ball_x, ball_seen, dead, blocks=None, fps=FPS):
         dead = np.asarray(dead, dtype=bool)
         if dead.shape != aim.shape:
             raise ValueError("measure: dead must have one flag per frame ({}), got {}".format(aim.size, dead.size))
-    spans = [(1, 0, aim.size)] if blocks is None else _blocks(blocks, aim.size)
+    spans = _blocks(blocks, aim.size)
+    if not spans:
+        raise ValueError("measure: blocks must name at least one graded block (half, start, stop); got none")
     seen = ball_seen & np.isfinite(ball_x)
     aim_ok = np.isfinite(aim)
 
@@ -367,8 +396,9 @@ def _backfilled(values):
 
 # -- the cache --------------------------------------------------------------------------------------------------------
 
-CAMERA_SHA256 = calibration_module._text_sha256(__file__)           # this file, as the module is imported
-AIM_SHA256 = calibration_module._text_sha256(aim_module.__file__)   # the aim's own definition
+# Taken as the module is imported, as calibration.py takes its own: a process that imported the code before it changed
+# goes on running it, and keeps the cache that fits it.
+SOURCE_SHA256 = {name: calibration_module._text_sha256(os.path.join(ROOT, *name.split("/"))) for name in SOURCES}
 
 
 def load_fit(data_dir=None, rebuild=False, inputs=None):
@@ -396,8 +426,10 @@ def load_fit(data_dir=None, rebuild=False, inputs=None):
 
 
 def digest(fit):
-    """The sha256 of everything a CameraFit holds: two fits are the same if and only if their digests agree."""
-    text = json.dumps(_document(fit), sort_keys=True, separators=(",", ":"), allow_nan=False)
+    """The sha256 of the eight constants the simulator uses (CONSTANTS), as canonical JSON: what reports name the camera
+    by. Two fits that would simulate the same aim have the same digest, whatever their `stats` say."""
+    text = json.dumps({name: getattr(fit, name) for name in CONSTANTS}, sort_keys=True, separators=(",", ":"),
+                      allow_nan=False)
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
@@ -415,10 +447,10 @@ def _key(inputs):
     homography = games.require(["homography"], inputs.game, inputs.data_dir)[0]
     key = {
         "fit_version": FIT_VERSION,
-        "constants": {"lags": [LAGS[0], LAGS[-1]], "taus": list(TAUS), "clip_percentiles": list(CLIP_PERCENTILES),
-                      "centre": list(aim_module.CENTRE), "p90": P90, "decimals": DECIMALS},
-        "code_sha256": CAMERA_SHA256,
-        "aim_sha256": AIM_SHA256,
+        "constants": {"lags": [LAGS[0], LAGS[-1]], "taus": list(TAUS), "settle": SETTLE,
+                      "clip_percentiles": list(CLIP_PERCENTILES), "centre": list(aim_module.CENTRE), "p90": P90,
+                      "decimals": DECIMALS},
+        "source_sha256": dict(SOURCE_SHA256),
         "atd_sources": inputs.atd_manifest["sources"],
         "atd_cache_version": inputs.atd_manifest["cache_version"],
         "homography": atd_cache.describe_source(homography),
@@ -505,6 +537,18 @@ def _pairs(spans, lag):
         return empty, empty
     now = np.concatenate(now)
     return now, now - lag
+
+
+def _visible_runs(seen, spans):
+    """(n,) int: the frames in a row with the ball seen that end at each frame, counted from its block's start (a gap
+    or the start resets it); 0 where the ball is not seen and outside the blocks."""
+    runs = np.zeros(seen.size, dtype=np.int64)
+    for _, start, stop in spans:
+        segment = seen[start:stop]
+        index = np.arange(stop - start)
+        last_unseen = np.maximum.accumulate(np.where(segment, -1, index))
+        runs[start:stop] = np.where(segment, index - last_unseen, 0)
+    return runs
 
 
 def _slices(spans, lag):

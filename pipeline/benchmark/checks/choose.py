@@ -100,3 +100,30 @@ def test_choose_refuses_missing_stale_and_mixed_reports():
         benchmark_run.write_json(path, report)
         expect_error(choose.ChooseError, lambda: chosen(root, ["nearest_w25"]), "nearest_w25", "calibration")
         expect_error(choose.ChooseError, lambda: chosen(root, ["nearest_w25", "nearest_w25"]), "each once")
+
+
+def test_choose_refuses_reports_of_two_cameras():
+    """Reports whose simulated camera differs (P09: another fit, or none at all) are of different runs, and refused;
+    reports from before P09, which have no `camera` key, compare as None and are still read together."""
+    assert "camera" in choose.SAME
+    with tempfile.TemporaryDirectory() as root:
+        written(root, [yardstick_path(50), yardstick_path(25)])
+        assert chosen(root, ["nearest_w25"])["chosen"] == "nearest_w25", "one run, one camera: chosen"
+        path = benchmark_run.report_path(root, "gaps", "nearest_w25", "coarse", sorted(synthetic_matches()), SEEDS)
+        with open(path, encoding="utf-8") as stream:
+            report = json.load(stream)
+        report["camera"]["sha256"] = "0" * 64                       # as if simulated with another camera fit
+        benchmark_run.write_json(path, report)
+        expect_error(choose.ChooseError, lambda: chosen(root, ["nearest_w25"]), "nearest_w25", "camera",
+                     "different runs")
+        del report["camera"]                                         # a report from before P09 beside one after it
+        benchmark_run.write_json(path, report)
+        expect_error(choose.ChooseError, lambda: chosen(root, ["nearest_w25"]), "nearest_w25", "camera")
+        for stem in ("nearest_w50", "nearest_w25"):                  # every report from before P09: None == None
+            for truth in benchmark_run.TRUTHS:
+                path = benchmark_run.report_path(root, "gaps", stem, truth, sorted(synthetic_matches()), SEEDS)
+                with open(path, encoding="utf-8") as stream:
+                    report = json.load(stream)
+                report.pop("camera", None)
+                benchmark_run.write_json(path, report)
+        assert chosen(root, ["nearest_w25"])["chosen"] == "nearest_w25", "reports without the key are one run"

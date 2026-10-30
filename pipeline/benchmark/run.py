@@ -496,7 +496,7 @@ def _report(config, halves, records, seed_list, profile, truth, git, environment
         "halves": [dataclasses.asdict(half) for half in halves],
         "versus": versus,
         "calibration": calibration,          # {sha256, version} of the Calibration degraded with; None for clean
-        "camera": camera_info,               # {sha256} of the CameraFit the aim was simulated from; None for clean
+        "camera": camera_info,               # {sha256} of the camera's constants (camera.digest); None for clean
     }
     if profile["name"] in SENSITIVITY_ONLY:
         report["sensitivity_only"] = SENSITIVITY_ONLY[profile["name"]]      # only for a profile that is one

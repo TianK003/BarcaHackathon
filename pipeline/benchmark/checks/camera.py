@@ -6,9 +6,11 @@ camera_aim, with no truth in it:
 
 * the smoother is the recursion it says, holding a missing ball and starting again at each block
   (test_camera_lowpass_on_a_hand_worked_series);
-* the fit gives back the constants of data made by the follower it fits, and its a, b, phi and sigma are the least
-  squares and the residual statistics of the frames it says it used, recomputed here another way
-  (test_camera_fit_recovers_known_constants);
+* the fit gives back the constants of data made by the follower it fits, of a ball it sees with gaps that the camera
+  did not have, and its a, b, phi and sigma are the least squares and the residual statistics of the frames it says
+  it used, recomputed here another way (test_camera_fit_recovers_known_constants);
+* the digest that reports and selections name the camera by is the eight constants the simulator uses, and nothing of
+  the statistics (test_camera_digest_names_the_simulation_constants_only);
 * the simulated aim is the follower on the clean ball plus the seeded noise, the same bytes for the same (match, seed),
   NaN off the graded blocks, clipped, and blind to the truth (test_camera_simulation_is_deterministic_per_seed,
   test_camera_simulation_reads_no_truth);
@@ -23,6 +25,7 @@ of any match.
 
 import contextlib
 import dataclasses
+import hashlib
 import io
 import json
 import math
@@ -46,13 +49,15 @@ from starter import load_homography
 # The follower the fit must give back (the brief's constants), and the scene it is drawn on: two blocks of BLOCK_ROWS
 # frames. The intercept is the loosest of the four: it is the follower extrapolated to x = 0 from a ball that lives
 # around the middle of the pitch, under noise whose long-run standard deviation is sigma / (1 - phi) = 40 m, so its
-# error's spread is about 80 m / sqrt(frames): 1.6% of a at 600,000 frames (measured over eight seeds while writing
-# this), against the 5% allowed. Fewer frames would make the 5% a matter of the seed.
+# error's spread is about 80 m / sqrt(frames): at 600,000 frames, with the fitter's ball gapped as ours is, its rms
+# was 1.7% of a and its worst 2.3% over eight seeds (lag and tau exact on all eight), measured while writing this,
+# against the 5% allowed. Fewer frames would make the 5% a matter of the seed.
 TRUE = {"lag": 30, "tau": 10.0, "a": 5.0, "b": 0.6, "phi": 0.95, "sigma": 2.0}
 TOLERANCE = 0.05
 BLOCK_ROWS = 300_000
 SEPARATOR = 100
 PITCH_LENGTH = 105.0
+REPOSITORY = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 
 # -- the smoother -----------------------------------------------------------------------------------------------------
@@ -98,11 +103,13 @@ def plain_lowpass(values, tau, start=0, stop=None):
 # -- the fit ----------------------------------------------------------------------------------------------------------
 
 def follower_scene(seed=0, rows=BLOCK_ROWS):
-    """(aim, ball_x, blocks): a ball and the aim of TRUE's follower of it, drawn here, one frame at a time.
+    """(aim, ball_x, blocks): the aim of TRUE's follower of a ball, and that ball as a tracker sees it, drawn here.
 
-    The ball wanders the pitch as a reflected walk whose speed persists (and now and then a long pass), and is missing
-    in runs of 1 to 16 s, as ours is; the aim is a + b * the smoothed ball `lag` frames earlier (NaN for the first `lag`
-    frames of a block) plus AR(1) noise that starts each block from its stationary distribution."""
+    The ball wanders the pitch as a reflected walk whose speed persists (and now and then a long pass). The camera
+    follows all of it: the aim is a + b * the smoothed TRUE ball `lag` frames earlier (NaN for the first `lag` frames of
+    a block) plus AR(1) noise that starts each block from its stationary distribution, all drawn one frame at a time.
+    The ball returned is the one the fitter is given, as ours: missing in runs of 1 to 16 s, so that its own smoother
+    holds a stale value through each gap that the camera never had."""
     rng = np.random.default_rng([seed, 30])
     blocks = [(1, 0, rows), (2, rows + SEPARATOR, 2 * rows + SEPARATOR)]
     n = 2 * rows + SEPARATOR
@@ -121,11 +128,11 @@ def follower_scene(seed=0, rows=BLOCK_ROWS):
                 x, v = 2 * PITCH_LENGTH - x, -v
             path.append(x)
         path = np.array(path)
+        smoothed = plain_lowpass(path, TRUE["tau"])                  # the camera's: the true ball, no gap
         onsets, lengths = rng.random(m) < 0.002, rng.integers(25, 400, m)
         for onset in np.flatnonzero(onsets):
             path[onset:onset + lengths[onset]] = np.nan
-        ball[start:stop] = path
-        smoothed = plain_lowpass(ball, TRUE["tau"], start, stop)
+        ball[start:stop] = path                                       # the fitter's: ours, with gaps
         z = rng.standard_normal(m).tolist()
         state = TRUE["sigma"] / math.sqrt(1 - TRUE["phi"] ** 2) * z[0]
         noise = [state]
@@ -137,11 +144,25 @@ def follower_scene(seed=0, rows=BLOCK_ROWS):
     return aim, ball, blocks
 
 
-def test_camera_fit_recovers_known_constants():
-    """Data from the follower with lag 30, tau 10, a 5, b 0.6, phi 0.95, sigma 2 give back lag and tau exactly and the
-    other four within 5%; a and b are the least squares, and phi and sigma the residuals', of the frames the fit used.
+def visible_runs(ball, blocks):
+    """(n,) the visible-ball frames in a row ending at each frame, counted inside its block (0 where it is not seen)."""
+    runs = [0] * len(ball)
+    values = np.asarray(ball).tolist()
+    for _, start, stop in blocks:
+        count = 0
+        for t in range(start, stop):
+            count = count + 1 if math.isfinite(values[t]) else 0
+            runs[t] = count
+    return np.array(runs)
 
-    The frames used are each block's t from `lag` on whose aim is there and whose ball at t - lag was seen. lo and hi
+
+def test_camera_fit_recovers_known_constants():
+    """A camera that followed the true ball with lag 30, tau 10, a 5, b 0.6, phi 0.95 and sigma 2, fitted from a ball
+    with our kind of gaps, gives back lag and tau exactly and the other four within 5%; a and b are the least squares,
+    and phi and sigma the residuals', of the frames the fit used.
+
+    The frames used are each block's t from `lag` on whose aim is there and whose ball at t - lag ends a run of at least
+    ceil(3 tau) visible frames (the smoother's memory of the gap has faded; at least the one frame for tau 0). lo and hi
     are the aim's 0.5th and 99.5th percentiles, and the fit is the same on a second call (no randomness)."""
     aim, ball, blocks = follower_scene()
     fitted = camera.fit(aim, ball, blocks)
@@ -153,7 +174,9 @@ def test_camera_fit_recovers_known_constants():
     # The arithmetic, another way: np.polyfit on the gathered frames, np.corrcoef on consecutive residuals.
     now = np.concatenate([np.arange(start + fitted.lag, stop) for _, start, stop in blocks])
     then = now - fitted.lag
-    used = np.isfinite(aim[now]) & np.isfinite(ball[then])
+    settled = max(1, math.ceil(3 * fitted.tau))
+    used = np.isfinite(aim[now]) & (visible_runs(ball, blocks)[then] >= settled)
+    assert used.sum() < (np.isfinite(aim[now]) & np.isfinite(ball[then])).sum(), "the frames after a gap are left out"
     smoothed = np.full(len(ball), np.nan)
     for _, start, stop in blocks:
         smoothed[start:stop] = plain_lowpass(ball, fitted.tau, start, stop)
@@ -170,7 +193,28 @@ def test_camera_fit_recovers_known_constants():
     assert abs(fitted.lo - lo) < 1e-8 and abs(fitted.hi - hi) < 1e-8, (fitted.lo, fitted.hi, lo, hi)
     assert fitted.stats["fit_frames"] == int(used.sum()), fitted.stats["fit_frames"]
     small = follower_scene(seed=1, rows=20_000)                 # determinism needs no long scene
-    assert camera.digest(camera.fit(*small)) == camera.digest(camera.fit(*small)), "the fit is deterministic"
+    assert camera.fit(*small) == camera.fit(*small), "the fit is deterministic"
+
+
+def test_camera_digest_names_the_simulation_constants_only():
+    """digest(fit) is the sha256 of the eight constants the simulator uses, as canonical JSON: another constant is
+    another digest, other statistics are not; and so a run with a fit that differs only in its stats writes the same
+    reports, to the byte."""
+    fit = synthetic_camera_fit()
+    constants = {name: getattr(fit, name) for name in ("lag", "tau", "a", "b", "phi", "sigma", "lo", "hi")}
+    canonical = json.dumps(constants, sort_keys=True, separators=(",", ":"))
+    assert camera.digest(fit) == hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    restated = dataclasses.replace(fit, stats={"peak_lag": 12, "median_err": 3.25, "another": None})
+    assert camera.digest(restated) == camera.digest(fit), "the statistics are not the camera"
+    for name, value in (("lag", 6), ("tau", 4.0), ("a", 4.5), ("b", 0.8), ("phi", 0.7), ("sigma", 1.25),
+                        ("lo", 11.0), ("hi", 89.0)):
+        assert camera.digest(dataclasses.replace(fit, **{name: value})) != camera.digest(fit), name
+    matches, cal = synthetic_matches(), synthetic_calibration()
+    with tempfile.TemporaryDirectory() as root:
+        reports = [[entry["report"] for entry in benchmark_run.evaluate_configs(
+            [yardstick_path(50)], profile="gaps", seeds=1, matches=matches, calibration=cal, camera_fit=one,
+            data_dir=root, log=quiet)["configs"]] for one in (fit, restated)]
+    assert json.dumps(reports[0], sort_keys=True) == json.dumps(reports[1], sort_keys=True)
 
 
 # -- the simulator ----------------------------------------------------------------------------------------------------
@@ -270,9 +314,11 @@ def hand_built_scene():
 
 def test_camera_measure_on_a_hand_built_scene():
     """peak_lag, median_err and both ratios exactly as worked out by hand; the same with the scene in two blocks and
-    other frames between them, which `blocks` keeps out; dead None leaves the dead/alive entries None."""
+    other frames between them, which `blocks` keeps out; dead None leaves the dead/alive entries None; and `blocks` is
+    required, so that no frame outside the graded ones can be counted."""
     aim, ball, seen, dead = hand_built_scene()
-    stats = camera.measure(aim, ball, seen, dead)
+    whole = [(1, 0, 120)]
+    stats = camera.measure(aim, ball, seen, dead, whole)
     expected = {"peak_lag": 3, "pairs": 112, "median_err": 2.0, "p90_err": 2.0, "speed_dead_mps": 6.25,
                 "speed_alive_mps": 12.5, "speed_gap_mps": 25.0, "speed_visible_mps": 12.5,
                 "speed_ratio_dead_alive": 0.5, "speed_ratio_gap_visible": 2.0}
@@ -288,15 +334,19 @@ def test_camera_measure_on_a_hand_built_scene():
     blocks = [(1, 0, 120), (2, 120 + between, 240 + between)]
     twice = camera.measure(*doubled, blocks=blocks)
     assert {name: twice[name] for name in expected} == dict(expected, pairs=224), twice
-    assert camera.measure(*doubled) != twice, "without the blocks, the frames between them are read"
+    assert camera.measure(*doubled, blocks=[(1, 0, 245)]) != twice, "one block over all: the frames between are read"
 
-    blind = camera.measure(aim, ball, seen, None)
+    blind = camera.measure(aim, ball, seen, None, whole)
     assert blind["speed_dead_mps"] is None and blind["speed_alive_mps"] is None
     assert blind["speed_ratio_dead_alive"] is None and blind["speed_ratio_gap_visible"] == 2.0, blind
-    empty = camera.measure(np.full(5, np.nan), np.full(5, np.nan), np.zeros(5, dtype=bool), np.zeros(5, dtype=bool))
+    empty = camera.measure(np.full(5, np.nan), np.full(5, np.nan), np.zeros(5, dtype=bool), np.zeros(5, dtype=bool),
+                           [(1, 0, 5)])
     assert empty["peak_lag"] is None and empty["median_err"] is None and empty["speed_ratio_dead_alive"] is None
-    expect_error(ValueError, lambda: camera.measure(aim, ball[:-1], seen, dead), "measure", "same length")
-    expect_error(ValueError, lambda: camera.measure(aim, ball, seen, dead[:-1]), "measure", "dead")
+    expect_error(ValueError, lambda: camera.measure(aim, ball[:-1], seen, dead, whole), "measure", "same length")
+    expect_error(ValueError, lambda: camera.measure(aim, ball, seen, dead[:-1], whole), "measure", "dead")
+    # The blocks are required: an aim off the graded frames must never be counted for want of them.
+    expect_error(TypeError, lambda: camera.measure(aim, ball, seen, dead), "blocks")
+    expect_error(ValueError, lambda: camera.measure(aim, ball, seen, dead, []), "measure", "blocks")
 
 
 # -- the cache, and what it says ---------------------------------------------------------------------------------------
@@ -363,6 +413,14 @@ def test_camera_fit_prints_aggregates_only():
         assert sorted(document["fit"]) == sorted(item.name for item in dataclasses.fields(camera.CameraFit))
         key_leaves = leaves(document["key"], "key")
         assert not any(isinstance(value, list) and len(value) > 10 for _, value in key_leaves), key_leaves
+        # The code the fit depends on is in the key, each file by its text with CRLF read as LF.
+        sources = ("pipeline/benchmark/camera.py", "pipeline/inputs/camera.py", "pipeline/evidence/kinematics.py",
+                   "starter/load_homography.py", "pipeline/inputs/__init__.py")
+        assert sorted(document["key"]["source_sha256"]) == sorted(sources), sorted(document["key"]["source_sha256"])
+        for name in sources:
+            with open(os.path.join(REPOSITORY, *name.split("/")), "rb") as handle:
+                text = handle.read().replace(b"\r\n", b"\n")
+            assert document["key"]["source_sha256"][name] == hashlib.sha256(text).hexdigest(), name
         assert len(camera.digest(fitted)) == 64 and camera.digest(fitted) != camera.digest(
             dataclasses.replace(fitted, a=fitted.a + 1.0))
 
@@ -376,13 +434,13 @@ def test_camera_fit_prints_aggregates_only():
             again = camera.load_fit(data_dir=root, inputs=inputs)
         finally:
             camera.fit = real_fit
-        assert again == fitted and camera.digest(again) == camera.digest(fitted)
+        assert again == fitted
         rebuilt = camera.load_fit(data_dir=root, inputs=inputs, rebuild=True)
-        assert camera.digest(rebuilt) == camera.digest(fitted), "a refit of the same sources is the same fit"
+        assert rebuilt == fitted, "a refit of the same sources is the same fit"
 
         with open(path, "w", encoding="utf-8") as handle:
             handle.write("{not json")
-        assert camera.digest(camera.load_fit(data_dir=root, inputs=inputs)) == camera.digest(fitted)
+        assert camera.load_fit(data_dir=root, inputs=inputs) == fitted
         with open(os.path.join(root, "tactical", "BAR-ATH_tactical_homography.csv"), "a", encoding="utf-8") as handle:
             handle.write("\n")
         camera.load_fit(data_dir=root, inputs=inputs)
