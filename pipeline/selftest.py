@@ -175,6 +175,34 @@ def test_config_bad_scope():
     expect_error(ConfigError, lambda: load_test_config('scope = "match"\n' + MINIMAL_CONFIG), "match", "halves")
 
 
+def test_match_only_reads_the_module_flag():
+    """match_only(kind) is the MATCH_ONLY of the module that defines the source, False where it declares none.
+
+    A source that needs an asset only our match has (the Smart Tagging, the whistle) says so once, in its own module,
+    and the benchmark runner reads it from there: the flag is not repeated in a config or in a list that could drift.
+    """
+    import types
+    from pipeline import evidence
+    for kind in evidence.REGISTRY:
+        assert evidence.match_only(kind) is False, "no source of today's REGISTRY is match-only: " + kind
+
+    module = types.ModuleType("pipeline.evidence._probe_match_only")
+    module.MATCH_ONLY = True
+
+    def compute(run):
+        return None
+
+    compute.__module__ = module.__name__
+    sys.modules[module.__name__] = module
+    evidence.REGISTRY["probe_match_only"] = compute
+    try:
+        assert evidence.match_only("probe_match_only") is True, "a module with MATCH_ONLY = True is match-only"
+    finally:
+        del evidence.REGISTRY["probe_match_only"]
+        del sys.modules[module.__name__]
+    expect_error(KeyError, lambda: evidence.match_only("no_such_source"), "no_such_source")
+
+
 # -- synthetic tracking -----------------------------------------------------------------------------------------------
 #
 # A fake tactical bundle in the real file format, so the cache and the evidence can be checked against the baseline's
