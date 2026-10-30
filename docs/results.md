@@ -5938,7 +5938,7 @@ edge never reaches an `X`.
 
 ```bash
 python pipeline/benchmark/run.py pipeline/configs/main.toml pipeline/benchmark/configs/r016/r016_t025.toml pipeline/benchmark/configs/r016/r016_t035.toml pipeline/benchmark/configs/r016/r016_t045.toml pipeline/benchmark/configs/r016/r016_t055.toml --truth both
-python pipeline/benchmark/choose.py --reference main --metric macro r016_t025 r016_t035 r016_t045 r016_t055
+python pipeline/benchmark/choose.py --reference main --metric macro --band 0.002 r016_t025 r016_t035 r016_t045 r016_t055
 ```
 
 `main` must reproduce R013's figures to the last digit (0.5430 raw and 0.5593 coarse spellF1, alive/dead F1 0.9731).
@@ -5946,7 +5946,7 @@ python pipeline/benchmark/choose.py --reference main --metric macro r016_t025 r0
 **The selection** (R008 to R014's rule, `choose.py --reference main --metric macro` on the reports). The objective is pooled
 raw macroF1 on `tracking`, with a tie band of 0.002. Among the tied configs the best pooled coarse macroF1 wins. Any tie
 left over goes to the lowest threshold, which writes the fewest `X`; so the stems are given to `choose.py` in the order
-`r016_t025 r016_t035 r016_t045 r016_t055`. **Nothing is added after the results**: a choice on an edge of the grid is
+`r016_t025 r016_t035 r016_t045 r016_t055`. The band must be passed explicitly (`--band 0.002`), because the tool's default is 0.005. **Nothing is added after the results**: a choice on an edge of the grid is
 reported as one, and the grid is not extended in this entry.
 
 **The bar.** The chosen config is adopted only if its `tracking` raw pooled macroF1 delta over `main.toml` is at least
