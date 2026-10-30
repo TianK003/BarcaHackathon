@@ -306,6 +306,36 @@ def test_match_inputs_have_no_audio():
     expect_error(match_inputs.AssetUnavailable, lambda: inputs.audio_features, "audio_features", "P01")
 
 
+def test_whistle_detect_runs():
+    from pipeline.evidence import whistle
+    n = 200
+    features = np.full((n, 2), -50.0)
+    graded = np.zeros(n, dtype=bool)
+    graded[10:100] = graded[120:190] = True
+
+    def blast(first, stop, tonal=20.0, band=6.0):
+        features[first:stop] = (tonal, band)
+
+    blast(10, 14)                     # 4 frames: too short
+    blast(20, 25)                     # 5 frames: detected
+    blast(30, 40, tonal=14.99)        # the tonal score just under its threshold
+    blast(50, 60, band=2.99)          # the band just under its
+    blast(70, 75, tonal=15.0, band=3.0)     # both exactly at their thresholds: detected (>=)
+    blast(95, 105)                    # runs out of the block at 100: 5 graded frames, detected
+    blast(112, 125)                   # starts before the graded block at 120: 5 graded frames, first at 120
+    blast(185, 195)                   # to the block's edge at 190: 5 graded frames
+    found = whistle.detect(features, graded)
+    assert found.dtype == np.int64 and found.tolist() == [20, 70, 95, 120, 185], found.tolist()
+    # a run across two touching-but-separate blocks splits at the gap
+    graded2 = np.zeros(n, dtype=bool)
+    graded2[0:50] = graded2[60:100] = True
+    features2 = np.full((n, 2), -50.0)
+    features2[45:65] = (20.0, 6.0)
+    assert whistle.detect(features2, graded2).tolist() == [45, 60], "a block's edge ends a run: 5 + 5, not one of 20"
+    expect_error(ValueError, lambda: whistle.detect(features[:, :1], graded), "features")
+    expect_error(ValueError, lambda: whistle.detect(features, graded[:10]), "graded_mask")
+
+
 def test_match_only_reads_the_module_flag():
     """match_only(kind) is the MATCH_ONLY of the module that defines the source, False where it declares none.
 
