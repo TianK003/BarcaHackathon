@@ -36,7 +36,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R014b | 2026-10-26 | restart states in the decoder (P17, Phase 2b): `restart_team` span `stoppage_end` with `hmm` `restart_source`, `switch_restart` {4, 8, 16, inf} x `use_ball` {false, true}, 8 configs | — | — | — | 0.5433 raw and 0.5589 coarse for `r014b_s04_b1`, against `main.toml`'s 0.5430 and 0.5593 | bar not met (+0.0003 raw, p 0.8125); not adopted; P17 dropped |
 | R015 | 2026-10-29 | the `offpitch` profile (P18): `tracking` v3 with DFL's ball hidden once it is more than m past a line and a share q of the transplanted gaps dropped, m and q fitted once on label-free statistics of our match, its fidelity, and `main.toml` on it | — | — | — | 0.5509 raw and 0.5296 coarse for `main.toml` on `offpitch`, against 0.5430 and 0.5593 on `tracking` (a difference between two profiles) | `offpitch` v1 frozen (m 0.2 m, q 0.430); 8 of 9 gates pass, median gap fails (15.04 s against 10.74); main.toml 0.5509 raw / 0.5296 coarse on it; P18 dropped after R015b |
 | R015b | 2026-10-29 | the `offpitch` v2 rule (the ball hidden while it is more than m past a line and moving, found again at rest), swept once on the benchmark's label-free fidelity statistics before anything was built | — | — | — | — | v2 cannot reach our share past a line at any margin (0.258 to 0.262 against 0.0407); P18 dropped, offpitch code removed (7b555eb) |
-| R018 | 2026-10-30 | the referee's whistle (P10): a hand-built 2 to 4 kHz band-pass detector on the tactical audio, its feasibility gate and its bar against `main.toml`'s own decoded stoppages | — | — | — | — | declared, not run |
+| R018 | 2026-10-30 | the referee's whistle (P10): a hand-built 2 to 4 kHz band-pass detector on the tactical audio, its feasibility gate and its bar against `main.toml`'s own decoded stoppages | — | — | — | — | part 1 run: gate FAILED; R018b declared (part 2) |
 
 ### The four yardsticks on every profile, in one table
 
@@ -5962,6 +5962,47 @@ runs. If R018b also fails, P10 is dropped and its code removed, as P18 was (R015
 | ID | status |
 |---|---|
 | R018 part 1 | declared, not run |
+
+**Part 2, the feasibility result** (2026-10-30, `whistle_stats.py feasibility`, aggregates only). The gate **FAILED**.
+- 340 detections, 185 in half 1 and 155 in half 2, where the gate allows 10 to 120 per half (gate 1 fails);
+- share near a decoded stoppage 0.624 against a control of 0.410, ratio 1.52, where the gate needs at least 2 (gate 3 fails;
+  gate 2, at least 50%, passes);
+- 240 of the 340 detections have a feature within 0.5 dB of a threshold.
+
+Reading: the fixed `TONAL_DB = 15` dB sits inside the crowd noise, so the detector fires on it. The retry R018 part 1 allowed
+is R018b, declared next. Nothing else is read into the failure.
+
+### R018b — The whistle's tonal threshold from the match's own duty cycle (2026-10-30, Tian)
+
+Proposal: P10 · The one retry allowed by R018 part 1.
+
+**Part 1, declared before any run** (2026-10-30), before any code of it is written.
+
+**The single change.** The tonal threshold is no longer a fixed 15 dB. It is the 98th percentile of `tonal_db` over the graded
+frames of the match, computed at run time from the features alone (`np.percentile(features[graded, 0], 98.0)`); no label, no
+stoppage and no score enters it.
+
+**The duty-cycle argument.** A referee whistles roughly 30 to 50 times a half, each for under a second, so at most about 2% of
+graded frames carry a whistle. A threshold that passes 2% of the frames passes about as many frames as whistles can occupy, and
+no more; R018's fixed threshold passed far more and so fired on crowd noise.
+
+**Everything else is unchanged**, by reference to R018 part 1: `BAND_DB` 3.0, `MIN_FRAMES` 5, `WINDOW_FRAMES` 12, the
+pseudo-labels (`main.toml`, sha256 as declared there), the near-a-stoppage window [w - 25, w + 50], the control, the
+feasibility gate (10 to 120 detections per half; at least 50% near a decoded stoppage; at least 2 times the control's share),
+the bar and the strength in the decoder. The comparison is `>=` against the computed threshold, which is rounded as the features
+are (0.01 dB). The public window is not used.
+
+**The gate** is R018 part 1's, unchanged: all three conditions must hold to proceed to the source.
+
+**Reported.** The computed threshold value (dB) is reported as an aggregate, with the number of detections near it (within
+0.5 dB of the tonal threshold or of `BAND_DB`) as in R018.
+
+**If R018b's gate fails, P10 is dropped and its code removed**, as P18 was (R015b). There is no further retry.
+
+| ID | status |
+|---|---|
+| R018 part 2 | feasibility gate failed (340 detections; 0.624 vs 0.410, ratio 1.52) |
+| R018b part 1 | declared, not run |
 
 ## Submission log
 
