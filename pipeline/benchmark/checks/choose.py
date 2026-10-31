@@ -317,9 +317,37 @@ def test_choose_mean_maximin_breaks_a_tie():
     assert choose._select_mean(["b", "a"], raw, coarse, 0.0) == ("b", ["b", "a"], "b")
 
 
+def test_choose_mean_lomo_floor_is_the_min_of_the_kept_means():
+    """The mean lomo's whole rule breaks a tie on min(kept raw mean, kept coarse mean), not on the kept mean of each
+    match's min. X swings between the truths match by match ((0.9, 0.5) and (0.5, 0.9), four of each), so on every fold
+    its kept raw and coarse means are both above Y's steady 0.66 (0.671 at worst) while its per-match mins are all 0.5;
+    the band ties the two (means 0.70 and 0.66). Y is named first, so neither the wrong floor nor the order picks X."""
+    matches = ["M{}".format(number) for number in range(1, 9)]
+
+    def row(pairs):
+        per_match = {truth: dict(zip(matches, values)) for truth, values in zip(("raw", "coarse"), zip(*pairs))}
+        per_match["mean"] = {m: (per_match["raw"][m] + per_match["coarse"][m]) / 2 for m in matches}
+        return {truth: {"per_match": values} for truth, values in per_match.items()}
+
+    rows = {"ref": row([(0.5, 0.5)] * 8), "X": row([(0.9, 0.5), (0.5, 0.9)] * 4), "Y": row([(0.66, 0.66)] * 8)}
+    x = rows["X"]
+    for held in matches:                        # the property holds on every fold, not only on the whole
+        kept = [m for m in matches if m != held]
+        floor = min(sum(x[truth]["per_match"][m] for m in kept) / len(kept) for truth in ("raw", "coarse"))
+        mins = sum(min(x["raw"]["per_match"][m], x["coarse"]["per_match"][m]) for m in kept) / len(kept)
+        assert floor > 0.66 > mins, (held, floor, mins)
+    estimate = choose.lomo(["Y", "X"], "ref", rows, 0.05, "mean")
+    assert estimate["objective"]["picks"] == {m: "X" for m in matches}, estimate["objective"]["picks"]
+    assert estimate["rule"]["picks"] == {m: "X" for m in matches}, (
+        "the floor must be the min of the kept means", estimate["rule"]["picks"])
+
+
 def choose_before_mean():
-    """choose.py as it was at BEFORE_MEAN, read from git and run as a module of its own; NotRun without git or that
-    commit (a copy of the repository without its history)."""
+    """choose.py as it was at BEFORE_MEAN, read from git and run as a module of its own.
+
+    A migration guard: it shows that adding the mean left objective="raw" as 7de5fd4c had it. The old code runs on
+    today's run.py and score.py, so retire this check, or re-pin BEFORE_MEAN, when their API changes under it. Without
+    git or that commit (a copy of the repository without its history) the check is NOT RUN, never passed."""
     try:
         source = subprocess.run(("git", "show", BEFORE_MEAN + ":pipeline/benchmark/choose.py"), cwd=choose.ROOT,
                                 capture_output=True, encoding="utf-8", timeout=30, check=True).stdout
@@ -352,6 +380,7 @@ def test_choose_raw_objective_is_unchanged():
                     lines, old_lines = choose.render(new), before.render(old)
                     assert lines[1:] == old_lines[1:], (metric, band)
                     assert lines[0].replace("   objective raw", "", 1) == old_lines[0] != lines[0], lines[0]
+                    assert choose.render(old) == lines, "a selection written before R024 (no objective) must render"
 
 
 def test_choose_cli_objective_mean():

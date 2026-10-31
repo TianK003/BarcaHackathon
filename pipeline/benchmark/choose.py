@@ -97,10 +97,12 @@ def choose(stems, reference, profile=run.DEFAULT_PROFILE, band=TIE_BAND, data_di
            metric="spell", objective="raw"):
     """The rule applied to `stems` (in the declared tie order) against `reference`; see the module docstring.
 
-    Returns {"reference", "profile", "matches", "seeds", "rows", "best", "tied", "chosen", "versus", "lomo"}: one row
+    Returns {"reference", "metric", "objective", "profile", "matches", "seeds", "band", "rows", "order", "best",
+    "tied", "chosen", "versus", "lomo"}: the reference, the metric, the objective and the band asked for; one row
     per stem (and the reference) with its pooled scores under both truths, its alive/dead F1, possessions per graded
-    minute, D share and per-match score (of `metric`); the best raw stem, the tied stems and the chosen one; the
-    chosen config against the reference under each truth (score.compare); and the two leave-one-match-out rules.
+    minute, D share and per-match score (of `metric`); the stems in the order given; the best raw stem, the tied stems
+    and the chosen one; the chosen config against the reference under each truth (score.compare); and the two
+    leave-one-match-out rules.
     `metric` is the objective, "spell" (pooled spellF1, the default) or "macro" (pooled macroF1): it picks the rows'
     score that selects, what score.compare compares and what the lomo averages; every other field is unchanged.
 
@@ -262,7 +264,8 @@ def render(choice, rows_shown=None):
     tied config's mean and min(raw, coarse), and the comparison and the lomo a mean line each; with "raw" the lines are
     those of R008 to R016, the header naming the objective.
     """
-    rows, reference, metric, objective = choice["rows"], choice["reference"], choice["metric"], choice["objective"]
+    rows, reference, metric = choice["rows"], choice["reference"], choice["metric"]
+    objective = choice.get("objective", "raw")          # a selection written before R024 has none: it was raw's
     averaged = objective == "mean"
     truths = (run.TRUTHS + ("mean",)) if averaged else run.TRUTHS
     order = sorted(choice["order"], key=lambda stem: -rows[stem][objective][metric])
