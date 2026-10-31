@@ -119,6 +119,7 @@ scope = "all"
 min_prob = 0.02
 alive_model = "pipeline/models/dead_ball_hgb.json"     # the teacher's dead-ball mask
 teacher = { radius = 1.5, max_rel_speed = 6.0, min_frames = 1, duel_radius = 1.0 }
+epsilon = 0.07                                         # 1 - controlled_touch's confidence 0.93 (R013)
 ```
 
 - **The teacher table is checked strictly** (review m8). Its keys must be `radius`, `max_rel_speed` and `min_frames`, with
@@ -220,7 +221,8 @@ worktree, and merged only if it passes.
 **The run.** `tracking` v3, 3 seeds, all seven matches. For each (match m, seed, block k): z from m's fold model, b_k
 from the other block's teacher rows, and the served `home` of P07 (b = 0) and of each variant, clipped as served.
 
-**The gate's frames:** block k's alive frames (truth H or A) where the served ball is missing. Those are the frames P07
+**The gate's frames:** block k's alive frames (truth H or A) where the served ball is missing and P07 speaks (z
+finite). Those are the frames P07
 exists for, as in R011. The log-loss of each variant on them is pooled by frames, per match over its seeds and blocks,
 and over all.
 
@@ -351,8 +353,12 @@ estimators + tool + their checks → task reviews → R027 part 1 (with Tian's c
 - `main.toml` is never touched.
 - The source's worktree is deleted unmerged if the gate failed.
 
-**The advisor** (an opus agent standing in for Tian, every ruling logged) decides only the three STOPs above, a
-cause-named retry after a failed bar, and anything the flow does not foresee.
+**The advisor** (an opus agent standing in for Tian, every ruling logged) decides only:
+- the two STOPs above, the reference not reproduced and an offset outside the band;
+- a cause-named retry after a failed bar;
+- anything the flow does not foresee, such as a crash or a reaped run whose cause is not clear.
+
+A failed BAR-ATH check is a DROP even when an offset is also outside the band.
 
 ## 8. Cost
 

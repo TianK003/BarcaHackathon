@@ -219,7 +219,7 @@ earlier lanes.
     | subcommand | 0 | 1 | 2 | 3 | 4 |
     |---|---|---|---|---|---|
     | `gate` | rung 1 GO | both NO-GO | error | | rung 1 NO-GO, rung 3 GO |
-    | `bar-ath` | every check passes | a check fails | error | an offset outside the band (STOP) | |
+    | `bar-ath` | every check passes | a check fails (this wins over 3) | error | every check passes but an offset is outside the band (STOP) | |
 
 **`gate`, per (match, seed),** one Inputs at a time, deleted after use:
 1. **The arrays:** z from the fold; the teacher's `y` and `rows`; the blocks `[(start, stop) for _, start, stop in
@@ -234,8 +234,9 @@ earlier lanes.
    ball missing, z finite), and b\*_touch on the other blocks' teacher rows with the truth's labels.
 4. **Per block, accumulated per match:**
    - the frames, the sum of log-loss and the right calls of each variant's served home (`clip(σ(·), min_prob,
-     1 − min_prob)`) on the gate frames;
-   - the same on the hold stratum (truth alive, ball present, not a teacher row);
+     1 − min_prob)`) on the gate frames (truth H/A, served ball missing, z finite);
+   - the same on the hold stratum (truth H/A, ball present, z finite, outside the teacher's kept episode frames,
+     whether or not the dead mask applies);
    - the held-out touch agreement at `conventions.TOUCH`, for base and rung 1;
    - the offsets and the oracles;
    - π̂, the teacher's home share, the rows per class, the masked share (teacher frames with alive < 0.5 over teacher
@@ -251,7 +252,8 @@ earlier lanes.
 **`bar_ath`,** on BAR-ATH's `Inputs` (`pipeline.inputs.Inputs(data_dir=...)`, the `full` model):
 - **Per block:** E2's b with its fallback, π̂, the teacher's share, the masked share, and the share of teacher rows on
   frames where home shows over 11 slots, and where away does.
-- **The band:** read from the gate report. Any |b_k| above it → exit 3.
+- **The band:** read from the gate report. Any |b_k| above it gives exit 3, but only if every check passes. A failed
+  check gives exit 1 whatever the band says.
 - **The gap check:** on graded frames with the ball missing, alive ≥ 0.5 and a Smart Tagging vote (`home` not NaN from
   `smart_tagging.compute(run, c_team=Settings.c_team, spread="frame")`), the agreement of base and adapted `home` (≥ 0.5)
   with the vote (≥ 0.5). It passes iff adapted ≥ base − 0.005.
@@ -390,7 +392,9 @@ cool-down, and the chain stops at the first non-zero exit **except where an exit
 - [ ] **5.3 The bar.** Run `r027-bar.ps1`.
   - `main.toml` must reproduce 0.5363 / 0.5764; if not, **STOP for the advisor**.
   - The shift guard picks the candidate: `r027_final` if it beats `r027_preshift` on the objective on `tracking` and is
-    not below −0.005 on `context`, else `r027_preshift`.
+    not below −0.005 on `context`, else `r027_preshift`. It is read with `choose.py --reference r027_preshift
+    --objective mean r027_final`, once with `--profile tracking` and once with `--profile context`. If s_b is
+    `main.toml`'s, `r027_final` is `r027_post`'s text under the stem `r027_final`.
   - Then `choose.py --reference main --objective mean <candidate>` for the deltas, the per-match deltas and the p.
   - Apply the declared bar and the vetoes.
   - **A pass** continues at 5.4. **A fail** writes part 2b and goes to DROP, unless the advisor approves one cause-named
