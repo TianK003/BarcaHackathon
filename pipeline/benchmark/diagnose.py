@@ -62,6 +62,11 @@ Against the raw truth only, the frame-level one (the coarse truth is a construct
   wherever a team source speaks the better alive state sits w log 2 max(h, 1 - h) above D, and beta on team_speaks
   measures that 50/50 assumption. And P(H) / (P(H) + P(A)) against the team, on the truth's alive frames; a frame
   whose P(H) + P(A) is 0 (underflow) has no such ratio and is counted apart (frames_without_alive_mass).
+* Added after the review of part 1, reported only and gating nothing: the same alive measure by which team sources
+  speak on the frame (alive_by_team_sources), keyed by the sorted names of the sources with a finite `home` joined by
+  "+", or "none" (speaker_groups). In main.toml shape_possession speaks on nearly every graded frame, so the declared
+  split is nearly all team_speaks; this says which sources the 50/50 assumption meets where. At most MAX_SPEAKER_KEYS
+  keys: beyond them the smallest combinations are folded under "other".
 * Metrics (calibration): the log-loss and the Brier score; the ECE over BINS equal-width bins and the reliability
   table (bin k holds floor(p * BINS) = k, p = 1 in the last); and a Platt fit by maximum likelihood, logit P(truth) =
   alpha logit(p) + beta, p clipped to [CLIP, 1 - CLIP] (the log-loss's clip too): alpha below 1 is overconfident, above
@@ -125,6 +130,10 @@ NEWTON_TOLERANCE = 1e-10              # a Newton step this small in both paramet
 SMALLEST_STEP = 1e-12                 # step halving gives up below this fraction of a Newton step
 SHAPE_KINDS = ("shape_possession",)   # home sources also measured apart where the ball is seen and where it is not
 POSTERIOR = "posterior"               # the decoder's key in the calibration block, beside the sources' names
+NO_TEAM_SOURCE = "none"               # alive_by_team_sources: the frames on which no source has a `home`
+OTHER_SPEAKERS = "other"              # ... and the combinations folded together beyond MAX_SPEAKER_KEYS
+MAX_SPEAKER_KEYS = 16                 # the most keys alive_by_team_sources has (2^k for k team sources, at most)
+RESERVED = (POSTERIOR, NO_TEAM_SOURCE, OTHER_SPEAKERS)   # names a source may not have: the report uses them
 REPORT_FOLDER = ("runs", "diagnose")  # <data dir>/runs/diagnose/<stem>[.<profile>][.m-<ids>][.s<n>].json
 MAX_LIST = 64                         # the longest list a report may hold: aggregates only
 POSTERIOR_PARAMETERS = ("switch_team", "switch_dead", "min_possession", "min_dead", "eps")
@@ -381,8 +390,31 @@ def platt(x, y):
     return None, None, False
 
 
+def speaker_groups(codes, names, limit=MAX_SPEAKER_KEYS):
+    """{key: [codes]}: the frames' speaker codes grouped under the names of the team sources that speak on them.
+
+    Bit i of a code is set where the i-th of `names` has a finite `home` on the frame. A key is those names, sorted and
+    joined by "+", or NO_TEAM_SOURCE for a code of 0. There are at most 2^k keys for k sources; beyond `limit` of them,
+    the limit - 1 that hold the most frames are kept (a tie by key) and the rest are folded under OTHER_SPEAKERS, so the
+    report stays an aggregate however many sources a config has.
+    """
+    if isinstance(limit, bool) or not isinstance(limit, int) or limit < 2:
+        raise ValueError("speaker_groups: limit must be a whole number of at least 2, got {!r}".format(limit))
+    present, counts = np.unique(np.asarray(codes, dtype=np.int64), return_counts=True)
+    entries = []
+    for code, count in zip(present.tolist(), counts.tolist()):
+        spoke = sorted(name for bit, name in enumerate(names) if code >> bit & 1)
+        entries.append((-count, "+".join(spoke) or NO_TEAM_SOURCE, code))
+    entries.sort()
+    if len(entries) <= limit:
+        return {key: [code] for _, key, code in entries}
+    groups = {key: [code] for _, key, code in entries[:limit - 1]}
+    groups[OTHER_SPEAKERS] = sorted(code for _, _, code in entries[limit - 1:])
+    return groups
+
+
 class _Pool:
-    """The (p, y) of one measure, gathered half by half under a key, with a flag per frame to split them by.
+    """The (p, y) of one measure, gathered half by half under a key, with a flag or a code per frame to split them by.
 
     `arrays` joins them in key order, so that the figures do not depend on the order the matches ran in."""
 
@@ -391,7 +423,7 @@ class _Pool:
 
     def add(self, key, p, y, flag=None):
         p = np.asarray(p, dtype=np.float64)
-        flag = np.zeros(len(p), dtype=bool) if flag is None else np.asarray(flag, dtype=bool)
+        flag = np.zeros(len(p), dtype=bool) if flag is None else np.asarray(flag)
         self._parts.append((key, p, np.asarray(y, dtype=bool), flag))
 
     def arrays(self):
@@ -443,21 +475,25 @@ def diagnose(config_path, profile=DEFAULT_PROFILE, seeds=None, match_ids=None, m
 
     Refused with BenchmarkError (or ConfigError from the pipeline's loader) before any match is loaded: what the runner
     refuses (scope = "file", an unknown profile or match, seeds below 1, a calibration the profile does not take), a
-    decoder that is not hmm or that sets restart_source (posterior_parameters), and a source named "posterior".
+    decoder that is not hmm or that sets restart_source (posterior_parameters), and a source named as one of the
+    report's own keys (RESERVED: "posterior", "none", "other").
 
     Returns the report, JSON-ready (run.plain): {"config": {"path", "stem", "sha256"}, "profile", "seeds", "matches",
     "dropped_match_only", "ladder": {"raw", "coarse" (ladder_summary), "mean": {"spell_f1", "clean_loss", "split_loss",
     "merge_loss", "both_loss"}}, "calibration": {source name: {"kind", "weight", "home", "home_ball_visible",
     "home_ball_missing", "alive"} (the channels it speaks on), "posterior": {"alive": {"all", "team_speaks",
-    "team_silent"}, "home"}}, "tracking_calibration" ({"sha256", "version"} of the Calibration, None for clean), "git",
-    "data_dir"}. Per-match figures are not kept.
+    "team_silent"}, "alive_by_team_sources": {key: ...} (speaker_groups), "home"}}, "tracking_calibration" ({"sha256",
+    "version"} of the Calibration, None for clean), "git", "data_dir"}. Per-match figures are not kept.
     """
     configs, dropped = run._load_configs([config_path], drop_match_only)
     config = configs[0]
     decoder = posterior_parameters(config)
-    if POSTERIOR in [component.name for component in config.evidence]:
-        raise run.BenchmarkError("{}: an evidence source is named {!r}, which is the decoder's key in the report's "
-                                 "calibration block; give it another name".format(config.stem, POSTERIOR))
+    names = [component.name for component in config.evidence]
+    for name in RESERVED:
+        if name in names:
+            raise run.BenchmarkError("{}: an evidence source is named {!r}, which the report's calibration block uses "
+                                     "for its own keys ({}); give it another name".format(config.stem, name,
+                                                                                         ", ".join(RESERVED)))
     run._check_profile(profile)
     seeds = run.DEFAULT_SEEDS if seeds is None else seeds
     if isinstance(seeds, bool) or not isinstance(seeds, int) or seeds < 1:
@@ -509,11 +545,11 @@ def diagnose(config_path, profile=DEFAULT_PROFILE, seeds=None, match_ids=None, m
                 key = (match.match_id, seed, half)
                 truth = raw[start:stop]
                 live = truth != D
-                speaks = np.zeros(stop - start, dtype=bool)
-                for name, source in sources.items():
+                speakers = np.zeros(stop - start, dtype=np.int64)       # bit i: the i-th source has a home here
+                for bit, (name, source) in enumerate(sources.items()):
                     home, alive = source.home[start:stop], source.alive[start:stop]
                     known = ~np.isnan(home)
-                    speaks |= known
+                    speakers |= known.astype(np.int64) << bit
                     if (known & live).any():
                         frames = known & live
                         pool(name, "home").add(key, home[frames], truth[frames] == H,
@@ -526,7 +562,7 @@ def diagnose(config_path, profile=DEFAULT_PROFILE, seeds=None, match_ids=None, m
                 posterior = hmm.marginals(emissions, decoder["switch_team"], decoder["switch_dead"],
                                           decoder["min_possession"], decoder["min_dead"])
                 in_play = posterior[:, H] + posterior[:, A]
-                pool(POSTERIOR, "alive").add(key, np.clip(in_play, 0.0, 1.0), live, speaks)
+                pool(POSTERIOR, "alive").add(key, np.clip(in_play, 0.0, 1.0), live, speakers)
                 defined = live & (in_play > 0.0)
                 pool(POSTERIOR, "home").add(key, np.clip(posterior[defined, H] / in_play[defined], 0.0, 1.0),
                                             truth[defined] == H)
@@ -559,12 +595,18 @@ def diagnose(config_path, profile=DEFAULT_PROFILE, seeds=None, match_ids=None, m
         if (component.name, "alive") in pools:
             entry["alive"] = _calibrate(*pools.pop((component.name, "alive")).arrays()[:2])
         measured[component.name] = entry
-    p, y, speaks = pools.pop((POSTERIOR, "alive")).arrays()
+    p, y, speakers = pools.pop((POSTERIOR, "alive")).arrays()
+    speaks = speakers != 0
     alive = {"all": _calibrate(p, y), "team_speaks": _calibrate(p[speaks], y[speaks]),
              "team_silent": _calibrate(p[~speaks], y[~speaks])}
+    by_speakers = {}
+    for group, codes_in in speaker_groups(speakers, names).items():
+        chosen = np.isin(speakers, codes_in)
+        by_speakers[group] = _calibrate(p[chosen], y[chosen])
     p, y, _ = pools.pop((POSTERIOR, "home")).arrays()
-    measured[POSTERIOR] = {"alive": alive, "home": dict(_calibrate(p, y), frames_without_alive_mass=without_mass)}
-    del p, y, speaks
+    measured[POSTERIOR] = {"alive": alive, "alive_by_team_sources": by_speakers,
+                           "home": dict(_calibrate(p, y), frames_without_alive_mass=without_mass)}
+    del p, y, speakers, speaks
 
     report = run.plain({
         "config": {"path": run.shown(config.path), "stem": config.stem,
@@ -642,7 +684,7 @@ def render(report):
                                                          "both_loss"))),
               "gate      R025 (A19): the mean clean-pair ladder loss is {}, {} {}".format(
                   _number(mean["clean_loss"]), "at least" if mean["clean_loss"] >= GATE else "below", GATE)]
-    lines += ["", "{:<49}{:>13}{:>10}{:>9}{:>9}{:>9}{:>9}{:>9}".format(
+    lines += ["", "{:<66}{:>13}{:>10}{:>9}{:>9}{:>9}{:>9}{:>9}".format(
         "calibration (raw truth, graded frames)", "n", "log-loss", "Brier", "ECE", "alpha", "beta", "weight")]
     for name, entry in report["calibration"].items():
         if name == POSTERIOR:
@@ -653,6 +695,8 @@ def render(report):
     posterior = report["calibration"][POSTERIOR]
     for part in ("all", "team_speaks", "team_silent"):
         lines.append(_calibration_line("posterior alive, {}".format(part), posterior["alive"][part]))
+    for group, measure in sorted(posterior["alive_by_team_sources"].items()):
+        lines.append(_calibration_line("posterior alive, team sources {}".format(group), measure))
     lines.append(_calibration_line("posterior home", posterior["home"]))
     if posterior["home"]["frames_without_alive_mass"]:
         lines.append("  {:,} alive frames have P(H) + P(A) = 0, and no home ratio".format(
@@ -690,7 +734,7 @@ def _ladder_lines(name, ladder):
 
 
 def _calibration_line(label, measure, weight=None):
-    return "  {:<47}{:>13,}{:>10}{:>9}{:>9}{:>9}{:>9}{:>9}".format(
+    return "  {:<64}{:>13,}{:>10}{:>9}{:>9}{:>9}{:>9}{:>9}".format(
         label, measure["n"], _number(measure["log_loss"]), _number(measure["brier"]), _number(measure["ece"]),
         _number(measure["alpha"]), _number(measure["beta"], signed=True), "" if weight is None else _number(weight))
 

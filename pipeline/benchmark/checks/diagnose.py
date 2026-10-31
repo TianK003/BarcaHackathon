@@ -30,6 +30,8 @@ from pipeline.benchmark import truth as truths
 from pipeline.benchmark.checks.common import (loading, random_match, read, strict_json, synthetic_calibration,
                                               synthetic_matches, yardstick_path)
 from pipeline.config import load_config
+from pipeline.contracts import Block, BlockContext, RunContext
+from pipeline.decode import hmm
 from pipeline.selftest import expect_error, quiet, write_text
 
 # Params
@@ -267,6 +269,11 @@ def test_calibration_recovers_known_miscalibration():
     sure = diagnose.calibration(1.0 / (1.0 + np.exp(-2.0 * np.log(p / (1.0 - p)))), y)
     assert sure["converged"] and abs(sure["alpha"] - 0.5) < 0.05 and abs(sure["beta"]) < 0.05, sure
     assert sure["log_loss"] > fair["log_loss"] and sure["ece"] > fair["ece"], (sure, fair)
+    # beta's sign, as A19 writes the fit, logit P(truth) = alpha logit(p) + beta: a source that says p' =
+    # sigmoid(logit(p) - 1) where the truth is drawn from p is too low by one nat, so beta is +1.
+    low = diagnose.calibration(1.0 / (1.0 + np.exp(1.0 - np.log(p / (1.0 - p)))), y)
+    assert low["converged"] and abs(low["alpha"] - 1.0) < 0.05 and abs(low["beta"] - 1.0) < 0.05, low
+    assert low["mean_p"] < low["mean_y"], "a source too low says less than happens"
 
     flat = diagnose.calibration(np.full(1000, 0.5), np.arange(1000) % 2 == 0)
     assert flat["ece"] < 1e-12 and close(flat["log_loss"], math.log(2.0)) and close(flat["brier"], 0.25), flat
@@ -323,39 +330,113 @@ def calibrations(report):
 
 
 def tallies(config_text, matches, root):
-    """What diagnose's measures count, tallied here frame by frame from run.predict's sources and the raw truth."""
+    """({measure: (n, sum of p, sum of y, sum of (p - y)^2)}, alive frames without P(H) + P(A)): every measure of
+    diagnose, worked out here from run.predict's sources, the raw truth and a posterior of hmm.decode's own.
+
+    A measure is (source, channel), ("posterior", "alive", part), ("posterior", "by", key) or ("posterior", "home").
+    The posterior is hmm.decode(BlockContext(...), posterior=True, **the config's [decoder] parameters) per graded
+    block, the decoder as the pipeline calls it, so a parameter that diagnose reads wrongly (a minimum, eps, a switch
+    cost) gives other numbers. Each frame's key is the sorted names of the sources with a home on it, joined by "+",
+    found one frame at a time.
+    """
     config = load_config(write_text(root, "tally.toml", config_text))
-    counts = {"graded": 0, "alive": 0, "speaks": 0, "home": {}, "visible": {}, "alive_of": {}}
+    shape = {component.name for component in config.evidence if component.kind == "shape_possession"}
+    sums, without_mass = {}, 0
+
+    def add(where, p, y):
+        n, sum_p, sum_y, squares = sums.get(where, (0, 0.0, 0.0, 0.0))
+        sums[where] = (n + len(p), sum_p + float(np.sum(p)), sum_y + float(np.sum(y)),
+                       squares + float(np.sum((np.asarray(p) - np.asarray(y, dtype=np.float64)) ** 2)))
+
     for match in matches.values():
         raw, _ = truths.truth_codes(match)
         atd = benchmark_run.make_atd(match, "gaps", 0, synthetic_calibration())
         inputs = match_inputs.MatchInputs(match, atd, profile="gaps", seed=0)
         _, sources = benchmark_run.predict(config, inputs)
-        for _, start, stop in match.graded:
-            for frame in range(start, stop):
-                counts["graded"] += 1
-                live = raw[frame] in (H, A)
-                counts["alive"] += live
-                counts["speaks"] += any(not np.isnan(source.home[frame]) for source in sources.values())
-                for name, source in sources.items():
-                    if live and not np.isnan(source.home[frame]):
-                        counts["home"][name] = counts["home"].get(name, 0) + 1
-                        counts["visible"][name] = counts["visible"].get(name, 0) + bool(atd.ball_present[frame])
-                    if not np.isnan(source.alive[frame]):
-                        counts["alive_of"][name] = counts["alive_of"].get(name, 0) + 1
-    return counts
+        context = RunContext(inputs=inputs, seed=config.seed)
+        for half, start, stop in match.graded:
+            truth = raw[start:stop]
+            live = (truth == H) | (truth == A)
+            seen = atd.ball_present[start:stop]
+            for name, source in sources.items():
+                home, alive = source.home[start:stop], source.alive[start:stop]
+                on = live & ~np.isnan(home)
+                if on.any():
+                    add((name, "home"), home[on], truth[on] == H)
+                    if name in shape:
+                        add((name, "home_ball_visible"), home[on & seen], truth[on & seen] == H)
+                        add((name, "home_ball_missing"), home[on & ~seen], truth[on & ~seen] == H)
+                on = ~np.isnan(alive)
+                if on.any():
+                    add((name, "alive"), alive[on], truth[on] != D)
+            block = BlockContext(run=context, block=Block(half=half, start=start, stop=stop),
+                                 evidence={name: source.window(start, stop) for name, source in sources.items()})
+            posterior = hmm.decode(block, posterior=True, **config.decoder.params).posterior
+            in_play = posterior[:, H] + posterior[:, A]
+            add(("posterior", "alive", "all"), in_play, live)
+            keys = ["+".join(sorted(name for name, source in sources.items() if not np.isnan(source.home[frame])))
+                    or "none" for frame in range(start, stop)]
+            speaks = np.array([key != "none" for key in keys])
+            add(("posterior", "alive", "team_speaks"), in_play[speaks], live[speaks])
+            add(("posterior", "alive", "team_silent"), in_play[~speaks], live[~speaks])
+            for key in sorted(set(keys)):
+                frames = np.array([other == key for other in keys])
+                add(("posterior", "by", key), in_play[frames], live[frames])
+            mass = live & (in_play > 0)
+            add(("posterior", "home"), posterior[mass, H] / in_play[mass], truth[mass] == H)
+            without_mass += int((live & ~mass).sum())
+    return sums, without_mass
+
+
+def where_in(report, measure):
+    """The calibration() result of the report that a tallies() measure names."""
+    block = report["calibration"]
+    if measure[0] != "posterior":
+        return block[measure[0]][measure[1]]
+    if measure[1] == "alive":
+        return block["posterior"]["alive"][measure[2]]
+    if measure[1] == "by":
+        return block["posterior"]["alive_by_team_sources"][measure[2]]
+    return block["posterior"]["home"]
+
+
+def same_measures(report, sums, without_mass):
+    """Every measure of the report has the tally's frames, mean p, mean y and Brier score (to 1e-8: the report is
+    rounded to 9 decimals); and the report has no measure the tally has not, by source and by team-source key.
+
+    The Brier score pins how p and y are paired, which the two means alone do not: the synthetic matches have exactly
+    as many H frames as A frames alive, so an outcome of "A" in place of "H" keeps mean y at 0.5."""
+    for measure, (n, sum_p, sum_y, squares) in sums.items():
+        found = where_in(report, measure)
+        assert found["n"] == n, (measure, found["n"], n)
+        if n:
+            assert close(found["mean_p"], sum_p / n, 1e-8), (measure, found["mean_p"], sum_p / n)
+            assert close(found["mean_y"], sum_y / n, 1e-8), (measure, found["mean_y"], sum_y / n)
+            assert close(found["brier"], squares / n, 1e-8), (measure, found["brier"], squares / n)
+    for name, entry in report["calibration"].items():
+        if name != "posterior":
+            assert {channel for channel in entry if channel not in ("kind", "weight")} == {
+                measure[1] for measure in sums if measure[0] == name}, (name, sorted(entry))
+    assert set(report["calibration"]["posterior"]["alive_by_team_sources"]) == {
+        measure[2] for measure in sums if measure[:2] == ("posterior", "by")}
+    assert report["calibration"]["posterior"]["home"]["frames_without_alive_mass"] == without_mass
 
 
 def test_diagnose_end_to_end_on_synthetic_matches():
-    """diagnose() on the synthetic matches (gaps, one seed): the declared layout, the runner's spellF1, exact counts.
+    """diagnose() on the synthetic matches (gaps, one seed): the declared layout, the runner's spellF1, and every
+    measure's frames, mean p, mean y and Brier score as an independent tally finds them.
 
     The ladder's pooled spellF1 under each truth is the one run.evaluate_truths reports for the same config, matches,
     profile and seed, so the ladder sees the codes the runner scores, after the refiner. Each source is measured on its
-    channels where it speaks (nearest_player and shape_possession on home, ball_presence and dead_ball_model on alive),
-    on as many frames as a tally from run.predict's own sources finds, and shape_possession is split by whether the
-    ball is seen. The posterior's alive measure covers every graded frame, split by whether a team source speaks, and
-    its home measure the truth's alive frames; every reliability row of it lies in [0, 1] and in its bin. No list in
-    the report is longer than 64, and only the reliability tables hold 10 rows.
+    channels where it speaks (nearest_player and shape_possession on home against the truth being H on its alive
+    frames, ball_presence and dead_ball_model on alive against the truth not being D), and shape_possession is split by
+    whether the ball is seen. The posterior is the decoder's own at the config's parameters (tallies): P(H) + P(A)
+    against alive on every graded frame, split by whether a team source speaks and by which ones do, and P(H) / (P(H) +
+    P(A)) against H on the truth's alive frames. Matching n, mean p, mean y and the Brier score pins which frames, which
+    probability and which outcome each measure takes, and how they are paired. Every reliability row lies in [0, 1] and
+    in its bin. No list in the report is
+    longer than 64, and only the reliability tables hold 10 rows. A second config, with team evidence only where the
+    ball is seen, makes every split of the posterior's frames non-empty.
     """
     matches = synthetic_matches()
     with tempfile.TemporaryDirectory() as root:
@@ -379,7 +460,6 @@ def test_diagnose_end_to_end_on_synthetic_matches():
             assert close(report["ladder"]["mean"][figure], mean, 2e-9), (figure, report["ladder"]["mean"])
         assert set(report["ladder"]["mean"]) == set(LADDER_FIGURES), report["ladder"]["mean"]
 
-        counts = tallies(MAIN_LIKE, matches, root)
         block = report["calibration"]
         assert set(block) == {"nearest_player", "ball_presence", "shape_possession", "dead_ball_model", "posterior"}
         assert set(block["nearest_player"]) == {"kind", "weight", "home"}, block["nearest_player"]
@@ -387,20 +467,18 @@ def test_diagnose_end_to_end_on_synthetic_matches():
         assert set(block["dead_ball_model"]) == {"kind", "weight", "alive"}, block["dead_ball_model"]
         assert set(block["shape_possession"]) == {"kind", "weight", "home", "home_ball_visible", "home_ball_missing"}
         assert block["shape_possession"]["weight"] == 0.2 and block["shape_possession"]["kind"] == "shape_possession"
-        for name in ("nearest_player", "shape_possession"):
-            assert block[name]["home"]["n"] == counts["home"][name] > 0, (name, block[name]["home"]["n"])
-        shape = block["shape_possession"]
-        assert shape["home_ball_visible"]["n"] == counts["visible"]["shape_possession"] > 0, shape
-        assert shape["home_ball_visible"]["n"] + shape["home_ball_missing"]["n"] == shape["home"]["n"], shape
-        assert shape["home_ball_missing"]["n"] > 0, "the gaps profile hides the ball somewhere"
-        for name in ("ball_presence", "dead_ball_model"):
-            assert block[name]["alive"]["n"] == counts["alive_of"][name] == counts["graded"], (name, counts)
         posterior = block["posterior"]
-        assert set(posterior) == {"alive", "home"} and set(posterior["alive"]) == {"all", "team_speaks", "team_silent"}
-        assert posterior["alive"]["all"]["n"] == counts["graded"], (posterior["alive"]["all"]["n"], counts)
-        assert posterior["alive"]["team_speaks"]["n"] == counts["speaks"], posterior["alive"]
-        assert posterior["alive"]["team_silent"]["n"] == counts["graded"] - counts["speaks"], posterior["alive"]
-        assert posterior["home"]["n"] + posterior["home"]["frames_without_alive_mass"] == counts["alive"], posterior
+        assert set(posterior) == {"alive", "alive_by_team_sources", "home"}, sorted(posterior)
+        assert set(posterior["alive"]) == {"all", "team_speaks", "team_silent"}, sorted(posterior["alive"])
+        sums, without_mass = tallies(MAIN_LIKE, matches, root)
+        same_measures(report, sums, without_mass)
+        shape = block["shape_possession"]
+        assert shape["home_ball_visible"]["n"] > 0 and shape["home_ball_missing"]["n"] > 0, shape
+        assert shape["home_ball_visible"]["n"] + shape["home_ball_missing"]["n"] == shape["home"]["n"], shape
+        graded = sum(stop - start for match in matches.values() for _, start, stop in match.graded)
+        assert posterior["alive"]["all"]["n"] == graded == block["dead_ball_model"]["alive"]["n"], posterior
+        assert sum(measure["n"] for measure in posterior["alive_by_team_sources"].values()) == graded, posterior
+        assert posterior["home"]["n"] > 0, posterior["home"]
         for where, measure in calibrations(report).items():
             rows = measure["reliability"]
             assert len(rows) == 10 and sum(row["n"] for row in rows) == measure["n"], where
@@ -416,15 +494,16 @@ def test_diagnose_end_to_end_on_synthetic_matches():
             assert not reliability or length == 10, (where, length)
         json.dumps(report, allow_nan=False)
         text = "\n".join(lines)
-        assert "ladder" in text and "posterior" in text and "clean" in text, text
+        assert "ladder" in text and "posterior" in text and "clean" in text and "team sources" in text, text
 
         # Team evidence only where the ball is seen: the posterior's alive frames split both ways, as the tally says.
-        quiet_report = diagnose.diagnose(write_text(root, "nearest_only.toml", NEAREST_ONLY), profile="gaps", seeds=1,
-                                         matches=matches, calibration=synthetic_calibration(), log=quiet)
-        counts = tallies(NEAREST_ONLY, matches, root)
-        alive = quiet_report["calibration"]["posterior"]["alive"]
-        assert alive["team_speaks"]["n"] == counts["speaks"] > 0, alive["team_speaks"]["n"]
-        assert alive["team_silent"]["n"] == counts["graded"] - counts["speaks"] > 0, alive["team_silent"]["n"]
+        other = diagnose.diagnose(write_text(root, "nearest_only.toml", NEAREST_ONLY), profile="gaps", seeds=1,
+                                  matches=matches, calibration=synthetic_calibration(), log=quiet)
+        sums, without_mass = tallies(NEAREST_ONLY, matches, root)
+        same_measures(other, sums, without_mass)
+        alive = other["calibration"]["posterior"]["alive"]
+        assert alive["team_speaks"]["n"] > 0 and alive["team_silent"]["n"] > 0, alive
+        assert set(other["calibration"]["posterior"]["alive_by_team_sources"]) == {"nearest_player", "none"}
 
 
 def test_diagnose_command_line_writes_the_report():
@@ -466,9 +545,54 @@ def test_diagnose_command_line_writes_the_report():
         assert code == 1 and shown.getvalue().startswith("FAILED") and "hmm" in shown.getvalue(), shown.getvalue()
 
 
+def test_diagnose_groups_frames_by_the_team_sources_that_speak():
+    """speaker_groups: a key per combination of sources with a home, their names sorted and joined, "none" for none;
+    beyond the limit, the combinations with the most frames are kept and the rest folded under "other".
+
+    Five sources make 32 combinations: with the limit at 16, the 15 with the most frames stay (their counts are all
+    different here, so the order is the counts') and the 17 smallest are "other". Under the limit nothing is folded.
+    """
+    names = ["shape", "touch", "alpha", "dead", "zeta"]          # bit i is names[i]
+    codes = np.repeat(np.arange(32), np.arange(32) + 1)          # code c on c + 1 frames: 31 has the most
+    groups = diagnose.speaker_groups(codes, names)
+    assert len(groups) == 16 and groups["other"] == list(range(17)), groups
+    assert groups["alpha+dead+shape+touch+zeta"] == [31], sorted(groups)
+    assert groups["alpha+dead+touch+zeta"] == [30] and groups["dead+zeta"] == [24], sorted(groups)
+    small = diagnose.speaker_groups(np.array([0, 0, 1, 2, 3, 3, 3]), ["shape", "touch"])
+    assert small == {"shape+touch": [3], "none": [0], "shape": [1], "touch": [2]}, small
+    assert list(small) == ["shape+touch", "none", "shape", "touch"], "the most frames first, then by name"
+    expect_error(ValueError, lambda: diagnose.speaker_groups(codes, names, limit=1), "limit")
+
+
+def test_diagnose_drops_match_only_sources_when_asked():
+    """drop_match_only reaches diagnose: a config with main.toml's smart_tagging runs without it, and says so.
+
+    Without the flag the first match stops the run with the runner's sentence, which names the flag (Smart Tagging is
+    an asset a benchmark match does not have). With it the report lists the source in dropped_match_only, has no
+    calibration of it, and measures the rest.
+    """
+    tagged = NEAREST_ONLY.replace("[decoder]", '[[evidence]]\nkind = "smart_tagging"\nweight = 0.2\nc_team = 0.76\n\n'
+                                               "[decoder]")
+    matches = synthetic_matches()
+    with tempfile.TemporaryDirectory() as root:
+        path = write_text(root, "tagged.toml", tagged)
+        expect_error(benchmark_run.BenchmarkError,
+                     lambda: diagnose.diagnose(path, profile="gaps", seeds=1, matches=matches,
+                                               calibration=synthetic_calibration(), log=quiet),
+                     "smart_tagging", "--drop-match-only")
+        lines = []
+        report = diagnose.diagnose(path, profile="gaps", seeds=1, matches=matches, calibration=synthetic_calibration(),
+                                   drop_match_only=True, log=lines.append)
+    assert report["dropped_match_only"] == ["smart_tagging"], report["dropped_match_only"]
+    assert set(report["calibration"]) == {"nearest_player", "ball_presence", "posterior"}, sorted(report["calibration"])
+    assert set(report["calibration"]["posterior"]["alive_by_team_sources"]) == {"nearest_player", "none"}
+    assert any(line.startswith("dropped") and "smart_tagging" in line for line in lines), lines
+
+
 def test_diagnose_refuses_a_non_hmm_decoder():
-    """A majority_vote decoder has no posterior, the restart states have none either, and a source may not be called
-    "posterior": each is a BenchmarkError naming the config and what to change, before any match is loaded."""
+    """A majority_vote decoder has no posterior, the restart states have none either, and a source may not be named as
+    one of the report's own keys ("posterior", "none", "other"): each is a BenchmarkError naming the config and what to
+    change, before any match is loaded."""
     def serve(match_id):
         raise AssertionError("a match was loaded for a config that is refused: " + match_id)
 
@@ -481,11 +605,13 @@ def test_diagnose_refuses_a_non_hmm_decoder():
                      lambda: diagnose.diagnose(write_text(root, "restart.toml", restart), profile="clean",
                                                data_dir=root, log=quiet),
                      "restart", "restart_source")
-        named = NEAREST_ONLY.replace('kind = "ball_presence"', 'kind = "ball_presence"\nname = "posterior"')
-        expect_error(benchmark_run.BenchmarkError,
-                     lambda: diagnose.diagnose(write_text(root, "named.toml", named), profile="clean", data_dir=root,
-                                               log=quiet),
-                     "named", "posterior")
+        for reserved in ("posterior", "none", "other"):
+            named = NEAREST_ONLY.replace('kind = "ball_presence"',
+                                         'kind = "ball_presence"\nname = "{}"'.format(reserved))
+            expect_error(benchmark_run.BenchmarkError,
+                         lambda: diagnose.diagnose(write_text(root, "named.toml", named), profile="clean",
+                                                   data_dir=root, log=quiet),
+                         "named", repr(reserved))
         file_scope = NEAREST_ONLY.replace('scope = "halves"', 'scope = "file"')
         expect_error(benchmark_run.BenchmarkError,
                      lambda: diagnose.diagnose(write_text(root, "whole.toml", file_scope), profile="clean",
