@@ -73,6 +73,12 @@ module of its topic:
                  scikit-learn says of the held-out match; exact, LF, bounded; retraining gives identical bytes), the
                  report (aggregates, worked out frame by frame, the stop rule, no match scored in sample), and
                  touch_agreement on a hand-built scene (synthetic only)
+    team.py      P19's team-model trainer: the rows (every stride-th alive frame with the ball visible, 1 for H), the
+                 augmentation, P05's settings, the exported trees against scikit-learn (NaN included), the same bytes
+                 on 1 and 4 threads, the folds that exclude the held-out match, no truth in the features, the
+                 artifact and --verify, the dry run's aggregates and dead columns, and the feasibility: its frames
+                 and sums worked out in plain loops, the integer go rule, a missing fold refused, the rule read from
+                 the config (synthetic only)
     label_diff.py
                  label_diff: the shares, possessions per half, changes in ball gaps and moved D onsets worked out on
                  hand-built codes, and that the printout holds figures and no frame (synthetic only)
@@ -102,7 +108,7 @@ what two of them share goes to common.py (test_a_check_module_imports_no_other_c
 
 from pipeline.benchmark.checks import (
     calibration, cap, choose, context, conventions, dead_ball, degrade, dfl, dfl_events, fidelity, harness, hazard, headroom,
-    inputs, label_diff, restarts, run, score, shape, sources, tag_stats, tracking, touch, truth)
+    inputs, label_diff, restarts, run, score, shape, sources, tag_stats, team, tracking, touch, truth)
 
 MODULES = (sources, dfl, dfl_events, truth, inputs, score, run, choose, hazard, calibration, degrade, cap, tracking, context,
-           fidelity, headroom, touch, dead_ball, conventions, restarts, shape, label_diff, tag_stats, harness)
+           fidelity, headroom, touch, dead_ball, conventions, restarts, shape, label_diff, tag_stats, team, harness)
