@@ -420,3 +420,38 @@ def test_prepare_counts_are_aggregates():
     codes[120:300] = 0
     _, _, counts = adapter.prepare_arrays(_inputs(), codes, np.full(600, 0.5))
     assert all(isinstance(v, (int, float, str)) for v in counts.values()), "counts hold only ints, floats, strs"
+
+
+# -- runner, degraded windows ----------------------------------------------------------------------
+
+def _window_arrays(frames=60):
+    """(xy, team, names, rows) of a synthetic window: 11 home nodes on the right, 10 away on the left, one unused."""
+    import numpy as np
+    rng = np.random.default_rng([8, 1])
+    xy = np.full((frames, 22, 2), np.nan, dtype=np.float32)
+    team = np.full(22, -1, dtype=np.int8)
+    names = np.array([""] * 22)
+    for row in range(21):
+        side = 0 if row < 11 else 1
+        base = rng.uniform((60, 5), (100, 63)) if side == 0 else rng.uniform((5, 5), (45, 63))
+        xy[:, row] = base + np.cumsum(rng.normal(0, 0.05, size=(frames, 2)), axis=0)
+        team[row] = side
+        names[row] = "{}_{}".format("home" if side == 0 else "away", row if side == 0 else row - 11)
+    team[21] = -1
+    return xy, team, names, np.arange(1000, 1000 + frames)
+
+
+def test_window_frame_layout():
+    from pathcrf_lab import runner
+    xy, team, names, rows = _window_arrays()
+    frame = runner.window_frame(xy, team, names, rows)
+    assert frame["frame_id"].tolist() == rows.tolist(), "frame_id must be the rows"
+    for column, value in (("period_id", 1), ("phase_id", 1), ("episode_id", 1)):
+        assert (frame[column] == value).all(), "{} must be {}".format(column, value)
+    assert (frame["ball_state"] == "alive").all() and frame["ball_owning_team_id"].isna().all(), "ball state"
+    assert frame[["ball_x", "ball_y"]].isna().all().all(), "the ball is unknown: NaN"
+    assert abs(frame["timestamp"].iloc[25] - frame["timestamp"].iloc[0] - 1.0) < 1e-9, "timestamp is rows / 25"
+    used = [c for c in frame.columns if c[:5] in ("home_", "away_")]
+    assert sorted(used) == sorted("{}_{}".format(n, a) for n in names[:21] for a in "xy"), "one x and y per used node"
+    assert not frame[used].isna().any().any(), "no NaN in a used node column"
+    assert not any(c.startswith("away_10") for c in frame.columns), "no column for the unused node"

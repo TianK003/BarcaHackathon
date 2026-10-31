@@ -10,6 +10,7 @@ name) import in the main .venv as well, where score.py uses them.
 
     python pathcrf_lab/runner.py smoke                    # the real checkpoint on one synthetic window; prints counts
     python pathcrf_lab/runner.py clean --match J03WR9     # their protocol on the clean match -> runs/pathcrf/clean.json
+    python pathcrf_lab/runner.py degraded --match J03WR9 --profile tracking --seeds 0 1 2   # each prepared window
 
 Nothing is printed from the match but aggregates: scores and counts. Their own prints are captured and counted.
 """
@@ -237,19 +238,106 @@ def smoke(repo_dir):
     return 0
 
 
+def window_frame(xy, team, names, rows):
+    """The raw tracking frame of one window, in the columns their preprocessing hands `inference`.
+
+    `xy` (T, 22, 2) metres, `team` (22,) and `names` (22,) as the adapter gives them, `rows` (T,) the match rows of
+    the window. Only the used nodes (team >= 0) get `<name>_x` and `<name>_y`; the running features are theirs to
+    compute (`decode_window`). The window is one in-play episode of one period, with the ball unknown: the model never
+    reads it (ball_feature is off), and their kinematics skip an empty column.
+    """
+    import pandas as pd
+    rows = np.asarray(rows)
+    columns = {"frame_id": rows.astype(np.int64), "period_id": np.ones(len(rows), dtype=np.int64),
+               "timestamp": rows / FPS, "phase_id": np.ones(len(rows), dtype=np.int64),
+               "episode_id": np.ones(len(rows), dtype=np.int64),
+               "ball_state": np.full(len(rows), "alive", dtype=object),
+               "ball_owning_team_id": np.full(len(rows), None, dtype=object),
+               "ball_x": np.full(len(rows), np.nan), "ball_y": np.full(len(rows), np.nan)}
+    for row in range(len(names)):
+        if team[row] < 0:
+            continue
+        columns["{}_x".format(names[row])] = np.asarray(xy[:, row, 0], dtype=np.float64)
+        columns["{}_y".format(names[row])] = np.asarray(xy[:, row, 1], dtype=np.float64)
+    return pd.DataFrame(columns)
+
+
+def decode_window_senders(model, frame):
+    """The decoded sender's name per row of a window (None where there is no output), one model pass for the window.
+
+    Their code, per window as its own episode (D3): running features (stdout captured), the keepers found by their
+    rule, `inference_episode` with the CRF, independent decoding, 10 s windows and no last node, on the CPU. A window
+    in which a team has no node returns None for every row.
+    """
+    import pandas as pd
+    from datatools import utils
+    from inference import inference_episode
+    names = [c[:-2] for c in frame.columns if c.endswith("_x") and c[:5] in ("home_", "away_")]
+    if not any(n.startswith("home_") for n in names) or not any(n.startswith("away_") for n in names):
+        return [None] * len(frame)
+    table, _ = _quiet(utils.calculate_running_features, frame, fps=int(FPS))
+    table = table.set_index("frame_id")
+    left, right = utils.detect_keepers(table, left_first=True)
+    out, _ = _quiet(inference_episode, model, table, left, right, use_crf=True, decode="indep", last_node=None,
+                    evaluate=False, window_seconds=WINDOW_SECONDS, fps=FPS, sample_freq=SAMPLE_FREQ, device="cpu")
+    micro = out[2]
+    if micro is None:
+        return [None] * len(frame)
+    return pd.Series(micro["edge_src"]).reindex(table.index).tolist()
+
+
+def decode_window(model, frame):
+    """One int8 team code per row of a window: 1 home, 0 away, OUT outside, SILENT where there is no output."""
+    return codes_from_senders(decode_window_senders(model, frame))
+
+
+def degraded(match_id, profile, seeds, data_dir):
+    """PathCRF on every prepared window of each seed: reads windows.npz, writes pathcrf.npz; prints counts only."""
+    import time
+    prepared = os.path.join(data_dir, "cache", "pathcrf", match_id, profile)
+    model = load_model(os.path.join(data_dir, "external", "pathcrf", "repo"))
+    for seed in seeds:
+        folder = os.path.join(prepared, "seed{}".format(seed))
+        with np.load(os.path.join(folder, "windows.npz")) as windows, np.load(os.path.join(folder, "frames.npz")) as f:
+            n_rows = len(f["window_of_row"])
+            starts, stops = windows["win_start"], windows["win_stop"]
+            node_xy, node_team, node_names = windows["node_xy"], windows["node_team"], windows["node_names"]
+            team = np.full(n_rows, SILENT, dtype=np.int8)
+            began = time.perf_counter()
+            at, skipped = 0, 0
+            for w, (a, b) in enumerate(zip(starts, stops)):
+                length = int(b - a)
+                frame = window_frame(node_xy[at: at + length], node_team[w], node_names[w], np.arange(a, b))
+                at += length
+                codes = decode_window(model, frame)
+                skipped += int((codes == SILENT).all())
+                team[a:b] = codes
+        np.savez_compressed(os.path.join(folder, "pathcrf.npz"), team=team)
+        coded = team != SILENT
+        print("seed {}: windows run {} skipped {}, rows coded {}, out-of-play share {:.4f}, {:.0f} s".format(
+            seed, len(starts) - skipped, skipped, int(coded.sum()),
+            float((team[coded] == OUT).mean()) if coded.any() else 0.0, time.perf_counter() - began))
+    return 0
+
+
 def main(argv=None, data_dir=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("smoke", "clean"):
+    for name in ("smoke", "clean", "degraded"):
         one = sub.add_parser(name)
         one.add_argument("--data-dir", help="the data bundle (default: data/, or $MTAH_DATA_DIR)")
-        if name == "clean":
-            one.add_argument("--match", default="J03WR9", help="the DFL match to run clean (default J03WR9)")
+        if name != "smoke":
+            one.add_argument("--match", default="J03WR9", help="the DFL match (default J03WR9)")
+        if name == "degraded":
+            one.add_argument("--profile", default="tracking")
+            one.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2])
     args = parser.parse_args(argv)
     data = args.data_dir or data_dir or games.DATA_DIR
     repo_dir = os.path.join(data, "external", "pathcrf", "repo")
     if args.command == "smoke":
         return smoke(repo_dir)
+    if args.command == "degraded":
+        return degraded(args.match, args.profile, args.seeds, data)
     work = os.path.join(data, "cache", "pathcrf", args.match, "clean")
     dfl_dir = os.path.join(data, "external", "dfl", args.match)
     result = clean(args.match, dfl_dir=dfl_dir, repo_dir=repo_dir, work_dir=work)

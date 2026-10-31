@@ -60,3 +60,41 @@ def test_load_model_weights_only_on_a_synthetic_checkpoint():
             pass
         else:
             raise AssertionError("a checkpoint holding a pickled object was loaded under weights_only=True")
+
+
+def _seeded_model():
+    from pathcrf_lab import runner, sources
+    torch = runner.prepare_torch()
+    repo = sources.repo_dir()
+    runner._repo(repo)
+    from models.utils import build_model, load_trial_args
+    torch.manual_seed(0)
+    model = build_model(load_trial_args(os.path.join(repo, "saved", str(runner.TRIAL))), "cpu")
+    model.eval()
+    return model
+
+
+def _right_home_frame():
+    from pathcrf_lab import checks_main, runner
+    return runner.window_frame(*checks_main._window_arrays(100))
+
+
+def test_decode_window_one_code_per_row():
+    _need_torch_and_repo()
+    import numpy as np
+    from pathcrf_lab import runner
+    model = _seeded_model()
+    frame = _right_home_frame()   # home is on the right: the model's left team is away
+    senders = runner.decode_window_senders(model, frame)
+    codes = runner.decode_window(model, frame)
+    assert len(codes) == len(frame) and set(codes.tolist()) <= {0, 1, 2}, "one code in {0, 1, 2} per row"
+    assert codes.tolist() == [runner.team_code(s) for s in senders], "a code must be team_code of the sender's name"
+    assert np.array_equal(codes, runner.decode_window(model, frame)), "the same codes on a second call"
+
+
+def test_decode_window_holds_each_step_five_frames():
+    _need_torch_and_repo()
+    from pathcrf_lab import runner
+    codes = runner.decode_window(_seeded_model(), _right_home_frame()).tolist()
+    changes = [i for i in range(1, len(codes)) if codes[i] != codes[i - 1]]
+    assert all(i % 5 == 0 or i == len(codes) - 1 for i in changes), "codes changed off a 5-frame step: {}".format(changes)
