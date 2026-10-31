@@ -109,6 +109,14 @@ def calibration_slope(z, y):
     return float(a)
 
 
+def geometric_mean(values):
+    """The geometric mean of `values` (a* pooled over the matches, log-symmetric against SLOPE_BAND); None unless all
+    are positive numbers."""
+    if not values or any(v is None or not v > 0 for v in values):
+        return None
+    return float(np.exp(np.mean(np.log(values))))
+
+
 def touch_verdict(unshifted, shifted):
     """True if the shifted touch agreement is at least the unshifted one minus TOUCH_SLACK; False if either is None."""
     return bool(unshifted is not None and shifted is not None and shifted >= unshifted - TOUCH_SLACK)
@@ -181,12 +189,14 @@ def feasibility(model=DEFAULT_MODEL_PATH, *, profile=run.DEFAULT_PROFILE, seeds=
             "slope": calibration_slope(np.concatenate(pooled_z), np.concatenate(pooled_y)),
             "pi_hat_alive": None if None in alive_shares else float(np.mean(alive_shares))}
         if log:
-            log("{}: pi_true {:.4f}, pi_hat {}".format(match_id, pi_true, ", ".join("{:.4f}".format(p) for p in hats)))
+            log("{}: pi_true {:.9f}, pi_hat per seed {}".format(match_id, pi_true,
+                                                                ", ".join("{:.9f}".format(p) for p in hats)))
         del match, codes
     verdict = gate([{"pi_true": cell["pi_true"], "pi_hat": [s["pi_hat"] for s in cell["seeds"]]}
                     for cell in per_match.values()])
+    slopes = [cell["slope"] for cell in per_match.values()]
     return {"profile": profile, "seeds": len(seed_list), "model": run.shown(path), "per_match": per_match,
-            "gate": verdict}
+            "gate": verdict, "slope": geometric_mean(slopes)}
 
 
 def render_feasibility(result):
@@ -202,6 +212,8 @@ def render_feasibility(result):
             number(cell["abs_error"]), number(cell["abs_baseline"]), number(cell["slope"]),
             number(cell["pi_hat_alive"]), "" if converged else "  NOT CONVERGED"))
     verdict = result["gate"]
+    lines.append("  a* (geometric mean of the slopes) {}, the band is {}-{}".format(
+        number(result["slope"]), SLOPE_BAND[0], SLOPE_BAND[1]))
     lines.append("  mean |err| {} against {} for guessing 0.5: ratio {}, the gate is {}: {}".format(
         number(verdict["error"]), number(verdict["baseline"]), number(verdict["ratio"]), number(verdict["factor"]),
         "PASS" if verdict["passes"] else "FAIL"))

@@ -208,6 +208,10 @@ def test_label_shift_feasibility_is_aggregates():
     rows = [{"pi_true": cell["pi_true"], "pi_hat": [s["pi_hat"] for s in cell["seeds"]]}
             for cell in result["per_match"].values()]
     assert result["gate"] == label_shift.gate(rows)
+    slopes = [cell["slope"] for cell in result["per_match"].values()]
+    assert abs(result["slope"] - float(np.prod(slopes)) ** (1.0 / len(slopes))) < 1e-9
+    assert label_shift.geometric_mean([0.5, 2.0]) == 1.0 and label_shift.geometric_mean([1.0, None]) is None
+    assert label_shift.geometric_mean([1.0, -1.0]) is None and label_shift.geometric_mean([]) is None
 
 
 # -- BAR-ATH ----------------------------------------------------------------------------------------------------------
@@ -270,7 +274,7 @@ def test_label_shift_bar_ath_refuses_an_extreme_share():
 def test_label_shift_prints_aggregates_only():
     result = planted_feasibility()
     lines = label_shift.render_feasibility(result)
-    assert len(lines) == len(FOLD_IDS) + 2 and all(len(line) <= 140 for line in lines)
+    assert len(lines) == len(FOLD_IDS) + 3 and all(len(line) <= 140 for line in lines)
     for line in lines:
         assert len(re.findall(r"\d+\.\d+", line)) <= PLANTED_SEEDS + 5, line
         assert not re.search(r"\d{4,}", line.replace(os.path.basename(result["model"]), "")), line
@@ -304,26 +308,33 @@ def test_label_shift_command_line():
 R020_STRENGTHS = {"r020_s025": 0.25, "r020_s050": 0.5, "r020_s100": 1.0}   # the advisor's grid, 2026-10-31
 
 
+def base_text(text):
+    """A config's text without R020's header (everything before main.toml's own first line) and without the two keys."""
+    text = text.replace("\r\n", "\n")
+    text = text[text.index("# The team's current pipeline"):]
+    return "".join(line for line in text.splitlines(keepends=True)
+                   if not line.startswith(("prior = ", "prior_strength = ")))
+
+
 def test_label_shift_r020_configs_are_main_plus_the_prior():
+    """Each config is main.toml's text plus the two keys: compared with the keys and the header taken out, so that the
+    check holds before and after the adoption (when main.toml carries them itself)."""
     from pipeline.config import load_config
-    configs = os.path.join(label_shift.HERE, "configs")
-    main = load_config(os.path.join(label_shift.ROOT, "pipeline", "configs", "main.toml"))
-    assert [c.name for c in main.evidence].count("shape_possession") == 1
+    configs = os.path.join(label_shift.HERE, "configs", "r020")
+    main_path = os.path.join(label_shift.ROOT, "pipeline", "configs", "main.toml")
+    with open(main_path, encoding="utf-8", newline="") as handle:
+        main_base = base_text(handle.read())
+    assert sorted(os.listdir(configs)) == sorted(stem + ".toml" for stem in R020_STRENGTHS)
     for stem, strength in R020_STRENGTHS.items():
-        path = os.path.join(configs, "r020", stem + ".toml")
-        assert os.path.exists(path), "{} is missing".format(path)
-        config = load_config(path)
-        assert config.stem == stem
-        assert (config.seed, config.scope) == (main.seed, main.scope)
-        assert config.decoder == main.decoder and config.refine == main.refine, "decoder and refiners are main.toml's"
-        assert [(c.name, c.kind, c.weight) for c in config.evidence] == [(c.name, c.kind, c.weight)
-                                                                          for c in main.evidence]
-        for ours, theirs in zip(config.evidence, main.evidence):
-            if ours.kind == "shape_possession":
-                assert ours.params == dict(theirs.params, prior="em", prior_strength=strength), ours.params
-                assert "prior" not in theirs.params, "main.toml has no prior yet"
-            else:
-                assert ours == theirs, "{}: another parameter than main.toml's".format(ours.name)
+        path = os.path.join(configs, stem + ".toml")
+        with open(path, encoding="utf-8", newline="") as handle:
+            text = handle.read()
+        assert base_text(text) == main_base, "{} differs from main.toml by more than the two keys".format(stem)
+        keys = [line.split("#")[0].strip() for line in text.splitlines() if line.startswith(("prior = ", "prior_strength = "))]
+        assert keys == ['prior = "em"', "prior_strength = {}".format(strength)], keys
+        assert max(len(line) for line in text.splitlines()[:5]) <= 120, "the header is short lines"
+        shape = [c for c in load_config(path).evidence if c.kind == "shape_possession"]
+        assert len(shape) == 1 and shape[0].params["prior"] == "em" and shape[0].params["prior_strength"] == strength
     assert sorted(R020_STRENGTHS.values()) == [0.25, 0.5, 1.0]
 
 

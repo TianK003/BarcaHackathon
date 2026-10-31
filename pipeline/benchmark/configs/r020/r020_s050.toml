@@ -1,7 +1,7 @@
-# R020's candidate at s = 0.5: pipeline/configs/main.toml as it stood at the declaration (LF sha256 124a38ad...),
-# plus two keys in the shape_possession entry, `prior = "em"` and `prior_strength = 0.5` (P22a: the EM share of
-# home frames, added to the logit as s * logit(share)). Nothing else differs; test_label_shift_r020_configs_are_main_plus_the_prior
-# checks it. The smart_tagging entry stays: the benchmark drops it with --drop-match-only.
+# R020 candidate at s = 0.5: main.toml (LF sha256 124a38ad...) plus two keys in its shape_possession
+# entry, prior = "em" and prior_strength = 0.5 (P22a: the EM home share, added to the logit as
+# s * logit(share)). Nothing else differs; the check is test_label_shift_r020_configs_are_main_plus_the_prior.
+# The smart_tagging entry stays: the benchmark drops it with --drop-match-only.
 #
 # The team's current pipeline -- the config that produces the file we would submit today.
 #
