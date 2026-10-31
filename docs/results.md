@@ -1700,6 +1700,24 @@ stands as written.
 **The run** (HEAVY, once; it loads BAR-ATH): `$PY pipeline/benchmark/wrong_team.py`, writing
 `data/runs/wrong_team/ratio.json`. The tool stays after this lane, because P19's transfer check reports its ratio.
 
+**Part 2, the run and the verdict** (2026-10-31, after `072516c`). `wrong_team.py` ran once on BAR-ATH and wrote
+`data/runs/wrong_team/ratio.json`; everything below applies part 1 as written. Aggregates only:
+
+| measure | candidate frames | graded frames | over 11 on candidates | over 11 on graded | ratio |
+|---|---|---|---|---|---|
+| over 11 (the rule) | 35,533 | 158,857 | 0.1097 | 0.1286 | **0.8532** |
+| `surplus` (T32's stricter definition, reported) | 35,533 | 158,857 | 0.0977 | 0.1080 | 0.9048 |
+
+**Onset (D3, report only):** 130 over-11 runs begin inside the graded blocks; 0.3769 of them lie within 1.0 s of a
+candidate frame, against 0.4755 of the graded frames: ratio 0.7926. It decides nothing.
+
+**Verdict: the ratio 0.8532 is below 1.5, so P21 is dropped by its declared rule** and the ceiling run is not run. Wrong-team
+surpluses are, if anything, rarer at the ball than elsewhere (all three ratios are below 1), so the benchmark's own
+placement, anywhere on the pitch, does not understate the cost, and A14's bound on all of `tracking`'s player degradation
+(0.013 raw) stands. The two effects that pull a state ratio towards 1 (part 1) cannot explain a value this far below it,
+and the onset ratio, which is free of the first, agrees in direction. The tool and its checks are kept, since P19's
+transfer check reports its ratio.
+
 ## Experiments
 
 Copy this template for each run, and add a scoreboard row for anything worth comparing.

@@ -37,7 +37,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P18](#p18--the-offpitch-profile-dfls-ball-hidden-off-the-pitch-as-ours-is-and-p05-retrained-on-it) | offpitch profile: DFL's ball hidden off the pitch as ours is, and P05 retrained on it | T39 (P05 overstated by the visible out-of-play ball) | M | A13: a perfect dead-ball source adds +0.029 raw on tracking; main.toml on offpitch 0.5509 raw / 0.5296 coarse; hiding the out-of-play ball cost today's P05 0.013 alive/dead F1 (R015) | dropped → R015, R015b (our tracker's off-pitch ball cannot be reproduced by a simple rule; code removed) |
 | [P19](#p19--a-learned-team-model-where-the-ball-is-seen) | A learned team model where the ball is seen: P05's recipe applied to the team | fact 3; A13's largest lever (+0.194 raw where the ball is seen) | M (feasibility S) | guess +0.02 to +0.05 raw; fully benchmarkable | idea |
 | [P20](#p20--ball-free-possession-paths-pathcrf-on-our-slots) | Ball-free possession paths: PathCRF (KDD 2026), trained on the same DFL matches | fact 1; A13's gaps (+0.176 raw) | S test, L to adopt | medium–high, uncertain: 92.4% team accuracy without the ball on clean tracking, unknown on ours | idea |
-| [P21](#p21--wrong-team-slots-measure-the-ceiling-then-repair-them) | Wrong-team slots: measure the ceiling, then repair from tracking or jersey colours | T32 | S test, M | low on the benchmark: all of `tracking`'s player degradation costs `main.toml` 0.013 (A14) | idea |
+| [P21](#p21--wrong-team-slots-measure-the-ceiling-then-repair-them) | Wrong-team slots: measure the ceiling, then repair from tracking or jersey colours | T32 | S test, M | low on the benchmark: all of `tracking`'s player degradation costs `main.toml` 0.013 (A14) | dropped → A16 (step 0's ratio 0.85 < 1.5; the tool is kept for P19's transfer report) |
 | [P22](#p22--the-shape-model-adapted-to-our-two-teams-without-labels) | The shape model adapted to our two teams without labels | fact 1 | S–M | low: guess +0.00 to +0.02 | idea |
 | [P03](#p03--one-command-deterministic-cached) | One-command, deterministic, cached pipeline | reproducibility | S–M | enabling | done → R001 |
 | [P04](#p04--sticky-ownership-from-controlled-touches) | Sticky ownership from controlled touches | facts 3, 5 | S | high: +0.1421 raw at the chosen decoder (R010) | done → R008, R010; rule re-chosen → R013 |
@@ -308,8 +308,8 @@ unchanged (sha256 `0ebdfbec...`).
    trained on, clean and degraded to `tracking` v3, against P07 on the same gap frames. If it wins by the declared
    margin, P20 is the bet for the gaps. Its retraining needs a GPU and DFL data only.
 4. **Cheap, only if a person is free:**
-   - P21's step 0: do our identity swaps cluster at the ball? A14 already bounds all of the benchmark's player
-     degradation at 0.013 for `main.toml`.
+   - ~~P21's step 0: do our identity swaps cluster at the ball? A14 already bounds all of the benchmark's player
+     degradation at 0.013 for `main.toml`.~~ Dropped (A16): ratio 0.85, below the declared 1.5.
    - P22(a), the label-shift prior.
    - ~~P10 with a pretrained audio tagger.~~ Dropped (R018, R018b): only the hand-built band-pass was tried, the tagger was not.
 5. **P16 still decides more than any of these.** Every ball-rich change so far has split the two truths: R010's decoder,
@@ -850,6 +850,8 @@ nodes, one per line, it has gone to. Viterbi decodes the path, and impossible tr
 - MPL-2.0 is file-level copyleft. It is fine in a public repo, but its files keep their licence headers.
 
 ### P21 — Wrong-team slots: measure the ceiling, then repair them
+
+**Status: dropped → [A16](results.md) (step 0: over-11 frames are 0.1097 of `controlled_touch`-style candidate frames against 0.1286 of graded frames, ratio 0.85, below the declared 1.5; the onset ratio, 0.79, agrees and decided nothing). A14's bound stands. `pipeline/benchmark/wrong_team.py` and its checks are kept, because P19's transfer check reports its ratio; no repair was built.**
 
 **Why.** T32: on at least 10.8% of the graded frames a team shows more than 11 slots, because a slot has followed a
 player of the other side. `controlled_touch` takes the team of the nearest slot at confidence 0.93, so a swap next to the
