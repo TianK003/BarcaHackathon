@@ -5713,6 +5713,293 @@ def test_smart_tagging_is_match_only():
     assert evidence.match_only("smart_tagging") is True, "the tags exist for our match only"
 
 
+# -- the team model source (P19) --------------------------------------------------------------------------------------
+#
+# Hand-made artifacts whose trees are stumps on `h_ball_d1`, so that every number is worked out here and not by the
+# trainer. A stump on h_ball_d1 is not antisymmetric by itself; the source's (r(x) - r(swap(x))) / 2 makes it so: the
+# logit is (leaf(h_ball_d1) - leaf(a_ball_d1)) / 2, the baseline cancels, and a NaN distance goes to the missing side.
+
+TEAM_TRAINER = "pipeline/benchmark/train_team.py"
+TEAM_THRESHOLD = 5.0
+
+
+def team_model_stub(baseline, left, right, feature="h_ball_d1", threshold=TEAM_THRESHOLD, missing_left=0, prior=0.5):
+    return {"baseline": baseline, "prior_home": prior,
+            "trees": [stump(TEAM_COLUMN[feature], threshold, left, right, missing_left)]}
+
+
+def write_team_model(folder, folds=None, full=None, name="team_hgb.json", **changes):
+    import json
+    from pipeline.evidence import team_features
+    artifact = {"format": 1, "kind": "hgb", "feature_version": team_features.FEATURE_VERSION,
+                "features": list(TEAM_NAMES), "profile": "tracking", "seeds": 3, "stride": 5, "provenance": {},
+                "folds": {"FOLD1": team_model_stub(-0.2, 1.0, -1.0)} if folds is None else folds,
+                "full": team_model_stub(0.7, -1.0, 2.0) if full is None else full}
+    artifact.update(changes)
+    return write_text(folder, name, json.dumps(artifact, sort_keys=True) + "\n")
+
+
+def team_home(inputs, path, game="BAR-ATH", **values):
+    from pipeline.contracts import RunContext, check_evidence
+    from pipeline.evidence import REGISTRY
+    inputs.game = game
+    evidence = REGISTRY["team_model"](RunContext(inputs=inputs, seed=0), model=path, **values)
+    check_evidence(evidence, len(inputs.atd.ball_xy))
+    assert np.isnan(evidence.alive).all(), "team_model has no opinion on whether the ball is alive"
+    assert not (evidence.home.flags.writeable or evidence.alive.flags.writeable), "the arrays are read-only"
+    return evidence.home
+
+
+def team_inputs(players, ball, teams, graded):
+    return play_inputs(players, ball, teams=teams, graded=graded)
+
+
+def stump_team_home(X, left, right, threshold=TEAM_THRESHOLD, missing_left=0, min_prob=0.02):
+    """The home probability of a stump on h_ball_d1, worked out from the two nearest distances alone."""
+    def leaf(distance):
+        goes_left = np.where(np.isnan(distance), bool(missing_left), distance <= threshold)
+        return np.where(goes_left, left, right)
+
+    logit_home = (leaf(X[:, TEAM_COLUMN["h_ball_d1"]]) - leaf(X[:, TEAM_COLUMN["a_ball_d1"]])) / 2.0
+    return np.clip(1.0 / (1.0 + np.exp(-logit_home)), min_prob, 1.0 - min_prob)
+
+
+def test_team_model_values():
+    # logit(home) = (r(x) - r(swap(x))) / 2: the baseline cancels, so no prior is ever corrected for
+    with tempfile.TemporaryDirectory() as root:
+        for baseline in (0.7, -3.0, 0.0):
+            path = write_team_model(root, full=team_model_stub(baseline, -1.0, 2.0))
+            for seed in (0, 1, 3, 5):
+                players, ball, teams, graded = team_scene(seed)
+                inputs = team_inputs(players, ball, teams, graded)
+                home = team_home(inputs, path)
+                X = team_matrix(players, ball, teams, graded)
+                known = ~np.isnan(home)
+                assert known.sum() > 20 and (np.abs(home[known] - 0.5) > 0.2).any()
+                assert np.allclose(home[known], stump_team_home(X, -1.0, 2.0)[known], rtol=0, atol=1e-12), \
+                    (baseline, seed)
+        # a model that gives every row the same leaf has no opinion to give: exactly 0.5, whatever its baseline
+        flat = write_team_model(root, full=team_model_stub(2.5, 0.8, 0.8), name="flat.json")
+        home = team_home(team_inputs(*team_scene(0)), flat)
+        assert (home[~np.isnan(home)] == 0.5).all() and (~np.isnan(home)).any()
+
+
+def test_team_model_is_antisymmetric():
+    from pipeline.evidence import team_features, trees
+    with tempfile.TemporaryDirectory() as root:
+        # none of the trees is symmetric: one reads the home block only, one the away block only, one a shared column
+        lopsided = {"baseline": 0.9, "prior_home": 0.5, "trees": [
+            stump(TEAM_COLUMN["h_ball_d1"], 3.0, -0.8, 1.7, missing_left=1),
+            stump(TEAM_COLUMN["a_reach_s"], 1.0, 0.6, -0.3),
+            stump(TEAM_COLUMN["ball_line_m"], -30.0, -1.0, 2.0),
+            stump(TEAM_COLUMN["adv_gap"], 0.0, -0.5, 1.5)]}
+        path = write_team_model(root, full=lopsided)
+        for seed in range(8):
+            players, ball, teams, graded = team_scene(seed)
+            home = team_home(team_inputs(players, ball, teams, graded), path)
+            relabelled = team_home(team_inputs(players, ball, 1 - teams, graded), path)
+            known = ~np.isnan(home)
+            assert known.sum() > 20 and np.array_equal(known, ~np.isnan(relabelled)), seed
+            assert np.allclose(home[known], 1.0 - relabelled[known], rtol=0, atol=1e-12), \
+                "seed {}: relabelling the teams is not 1 - home".format(seed)
+            # the check has teeth: the trees alone, run on the two labellings, are not antisymmetric
+            X = team_matrix(players, ball, teams, graded)[known]
+            alone = 1.0 / (1.0 + np.exp(-trees.score(lopsided, X)))
+            alone_relabelled = 1.0 / (1.0 + np.exp(-trees.score(lopsided, team_features.swap(X))))
+            assert np.abs(alone - (1.0 - alone_relabelled)).max() > 0.05, "the model is symmetric on its own"
+        # on random rows the logit is exactly odd under swap
+        rng = np.random.default_rng(21)
+        rows = rng.normal(size=(400, 56)) * 5.0
+        rows[rng.random(rows.shape) < 0.2] = np.nan
+        both = (trees.score(lopsided, rows) - trees.score(lopsided, team_features.swap(rows))) / 2.0
+        flipped = (trees.score(lopsided, team_features.swap(rows)) - trees.score(lopsided, rows)) / 2.0
+        assert np.allclose(both, -flipped, rtol=0, atol=1e-12)
+
+
+def test_team_model_silent_where_the_ball_is_missing():
+    with tempfile.TemporaryDirectory() as root:
+        path = write_team_model(root)
+        for seed in (0, 3):
+            players, ball, teams, graded = team_scene(seed)
+            home = team_home(team_inputs(players, ball, teams, graded), path)
+            inside = block_mask(len(home), graded)
+            seen = inside & ~np.isnan(ball[:, 0])
+            assert seen.sum() > 50 and (inside & np.isnan(ball[:, 0])).sum() > 5, "the scene needs both kinds"
+            assert np.isnan(home[~seen]).all(), "no opinion where the ball is missing or outside the blocks"
+            assert not np.isnan(home[seen]).any(), "an opinion on every graded frame with the ball"
+
+
+def test_team_model_fold_choice():
+    with tempfile.TemporaryDirectory() as root:
+        folds = {"FOLD1": team_model_stub(0.0, 1.0, -1.0), "FOLD2": team_model_stub(0.0, 3.0, -3.0)}
+        path = write_team_model(root, folds=folds, full=team_model_stub(0.0, -1.0, 1.0))
+        players, ball, teams, graded = team_scene(0)
+        X = team_matrix(players, ball, teams, graded)
+        inputs = team_inputs(players, ball, teams, graded)
+        values = dict(min_prob=0.0001)
+        full = team_home(inputs, path, **values)
+        known = ~np.isnan(full)
+        assert np.allclose(full[known], stump_team_home(X, -1.0, 1.0, min_prob=0.0001)[known], rtol=0, atol=1e-12)
+        for game, left, right in (("FOLD1", 1.0, -1.0), ("FOLD2", 3.0, -3.0)):
+            fold = team_home(inputs, path, game=game, **values)
+            assert np.array_equal(known, ~np.isnan(fold))
+            assert np.allclose(fold[known], stump_team_home(X, left, right, min_prob=0.0001)[known], rtol=0,
+                               atol=1e-12), "{} is the fold of its own game".format(game)
+            assert not np.allclose(fold[known], full[known]), "the folds must differ from `full`"
+        for game in ("BAR-ATH", "NOT-IN-FOLDS", "full"):
+            other = team_home(inputs, path, game=game, **values)
+            assert np.array_equal(other, full, equal_nan=True), "{}: a game with no fold gets `full`".format(game)
+        # the file is read again when it changes
+        write_team_model(root, folds=folds, full=team_model_stub(0.0, 5.0, -5.0))
+        changed = team_home(inputs, path, **values)
+        assert np.allclose(changed[known], stump_team_home(X, 5.0, -5.0, min_prob=0.0001)[known], rtol=0, atol=1e-12)
+
+
+def test_team_model_rejects_bad_artifacts():
+    import json
+    from pipeline.evidence import team_features
+    with tempfile.TemporaryDirectory() as root:
+        inputs = team_inputs(*team_scene(0))
+        renamed = list(TEAM_NAMES)
+        renamed[3] = "h_rel_speed_x"
+        good = team_model_stub(0.0, -1.0, 1.0)
+
+        def refused(path, *fragments):
+            return expect_error(ValueError, lambda: team_home(inputs, path), "team_model", TEAM_TRAINER, *fragments)
+
+        for label, changes in (("format", {"format": 2}), ("format", {"format": None}),
+                               ("feature_version", {"feature_version": 2}),
+                               ("feature_version", {"feature_version": team_features.FEATURE_VERSION + 1}),
+                               ("features", {"features": list(TEAM_NAMES)[::-1]}), ("features", {"features": renamed}),
+                               ("features", {"features": list(TEAM_NAMES)[:-1]}),
+                               ("features", {"features": list(SHAPE_NAMES)}),
+                               ("kind", {"kind": "logistic"}), ("kind", {"kind": None}),
+                               ("folds", {"folds": [good]}), ("folds", {"folds": "FOLD1"})):
+            refused(write_team_model(root, name="other.json", **changes), label)
+        refused(write_text(root, "list.json", "[1, 2]"), "model object")
+        for bad in (0.6, 0.0, 1.0, -0.5, True, "0.5", None):
+            refused(write_team_model(root, full=dict(good, prior_home=bad), name="prior.json"), "prior_home", "full")
+            refused(write_team_model(root, folds={"FOLD1": dict(good, prior_home=bad)}, name="prior.json"),
+                    "prior_home", "FOLD1")
+        ragged = team_model_stub(0.0, -1.0, 1.0)
+        ragged["trees"][0]["left"] = [1, 0]                      # arrays of unequal lengths
+        refused(write_team_model(root, full=ragged, name="ragged.json"), "tree 0", "full")
+        wide = team_model_stub(0.0, -1.0, 1.0)
+        wide["trees"][0]["feature"][0] = len(TEAM_NAMES)         # a column the features do not have
+        refused(write_team_model(root, folds={"FOLD1": wide}, name="wide.json"), "tree 0", "FOLD1")
+        refused(write_team_model(root, full=dict(good, baseline=None), name="nobase.json"), "baseline")
+        refused(os.path.join(root, "absent.json"), "absent.json")
+        # P07's file is a model of other features: it must not load here
+        refused(write_shape_model(root, name="shape.json"), "features")
+
+
+def test_team_model_parameters():
+    from pipeline.contracts import RunContext
+    from pipeline.evidence import REGISTRY
+    with tempfile.TemporaryDirectory() as root:
+        path = write_team_model(root)
+        inputs = team_inputs(*team_scene(3))
+        for bad in (0.0, 0.5, 0.6, -0.1, True, False, "0.02", None, float("nan"), float("inf")):
+            expect_error(ValueError, lambda: team_home(inputs, path, min_prob=bad), "team_model", "min_prob")
+        for bad in (None, 5, "", True):
+            expect_error(ValueError, lambda: team_home(inputs, bad), "team_model", "model")
+        expect_error(TypeError, lambda: REGISTRY["team_model"](RunContext(inputs=inputs, seed=0)), "model")
+        expect_error(TypeError, lambda: team_home(inputs, path, scope="all"), "scope")
+        team_home(inputs, path, min_prob=np.float64(0.25))                      # numpy numbers from a sweep are fine
+        # the default is the design's 0.02, and the clip holds a score far out at min_prob and 1 - min_prob
+        assert np.array_equal(team_home(inputs, path), team_home(inputs, path, min_prob=0.02), equal_nan=True)
+        extreme = write_team_model(root, full=team_model_stub(0.0, -40.0, 40.0), name="extreme.json")
+        X = team_matrix(*team_scene(3))
+        for min_prob in (0.02, 0.1, 0.4):
+            home = team_home(inputs, extreme, min_prob=min_prob)
+            known = ~np.isnan(home)
+            assert known.any() and home[known].min() >= min_prob and home[known].max() <= 1.0 - min_prob
+            assert np.allclose(home[known], stump_team_home(X, -40.0, 40.0, min_prob=min_prob)[known], rtol=0,
+                               atol=1e-12)
+        assert home.dtype == np.float64 and home.shape == (len(X),)
+
+
+def test_team_model_remembers_its_scores_per_inputs():
+    from pipeline.evidence import trees
+    with tempfile.TemporaryDirectory() as root:
+        path = write_team_model(root)
+        inputs = team_inputs(*team_scene(0))
+        calls = []
+        real = trees.score
+        trees.score = lambda model, X: calls.append(len(X)) or real(model, X)
+        try:
+            first = team_home(inputs, path)
+            walked = len(calls)
+            assert walked >= 1
+            second = team_home(inputs, path)
+            assert len(calls) == walked and np.array_equal(first, second, equal_nan=True), "walked the trees again"
+            clipped = team_home(inputs, path, min_prob=0.3)                         # another clip: no walk
+            assert len(calls) == walked
+            assert np.nanmin(clipped) >= 0.3 and np.nanmax(clipped) <= 0.7, "a different min_prob must re-clip"
+            team_home(inputs, path, game="FOLD1")                                    # another model of the file
+            assert len(calls) == 2 * walked
+            team_home(inputs, path, game="FOLD1")
+            assert len(calls) == 2 * walked
+            team_home(team_inputs(*team_scene(0)), path)
+            assert len(calls) == 3 * walked, "the memo is per Inputs object"
+        finally:
+            trees.score = real
+
+
+def test_team_model_refuses_infinite_features():
+    from pipeline.evidence import team_features
+    with tempfile.TemporaryDirectory() as root:
+        path = write_team_model(root)
+        inputs = team_inputs(*team_scene(0))
+        names, X = team_features.features(inputs)
+        broken = X.copy()
+        seen = np.flatnonzero(~np.isnan(X[:, TEAM_COLUMN["ball_line_m"]]))
+        broken[seen[3], TEAM_COLUMN["ball_line_m"]] = np.inf
+        real = team_features.features
+        team_features.features = lambda given: (names, broken)
+        try:
+            expect_error(ValueError, lambda: team_home(inputs, path), "team_model", "infinite")
+        finally:
+            team_features.features = real
+
+
+def test_team_model_speed():
+    from pipeline.contracts import RunContext
+    from pipeline.evidence import REGISTRY, team_features
+    rng = np.random.default_rng(22)
+    n, slots = 140_000, 46
+    players = rng.random((n, slots, 2))
+    players[rng.random((n, slots)) < 0.4] = np.nan
+    ball = rng.random((n, 2))
+    ball[rng.random(n) < 0.4] = np.nan
+    inputs = kinematics_inputs(kinematics_atd(players, ball), [(1, 5_000, 70_000), (2, 75_000, 135_000)])
+    inputs.game = "BAR-ATH"
+    inputs.atd.players_present                      # the Atd's own cached masks are not this module's cost
+    inputs.atd.ball_present
+    model = random_hgb_model(rng, prior=0.5)        # of the size the trainer writes, over the 56 team columns
+    model.pop("prior_alive")
+    model["prior_home"] = 0.5
+    for tree in model["trees"]:
+        tree["feature"] = [feature % len(TEAM_NAMES) if feature >= 0 else feature for feature in tree["feature"]]
+    with tempfile.TemporaryDirectory() as root:
+        path = write_team_model(root, full=model)
+        started = time.perf_counter()
+        team_features.features(inputs)              # warm: the features have their own check
+        features_s = time.perf_counter() - started
+        started = time.perf_counter()
+        evidence = REGISTRY["team_model"](RunContext(inputs=inputs, seed=0), model=path)
+        first_s = time.perf_counter() - started
+        started = time.perf_counter()
+        REGISTRY["team_model"](RunContext(inputs=inputs, seed=0), model=path, min_prob=0.01)
+        again_s = time.perf_counter() - started
+        print("      team_model speed: 125,000 graded frames, 300 trees of 15 leaves, two walks over the ball-visible "
+              "frames: first inference {:.2f} s (features {:.2f} s before it), a second config on the same inputs "
+              "{:.2f} s".format(first_s, features_s, again_s))
+        assert np.isnan(evidence.home[:5_000]).all() and not np.isnan(evidence.home[5_000:70_000]).all()
+        assert first_s < 6.0, "{:.2f} s for 300 trees, twice, on the ball-visible frames (the budget is 6 s)".format(
+            first_s)
+
+
 # -- runner -----------------------------------------------------------------------------------------------------------
 
 def main(argv=None):
