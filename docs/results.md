@@ -6920,7 +6920,7 @@ measured.
 
 Proposal: P16 · Part 1 only. Part 2 (the run) is written after Tian signs; amendments go in before any file is fetched.
 The source is advisor-02, Lane C. The research behind it (licence text, taxonomy, kloppy, StatsBomb, PathCRF) is the
-local note `.superpowers/sdd/2026-10-31-p16-protocol/research.md`.
+[research note](research/2026-10-31-p16-metrica.md).
 
 **Question.** Is our ground truth's possession grain nearer DFL's raw flag or the coarse truth ([T33](traps.md), A06)?
 Every re-tune since R007 has split the two truths, so the answer sets which truth ranks every later choice.
