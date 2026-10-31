@@ -236,6 +236,13 @@ implements.
   so it can turn a held team over a gap and cannot outvote a control episode frame for frame. It also speaks where the
   ball is visible, which R011 found better than speaking only in the gaps (+0.0113 pooled spellF1 raw at the chosen
   weight, `tracking` v3).
+- **P07 recalibrated per half from the touch rule's own labels (P22(b), tried and dropped):** an intercept added to
+  P07's logit on each half, fitted on the other half's controlled-touch frames, allowing for the rule's 7% label noise
+  and removing their class share (R027). It failed its gate on the seven DFL matches: in the held-out half's ball gaps
+  P07's pooled log-loss rose from 0.3759 to 0.3820, where a fall of 0.002 was needed, and it rose on 5 of 7 matches;
+  the retry's column, a team-aware linear head, did worse (0.4597). The offsets exist (0.28 in logit on average in the
+  gaps), but the one the touches see is not the gaps' (0.30 apart, against 0.11 of label noise). It never ran on our
+  match, and the code was removed.
 - **Touches, deflections, aerial duels:** Since R013 a single control frame is an episode, so what keeps a deflection
   from being a possession is the decoder: an episode of the other team earns 2.59 nats a frame, a change of team costs
   4 nats each way, and the new team's run must last 35 frames, so a touch of a frame or two does not turn the

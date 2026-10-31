@@ -664,7 +664,7 @@ const DATA = {
   commit: "f695059",
   title: "Possession pipeline · team overview",
   subtitle: "More than a Hack 2027, Phase 1 · FC Barcelona (H) vs Athletic Club (A), LaLiga 2024-25 MD2",
-  footer: "As of 2026-10-31 (f695059, the merge of P23). P23 reviewed the HMM decoder: R024 re-chose R013's grids on the mean of the two truths and moved the touch hold to 0.55 (`main.csv` `e6496a9b…`, not yet regenerated from a fresh clone; A17 and A18 checked R017's `7ba575c0…`), A19 found the remaining loss mostly in the edges, and posterior edges (R025, R025b) and a gap weight for P07 (R026) were dropped. Update DATA when an entry lands; the docs are the source of truth.",
+  footer: "As of 2026-10-31 (f695059, the merge of P23). P23 reviewed the HMM decoder: R024 re-chose R013's grids on the mean of the two truths and moved the touch hold to 0.55 (`main.csv` `e6496a9b…`, not yet regenerated from a fresh clone; A17 and A18 checked R017's `7ba575c0…`), A19 found the remaining loss mostly in the edges, and posterior edges (R025, R025b) and a gap weight for P07 (R026) were dropped. P22(b), P07 recalibrated per half from the touch rule's own labels, was then dropped at R027's gate on DFL (pooled log-loss in the gaps +0.0061; no spellF1, code removed). Update DATA when an entry lands; the docs are the source of truth.",
 
   /* ---------- Overview ---------- */
   onboarding: {
@@ -730,7 +730,7 @@ const DATA = {
   },
 
   nextSteps: [
-    { title: "The grain answered (R023), R013 re-chosen on it (R024)", text: "On Metrica's own sample games the event-derived grain falls between the two truths (6.20 possessions per alive minute, median 4.72 s), so every choice now ranks on the mean of the raw and coarse pooled spellF1s. R024 re-chose R013's grids on it: only the hold moved, 0.60 to 0.55 (+0.0052 on the mean, p 0.0469; raw −0.0067, coarse +0.0171). P23's review put the decoder's remaining loss in where the evidence changes; F (P22(b), the evidence in the gaps) is the one idea left aimed there." },
+    { title: "The grain answered (R023), R013 re-chosen on it (R024)", text: "On Metrica's own sample games the event-derived grain falls between the two truths (6.20 possessions per alive minute, median 4.72 s), so every choice now ranks on the mean of the raw and coarse pooled spellF1s. R024 re-chose R013's grids on it: only the hold moved, 0.60 to 0.55 (+0.0052 on the mean, p 0.0469; raw −0.0067, coarse +0.0171). P23's review put the decoder's remaining loss in where the evidence changes; F (P22(b), the evidence in the gaps), the one idea left aimed there, was dropped at R027's gate: the offset the touches see is not the gaps'." },
     { title: "Not now: a video ball detector (P14)", text: "A14: the ball is about 6 px wide, smaller than a ViT patch (T46), and a perfect ball in our gaps is worth +0.10 raw but only +0.02 coarse. A half-day zero-shot test only if someone is free." },
     { title: "The deliverables", text: "Regenerate `main.toml`'s file from a clean clone on a second machine, make the repo public as the last step, fill the placeholders of [the technical document](../docs/technical_document_submission.md), and decide before the freeze how much of the benchmark's gain to believe (a decision, not a run: T38, T39, R011). Our advice, not a rule: upload the file early as a safety copy. See [Work to do](#work)." }
   ],
@@ -1139,7 +1139,7 @@ const DATA = {
           "Shape lags a turnover: a team needs seconds to reshape, so it is good on who has the ball and weak on when it changed; touches and the decoder place the edges.",
           "Wrong-team slots move its features (T32). It uses means, percentiles and shares, never a minimum or maximum, to limit that.",
           "A heavier weight in the gaps alone added possessions and lost on the mean (R026); A19 found it calibrated alike with the ball seen or missing.",
-          "Next on this question: P22 (adapting this one to our teams without labels). P20 (PathCRF, a stronger model of the same thing) was measured and dropped (R022)."
+          "Adapting it to our teams without labels (P22) was dropped at two gates: an EM home-share prior (R020), and a per-half intercept from the touch rule's labels (R027), whose touch-frame offset is not the gaps'. P20 (PathCRF, a stronger model of the same thing) was measured and dropped (R022)."
         ],
         files: [
           { label: "shape_possession.py", href: "../pipeline/evidence/shape_possession.py" },
@@ -1384,9 +1384,9 @@ const DATA = {
     { id: "P21", anchor: "p21--wrong-team-slots-measure-the-ceiling-then-repair-them", title: "Wrong-team slots: measure the ceiling, then repair from tracking or jersey colours", attacks: "T32", effort: "S test, M", impact: "low on the benchmark: all of `tracking`'s player degradation costs `main.toml` 0.013 (A14)", status: "dropped", stage: "inputs",
       note: "dropped → A16 (step 0: over-11 frames are 0.11 of the candidate frames against 0.13 of graded frames, ratio 0.85 against the declared 1.5; the measuring tool is kept)" },
     { id: "P22", anchor: "p22--the-shape-model-adapted-to-our-two-teams-without-labels", title: "The shape model adapted to our two teams without labels", attacks: "fact 1", effort: "S–M", impact: "low: guess +0.00 to +0.02", status: "dropped", stage: "evidence",
-      note: "(a) dropped → R020 (the feasibility gate failed, ratio 0.863 against 0.75; code removed); (b) and (c) not tried" },
+      note: "(a) dropped → R020 (the feasibility gate failed, ratio 0.863 against 0.75; code removed); (b) dropped → R027 (the gate failed: P07's pooled log-loss in the held-out half's gaps +0.0061, needing −0.002; the transfer from touch frames to gaps 0.296 against the teacher's noise 0.107; rung 3 worse too; code removed); (c) not tried" },
     { id: "P23", anchor: "p23--the-hmm-backbone-reviewed-nine-ideas-five-taken", title: "The HMM backbone reviewed: re-choose under R023's objective (A), decompose the IoU ladder (B), posterior edges (C), calibration (D), a gap weight for P07 (E)", attacks: "fact 5; the decoder's placement of changes; fact 1 (E)", effort: "S each", impact: "low: +0.01 to +0.03 for the lot (the advisor's estimate); measured: A +0.0052 on the mean (R024)", status: "done", stage: "decode",
-      note: "done: A adopted → R024; B, D measured → A19; C dropped → R025, R025b; E dropped → R026; F deferred, G to I not taken" }
+      note: "done: A adopted → R024; B, D measured → A19; C dropped → R025, R025b; E dropped → R026; F deferred, then run as P22(b) and dropped → R027; G to I not taken" }
   ],
 
   /* ---------- Traps (docs/traps.md) ---------- */
@@ -1561,7 +1561,9 @@ const DATA = {
     { date: "2026-10-31", title: "P23 C posterior edges dropped", entries: "R025, R025b", outcome: "dropped", stages: ["decode"],
       text: "Each change moved to the median of the decoder's posterior: 55% moved, by a median of 1 frame, mean −0.0010 (2 wins in 7). The one retry, the posterior tempered at T = 5 (the advisor's ruling): moves of 3 frames that widened the edges' errors, mean −0.0282 (0 wins). Code removed in `515f26a` (T50)." },
     { date: "2026-10-31", title: "P23 E: P07 weighted apart in the gaps, dropped", entries: "R026", outcome: "dropped", stages: ["evidence"],
-      text: "Six configs of a weight where the ball is seen and one in the gaps: the rule kept `main.toml`'s (0.2, 0.2), which scored as `main.toml` to the last digit; every heavier gap weight added possessions and lost on the mean (−0.010 to −0.020). No retry (the advisor's ruling); code removed in `4690545`." }
+      text: "Six configs of a weight where the ball is seen and one in the gaps: the rule kept `main.toml`'s (0.2, 0.2), which scored as `main.toml` to the last digit; every heavier gap weight added possessions and lost on the mean (−0.010 to −0.020). No retry (the advisor's ruling); code removed in `4690545`." },
+    { date: "2026-10-31", title: "P22(b): P07 recalibrated from the touch rule's own labels, dropped at its gate", entries: "R027", outcome: "dropped", stages: ["evidence", "benchmark"],
+      text: "An intercept on P07's logit for each half, fitted on the other half's controlled-touch frames with the rule's 7% label noise allowed for, tested on DFL before any source was merged: P07's pooled log-loss in the held-out half's gaps went from 0.3759 to 0.3820 (0.002 lower was needed), worse on 5 of 7 matches; the retry's column, a team-aware head, 0.4597. The offsets exist (0.276 on average), but the touches' is not the gaps' (transfer 0.296 against noise 0.107). No spellF1; code removed in `9ee4d1f`." }
   ],
   outcomes: {
     adopted: { label: "adopted", cls: "ok", glyph: "✓" },

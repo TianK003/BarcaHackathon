@@ -48,6 +48,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | A19 | 2026-10-31 | P23 B and D: `main.toml`'s IoU ladder decomposed and its calibration (`diagnose.py`) | — | — | — | mean clean-pair ladder loss 0.0704 (merge 0.0254, split 0.0273); the posterior 4–5× too sharp (Platt α 0.19 team, 0.27 alive), the sources near calibrated | measurement: R025's gate passed |
 | R025, R025b | 2026-10-31 | P23 C: posterior edges, then on a posterior tempered at T = 5 (the one retry) | — | — | — | mean Δ -0.0010 (2 wins) and -0.0282 (0 wins) against `main` | **dropped**: guard failed both times; code removed |
 | R026 | 2026-10-31 | P23 E: P07 weighted apart in the gaps (6 configs) | — | — | — | the identity scored as `main`; every heavier gap weight -0.010 to -0.020 on the mean | **dropped**: no config beat `main`; no retry (advisor); code removed |
+| R027 | 2026-10-31 | P22(b): P07's logit plus a per-half intercept fitted on the other half's touch-rule frames (E2, noise-aware at ε 0.07), served by a new source `shape_selftrain`; part 1: the gate on DFL (rung 1's pooled log-loss in the held-out half's gaps at least 0.002 nats below P07's, no match more than 0.002 above), the shift, the bar (the mean of the two truths: pooled Δ ≥ +0.005 on `tracking`, no match below −0.005), two vetoes, the BAR-ATH checks; rung 3 the one retry (R027b); part 2a: the gate run | — | — | — | — | dropped 2026-10-31, code removed (recover from `1e5a5d2` and the local tag `archive/r027-source`): the gate failed, rung 1's pooled log-loss +0.0061 (0.3820 against P07's 0.3759; needed −0.002) and worse on 5 of 7 matches (worst +0.0148, J03WMX), rung 3 +0.0838; the touch-to-gap transfer 0.296 against the teacher's noise 0.107 (E/B 1.18); no shift, bar or BAR-ATH run, no spellF1 |
 
 ### The four yardsticks on every profile, in one table
 
@@ -7025,8 +7026,9 @@ of abs(0.5 - pi_true) = **0.0623**; ratio **0.8634**. The gate needs error <= 0.
 
 **What stays.** P22(c), the prior as asymmetric switch costs in the decoder, stays recorded in `docs/proposals.md` for the
 team, untested: it would use the same pi_hat, which this run shows is not a better guess than 0.5. P22(b), self-training,
-was not tried. The code (the prior on `shape_possession`, `label_shift.py`, its checks and the three configs) is removed in
-one commit, recoverable from `e303365`; `wrong_team.py` and its checks stay, since P19's transfer check reports A16's ratio.
+was not tried here (it was later that day, as R027). The code (the prior on `shape_possession`, `label_shift.py`, its
+checks and the three configs) is removed in one commit, recoverable from `e303365`; `wrong_team.py` and its checks stay,
+since P19's transfer check reports A16's ratio.
 `main.toml` was never changed, and `pipeline/` equals main's except for `wrong_team.py` and its checks.
 
 ### R021 — P19's team model where the ball is seen: feasibility, a two-stage grid, the bar and the transfer (2026-10-31, the overnight lane for Tian)
@@ -8256,6 +8258,487 @@ above. The one blocker was R024's extension, which could be read two ways.
 and its checks), and `pipeline/benchmark/configs/r026/`. It is recoverable from `57013a1`. `main.toml` is unchanged
 (R024's, `e6496a9b…`).
 
+### R027 — P22(b): P07 recalibrated per half from the touch rule's own labels: the gate, the bar and the checks (declared 2026-10-31, Tian)
+Proposal: P22 (b), touching P07 · Branch `p22b-selftrain` · Design:
+`docs/superpowers/specs/2026-10-31-p22b-selftrain-design.md` · Commits:
+- part 1 is committed on the lane after `p22b-tool` is merged into it: the tool (`63d2da1`) and its commit that points
+  `selftrain.DEFAULT_CONFIG` at `pipeline/configs/r024_both.toml` (The settings, below), on Task 1's `dfc32fd`. The
+  gate runs from a detached checkout of that lane commit;
+- the lag runs from the lane commit that merges the source; the bar and the BAR-ATH checks run from the next lane
+  commit, which adds `r027_final.toml` (the shift, below);
+- before each step, the controller logs the run worktree's `git rev-parse HEAD` and `git status --porcelain`, which
+  must be empty (untracked files count, as they do for `+dirty`); a report that records its own `git` state (the
+  gate's, `run.py`'s, `diagnose.py`'s and `pipeline/run.py`'s) names the same commit with no `+dirty`.
+
+The runs' commits are in part 2.
+
+**Part 1, declared before any run** (2026-10-31). Nothing below was chosen from a score, and no run of this entry has
+been made. It states the design's sections 2 and 5 to 7, with Tian's four answers (its section 9) in place. Every
+threshold is held as written, with no rounding: the number compared with it is read from the reports' JSON (9
+decimals), not from their printouts, and a miss by any margin is a miss (the reference's reproduction, held at R024's
+4 printed decimals, is the one exception).
+
+**Why.** P07 (`shape_possession`) gives `home` on every graded frame from the two teams' shape. Its trees were fitted on
+the seven DFL matches, and BAR-ATH is read by `full`, which has seen neither team (R011).
+- **A hint, and only a reading.** R020's EM missed the home share by 0.0538 on average (by 0.18 on J03WN1, by 0.09 the
+  other way on J03WQQ), while P07's calibration slope stayed at 0.94 to 1.16 (a geometric mean of 1.071). A slope near
+  1 with misses of that size is what a per-match offset in P07's likelihood would produce. R020 fitted a slope only.
+- **Not evidence.** A19's pooled β of +0.13 is the class prior, the mean of logit(π_true) over the seven matches
+  (+0.130), which the estimator below removes by construction. No offset has been measured yet: the gate's oracle
+  b\*_gap is the first measurement.
+- **Mild counter-evidence, and confounded.** A19's β is +0.16 with the ball seen and +0.07 with it missing. A Platt
+  intercept carries the class prior of its frames, which is why the pooled +0.13 is the prior. So the split may be the
+  home share differing between seen frames and gaps as much as two offsets. If it is two offsets, the frames the
+  teacher labels (ball seen) and the frames the correction is for (gaps) do not share one. The gate's class-balanced
+  oracles remove the prior and measure that transfer (b\*_touch against b\*_gap); nothing assumes it.
+- **Why it would matter.** P07 enters the decoder at weight 0.2, and in a ball gap (41% of the graded frames, median
+  10.7 s, A01) it is the main team evidence besides Smart Tagging. An offset b in its logit moves the difference between
+  the two teams' accumulated evidence by at most 0.2·|b| nats a frame: 25 nats over a 10 s gap at b = 0.5, against
+  `switch_team`'s 4.
+
+**Belief.** The touch rule reads the ball and the players next to it, never the teams' shape. On DFL its episode frames
+name the right team 93.1% of the time (R013's floor, `main.toml`'s confidence 0.93). A noise-aware intercept fitted on
+one half's episode frames, with P07's logit as the offset and those frames' class prior removed, estimates the match's
+offset. Applied to the other half, it makes P07's evidence in the gaps more right, and the decoder puts fewer wrong
+changes there. **Falsified if** the gate fails (on DFL the intercept does not lower P07's log-loss in the held-out
+half's gaps by the declared minimum, or it harms a match), or the pipeline with it fails the bar.
+
+**The teacher.** `controlled_touch` at `main.toml`'s rule (1.5 m, 6.0 m/s, 1 frame, duel radius 1.0), called with
+confidence 0.99 and hold 0.5, so that its `home` is a number exactly on the kept episode frames. The rows are those
+frames, labelled with the episode's team, where P07's logit z is finite and `dead_ball_model`'s alive evidence at
+`main.toml`'s model (its likelihood with the training prior taken off, as the decoder reads it; not a posterior) is at
+least 0.5.
+- **The mask** is for touches whose truth would be `D`, such as a keeper holding the ball or a player placing it for
+  a restart: it drops the touches that the dead-ball model, which reads no label, calls dead. It is the same on DFL and
+  BAR-ATH, and it removes BAR-ATH's 2,934 frames before the second half's kick-off, where that model is forced dead.
+- **Every frame is used,** with no stride.
+- **Not the decoded labels:** in the gaps they carry P07 itself and the hold, which is circular, and on BAR-ATH they
+  carry Smart Tagging, which DFL lacks. Smart Tagging is BAR-ATH's independent check in the gaps instead.
+
+**The estimator, E2,** with ε = 0.07, which is 1 − `main.toml`'s touch confidence 0.93:
+1. s maximises Σᵢ [ỹᵢ log qᵢ + (1 − ỹᵢ) log(1 − qᵢ)], with qᵢ = ε + (1 − 2ε)·σ(zᵢ + s): the maximum-likelihood offset
+   under symmetric label noise ε, a forward correction (Patrini et al. 2017).
+2. b = s − logit(π̂), where π̂ = clip((ȳ − ε)/(1 − 2ε), 0.05, 0.95) is the teacher's home share corrected for the
+   noise. s is the posterior offset on the teacher's frames. Removing their log prior odds leaves the likelihood
+   offset, with the prior 0.5 that P07 and the decoder require (R011; R020's D2).
+- **The numerics** (`recalibration._root` as of `dfc32fd`, which replaced the design's single bisection before any
+  run: at an end of the bracket, a few contradicted rows with the most confident z could turn the score's sign and give
+  "no root" although the likelihood had a clear interior maximum). The score is read on a fixed grid of 0.25 nats
+  over [−10, 10], 81 points, each value a `math.fsum`. Every cell where it goes from positive to non-positive holds a
+  local maximum of the likelihood and is bisected to 1e-12; of the maxima found, the one with the highest
+  log-likelihood is s, the smaller on an exact tie. b is rounded to 1e-9 before use. If no cell goes from positive to
+  non-positive (the offset lies beyond ±10 nats, or the likelihood rises towards an end of the bracket), b = 0 with the
+  reason "no root", and the report says so.
+- **Why not E1,** the class-balanced intercept. Balanced on noisy classes, the minority class's rows are the dirtier
+  ones, so E1 is pulled towards the teacher's minority class. On synthetic data (4,000 rows, 20 repetitions, 7%
+  symmetric noise, no true offset), E1 gives −0.107 at a home share of 0.65 and +0.118 at 0.35, against E2's +0.008
+  and +0.007. E1 is reported in the gate and decides nothing.
+
+**The cross-fit and the floor.** On graded block k the source serves z + b_k, where z is P07's unclipped, symmetrised
+logit (the match's fold on DFL, `full` on BAR-ATH) and b_k is fitted on the other block's rows. Every number about
+block k then uses a b that never saw block k, which keeps the held-out checks honest. The double counting it also
+prevents is small: at most 0.2·|b| nats on frames where the teacher itself speaks at 2.6. With fewer than 500 rows of
+either teacher class among the other block's rows (20 s of controlled touches a team), b_k = 0, the source is P07
+exactly on block k, and the report says so.
+
+**The source and the candidates.** A new evidence kind, `shape_selftrain` (`pipeline/evidence/shape_selftrain.py`),
+with the estimators in `pipeline/evidence/recalibration.py` (numpy and `math` only). The gate's tool imports the same
+functions, so the gate measures the code that would be served.
+- `home` = clip(σ(z + b_k), 0.02, 0.98) where P07 speaks under its scope (`all`), and `alive` is NaN. With every b at
+  0 it is P07 to the last bit (a check).
+- The fit runs inside `pipeline/run.py` from `data/`, deterministically, with no new artefact and no new pin. It
+  imports nothing from `pipeline.benchmark`.
+- **The configs,** in `pipeline/benchmark/configs/r027/`. `r027_post.toml` is `main.toml` as it is today (its entries
+  are `pipeline/configs/r024_both.toml`'s) with its `shape_possession` entry swapped for `kind = "shape_selftrain"`,
+  with the same model, weight 0.2, scope `"all"` and `min_prob` 0.02, plus
+  `alive_model = "pipeline/models/dead_ball_hgb.json"` (the teacher's dead-ball mask),
+  `teacher = { radius = 1.5, max_rel_speed = 6.0, min_frames = 1, duel_radius = 1.0 }` and `epsilon = 0.07`.
+  `r027_preshift.toml` is the same without `[[refine]]`, and `r027_final.toml` comes from the shift below. Nothing
+  else is re-chosen: not the touch rule, the dead-ball model, Smart Tagging or the decoder 4/32/35/25.
+- **The settings.** The gate's tool reads the teacher, ε, the dead-ball and shape models, P07's `min_prob` and Smart
+  Tagging's c_team with `selftrain.settings()`. Before the gate runs, in the commit it runs from,
+  `selftrain.DEFAULT_CONFIG` becomes `pipeline/configs/r024_both.toml`: the entries `main.toml` holds today, identical
+  outside its comments and description. `settings()` and its check read that file, and the configs check, which comes
+  with the source, compares `r027_post` with `r024_both.toml`'s text with the shape block swapped. So the gate runs the
+  final code, no number changes, and both checks still hold after an adoption, when `main.toml`'s P07 entry is
+  `shape_selftrain`.
+
+**Rules.** The labels are an algorithm's and no person decides any of them, which RULES.md allows on the provided game
+("pseudo-labels produced by an algorithm, provided no person decided any of them"). There are no hand labels and no
+human-produced data about the match. DFL's truth (other games) only validates: the gate, the bar and the reports. The
+teacher's rule, the dead-ball model and ε are `main.toml`'s (R009, R013, R024). The floor, π̂'s clip, the bracket and
+its grid of 0.25 nats, the tolerance, the rounding, the gate's two limits, rung 3's penalty and Newton settings (below)
+and the BAR-ATH margins are fixed here, and none is chosen from a score. The tool writes per-block and per-match
+aggregates, and nothing per frame of BAR-ATH.
+
+**The gate** (`selftrain.py gate`), run before the source exists. The source is built meanwhile in its own worktree and
+merged only after a GO. `tracking` v3, 3 seeds, all seven matches. For each (match, seed, block k): z from the match's
+fold, b_k from the other block's teacher rows, and the served `home` of P07 (b = 0) and of each variant, clipped to
+[0.02, 0.98] as served.
+- **The frames:** block k's alive frames (truth H or A) where the served ball is missing and z is finite, the frames
+  P07 exists for (R011). Each variant's log-loss on them is pooled by frames, per match over its seeds and blocks, and
+  over all.
+- **Go iff both hold:**
+  - rung 1's pooled log-loss is at most P07's minus 0.002 nats, about a third of what correcting the offsets that
+    R020's three misses suggest (0.73, 0.35 and 0.22 in logit) at 70% would gain (a calculation from R020's misses, not
+    a measurement);
+  - no match has a rung-1 log-loss above its P07 log-loss plus 0.002 nats, the cost of a spurious offset of about 0.16
+    on a match that has none (likewise a calculation).
+- **Reported, deciding nothing:**
+  - the accuracy and log-loss on the gate's frames of P07, rung 1, E1 and rung 3 (the retry's column), each
+    cross-fitted, and of a single b per match fitted on both blocks (no cross-fit);
+  - the oracles, fitted on the truth's labels by class-balanced weights (clean labels, so the prior is removed
+    exactly): b\*_gap on block k's gate frames, and b\*_touch on those teacher rows that gave b_k whose truth is H or A;
+  - per match, the mean |b − b\*_touch| (the teacher's noise) and the mean |b\*_touch − b\*_gap| (the transfer), over
+    the cells where both oracles exist; their sum bounds E there;
+  - B, the mean |b\*_gap|, and E/B in R020's form, E being the mean |b − b\*_gap|. Each is a mean over seeds and blocks
+    within a match, then over matches, taken over the cells whose b\*_gap could be fitted. A cell with one class or no
+    root is left out and counted;
+  - **the band:** the largest |b\*_gap| over those cells, at most 42 (7 matches × 3 seeds × 2 blocks);
+  - the teacher: its precision against the truth on its rows whose truth is H or A (the rows whose truth is `D` are
+    counted apart), its home share, π̂, the share masked as dead, the rows per class, and the blocks that fell back to
+    b = 0;
+  - the hold stratum (truth H or A, ball seen, z finite, outside the teacher's kept episode frames, whether or not the
+    dead mask applies): P07's and rung 1's log-loss;
+  - the touch agreement on the held-out block, P07 and rung 1, at R011's rule (`conventions.TOUCH`, 2.0 m, 6.0 m/s, 3
+    frames): a sanity check, not a transfer check.
+- **A second run on `context`** (T38: there the gaps fall where the play is, as on BAR-ATH) reports the same statistics,
+  and its exit code decides nothing.
+- **What the gate leads to,** by its exit code on `tracking`: 0 (rung 1 GO), the source is merged, and the lag and the
+  bar follow automatically (Tian's answer 3); 4 (rung 1 NO-GO, rung 3 GO), R027b, automatically (Tian's answer 1):
+  part 2a, then R027b's own part 1, reviewed and committed before its runs; the source's branch is kept, since R027b's
+  source extends it; 1 (both NO-GO), DROP, and the source's worktree is deleted unmerged; 2 is an error, not a verdict
+  (Errors, below).
+
+**The shift,** R012's rule in R024's form:
+1. the lag of `r027_preshift.toml` is measured on `tracking`, 3 seeds, raw truth;
+2. s_b per type (team, into `D`, out of `D`) is `conventions.pipeline_lag` of that type's lags in the latency file:
+   minus numpy's round of their median (half to even, so +1.5 and +2.5 both give 2), and 0 below 30 matched changes;
+3. `r027_final.toml` is `r027_preshift` with that s_b, which makes it `r027_post` if s_b is `main.toml`'s +1 / −2 / 0;
+4. s_b is kept only if `r027_final` passes the guard against `r027_preshift`: the objective's Δ > 0 on `tracking`, and
+   not below −0.005 on `context`. Otherwise the candidate is `r027_preshift` itself.
+
+Both bar runs therefore carry `main.toml`, `r027_final` and `r027_preshift`.
+
+**The bar,** Tian's form (ii): a magnitude bar with a no-harm veto, for an effect the belief expects on a few matches.
+The objective is R023's, the mean of the pooled raw and coarse spellF1s, and every Δ is the candidate's against
+`main.toml`:
+- **on `tracking`, the objective's pooled Δ is at least +0.005** (the house's tie band), **and no match's Δ of the
+  objective is below −0.005**. The exact sign-flip p over the seven per-match deltas is reported and decides nothing.
+- **The vetoes.** The candidate is not adopted if either is below −0.005: the objective's Δ on `context`, or the pooled
+  `tracking` alive/dead F1 minus `main.toml`'s. The decoder moves `D` edges jointly, so equality is not expected
+  (R013's Stage A varied it from 0.9730 to 0.9731).
+- **The reference.** `main.toml` runs first in both runs. On `tracking`, its pooled spellF1s rounded to 4 decimals
+  (`rows.main.raw.spell` and `rows.main.coarse.spell` of `bar-tracking.json`) must be 0.5363 raw and 0.5764 coarse,
+  R024's printed figures as R025, R025b and R026 reproduced them. This is the one comparison made at 4 decimals,
+  because its figures were only ever printed. If either differs, the lane stops for the advisor: something in the
+  environment changed, and nothing about P22(b) is decided until it is explained.
+- **Read from** `choose.py`'s JSON (`--out`), never its printout, which has 4 decimals: `choose.py --reference main
+  --objective mean <candidate>` for the bar and the vetoes, and `choose.py --reference r027_preshift --objective mean
+  r027_final` for the shift's guard, each on `--profile tracking` and again on `--profile context` (the commands
+  below). The fields:
+  - the objective's pooled Δ is `versus.mean.pooled_delta`, the per-match Δs `versus.mean.match_deltas`, and the
+    sign-flip p `versus.mean.p_sign_flip`;
+  - each truth's Δ is `versus.raw.pooled_delta` and `versus.coarse.pooled_delta`;
+  - the alive/dead F1 is `rows.<stem>.alive_dead` (the raw report's; the coarse truth changes no `D`);
+  - the reference's spellF1s are `rows.main.raw.spell` and `rows.main.coarse.spell`.
+
+  Reported beside them is A19's ladder for the candidate (`diagnose.py`, whose `SHAPE_KINDS` gains
+  `shape_selftrain`).
+- **A failed bar or veto is a DROP,** unless the one cause-named retry below is approved.
+
+**BAR-ATH, label-free, before adopting** (aggregates only):
+- **The band.** Each |b_k| must be at most the `tracking` gate's band: an offset outside the benchmark's range is an
+  extrapolation. A larger one, with every check passed, stops the lane for the advisor, who adopts or drops from the
+  aggregates.
+- **The gaps.** The frames are BAR-ATH's graded frames with:
+  - the ball missing and z finite;
+  - `dead_ball_model`'s alive evidence ≥ 0.5;
+  - a Smart Tagging team vote (`main.toml`'s c_team 0.76, spread `frame`).
+
+  On those frames, pooled over both blocks, the adapted source's agreement with the votes must be at least P07's minus
+  0.005. The difference is taken at 9 decimals, so the edge passes. Each block is read with the other block's b, and
+  each block's two agreements are reported. A call or a vote is home at 0.5 or above. Smart Tagging is in neither the
+  teacher nor P07, and it is the only independent view of our gaps (R021 used it so).
+- **Determinism:**
+  - the same sha256 on the two runs of the candidate, read from each run's log (the second run overwrites the first's
+    manifest);
+  - no `X` in a graded block: `summary.labels_graded.X` is 0 in the candidate's manifest, `<data>/runs/<candidate>.json`
+    (the printout's shares have one decimal).
+- **The `D` share** of the graded frames, `summary.labels_graded.D / summary.graded_frames` in that manifest, is within
+  1 point of `main.toml`'s 36.00% (R024): |share − 0.3600| ≤ 0.0100.
+- **Possessions per half** are `label_diff.py`'s (`main.toml` → candidate), reported with a WARN beyond ±25% of
+  `main.toml`'s (T33); a WARN decides nothing. So is the share of graded frames relabelled.
+- **Reported only:** b per block and |b₁ − b₂|; π̂ and the masked share per block; the share of teacher rows on frames
+  where a team shows more than 11 present slots, per team (A16's definition); the held-out touch agreement, P07 and
+  adapted (a sanity check); the one command's runtime.
+- **What it leads to.** `selftrain.py bar-ath` exits 1 if any check fails, else 3 if an offset is outside the band,
+  else 0. A failed check is a DROP, whatever the band says, and so is a failure in the runs after it (the sha256 twice,
+  no `X`, the `D` share). Exit 3 with every check passed is the advisor's STOP. Everything passed is ADOPT,
+  automatically (Tian's answer 4).
+
+**The one retry, R027b (rung 3),** runs only if rung 1 fails the gate and rung 3's column passes the same two
+conditions in the same run (exit 4). Rung 3, declared now:
+1. the 26 `shape_features` on the rows are standardised by their mean and SD over those rows; NaN becomes 0 after
+   standardising, and a column with no spread becomes 0;
+2. β is fitted by class-balanced logistic regression with offset z, a free intercept and an L2 penalty of 0.01 a row
+   on β (a coefficient of one SD must buy 0.005 nats a row), by Newton's method from 0 until no coordinate of the step
+   reaches 1e-10, at most 50 steps. A step with a coordinate above 1e-4 is halved while it does not lower the
+   objective, down to 2⁻³⁰ of it (`selftrain.head_fit`; the optimum is Newton's own, and the halving only stops an
+   overshoot on collinear features);
+3. the intercept is then re-fitted by E2 with offset z + β·x̃, so that it carries no minority-class pull.
+
+Rung 3 has no head on a block, and its column is P07 there, in three cases: rung 1 fell back for "few rows", E2's
+re-fit has no root, or Newton does not settle in 50 steps ("no convergence"). The gate counts those cells as they are,
+and its exit code is taken as the tool computes it. The fallbacks are reported, and nobody reads them before the exit
+code decides.
+
+R027b gets its own part 1, its source (rung 3 served, under the same determinism rules) and the same shift, bar and
+BAR-ATH checks. A failure anywhere drops the lane. No other retry is pre-approved. After a failed bar or veto, and
+only if R027b has not run, the controller asks the advisor once, with part 2b's aggregates. The advisor approves a
+retry only from a cause it names in those aggregates (R020's rule). That retry gets its own part 1 before any run and
+faces the same shift, bar and BAR-ATH checks; if it fails, the lane is a DROP. If the advisor approves none, or if
+R027b has run, the lane is a DROP.
+
+**ADOPT.** `main.toml` becomes the candidate, kept also as `pipeline/configs/r027_selftrain.toml`. `main.csv` is
+regenerated twice with the same sha256 and logged in the submission log; it is not uploaded. The pipeline suite, the
+benchmark suite and `selftest.py --data` pass on the merged tree, and the merge is `--no-ff`. `main.csv`'s sha256 must
+equal the candidate's from the BAR-ATH runs. If a suite or that sha256 fails all the same, the merge waits and the
+advisor rules (the unforeseen); nothing is half-adopted. `docs/technical_document.md` and the submission document
+describe the self-training: the teacher, the fit, and that no person decided any label. The docs, CLAUDE.md's
+architecture line and the site are updated.
+
+**DROP.** One commit removes, and names the commit to recover them from:
+- the estimators (`pipeline/evidence/recalibration.py`);
+- the source (`shape_selftrain.py`, if merged), its registry line and its README row;
+- the tool (`pipeline/benchmark/selftrain.py`), its checks and their registration, and its README paragraph;
+- the selftest checks;
+- `diagnose.py`'s `SHAPE_KINDS` addition;
+- the configs (`pipeline/benchmark/configs/r027/`).
+
+Both suites pass after it, and `main.toml`, never touched, still writes `e6496a9b…`. R027 keeps its results. The
+`p22b-tool` and `p22b-source` branches and their worktrees are deleted.
+
+**The advisor,** standing in for Tian with every ruling logged, decides only a cause-named retry after a failed bar or
+veto, the two STOPs (the reference not reproduced, an offset outside the band), and the unforeseen: a crash whose cause
+is not clear, the errors below that are left to it, and anything else this entry does not foresee. **The public
+window** is a correctness check after the decision only (T01, T27).
+
+**Errors.** Only `selftrain.py`'s codes are verdicts (`gate` 0, 1 and 4; `bar-ath` 0, 1 and 3). An exit 2 from it,
+any non-zero exit of any other command, a crash, or a log that ends without `EXIT=` is an error, not a verdict.
+- **A clear cause outside the declared code and constants** (free memory under the wrapper's guard, a missing or
+  locked file, a full disk): the controller removes the cause and reruns that step once, from the same commit. A
+  second failure is the advisor's.
+- **A reaped run** is rerun only with Tian's leave (the house rule); the lane waits for Tian there.
+- **An error inside the declared code** (a traceback from `recalibration`, `selftrain`, the source or the benchmark)
+  is never fixed and rerun by the controller. It is the advisor's, and any fix is logged in part 2 as a deviation
+  before the rerun.
+- **A `context` gate run that still fails** after this does not hold the lane, since it decides nothing. Part 2a says
+  that its statistics are missing.
+
+**The commands,** one throttled process at a time through `.superpowers/bin/heavy-p22b.ps1`, with the run worktree (a
+detached checkout of the commits named in the header) as the working directory. The wrapper sets `MTAH_DATA_DIR` to
+`<data>` = `C:/Users/Tian/Desktop/BarcaHackathon/data`, so `--data-dir` is omitted from the heavy steps. A path into
+the bundle is written in full, since a relative `data/` names the run worktree's own `data/` folder.
+`--drop-match-only` drops Smart Tagging, which DFL cannot serve.
+
+```bash
+# r027-gate.ps1: the gate decides on tracking; context reports only. The chain goes on after the tracking run's
+# verdicts 0, 1 and 4, and stops only at 2.
+python pipeline/benchmark/selftrain.py gate --profile tracking --seeds 3
+python pipeline/benchmark/selftrain.py gate --profile context --seeds 3
+# r027-lag.ps1, after a GO and the source's merge
+python pipeline/benchmark/conventions.py latency pipeline/benchmark/configs/r027/r027_preshift.toml dfl \
+    --profile tracking --seeds 3 --truth raw --drop-match-only
+# r027-bar.ps1: the two run.py runs only. Then r027-choose (below), which gives <candidate>, the guard's verdict,
+# r027_final or r027_preshift; then r027-diagnose.ps1:
+python pipeline/benchmark/run.py pipeline/configs/main.toml pipeline/benchmark/configs/r027/r027_final.toml \
+    pipeline/benchmark/configs/r027/r027_preshift.toml --profile tracking --seeds 3 --truth both --drop-match-only
+python pipeline/benchmark/run.py pipeline/configs/main.toml pipeline/benchmark/configs/r027/r027_final.toml \
+    pipeline/benchmark/configs/r027/r027_preshift.toml --profile context --seeds 3 --truth both --drop-match-only
+# r027-choose (light: it reads the reports), after both run.py runs end EXIT=0; --data-dir because it may run outside
+# the wrapper, where data/ is the run worktree's own folder
+python pipeline/benchmark/choose.py --reference r027_preshift --objective mean r027_final --profile tracking \
+    --data-dir <data> --out <data>/runs/r027/guard-tracking.json
+python pipeline/benchmark/choose.py --reference r027_preshift --objective mean r027_final --profile context \
+    --data-dir <data> --out <data>/runs/r027/guard-context.json
+# <candidate> is the guard's verdict from those two files; then:
+python pipeline/benchmark/choose.py --reference main --objective mean <candidate> --profile tracking \
+    --data-dir <data> --out <data>/runs/r027/bar-tracking.json
+python pipeline/benchmark/choose.py --reference main --objective mean <candidate> --profile context \
+    --data-dir <data> --out <data>/runs/r027/bar-context.json
+# r027-diagnose.ps1, on <candidate>
+python pipeline/benchmark/diagnose.py pipeline/benchmark/configs/r027/<candidate>.toml --profile tracking --seeds 3 \
+    --drop-match-only
+# r027-barath.ps1, after the bar passes
+python pipeline/benchmark/selftrain.py bar-ath --gate-report <data>/runs/selftrain/gate-tracking.json
+python pipeline/run.py pipeline/benchmark/configs/r027/<candidate>.toml          # twice: the same sha256
+python pipeline/benchmark/label_diff.py pipeline/configs/main.toml pipeline/benchmark/configs/r027/<candidate>.toml
+```
+
+**What it cannot settle.**
+- **Asymmetric teacher error.** Both estimators drift by about +0.06 when one team's labels are noisier than the
+  other's (4% against 10%, synthetic), which the benchmark's symmetric slot swaps do not simulate. So BAR-ATH's over-11
+  share per team is reported; it decides nothing.
+- **Where `tracking` puts the gaps** (T38). It transplants our gaps with their pattern and not their clock, so the gate
+  decides on gaps the play did not place. `context` places them by our hazard, and is reported beside it.
+- **The grain** (T33). DFL's raw truth cuts possessions finer than ours may, so the bar ranks on the mean of the two
+  truths (R023), and each truth's Δ is reported.
+- **The rung's capacity.** One intercept per half cannot learn that one of these two teams' cues misleads. That is
+  rung 3's, which is served only as the retry.
+- **Neither team is in training** (R011), so a gain on the benchmark is not a forecast for BAR-ATH.
+
+**Review.** Before any run, an independent reviewer read part 1 against the design, the plan, the code of Tasks 1 and 2,
+and R024 to R026. It found 18 points (6 major, 12 minor, no blocker), all resolved in the text above. The majors were
+places where the text had drifted from the code or from how the runs execute:
+- E2's root search;
+- `choose.py`'s JSON;
+- a path into the run worktree;
+- the reference's decimals;
+- the suite after an adoption;
+- the errors.
+
+A re-review found five small points, pasted as written.
+
+**Part 2a, the gate and the verdict** (2026-10-31). Everything below applies part 1 as written; nothing was chosen
+after the run. Only the gate ran: no shift, bar or BAR-ATH run was made, and no spellF1 of any R027 config was
+produced. Every figure below is an aggregate of the seven DFL matches, quoted from the gate's printed logs.
+
+**The runs.** `selftrain.py` as merged into the lane in `c3bc27d` (the tool `63d2da1` and its fix round `972d0e3`),
+from the run worktree detached at part 1's commit `1e5a5d2`, with `--seeds 3`, one throttled process at a time through
+`.superpowers/bin/heavy-p22b.ps1`. Before each step the chain logged the worktree's `git rev-parse HEAD`, `1e5a5d2…`,
+and an empty `git status --porcelain`.
+- `gate --profile tracking`, 22:01 to 22:07. It printed the verdict below, but its log ended `EXIT=` with no value.
+- `gate --profile context`, 22:09 to 22:15, report only.
+- `gate --profile tracking` once more, 22:15 to 22:21, under the errors rule (below): `EXIT=1`. Its 38 printed lines
+  between the log's header and its exit line are byte for byte the first run's, so the gate is deterministic and each
+  `tracking` figure below is both runs'.
+
+**The errors rule, applied as declared.** The tool printed "verdict: rung 1 NO-GO and rung 3 NO-GO: DROP (exit 1)".
+The throttle wrapper, which starts Python with `Start-Process -NoNewWindow`, read the exit code without having cached
+the process's handle, and got none: its log ended `EXIT=`, and the chain read the code as 0 ("CHAIN DONE tracking=0
+context=0"; T51). Part 1 counts a log without a valid exit as an error, not a verdict, and a clear cause outside the
+declared code and constants is removed and the step rerun once from the same commit. So the wrapper now reads
+`$p.Handle` right after the start and logs `EXIT=UNKNOWN` (exit 99) if the code is still empty, and the `tracking` gate
+ran again from `1e5a5d2`.
+- The chain goes on to `context` after a 0, a 1 or a 4 alike, so the lost code changed nothing that ran.
+- The `context` log ends with the same empty `EXIT=`. It decides nothing, and its statistics are printed in full above
+  its verdict line, so it was not rerun: a disclosed deviation from the errors rule's rerun.
+
+**The gate on `tracking`** (v3, seeds 0 to 2, two blocks a match). The frames are block k's alive frames with the
+served ball missing and z finite. Each block's offset is fitted on the other block's teacher rows, and every column is
+served and clipped as the pipeline would serve it. The columns:
+- **P07**, b = 0. It is R011's held-out table to the last printed digit: the same 677,900 frames, and per match the
+  same log-loss and accuracy (R011, part 1). So the tool serves P07 as R011 measured it.
+- **rung 1**, E2, cross-fitted: the candidate.
+- **E1**, the class-balanced intercept, cross-fitted.
+- **single**, one E2 offset per match fitted on both blocks, with no cross-fit.
+- **rung 3**, the team-aware head, cross-fitted: the retry's column.
+
+Log-loss (nats):
+
+| match | frames | P07 | rung 1 | E1 | single | rung 3 | rung 1 − P07 |
+|---|---|---|---|---|---|---|---|
+| J03WMX | 98,966 | 0.3928 | 0.4076 | 0.4052 | 0.3945 | 0.4855 | +0.0148 |
+| J03WN1 | 87,035 | 0.4612 | 0.4561 | 0.4569 | 0.4543 | 0.5707 | −0.0051 |
+| J03WOH | 90,369 | 0.3711 | 0.3766 | 0.3755 | 0.3763 | 0.4362 | +0.0055 |
+| J03WOY | 95,561 | 0.3624 | 0.3711 | 0.3691 | 0.3610 | 0.4163 | +0.0087 |
+| J03WPY | 101,397 | 0.3574 | 0.3704 | 0.3654 | 0.3749 | 0.3910 | +0.0130 |
+| J03WQQ | 108,130 | 0.3481 | 0.3397 | 0.3389 | 0.3412 | 0.4884 | −0.0084 |
+| J03WR9 | 96,442 | 0.3500 | 0.3640 | 0.3597 | 0.3601 | 0.4378 | +0.0140 |
+| **pooled** | 677,900 | **0.3759** | **0.3820** | 0.3798 | 0.3787 | 0.4597 | **+0.0061** |
+
+Accuracy (the call is `home` ≥ 0.5, as in R011):
+
+| match | frames | P07 | rung 1 | E1 | single | rung 3 | rung 1 − P07 |
+|---|---|---|---|---|---|---|---|
+| J03WMX | 98,966 | 0.8304 | 0.8170 | 0.8179 | 0.8247 | 0.7952 | −0.0134 |
+| J03WN1 | 87,035 | 0.7912 | 0.7917 | 0.7918 | 0.7965 | 0.7423 | +0.0005 |
+| J03WOH | 90,369 | 0.8373 | 0.8352 | 0.8359 | 0.8360 | 0.8103 | −0.0021 |
+| J03WOY | 95,561 | 0.8440 | 0.8352 | 0.8368 | 0.8436 | 0.8103 | −0.0088 |
+| J03WPY | 101,397 | 0.8389 | 0.8369 | 0.8388 | 0.8344 | 0.8326 | −0.0020 |
+| J03WQQ | 108,130 | 0.8475 | 0.8510 | 0.8508 | 0.8485 | 0.7970 | +0.0035 |
+| J03WR9 | 96,442 | 0.8495 | 0.8389 | 0.8432 | 0.8430 | 0.8121 | −0.0106 |
+| **pooled** | 677,900 | **0.8349** | **0.8303** | 0.8316 | 0.8331 | 0.8008 | **−0.0047** |
+
+The rest of the report decides nothing:
+- **The oracles,** fitted on the truth's labels with class-balanced weights, each a mean over seeds and blocks within
+  a match, then over the 7 matches. B, the mean |b\*_gap|, is 0.2760, and E, the mean |b − b\*_gap|, is 0.3270: E/B =
+  1.18. E splits into the teacher's noise, the mean |b − b\*_touch|, 0.1071, and the transfer, the mean
+  |b\*_touch − b\*_gap|, 0.2962. **The band,** the largest |b\*_gap| over the cells, is 0.7647.
+- **The hold stratum** (ball seen, outside the teacher's kept episode frames; 555,225 frames): log-loss P07 0.4038,
+  rung 1 0.4095.
+- **The held-out touch agreement** at R011's rule (`conventions.TOUCH`), a sanity check: P07 0.8290, R011's pooled
+  figure, and rung 1 0.8240.
+- **The teacher:** precision 0.9308 on its 425,050 rows with an alive truth (R013's floor: 93.1%), home share 0.5256,
+  π̂ 0.5268, masked as dead 0.1725. No block fell back to b = 0, in any column.
+
+**The gate's arithmetic.** The tool decides on its JSON's 9-decimal values. The 4 printed decimals quoted here are far
+from both limits, so the rounding decides nothing.
+- **Rung 1:** the pooled gain, P07's log-loss minus rung 1's, is −0.0061, against at least +0.002: short. The worst
+  harm is +0.0148 on J03WMX, against at most +0.002: over, and four more matches are over it too (J03WR9 +0.0140,
+  J03WPY +0.0130, J03WOY +0.0087, J03WOH +0.0055). **NO-GO.**
+- **Rung 3:** the pooled gain is −0.0838, and the worst harm +0.1403 on J03WQQ. It is worse than P07 on all seven
+  matches, by +0.0336 (J03WPY) at least. **NO-GO.**
+- **The exit is 1: both NO-GO, DROP.**
+
+**The retry order, evaluated as declared.** R027b runs only on exit 4: rung 1 NO-GO, and rung 3's column passing the
+same two conditions in the same run. Rung 3 fails both, by more than rung 1 does, so R027b does not run. The advisor's
+one cause-named retry follows only a failed bar or veto, and no bar ran. So **P22(b) is dropped**, by part 1's rule for
+exit 1. The verdict needed no ruling; the run's one ruling was the controller's rerun under the errors rule.
+
+**`context`, report only** (v1, seeds 0 to 2, 571,909 frames). Its numbers decide nothing:
+- Rung 1 is 0.3806 against P07's 0.3769, +0.0037 pooled: worse on 5 of 7 matches (the worst +0.0178, J03WPY), better
+  on J03WN1 (−0.0068) and J03WQQ (−0.0059). E1 0.3782, single 0.3778, rung 3 0.4064 (+0.0295; the worst +0.0550,
+  J03WN1). Pooled accuracy: P07 0.8365, rung 1 0.8342.
+- B 0.3692, E 0.3234, E/B 0.88; the teacher's noise 0.0999, the transfer 0.2966; the band 0.7913.
+- The hold stratum: 0.4079 for P07, 0.4169 for rung 1 (611,434 frames). The held-out touch agreement: 0.8363 and
+  0.8324. The teacher: precision 0.9350 on 474,662 rows, home share 0.5304, π̂ 0.5334, masked as dead 0.1344, no
+  fallbacks.
+- The same printed verdict: both NO-GO.
+
+**Readings, hedged** (they decide nothing; the verdict is the gate's):
+- **The offsets exist; the touches do not find them.** In a held-out half's gaps, the intercept the truth fits
+  (b\*_gap) is 0.276 from zero on average (B, in logit), and up to 0.765 (the band). The touch-fitted b ends further
+  from it than b = 0 does (E 0.327, E/B 1.18). Label noise is not why. The fitted b lies 0.107 on average from the
+  offset that clean labels give on the same touch frames, and that offset lies 0.296 from the gaps', nearly three times
+  as far. The offset the touch rule sees on the other half's ball-seen, controlled frames is not the offset in this
+  half's gaps.
+- **Neither the cross-fit nor the estimator.** Pooled, one b per match fitted on both halves, with no cross-fit, is
+  worse than P07 too (0.3787), and so is E1 (0.3798).
+- **Not the gaps alone.** Where the ball is seen outside the episodes (the hold stratum), rung 1 is worse as well
+  (0.4095 against 0.4038), and it agrees a little less with the held-out half's touches (0.8240 against 0.8290).
+  Whether the offset drifts between the halves, or differs between episode frames and the rest, these aggregates
+  cannot say.
+- **`context` agrees.** There, where the play places the gaps, the gaps' offsets are larger (B 0.369) and b lands
+  nearer them than b = 0 on average (E/B 0.88), yet rung 1 is still worse pooled (+0.0037). The transfer is the same
+  size there (0.297, against noise of 0.100).
+- **Rung 3** fits 26 coefficients on the same touch rows and is worse on every match, by +0.0336 to +0.1403: what more
+  it learns from the touch frames costs more in the gaps, which a difference between the two kinds of frame would
+  explain.
+- **What it would take.** A gap-specific offset needs labels inside the gaps, and no algorithmic teacher gives them on
+  our match. The decoded labels carry P07 itself there, which is circular, and Smart Tagging has no DFL counterpart on
+  which to validate a fit.
+- **Part 1 had the warning.** A19's β, +0.16 with the ball seen against +0.07 with it missing (the design review's
+  M4), was the sign that the teacher's frames and the gaps might not share one offset. The gate's split of E measured
+  it: the transfer, not the noise.
+
+**What stays.**
+- R027's part 1 (`1e5a5d2`) and this part 2a. `main.toml` was never touched, and `main.csv` stays `e6496a9b…` (R024).
+- **The code was removed in one commit, `9ee4d1f`:** `pipeline/evidence/recalibration.py`,
+  `pipeline/benchmark/selftrain.py`, their checks and registration, the selftest checks and the benchmark README's
+  paragraph. After it `pipeline/` equals main's `fb49f6b`, and both suites pass on the lane (pipeline 191 of 191,
+  benchmark 460, as on main). The estimators, the tool and its checks are recoverable from `1e5a5d2`.
+- **The source was never merged.** `shape_selftrain`, its registry line and README row, the R027 configs,
+  `diagnose.py`'s `SHAPE_KINDS` addition and headroom's writer for inline tables were reviewed and not merged. They
+  are kept at the local tag `archive/r027-source` (`83fe0a2`), on this machine only. The `p22b-tool` and `p22b-source`
+  branches and their worktrees are deleted when the lane closes, as part 1's DROP declares.
+- **Kept: `afa721a`,** a fix to a test older than the lane, found during it. `test_shape_possession_fold_choice`
+  rewrote a model of the same size within one tick of the file clock, so the (size, mtime) cache could serve the stale
+  file: 2 runs of 60 failed before the fix, 0 of 520 after (T52). Only the test changed.
+- **Cost:** the gate took about 6 minutes a profile. The design, its review, the plan and the implementation took the
+  evening of 31 Oct.
+
 ## Submission log
 
 The form keeps only the last response before the deadline, so log every upload.
@@ -8294,7 +8777,8 @@ NOT uploaded.
 `main.toml` was rewritten a sixth time by R024 (2026-10-31, P23 A): the touch hold re-chosen under R023's
 objective, 0.60 to 0.55. It now produces sha256
 `e6496a9b9805217ef085e52ed69cbb27a42b95368d65c1d188b4a2f339b61170` (commit `3943962`), identical to
-`r024_both.toml`'s file. R025, R025b and R026 left it unchanged (C and E dropped). It has NOT been uploaded.
+`r024_both.toml`'s file. R025, R025b, R026 and R027 left it unchanged (C, E and P22(b) dropped). It has NOT been
+uploaded.
 
 Before each upload:
 1. Regenerate the file from a clean clone, ideally on a second machine, and compare the sha256 ([T21](traps.md)).

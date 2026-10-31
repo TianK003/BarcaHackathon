@@ -282,7 +282,7 @@ const DATA = {
   title: "Progress",
   subtitle: "The benchmark spellF1 of main.toml by entry, and the feature that moved it",
   asOf: "2026-10-31",
-  footer: "As of 2026-10-31 (P23 done: R024 re-chose R013's grids on the mean of the two truths and moved the hold to 0.55; A19 measured where the decoder loses; R025, R025b and R026 were dropped). [docs/results.md](../docs/results.md) is the source of truth; this page only repeats it. Benchmark scores rank versions of our pipeline on other matches; they are not our leaderboard score.",
+  footer: "As of 2026-10-31 (P23 done: R024 re-chose R013's grids on the mean of the two truths and moved the hold to 0.55; A19 measured where the decoder loses; R025, R025b and R026 were dropped; then P22(b) was dropped at R027's gate, with no benchmark score). [docs/results.md](../docs/results.md) is the source of truth; this page only repeats it. Benchmark scores rank versions of our pipeline on other matches; they are not our leaderboard score.",
   links: [
     { href: "index.html", label: "← Team overview", cls: "home" },
     { href: "rules.html", label: "Rules" }
@@ -325,7 +325,7 @@ const DATA = {
     { id: "R026", date: "2026-10-31", raw: 0.5396, coarse: 0.5589, adopted: false, dr: 0.0033, dc: -0.0174, prop: "P23 E",
       what: "P07 at 0.1 where the ball is seen, 0.2 in the gaps (`r026_v100_g200`)", note: "The best of R026's five configs that differ from `main.toml`, mean −0.0071; every heavier gap weight lost more. No config beat `main.toml`; E dropped." }
   ],
-  chartCaption: "Pooled spellF1 of `main.toml` on the benchmark at each entry that scored it. Filled points were adopted and are joined by the step line, which is the running `main.toml`; hollow points are candidates that were tried and not adopted. Points are spaced by entry, not by date. Select a point (hover, tab, tap) for its feature and its change over the previous adopted point. R015 to R023 and A19 changed no score on the benchmark and are in the ledger. Since R023 a choice ranks on the mean of the two truths, so R024 is adopted with a lower raw and a higher coarse score. Today's `main.toml` also carries P08 (R017), which no benchmark can score (DFL has no tags); `--drop-match-only` switches it off and reproduces R024's numbers.",
+  chartCaption: "Pooled spellF1 of `main.toml` on the benchmark at each entry that scored it. Filled points were adopted and are joined by the step line, which is the running `main.toml`; hollow points are candidates that were tried and not adopted. Points are spaced by entry, not by date. Select a point (hover, tab, tap) for its feature and its change over the previous adopted point. R015 to R023, A19 and R027 changed no score on the benchmark and are in the ledger. Since R023 a choice ranks on the mean of the two truths, so R024 is adopted with a lower raw and a higher coarse score. Today's `main.toml` also carries P08 (R017), which no benchmark can score (DFL has no tags); `--drop-match-only` switches it off and reproduces R024's numbers.",
 
   /* Each proposal's final status: drives the counts on the cards. P12's shift is counted under P02. */
   features: [
@@ -343,7 +343,8 @@ const DATA = {
     { p: "P19", name: "Learned team model where the ball is seen", status: "dropped" },
     { p: "P20", name: "PathCRF paths", status: "dropped" },
     { p: "P21", name: "Wrong-team slots", status: "dropped" },
-    { p: "P22", name: "EM label-shift prior (a)", status: "dropped" },
+    { p: "P22(a)", name: "EM label-shift prior", status: "dropped" },
+    { p: "P22(b)", name: "P07 recalibrated per half from the touch rule's labels", status: "dropped" },
     { p: "P23 C", name: "Posterior edges", status: "dropped" },
     { p: "P23 E", name: "P07 weighted apart in the gaps", status: "dropped" },
     { p: "P16", name: "The grain of our provider (Metrica's sample games)", status: "measured" }
@@ -397,7 +398,9 @@ const DATA = {
     { prop: "P23 C", feature: "Posterior edges, then on a posterior tempered at T = 5", entry: "R025, R025b", date: "2026-10-31", dr: "−0.0002, −0.0242", dc: "−0.0018, −0.0323", status: "dropped",
       why: "Guard failed twice: the posterior's median moved edges by 1 frame (mean −0.0010, 2 wins in 7), and the one retry, tempered at T = 5 (the advisor's ruling), moved them 3 frames and widened their errors (mean −0.0282, 0 wins). Code removed, recoverable from `171d0bb` (T50)." },
     { prop: "P23 E", feature: "P07 weighted apart in the gaps and where the ball is seen", entry: "R026", date: "2026-10-31", dr: "−0.0031 to +0.0033", dc: "−0.0416 to −0.0174", status: "dropped",
-      why: "Six configs; the rule kept `main.toml`'s weights (0.2, 0.2), which scored as `main.toml` to the last digit. Every heavier gap weight added possessions (3.22 to 3.35 a minute against 3.06) and lost on the mean (−0.010 to −0.020), the coarse truth most. No retry (the advisor: A19 shows P07 calibrated alike in both ball states). Code removed, recoverable from `57013a1`." }
+      why: "Six configs; the rule kept `main.toml`'s weights (0.2, 0.2), which scored as `main.toml` to the last digit. Every heavier gap weight added possessions (3.22 to 3.35 a minute against 3.06) and lost on the mean (−0.010 to −0.020), the coarse truth most. No retry (the advisor: A19 shows P07 calibrated alike in both ball states). Code removed, recoverable from `57013a1`." },
+    { prop: "P22", feature: "P07 recalibrated per half from the touch rule's own labels (b)", entry: "R027", date: "2026-10-31", dr: "—", dc: "—", status: "dropped",
+      why: "Dropped at the gate on DFL: rung 1, an intercept on P07's logit fitted on the other half's touch-rule frames (noise-aware), made P07's pooled log-loss in the held-out half's gaps 0.3820 against 0.3759 (+0.0061; needed −0.002), worse on 5 of 7 matches (worst +0.0148); rung 3, the retry's column, 0.4597. The offsets exist (0.276 on average, up to 0.765), but the touches' is not the gaps' (transfer 0.296 against the teacher's noise 0.107). No shift, bar or BAR-ATH run, no spellF1; code removed, recoverable from `1e5a5d2` and the local tag `archive/r027-source`." }
   ],
   statuses: {
     adopted: { label: "adopted", cls: "ok", glyph: "✓" },

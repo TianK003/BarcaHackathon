@@ -421,6 +421,32 @@ merge commit was amended, so no pushed commit holds it. Before committing after 
 `git status --short` and add the files you mean by name; a model or a cache that must stay out of the history belongs in
 `.gitignore` or in `data/` before it exists.
 
+**T51 — A wrapper that starts Python with `Start-Process -NoNewWindow` can lose the exit code, and an empty code reads
+as 0.** R027's gate printed "DROP (exit 1)", but the throttle wrapper's log ended `EXIT=` with no value, and the chain
+that called it read the code as 0. The wrapper starts the venv's Python with `Start-Process -PassThru -NoNewWindow`,
+waits with `WaitForExit()` and reads `$p.ExitCode`. Without the process's handle cached while it runs, that read can
+come back empty: `"EXIT=$($p.ExitCode)"` then writes nothing after the `=`, and `exit $null` exits 0. It does not
+happen every time. The same wrapper code logged `EXIT=1` correctly twice on 30 and 31 Oct, and P23's 27 runs all
+logged `EXIT=0`, so a wrapper that has worked so far proves nothing. A verdict carried by the exit code was nearly
+read wrong: R027's errors rule (a log without a valid exit is an error, not a verdict) caught it, and the step was
+rerun once, 6 minutes. What to do:
+- read `$p.Handle` (`$null = $p.Handle`) right after `Start-Process`, before anything waits on the process.
+  Every `heavy*.ps1` in `.superpowers/bin/` (local, not in git) does so now: `heavy.ps1`, `heavy-p23.ps1`,
+  `heavy-p22b.ps1`, `heavy-pathcrf.ps1` and `heavy-repro.ps1`;
+- never let an empty code pass as 0: each of them logs `EXIT=UNKNOWN` and exits 99;
+- read the tool's own printed verdict beside the log's `EXIT=` line, and treat a disagreement as an error.
+
+**T52 — A cache keyed by a file's size and modification time serves a stale file rewritten to the same size within
+one clock tick.** `trees.load_artifact` and `trees.remember` (`pipeline/evidence/trees.py`) reuse a parsed model while
+its file's (size, `mtime_ns`) stamp is unchanged. `test_shape_possession_fold_choice` rewrote its shape model a few
+milliseconds after writing it, with leaves of the same byte length, and Windows file times move with the system
+timer's tick. When both writes fell in one tick the file looked unchanged, the stale model was served and the test
+failed: 2 runs in 60. A probe of 300 quick same-size rewrites kept the same stamp 230 times. The fix, `afa721a`, is in
+the test alone: it sets the rewritten file's mtime a second later (`os.utime`), as a real retrain, minutes apart,
+would; 0 failures in 520 runs. A test or a tool that rewrites a cached file must change its size or move its mtime
+itself (P05's sibling test is safe only because its new model has another length). Cost: a failure in a suite run that
+had nothing to do with the change under test (P22(b)'s Task 1), and a replay to explain it.
+
 ## Rules and data handling
 
 **T25 — Data must never leave our machines the wrong way.**
