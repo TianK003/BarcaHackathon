@@ -48,7 +48,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | A19 | 2026-10-31 | P23 B and D: `main.toml`'s IoU ladder decomposed and its calibration (`diagnose.py`) | — | — | — | mean clean-pair ladder loss 0.0704 (merge 0.0254, split 0.0273); the posterior 4–5× too sharp (Platt α 0.19 team, 0.27 alive), the sources near calibrated | measurement: R025's gate passed |
 | R025, R025b | 2026-10-31 | P23 C: posterior edges, then on a posterior tempered at T = 5 (the one retry) | — | — | — | mean Δ -0.0010 (2 wins) and -0.0282 (0 wins) against `main` | **dropped**: guard failed both times; code removed |
 | R026 | 2026-10-31 | P23 E: P07 weighted apart in the gaps (6 configs) | — | — | — | the identity scored as `main`; every heavier gap weight -0.010 to -0.020 on the mean | **dropped**: no config beat `main`; no retry (advisor); code removed |
-| R027 | 2026-10-31 | P22(b): P07's logit plus a per-half intercept fitted on the other half's touch-rule frames (E2, noise-aware at ε 0.07), served by a new source `shape_selftrain`; part 1: the gate on DFL (rung 1's pooled log-loss in the held-out half's gaps at least 0.002 nats below P07's, no match more than 0.002 above), the shift, the bar (the mean of the two truths: pooled Δ ≥ +0.005 on `tracking`, no match below −0.005), two vetoes, the BAR-ATH checks; rung 3 the one retry (R027b) | — | — | — | — | declared, not run |
+| R027 | 2026-10-31 | P22(b): P07's logit plus a per-half intercept fitted on the other half's touch-rule frames (E2, noise-aware at ε 0.07), served by a new source `shape_selftrain`; part 1: the gate on DFL (rung 1's pooled log-loss in the held-out half's gaps at least 0.002 nats below P07's, no match more than 0.002 above), the shift, the bar (the mean of the two truths: pooled Δ ≥ +0.005 on `tracking`, no match below −0.005), two vetoes, the BAR-ATH checks; rung 3 the one retry (R027b); part 2a: the gate run | — | — | — | — | dropped 2026-10-31, code removed (recover from `1e5a5d2` and the local tag `archive/r027-source`): the gate failed, rung 1's pooled log-loss +0.0061 (0.3820 against P07's 0.3759; needed −0.002) and worse on 5 of 7 matches (worst +0.0148, J03WMX), rung 3 +0.0838; the touch-to-gap transfer 0.296 against the teacher's noise 0.107 (E/B 1.18); no shift, bar or BAR-ATH run, no spellF1 |
 
 ### The four yardsticks on every profile, in one table
 
@@ -8599,6 +8599,145 @@ places where the text had drifted from the code or from how the runs execute:
 
 A re-review found five small points, pasted as written.
 
+**Part 2a, the gate and the verdict** (2026-10-31). Everything below applies part 1 as written; nothing was chosen
+after the run. Only the gate ran: no shift, bar or BAR-ATH run was made, and no spellF1 of any R027 config was
+produced. Every figure below is an aggregate of the seven DFL matches, quoted from the gate's printed logs.
+
+**The runs.** `selftrain.py` as merged into the lane in `c3bc27d` (the tool `63d2da1` and its fix round `972d0e3`),
+from the run worktree detached at part 1's commit `1e5a5d2`, with `--seeds 3`, one throttled process at a time through
+`.superpowers/bin/heavy-p22b.ps1`. Before each step the chain logged the worktree's `git rev-parse HEAD`, `1e5a5d2…`,
+and an empty `git status --porcelain`.
+- `gate --profile tracking`, 22:01 to 22:07. It printed the verdict below, but its log ended `EXIT=` with no value.
+- `gate --profile context`, 22:09 to 22:15, report only.
+- `gate --profile tracking` once more, 22:15 to 22:21, under the errors rule (below): `EXIT=1`. Its 38 printed lines
+  between the log's header and its exit line are byte for byte the first run's, so the gate is deterministic and each
+  `tracking` figure below is both runs'.
+
+**The errors rule, applied as declared.** The tool printed "verdict: rung 1 NO-GO and rung 3 NO-GO: DROP (exit 1)".
+The throttle wrapper, which starts Python with `Start-Process -NoNewWindow`, read the exit code without having cached
+the process's handle, and got none: its log ended `EXIT=`, and the chain read the code as 0 ("CHAIN DONE tracking=0
+context=0"; T51). Part 1 counts a log without a valid exit as an error, not a verdict, and a clear cause outside the
+declared code and constants is removed and the step rerun once from the same commit. So the wrapper now reads
+`$p.Handle` right after the start and logs `EXIT=UNKNOWN` (exit 99) if the code is still empty, and the `tracking` gate
+ran again from `1e5a5d2`.
+- The chain goes on to `context` after a 0, a 1 or a 4 alike, so the lost code changed nothing that ran.
+- The `context` log ends with the same empty `EXIT=`. It decides nothing, and its statistics are printed in full above
+  its verdict line, so it was not rerun.
+
+**The gate on `tracking`** (v3, seeds 0 to 2, two blocks a match). The frames are block k's alive frames with the
+served ball missing and z finite. Each block's offset is fitted on the other block's teacher rows, and every column is
+served and clipped as the pipeline would serve it. The columns:
+- **P07**, b = 0. It is R011's held-out table to the last printed digit: the same 677,900 frames, and per match the
+  same log-loss and accuracy (R011, part 1). So the tool serves P07 as R011 measured it.
+- **rung 1**, E2, cross-fitted: the candidate.
+- **E1**, the class-balanced intercept, cross-fitted.
+- **single**, one E2 offset per match fitted on both blocks, with no cross-fit.
+- **rung 3**, the team-aware head, cross-fitted: the retry's column.
+
+Log-loss (nats):
+
+| match | frames | P07 | rung 1 | E1 | single | rung 3 | rung 1 − P07 |
+|---|---|---|---|---|---|---|---|
+| J03WMX | 98,966 | 0.3928 | 0.4076 | 0.4052 | 0.3945 | 0.4855 | +0.0148 |
+| J03WN1 | 87,035 | 0.4612 | 0.4561 | 0.4569 | 0.4543 | 0.5707 | −0.0051 |
+| J03WOH | 90,369 | 0.3711 | 0.3766 | 0.3755 | 0.3763 | 0.4362 | +0.0055 |
+| J03WOY | 95,561 | 0.3624 | 0.3711 | 0.3691 | 0.3610 | 0.4163 | +0.0087 |
+| J03WPY | 101,397 | 0.3574 | 0.3704 | 0.3654 | 0.3749 | 0.3910 | +0.0130 |
+| J03WQQ | 108,130 | 0.3481 | 0.3397 | 0.3389 | 0.3412 | 0.4884 | −0.0084 |
+| J03WR9 | 96,442 | 0.3500 | 0.3640 | 0.3597 | 0.3601 | 0.4378 | +0.0140 |
+| **pooled** | 677,900 | **0.3759** | **0.3820** | 0.3798 | 0.3787 | 0.4597 | **+0.0061** |
+
+Accuracy (the call is `home` ≥ 0.5, as in R011):
+
+| match | frames | P07 | rung 1 | E1 | single | rung 3 | rung 1 − P07 |
+|---|---|---|---|---|---|---|---|
+| J03WMX | 98,966 | 0.8304 | 0.8170 | 0.8179 | 0.8247 | 0.7952 | −0.0134 |
+| J03WN1 | 87,035 | 0.7912 | 0.7917 | 0.7918 | 0.7965 | 0.7423 | +0.0005 |
+| J03WOH | 90,369 | 0.8373 | 0.8352 | 0.8359 | 0.8360 | 0.8103 | −0.0021 |
+| J03WOY | 95,561 | 0.8440 | 0.8352 | 0.8368 | 0.8436 | 0.8103 | −0.0088 |
+| J03WPY | 101,397 | 0.8389 | 0.8369 | 0.8388 | 0.8344 | 0.8326 | −0.0020 |
+| J03WQQ | 108,130 | 0.8475 | 0.8510 | 0.8508 | 0.8485 | 0.7970 | +0.0035 |
+| J03WR9 | 96,442 | 0.8495 | 0.8389 | 0.8432 | 0.8430 | 0.8121 | −0.0106 |
+| **pooled** | 677,900 | **0.8349** | **0.8303** | 0.8316 | 0.8331 | 0.8008 | **−0.0047** |
+
+The rest of the report decides nothing:
+- **The oracles,** fitted on the truth's labels with class-balanced weights, each a mean over seeds and blocks within
+  a match, then over the 7 matches. B, the mean |b\*_gap|, is 0.2760, and E, the mean |b − b\*_gap|, is 0.3270: E/B =
+  1.18. E splits into the teacher's noise, the mean |b − b\*_touch|, 0.1071, and the transfer, the mean
+  |b\*_touch − b\*_gap|, 0.2962. **The band,** the largest |b\*_gap| over the cells, is 0.7647.
+- **The hold stratum** (ball seen, outside the teacher's kept episode frames; 555,225 frames): log-loss P07 0.4038,
+  rung 1 0.4095.
+- **The held-out touch agreement** at R011's rule (`conventions.TOUCH`), a sanity check: P07 0.8290, R011's pooled
+  figure, and rung 1 0.8240.
+- **The teacher:** precision 0.9308 on its 425,050 rows with an alive truth (R013's floor: 93.1%), home share 0.5256,
+  π̂ 0.5268, masked as dead 0.1725. No block fell back to b = 0, in any column.
+
+**The gate's arithmetic.** The tool decides on its JSON's 9-decimal values. The 4 printed decimals quoted here are far
+from both limits, so the rounding decides nothing.
+- **Rung 1:** the pooled gain, P07's log-loss minus rung 1's, is −0.0061, against at least +0.002: short. The worst
+  harm is +0.0148 on J03WMX, against at most +0.002: over, and four more matches are over it too (J03WR9 +0.0140,
+  J03WPY +0.0130, J03WOY +0.0087, J03WOH +0.0055). **NO-GO.**
+- **Rung 3:** the pooled gain is −0.0838, and the worst harm +0.1403 on J03WQQ. It is worse than P07 on all seven
+  matches, by +0.0336 (J03WPY) at least. **NO-GO.**
+- **The exit is 1: both NO-GO, DROP.**
+
+**The retry order, evaluated as declared.** R027b runs only on exit 4: rung 1 NO-GO, and rung 3's column passing the
+same two conditions in the same run. Rung 3 fails both, by more than rung 1 does, so R027b does not run. The advisor's
+one cause-named retry follows only a failed bar or veto, and no bar ran. So **P22(b) is dropped**, by part 1's rule for
+exit 1. The verdict needed no ruling; the run's one ruling was the controller's rerun under the errors rule.
+
+**`context`, report only** (v1, seeds 0 to 2, 571,909 frames). Its numbers decide nothing:
+- Rung 1 is 0.3806 against P07's 0.3769, +0.0037 pooled: worse on 5 of 7 matches (the worst +0.0178, J03WPY), better
+  on J03WN1 (−0.0068) and J03WQQ (−0.0059). E1 0.3782, single 0.3778, rung 3 0.4064 (+0.0295; the worst +0.0550,
+  J03WN1). Pooled accuracy: P07 0.8365, rung 1 0.8342.
+- B 0.3692, E 0.3234, E/B 0.88; the teacher's noise 0.0999, the transfer 0.2966; the band 0.7913.
+- The hold stratum: 0.4079 for P07, 0.4169 for rung 1 (611,434 frames). The held-out touch agreement: 0.8363 and
+  0.8324. The teacher: precision 0.9350 on 474,662 rows, home share 0.5304, π̂ 0.5334, masked as dead 0.1344, no
+  fallbacks.
+- The same printed verdict: both NO-GO.
+
+**Readings, hedged** (they decide nothing; the verdict is the gate's):
+- **The offsets exist; the touches do not find them.** In a held-out half's gaps, the intercept the truth fits
+  (b\*_gap) is 0.276 from zero on average (B, in logit), and up to 0.765 (the band). The touch-fitted b ends further
+  from it than b = 0 does (E 0.327, E/B 1.18). Label noise is not why. The fitted b lies 0.107 on average from the
+  offset that clean labels give on the same touch frames, and that offset lies 0.296 from the gaps', nearly three times
+  as far. The offset the touch rule sees on the other half's ball-seen, controlled frames is not the offset in this
+  half's gaps.
+- **Neither the cross-fit nor the estimator.** Pooled, one b per match fitted on both halves, with no cross-fit, is
+  worse than P07 too (0.3787), and so is E1 (0.3798).
+- **Not the gaps alone.** Where the ball is seen outside the episodes (the hold stratum), rung 1 is worse as well
+  (0.4095 against 0.4038), and it agrees a little less with the held-out half's touches (0.8240 against 0.8290).
+  Whether the offset drifts between the halves, or differs between episode frames and the rest, these aggregates
+  cannot say.
+- **`context` agrees.** There, where the play places the gaps, the gaps' offsets are larger (B 0.369) and b lands
+  nearer them than b = 0 on average (E/B 0.88), yet rung 1 is still worse pooled (+0.0037). The transfer is the same
+  size there (0.297, against noise of 0.100).
+- **Rung 3** fits 26 coefficients on the same touch rows and is worse on every match, by +0.0336 to +0.1403: what more
+  it learns from the touch frames costs more in the gaps, which a difference between the two kinds of frame would
+  explain.
+- **What it would take.** A gap-specific offset needs labels inside the gaps, and no algorithmic teacher gives them on
+  our match. The decoded labels carry P07 itself there, which is circular, and Smart Tagging has no DFL counterpart on
+  which to validate a fit.
+- **Part 1 had the warning.** A19's β, +0.16 with the ball seen against +0.07 with it missing (the design review's
+  M4), was the sign that the teacher's frames and the gaps might not share one offset. The gate's split of E measured
+  it: the transfer, not the noise.
+
+**What stays.**
+- R027's part 1 (`1e5a5d2`) and this part 2a. `main.toml` was never touched, and `main.csv` stays `e6496a9b…` (R024).
+- **The code was removed in one commit, `9ee4d1f`:** `pipeline/evidence/recalibration.py`,
+  `pipeline/benchmark/selftrain.py`, their checks and registration, the selftest checks and the benchmark README's
+  paragraph. After it `pipeline/` equals main's `fb49f6b`, and both suites pass on the lane (pipeline 191 of 191,
+  benchmark 460, as on main). The estimators, the tool and its checks are recoverable from `1e5a5d2`.
+- **The source was never merged.** `shape_selftrain`, its registry line and README row, the R027 configs,
+  `diagnose.py`'s `SHAPE_KINDS` addition and headroom's writer for inline tables were reviewed and not merged. They
+  are kept at the local tag `archive/r027-source` (`83fe0a2`), on this machine only. The `p22b-tool` and `p22b-source`
+  branches and their worktrees are deleted when the lane closes, as part 1's DROP declares.
+- **Kept: `afa721a`,** a fix to a test older than the lane, found during it. `test_shape_possession_fold_choice`
+  rewrote a model of the same size within one tick of the file clock, so the (size, mtime) cache could serve the stale
+  file: 2 runs of 60 failed before the fix, 0 of 520 after (T52). Only the test changed.
+- **Cost:** the gate took about 6 minutes a profile. The design, its review, the plan and the implementation took the
+  evening of 31 Oct.
+
 ## Submission log
 
 The form keeps only the last response before the deadline, so log every upload.
@@ -8637,7 +8776,8 @@ NOT uploaded.
 `main.toml` was rewritten a sixth time by R024 (2026-10-31, P23 A): the touch hold re-chosen under R023's
 objective, 0.60 to 0.55. It now produces sha256
 `e6496a9b9805217ef085e52ed69cbb27a42b95368d65c1d188b4a2f339b61170` (commit `3943962`), identical to
-`r024_both.toml`'s file. R025, R025b and R026 left it unchanged (C and E dropped). It has NOT been uploaded.
+`r024_both.toml`'s file. R025, R025b, R026 and R027 left it unchanged (C, E and P22(b) dropped). It has NOT been
+uploaded.
 
 Before each upload:
 1. Regenerate the file from a clean clone, ideally on a second machine, and compare the sha256 ([T21](traps.md)).
