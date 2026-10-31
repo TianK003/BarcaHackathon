@@ -878,8 +878,9 @@ it). A17 checked it from a fresh clone of the pushed repository, a new venv from
 with no caches: the same sha256 on two runs at one BLAS thread and on a third at the default threads, and both trained
 models and the benchmark's 0.5430 / 0.5593 came back exactly. The first run parses the tracking into `data/cache/` once
 (7.4 s in A17). Every run then computes the play features and the shape features and walks the trees: 13 s with the cache
-warm and 20 s cold in A17, on an AMD Ryzen 5 5500U (6 cores), 15.3 GB RAM, Windows 11, CPU only. A second machine (another
-processor or operating system) has not been tried yet (T20, T21).
+warm and 20 s cold in A17, on an AMD Ryzen 5 5500U (6 cores), 15.3 GB RAM, Windows 11, CPU only. A18 ran the same on
+Linux (WSL 2, Ubuntu 24.04, same laptop) with LF configs: the same sha256 on two runs, and `selftest.py --data` passed. Another
+processor (an Intel CPU) has not been tried yet (T20, T21).
 
 The two trained models that `main.toml` reads, `dead_ball_hgb.json` and `shape_possession_hgb.json`, are committed as
 JSON under `pipeline/models/` and read with numpy only, so the CSV needs no scikit-learn. Two commands in

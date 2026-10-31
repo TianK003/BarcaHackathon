@@ -252,7 +252,9 @@ py -3.11 -m venv .venv                         # macOS/Linux: python3.11 -m venv
 from the requirements files, with a data folder holding only the raw bundle and no caches. `main.csv` came out as
 `7ba575c0…` on two runs at one BLAS thread and on a third at the default threads; the validator and all the self-tests passed, both
 models retrained identical to the committed files, and the benchmark returned 0.5430 / 0.5593 to the last digit. The
-machine was an AMD Ryzen 5 5500U with 15.3 GB RAM, Windows 11, CPU only; a second machine has not been tried yet.
+machine was an AMD Ryzen 5 5500U with 15.3 GB RAM, Windows 11, CPU only. On Linux (A18: Ubuntu 24.04 under WSL 2, the
+same laptop, LF line endings) the file came out the same on two runs and `selftest.py --data` passed; another processor
+has not been tried yet.
 
 ## References
 
