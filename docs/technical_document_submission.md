@@ -8,70 +8,50 @@
   docs/traps.md, P.. (proposals) in docs/proposals.md. The full record of every choice is docs/technical_document.md.
 
 **Terms.** The *benchmark* is seven open DFL/IDSSE matches of other games, their tracking degraded to look like ours
-by the profile `tracking` v3 (our ball-gap pattern, tracklet lengths, wrong-team slots and *low-count frames*, where few
-players are tracked). Its *fidelity gates* are statistics the copy must match ours within tolerances fixed in advance.
-*Pooled spellF1* is the official scorer's spellF1 over all seven matches' halves as one file, scored against a *raw* and
-a *coarse* truth (section 5). The *yardsticks* are the organisers' smoothed baselines run on the benchmark. *Nats* are
-units of log-likelihood, in which the decoder weighs evidence against its switch costs.
+(our ball-gap pattern, tracklet lengths, wrong-team slots). Its *fidelity gates* are statistics the copy must match ours
+within tolerances fixed in advance. *Pooled spellF1* is the official scorer's spellF1 over all seven matches' halves as
+one file, scored against a *raw* and a *coarse* truth (section 5). *Nats* are units of log-likelihood, in which the
+decoder weighs evidence against its switch costs.
 
 ## 1. Approach
 
-**The problem as measured.** The ball is missing on 40.7% of the graded frames, in 150 gaps with a median of 10.7 s
-(A01). In the public window, the nearest player's team is right on only 77.8% of the in-play frames with the ball seen,
-and the ball is visible on 66% of the dead frames, so a missing ball is not a dead ball (A01). The organisers'
+**The problem.** The ball is missing on 40.7% of the graded frames, in 150 gaps with a median of 10.7 s (A01); the
+nearest player is a poor guess at the possessor, and a missing ball is not a dead ball (section 3). The organisers'
 baselines fragment: the unsmoothed one reports 131 possessions in the public window against 17 (R000). The question is
 how to hold a team through long stretches without a ball and change it only on real evidence.
 
 **The pipeline** (pipeline/README.md): inputs → evidence → decode → refine → output. Each *evidence* source gives per
 frame P(ball in play) (`alive`) and P(home has it | in play) (`home`), or no opinion. A *decoder* turns them into labels
-per graded half, a *refiner* adjusts the edges, and the *output* stage writes the CSV and runs the organisers' validator
-on it.
+per graded half, a *refiner* adjusts the edges, and the *output* stage writes and validates the CSV.
 
 **The decoder** (P06) is a three-state hidden Markov model over `H`, `A` and `D`, decoded by Viterbi. Each source
 adds its log-likelihood to the states it speaks for; silence adds nothing. A change of team costs 4 nats, a change into
 or out of `D` 32, a run of `H` or `A` lasts at least 35 frames (1.4 s) and a run of `D` at least 25 (R010, R013). A
 possession is then an interval whose two edges must be paid for, which is what spellF1 scores.
 
-**Four sources:**
-- `controlled_touch` (P04), `home`: a control rule where the ball is seen (section 4), voting 0.93 inside a control
-  episode and, while the ball is visible, 0.60 for the last controlling team outside one (R013).
-- `dead_ball_model` (P05), `alive`: boosted trees on 30 play features (the ball against the lines and restart spots,
-  the players' slowdown, set-piece shapes), trained on DFL's `BallStatus` (R009).
-- `shape_possession` (P07), `home`: boosted trees on 26 features of how the two teams stand and move, none reading the
-  ball, trained on DFL's `BallPossession`, symmetric in the two teams, weight 0.2 on every graded frame (R011, R013).
-- `smart_tagging` (P08), `home`: the automatic phase tags as team votes, confidence 0.76, weight 0.2 (R017).
-
-After the decoder, `shift_edges` (P02) moves a change of team 1 frame later and a change into `D` 2 frames earlier: the
-pipeline's own median lag on the benchmark, negated (R012).
+**Four sources:** `controlled_touch` (P04, `home`), a control rule where the ball is seen (section 4);
+`dead_ball_model` (P05, `alive`), boosted trees on 30 play features (R009); `shape_possession` (P07, `home`), boosted
+trees on 26 features of how the two teams stand and move, none reading the ball, weight 0.2 (R011, R013); and
+`smart_tagging` (P08, `home`), the automatic phase tags as team votes, weight 0.2 (R017). Section 2 lists their training
+data. After the decoder, `shift_edges` (P02) moves a change of team 1 frame later and a change into `D` 2 frames
+earlier: the pipeline's own median lag on the benchmark, negated (R012).
 
 **Why.** No labels of this match may be used, so every learned part is trained on other matches. Every choice is made
 on the benchmark (section 5), except Smart Tagging's strength (section 6). Boosted trees on hand-built features suit
-that: they train on a CPU, are committed as JSON and read with numpy, and each feature can be checked against how our
-tracking differs from the training data. A published sequence model, PathCRF, missed its bar against P07 on a held-out
-DFL match (section 2, R022). Each adopted step on the benchmark (pooled spellF1, three degradation seeds):
-
-| step | entry | raw | coarse |
-|---|---|---|---|
-| organisers' `smooth50` decoded per half (yardstick) | R004c | 0.2018 | 0.1842 |
-| organisers' `smooth125` (yardstick) | R004c | 0.1665 | 0.2226 |
-| touch rule + dead-ball model + HMM | R010 | 0.4217 | 0.4556 |
-| + shape model | R011 | 0.5159 | 0.5591 |
-| + edge shift | R012 | 0.5164 | 0.5592 |
-| touch rule and decoder re-chosen | R013 | 0.5430 | 0.5593 |
-| + Smart Tagging (DFL has no tags, so the benchmark runs without it) | R017 | 0.5430 | 0.5593 |
+that: they train on a CPU, and each feature can be checked against how our tracking differs from the training data.
 
 ## 2. Assets used and dropped
 
 | asset | used | how, or why not |
 |---|---|---|
 | Tactical ATD | yes | Every source. Speeds from successive positions, never the speed channel (T31). |
-| Smart Tagging | team votes | Agreement 0.761 with our touch-rule pseudo-labels, bar 0.75; the dead votes failed (0.409, bar 0.60) and were removed (R017). |
+| Smart Tagging | team votes | The team votes passed their bar (section 5); the dead votes failed (0.409, bar 0.60) and were removed (R017). |
 | Tactical homography | no | Analysed only: the camera's aim has a median along-pitch error of 12.1 m (A03). P09 dropped (below). |
 | Tactical video, audio | no | The audio was decoded locally for P10, dropped. No LLM saw video or audio. |
 | Broadcast assets | no | Own 164,488-frame timeline, no mapping to the tactical frames (A04). |
 | Public 5-minute GT | check, inspection | See "About this match" below. |
 | DFL/IDSSE open data | yes | Trains P05 and P07; the benchmark (below). |
-| PathCRF checkpoint (Kim et al. 2026, MPL-2.0) | tried, dropped | Trained by its authors on DFL matches; run only in R022, never on our match (below). |
+| PathCRF checkpoint (Kim et al. 2026, MPL-2.0) | tried, dropped | Run only in R022, never on our match (below). |
 
 **Tried and dropped**, each by a bar declared before its run:
 - **P17, the restarting team** (R014, R014b): +0.0040 raw at best (p 0.0938), bar +0.005 with p ≤ 0.05.
@@ -94,7 +74,7 @@ DFL match (section 2, R022). Each adopted step on the benchmark (pooled spellF1,
 - **P19, a learned team model where the ball is seen** (R021): out-of-fold per-frame accuracy +0.0160 over `main.toml`'s
   decoded labels, pooled, where +0.020 was needed in the pool and in 6 of the 7 matches; 3 matches reached it.
 
-Not built: pass events (P11), more labelled tracking (P13), the ball from the video (P14), the broadcast (P15).
+Not built: more labelled tracking (P13), the broadcast (P15), and the ideas of section 6.
 
 ### Labelled data
 
@@ -106,11 +86,10 @@ We labelled nothing by hand, on any game. The labelled data used are all about o
 | DFL/IDSSE events | DFL's raw event files, the same release; for J03WR9, the copy synchronised in PathCRF's repository | DFL's data collectors, trained human operators according to the paper | 681 restart events over the 7 matches (A12); one match's events (R022) | A diagnostic of P17's restart types (A12); R022's correctness check of PathCRF on the clean J03WR9. Nothing trained or chosen from them |
 | PathCRF checkpoint (a model trained on labels) | Kim et al. 2026, MPL-2.0 | Its authors, on possession derived from DFL's events: five of the seven matches for training, a sixth for validation | one checkpoint | R022's measurement only; dropped |
 
-**About this match.** No frame was hand-labelled, no tracking was corrected by hand, and no human-produced data about
-the match were used. No model was trained on the public 5-minute ground truth and no constant of `main.toml` was set on
-it. It was used in three ways:
-- **A correctness check** (alignment, a valid and deterministic file, each source's direction). Its scores chose
-  nothing.
+**About this match.** No tracking was corrected by hand, and no human-produced data about the match were used. No
+model was trained on the public 5-minute ground truth and no constant of `main.toml` was set on it. It was used in
+three ways:
+- **A correctness check** (alignment, a valid and deterministic file, each source's direction); section 5.
 - **An inspection to describe the truth,** which RULES.md allows. The window figures quoted here (77.8% and 66%, A01;
   80.4%, A06; the timing of its changes, A11) describe it and set nothing.
 - **Two inputs, both disclosed.** R009 chose the dead-ball source and its weight 1.0 in configs that all carried
@@ -118,44 +97,39 @@ it. It was used in three ways:
   and the decoder without it, and declared why it kept R009's choice: the source rests on its out-of-fold log-loss
   (lower on 7 of 7 matches), which no other source enters, and weight 1.0 takes its probability as it is. R012's shift
   rule read the window as an input to g, a gap to our truth's convention; g came out 0 for every type and was retired
-  under the organisers' rule of 23 Oct 2026, so the shift is DFL's lag alone.
+  under the organisers' rule of 23 Oct 2026.
 
-Smart Tagging is automatic, without manual review (FAQ.md). Its constant 0.76 is its agreement with our touch-rule
-pseudo-labels, which an algorithm made and no person decided. Its strength (per frame, weight 0.2) was Tian's pick of
-two declared options, made after seeing label-free aggregates of our own predictions (the `D` share, possessions per
-half, frames changed); no score or label entered it (R017). We degrade the DFL tracking and say so, as CC BY 4.0 asks;
+Smart Tagging is automatic, without manual review (FAQ.md), and the pseudo-labels behind its constant 0.76 came from an
+algorithm, decided by no person. Its strength (per frame, weight 0.2) was Tian's pick of two declared options, made
+after seeing label-free aggregates of our own predictions (the `D` share, possessions per half, frames changed); no
+score or label entered it (R017). We degrade the DFL tracking and say so, as CC BY 4.0 asks;
 pipeline/benchmark/sources.py checks each DFL file's size and md5.
 
 ## 3. Missing and noisy tracking
 
 Measured on our match (aggregates only), and what the pipeline does about each.
 
-- **Long ball gaps.** Gaps under 2 s hold 0.1% of the missing frames, the p90 gap is 34 s (A01), and coverage falls
-  from 12% missing in the first five graded minutes to 80% in a later block (A02). *Response:* no interpolation. The
-  touch rule is silent without the ball and the decoder keeps its state. The shape model reads the players on every
-  frame: out of fold on DFL it is right on 0.8349 of the alive frames without a ball (log-loss 0.3759 against 0.6931
-  for a coin, R011). The tag votes cover 0.499 of the graded frames without a ball (R017).
+- **Long ball gaps.** Gaps under 2 s hold 0.1% of the missing frames and the p90 gap is 34 s (A01); coverage falls
+  through each half (section 6). *Response:* no interpolation. The decoder keeps its state, and the shape model and the
+  tags speak: out of fold on DFL the shape model is right on 0.8349 of the alive frames without a ball (log-loss 0.3759
+  against 0.6931 for a coin, R011), and the tag votes cover 0.499 of the graded frames without a ball (R017).
 - **Gaps start near the lines and on slow balls more often than chance.** 28.6% of gap onsets lie within 2 m of a line
   against 8.5% of visible frames, and a hazard model places the gaps only coarsely (A08). *Response:* the dead-ball
   model reads where the ball vanished and reappeared, the players' slowdown and set-piece shapes, and never splits on
-  whether the ball is missing (R009). `D` never comes from ball presence.
+  whether the ball is missing (R009). The ball is visible on 66% of the public window's dead frames (A01), so `D` never
+  comes from ball presence.
 - **The ball-speed channel** is NaN on 92.2% of graded frames with a ball and otherwise behaves like a player's speed
   (T31, A07). *Response:* every speed comes from successive positions.
 - **The nearest player is not the possessor** (right on 77.8% in the public window, A01; 77.5% on DFL, A06).
-  *Response:* the touch rule also needs no opponent close and the ball moving with the player.
+  *Response:* the touch rule's further conditions (section 4).
 - **Slots are tracklets.** 46 slots for 22 players, 20.52 present per frame, 1,144 tracklets with a median of 41.3 s
   (A07, A09). *Response:* no feature follows a slot over time; shape features are per-frame team aggregates.
 - **Wrong-team slots.** One team shows more than 11 slots while the other shows fewer on 10.8% of graded frames
-  (17,156 of 158,857), a lower bound (T32, A07). A16's declared measure shows no sign that they cluster at the ball,
-  though it compares ball-seen frames with all graded frames and so may partly reflect ball visibility. No repair was
-  built.
-- **The benchmark imitates this.** All eight fidelity gates pass, e.g. ball missing 0.4189 against our 0.4110
-  (R004c). The whole player degradation costs `main.toml` 0.0129 raw (A16, from A14's table).
+  (17,156 of 158,857), a lower bound (T32, A07). A16's declared measure (P21, section 2) shows no sign that they
+  cluster at the ball, though it compares ball-seen frames with all graded frames and so may partly reflect ball
+  visibility.
 
 ## 4. Possession rules implemented
-
-Some answers to CHALLENGE.md are explicit rules, some follow from the decoder's costs, and some are implemented by
-nothing.
 
 **Explicit rules:**
 - **Control.** A team controls the ball when the nearest tracked player of either team is its own and within 1.5 m, no
@@ -167,38 +141,36 @@ nothing.
   0.60 for the last controlling team; without the ball it is silent. Possession stays with the last team through loose
   and contested phases, as CHALLENGE.md asks, unless shape or tags outweigh the hold.
 - **Dead ball.** P(alive) is the model's. Before each half's documented kick-off a graded frame is `D` (2,934 frames
-  before the second half's, A07), from the organisers' documented kick-offs, not from any ground truth.
-- **Edge timing.** The shift of section 1.
+  before the second half's, A07): a rule from the organisers' kick-offs, not from any ground truth.
+- **Edge timing.** The shift of section 1 (R012).
 
 **Implied by the decoder, with no rule of their own:**
-- **Touches, deflections, challenges.** One control frame is an episode, so only the decoder stops a touch or deflection
-  from becoming a possession: a change of team costs 4 nats each way and the new run must last 35 frames, so a touch of
-  a frame or two changes nothing unless the evidence around it agrees. A challenge with opponents within 1 m gives no
-  episode, so the hold continues. There is no "few seconds" or "two passes" test; the 35-frame minimum and the switch
-  cost, chosen on DFL's flag (R013), are the only persistence requirement.
+- **Touches, deflections, challenges.** One control frame is an episode, so only the decoder's switch cost and 35-frame
+  minimum (section 1) stop a touch of a frame or two from becoming a possession, unless the evidence around it agrees.
+  A challenge with opponents within 1 m gives no episode, so the hold continues. There is no "few seconds" or "two
+  passes" test; those two, chosen on DFL's flag (R013), are the only persistence requirement.
 - **After a restart.** The hold favours the team that had the ball before the stoppage until a new episode names a team;
   shape and tags give their own view.
-- **A change inside a ball gap.** The touch rule is silent there, so the team changes where the shape and tag evidence
-  for the other team pays the switch cost.
+- **A change inside a ball gap** falls where the shape and tag evidence for the other team pays the switch cost.
 
 **Implemented by none:**
 - **Aerial duels.** No ball height: nothing tells winning a header from controlling the ball after it.
 - **The restarting team by restart type** (corner to the attackers, goal kick to the defenders): P17, dropped.
 - **Passes, receptions, interceptions** as events (P11): a completed pass is only a new episode of the same team.
-- **Abstention.** No `X` on a graded frame; `X` only where nothing is graded. Free `X` was dropped (R016).
+- **Abstention.** No `X` on a graded frame; `X` only where nothing is graded (free `X`: P12, dropped).
 - **Dead-ball ownership.** Not asked: `D`.
 
 ## 5. Validation
 
-**Not the public window.** The organisers' rule makes it a correctness check, "not training data and not a tuning set".
-It would mislead too: with 17 possessions one moves spellF1 by about 0.06, it is the best-covered block (A02), and it
-ranks `smooth125` above `smooth50`, the reverse of the full match (T01). Today's file scores macroF1 0.6986 and spellF1
-0.4000 on it (R017), which chose nothing. Section 2 lists every use of the window.
+**Not the public window** (section 2 lists its uses). Beyond the rule, it would mislead: with 17 possessions one moves
+spellF1 by about 0.06, it is the best-covered block (A02), and it ranks `smooth125` above `smooth50`, the reverse of the
+full match (T01). Today's file scores macroF1 0.6986 and spellF1 0.4000 on it (R017), which chose nothing.
 
-**The benchmark** (P01): seven DFL/IDSSE matches, the truth built as ours is (`D` where `BallStatus` is dead, else
-`BallPossession`'s team), served to our components with no truth reachable and graded by the organisers' scorer per
-half. The truth served as a prediction scores 1.0000 on all seven (R002). The degradation was fitted on label-free
-statistics of our tracking and frozen, never tuned towards a score.
+**The benchmark** (P01) builds the truth as ours is (`D` where `BallStatus` is dead, else `BallPossession`'s team);
+our components see no truth, and the organisers' scorer grades each half. The truth served as a prediction scores
+1.0000 on all seven (R002). The degradation was fitted on label-free statistics of our tracking and frozen, never tuned
+towards a score. All eight fidelity gates pass, e.g. ball missing 0.4189 against our 0.4110 (R004c), and the whole
+player degradation costs `main.toml` 0.0129 raw (A16, from A14's table).
 
 **Two truths.** DFL's flag gives 4.58 possessions per graded minute. Our grain is unknown, so every choice is also
 ranked under a coarse truth that absorbs possessions under 5 s between two of the other team: 2.48 a minute (R002; the
@@ -208,12 +180,15 @@ ranked under a coarse truth that absorbs possessions under 5 s between two of th
 t-interval, an exact sign-flip test (the smallest possible p is 0.0156) and the number of matches won. Three seeds,
 since one seed moves a pooled score by up to about 0.015 (R007).
 
-**Every adopted step met a bar declared before its runs:**
-- R010: +0.2199 raw over `smooth50` and +0.2330 coarse over `smooth125`, 7 wins in 7 each.
-- R011: +0.0942 raw, 7 in 7.
-- R013: +0.0267 raw (p 0.0156, 7 in 7), and level coarse (+0.0001).
-- R012's shift: +0.0005 raw (p 0.5000). It was adopted because its rule says so, not because it helps.
-- R017: the tag votes' agreement 0.761 against a bar of 0.75. Their strength is untested (section 6).
+**Every adopted step met a bar declared before its runs** (pooled spellF1 raw / coarse; the organisers'
+baselines on the benchmark score `smooth50` 0.2018 / 0.1842 and `smooth125` 0.1665 / 0.2226, R004c):
+- R010, touch rule + dead-ball model + HMM, 0.4217 / 0.4556: +0.2199 raw over `smooth50` and +0.2330 coarse over
+  `smooth125`, 7 wins in 7 each.
+- R011, + shape model, 0.5159 / 0.5591: +0.0942 raw, 7 in 7.
+- R012, + edge shift, 0.5164 / 0.5592: +0.0005 raw (p 0.5000), adopted because its rule says so, not because it helps.
+- R013, touch rule and decoder re-chosen, 0.5430 / 0.5593: +0.0267 raw (p 0.0156, 7 in 7), level coarse (+0.0001).
+- R017, + Smart Tagging: the tag votes' agreement with our touch-rule pseudo-labels, 0.761 against a bar of 0.75. The
+  benchmark has no tags, so their strength is untested (section 6).
 
 The full record's section 5 traces every constant of `main.toml` to its entry.
 
@@ -228,25 +203,23 @@ overstates the dead ball (section 6), so the split may differ on our match.
 ## 6. Limitations
 
 - **Where it is weakest on our match.** Late in each half the ball is missing on up to 80% of a 5-minute block (A02).
-  There the touch rule is mostly silent, and the team rests on the shape model, trained on other teams, and on the
-  tags, whose strength is untested. Where the ball is seen, the touch rule finds control on 36.9% of our frames, against
-  43.6% for the 2.0 m rule it replaced (R013); what the tighter rule loses here is not measured.
-- **Our truth's grain is unknown** (T33). DFL's flag gives 437 possessions a match, median 3.7 s (A06). The public
-  window cannot say how ours compares: it is alive on 80.4% of its frames, livelier than 96% of DFL's 5-minute windows
-  (A06). R013 gained +0.0267 raw and +0.0001 coarse: if our truth is coarse, it may not help.
+  There the team rests on the shape model, trained on other teams, and on the tags. Where the ball is seen, the touch
+  rule finds control on 36.9% of our frames, against 43.6% for the 2.0 m rule it replaced (R013); what the tighter rule
+  loses here is not measured.
+- **Our truth's grain is unknown** (T33). DFL's flag gives 437 possessions a match, median 3.7 s, and the public window
+  cannot say how ours compares: it is alive on 80.4% of its frames, livelier than 96% of DFL's 5-minute windows (A06).
+  R013's gain is raw only (section 5): if our truth is coarse, it may not help.
 - **The benchmark overstates the dead ball** (T38, T39). DFL tracks the ball out of play, and ours loses it near the
   lines: among the at-risk rows (frames where a gap could begin) the ball is beyond a line on 17.68% of DFL's against
   4.07% of ours (R009). So P05's 0.9725 alive/dead F1 is optimistic for our match by an amount the benchmark cannot
-  measure. Our predicted `D` share is 35.93% (R017) against 44.6% on the benchmark (R013). The transplanted gaps ignore
-  the play, so features about where gaps fall go unvalued, and hiding DFL's out-of-play ball failed (P18).
-- **Transfer to LaLiga.** Both models learned from seven German matches, five of them one club's home games. The shape
-  model's transfer gate passes, but it lowers the possession count by 2.4% on our match where it raises it by 16% on
-  the benchmark (R011).
-- **Smart Tagging's strength is untested.** No benchmark has tags. The weight and the spread were Tian's pick between
-  two declared options. The source changes 2.28% of the graded frames, 56.3% of them in gaps, and no score was measured
-  (R017).
-- **Seven matches,** and they are not independent. R013 selected from 192 and then 144 configs on them, though its
-  leave-one-match-out estimates agree.
+  measure. Our predicted `D` share, 35.93% (section 5), is below the benchmark's 44.6% (R013). The transplanted gaps
+  ignore the play, so features about where gaps fall go unvalued (P18 did not fix this).
+- **Transfer to LaLiga, on seven matches.** Both models learned from seven German matches, five of them one club's
+  home games, so not independent. The shape model's transfer gate passes, but it lowers the possession count by 2.4% on
+  our match where it raises it by 16% on the benchmark (R011). R013 selected from 192 and then 144 configs on these
+  matches, though its leave-one-match-out estimates agree.
+- **Smart Tagging's strength is untested** (Tian's pick, section 2). It changes 2.28% of the graded frames, 56.3% of
+  them in gaps, and no score was measured (R017).
 - **Timing.** On 10 of the public window's 12 team changes, our truth flips a median 24 frames (0.96 s) before the new
   team's first controlled touch, where DFL's flag flips 1 frame after it; the gap's 90% interval holds 0 under both
   truths, so a difference is not shown (A11), and nothing may be fitted to it.
@@ -267,9 +240,8 @@ py -3.11 -m venv .venv                         # macOS/Linux: python3.11 -m venv
 .venv/Scripts/python evaluation/validate_submission.py "../[team name].csv"
 ```
 
-- **One command** goes from `data/` to the CSV. It writes LF line endings, validates the file with the official checks
-  and, without `--out`, writes `evaluation/results/main.csv`. The expected sha256 is `7ba575c0…`, the same on two runs
-  (R017).
+- **One command** goes from `data/` to the CSV, written with LF line endings and validated by the official checks
+  (without `--out`: `evaluation/results/main.csv`). Its sha256 is the header's, the same on two runs (R017).
 - **Pins:** Python 3.11.9, and every package the pipeline imports at an exact version in `requirements-pipeline.txt`
   (numpy 2.4.6, pandas 3.0.6). Both models are JSON under `pipeline/models/`, kept LF by `.gitattributes` and read with
   numpy only.
