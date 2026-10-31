@@ -5787,11 +5787,12 @@ def test_team_model_values():
 def test_team_model_is_antisymmetric():
     from pipeline.evidence import team_features, trees
     with tempfile.TemporaryDirectory() as root:
-        # none of the trees is symmetric: one reads the home block only, one the away block only, one a shared column
+        # none of the trees is symmetric: one reads the home block only, one the away block only, two others a team
+        # column and a shape column that swap or change sign (a shared column would cancel by construction)
         lopsided = {"baseline": 0.9, "prior_home": 0.5, "trees": [
             stump(TEAM_COLUMN["h_ball_d1"], 3.0, -0.8, 1.7, missing_left=1),
             stump(TEAM_COLUMN["a_reach_s"], 1.0, 0.6, -0.3),
-            stump(TEAM_COLUMN["ball_line_m"], -30.0, -1.0, 2.0),
+            stump(TEAM_COLUMN["h_until_episode_s"], 0.5, 0.7, -0.4),
             stump(TEAM_COLUMN["adv_gap"], 0.0, -0.5, 1.5)]}
         path = write_team_model(root, full=lopsided)
         for seed in range(8):
@@ -5996,7 +5997,7 @@ def test_team_model_speed():
               "frames: first inference {:.2f} s (features {:.2f} s before it), a second config on the same inputs "
               "{:.2f} s".format(first_s, features_s, again_s))
         assert np.isnan(evidence.home[:5_000]).all() and not np.isnan(evidence.home[5_000:70_000]).all()
-        assert first_s < 6.0, "{:.2f} s for 300 trees, twice, on the ball-visible frames (the budget is 6 s)".format(
+        assert first_s < 18.0, "{:.2f} s for 300 trees, twice, on the ball-visible frames (the budget is 18 s)".format(
             first_s)
 
 

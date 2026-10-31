@@ -6707,6 +6707,13 @@ both --drop-match-only`, one process at a time, throttled.
 **Cost:** about 3 h of heavy runs in all (training 7 folds and `full`, the feasibility, 17 configs on two truths and
 `context`, the latency, the transfer).
 
+**Amended before any run** (2026-10-31, on review, still before any run of this entry). Two sentences, nothing else
+changed. (1) If Stage 2b runs, its LOMO is over the union of all three stages with each distinct config counted once, in
+declared order: a stem that Stage 2b shares with Stage 2 (for example `r021c_t08_mp075` and `r021b_t08_mp075`, the same
+config) is kept at its first place and not counted again, as C2 does for Stage 1 and Stage 2. (2) "A miss by any margin
+is a miss" (Advisor (for Tian), §3.2) applies to every threshold of this entry, not only the feasibility's: the bar, each
+veto, the LOMO's sign and its 6 wins in 7, and the transfer's inequality are held as written, with no rounding.
+
 **Part 2, the runs and the verdict:** to be written after the runs.
 
 ## Submission log
