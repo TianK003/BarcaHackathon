@@ -51,7 +51,8 @@ What it does, in order
    decoder counts a per-frame prior once a frame, scaled by the evidence's weight (research.md section 4), so s is a
    choice and not a derivation. EM's sample is every graded frame with an opinion whatever the scope, so pi is the
    same for both scopes and every `min_prob`: it reads the memoised, symmetrised, unclipped logit, never the clipped
-   `home`. A share of exactly 0 or 1 cannot be shifted by and raises; no frame with an opinion means 0.5 and no shift.
+   `home`. A share within EM_SHARE_BOUND of 0 or 1 cannot be shifted by and raises, on either side; no frame with
+   an opinion means 0.5 and no shift.
    The share comes from the model's outputs and from nothing else, never from published statistics of the match (T26).
    The shift is antisymmetric too: relabelling the teams turns pi into 1 - pi and z into -z.
 5. Clip `home` to [min_prob, 1 - min_prob]: a tree can be far more certain than seven matches deserve, and the decoder
@@ -90,6 +91,8 @@ SCOPES = ("gaps", "all")
 PRIORS = ("none", "em")
 EM_TOLERANCE = 1e-6                                    # EM stops when the share moves by less than this ...
 EM_MAX_ITERATIONS = 200                                # ... or after this many updates
+EM_SHARE_BOUND = 1e-6                                  # a share outside [bound, 1 - bound] raises: logit(pi) would be
+                                                       # a shift of 14 nats, and float rounding must not decide it
 TRAINER = "pipeline/benchmark/train_shape.py"          # path form: the benchmark-import scan reads dotted names
 RETRAIN = "retrain it with `python {}`".format(TRAINER)
 
@@ -149,10 +152,10 @@ def em_prior(logits, *, tolerance=EM_TOLERANCE, max_iterations=EM_MAX_ITERATIONS
     while iterations < max_iterations and not converged:
         updated = float(np.mean(trees.sigmoid(z + np.log(share / (1.0 - share)))))
         iterations += 1
-        if not 0.0 < updated < 1.0:
-            raise ValueError("{}: the EM share of home frames reached {} after {} updates, and a share of 0 or 1 "
-                             "cannot be shifted by; leave `prior` at \"none\" for this model and match"
-                             .format(NAME, updated, iterations))
+        if not EM_SHARE_BOUND <= updated <= 1.0 - EM_SHARE_BOUND:
+            raise ValueError("{}: the EM share of home frames reached {} after {} updates, which is within {} of 0 or "
+                             "1 and cannot be shifted by; leave `prior` at \"none\" for this model and match"
+                             .format(NAME, updated, iterations, EM_SHARE_BOUND))
         converged = abs(updated - share) < tolerance
         share = updated
     return {"prior_home": share, "iterations": iterations, "converged": converged, "frames": len(z)}
