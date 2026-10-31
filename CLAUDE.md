@@ -92,6 +92,7 @@ python pipeline/benchmark/choose.py --reference main STEM ...   # a grid's decla
 python pipeline/benchmark/fidelity.py --profile tracking --seeds 3   # gates + WARNs: the copy against our match
 python pipeline/benchmark/train_shape.py [--verify|--report]   # P07: train the shape model as JSON; --verify, --report
 python pipeline/benchmark/conventions.py public|dfl|compare|latency|shift ...   # P02: timing, inspected; DFL-lag shift
+python pipeline/benchmark/metrica.py [--offline]        # P16: Metrica's sample games' grain against the two truths (R023)
 python pipeline/benchmark/selftest.py [--dfl] [--data]  # benchmark checks (seconds); --dfl: the 7 matches, --data: ours
 
 python evaluation/validate_submission.py path/to.csv            # official scorer's checks; run on the exact upload
@@ -168,7 +169,7 @@ keeps that convention: its scripts swap their own folder on `sys.path` for the r
   `restarts` (the stoppages' anatomy, the restart vote's stats, its configs), `dfl_events` (the DFL restart events,
   diagnostics), `headroom` (a config beside variants whose evidence is the truth: what a perfect source would add;
   its `plus_` variants measure `main.toml` itself, A13), `tag_stats` (Smart Tagging's votes against our own
-  pseudo-labels on BAR-ATH, R017), `label_diff` (how a config changes BAR-ATH's labels, aggregates only), `wrong_team` (P21 step 0, dropped in A16: the ratio of over-11 slot frames at the ball to all graded frames, kept for P19's transfer check) and `checks/`
+  pseudo-labels on BAR-ATH, R017), `label_diff` (how a config changes BAR-ATH's labels, aggregates only), `wrong_team` (P21 step 0, dropped in A16: the ratio of over-11 slot frames at the ball to all graded frames, kept for P19's transfer check), `metrica` (P16, R023: H/A/D derived from Metrica's three public sample games' events, fetched at run time and never committed, and their grain against A06's two truths) and `checks/`
   (what `selftest.py` runs). Degradations are fitted once per version on
   label-free statistics of our tracking, then frozen, never tuned towards a score (T26, T37). The Calibration and every
   degraded `Atd` hold BAR-ATH's masks and counts: print none of it, and write no CSV of BAR-ATH labels.
@@ -236,7 +237,8 @@ frames are all `D`. The public GT labels only 11,185–18,684 (5 minutes, 17 pos
   team it names. Dead-ball ownership is never asked for.
 - DFL's flag is fine-grained (437 possessions a match, median 3.7 s) and how fine ours is is not known: rank anything
   that depends on possession length under the raw and the coarse truth (`--truth coarse`), and treat a disagreement
-  as a warning (T33, A06).
+  as a warning (T33, A06). R023 (P16, Metrica's own sample games) found **both**: a choice declared since then
+  ranks on the unweighted mean of the two truths' pooled spellF1s, each reported.
 - Two benchmark matches have a team down to 10, so a gate on how many slots are present is measured on full-strength
   frames only (T36).
 - DFL's own jitter is rare jumps on a 1 cm grid (RMS of the second difference 9.0 cm against our 3.3 mm): compare

@@ -19,6 +19,7 @@ python pipeline/benchmark/headroom.py CONFIG  # a config beside five variants wh
 python pipeline/benchmark/label_diff.py REFERENCE CONFIG ...  # how configs change BAR-ATH's labels beside a reference, aggregates only (heavy)
 python pipeline/benchmark/tag_stats.py        # P08: Smart Tagging's votes against our own pseudo-labels (R017), aggregates only (heavy)
 python pipeline/benchmark/wrong_team.py       # P21 step 0: wrong-team slots at the ball against all graded frames (A16), aggregates only (heavy)
+python pipeline/benchmark/metrica.py [--offline]   # P16: the grain of H/A/D derived from Metrica's sample games' events (R023)
 python pipeline/benchmark/touch_stats.py      # P04's control rule measured: coverage, agreement, flip lags, confidence
 python pipeline/benchmark/train_dead_ball.py --model hgb   # P05: train the dead-ball model (folds + full) as JSON
 python pipeline/benchmark/train_shape.py [--verify|--report]   # P07: train the shape model (folds + full) as JSON
@@ -145,6 +146,14 @@ every possession shorter than 5 s that sits between two possessions of the *othe
 for a coarser grain (1,659 possessions against 3,061, A06). **Run the yardstick under both and read the two side by
 side**: a ranking that differs between them is a warning that the choice depends on the grain of the truth, not
 something to fix. The two reports are filed apart (`<stem>.json` and `<stem>.coarse.json`).
+
+Which one our ground truth resembles was measured on other games of its provider. `metrica.py` (P16,
+[R023](../../docs/results.md)) fetches Metrica's three public sample games' event files: pinned to one commit, checked
+by git blob SHA, and never committed. It derives H/A/D from them by a rule declared before the fetch and compares their
+grain with A06's two truths: 6.20 possessions per alive minute, between 8.30 (raw) and 4.50 (coarse), and a median of
+4.72 s, on the raw side. The outcome was **both**: a choice declared after R023 ranks on the unweighted mean of the
+two pooled spellF1s, each reported. It is event-tagged possession, not a tracking flag, so how far that grain sits
+from our flag's is not measured (R023's stated limit).
 
 ### The profiles
 

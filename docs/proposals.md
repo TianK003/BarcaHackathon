@@ -32,7 +32,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 |---|---|---|---|---|---|
 | [P01](#p01--a-validation-set-we-can-trust) | Validation set we can trust: other matches, degraded to look like ours | deciding anything at all | M | enabling | done → R002–R005 |
 | [P02](#p02--inspect-the-ground-truths-conventions-on-the-public-window-to-understand-and-never-to-tune) | Inspect the GT's conventions on the public window, to understand and never to tune | boundary timing | S | bounded since the 23 Oct rule: understanding only; so far the pipeline's own lag on DFL, 1 to 2 frames, within noise (R012) | done → A11, R012, A15 (inspection only; a person may watch to understand) |
-| [P16](#p16--metricas-sample-games-in-our-ground-truth-providers-conventions) | Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing | boundary timing, grain | M | medium | in progress; R023 part 1 signed 2026-10-31 |
+| [P16](#p16--metricas-sample-games-in-our-ground-truth-providers-conventions) | Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing | boundary timing, grain | M | medium | partly done → R023 (the grain: outcome both, so choices rank on the mean of the two truths); the switch timing and the feeds are not done |
 | [P17](#p17--the-restart-team-channel) | Restart-team channel: who restarts after a stoppage, from the players' arrangement | facts 3, 5 (the hold points at the old team after most stoppages) | S–M | ceiling +0.0198 raw (A12); delivered +0.0040 raw at best, bar not met (R014) | dropped → R014, R014b (the source and the decoder's restart states stay, off by default) |
 | [P18](#p18--the-offpitch-profile-dfls-ball-hidden-off-the-pitch-as-ours-is-and-p05-retrained-on-it) | offpitch profile: DFL's ball hidden off the pitch as ours is, and P05 retrained on it | T39 (P05 overstated by the visible out-of-play ball) | M | A13: a perfect dead-ball source adds +0.029 raw on tracking; main.toml on offpitch 0.5509 raw / 0.5296 coarse; hiding the out-of-play ball cost today's P05 0.013 alive/dead F1 (R015) | dropped → R015, R015b (our tracker's off-pitch ball cannot be reproduced by a simple rule; code removed) |
 | [P19](#p19--a-learned-team-model-where-the-ball-is-seen) | A learned team model where the ball is seen: P05's recipe applied to the team | fact 3; A13's largest lever (+0.194 raw where the ball is seen) | M (feasibility S) | measured: +0.0160 pooled per-frame accuracy against `main.toml`'s decoded labels, gate +0.020 (R021) | dropped → R021 (feasibility: +0.0160 pooled against +0.020, 3 of 7 matches against 6; no spellF1) |
@@ -228,7 +228,10 @@ except R009's dead-ball source and weight, which R013 declared out of scope.
    two truths: R010's decoder and R013's touch rule each gained under the raw truth and lost under the coarse one, and
    R013's final config is +0.0267 raw and only level coarse. Which of the two our ground truth resembles is what would
    say whether R013 helps on our match. The public window cannot answer it (A06), so it has to come from our
-   provider's conventions on other games: Metrica's sample games (P16), by a rule declared on them.
+   provider's conventions on other games: Metrica's sample games (P16), by a rule declared on them. **Answered by R023
+   (2026-10-31): both.** The rate falls between the truths and the median on the raw side of the middle, so choices
+   declared from now on rank on the mean of the two pooled spellF1s. Whether to re-choose what the raw truth decided
+   alone (R013) is the team's call.
 2. **Before the upload, decide how much of the gain to believe** ("After P07 and P02", item 3, unchanged). R013 adds two
    caveats to T38, T39 and R011's: the gain is a raw-truth gain, and the tighter touch rule covers relatively fewer
    ball-visible frames on BAR-ATH than on DFL (36.9% against R008's rule's 43.6%, where the benchmark has 43.4% against
@@ -318,7 +321,8 @@ unchanged (sha256 `0ebdfbec...`).
    - ~~P22(a), the label-shift prior.~~ Dropped (R020): the feasibility gate failed, ratio 0.863 against 0.75.
    - ~~P10 with a pretrained audio tagger.~~ Dropped (R018, R018b): only the hand-built band-pass was tried, the tagger was not.
 5. **P16 still decides more than any of these.** Every ball-rich change so far has split the two truths: R010's decoder,
-   R013's touch rule, and now A14's ball. Knowing our truth's grain says which of them helps on our match.
+   R013's touch rule, and now A14's ball. Knowing our truth's grain says which of them helps on our match. **R023
+   answered "both" (2026-10-31):** each of them is now read on the mean of the two truths.
 
 ---
 
@@ -489,9 +493,11 @@ into a number for a config, is not ([T27](traps.md)).
 
 ### P16 — Metrica's sample games, in our ground truth provider's conventions
 
-**Status: doing → [R023](results.md) (part 1 signed by Tian on 2026-10-31: the licence note suffices, outcome "both"
-ranks on the mean of the two truths, the event-against-flag limit is accepted; part 2, the grain of the three games'
-event-derived labels, runs next). The switch timing and the feeds below are not part of R023.**
+**Status: partly done → [R023](results.md) (signed by Tian and run on 2026-10-31). The three games' event-derived
+labels give 6.20 possessions per alive minute (class both) and a median possession of 4.72 s (class raw, 0.11 s under the
+band). The outcome is **both**: choices declared from now on rank on the unweighted mean of the raw and coarse pooled
+spellF1s, each reported. Nothing past is reopened and `main.toml` is untouched. Not done: the switch timing and the feeds
+below (P04's back-dating, P05's `D` onset, P12's shift).**
 
 **Why.** P01's truth follows DFL's conventions, and P02 inspects Metrica's in 20 transitions in one 5-minute window,
 which is livelier than 96% of DFL's windows (A06) and, since `f8f2629`, no place to fit them. When the flags flip and
