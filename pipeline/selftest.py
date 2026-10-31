@@ -3201,8 +3201,164 @@ def test_hmm_posterior_edges_refusals():
                  "stats")
 
 
+# Tempered edges (R025b). With edge_temperature = T, edges = "posterior" reads marginals(emissions / T, switch_team / T,
+# switch_dead / T, min_possession, min_dead) instead of the model's own posterior; the Viterbi path and R025's rule are
+# untouched, and T = 1 is R025 to the byte.
+
+def r025_labels(emissions, costs):
+    """R025's labels as declared, from the module's parts and not from decode: posterior_edges on the Viterbi path and
+    the untempered marginals, both at the decoder's parameters."""
+    from pipeline.decode import hmm
+    return hmm.posterior_edges(hmm.viterbi(emissions, **costs), hmm.marginals(emissions, **costs))
+
+
+def test_hmm_posterior_edges_temperature_one_is_r025():
+    """edge_temperature = 1, however it is written, is R025 to the byte: the labels of posterior_edges on the Viterbi
+    path and the untempered marginals, and that same posterior with posterior = true. With edges = "viterbi", a
+    temperature of 1 is the default decoder: Viterbi's labels, and the model's own posterior when one is asked for."""
+    from pipeline.decode import REGISTRY, hmm
+    for case in range(12):
+        rng = np.random.default_rng([6, 7300 + case])
+        n_frames = int(rng.integers(1, 1000))
+        homes, alives, weights = hmm_random_scene(rng, n_frames)
+        costs = hmm_random_costs(rng, longest=30)
+        ctx = hmm_context(homes, alives, weights=weights)
+        emissions = hmm.log_likelihoods(ctx.evidence.values(), n_frames, hmm.EPS)
+        expected, posterior = r025_labels(emissions, costs), hmm.marginals(emissions, **costs)
+        for one in (1, 1.0, np.float64(1.0), np.int64(1)):
+            got = REGISTRY["hmm"](ctx, edges="posterior", edge_temperature=one, posterior=True, **costs)
+            assert got.labels.dtype == np.int8 and got.labels.tobytes() == expected.tobytes(), (case, one)
+            assert got.posterior.dtype == np.float64 and got.posterior.tobytes() == posterior.tobytes(), (case, one)
+        alone = REGISTRY["hmm"](ctx, edges="posterior", edge_temperature=1, **costs)
+        assert alone.posterior is None and alone.labels.tobytes() == expected.tobytes(), case
+        viterbi = hmm.viterbi(emissions, **costs)
+        plain = REGISTRY["hmm"](ctx, edges="viterbi", edge_temperature=1, **costs)
+        assert plain.posterior is None and plain.labels.tobytes() == viterbi.tobytes(), case
+        asked = REGISTRY["hmm"](ctx, edge_temperature=1.0, posterior=True, **costs)
+        assert asked.labels.tobytes() == viterbi.tobytes() and asked.posterior.tobytes() == posterior.tobytes(), case
+
+
+def test_hmm_posterior_edges_tempered_posterior_is_that_marginals_call():
+    """With edges = "posterior" and edge_temperature = T, each decode computes one posterior, marginals(emissions / T,
+    switch_team / T, switch_dead / T, min_possession, min_dead) to the bit (a counter on hmm.marginals sees the scaled
+    emissions), and moves the changes of the untempered Viterbi path by it: the runs are the Viterbi path's.
+    posterior = true returns that tempered posterior, and hmm.edge_posterior is the same call. A control: the
+    temperatures move some changes elsewhere than T = 1 does, or the check would prove nothing."""
+    from pipeline.decode import REGISTRY, hmm
+    computed = []
+    original = hmm.marginals
+
+    def counted(*arguments):
+        computed.append(arguments)
+        return original(*arguments)
+
+    differs = 0
+    hmm.marginals = counted
+    try:
+        for case in range(16):
+            rng = np.random.default_rng([6, 7400 + case])
+            n_frames = int(rng.integers(1, 1200))
+            homes, alives, weights = hmm_random_scene(rng, n_frames)
+            costs = hmm_random_costs(rng, longest=30)
+            temperature = float(rng.choice([0.5, 2.0, 5.0, 7.3]))
+            ctx = hmm_context(homes, alives, weights=weights)
+            emissions = hmm.log_likelihoods(ctx.evidence.values(), n_frames, hmm.EPS)
+            tempered = original(emissions / temperature, costs["switch_team"] / temperature,
+                                costs["switch_dead"] / temperature, costs["min_possession"], costs["min_dead"])
+            viterbi = hmm.viterbi(emissions, **costs)
+            expected = hmm.posterior_edges(viterbi, tempered)
+            untempered = hmm.posterior_edges(viterbi, original(emissions, **costs))
+            del computed[:]
+            got = REGISTRY["hmm"](ctx, edges="posterior", edge_temperature=temperature, posterior=True, **costs)
+            assert len(computed) == 1 and computed[0][0].tobytes() == (emissions / temperature).tobytes(), case
+            assert got.posterior.tobytes() == tempered.tobytes(), case
+            assert got.labels.dtype == np.int8 and got.labels.tobytes() == expected.tobytes(), case
+            alone = REGISTRY["hmm"](ctx, edges="posterior", edge_temperature=temperature, **costs)
+            assert len(computed) == 2 and alone.posterior is None, case
+            assert alone.labels.tobytes() == expected.tobytes(), case
+            assert [run[0] for run in edge_runs(got.labels)] == [run[0] for run in edge_runs(viterbi)], case
+            shared = hmm.edge_posterior(emissions, edge_temperature=temperature, **costs)
+            assert shared.tobytes() == tempered.tobytes(), case
+            differs += int((expected != untempered).sum())
+    finally:
+        hmm.marginals = original
+    assert differs >= 20, "only {} frames moved by the temperatures in 16 decodes: hardly tested".format(differs)
+
+
+def test_hmm_posterior_edges_temperature_moves_towards_the_weak_side():
+    """R025b's belief on a flat-then-steep score. 60 frames of strong H evidence (home 0.99: 4.6 nats a frame for H over
+    A), 40 of weak A (home 0.4: 0.41 nats for A) and 60 of strong A, alive 0.99 throughout (D 4.6 nats down a frame):
+    Viterbi changes team where the weak A begins, frame 60. Moving that change later costs 0.41 nats a frame, earlier
+    4.6: the score falls slowly on the weak side and fast on the strong one. With min_possession 30 no path has a second
+    change of team in reach, so P(A) at frame t is the probability that the one change has happened by t, over the
+    paths H[0, c) A[c, n) of weight exp(score(c) / T): the change moves to that distribution's median, summed here from
+    the evidence. At T = 1 it is one frame from Viterbi's (61); tempered it moves towards the weak side, the further the
+    larger T (63 at 2, 67 at 5). The mirror, weak H before strong A, moves earlier: 99, 97 and 93 against Viterbi's 100.
+    """
+    from pipeline.contracts import A
+    for home, viterbi_change, medians in (
+            (home_runs((0.99, 60), (0.4, 40), (0.01, 60)), 60, ((1, 61), (2.0, 63), (5, 67))),
+            (home_runs((0.99, 60), (0.6, 40), (0.01, 60)), 100, ((1, 99), (2.0, 97), (5, 93)))):
+        n_frames = len(home)
+        ctx = hmm_context(home, np.full(n_frames, 0.99))
+        parameters = {"switch_team": 4.0, "switch_dead": 100.0, "min_possession": 30, "min_dead": 1}
+        viterbi = hmm_labels(ctx, **parameters)
+        assert letters(viterbi) == "H" * viterbi_change + "A" * (n_frames - viterbi_change), letters(viterbi)
+        # score(c) - score(0): the H-over-A log-odds of the frames before c, the only thing c changes.
+        score = np.concatenate(([0.0], np.cumsum(np.log(home / (1.0 - home)))))
+        found = []
+        for temperature, expected in medians:
+            weights = np.exp((score - score.max()) / temperature)
+            median = int(np.argmax(np.cumsum(weights) / weights.sum() >= 0.5))
+            moved = hmm_labels(ctx, edges="posterior", edge_temperature=temperature, **parameters)
+            change = int(np.flatnonzero(moved == A)[0])
+            assert letters(moved) == "H" * change + "A" * (n_frames - change), (temperature, letters(moved))
+            assert change == median == expected, (temperature, change, median, expected)
+            found.append(abs(change - viterbi_change))
+        assert found[0] <= 1 < found[1] < found[2], found
+
+
+def test_hmm_posterior_edges_temperature_refusals():
+    """edge_temperature must be a finite number > 0 and is read only with edges = "posterior": anything else is a
+    ValueError naming it and the fix, a temperature of 1 aside, which is the default wherever it is given. A T so small
+    that it scales the scores past a float's range is refused by name as well."""
+    from pipeline.contracts import no_opinion
+    from pipeline.decode import REGISTRY, hmm
+    ctx = hmm_context([np.full(10, VOTE), no_opinion(10)])
+
+    def decode(**parameters):
+        return REGISTRY["hmm"](ctx, **dict({"switch_team": 1.0, "switch_dead": 1.0}, **parameters))
+
+    for bad in (0, 0.0, -0.0, -1, -0.5, math.inf, -math.inf, math.nan, np.float64("nan"), True, False, np.True_, "5",
+                None, [5.0], np.array([5.0])):
+        expect_error(ValueError, lambda: decode(edges="posterior", edge_temperature=bad), "hmm", "edge_temperature",
+                     "finite number > 0")
+        expect_error(ValueError, lambda: hmm.check_edge_temperature(bad, "posterior"), "hmm", "edge_temperature")
+        expect_error(ValueError, lambda: hmm.edge_posterior(np.zeros((4, 3)), 1.0, 1.0, 1, 1, bad), "hmm",
+                     "edge_temperature")
+    # Nothing reads a temperature without the posterior edges: refused, as a finite switch_restart without its source.
+    for parameters in ({}, {"edges": "viterbi"}, {"posterior": True}, {"restart_source": "s1"}):
+        expect_error(ValueError, lambda: decode(edge_temperature=5, **parameters), "hmm", "edge_temperature = 5",
+                     "'viterbi'", 'set edges = "posterior"')
+    expect_error(ValueError, lambda: hmm.check_edge_temperature(0.5, "viterbi"), "hmm", "edge_temperature")
+    # The restart states have no posterior, tempered or not.
+    expect_error(ValueError, lambda: decode(edges="posterior", edge_temperature=5, restart_source="s1"), "hmm",
+                 "edges", "restart_source")
+    expect_error(ValueError, lambda: decode(edges="posterior", edge_temperature=1e-310), "hmm", "edge_temperature",
+                 "1e-310")
+    # Whole numbers and numpy scalars are fine, and 1 is the default wherever it is said.
+    for good in (5, 5.0, np.float64(0.25), np.int64(3)):
+        assert len(decode(edges="posterior", edge_temperature=good).labels) == 10, good
+        assert hmm.check_edge_temperature(good, "posterior") == float(good) and type(
+            hmm.check_edge_temperature(good, "posterior")) is float, good
+    assert hmm.check_edge_temperature(1, "viterbi") == 1.0
+    assert np.array_equal(decode(edge_temperature=1).labels, decode().labels)
+    assert decode(edges="viterbi", edge_temperature=1.0, restart_source="s1").labels.shape == (10,)
+
+
 def test_run_end_to_end_synthetic_hmm_posterior_edges():
-    """edges = "posterior" in a config's [decoder] passes the signature check and runs through the pipeline."""
+    """edges = "posterior" in a config's [decoder] passes the signature check and runs through the pipeline, with or
+    without edge_temperature (R025b)."""
     from pipeline import output
     from pipeline.config import load_config
     from pipeline.contracts import X
@@ -3210,14 +3366,16 @@ def test_run_end_to_end_synthetic_hmm_posterior_edges():
     with tempfile.TemporaryDirectory() as root:
         make_synthetic_bundle(root)
         inputs = synthetic_inputs(root, graded=[(1, 50, 280), (2, 320, 560)])
-        config = load_config(write_text(root, "trial.toml", HMM_TRIAL_CONFIG + 'edges = "posterior"\n'))
-        assert config.decoder.params["edges"] == "posterior", config.decoder.params
-        out_path = os.path.join(root, "trial.csv")
-        result = run(config, inputs, out_path, log=quiet)
-        outside = np.ones(SYNTHETIC_FRAMES, dtype=bool)
-        outside[50:280] = outside[320:560] = False
-        assert (result.codes[outside] == X).all() and (result.codes[~outside] != X).all()
-        output.validate(out_path, SYNTHETIC_FRAMES, result.codes)
+        for extra, temperature in (("", None), ("edge_temperature = 5\n", 5)):
+            config = load_config(write_text(root, "trial.toml", HMM_TRIAL_CONFIG + 'edges = "posterior"\n' + extra))
+            assert config.decoder.params["edges"] == "posterior", config.decoder.params
+            assert config.decoder.params.get("edge_temperature") == temperature, config.decoder.params
+            out_path = os.path.join(root, "trial.csv")
+            result = run(config, inputs, out_path, log=quiet)
+            outside = np.ones(SYNTHETIC_FRAMES, dtype=bool)
+            outside[50:280] = outside[320:560] = False
+            assert (result.codes[outside] == X).all() and (result.codes[~outside] != X).all()
+            output.validate(out_path, SYNTHETIC_FRAMES, result.codes)
 
 
 # -- dead ball (P05) --------------------------------------------------------------------------------------------------

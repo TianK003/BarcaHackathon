@@ -12,6 +12,7 @@ restart_source (P17), D splits into two restart states.
     restart_source = "restart_team"   # optional: the evidence source whose `home` says who restarts (default: none)
     switch_restart = inf   # nats a restart by the other team costs on top of switch_dead (default inf: forbidden)
     edges = "viterbi"      # "posterior": changes at the posterior's median (default "viterbi": Viterbi's own frames)
+    edge_temperature = 1   # edges = "posterior" only: the posterior it reads, tempered by T (default 1: the model's own)
 
 The model
 ---------
@@ -187,6 +188,22 @@ take about 2 ms (31 Oct 2026; one run, apart from the 0.33 s of "How it is solve
 longer honour min_possession and min_dead: a moved change can leave a run shorter than its minimum, never empty.
 edges = "posterior" with restart_source is refused, as posterior = true is: the restart states have no posterior.
 
+Tempered edges (R025b). On the benchmark R025 moved 55% of the changes, by a median of 1 frame: the posterior is too
+sharp for its median to leave Viterbi's mode. A19 measured it about five times too sharp where an edge is uncertain
+(Platt's alpha 0.19 for the team posterior, 0.21 for the alive posterior where only P07 speaks: 1 / alpha = 5.3 and
+4.8). edge_temperature = T, default 1, tempers the posterior that the edges read, by one constant for the whole model:
+it is `edge_posterior`, marginals(emissions / T, switch_team / T, switch_dead / T, min_possession, min_dead), every
+valid path weighted exp(score / T) instead of exp(score), the minimums unchanged. Where the score of putting a change
+elsewhere falls slowly on one side of it (weak evidence) and fast on the other, T > 1 spreads the change's position
+along the slow side, and the median moves towards it by an amount that depends on how weak that side is; at T = 1 the
+mass sits on the mode. Nothing else moves: the labels are still the Viterbi path of the untempered emissions (dividing
+every score by T > 0 changes no maximum, so nothing is recomputed), the rule is posterior_edges as above, there is still
+one marginals per block, and T = 1 is R025's posterior to the bit (x / 1.0 is x exactly). With posterior = true the
+array returned is the one the edges read, tempered: it is the decoder's posterior once the edges have read it. The
+model's own posterior, the one A19 calibrates, is T = 1, and pipeline/benchmark/diagnose.py keeps its calibration
+there while it counts the edges on the tempered one. T must be a finite number > 0, and a T other than 1 is refused
+without edges = "posterior", where nothing would read it, as a finite switch_restart is without restart_source.
+
 What it does not do yet
 -----------------------
 * No duration priors beyond the minimums: a run is as likely to last 2 minutes as 5 seconds, once it is long enough.
@@ -224,7 +241,7 @@ EDGE_OUTCOMES = ("earlier", "later", "at_b", "before", "after")   # ... what the
 
 
 def decode(ctx, *, switch_team, switch_dead, min_possession=1, min_dead=1, eps=EPS, posterior=False,
-           restart_source=None, switch_restart=math.inf, edges="viterbi"):
+           restart_source=None, switch_restart=math.inf, edges="viterbi", edge_temperature=1):
     """Decoded(labels) for ctx.block: the best valid path through the block's emissions.
 
     With posterior=True, Decoded.posterior is also the (len(block), 3) marginal probability of H, A and D per frame
@@ -232,6 +249,9 @@ def decode(ctx, *, switch_team, switch_dead, min_possession=1, min_dead=1, eps=E
 
     With edges="posterior" the labels are that path with each change moved by `posterior_edges` (the module
     docstring's "Posterior edges"): the posterior is computed once and, with posterior=True, returned as it is.
+    edge_temperature=T tempers the posterior the edges read (`edge_posterior`, the module docstring's "Tempered
+    edges"), and posterior=True then returns that tempered posterior, the one the edges read. A T other than 1 is
+    refused with edges="viterbi": nothing would read it.
 
     With restart_source, the name of one of ctx.evidence's sources, the four states of the module docstring: that
     source's `home` says who restarts, switch_restart prices a restart by the other team, and D_H and D_A are written
@@ -243,16 +263,18 @@ def decode(ctx, *, switch_team, switch_dead, min_possession=1, min_dead=1, eps=E
         raise ValueError("hmm: posterior must be True or False, got {!r}".format(posterior))
     if not isinstance(edges, str) or edges not in EDGES:
         raise ValueError("hmm: edges must be one of {}, got {!r}".format(", ".join(map(repr, EDGES)), edges))
+    check_edge_temperature(edge_temperature, edges)
     _check_restart(restart_source, switch_restart)
     if restart_source is None:
         emissions = log_likelihoods(ctx.evidence.values(), len(ctx.block), eps)
         labels = viterbi(emissions, switch_team, switch_dead, min_possession, min_dead)
-        if not posterior and edges == "viterbi":
-            return Decoded(labels=labels)
-        marginal = marginals(emissions, switch_team, switch_dead, min_possession, min_dead)
-        if edges == "posterior":
-            labels = posterior_edges(labels, marginal)
-        return Decoded(labels=labels, posterior=marginal if posterior else None)
+        if edges == "viterbi":
+            if not posterior:
+                return Decoded(labels=labels)
+            return Decoded(labels=labels, posterior=marginals(emissions, switch_team, switch_dead, min_possession,
+                                                              min_dead))
+        marginal = edge_posterior(emissions, switch_team, switch_dead, min_possession, min_dead, edge_temperature)
+        return Decoded(labels=posterior_edges(labels, marginal), posterior=marginal if posterior else None)
     if posterior:
         raise ValueError("hmm: posterior = true is the three states' only, and restart_source {!r} asks for the four "
                          "restart states; leave one of them out".format(restart_source))
@@ -513,6 +535,41 @@ def marginals(emissions, switch_team, switch_dead, min_possession, min_dead):
         states = np.add.reduceat(rows, first, axis=1)
         posterior[lo:lo + CHUNK] = states / states.sum(axis=1, keepdims=True)
     return posterior
+
+
+def edge_posterior(emissions, switch_team, switch_dead, min_possession, min_dead, edge_temperature=1):
+    """(n_frames, 3) float64: the posterior that edges = "posterior" reads, marginals(emissions / T, switch_team / T,
+    switch_dead / T, min_possession, min_dead) with T = edge_temperature (the module docstring's "Tempered edges").
+
+    At T = 1 it is marginals' own to the bit: x / 1.0 is x exactly. ValueError for a T that check_edge_temperature
+    refuses, and for one so small that it scales a score past a float's range.
+    """
+    temperature = check_edge_temperature(edge_temperature, "posterior")
+    switch_team, switch_dead, min_possession, min_dead = _check_costs(
+        switch_team, switch_dead, min_possession, min_dead)
+    emissions = _check_emissions(emissions)
+    with np.errstate(over="ignore"):
+        scaled = emissions / temperature
+    team, dead = switch_team / temperature, switch_dead / temperature
+    if not (np.isfinite(scaled).all() and math.isfinite(team) and math.isfinite(dead)):
+        raise ValueError("hmm: edge_temperature = {!r} divides the scores past a float's range; use a temperature "
+                         "that keeps the emissions and the switches finite, near 1".format(edge_temperature))
+    return marginals(scaled, team, dead, min_possession, min_dead)
+
+
+def check_edge_temperature(edge_temperature, edges):
+    """edge_temperature as a float. ValueError naming it unless it is a finite number > 0 (a bool is not one), and
+    unless it is 1 where `edges` is not "posterior": nothing else reads it."""
+    if (isinstance(edge_temperature, (bool, np.bool_)) or not isinstance(edge_temperature, numbers.Real)
+            or not math.isfinite(edge_temperature) or not edge_temperature > 0):
+        raise ValueError("hmm: edge_temperature must be a finite number > 0, the temperature of the posterior that "
+                         "edges = \"posterior\" reads (1, the default, is the model's own), got {!r}".format(
+                             edge_temperature))
+    if edge_temperature != 1 and edges != "posterior":
+        raise ValueError("hmm: edge_temperature = {!r} tempers the posterior that edges = \"posterior\" reads, and "
+                         "edges is {!r}, so nothing would read it; set edges = \"posterior\", or leave "
+                         "edge_temperature out".format(edge_temperature, edges))
+    return float(edge_temperature)
 
 
 def posterior_edges(labels, posterior, stats=None):
