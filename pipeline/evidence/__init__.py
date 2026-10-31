@@ -15,7 +15,7 @@ import numpy as np
 
 from pipeline.contracts import A, D, H, X
 from pipeline.evidence import (ball_presence, controlled_touch, dead_ball_model, dead_ball_rules, nearest_player,
-                               restart_team, shape_possession, smart_tagging, team_model)
+                               restart_team, shape_possession, smart_tagging)
 
 # Params
 # kind (as written in a config) -> compute function. Explicit on purpose: one line per source, no import magic, and
@@ -29,7 +29,6 @@ REGISTRY = {
     "restart_team": restart_team.compute,
     "shape_possession": shape_possession.compute,
     "smart_tagging": smart_tagging.compute,
-    "team_model": team_model.compute,
 }
 
 

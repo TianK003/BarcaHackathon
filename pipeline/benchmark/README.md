@@ -22,9 +22,6 @@ python pipeline/benchmark/wrong_team.py       # P21 step 0: wrong-team slots at 
 python pipeline/benchmark/touch_stats.py      # P04's control rule measured: coverage, agreement, flip lags, confidence
 python pipeline/benchmark/train_dead_ball.py --model hgb   # P05: train the dead-ball model (folds + full) as JSON
 python pipeline/benchmark/train_shape.py [--verify|--report]   # P07: train the shape model (folds + full) as JSON
-python pipeline/benchmark/train_team.py [--verify|--dry-run|--feasibility]   # P19: train the team model (folds + full), count its rows, or test it against main.toml
-python pipeline/benchmark/team_grid.py stage1|stage2|order|verdict   # P19: R021's configs from main.toml, their tie order, the bar's verdict
-python pipeline/benchmark/team_transfer.py                   # P19: agreement with Smart Tagging's votes on BAR-ATH vs the rule (HEAVY)
 python pipeline/benchmark/conventions.py public|dfl|compare|latency|shift ...   # P02: when a truth flips, the shift
 python pipeline/benchmark/selftest.py [--dfl] [--data]   # the checks
 ```
