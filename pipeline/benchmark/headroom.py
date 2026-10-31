@@ -66,8 +66,9 @@ so that a config's path, its text (both are in its report) and so its report's b
 is written only if it does not already hold exactly these bytes (write_text): the texts are the same under both truths,
 and a raw run and a coarse run side by side would otherwise each replace files that the other has open, which Windows
 refuses. They are read by the pipeline's own loader like any config: the benchmark is only worth anything if it scores
-what the submission pipeline does. The writer handles the flat tables that a Config holds, str, int, float and bool, and
-refuses a parameter of another kind by name (toml_value) before any file is written.
+what the submission pipeline does. The writer handles the flat tables that a Config holds: str, int, float and bool
+parameters, and a table of those, written inline (shape_selftrain's `teacher = { radius = 1.5, ... }`). It refuses a
+parameter of another kind by name (toml_value) before any file is written.
 
 --variants picks others, or a subset, by suffix (VARIANT_NAMES: the five above, then restart and restart_run, then the six plus_ ones). The two
 restart variants replace nothing: <stem>__restart is CONFIG's evidence plus oracle_restart at weight 1.0, and
@@ -476,7 +477,7 @@ def toml_text(config, evidence, description, note):
     where they are not the defaults, the kind and 1.0), the [decoder] and one [[refine]] per refiner, with their
     parameters in the order the config had them. load_config of the result is the config, evidence and description
     aside (test_headroom_variants_round_trip_what_config_holds). BenchmarkError for a parameter that is not a str, an
-    int, a float or a bool.
+    int, a float, a bool or a table of those (toml_value).
     """
     lines = ["# " + line for line in note] + ["",
                                               "description = " + toml_string(description),
@@ -523,7 +524,9 @@ def toml_string(text):
 
 def toml_value(value, where):
     """`value` as TOML: a bool as true or false, an int as digits, a float as Python writes it (1e-06, inf, nan are
-    all TOML's), a str quoted. BenchmarkError naming `where` for anything else, a list or a table included."""
+    all TOML's), a str quoted, a dict as an inline table (`{ radius = 1.5, min_frames = 1 }`, `{}` if empty): its keys
+    in the dict's order, each value written by this function in turn, so that a table in a table is written too.
+    BenchmarkError naming `where` for anything else, a list included, and for a table with a key that is not a str."""
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, int):
@@ -532,10 +535,19 @@ def toml_value(value, where):
         return repr(value)
     if isinstance(value, str):
         return toml_string(value)
+    if isinstance(value, dict):
+        for key in value:
+            if not isinstance(key, str):
+                raise run.BenchmarkError(
+                    "headroom: {} is a table with the key {!r} ({}); a TOML key is a str".format(
+                        where, key, type(key).__name__))
+        pairs = ["{} = {}".format(toml_key(key), toml_value(item, "{}, key {!r}".format(where, key)))
+                 for key, item in value.items()]
+        return "{ " + ", ".join(pairs) + " }" if pairs else "{}"
     raise run.BenchmarkError(
-        "headroom: {} is a {} ({!r}); the variants are written with str, int, float and bool parameters, which is what "
-        "the configs of this repository hold, so extend toml_value in pipeline/benchmark/headroom.py before running "
-        "this config".format(where, type(value).__name__, value))
+        "headroom: {} is a {} ({!r}); the variants are written with str, int, float and bool parameters and tables of "
+        "them, which is what the configs of this repository hold, so extend toml_value in "
+        "pipeline/benchmark/headroom.py before running this config".format(where, type(value).__name__, value))
 
 
 # -- the run ----------------------------------------------------------------------------------------------------------

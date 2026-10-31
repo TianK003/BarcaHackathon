@@ -55,13 +55,14 @@ import types
 import numpy as np
 
 import possession_metrics as pm
-from pipeline.benchmark import conventions, selftrain, train_shape, truth
+from pipeline import evidence as evidence_stage
+from pipeline.benchmark import conventions, headroom, selftrain, train_shape, truth
 from pipeline.benchmark import run as benchmark_run
 from pipeline.benchmark.checks.common import CONFIG_FOLDER, loading, strict_json, synthetic_calibration
 from pipeline.benchmark.dfl import DflMatch
 from pipeline.benchmark.run import BenchmarkError
 from pipeline.benchmark.train_dead_ball import served_inputs
-from pipeline.config import load_config
+from pipeline.config import Component, load_config
 from pipeline.contracts import RunContext
 from pipeline.evidence import controlled_touch, recalibration, shape_features, shape_possession, smart_tagging
 from pipeline.selftest import (SHAPE_COLUMN, expect_error, play_inputs, stump, touch_dead_model, write_model,
@@ -351,6 +352,27 @@ def test_selftrain_r027_configs_are_the_base_with_the_source_swapped():
     assert entry.params["min_prob"] == settings.min_prob == old.params["min_prob"]
     assert (entry.params["scope"], entry.params["model"], entry.weight) == ("all", old.params["model"], old.weight)
     assert entry.weight == 0.2 and entry.name == "shape_selftrain", entry
+
+
+def test_selftrain_r027_configs_have_headroom_variants():
+    """headroom.py writes variants of R027's configs: the table `teacher` goes in inline and comes out as the same dict.
+
+    A13 runs headroom.py on main.toml, which an adoption makes this candidate, and the writer used to refuse a parameter
+    that is a table, so it would have stopped on `teacher = { ... }`. The plus_ variants of r027_post.toml (it has no
+    nearest_player, as main.toml has none) are written, loaded again with the oracles registered, and are its evidence
+    with the oracles appended, its decoder and its refiner as they were, and the table on one line.
+    """
+    post = load_config(os.path.join(R027_CONFIGS, "r027_post.toml"))
+    with tempfile.TemporaryDirectory() as root, headroom.registered(evidence_stage.REGISTRY, **headroom.oracles({})):
+        written = headroom.write_variants(post, root, variants=("plus_home_gaps", "alive_plus_home_all"))
+        for (stem, path), kinds in zip(written, (["oracle_home_gaps"], ["oracle_alive", "oracle_home_all"])):
+            variant = load_config(path)
+            added = [Component(kind=kind, name=kind, weight=1.0, params={}) for kind in kinds]
+            assert list(variant.evidence) == list(post.evidence) + added, stem
+            assert (variant.decoder, variant.refine) == (post.decoder, post.refine), stem
+            line = "teacher = { radius = 1.5, max_rel_speed = 6.0, min_frames = 1, duel_radius = 1.0 }\n"
+            with open(path, encoding="utf-8") as handle:
+                assert line in handle.read(), stem
 
 
 def test_selftrain_constants_are_the_designs():

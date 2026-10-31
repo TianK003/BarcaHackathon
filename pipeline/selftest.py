@@ -4864,9 +4864,16 @@ def test_shape_selftrain_parameters():
             expect_error(ValueError, lambda: source(model=bad), "shape_selftrain", "model must be")
             expect_error(ValueError, lambda: source(alive_model=bad), "shape_selftrain", "alive_model must be")
         expect_error(ValueError, lambda: source(model=absent), "shape_possession", "absent.json", SHAPE_TRAINER)
-        expect_error(ValueError, lambda: source(alive_model=absent), "dead_ball_model", "absent.json")
         expect_error(ValueError, lambda: source(model=dead), "shape_possession", "features", SHAPE_TRAINER)
-        expect_error(ValueError, lambda: source(alive_model=shape), "dead_ball_model", "features")
+        # the dead-ball loader's own message tells to fix `model`, which in this entry is `alive_model`: it is kept
+        # whole, trainer and all, and prefixed with this source's name and that key (through `fit` as through `compute`)
+        for call in (source, fit):
+            message = expect_error(ValueError, lambda: call(alive_model=absent), "dead_ball_model", "absent.json",
+                                   "train_dead_ball.py")
+            prefix = "shape_selftrain: alive_model: dead_ball_model: "
+            assert message.startswith(prefix + "cannot read the model file"), message
+            message = expect_error(ValueError, lambda: call(alive_model=shape), "dead_ball_model", "features")
+            assert message.startswith(prefix), message
         # what is fine: the defaults are scope "gaps" and min_prob 0.02, numpy numbers from a sweep, an optional
         # duel_radius
         assert np.array_equal(source().home, source(scope="gaps", min_prob=0.02).home, equal_nan=True)

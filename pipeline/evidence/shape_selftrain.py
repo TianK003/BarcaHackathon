@@ -62,10 +62,12 @@ the one command still goes from `data/` to the CSV. It is deterministic: its sum
 rounded to 9 decimals before use, and the same inputs give the same bytes whatever the order of the rows.
 
 What it costs and remembers. A `controlled_touch` pass and a `dead_ball_model` pass (whose walk of the trees is its own
-memo), plus 81 reads of a score on the rows of each fit. The offsets are remembered per Inputs object and per (the two
-model files' sizes and modification times, the game, the table of the teacher, epsilon), so that the configs of a
-benchmark stage that share them fit once; `scope` and `min_prob`, which are cheap, are applied after it. A caller gets a
-list of its own. This module imports nothing from the benchmark.
+memo), and a fit a block: 81 reads of the score on the grid, about 38 more for each maximum it finds (the bisection from
+a cell of 0.25 nats down to 1e-12), and, where there are several maxima, a read of the likelihood at each. A read is a
+pass over the rows of the other blocks, so a fit on 60,000 rows takes about 0.5 s. The offsets are remembered per Inputs
+object and per (the two model files' sizes and modification times, the game, the table of the teacher, epsilon), so that
+the configs of a benchmark stage that share them fit once; `scope` and `min_prob`, which are cheap, are applied after
+it. A caller gets a list of its own. This module imports nothing from the benchmark.
 """
 
 import functools
@@ -127,7 +129,10 @@ def _logit_and_offsets(run, model, alive_model, teacher, epsilon):
     path = trees.model_path(model, NAME, MODEL_EXAMPLE)
     alive_path = _alive_path(alive_model)
     artifact = shape_possession.load(path)
-    dead_ball_model.load(alive_path)                  # the file is there and is a dead-ball model, or this says why not
+    try:
+        dead_ball_model.load(alive_path)              # the file is there and is a dead-ball model, or this says why not
+    except ValueError as error:                       # its hint says to fix `model`: in this entry it is `alive_model`
+        raise ValueError("{}: alive_model: {}".format(NAME, error)) from error
 
     inputs = run.inputs
     key = inputs.game if inputs.game in artifact["folds"] else "full"

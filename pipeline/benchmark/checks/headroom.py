@@ -10,6 +10,12 @@ a run that raised. The one that anchors the rest is test_headroom_full_oracle_is
 decoder free to follow them, the score is exactly 1.0 on all three metrics, the same assertion that the oracle of
 test_dfl_oracle_scores_perfectly makes of the runner, so the variants are known to carry the truth to the score.
 
+The file the variants are written as is held too: the scalars of the flat writer read back as they went in, a table
+parameter (shape_selftrain's `teacher`) is written inline and reads back as the same dict, every config of the
+repository that has no table is written exactly as it was before tables could be written, and a config whose source
+takes a table has its variants written, loaded and run (the test_headroom_toml_writer_* checks and
+test_headroom_runs_a_config_with_a_table_parameter).
+
 The matches are the synthetic ones of checks/common.py (random flags and tracking, whose scores mean nothing), under the
 gaps profile and the synthetic Calibration, or the clean profile where a check is about loading.
 """
@@ -36,7 +42,7 @@ from pipeline.benchmark import run as benchmark_run
 from pipeline.benchmark.checks.common import (PROBE_CONFIG, loading, match_only_source, random_match, read,
                                               synthetic_calibration, synthetic_matches, yardstick_path)
 from pipeline.config import Component, load_config
-from pipeline.contracts import A, D, H, X, RunContext, check_evidence
+from pipeline.contracts import A, D, H, X, Evidence, RunContext, check_evidence, no_opinion
 from pipeline.selftest import expect_error, quiet, write_text
 
 # Params
@@ -144,6 +150,12 @@ min_possession = 1
 min_dead = 1
 """
 FAILS_MID_RUN = HMM.replace("switch_team = 0.01", "switch_team = -1")
+# A config with a source that takes a table, as shape_selftrain's `teacher` is (the stand-in is table_probe, below).
+TEACHER = {"radius": 1.5, "max_rel_speed": 6.0, "min_frames": 1, "duel_radius": 1.0}
+TABLE_CONFIG = HMM.replace(
+    'kind = "nearest_player"\n',
+    'kind = "nearest_player"\n\n[[evidence]]\nkind = "table_probe"\nweight = 0.5\n'
+    'teacher = { radius = 1.5, max_rel_speed = 6.0, min_frames = 1, duel_radius = 1.0 }\nlabel = "probe"\n')
 
 
 # -- helpers ----------------------------------------------------------------------------------------------------------
@@ -183,6 +195,35 @@ def load_config_of(text):
 def oracle_inputs(match_id="RND001"):
     match = random_match(match_id)
     return match, match_inputs.MatchInputs(match, match_inputs.clean_atd(match))
+
+
+def table_probe_source(seen):
+    """A source of kind table_probe: it says nothing, and notes the label and the table it was given in `seen`."""
+    def table_probe(run, *, teacher, label="a"):
+        seen.append((label, teacher))
+        n = len(run.inputs.atd.ball_xy)
+        return Evidence(alive=no_opinion(n), home=no_opinion(n))
+    return table_probe
+
+
+def holds_a_table(config):
+    """True if a parameter of any source, of the decoder or of a refiner of `config` is a table."""
+    return any(isinstance(value, dict) for component in (*config.evidence, config.decoder, *config.refine)
+               for value in component.params.values())
+
+
+def old_toml_value(value, where):
+    """headroom.toml_value as it was before it wrote tables, restated: bool, int, float and str, and a refusal of any
+    other kind (the message is not the point here, only that it is refused)."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return repr(value)
+    if isinstance(value, str):
+        return headroom.toml_string(value)
+    raise benchmark_run.BenchmarkError(where)
 
 
 # -- the variants -----------------------------------------------------------------------------------------------------
@@ -459,6 +500,116 @@ def test_headroom_toml_writer_reads_back_as_written():
                                                                                    bool)
     # A bool is not written as an int, nor an int as a float.
     assert "yes = true" in text and "no = false" in text and "zero = 0\n" in text and "half = 0.5" in text
+
+
+def test_headroom_toml_writer_writes_inline_tables():
+    """A table parameter is written as an inline table that tomllib reads back as the same dict, its keys in order.
+
+    shape_selftrain takes `teacher = { radius = 1.5, ... }`, which the writer refused as a parameter that is not a
+    str, an int, a float or a bool, so headroom.py could not have run a config that has it: A13's, once it is main.toml.
+    A dict is now written as { key = value, ... } on one line, its keys in its order and each value by toml_value in
+    turn, so a table in a table, an empty one, a key that needs quotes and the strings and numbers of the flat writer
+    all come back as they went in. Still refused, by name and before anything is written: a list, in a table too, any
+    other kind, and a table with a key that is not a str.
+    """
+    line = "{ radius = 1.5, max_rel_speed = 6.0, min_frames = 1, duel_radius = 1.0 }"
+    assert headroom.toml_value(TEACHER, "x") == line
+    assert headroom.toml_value({}, "x") == "{}"
+    assert headroom.toml_value({"a": {"b": 1}, "c": {}}, "x") == "{ a = { b = 1 }, c = {} }"
+    nested = {"outer": {"inner": {"text": 'say "hi" \\ \n\t\x01 ü', "yes": True, "no": False}, "n": -3}, "odd key": 2.5,
+              "empty": {}, "far": math.inf, "small": 1e-06}
+    table = tomllib.loads("v = " + headroom.toml_value(nested, "x"))["v"]
+    assert table == nested and list(table) == list(nested) and list(table["outer"]) == ["inner", "n"], table
+    # in a config: on one line, the keys in the order they had, beside the flat parameters
+    config = load_config_of(HMM)
+    probe = Component(kind="fake", name="fake", weight=1.0, params={"scalar": 2, "teacher": TEACHER, "nested": nested})
+    changed = dataclasses.replace(config, refine=(probe,))
+    text = headroom.toml_text(changed, changed.evidence, "d", ["n"])
+    assert [line for line in text.split("\n") if line.startswith("teacher = ")] == [
+        "teacher = { radius = 1.5, max_rel_speed = 6.0, min_frames = 1, duel_radius = 1.0 }"], text
+    written = tomllib.loads(text)["refine"]
+    assert written == [{"kind": "fake", "scalar": 2, "teacher": TEACHER, "nested": nested}], written
+    assert list(written[0]) == ["kind", "scalar", "teacher", "nested"] and list(written[0]["teacher"]) == list(TEACHER)
+    assert "\r" not in text and text.endswith("\n")
+    # what is still refused: the message names the parameter, and the key inside it
+    for refused, fragments in (({"values": [1, 2]}, ("values", "list")), ({"flag": None}, ("flag", "NoneType")),
+                               ({"inner": {"x": (1, 2)}}, ("inner", "x", "tuple"))):
+        listed = dataclasses.replace(config, decoder=Component(kind="hmm", name="hmm", weight=1.0,
+                                                               params={"teacher": refused}))
+        expect_error(benchmark_run.BenchmarkError, lambda: headroom.toml_text(listed, listed.evidence, "d", ["n"]),
+                     "decoder", "teacher", *fragments, "str, int, float and bool")
+    expect_error(benchmark_run.BenchmarkError, lambda: headroom.toml_value({"a": {1: 2}}, "where"), "where",
+                 "key 'a'", "1", "int", "str")
+    expect_error(benchmark_run.BenchmarkError, lambda: headroom.toml_value([1, 2], "where"), "where", "list",
+                 "str, int, float and bool")
+
+
+def test_headroom_toml_writer_leaves_the_existing_outputs_alone():
+    """Every config of the repository without a table is written exactly as it was before tables, byte for byte.
+
+    toml_value is restated as it stood (old_toml_value). The two give the same text for a battery of scalars, and
+    toml_text gives the same bytes with either (the old one patched in) for every config under pipeline/configs/ and
+    pipeline/benchmark/configs/: the grids of R013 and R024 among them. The configs that the old one refuses are those
+    that hold a table (R027's, while they are there), and for them the new one writes what tomllib reads back as the
+    same parameters.
+    """
+    scalars = [True, False, 0, -7, 2 ** 70, 0.0, -0.0, 0.5, 1e-06, 1e22, math.inf, -math.inf, math.nan, "", "a",
+               'q"uote', "back\\slash", "new\nline", "tab\t", "\x01\x7f", "ü 中"]
+    for value in scalars:
+        assert headroom.toml_value(value, "w") == old_toml_value(value, "w"), repr(value)
+    paths = []
+    for folder in ("configs", os.path.join("benchmark", "configs")):
+        for base, _, names in os.walk(os.path.join(ROOT, "pipeline", folder)):
+            paths += [os.path.join(base, name) for name in names if name.endswith(".toml")]
+    compared, tabled, real = 0, [], headroom.toml_value
+    for path in sorted(paths):
+        config = load_config(path)
+        new = headroom.toml_text(config, config.evidence, config.description, ["note"])
+        headroom.toml_value = old_toml_value
+        try:
+            old = headroom.toml_text(config, config.evidence, config.description, ["note"])
+        except benchmark_run.BenchmarkError:
+            assert holds_a_table(config), "the old writer refused a config without a table: " + path
+            tabled.append(config)
+            continue
+        finally:
+            headroom.toml_value = real
+        assert new == old, path
+        compared += 1
+    assert compared > 100, "a sweep of {} configs is too few to say the outputs are unchanged".format(compared)
+    for config in tabled:
+        written = tomllib.loads(headroom.toml_text(config, config.evidence, config.description, ["note"]))
+        assert [{key: value for key, value in entry.items() if key not in ("kind", "name", "weight")}
+                for entry in written["evidence"]] == [component.params for component in config.evidence], config.stem
+
+
+def test_headroom_runs_a_config_with_a_table_parameter():
+    """A config whose source takes a table (the stand-in table_probe) gets its variants written, read back and run.
+
+    The table goes into each variant's file as an inline table and comes out as the same dict. The variants of a plus_
+    and an alive plus_ kind are the config's evidence with the oracles appended and its decoder as it was, and a run of
+    one through run_headroom (the loader, the runner and the source) gives the source the table it was written with,
+    every time, for the config and for its variant.
+    """
+    seen = []
+    with tempfile.TemporaryDirectory() as root, headroom.registered(
+            evidence_stage.REGISTRY, table_probe=table_probe_source(seen), **headroom.oracles({})):
+        path = write_text(root, "table_config.toml", TABLE_CONFIG)
+        base = load_config(path)
+        assert holds_a_table(base) and base.evidence[1].params == {"teacher": TEACHER, "label": "probe"}
+        written = headroom.write_variants(base, root, variants=("plus_home_gaps", "alive_plus_home_all"))
+        for (stem, variant_path), kinds in zip(written, (["oracle_home_gaps"], ["oracle_alive", "oracle_home_all"])):
+            variant = load_config(variant_path)
+            added = [Component(kind=kind, name=kind, weight=1.0, params={}) for kind in kinds]
+            assert list(variant.evidence) == list(base.evidence) + added, stem
+            assert (variant.decoder, variant.refine, variant.seed, variant.scope) == (
+                base.decoder, base.refine, base.seed, base.scope), stem
+            assert "teacher = { radius = 1.5, max_rel_speed = 6.0, min_frames = 1, duel_radius = 1.0 }\n" in read(
+                variant_path), stem
+        assert not seen, "writing the variants runs nothing"
+        result = on_gaps(path, root, variants=("plus_home_gaps",))
+    assert [entry["stem"] for entry in result["configs"]] == ["table_config", "table_config__plus_home_gaps"]
+    assert len(seen) >= 4 and all(note == ("probe", TEACHER) for note in seen), seen
 
 
 # -- the oracles ------------------------------------------------------------------------------------------------------
