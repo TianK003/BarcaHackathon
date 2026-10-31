@@ -1763,6 +1763,30 @@ name library versions and line endings as the risks, and a run on a second machi
 check that week 4 asks for. The `.gitattributes` rule `pipeline/models/*.json text eol=lf` keeps the models' bytes the
 same on any checkout; the configs may arrive with CRLF on Windows, which changes no parsed value and no output byte here.
 
+### A18 — The submission regenerated on Linux (2026-10-31, Tian)
+Source: advisor-02, section 9 (Advisor, for Tian: round 3, the pipeline part of the second-machine check only; it never
+changes `main.toml` or a model). Run by the controller from 03:31 to 03:40 on 2026-10-31.
+
+**What was run.** WSL 2, Ubuntu 24.04 (Linux 6.18.54.1), on the same laptop as A17: the same processor, but another
+operating system, Linux wheels and LF line endings. `git clone` of the local `main` at `d12d08e` (committed and pushed),
+so the configs arrived with LF (0 CR bytes in `main.toml`; A17's Windows checkout had CRLF). Python 3.11.9 from uv
+(user-level, uninstalled afterwards), a venv with `requirements-pipeline.txt` only: numpy 2.4.6, pandas 3.0.6,
+python-dateutil 2.9.0.post0, six 1.17.0. The data folder, inside the WSL home, held symbolic links to the four raw
+tactical files `main.toml` reads (`_atd.xml`, `_atd.txt`, `_homography.csv`, `_smart_tagging.xml`), no video, and no
+cache, so the ATD cache was rebuilt. Every step ran at one BLAS thread under `nice`, one at a time, behind a 3 GB
+free-memory guard; the folder and the Python were deleted after, and WSL was shut down.
+
+| check | result | time |
+|---|---|---|
+| `pipeline/run.py pipeline/configs/main.toml`, first run (cache built) | sha256 `7ba575c0982aacb9765b39c406e4ff5c9ddb82ca37cfa2b7f101417431fc3d7c`, valid, 413 possessions | 16 s |
+| the same, second run | the same sha256 | 9 s |
+| `pipeline/selftest.py --data` (`main.toml` twice, the four baselines byte for byte) | 193 of 193 | 44 s |
+
+**What it shows, and what it does not.** The submission file is the same byte for byte on Linux as on Windows, with LF
+configs, at one thread. Not run on Linux (the advisor's limit for a crash-prone laptop): the default-thread run, the two
+`--verify` runs and the benchmark. Not tried at all: another processor (an Intel CPU), where float results of the same
+wheels could still differ (T20).
+
 ## Experiments
 
 Copy this template for each run, and add a scoreboard row for anything worth comparing.

@@ -664,7 +664,7 @@ const DATA = {
   commit: "d11f31e",
   title: "Possession pipeline · team overview",
   subtitle: "More than a Hack 2027, Phase 1 · FC Barcelona (H) vs Athletic Club (A), LaLiga 2024-25 MD2",
-  footer: "As of 2026-10-31 (main d11f31e). P19 to P22 were each dropped at their feasibility gates, P16 part 1 is an unsigned draft, and A17 regenerated the submission byte for byte from a fresh clone. Update DATA when an entry lands; the docs are the source of truth.",
+  footer: "As of 2026-10-31 (main d11f31e). P19 to P22 were each dropped at their feasibility gates, P16 part 1 is an unsigned draft, and A17 and A18 regenerated the submission byte for byte from a fresh clone, on Windows and on Linux. Update DATA when an entry lands; the docs are the source of truth.",
 
   /* ---------- Overview ---------- */
   onboarding: {
@@ -1531,7 +1531,9 @@ const DATA = {
     { date: "2026-10-31", title: "P16 part 1: Metrica's sample games and the grain of our truth (draft)", entries: "R023", outcome: "analysis", stages: ["benchmark"],
       text: "An unsigned draft: not declared until Tian signs or amends it, and nothing has been downloaded or run." },
     { date: "2026-10-31", title: "A17: the submission regenerated from a fresh clone", entries: "A17", outcome: "analysis", stages: ["output"],
-      text: "A clone of the pushed repository, a new venv from the requirements files and the raw bundle with no caches: `main.csv` came out `7ba575c0…` on two runs and at the default threads, both models retrained identical, and the benchmark returned 0.5430 / 0.5593. One machine only." }
+      text: "A clone of the pushed repository, a new venv from the requirements files and the raw bundle with no caches: `main.csv` came out `7ba575c0…` on two runs and at the default threads, both models retrained identical, and the benchmark returned 0.5430 / 0.5593. One machine only." },
+    { date: "2026-10-31", title: "A18: the submission regenerated on Linux", entries: "A18", outcome: "analysis", stages: ["output"],
+      text: "Ubuntu 24.04 under WSL 2 on the same laptop, LF configs, a fresh venv and no cache: `7ba575c0…` on two runs and `selftest.py --data` 193 of 193. Another processor is still untried." }
   ],
   outcomes: {
     adopted: { label: "adopted", cls: "ok", glyph: "✓" },
@@ -1576,8 +1578,8 @@ const DATA = {
       text: "The repository is private and must be made public by 17 Nov, as a deliberate final step. It must hold the source, pinned dependencies, install and run instructions, and the command that regenerates the CSV." },
     { title: "Technical document (`<team_name>.pdf` or `.md`)", status: "doing", label: "condensed",
       text: "[docs/technical_document_submission.md](../docs/technical_document_submission.md) is the version to upload: the seven sections of the long one at deliverable length, every number from `docs/results.md` with its entry. It still has placeholders ([Team name], the five names, the repo URL, the commit); its section 7 carries A17's fresh-clone reproduction. [docs/technical_document.md](../docs/technical_document.md) stays the full record." },
-    { title: "Clean-clone reproduction on a second machine", status: "doing", label: "this machine done",
-      text: "A17 (31 Oct): a fresh clone on the team laptop regenerated `7ba575c0…` byte for byte, also at the default threads. Still to do: the same on a second machine, another processor or operating system (T20, T21)." },
+    { title: "Clean-clone reproduction on a second machine", status: "doing", label: "Windows and Linux done",
+      text: "A17 (31 Oct): a fresh clone on the team laptop regenerated `7ba575c0…` byte for byte, also at the default threads. A18: the same on Linux (WSL 2, same laptop, LF configs). Still to do: another processor, ideally an Intel machine (T20, T21)." },
     { title: "Pinned dependencies", status: "done", label: "done",
       text: "[requirements-pipeline.txt](../requirements-pipeline.txt) pins what the pipeline imports (numpy 2.4.6, pandas 3.0.6; Python 3.11.9)." }
   ],
