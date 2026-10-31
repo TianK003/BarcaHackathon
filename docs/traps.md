@@ -431,9 +431,9 @@ logged `EXIT=0`, so a wrapper that has worked so far proves nothing. A verdict c
 read wrong: R027's errors rule (a log without a valid exit is an error, not a verdict) caught it, and the step was
 rerun once, 6 minutes. What to do:
 - read `$p.Handle` (`$null = $p.Handle`) right after `Start-Process`, before anything waits on the process.
-  `heavy.ps1`, `heavy-p23.ps1` and `heavy-p22b.ps1` in `.superpowers/bin/` (local, not in git) do so now; the older
-  `heavy-pathcrf.ps1` and `heavy-repro.ps1` do not, so copy from the first three;
-- never let an empty code pass as 0: `heavy-p22b.ps1` logs `EXIT=UNKNOWN` and exits 99;
+  Every `heavy*.ps1` in `.superpowers/bin/` (local, not in git) does so now: `heavy.ps1`, `heavy-p23.ps1`,
+  `heavy-p22b.ps1`, `heavy-pathcrf.ps1` and `heavy-repro.ps1`;
+- never let an empty code pass as 0: each of them logs `EXIT=UNKNOWN` and exits 99;
 - read the tool's own printed verdict beside the log's `EXIT=` line, and treat a disagreement as an error.
 
 **T52 — A cache keyed by a file's size and modification time serves a stale file rewritten to the same size within
