@@ -9,8 +9,9 @@ spellF1 of the ladder is score.pooled's to the last bits. The calibration recove
 overconfident by a factor of two in the logit, a constant), and its log-loss, Brier score and ECE are worked out on a
 handful of numbers. End to end, diagnose() runs on the synthetic matches of checks/common.py: its report has the layout
 A19 declares, the ladder's spellF1 is the runner's, the frames each measure counts are those an independent tally finds,
-the posterior's rows lie in [0, 1], and no list in the report is longer than an aggregate's. The matches are random
-flags and tracking: their scores mean nothing. No check reads data.
+the posterior's rows lie in [0, 1], and no list in the report is longer than an aggregate's. A config with P22(b)'s
+`shape_selftrain` in P07's place gets P07's split by whether the ball is seen, as a tally of its own finds it. The
+matches are random flags and tracking: their scores mean nothing. No check reads data.
 """
 
 import contextlib
@@ -81,6 +82,15 @@ kind = "shift_edges"
 team = 1
 into_dead = -2
 """
+# MAIN_LIKE with P22(b)'s self-trained shape source in P07's place (the entry R027 declares, without the comments). The
+# kinds that A19 measures apart where the ball is seen and where it is not, typed here and not read from diagnose.py:
+# this is what the checks hold diagnose.SHAPE_KINDS to.
+SELFTRAIN_LIKE = MAIN_LIKE.replace(
+    'kind = "shape_possession"\nweight = 0.2\nmodel = "pipeline/models/shape_possession_hgb.json"\nscope = "all"\n',
+    'kind = "shape_selftrain"\nweight = 0.2\nmodel = "pipeline/models/shape_possession_hgb.json"\nscope = "all"\n'
+    'alive_model = "pipeline/models/dead_ball_hgb.json"\n'
+    'teacher = { radius = 1.5, max_rel_speed = 6.0, min_frames = 1, duel_radius = 1.0 }\nepsilon = 0.07\n')
+SHAPE_KINDS = ("shape_possession", "shape_selftrain")
 # Team evidence only where the ball is seen (the nearest player), so that the posterior's frames split both ways.
 NEAREST_ONLY = """
 scope = "halves"
@@ -340,7 +350,7 @@ def tallies(config_text, matches, root):
     found one frame at a time.
     """
     config = load_config(write_text(root, "tally.toml", config_text))
-    shape = {component.name for component in config.evidence if component.kind == "shape_possession"}
+    shape = {component.name for component in config.evidence if component.kind in SHAPE_KINDS}
     sums, without_mass = {}, 0
 
     def add(where, p, y):
@@ -504,6 +514,38 @@ def test_diagnose_end_to_end_on_synthetic_matches():
         alive = other["calibration"]["posterior"]["alive"]
         assert alive["team_speaks"]["n"] > 0 and alive["team_silent"]["n"] > 0, alive
         assert set(other["calibration"]["posterior"]["alive_by_team_sources"]) == {"nearest_player", "none"}
+
+
+def test_diagnose_splits_shape_selftrain_by_the_ball():
+    """A source of kind shape_selftrain is measured as P07's is: diagnose.SHAPE_KINDS names both kinds, and a config
+    with the self-trained source in P07's place gets the calibration of its `home` on all frames and apart where the
+    degraded ball is seen and where it is not, as an independent tally (tallies) finds them.
+
+    The synthetic matches give the teacher too few rows for a fit, so the source says what P07 says here (its own
+    checks, in pipeline/selftest.py, hold what it adds); what is held is that diagnose reads the kind: the entry has the
+    three `home` measures, the two halves of the ball split add up to the whole, and every figure is the tally's. P07
+    itself, in test_diagnose_end_to_end_on_synthetic_matches, is split as before.
+    """
+    assert tuple(diagnose.SHAPE_KINDS) == SHAPE_KINDS, diagnose.SHAPE_KINDS
+    matches = synthetic_matches()
+    with tempfile.TemporaryDirectory() as root:
+        path = write_text(root, "selftrain_like.toml", SELFTRAIN_LIKE)
+        config = load_config(path)
+        assert [component.kind for component in config.evidence] == [
+            "nearest_player", "ball_presence", "shape_selftrain", "dead_ball_model"], config.evidence
+        report = diagnose.diagnose(path, profile="gaps", seeds=1, matches=matches, calibration=synthetic_calibration(),
+                                   data_dir=root, log=quiet)
+        block = report["calibration"]
+        assert set(block) == {"nearest_player", "ball_presence", "shape_selftrain", "dead_ball_model", "posterior"}
+        entry = block["shape_selftrain"]
+        assert set(entry) == {"kind", "weight", "home", "home_ball_visible", "home_ball_missing"}, sorted(entry)
+        assert entry["kind"] == "shape_selftrain" and entry["weight"] == 0.2, entry
+        assert entry["home_ball_visible"]["n"] > 0 and entry["home_ball_missing"]["n"] > 0, entry
+        assert entry["home_ball_visible"]["n"] + entry["home_ball_missing"]["n"] == entry["home"]["n"], entry
+        assert set(block["nearest_player"]) == {"kind", "weight", "home"}, "a source that is no shape kind is not split"
+        sums, without_mass = tallies(SELFTRAIN_LIKE, matches, root)
+        same_measures(report, sums, without_mass)
+        assert ("shape_selftrain", "home_ball_missing") in sums and ("shape_selftrain", "home_ball_visible") in sums
 
 
 def test_diagnose_command_line_writes_the_report():

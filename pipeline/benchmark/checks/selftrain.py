@@ -8,6 +8,10 @@ real one). What is held against it:
 
 * the settings are `main.toml`'s (the teacher's rule, epsilon, the two models, the clip, Smart Tagging's c_team), and a
   config that lacks an entry is refused by name (test_selftrain_settings_read_main);
+* R027's two configs (pipeline/benchmark/configs/r027/) are the base config (r024_both.toml: main.toml's entries today,
+  and an adoption leaves it as it is) with its one `shape_possession` entry replaced by the declared `shape_selftrain`
+  one and nothing else re-chosen, the second without the refiner
+  (test_selftrain_r027_configs_are_the_base_with_the_source_swapped);
 * rung 3's head is the penalised, class-balanced fit that the design declares, against scipy's L-BFGS-B on the same
   objective, then an intercept that is E2 on z plus the head; standardised as declared; the same bits whatever the
   order of the rows; refusals (test_selftrain_head_fit_matches_scipy, test_selftrain_head_is_standardised_...);
@@ -53,10 +57,11 @@ import numpy as np
 import possession_metrics as pm
 from pipeline.benchmark import conventions, selftrain, train_shape, truth
 from pipeline.benchmark import run as benchmark_run
-from pipeline.benchmark.checks.common import loading, strict_json, synthetic_calibration
+from pipeline.benchmark.checks.common import CONFIG_FOLDER, loading, strict_json, synthetic_calibration
 from pipeline.benchmark.dfl import DflMatch
 from pipeline.benchmark.run import BenchmarkError
 from pipeline.benchmark.train_dead_ball import served_inputs
+from pipeline.config import load_config
 from pipeline.contracts import RunContext
 from pipeline.evidence import controlled_touch, recalibration, shape_features, shape_possession, smart_tagging
 from pipeline.selftest import (SHAPE_COLUMN, expect_error, play_inputs, stump, touch_dead_model, write_model,
@@ -72,6 +77,20 @@ TOP_KEYS = {"kind", "profile", "seeds", "matches", "calibration", "settings", "c
             "pooled", "oracles", "gate"}
 MATCH_KEYS = {"gate_frames", "variants", "hold", "touch", "oracle", "teacher", "fallbacks", "cells"}
 VARIANTS = ("base", "rung1", "e1", "single", "rung3")
+R027_CONFIGS = os.path.join(CONFIG_FOLDER, "r027")
+# What R027's configs are made from, and what the check below holds them to (main.toml is the candidate once adopted)
+BASE_CONFIG = os.path.join(selftrain.ROOT, "pipeline", "configs", "r024_both.toml")
+# The entry that the design's section 2 declares for R027's candidate, as written there (the source's docstring has it
+# too): the base's one `shape_possession` entry is replaced by it, comments included, and nothing else is touched.
+R027_ENTRY = """[[evidence]]
+kind = "shape_selftrain"
+weight = 0.2
+model = "pipeline/models/shape_possession_hgb.json"
+scope = "all"
+min_prob = 0.02
+alive_model = "pipeline/models/dead_ball_hgb.json"     # the teacher's dead-ball mask
+teacher = { radius = 1.5, max_rel_speed = 6.0, min_frames = 1, duel_radius = 1.0 }
+epsilon = 0.07                                         # 1 - controlled_touch's confidence 0.93 (R013)"""
 
 
 # -- a scene with enough touches for the fits -------------------------------------------------------------------------
@@ -270,6 +289,68 @@ def test_selftrain_settings_read_main():
         expect_error(ValueError, lambda: selftrain.settings(write_text(root, "one.toml", config_text(confidence=1.0))),
                      "confidence", "epsilon")
         expect_error(ValueError, lambda: selftrain.settings(os.path.join(root, "absent.toml")), "absent.toml")
+
+
+def paragraphs_after_description(config):
+    """The blank-line separated paragraphs of a config's text after its description line, each stripped: what is left
+    when the header comment and the description, each config's own, are taken off."""
+    _, found, rest = config.text.partition("\ndescription = ")
+    assert found, "{} has no description line".format(config.stem)
+    return [paragraph.strip() for paragraph in rest.split("\n", 1)[1].split("\n\n")]
+
+
+def test_selftrain_r027_configs_are_the_base_with_the_source_swapped():
+    """R027's two configs are the base config, r024_both.toml, with its one `shape_possession` entry replaced by the
+    declared `shape_selftrain` one and nothing else re-chosen; the second has no [[refine]], for the shift's
+    re-derivation (R012's rule).
+
+    The base is r024_both.toml and not main.toml, so that the check holds after an automatic adoption, when main.toml
+    is itself the candidate and has no `shape_possession` entry to replace. Today the two have the same entries. Both
+    configs load against the real registries. After the header comment and the description, whose texts are each
+    config's own, r027_post's paragraphs are the base's with the `shape_possession` one replaced by R027_ENTRY, the
+    declared entry, to the character, and r027_preshift's are r027_post's without the last, the refiner's. Read as
+    configs, every other source, the decoder and the refiners are the base's, and the entry's teacher, epsilon, models,
+    clip, scope and weight are what selftrain.settings(base) and the base's own entries give: the touch rule's table
+    with its duel radius, 1 minus its confidence, the two model paths, P07's clip, scope and weight. So no constant is
+    re-chosen in them. The header comment names R027 and the descriptions say what each config is.
+    """
+    base = load_config(BASE_CONFIG)
+    post = load_config(os.path.join(R027_CONFIGS, "r027_post.toml"))
+    preshift = load_config(os.path.join(R027_CONFIGS, "r027_preshift.toml"))
+    expected = [R027_ENTRY if paragraph.startswith('[[evidence]]\nkind = "shape_possession"') else paragraph
+                for paragraph in paragraphs_after_description(base)]
+    assert expected.count(R027_ENTRY) == 1, "the base has exactly one shape_possession entry"
+    assert paragraphs_after_description(post) == expected
+    assert expected[-1].startswith("# ") and "[[refine]]" in expected[-1], "the last paragraph is the refiner's"
+    assert paragraphs_after_description(preshift) == expected[:-1]
+    assert [component.kind for component in post.refine] == ["shift_edges"] and preshift.refine == ()
+    swapped = {"shape_possession": "shape_selftrain"}
+    for config in (post, preshift):
+        assert config.text.startswith("# R027"), "the header comment names R027: " + config.stem
+        assert "R027" in config.description and "shape_selftrain" in config.description, config.description
+        assert config.description != base.description and (config.seed, config.scope) == (base.seed, base.scope)
+        assert [swapped.get(c.kind, c.kind) for c in base.evidence] == [c.kind for c in config.evidence]
+        assert [c.name for c in config.evidence] == [swapped.get(c.name, c.name) for c in base.evidence]
+        assert config.decoder == base.decoder
+        for ours, theirs in zip(config.evidence, base.evidence):
+            if theirs.kind not in swapped:
+                assert ours == theirs, (ours, theirs)
+    assert post.refine == base.refine and "shift_edges" in post.description
+    assert "without shift_edges" in preshift.description, preshift.description
+    old = [c for c in base.evidence if c.kind == "shape_possession"][0]
+    touch = [c for c in base.evidence if c.kind == "controlled_touch"][0].params
+    entry = [c for c in post.evidence if c.kind == "shape_selftrain"][0]
+    assert entry == [c for c in preshift.evidence if c.kind == "shape_selftrain"][0]
+    assert set(entry.params) == {"model", "alive_model", "teacher", "epsilon", "scope", "min_prob"}, entry.params
+    settings = selftrain.settings(BASE_CONFIG)
+    teacher = {key: touch[key] for key in ("radius", "max_rel_speed", "min_frames")}
+    assert entry.params["teacher"] == settings.teacher == dict(teacher, duel_radius=touch.get("duel_radius", 1.0))
+    assert entry.params["teacher"] == recalibration.check_teacher(entry.params["teacher"])
+    assert entry.params["epsilon"] == settings.epsilon == round(1.0 - touch["confidence"], 12) == 0.07
+    assert entry.params["alive_model"] == settings.alive_model and entry.params["model"] == settings.shape_model
+    assert entry.params["min_prob"] == settings.min_prob == old.params["min_prob"]
+    assert (entry.params["scope"], entry.params["model"], entry.weight) == ("all", old.params["model"], old.weight)
+    assert entry.weight == 0.2 and entry.name == "shape_selftrain", entry
 
 
 def test_selftrain_constants_are_the_designs():

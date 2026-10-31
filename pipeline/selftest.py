@@ -4691,6 +4691,475 @@ def test_recalibration_rejects_bad_arguments():
                      "finite")
 
 
+# -- the self-trained shape source (P22(b)) ---------------------------------------------------------------------------
+#
+# `shape_selftrain` is `shape_possession`'s logit plus an intercept per graded block, fitted at run time on the other
+# blocks' touch-episode frames (recalibration.py, checked above). What is held here is the source: its parameters, that
+# with every offset 0 it is P07 to the bit, that it adds the *other* block's offset to z before the clip, that
+# relabelling the teams still gives 1 - home, where it speaks and what it remembers. The scene is the touch rule's:
+# twelve players and a ball that one of them carries, half a metre ahead of him, for 60 to 140 frames at a time, the
+# two teams in turn. Everybody shifts along the pitch with the carrier's team, so that adv_gap, the one feature of the
+# stump model, says who has the ball, except for a few frames after a change, where the shift lags, and only on away's
+# frames: z is +-1.5, the labels do not agree with it equally for the two teams, and that is what makes the fitted
+# offsets non-zero. The ball is missing in long runs, nobody is tracked for 25 frames now and then, and the dead-ball
+# model is a stump that calls the ball dead beyond a line, which this ball never crosses.
+
+SELFTRAIN_ROWS = (4200, 3900)                  # the scene's two graded blocks, in frames
+SELFTRAIN_TEACHER = {"radius": 1.5, "max_rel_speed": 6.0, "min_frames": 1, "duel_radius": 1.0}    # main.toml's rule
+SELFTRAIN_EPSILON = 0.07                       # 1 - main.toml's touch confidence 0.93
+SELFTRAIN_LOGIT = 1.5                          # |z| of the stump model below: (2.5 - (-0.5)) / 2, exactly
+
+
+def selftrain_scene(seed=0, rows=SELFTRAIN_ROWS, gap=25, shift=4.0):
+    """(players, ball, teams, graded): the section's scene in metres, `rows` frames in each of two graded blocks with
+    `gap` frames between them (the teams swap ends): the players (n, 12, 2) with slots 0-5 home, the ball (n, 2) and
+    `teams` (12,). `shift` leans the whole shape towards home along the pitch: adv_gap is 12 * lead + 2 * shift m."""
+    rng = np.random.default_rng([27, seed])
+    length = PLAY_PITCH[0]
+    n = sum(rows) + gap
+    graded = [(1, 0, rows[0]), (2, rows[0] + gap, n)]
+    teams = np.array([0] * 6 + [1] * 6)
+    formation = np.concatenate([np.stack([np.linspace(15.0, 45.0, 6), np.linspace(10.0, 58.0, 6)], axis=1),
+                                np.stack([np.linspace(60.0, 90.0, 6), np.linspace(58.0, 10.0, 6)], axis=1)])
+    players, ball = np.full((n, 12, 2), np.nan), np.full((n, 2), np.nan)
+    for half, start, stop in graded:
+        m = stop - start
+        spans = []
+        while sum(spans) < m:
+            spans.append(int(rng.integers(60, 141)))
+        team_of = (np.arange(len(spans)) + int(rng.integers(2))) % 2             # the teams take the ball in turn
+        slot_of = rng.integers(6, size=len(spans)) + 6 * team_of
+        carrying, carrier = np.repeat(team_of, spans)[:m], np.repeat(slot_of, spans)[:m]
+        lead = np.convolve(np.where(carrying == 0, 1.0, -1.0), np.ones(51) / 51, mode="same") + shift / 6.0
+        base = formation if half == 1 else formation * [-1.0, 1.0] + [length, 0.0]
+        xy = base[None] + np.cumsum(rng.normal(size=(m, 12, 2)) * 0.03, axis=0)
+        xy[:, :, 0] += ((1.0 if half == 1 else -1.0) * 6.0 * lead)[:, None]
+        players[start:stop] = xy
+        ball[start:stop] = xy[np.arange(m), carrier] + [0.5, 0.0]
+    seen, position, run_is_seen = np.zeros(n, dtype=bool), 0, True
+    while position < n:                                                # long runs of a seen, then a missing ball
+        span = int(rng.integers(200, 601)) if run_is_seen else int(rng.integers(150, 401))
+        seen[position:position + span] = run_is_seen
+        position, run_is_seen = position + span, not run_is_seen
+    ball[~seen] = np.nan
+    middle = slice(rows[0], rows[0] + gap)         # between the halves: tracked, though nobody grades it, the ball seen
+    players[middle] = formation + rng.normal(size=(gap, 12, 2)) * 0.03          # on the first half of it only
+    ball[middle] = np.where((np.arange(gap) < gap // 2)[:, None], formation[0] + [0.5, 0.0], np.nan)
+    for _, start, stop in graded:
+        for hole in rng.integers(start + 100, stop - 100, size=3):
+            players[hole:hole + 25] = np.nan                           # nobody tracked: no shape, no teacher row
+    return players, ball, teams, graded
+
+
+def selftrain_files(root):
+    """(the shape model's path, the dead-ball model's) in `root`: a stump on adv_gap whose logit is +-SELFTRAIN_LOGIT
+    where the gap has a sign and 0 where it has none, and one that calls the ball dead 0.5 m beyond a line."""
+    return (write_shape_model(root, full=shape_model(0.5, -1.0, 2.0), name="selftrain_shape.json"),
+            write_model(root, full=touch_dead_model(3.0, -3.0), name="selftrain_dead.json"))
+
+
+def selftrain_run(players, ball, teams, graded, game="BAR-ATH"):
+    from pipeline.contracts import RunContext
+    inputs = play_inputs(players, ball, teams=teams, graded=graded)
+    inputs.game = game
+    return RunContext(inputs=inputs, seed=0)
+
+
+def selftrain_z(players, teams, graded):
+    """z as the stump model gives it: SELFTRAIN_LOGIT times the sign of adv_gap (0 where it is NaN) on the graded frames
+    where someone is present, NaN elsewhere. Worked out here from the features, and not by walking the trees."""
+    gap = shape_matrix(players, teams, graded)[:, SHAPE_COLUMN["adv_gap"]]
+    present = someone_present(players) & block_mask(len(players), graded)
+    z = np.full(len(players), np.nan)
+    z[present] = np.where(np.isnan(gap[present]), 0.0, np.sign(gap[present])) * SELFTRAIN_LOGIT
+    return z
+
+
+def selftrain_fit(run, shape, dead, **changes):
+    from pipeline.evidence import shape_selftrain
+    values = dict(model=shape, alive_model=dead, teacher=dict(SELFTRAIN_TEACHER), epsilon=SELFTRAIN_EPSILON)
+    values.update(changes)
+    return shape_selftrain.fit(run, **values)
+
+
+def selftrain_home(run, shape, dead, **changes):
+    """The registered source's `home` on `run`, with main.toml's teacher and epsilon unless `changes` says otherwise,
+    after the contract's checks: `alive` is NaN and both arrays are read-only."""
+    from pipeline.contracts import check_evidence
+    from pipeline.evidence import REGISTRY
+    values = dict(model=shape, alive_model=dead, teacher=dict(SELFTRAIN_TEACHER), epsilon=SELFTRAIN_EPSILON)
+    values.update(changes)
+    evidence = REGISTRY["shape_selftrain"](run, **values)
+    check_evidence(evidence, len(run.inputs.atd.ball_xy))
+    assert np.isnan(evidence.alive).all(), "shape_selftrain has no opinion on whether the ball is alive"
+    assert not (evidence.home.flags.writeable or evidence.alive.flags.writeable), "the arrays are read-only"
+    return evidence.home
+
+
+def rewrite_model(path, writer):
+    """`writer()` rewrites the model file at `path`; it then gets a later modification time. The caches compare the size
+    and the time, and a rewrite of the same length within one tick of the file system's clock (most of them, in a
+    probe on Windows) would otherwise be served stale."""
+    before = os.stat(path).st_mtime_ns
+    writer()
+    os.utime(path, ns=(before + 10 ** 9, before + 10 ** 9))
+
+
+def test_shape_selftrain_parameters():
+    import inspect
+    from pipeline.evidence import REGISTRY, shape_possession, shape_selftrain
+    players, teams, graded = shape_scene(3)
+    run = selftrain_run(players, nothing(len(players)), teams, graded)
+    with tempfile.TemporaryDirectory() as root:
+        shape, dead = selftrain_files(root)
+        absent = os.path.join(root, "absent.json")
+        ok = dict(model=shape, alive_model=dead, teacher=dict(SELFTRAIN_TEACHER), epsilon=SELFTRAIN_EPSILON)
+
+        def source(**changes):
+            return REGISTRY["shape_selftrain"](run, **dict(ok, **changes))
+
+        def fit(**changes):
+            return shape_selftrain.fit(run, **dict(ok, **changes))
+
+        # the signature: all keywords after the run; scope and min_prob are shape_possession's, with its defaults
+        parameters = inspect.signature(shape_selftrain.compute).parameters
+        names = ["run", "model", "alive_model", "teacher", "epsilon", "scope", "min_prob"]
+        assert list(parameters) == names, parameters
+        assert all(parameters[name].kind is inspect.Parameter.KEYWORD_ONLY for name in list(parameters)[1:])
+        shape_parameters = inspect.signature(shape_possession.compute).parameters
+        for name in ("scope", "min_prob"):
+            assert parameters[name].default == shape_parameters[name].default, name
+        assert (parameters["scope"].default, parameters["min_prob"].default) == ("gaps", 0.02)
+        fitted = inspect.signature(shape_selftrain.fit).parameters
+        assert list(fitted) == ["run", "model", "alive_model", "teacher", "epsilon"], fitted
+        assert all(fitted[name].kind is inspect.Parameter.KEYWORD_ONLY for name in list(fitted)[1:])
+        # the teacher table is checked strictly, by recalibration.check_teacher, and so are epsilon and the rest, before
+        # any file is read (the model is absent in each of these calls: it is not what is complained of)
+        for call in (source, fit):
+            for key, value in (("hold", 0.6), ("confidence", 0.93)):
+                expect_error(ValueError, lambda: call(model=absent, teacher=dict(SELFTRAIN_TEACHER, **{key: value})),
+                             "shape_selftrain", "teacher", key, "fixes")
+            expect_error(ValueError, lambda: call(model=absent, teacher={"radious": 1.5, "max_rel_speed": 6.0,
+                                                                         "min_frames": 1}),
+                         "shape_selftrain", "teacher", "radious", "radius")
+            for key in ("radius", "max_rel_speed", "min_frames"):
+                short = {k: v for k, v in SELFTRAIN_TEACHER.items() if k != key}
+                expect_error(ValueError, lambda: call(model=absent, teacher=short), "shape_selftrain", "teacher", key)
+            for bad in (None, [1.5, 6.0, 1], "radius", 1.5):
+                expect_error(ValueError, lambda: call(model=absent, teacher=bad), "shape_selftrain", "teacher", "table")
+            for bad in (0.0, 0.5, 0.7, -0.07, 0, 1, True, False, "0.07", None, [0.07], float("nan"), float("inf")):
+                expect_error(ValueError, lambda: call(model=absent, epsilon=bad), "shape_selftrain", "epsilon")
+        for bad in ("GAPS", "", "none", None, True, 1, ["gaps"]):
+            expect_error(ValueError, lambda: source(model=absent, scope=bad), "shape_selftrain", "scope", "gaps", "all")
+        for bad in (0.0, 0.5, 0.6, -0.1, True, False, "0.1", None, float("nan"), float("inf")):
+            expect_error(ValueError, lambda: source(model=absent, min_prob=bad), "shape_selftrain", "min_prob")
+        expect_error(TypeError, lambda: fit(scope="all"), "scope")                 # the fit has no scope and no clip
+        expect_error(TypeError, lambda: fit(min_prob=0.02), "min_prob")
+        for key in ok:
+            lacking = {k: v for k, v in ok.items() if k != key}
+            expect_error(TypeError, lambda: REGISTRY["shape_selftrain"](run, **lacking), key)
+        # the two model files: a value that is no path, and a file that is absent or of another model, each refused by
+        # the loader that owns the file, with its own name and its trainer
+        for bad in (None, 5, "", True):
+            expect_error(ValueError, lambda: source(model=bad), "shape_selftrain", "model must be")
+            expect_error(ValueError, lambda: source(alive_model=bad), "shape_selftrain", "alive_model must be")
+        expect_error(ValueError, lambda: source(model=absent), "shape_possession", "absent.json", SHAPE_TRAINER)
+        expect_error(ValueError, lambda: source(alive_model=absent), "dead_ball_model", "absent.json")
+        expect_error(ValueError, lambda: source(model=dead), "shape_possession", "features", SHAPE_TRAINER)
+        expect_error(ValueError, lambda: source(alive_model=shape), "dead_ball_model", "features")
+        # what is fine: the defaults are scope "gaps" and min_prob 0.02, numpy numbers from a sweep, an optional
+        # duel_radius
+        assert np.array_equal(source().home, source(scope="gaps", min_prob=0.02).home, equal_nan=True)
+        source(epsilon=np.float64(0.07), min_prob=np.float64(0.25), scope="all")
+        source(scope="all", min_prob=0.001, teacher=dict(SELFTRAIN_TEACHER, duel_radius=0.8))
+        source(teacher={k: v for k, v in SELFTRAIN_TEACHER.items() if k != "duel_radius"})
+        assert len(fit()) == len(graded) and all(block.offset == 0.0 for block in fit(epsilon=0.2))
+
+
+def test_shape_selftrain_equals_p07_when_every_offset_is_zero():
+    from pipeline.contracts import RunContext
+    from pipeline.evidence import REGISTRY
+    with tempfile.TemporaryDirectory() as root:
+        make_synthetic_bundle(root)
+        # two blocks of 300 frames: the teacher has too few rows for the floor
+        inputs = synthetic_inputs(root)
+        run = RunContext(inputs=inputs, seed=0)
+        shape = write_shape_model(root, full=shape_model(0.5, -1.0, 2.0), name="selftrain_shape.json")
+        dead = write_model(root, name="selftrain_dead.json")
+        for game in ("BAR-ATH", "FOLD1"):                # `full`, and the fold both models have for this game
+            inputs.game = game
+            found = selftrain_fit(run, shape, dead)
+            assert [(block.offset, block.fallback) for block in found] == [(0.0, "few rows")] * 2, found
+            assert all(min(block.rows_home, block.rows_away) < 500 for block in found), found
+            for scope in ("gaps", "all"):
+                for min_prob in (0.02, 0.2, 0.0001):
+                    ours = REGISTRY["shape_selftrain"](run, model=shape, alive_model=dead,
+                                                       teacher=dict(SELFTRAIN_TEACHER), epsilon=SELFTRAIN_EPSILON,
+                                                       scope=scope, min_prob=min_prob)
+                    p07 = REGISTRY["shape_possession"](run, model=shape, scope=scope, min_prob=min_prob)
+                    assert np.array_equal(ours.home, p07.home, equal_nan=True), (game, scope, min_prob)
+                    assert np.array_equal(ours.alive, p07.alive, equal_nan=True), (game, scope, min_prob)
+                    assert (~np.isnan(ours.home)).sum() > (60 if scope == "gaps" else 400), (game, scope)
+
+
+def test_shape_selftrain_applies_the_other_blocks_offset():
+    from functools import partial
+    from pipeline.evidence import REGISTRY, recalibration
+    players, ball, teams, graded = selftrain_scene()
+    n, blocks = len(players), [(start, stop) for _, start, stop in graded]
+    z = selftrain_z(players, teams, graded)
+    present, seen = ~np.isnan(z), ~np.isnan(ball[:, 0])
+    # Designed labels: a block's rows are 70% of its frames, those where nobody is present too, and they say home with
+    # the probability sigmoid(z + planted): 0.0 in the first block, where the labels follow z, and -2.0 in the second
+    rng = np.random.default_rng([27, 99])
+    y, rows = np.full(n, np.nan), np.zeros(n, dtype=bool)
+    for (start, stop), planted in zip(blocks, (0.0, -2.0)):
+        chosen = rng.random(stop - start) < 0.7
+        logit = np.where(np.isnan(z[start:stop]), 0.0, z[start:stop]) + planted
+        drawn = (rng.random(stop - start) < 1.0 / (1.0 + np.exp(-logit))).astype(np.float64)
+        rows[start:stop], y[start:stop] = chosen, np.where(chosen, drawn, np.nan)
+    assert (rows & ~present).any(), "some rows have nobody present: z is NaN there and they are no rows"
+    fit = partial(recalibration.noise_aware_offset, epsilon=SELFTRAIN_EPSILON)
+    expected = recalibration.block_offsets(z, y, rows, blocks, fit=fit)
+    assert [block.fallback for block in expected] == [None, None], expected
+    assert min(min(block.rows_home, block.rows_away) for block in expected) >= 500, expected
+    assert abs(expected[0].offset - expected[1].offset) > 0.3 and min(abs(block.offset) for block in expected) > 0.2, \
+        "the two blocks' offsets must differ and be worth adding: {}".format(expected)
+    for k, other in ((0, 1), (1, 0)):                    # block k is fitted on the other block's rows alone
+        start, stop = blocks[other]
+        usable = rows[start:stop] & present[start:stop]
+        assert expected[k].fitted == fit(z[start:stop][usable], y[start:stop][usable].astype(np.int64)), k
+    adapted = z.copy()
+    for (start, stop), block in zip(blocks, expected):
+        adapted[start:stop] += block.offset
+
+    labels = {"y": y, "rows": rows}
+    real, asked = recalibration.teacher_labels, []
+    recalibration.teacher_labels = lambda run, *, alive_model, teacher: asked.append((alive_model, dict(teacher))) or (
+        labels["y"].copy(), labels["rows"].copy())
+    try:
+        with tempfile.TemporaryDirectory() as root:
+            shape, dead = selftrain_files(root)
+            run = selftrain_run(players, ball, teams, graded)
+            found = selftrain_fit(run, shape, dead)
+            assert [(b.fallback, b.rows_home, b.rows_away) for b in found] == \
+                [(b.fallback, b.rows_home, b.rows_away) for b in expected], found
+            assert all(abs(b.offset - e.offset) <= 1e-9 for b, e in zip(found, expected)), (found, expected)
+            # home is the clipped sigmoid of z plus the block's offset, where P07 speaks, at both scopes and two clips
+            home = selftrain_home(run, shape, dead, scope="all")
+            assert np.array_equal(~np.isnan(home), present)
+            assert np.abs(home[present] - np.clip(1.0 / (1.0 + np.exp(-adapted[present])), 0.02, 0.98)).max() <= 1e-12
+            gaps = selftrain_home(run, shape, dead, scope="gaps", min_prob=0.1)
+            assert np.array_equal(~np.isnan(gaps), present & ~seen)
+            assert np.abs(gaps[present & ~seen]
+                          - np.clip(1.0 / (1.0 + np.exp(-adapted[present & ~seen])), 0.1, 0.9)).max() <= 1e-12
+            assert asked == [(dead, dict(SELFTRAIN_TEACHER))], \
+                "one teacher call for all of it, with the checked table (duel_radius in it) and the model as written"
+
+            # a block whose other block gives no away row is P07 there, to the bit: 0.0, "few rows", and no exception
+            start, stop = blocks[1]
+            lopsided = rows.copy()
+            lopsided[start:stop] &= y[start:stop] == 1.0
+            labels["rows"] = lopsided
+            other_run = selftrain_run(players, ball, teams, graded)           # a new Inputs: the offsets are remembered
+            found = selftrain_fit(other_run, shape, dead)
+            assert (found[0].offset, found[0].fallback, found[0].rows_away) == (0.0, "few rows", 0), found
+            assert found[1].fallback is None and abs(found[1].offset - expected[1].offset) <= 1e-9, found
+            home = selftrain_home(other_run, shape, dead, scope="all")
+            p07 = REGISTRY["shape_possession"](other_run, model=shape, scope="all").home
+            first, second = slice(*blocks[0]), slice(*blocks[1])
+            assert np.array_equal(home[first], p07[first], equal_nan=True), "a block with no offset is P07's"
+            assert np.abs(home[second] - p07[second])[present[second]].max() > 0.01, "and the other block is not"
+
+            # labels that are all against the shape (home where z says away): the likelihood has no maximum in the
+            # bracket, for either block, and the source is P07's with that reason given, and no exception
+            labels["y"], labels["rows"] = np.where(np.isnan(y), np.nan, (z < 0).astype(np.float64)), rows
+            against = selftrain_run(players, ball, teams, graded)
+            found = selftrain_fit(against, shape, dead)
+            assert [(b.offset, b.fallback) for b in found] == [(0.0, "no root")] * 2, found
+            assert min(min(b.rows_home, b.rows_away) for b in found) >= 500, "it is the root, and not the floor"
+            home = selftrain_home(against, shape, dead, scope="all")
+            assert np.array_equal(home, REGISTRY["shape_possession"](against, model=shape, scope="all").home,
+                                  equal_nan=True)
+    finally:
+        recalibration.teacher_labels = real
+
+
+def test_shape_selftrain_is_antisymmetric():
+    from pipeline.evidence import REGISTRY
+    players, ball, teams, graded = selftrain_scene(seed=1)
+    with tempfile.TemporaryDirectory() as root:
+        shape, dead = selftrain_files(root)
+        runs = [selftrain_run(players, ball, flipped, graded) for flipped in (teams, 1 - teams)]
+        found = [selftrain_fit(run, shape, dead) for run in runs]
+        for one, other in zip(*found):               # the real teacher, on a scene whose touches fill both classes
+            assert one.fallback is None and other.fallback is None, (one, other)
+            assert min(one.rows_home, one.rows_away) >= 500 and abs(one.offset) > 0.1, one
+            assert (one.rows_home, one.rows_away) == (other.rows_away, other.rows_home), "classes swap with the teams"
+            assert abs(one.offset + other.offset) <= 1e-9, (one, other)
+        for min_prob in (0.02, 0.2):                 # at 0.2 the clip binds on some frames and not on others
+            home, relabelled = (selftrain_home(run, shape, dead, scope="all", min_prob=min_prob) for run in runs)
+            known = ~np.isnan(home)
+            assert known.sum() > 7000 and np.array_equal(known, ~np.isnan(relabelled)), min_prob
+            assert np.allclose(home[known], 1.0 - relabelled[known], rtol=0, atol=1e-9), \
+                "min_prob {}: relabelling the teams is not 1 - home".format(min_prob)
+            # the check has teeth: the offsets move home away from P07's, which is antisymmetric on its own
+            p07 = REGISTRY["shape_possession"](runs[0], model=shape, scope="all", min_prob=min_prob).home
+            assert np.abs(home - p07)[known].max() > 0.02, min_prob
+        clipped = (home[known] == 0.2) | (home[known] == 0.8)
+        assert clipped.any() and not clipped.all(), "the clip must bind on some frames and not on all"
+
+
+def test_shape_selftrain_registry_and_scope():
+    from pipeline import evidence
+    from pipeline.evidence import REGISTRY, shape_selftrain
+    assert REGISTRY["shape_selftrain"] is shape_selftrain.compute
+    assert list(REGISTRY) == sorted(REGISTRY), "one line a source, in alphabetical order"
+    assert evidence.match_only("shape_selftrain") is False, "it needs no asset that only our match has"
+    players, ball, teams, graded = selftrain_scene(seed=2)
+    n = len(players)
+    graded_rows, someone, seen = block_mask(n, graded), someone_present(players), ~np.isnan(ball[:, 0])
+    assert (graded_rows & someone & seen).any() and (graded_rows & someone & ~seen).any()
+    assert (graded_rows & ~someone).any(), "nobody is tracked on some graded frames"
+    assert (~graded_rows & someone & ~seen).any() and (~graded_rows & someone & seen).any(), "ungraded ones have both"
+    with tempfile.TemporaryDirectory() as root:
+        shape, dead = selftrain_files(root)
+        run = selftrain_run(players, ball, teams, graded)
+        atd = run.inputs.atd
+        arrays = [atd.players_xy, atd.ball_xy, atd.slot_team]
+        saved = [array.copy() for array in arrays]
+        for array in arrays:
+            array.flags.writeable = False
+        found = selftrain_fit(run, shape, dead)
+        assert all(block.fallback is None and abs(block.offset) > 0.05 for block in found), found
+        home_all = selftrain_home(run, shape, dead, scope="all")
+        assert np.array_equal(~np.isnan(home_all), graded_rows & someone), "all: graded frames with someone present"
+        home_gaps = selftrain_home(run, shape, dead, scope="gaps")
+        assert np.array_equal(~np.isnan(home_gaps), graded_rows & someone & ~seen), "gaps: where the ball is missing"
+        both = ~np.isnan(home_gaps)
+        assert np.array_equal(home_all[both], home_gaps[both]), "the scope only chooses where to speak"
+        assert np.array_equal(selftrain_home(run, shape, dead), home_gaps, equal_nan=True), "gaps is the default"
+        p07 = REGISTRY["shape_possession"](run, model=shape, scope="all").home
+        assert np.abs(home_all - p07)[~np.isnan(home_all)].max() > 0.02, "the offsets reach the frames where it speaks"
+        assert np.isnan(home_all[graded_rows & ~someone]).all() and np.isnan(home_all[~graded_rows]).all()
+        for array, copy in zip(arrays, saved):
+            assert np.array_equal(array, copy, equal_nan=True), "the source must not write to the inputs"
+        again = selftrain_home(run, shape, dead, scope="all")
+        assert np.array_equal(again, home_all, equal_nan=True), "a second call gives the same numbers"
+
+
+def test_shape_selftrain_remembers_its_offsets():
+    import gc
+    from pipeline.evidence import recalibration, shape_selftrain
+    players, ball, teams, graded = selftrain_scene(seed=3)
+    real, asked = recalibration.teacher_labels, []
+    recalibration.teacher_labels = lambda run, *, alive_model, teacher: asked.append(1) or real(
+        run, alive_model=alive_model, teacher=teacher)
+    try:
+        with tempfile.TemporaryDirectory() as root:
+            shape, dead = selftrain_files(root)
+            run = selftrain_run(players, ball, teams, graded)
+            first = selftrain_fit(run, shape, dead)
+            assert len(asked) == 1 and all(block.fallback is None for block in first), (asked, first)
+            again = selftrain_fit(run, shape, dead)
+            assert again == first and again is not first, "remembered, and a list of the caller's own"
+            assert len(asked) == 1
+            first.clear()
+            assert selftrain_fit(run, shape, dead) == again, "the caller's list is not the memo"
+            for scope, min_prob in (("all", 0.02), ("gaps", 0.3), ("all", 0.1)):
+                selftrain_home(run, shape, dead, scope=scope, min_prob=min_prob)
+            no_duel = {k: v for k, v in SELFTRAIN_TEACHER.items() if k != "duel_radius"}
+            assert selftrain_fit(run, shape, dead, teacher=no_duel) == again and len(asked) == 1, \
+                "a table with the default duel_radius written or left out is one table"
+            # another epsilon or teacher is a fit of its own, and both are kept
+            looser = selftrain_fit(run, shape, dead, epsilon=0.2)
+            assert len(asked) == 2 and [b.offset for b in looser] != [b.offset for b in again], (looser, again)
+            assert selftrain_fit(run, shape, dead) == again and selftrain_fit(run, shape, dead, epsilon=0.2) == looser
+            assert len(asked) == 2
+            selftrain_fit(run, shape, dead, teacher=dict(SELFTRAIN_TEACHER, radius=1.0))
+            assert len(asked) == 3
+            # a model file that changed (as long as before, with a later time, as a retrain leaves it) is read again
+            rewrite_model(dead, lambda: write_model(root, full=touch_dead_model(2.0, -3.0), name="selftrain_dead.json"))
+            selftrain_fit(run, shape, dead)
+            assert len(asked) == 4, "the dead-ball model changed"
+            rewrite_model(shape, lambda: write_shape_model(root, full=shape_model(0.5, -2.0, 4.0),
+                                                           name="selftrain_shape.json"))
+            wider = selftrain_fit(run, shape, dead)
+            assert len(asked) == 5 and [b.offset for b in wider] != [b.offset for b in again], "the shape model changed"
+            other = selftrain_run(players, ball, teams, graded)
+            selftrain_fit(other, shape, dead)
+            assert len(asked) == 6, "the memo is per Inputs object"
+            gc.collect()                                  # what earlier checks left behind goes first
+            held = len(shape_selftrain._MEMO)
+            del run, other
+            gc.collect()
+            assert len(shape_selftrain._MEMO) == held - 2, "the memo kept an object"
+    finally:
+        recalibration.teacher_labels = real
+
+
+SELFTRAIN_TRIAL_CONFIG = """
+[[evidence]]
+kind = "nearest_player"
+
+[[evidence]]
+kind = "shape_selftrain"
+weight = 0.2
+model = {model}
+scope = "all"
+min_prob = 0.1
+alive_model = {alive}
+teacher = {{ radius = 1.5, max_rel_speed = 6.0, min_frames = 1, duel_radius = 1.0 }}
+epsilon = 0.07
+
+[decoder]
+kind = "hmm"
+switch_team = 5
+switch_dead = 20
+min_possession = 1
+min_dead = 1
+"""
+
+
+def test_run_end_to_end_synthetic_shape_selftrain():
+    """Config -> registry -> evidence -> hmm -> CSV: the source is found by its kind, its inline table is bound, and its
+    parameters are checked with the source's name."""
+    from pipeline import output
+    from pipeline.config import ConfigError, load_config
+    from pipeline.contracts import X
+    from pipeline.run import run
+    with tempfile.TemporaryDirectory() as root:
+        make_synthetic_bundle(root)
+        shape = write_shape_model(root)
+        dead = write_model(root, name="dead.json")
+        text = SELFTRAIN_TRIAL_CONFIG.format(model=json_string(shape), alive=json_string(dead))
+        inputs = synthetic_inputs(root, graded=[(1, 50, 280), (2, 320, 560)])
+        out_path = os.path.join(root, "selftrain.csv")
+        result = run(load_config(write_text(root, "selftrain.toml", text)), inputs, out_path, log=quiet)
+        outside = np.ones(SYNTHETIC_FRAMES, dtype=bool)
+        outside[50:280] = outside[320:560] = False
+        assert (result.codes[outside] == X).all() and (result.codes[~outside] != X).all()
+        output.validate(out_path, SYNTHETIC_FRAMES, result.codes)
+        source = result.evidence["shape_selftrain"]
+        assert source.weight == 0.2 and np.isnan(source.alive).all() and np.isnan(source.home[outside]).all()
+        assert (~np.isnan(source.home[~outside])).mean() > 0.5, "the source speaks on most graded frames"
+        assert np.nanmin(source.home) >= 0.1 and np.nanmax(source.home) <= 0.9
+        # the teacher has too few rows here for the floor of 500 a class, so what the source says is P07's
+        p07 = shape_home(inputs, shape, scope="all", min_prob=0.1)
+        assert np.array_equal(source.home, p07, equal_nan=True)
+        for old, new in (('scope = "all"', 'scope = "everywhere"'), ("min_prob = 0.1", "min_prob = 0.7"),
+                         ("epsilon = 0.07", "epsilon = 0.7"), ("radius = 1.5", "radius = 1.5, hold = 0.6")):
+            bad = write_text(root, "bad.toml", text.replace(old, new))
+            expect_error(ValueError, lambda: run(load_config(bad), inputs, os.path.join(root, "bad.csv"), log=quiet),
+                         "shape_selftrain")
+        unknown = write_text(root, "unknown.toml", text.replace("epsilon = 0.07", "epsilon = 0.07\nradius = 2"))
+        expect_error(ConfigError, lambda: load_config(unknown), "shape_selftrain", "radius")
+        for key in ("alive_model", "teacher", "epsilon", "model"):
+            lacking = "\n".join(line for line in text.split("\n") if not line.startswith(key + " ="))
+            expect_error(ConfigError, lambda: load_config(write_text(root, "lacking.toml", lacking)), "shape_selftrain",
+                         "missing", key)
+
+
 # -- the dead-ball model (P05) ----------------------------------------------------------------------------------------
 #
 # A hand-made artifact of a couple of trees, so that every number is worked out here and not by the trainer. Its one
