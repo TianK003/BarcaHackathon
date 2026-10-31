@@ -687,7 +687,11 @@ classes balance exactly and the model has no prior to subtract and no notion of 
   (R019). P22(a) shifted the shape model's logit by the home share that EM estimates from its own outputs, and was
   dropped at its feasibility gate on the seven DFL matches (the share's mean error 0.0538 against 0.0623 for guessing
   0.5, needing 0.75 of it; R020): the model's outputs are not a calibrated estimate of a match's possession share, and
-  no score was produced. P08 was not checked on the public window before its
+  no score was produced. P19 trained boosted trees on the seven DFL matches (degraded as `tracking` v3) to say which
+  team has the ball where the ball is seen, and was dropped at its feasibility gate: out of fold it agreed with the
+  per-frame truth on 0.9087 of the frames against 0.8927 for `main.toml`'s decoded labels, +0.0160 pooled against the
+  declared +0.020 and in 3 of 7 matches against the 6 needed (R021); the grid was not run and no spellF1 was produced.
+  P08 was not checked on the public window before its
   adoption, and its strength (weight 0.2, spread `frame`) was Tian's pick between two declared options: no constant came
   from the window. After the adoption `selftest.py --data` scored the window as a correctness check (macroF1 0.6986,
   spellF1 0.4000, against R013's 0.7152 and 0.4649; one possession moves spellF1 by about 0.06 there), and those figures

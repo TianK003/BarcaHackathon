@@ -35,7 +35,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P16](#p16--metricas-sample-games-in-our-ground-truth-providers-conventions) | Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing | boundary timing, grain | M | medium | idea |
 | [P17](#p17--the-restart-team-channel) | Restart-team channel: who restarts after a stoppage, from the players' arrangement | facts 3, 5 (the hold points at the old team after most stoppages) | S–M | ceiling +0.0198 raw (A12); delivered +0.0040 raw at best, bar not met (R014) | dropped → R014, R014b (the source and the decoder's restart states stay, off by default) |
 | [P18](#p18--the-offpitch-profile-dfls-ball-hidden-off-the-pitch-as-ours-is-and-p05-retrained-on-it) | offpitch profile: DFL's ball hidden off the pitch as ours is, and P05 retrained on it | T39 (P05 overstated by the visible out-of-play ball) | M | A13: a perfect dead-ball source adds +0.029 raw on tracking; main.toml on offpitch 0.5509 raw / 0.5296 coarse; hiding the out-of-play ball cost today's P05 0.013 alive/dead F1 (R015) | dropped → R015, R015b (our tracker's off-pitch ball cannot be reproduced by a simple rule; code removed) |
-| [P19](#p19--a-learned-team-model-where-the-ball-is-seen) | A learned team model where the ball is seen: P05's recipe applied to the team | fact 3; A13's largest lever (+0.194 raw where the ball is seen) | M (feasibility S) | guess +0.02 to +0.05 raw; fully benchmarkable | in progress, R021 (part 1 declared) |
+| [P19](#p19--a-learned-team-model-where-the-ball-is-seen) | A learned team model where the ball is seen: P05's recipe applied to the team | fact 3; A13's largest lever (+0.194 raw where the ball is seen) | M (feasibility S) | guess +0.02 to +0.05 raw; fully benchmarkable | dropped → R021 (feasibility: +0.0160 pooled against +0.020, 3 of 7 matches against 6; no spellF1) |
 | [P20](#p20--ball-free-possession-paths-pathcrf-on-our-slots) | Ball-free possession paths: PathCRF (KDD 2026), trained on the same DFL matches | fact 1; A13's gaps (+0.176 raw) | S test, L to adopt | measured: +0.0049 pooled on the gap frames (needed +0.04); PathCRF's own protocol on the clean match reached 0.9172, against P07's 0.8522 on degraded tracking (not like for like) | dropped → R022 (step 0 no-go: +0.0049 under our degradation and the adapter, needed +0.04; code removed, recoverable at `2163406`) |
 | [P21](#p21--wrong-team-slots-measure-the-ceiling-then-repair-them) | Wrong-team slots: measure the ceiling, then repair from tracking or jersey colours | T32 | S test, M | low on the benchmark: all of `tracking`'s player degradation costs `main.toml` 0.013 (A14) | dropped → A16 (step 0's ratio 0.85 < 1.5; the tool is kept for P19's transfer report) |
 | [P22](#p22--the-shape-model-adapted-to-our-two-teams-without-labels) | The shape model adapted to our two teams without labels | fact 1 | S–M | low: guess +0.00 to +0.02 | (a) dropped → R020 (feasibility gate failed: 0.0538 against 0.0623, ratio 0.863 > 0.75); (b) and (c) not tried |
@@ -302,8 +302,11 @@ unchanged (sha256 `0ebdfbec...`).
    - **What may still run** is P14's test B: zero-shot, half a day, one person, CPU only. Run it only if someone is free
      after items 2 and 3. A full build follows only if test B passes *and* P16 finds that our truth is closer to DFL's raw
      grain than to the coarse one.
-2. **Next: P19's feasibility test (half a day), then P19.** The team where the ball is seen holds the largest headroom
-   (+0.194 raw, A13). It is fully benchmarkable and needs no new asset.
+2. **P19's feasibility test: done, no-go (R021).** The team where the ball is seen holds the largest headroom (+0.194
+   raw, A13), but a learned team model beat `main.toml`'s decoded labels per frame by only +0.0160 pooled against the
+   +0.020 declared, and in 3 of 7 matches against the 6 needed (all seven positive, mostly on hold frames). P19 is
+   dropped and its code removed (recoverable at `15e7e14`). Per-frame accuracy is a strict proxy for a decoder vote, and
+   a spellF1 grid was never run: whether to run one is Tian's call, as a new proposal.
 3. **P20's step 0: done, no-go (R022).** PathCRF's published checkpoint on the one DFL match it never trained on,
    degraded to `tracking` v3, against P07 on the same gap frames: +0.0049 pooled against the +0.04 declared (PathCRF's
    own protocol on the clean match reached 0.9172, against P07's 0.8522 on degraded tracking: not like for like). The retry condition did not hold, so P20 is dropped and its code removed (recoverable at
@@ -769,8 +772,11 @@ protocol and bar declared before its runs. Every impact figure below is a guess 
 
 ### P19 — A learned team model where the ball is seen
 
-**Status:** in progress. R021 part 1 (the declaration: model, features, feasibility, grid, bar, transfer) is committed
-before any run.
+**Status: dropped → [R021](results.md) (the feasibility gate failed: out of fold, P19 was right on 0.9087 of the
+frames against 0.8927 for `main.toml`'s decoded labels, +0.0160 pooled against the declared +0.020, and 3 of 7 matches
+cleared it against the 6 needed; all seven deltas are positive, mostly on the hold frames, +0.0257 against +0.0035 in
+episodes). The grid, the bar and the transfer were not run and no spellF1 was produced; the code is removed, recoverable
+at `15e7e14`.** A grid without the per-frame gate would be a new proposal for Tian, conceived after seeing this result.
 
 **Why.** `main.toml` has no learned team source where the ball is seen. `controlled_touch` is a fixed rule with four
 constants, three of them on the edges of R013's grid, and it speaks on only 36.9% of the ball-visible frames on BAR-ATH;

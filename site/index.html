@@ -730,7 +730,6 @@ const DATA = {
   },
 
   nextSteps: [
-    { title: "P19: a learned team model where the ball is seen", text: "A13's largest lever: a perfect team where the ball is seen adds +0.194 raw / +0.231 coarse. Feasibility first (half a day): leave-one-match-out per-frame accuracy against the touch rule and its hold. Fully benchmarkable (“After A14”, item 2)." },
     { title: "The grain of our truth (P16)", text: "Every ball-rich change splits the two truths: R010's decoder, R013's touch rule, A14's ball. Metrica's sample games, in our provider's conventions, are how to learn which truth ours resembles." },
     { title: "Not now: a video ball detector (P14)", text: "A14: the ball is about 6 px wide, smaller than a ViT patch (T46), and a perfect ball in our gaps is worth +0.10 raw but only +0.02 coarse. A half-day zero-shot test only if someone is free." },
     { title: "The deliverables", text: "Regenerate `main.toml`'s file from a clean clone on a second machine, make the repo public as the last step, condense the technical document, and decide before the freeze how much of the benchmark's gain to believe (a decision, not a run: T38, T39, R011). Our advice, not a rule: upload the file early as a safety copy. See [Work to do](#work)." }
@@ -788,7 +787,7 @@ const DATA = {
       built: "R001 · 2026-10-22; sources since",
       summary: "Each source reads the whole match and gives an opinion on every frame; it never decides a label. Deciding (weighing the sources, keeping possessions as intervals, paying for every change) is the decoder's job, so a new source plugs in without touching it and a better decoder improves every source at once. `main.toml` runs four: `controlled_touch`, `shape_possession` and `smart_tagging` for `home`, `dead_ball_model` for `alive`.",
       contract: "**Out:** one `Evidence(alive, home)` per source, float64 per frame in [0, 1], NaN = no opinion. `alive` = P(ball in play); `home` = P(home has it | in play). Read together: P(H) = alive·home, P(A) = alive·(1 − home), P(D) = 1 − alive.",
-      planned: [{ title: "A13 says where", text: "The team side holds the remaining score: a perfect team where the ball is seen is worth +0.194 raw and in the gaps +0.176, a perfect dead ball only +0.029." }, "P19", "P22", "P11", "P13"],
+      planned: [{ title: "A13 says where", text: "The team side holds the remaining score: a perfect team where the ball is seen is worth +0.194 raw and in the gaps +0.176, a perfect dead ball only +0.029." }, "P22", "P11", "P13"],
       traps: ["T12", "T14", "T38", "T39"],
       files: [
         { label: "evidence/README.md", href: "../pipeline/evidence/README.md" },
@@ -1050,7 +1049,7 @@ const DATA = {
         limits: [
           "Silent in the ball gaps; the shape model is the only `home` source there.",
           "It takes the slot's team, so an identity swap next to the ball gives a confident wrong team (T32, P21).",
-          "Three of its constants sit on edges of R013's grid, and R013 advises no second round: a tighter rule covers even fewer of our frames (“After R013”, item 3). The next step on this side is P19, a learned model."
+          "Three of its constants sit on edges of R013's grid, and R013 advises no second round: a tighter rule covers even fewer of our frames (“After R013”, item 3). A learned team model was tried on this side and dropped at its feasibility gate (R021)."
         ],
         files: [
           { label: "controlled_touch.py", href: "../pipeline/evidence/controlled_touch.py" },
@@ -1365,8 +1364,8 @@ const DATA = {
       next: "Declare the adoption rule first, on the sample games alone; derive `H`, `A` and `D` from their events and tracking; measure the switch timing and the grain beside DFL's (A06). It decides whether R013's raw-truth gain helps on our match." },
     { id: "P17", anchor: "p17--the-restart-team-channel", title: "Restart-team channel: who restarts after a stoppage, from the players' arrangement", attacks: "facts 3, 5", effort: "S–M", impact: "ceiling +0.0198 raw (A12); delivered +0.0040 raw at best, bar not met (R014)", status: "dropped", note: "dropped → R014, R014b (code stays, off)" },
     { id: "P18", anchor: "p18--the-offpitch-profile-dfls-ball-hidden-off-the-pitch-as-ours-is-and-p05-retrained-on-it", title: "offpitch profile: DFL's ball hidden off the pitch as ours is, and P05 retrained on it", attacks: "T39", effort: "M", impact: "A13: a perfect dead-ball source adds +0.029 raw; hiding the out-of-play ball cost today's P05 0.013 alive/dead F1 (R015)", status: "dropped", note: "dropped → R015, R015b (code removed)" },
-    { id: "P19", anchor: "p19--a-learned-team-model-where-the-ball-is-seen", title: "A learned team model where the ball is seen: P05's recipe applied to the team", attacks: "fact 3; A13's largest lever (+0.194 raw where the ball is seen)", effort: "M (feasibility S)", impact: "guess +0.02 to +0.05 raw; fully benchmarkable", status: "idea", stage: "evidence",
-      next: "Boosted trees on the ball, the two nearest players of each team, the touch episodes on either side and P07's shape, trained on DFL's `BallPossession`. Feasibility first: leave-one-match-out per-frame accuracy against the touch rule and its hold; go if at least 2 points better in 6 of 7 matches." },
+    { id: "P19", anchor: "p19--a-learned-team-model-where-the-ball-is-seen", title: "A learned team model where the ball is seen: P05's recipe applied to the team", attacks: "fact 3; A13's largest lever (+0.194 raw where the ball is seen)", effort: "M (feasibility S)", impact: "measured: +0.0160 pooled per-frame accuracy against main.toml's decoded labels, gate +0.020 (R021)", status: "dropped", stage: "evidence",
+      note: "dropped → R021 (the feasibility gate failed: 3 of 7 matches won against the 6 needed, all seven positive; the grid was not run and no spellF1 was produced; code removed)" },
     { id: "P20", anchor: "p20--ball-free-possession-paths-pathcrf-on-our-slots", title: "Ball-free possession paths: PathCRF (KDD 2026), trained on the same DFL matches", attacks: "fact 1; A13's gaps (+0.176 raw)", effort: "S test, L to adopt", impact: "measured: +0.0049 pooled on the gap frames, bar +0.04 (R022)", status: "dropped", note: "dropped → R022 (code removed)" },
     { id: "P21", anchor: "p21--wrong-team-slots-measure-the-ceiling-then-repair-them", title: "Wrong-team slots: measure the ceiling, then repair from tracking or jersey colours", attacks: "T32", effort: "S test, M", impact: "low on the benchmark: all of `tracking`'s player degradation costs `main.toml` 0.013 (A14)", status: "dropped", stage: "inputs",
       note: "dropped → A16 (step 0: over-11 frames are 0.11 of the candidate frames against 0.13 of graded frames, ratio 0.85 against the declared 1.5; the measuring tool is kept)" },

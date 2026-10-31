@@ -7064,7 +7064,79 @@ config) is kept at its first place and not counted again, as C2 does for Stage 1
 is a miss" (Advisor (for Tian), §3.2) applies to every threshold of this entry, not only the feasibility's: the bar, each
 veto, the LOMO's sign and its 6 wins in 7, and the transfer's inequality are held as written, with no rounding.
 
-**Part 2, the runs and the verdict:** to be written after the runs.
+**Part 2a: the training and the feasibility run, and the verdict** (2026-10-31, run by the controller). Everything below
+applies part 1 as written (and its amendment); nothing was changed after the run. The grid, the bar and the transfer
+check were not run: the feasibility gate came first, as declared.
+
+**The runs.** Commit `15e7e14`, with `pipeline/benchmark/train_team.py` as of `10bb22b`; `tracking` v3, 3 seeds, all seven
+matches, one process at a time, throttled; every log ends `EXIT=0`. Both synthetic suites and `selftest.py --data` had
+passed on that commit (213 of 213 on the last).
+
+```bash
+python pipeline/benchmark/train_team.py                 # the seven folds and `full`
+python pipeline/benchmark/train_team.py --verify        # retrains and compares
+python pipeline/benchmark/train_team.py --feasibility   # out of fold, against main.toml's decoded labels
+```
+
+**The model.** `pipeline/models/team_model_hgb.json`: 3,587,508 bytes (under the 10 MB limit), sha256
+`07eb5450b6fb2424974ee9d7523eba55afe5b7a176fe8caccfffbfac49668ee1`. `--verify` retrained it and reported it identical
+("is what the code trains"). The rows, at stride 5 with the served ball visible, 23,611 to 31,898 per match (home share
+45.6% to 62.8%). The file was never committed (it is fitted on DFL, and the code is removed below); the commit and the
+hash above restore it exactly: check out `15e7e14` and run the first command.
+
+**The feasibility** (P19 against `main.toml`'s decoded label on the frames that are graded, truth H or A, ball seen and
+decoded H or A; the rule is `controlled_touch` with its hold 0.60, silent frames wrong). Accuracy, then the coarse truth
+on its own frames, then the log-loss (the rule's silent frames scored at 0.5):
+
+| match | frames | P19 | main | rule | P19 − main | P19 coarse | main coarse | P19 log-loss | rule log-loss | rule silent | win |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| J03WMX | 156,781 | 0.9148 | 0.9008 | 0.8962 | +0.0140 | 0.9082 | 0.8997 | 0.2240 | 0.4182 | 198 (0.1%) | no |
+| J03WN1 | 117,577 | 0.8811 | 0.8550 | 0.8521 | +0.0261 | 0.8574 | 0.8353 | 0.2957 | 0.4788 | 46 (0.0%) | yes |
+| J03WOH | 125,206 | 0.9044 | 0.8884 | 0.8728 | +0.0160 | 0.8854 | 0.8710 | 0.2210 | 0.4378 | 198 (0.2%) | no |
+| J03WOY | 133,017 | 0.9001 | 0.8794 | 0.8548 | +0.0207 | 0.8689 | 0.8514 | 0.2526 | 0.4653 | 192 (0.1%) | yes |
+| J03WPY | 142,604 | 0.9132 | 0.8913 | 0.8794 | +0.0219 | 0.8983 | 0.8710 | 0.2073 | 0.4275 | 158 (0.1%) | yes |
+| J03WQQ | 144,515 | 0.9116 | 0.9044 | 0.8901 | +0.0072 | 0.8875 | 0.8927 | 0.2203 | 0.4348 | 145 (0.1%) | no |
+| J03WR9 | 158,908 | 0.9269 | 0.9176 | 0.9068 | +0.0093 | 0.9154 | 0.9103 | 0.1849 | 0.3923 | 254 (0.2%) | no |
+| pooled | 978,608 | 0.9087 | 0.8927 | 0.8806 | +0.0160 | 0.8905 | 0.8782 | 0.2268 | 0.4340 | 1,191 (0.1%) | no |
+
+By frame class, pooled (frames, P19, main, P19 − main):
+
+| class | frames | P19 | main | difference |
+|---|---|---|---|---|
+| in an episode | 425,729 | 0.9368 | 0.9333 | +0.0035 |
+| in the hold | 551,688 | 0.8869 | 0.8612 | +0.0257 |
+| the rule silent | 1,191 | 0.9278 | 0.9387 | −0.0109 |
+| a team over 11 slots | 93,077 | 0.8871 | 0.8576 | +0.0295 |
+| neither over 11 | 885,531 | 0.9110 | 0.8964 | +0.0146 |
+
+**The verdict, by the declared integer test (50 (P19 right − main right) ≥ frames).** 3 of the 7 matches win (J03WN1,
+J03WOY, J03WPY; 6 needed), and the pool does not: +0.0160 against the +0.020 declared. **NO GO.** The pooled gain is
+below the gate by 0.0040 and the matches fall short by three; a miss by any margin is a miss.
+
+**Advisor (for Tian), §8 ruling:** drop P19 as declared; the one retry is not spent, because no retry qualifies.
+- The mechanical reading is a no-go (§3.2 and this entry's amendment). The argument that a per-frame gate is the wrong
+  screen for a decoder vote is an argument against the gate itself, which was weighed when it was kept (§2) and accepted;
+  waiving it after seeing the result would be choosing after seeing.
+- The aggregates name no cause for a retry. The model works with a modest margin and no defect: all seven matches are
+  positive and its log-loss is about half the rule's. On episode frames the rule is already near its ceiling; on hold
+  frames the model already reads the deciding information. Reaching +0.020 in 6 of 7 would need roughly +0.034 on hold
+  frames, and a feature added for that would be a hope and not a cause, which §3.3 excludes.
+
+**Readings (hedged).**
+- The gain is consistent in sign (seven of seven) but small, and most of it sits on the hold frames (+0.0257 on 56% of the
+  frames) and on frames of a team over 11 slots (+0.0295); on episode frames it is +0.0035. The coarse truth agrees in
+  sign on six of seven matches and in the pool (+0.0123).
+- Per-frame accuracy against `main.toml`'s decoded labels is a strict proxy for a decoder vote: the HMM already holds the
+  last team through a pass, so an agreeing vote adds little where it already holds. The gate measured what was declared;
+  how much a spellF1 grid would have moved is not measured, and the result predicts a small effect.
+- A grid run without the per-frame gate (for example the declared 17 configs under R014's bar plus the leave-one-match-out)
+  would be a new proposal for Tian, conceived after seeing this result, with its own declaration. It is not made here.
+
+**Outcome.** P19 is dropped at the feasibility gate; the grid, the bar and the transfer check were not run, and no spellF1
+was produced (`main.toml` is unchanged; `pipeline/` equals main's after the removal). The code (`team_features.py`,
+`team_model.py` and its registry line, `train_team.py`, `team_grid.py`, `team_transfer.py`, their checks and README rows)
+is removed from the branch in one commit, recoverable at `15e7e14`; the model is restored from it by the command above and
+checked against the sha256 above. Gitignored leftovers on the machine that ran it: `data/runs/r021/`.
 
 ## Submission log
 
