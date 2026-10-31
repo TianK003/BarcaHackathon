@@ -798,14 +798,12 @@ compares it with the code before the change).
 ```
 
 `diagnose.py` (A19, P23 B and D) runs a config on the benchmark once and writes `<data dir>/runs/diagnose/<stem>.json`,
-aggregates of DFL only. It has three parts.
+aggregates of DFL only. It has two parts.
 - **The ladder.** For each truth it decomposes where spellF1 goes between IoU 0.3 and 0.7: every pair the scorer
   matches at 0.3 is clean, merge, split or both by its same-team overlaps, and each class's loss up the ladder is
   given in spellF1 units. The clean pairs' edge errors are reported too.
 - **The calibration.** Each source and the hmm's posterior against the raw truth: log-loss, Brier, ECE, the reliability
   table and a Platt fit (α below 1 is overconfident).
-- **The edge counts.** With `edges = "posterior"`, the counts of R025's rule: how many changes moved, by how much,
-  and how many were left in place, and why.
 
 Its matching is the scorer's own (`pm.matched_gt_flags`), and the code checks it on every half. Its pooled spellF1
 must equal `score.pooled`'s.

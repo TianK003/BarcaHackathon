@@ -76,28 +76,6 @@ Against the raw truth only, the frame-level one (the coarse truth is a construct
   a bias can be fitted (alpha None); where the two classes do not overlap in logit(p), or one is missing, the
   likelihood has no maximum and alpha and beta are None, with converged false.
 
-R025, the posterior edges' counts
----------------------------------
-R025 reports what its rule does to the decoder's changes on the benchmark. With edges = "posterior" in the config's
-[decoder], the posterior loop above also takes hmm.viterbi on the same emissions (the decoder's own: the same sources
-in the same order, the same parameters) for the graded block's Viterbi labels, and hmm.posterior_edges(labels,
-posterior, stats) with the posterior already there adds what the rule did to one dict over every block of every match
-and seed. The report holds the sum under "edges", in posterior_edges' layout: per kind of change ("team", "into_d",
-"out_of_d") the count of each outcome ("earlier", "later", "at_b", "before", "after"), and "shift", the exact count of
-each |b' - b| (its keys are text in the report: edge_quartiles reads them). With edges = "viterbi" it is None. render
-prints, per kind, the outcomes and the share moved (earlier + later over all), and the median and quartiles of
-|b' - b| by numpy's linear rule among the moved changes and among all of them. They are the decoder's changes, before
-any refiner (shift_edges), where the ladder reads the codes after it.
-
-R025b tempers the posterior that the edges read (hmm's edge_temperature, T). The counts are taken on that posterior,
-the decoder's own: with T other than 1 the loop makes a second posterior per block, hmm.edge_posterior on the same
-emissions at T (marginals of the emissions and both switches divided by T), and posterior_edges reads it; at T = 1 it
-reads the posterior already there, which is the same to the bit. The calibration above stays at T = 1 whatever the
-config's T: it measures the model's own posterior (A19), which is what tells how far a temperature is from 1. The
-report says which T the counts were taken at ("edge_temperature", None with edges = "viterbi"), and render names a T
-other than 1. An edge_temperature that hmm.decode refuses (not a finite number > 0, or other than 1 without edges =
-"posterior") is refused before any match is loaded.
-
 What it writes
 --------------
 <data dir>/runs/diagnose/<stem>.json for the declared run (the tracking profile, all seven matches, the default number
@@ -459,9 +437,7 @@ class _Pool:
 
 def posterior_parameters(config):
     """{switch_team, switch_dead, min_possession, min_dead, eps}: the config's [decoder] parameters for hmm.marginals,
-    hmm.decode's defaults where it leaves one out; whatever else [decoder] sets (edges, edge_temperature, ...) is not
-    the model's, and is left to edges_setting and edge_temperature_setting. BenchmarkError unless the decoder is hmm
-    without restart_source."""
+    hmm.decode's defaults where it leaves one out. BenchmarkError unless the decoder is hmm without restart_source."""
     if config.decoder.kind != "hmm":
         raise run.BenchmarkError(
             "{}: the decoder is {!r}, which has no posterior; A19 reads the posterior of the hmm decoder "
@@ -476,42 +452,6 @@ def posterior_parameters(config):
             "three states' only), so diagnose the config without restart_source".format(
                 config.stem, values["restart_source"]))
     return {name: values[name] for name in POSTERIOR_PARAMETERS}
-
-
-def edges_setting(config):
-    """The config's [decoder] edges, hmm.decode's default where it leaves it out; BenchmarkError for a value hmm does
-    not know, before any match is loaded. Call it after posterior_parameters, which checks that the decoder is hmm."""
-    edges = config.decoder.params.get("edges", inspect.signature(hmm.decode).parameters["edges"].default)
-    if not isinstance(edges, str) or edges not in hmm.EDGES:
-        raise run.BenchmarkError("{}: [decoder] sets edges = {!r}; the hmm decoder knows {}".format(
-            config.stem, edges, ", ".join(map(repr, hmm.EDGES))))
-    return edges
-
-
-def edge_temperature_setting(config, edges):
-    """The config's [decoder] edge_temperature as a float, hmm.decode's default (1) where it leaves it out; `edges` is
-    edges_setting's. BenchmarkError, before any match is loaded, for a value hmm.decode refuses
-    (hmm.check_edge_temperature: a finite number > 0, and 1 unless edges is "posterior")."""
-    value = config.decoder.params.get("edge_temperature",
-                                      inspect.signature(hmm.decode).parameters["edge_temperature"].default)
-    try:
-        return hmm.check_edge_temperature(value, edges)
-    except ValueError as error:
-        raise run.BenchmarkError("{}: [decoder] {}".format(config.stem, error)) from error
-
-
-def edge_quartiles(shift, moved_only=False):
-    """{"n", "q25", "median", "q75"} of |b' - b| from posterior_edges' {d: count} (its keys ints, or text as a report
-    holds them), over every change or, with moved_only, over the changes that moved (d >= 1), by numpy's linear rule;
-    the three figures None when there is no change to read."""
-    counts = sorted((int(distance), int(count)) for distance, count in shift.items())
-    counts = [(distance, count) for distance, count in counts if count > 0 and distance >= (1 if moved_only else 0)]
-    if not counts:
-        return {"n": 0, "q25": None, "median": None, "q75": None}
-    values = np.repeat(np.array([distance for distance, _ in counts], dtype=np.int64),
-                       np.array([count for _, count in counts], dtype=np.int64))
-    q25, median, q75 = (float(value) for value in np.percentile(values, [25, 50, 75]))
-    return {"n": int(len(values)), "q25": q25, "median": median, "q75": q75}
 
 
 def _predict(config, inputs):
@@ -535,26 +475,19 @@ def diagnose(config_path, profile=DEFAULT_PROFILE, seeds=None, match_ids=None, m
 
     Refused with BenchmarkError (or ConfigError from the pipeline's loader) before any match is loaded: what the runner
     refuses (scope = "file", an unknown profile or match, seeds below 1, a calibration the profile does not take), a
-    decoder that is not hmm or that sets restart_source (posterior_parameters), an edges value hmm does not know
-    (edges_setting) or an edge_temperature it refuses (edge_temperature_setting), and a source named as one of the
+    decoder that is not hmm or that sets restart_source (posterior_parameters), and a source named as one of the
     report's own keys (RESERVED: "posterior", "none", "other").
 
     Returns the report, JSON-ready (run.plain): {"config": {"path", "stem", "sha256"}, "profile", "seeds", "matches",
     "dropped_match_only", "ladder": {"raw", "coarse" (ladder_summary), "mean": {"spell_f1", "clean_loss", "split_loss",
     "merge_loss", "both_loss"}}, "calibration": {source name: {"kind", "weight", "home", "home_ball_visible",
     "home_ball_missing", "alive"} (the channels it speaks on), "posterior": {"alive": {"all", "team_speaks",
-    "team_silent"}, "alive_by_team_sources": {key: ...} (speaker_groups), "home"}} (the posterior at T = 1, whatever
-    the config's edge_temperature), "edges" (hmm.posterior_edges' stats summed over the graded blocks with edges =
-    "posterior", on the posterior tempered at the config's edge_temperature; None with "viterbi"), "edge_temperature"
-    (that T, a float; None with "viterbi"), "tracking_calibration" ({"sha256", "version"} of the Calibration, None for
-    clean), "git", "data_dir"}. Per-match figures are not kept.
+    "team_silent"}, "alive_by_team_sources": {key: ...} (speaker_groups), "home"}}, "tracking_calibration" ({"sha256",
+    "version"} of the Calibration, None for clean), "git", "data_dir"}. Per-match figures are not kept.
     """
     configs, dropped = run._load_configs([config_path], drop_match_only)
     config = configs[0]
     decoder = posterior_parameters(config)
-    edges = edges_setting(config)
-    temperature = edge_temperature_setting(config, edges)              # R025b: what the edges read; 1 is R025's
-    edge_stats = {} if edges == "posterior" else None                  # R025's counts, summed over the blocks
     names = [component.name for component in config.evidence]
     for name in RESERVED:
         if name in names:
@@ -628,16 +561,6 @@ def diagnose(config_path, profile=DEFAULT_PROFILE, seeds=None, match_ids=None, m
                 emissions = hmm.log_likelihoods(window, stop - start, decoder["eps"])
                 posterior = hmm.marginals(emissions, decoder["switch_team"], decoder["switch_dead"],
                                           decoder["min_possession"], decoder["min_dead"])
-                if edge_stats is not None:
-                    labels = hmm.viterbi(emissions, decoder["switch_team"], decoder["switch_dead"],
-                                         decoder["min_possession"], decoder["min_dead"])
-                    # The edges read the posterior at the config's temperature, the decoder's own; the calibration
-                    # below keeps the model's own, T = 1. At T = 1 the two are the same array to the bit.
-                    tempered = posterior if temperature == 1.0 else hmm.edge_posterior(
-                        emissions, decoder["switch_team"], decoder["switch_dead"], decoder["min_possession"],
-                        decoder["min_dead"], temperature)
-                    hmm.posterior_edges(labels, tempered, stats=edge_stats)
-                    del labels, tempered
                 in_play = posterior[:, H] + posterior[:, A]
                 pool(POSTERIOR, "alive").add(key, np.clip(in_play, 0.0, 1.0), live, speakers)
                 defined = live & (in_play > 0.0)
@@ -694,8 +617,6 @@ def diagnose(config_path, profile=DEFAULT_PROFILE, seeds=None, match_ids=None, m
         "dropped_match_only": list(dropped[config.stem]),
         "ladder": ladder,
         "calibration": measured,
-        "edges": edge_stats,
-        "edge_temperature": None if edge_stats is None else temperature,
         "tracking_calibration": None if profile == run.CLEAN else {
             "sha256": calibration_module.digest(calibration), "version": calibration_module.CALIBRATION_VERSION},
         "git": pipeline_run.git_state(),
@@ -744,8 +665,7 @@ def write_report(report, data_dir=None):
 
 
 def render(report):
-    """The lines diagnose() logs: the ladder under each truth and their mean, R025's gate, the calibration table, and
-    R025's edge counts when the config has edges = "posterior"."""
+    """The lines diagnose() logs: the ladder under each truth and their mean, R025's gate, and the calibration table."""
     profile, git = report["profile"], report["git"]
     lines = ["",
              "diagnose  {}   profile {} (version {})   seeds {}   {} matches   commit {}{}".format(
@@ -781,33 +701,6 @@ def render(report):
     if posterior["home"]["frames_without_alive_mass"]:
         lines.append("  {:,} alive frames have P(H) + P(A) = 0, and no home ratio".format(
             posterior["home"]["frames_without_alive_mass"]))
-    if report["edges"] is not None:
-        lines += _edge_lines(report["edges"], report["edge_temperature"])
-    return lines
-
-
-def _edge_lines(edges, temperature):
-    """R025's counts: per kind of change the outcomes and the share moved, then |b' - b| among the moved and all; the
-    header names the temperature of the posterior they were taken on when it is not 1 (R025b)."""
-    tempered = "" if temperature == 1.0 else ", tempered at T = {:g} (R025b)".format(temperature)
-    lines = ["", "edges     R025: the decoder's changes moved by its posterior{} (graded blocks, before any "
-                 "refiner)".format(tempered),
-             "          {:<10}{:>9}{:>9}{:>9}{:>9}{:>9}{:>9}{:>8}".format(
-                 "kind", "changes", "earlier", "later", "at b", "before", "after", "moved")]
-    everything = dict.fromkeys(hmm.EDGE_OUTCOMES, 0)
-    for kind in hmm.EDGE_KINDS + ("all",):
-        counts = everything if kind == "all" else edges[kind]
-        if kind != "all":
-            for outcome in hmm.EDGE_OUTCOMES:
-                everything[outcome] += counts[outcome]
-        total = sum(counts[outcome] for outcome in hmm.EDGE_OUTCOMES)
-        lines.append("          {:<10}{:>9,}{:>9,}{:>9,}{:>9,}{:>9,}{:>9,}{:>8}".format(
-            kind, total, *(counts[outcome] for outcome in hmm.EDGE_OUTCOMES),
-            _share((counts["earlier"] + counts["later"]) / total if total else None)))
-    for label, moved_only in (("moved", True), ("all", False)):
-        found = edge_quartiles(edges["shift"], moved_only)
-        lines.append("          |b' - b| in frames, {} changes ({:,}): median {}, quartiles [{}, {}]".format(
-            label, found["n"], *(_distance(found[figure]) for figure in ("median", "q25", "q75"))))
     return lines
 
 
@@ -858,10 +751,6 @@ def _share(value):
 
 def _frames(value):
     return "n/a" if value is None else "{:+.1f}".format(value)
-
-
-def _distance(value):
-    return "n/a" if value is None else "{:.1f}".format(value)
 
 
 # -- the command line -------------------------------------------------------------------------------------------------

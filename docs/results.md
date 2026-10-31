@@ -8095,6 +8095,64 @@ settled.
 
 The results stay logged here and in R025, and R026 runs on `main.toml` without `edges`.
 
+**Part 2, the run** (2026-10-31).
+
+**The code** is `171d0bb`: `edge_temperature` in `hmm`, its checks, and `diagnose.py` counting the edges on the
+tempered posterior. The configs are `3452f74` and `0349a24`.
+
+**The lag** (`conventions.py latency pipeline/benchmark/configs/r025/r025b_preshift.toml dfl --profile tracking
+--seeds 3 --truth raw --drop-match-only`, EXIT=0). Pooled lags:
+- team -3.0 frames (40% matched; quartiles -13 and +15, against -9 and +18 at T = 1 in R025 and -8 and +18 for Viterbi
+  in R024);
+- into `D` +1.0;
+- out of `D` -1.0.
+
+So s_b is **+3, -1, +1**, and `r025b_final.toml` is `r025b_preshift` with it.
+
+**The guard runs** (`0349a24`, throttled, `--truth both --drop-match-only`). Claude Code's memory-pressure reaper
+stopped the first attempt a minute in. Nothing was written, no process survived it, and Tian restarted the chain. The
+second attempt ended EXIT=0.
+
+| profile | `main` raw / coarse | final raw / coarse | raw Δ | coarse Δ | **mean Δ** [mean per match, 90% t] | p | wins / losses |
+|---|---|---|---|---|---|---|---|
+| `tracking`: the guard and the bar | 0.5363 / 0.5764 | 0.5121 / 0.5441 | -0.0242 | -0.0323 | **-0.0282** [-0.0333, -0.0232] | 0.0156 | 0 / 7 |
+| `context`: sensitivity only | 0.5394 / 0.5756 | 0.5122 / 0.5415 | -0.0272 | -0.0341 | -0.0307 [-0.0354, -0.0260] | 0.0156 | 0 / 7 |
+
+Pooled macroF1 on `tracking` fell to 0.8596 raw (`main` 0.8903), and alive/dead F1 to 0.9719 (0.9730). The shift
+helped inside R025b (final against preshift +0.0013 on the mean), not enough to matter.
+
+**The readout.** This time the mechanism engaged:
+
+| kind | changes | earlier | later | at b | before | after | moved |
+|---|---|---|---|---|---|---|---|
+| team | 4,052 | 2,744 | 559 | 258 | 491 | 0 | 81.5% |
+| into `D` | 2,075 | 886 | 519 | 667 | 0 | 3 | 67.7% |
+| out of `D` | 2,040 | 544 | 677 | 810 | 9 | 0 | 59.9% |
+| all | 8,167 | 4,174 | 1,755 | 1,735 | 500 | 3 | 72.6% |
+
+- |b′ − b| among the moved has a median of 3 frames (quartiles 1 and 9), against R025's 1.
+- **The edges got worse, not better.** The spread widened. The raw clean pairs' start error has quartiles -11 and +9
+  (A19: -5 and +14), and their end error -14 and +17 (A19: -6 and +22). Within ±5 frames fell from 45.5% to 40.8% at
+  the start, and from 37.4% to 30.9% at the end.
+- **The ladder moved the wrong way.** The mean clean-pair loss rose to 0.0833 (0.0704), and the raw pooled spellF1
+  fell to 0.5121.
+
+The belief was that a tempered median moves each edge towards its weak-evidence side, which is where the truth lies.
+The edges moved, but the weak side was not where the truth was: frames of weak evidence are as often the tail of the
+old possession as the start of the new one. The narrowing of the spread that the belief predicted did not happen.
+
+**Verdict: R025b fails** (the guard: -0.0282 on the mean, 0 wins in 7). **C is dropped.** Its code was removed in one
+commit, as R025b part 1 declared:
+- the reverts of `f5beaa5`, `f68b8ee` and `171d0bb`;
+- `pipeline/benchmark/configs/r025/`.
+
+`hmm.py`, `pipeline/selftest.py`, `diagnose.py` and its checks are byte for byte as they were before C. The code is
+recoverable from `171d0bb`. `main.toml` is unchanged (R024's, `e6496a9b…`), and R026 runs on it.
+
+**What C leaves.** A19's diagnosis stands: the decoder's posterior is about five times too sharp, and the IoU ladder is
+mostly edges. Moving edges by the posterior, sharp or tempered, does not recover them. The edges' errors come from
+where the evidence changes, not from where the decoder puts the change given that evidence.
+
 ### R026 — P07 weighted apart in the gaps and where the ball is seen (P23 E; declared 2026-10-31, Tian)
 Proposal: P23 (E), P07 · Commit: part 1 (this declaration) is committed before any run of it; the code, the configs
 and the runs are in part 2.
