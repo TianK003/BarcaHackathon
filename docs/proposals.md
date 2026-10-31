@@ -32,7 +32,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 |---|---|---|---|---|---|
 | [P01](#p01--a-validation-set-we-can-trust) | Validation set we can trust: other matches, degraded to look like ours | deciding anything at all | M | enabling | done → R002–R005 |
 | [P02](#p02--inspect-the-ground-truths-conventions-on-the-public-window-to-understand-and-never-to-tune) | Inspect the GT's conventions on the public window, to understand and never to tune | boundary timing | S | bounded since the 23 Oct rule: understanding only; so far the pipeline's own lag on DFL, 1 to 2 frames, within noise (R012) | done → A11, R012, A15 (inspection only; a person may watch to understand) |
-| [P16](#p16--metricas-sample-games-in-our-ground-truth-providers-conventions) | Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing | boundary timing, grain | M | medium | idea |
+| [P16](#p16--metricas-sample-games-in-our-ground-truth-providers-conventions) | Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing | boundary timing, grain | M | medium | idea; R023 part 1 drafted, unsigned |
 | [P17](#p17--the-restart-team-channel) | Restart-team channel: who restarts after a stoppage, from the players' arrangement | facts 3, 5 (the hold points at the old team after most stoppages) | S–M | ceiling +0.0198 raw (A12); delivered +0.0040 raw at best, bar not met (R014) | dropped → R014, R014b (the source and the decoder's restart states stay, off by default) |
 | [P18](#p18--the-offpitch-profile-dfls-ball-hidden-off-the-pitch-as-ours-is-and-p05-retrained-on-it) | offpitch profile: DFL's ball hidden off the pitch as ours is, and P05 retrained on it | T39 (P05 overstated by the visible out-of-play ball) | M | A13: a perfect dead-ball source adds +0.029 raw on tracking; main.toml on offpitch 0.5509 raw / 0.5296 coarse; hiding the out-of-play ball cost today's P05 0.013 alive/dead F1 (R015) | dropped → R015, R015b (our tracker's off-pitch ball cannot be reproduced by a simple rule; code removed) |
 | [P19](#p19--a-learned-team-model-where-the-ball-is-seen) | A learned team model where the ball is seen: P05's recipe applied to the team | fact 3; A13's largest lever (+0.194 raw where the ball is seen) | M (feasibility S) | guess +0.02 to +0.05 raw; fully benchmarkable | idea |
@@ -513,6 +513,17 @@ validation set. If they pass, they give far more transitions than the public win
 nothing human-produced about it is used from any source ([T27](traps.md), `f8f2629`). Check each source's licence
 first, keep it public so that the organisers can access it, and cite it in the technical document with who labelled it
 and how much (P13's rule). Use nothing about this fixture ([T26](traps.md)).
+
+**Draft protocol (2026-10-31, advisor for Tian, unsigned).** [R023](results.md#r023--p16-part-1-metricas-sample-games-and-the-grain-of-our-truth-draft-2026-10-31) part 1
+fixes, before anything is fetched:
+- one derivation rule from Metrica's event definitions;
+- A06's grain statistics;
+- the rule that maps the grain to the objective (raw, coarse or both);
+- a licence stop;
+- what voids it.
+
+It covers the grain only, not the switch timing. Its "both, with equal weight" replaces the fourth bullet's "add a
+truth of that grain" if Tian signs it. Nothing runs until Tian signs or amends it.
 
 ### P03 — One command, deterministic, cached
 

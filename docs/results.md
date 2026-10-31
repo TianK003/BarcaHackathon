@@ -6914,6 +6914,132 @@ measured.
 
 **Outcome.** P20 is dropped; the code is removed from the branch, recoverable at `2163406`.
 
+### R023 — P16 part 1: Metrica's sample games and the grain of our truth (draft, 2026-10-31)
+
+**Advisor (for Tian), unsigned: not declared until Tian signs or amends it; nothing has been downloaded or run.**
+
+Proposal: P16 · Part 1 only. Part 2 (the run) is written after Tian signs; amendments go in before any file is fetched.
+The source is advisor-02, Lane C. The research behind it (licence text, taxonomy, kloppy, StatsBomb, PathCRF) is the
+[research note](research/2026-10-31-p16-metrica.md).
+
+**Question.** Is our ground truth's possession grain nearer DFL's raw flag or the coarse truth ([T33](traps.md), A06)?
+Every re-tune since R007 has split the two truths, so the answer sets which truth ranks every later choice.
+
+**Data.** [metrica-sports/sample-data](https://github.com/metrica-sports/sample-data) at commit
+`e706dd506b360d69d9d123d5b8026e7294b13996`, event files only, each checked by its git blob SHA:
+- `Sample_Game_1_RawEventsData.csv` `3c426dd4f442dd433bccf89e3634f91aa310cd8f`;
+- `Sample_Game_2_RawEventsData.csv` `decccd47c1d53960d290cb6679337eec83a8a97f`;
+- `Sample_Game_3_events.json` `992b4cb502f0b0bc1244174f014f3f7ecb6d38ef`, with `Sample_Game_3_metadata.xml`
+  `74b55a80f6aeeb8f8df7fd26e4b3a94e2cc1738d`.
+
+They are fetched into `data/external/metrica/` and never committed. No tracking file is fetched. A stdlib reader of
+our own, written in part 2, parses them: kloppy 3.18.0 has no loader for the CSV events, and its JSON loader drops
+SET PIECE events. kloppy only cross-checks game 3's type ids. Nothing of BAR-ATH, the public window or the public GT is
+read.
+
+**Derivation rule.** It is chosen from Metrica's `documentation/events-definitions.pdf` alone, and no constant in it
+comes from data.
+
+Per game, events are taken in file order, periods 1 and 2 only. Type and subtype names are matched case-insensitively:
+the CSV `Subtype` is split on `-`, and the JSON uses its names (ids only through kloppy 3.18.0's constants). Frames are
+the files' own start and end frames; a JSON event without a frame field takes round(time x 25). CARRY appears only in
+game 3's JSON (kloppy names it; the PDF does not), and it goes wherever PASS does below.
+
+0. **Span.** A period runs from its first event's start frame to its last event's end frame, inclusive. Frames outside
+   it are `X`.
+1. **Stops (`D` opens):**
+   - the end frame of a BALL OUT;
+   - the end frame of an event with subtype GOAL (a shot result or an own goal; GOAL KICK is a different subtype);
+   - the end frame of a SHOT with subtype OUT;
+   - the start frame of a FAULT RECEIVED, or of a CHALLENGE with subtype FAULT;
+   - the end frame of an event with subtype FORCED, END HALF or OFFSIDE.
+
+   Each stop is in the PDF: "Out of play: the ball went out of bounds or the referee has stopped play."
+2. **Restarts (`D` closes).** `D` closes at the start frame of the first later event of type SET PIECE, RECOVERY, PASS,
+   SHOT, BALL LOST or CARRY whose start frame is after the stop's. In the PDF, SET PIECE and RECOVERY "bring the ball back into play", and GOAL KICK is an
+   *Attempt* subtype, so a goal kick is a PASS and not a SET PIECE. CARD, FAULT RECEIVED, CHALLENGE and BALL OUT never
+   close `D`.
+   - `D` covers [stop, restart). With no restart, it runs to the span's end.
+   - Overlapping intervals merge.
+3. **Team, on the alive frames.** Walk the events in file order, keeping the current team T and the frame of the last
+   change t, with T unset at the period's first event. For an event e of team E:
+   - (a) if e is a RECOVERY, or e is a SET PIECE, PASS, SHOT, BALL LOST, BALL OUT or CARRY with E ≠ T, change to E at
+     max(start(e), t);
+   - (b) then, if e is a BALL LOST, change to the other team at max(end(e), t).
+
+   Each change sets T and t. A frame takes the team of the last change at or before it. The first event (the KICK OFF)
+   sets the team at the span's start. CHALLENGE, FAULT RECEIVED and CARD never change the team. **No split midpoints:**
+   a team holds until the frame of the event that changes it. Metrica's own definition says the same: possession lasts
+   "until … another player takes over possession". PathCRF's `split` mode would instead cut each gap at its midpoint.
+4. **Labels.** `D` on step 2's intervals. Elsewhere `Home` (game 3: the metadata's first team) → `H`, and the other
+   team → `A`.
+
+**Grain statistics, A06's.** `pipeline/benchmark/truth.py`'s `summary` runs on the three games laid end to end
+(`truth.concatenate`), exactly as A06's figures were computed:
+- **g**, possessions per alive minute;
+- **L**, the median possession length in seconds, pooled.
+
+Reported beside them, per game and pooled: the alive share, stoppages, possessions, the mean, the share under 5 s,
+spells of 2 or fewer and of 12 or fewer frames, and the stops by kind. The frame rate is 25 fps, checked in
+integrity check 3.
+
+**Decision rule.** The references are A06's pooled figures:
+- raw truth: **8.30 possessions per alive minute, median 3.68 s**;
+- coarse truth: **4.50 per alive minute, median 8.40 s**.
+
+The advisor's 4.58 and 2.48 count the same possessions per *graded* minute (668.4 min; A10, R002 on), not in A06's unit.
+Per graded minute the comparison would carry DFL's alive share against our event-derived `D`, so A06's
+per-alive-minute figures are used. The two pairs have the same ratio (1.84).
+- **Rate class.** The midpoint is m = sqrt(8.30 x 4.50) = 6.11 per alive minute.
+  - **both** if |ln(g / m)| ≤ ln 1.15, that is 5.31 ≤ g ≤ 7.03;
+  - otherwise **raw** if g > m (nearer 8.30 in log ratio);
+  - otherwise **coarse**.
+- **Median class.** The same rule on L, with m = sqrt(3.68 x 8.40) = 5.56 s: **both** from 4.83 to 6.39 s, otherwise
+  **raw** below 5.56 s and **coarse** above it.
+- **Outcome.** The rate class, except that if the rate class is raw or coarse and the median class is the other of the
+  two, the outcome is **both**. This is T33's "a disagreement is a warning".
+- **The objective it sets**, for choices declared after part 2:
+  - **raw:** ranked on the raw truth's pooled spellF1, with the coarse truth beside it. This is the current practice.
+  - **coarse:** ranked on the coarse truth, with the raw truth beside it.
+  - **both:** ranked on the unweighted mean of the two pooled spellF1s, each reported.
+
+  R023 reopens no past choice and does not touch `main.toml`. Reopening a past choice is the team's decision.
+
+**Licence stop.** The repository has no licence file. Its README's only terms are, verbatim: "Please be responsible
+with the use of this data." and "If you use it for anything public, please aknowledge the source." That reads as
+public use with acknowledgement. It grants no redistribution, hence fetch-only and nothing committed. The technical
+document acknowledges Metrica and says what was labelled (event types), by whom (the provider) and how much (3 games),
+by P13's rule. **R023 stops before any fetch if:**
+- the README at the pinned commit or at HEAD is not blob `03fb97acc3545cc7428d0a07485921c5a1d405c1`;
+- a licence file has appeared that forbids this use;
+- Tian rules the README's note insufficient for a public repository. Signing this part is that ruling.
+
+**What makes it invalid.** An invalid R023 gives no decision, and the current practice stays: the raw truth as the
+objective, the coarse truth beside it.
+1. This part is amended after any event file has been fetched.
+2. A file's blob SHA differs from the one above.
+3. A game fails an integrity check:
+   - a start frame is not round(start time x 25) to within 1;
+   - start frames decrease in file order within a period;
+   - a period does not begin with a SET PIECE KICK OFF;
+   - a type name is outside the PDF's nine and CARRY;
+   - an event has no end frame;
+   - game 3's names cannot be mapped.
+
+   A game that fails drops out: these checks concern the files' format, not the grain. With fewer than two games
+   left, R023 is invalid.
+4. The derived labels fail a sanity bound declared now. The bounds test the derivation, not the grain; DFL ranges
+   from 48.3% to 59.3% alive, with 92 to 113 stoppages a match (A06).
+   - the alive share is outside 40% to 70% in some game;
+   - the stoppages are outside 60 to 160 in some game.
+
+   Any one of these makes R023 invalid. No game is dropped for it, because these bounds correlate with the grain.
+5. Anything of BAR-ATH, the public window or the public GT is read for R023, or compared to gate it (P16).
+
+**A limit, stated with any verdict.** Our GT comes from corrected-tracking flags. R023 measures event-tagged possession
+under Metrica's event definition and this derivation. How far an event-derived grain sits from a flag grain is not
+measured. The same comparison on DFL's own events against its flag would measure it, and that is not part of R023.
+
 ## Submission log
 
 The form keeps only the last response before the deadline, so log every upload.
