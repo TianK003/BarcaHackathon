@@ -4196,12 +4196,33 @@ RECAL_BLOCKS = [(100, 6100), (6300, 12300), (12500, 18500)]    # three graded bl
 RECAL_PLANTED = (-0.6, 0.5, 0.6)                              # the offset each block's model is missing
 
 
-def recal_sample(rng, n, share, b_true, flip_home=0.07, flip_away=0.07):
-    """(z, y): the model's logit and the teacher's noisy 0/1 labels of n rows, `share` of them truly home."""
+def recal_sample(rng, n, share, b_true, flip_home=0.07, flip_away=0.07, mean=1.2):
+    """(z, y): the model's logit and the teacher's noisy 0/1 labels of n rows, `share` of them truly home. The class
+    means of the log-likelihood ratio are +-`mean` and its variance is twice that (1.2 and 2.4 in the design)."""
     truth = (rng.random(n) < share).astype(np.int64)
-    ratio = np.where(truth == 1, 1.2, -1.2) + rng.normal(size=n) * np.sqrt(2.4)
+    ratio = np.where(truth == 1, mean, -mean) + rng.normal(size=n) * np.sqrt(2.0 * mean)
     flipped = rng.random(n) < np.where(truth == 1, flip_home, flip_away)
     return ratio - b_true, np.where(flipped, 1 - truth, truth)
+
+
+def recal_tailed(seed, tail_share, tail_z, contradicting, sides, n=20000):
+    """The design's generator (share 0.5, b_true 0, 7% noise) with a share `tail_share` of its rows moved out to
+    z = +-tail_z and a share `contradicting` of those labelled against the sign of their z, the rest with it. The sign
+    is random with sides "both" and always + (home's side) with sides "home"."""
+    rng = np.random.default_rng([seed, 3000])
+    z, y = recal_sample(rng, n, 0.5, 0.0)
+    tail = rng.random(n) < tail_share
+    sign = np.where(rng.random(n) < 0.5, 1.0, -1.0) if sides == "both" else np.ones(n)
+    against = rng.random(n) < contradicting
+    z[tail] = (tail_z * sign)[tail]
+    y[tail] = np.where(against, sign < 0, sign > 0)[tail]                 # home (1) if the sign says so, or against it
+    return z, y
+
+
+def recal_loglik(z, y, s, epsilon=RECAL_EPSILON):
+    """E2's log-likelihood at the intercept s, as the design writes it, the plain way (fine while |z + s| < 30)."""
+    q = epsilon + (1.0 - 2.0 * epsilon) / (1.0 + np.exp(-(z + s)))
+    return float(np.sum(np.where(y == 1, np.log(q), np.log(1.0 - q))))
 
 
 def recal_frames(seed=0, rate=0.45):
@@ -4253,7 +4274,7 @@ def test_recalibration_e1_leans_to_the_minority():
         balanced.append(recalibration.balanced_offset(z, y).offset)
         noise_aware.append(recalibration.noise_aware_offset(z, y, epsilon=RECAL_EPSILON).offset)
     assert np.mean(balanced) < -0.05 and max(balanced) < -0.05, balanced
-    assert abs(np.mean(noise_aware)) <= 0.03, noise_aware
+    assert max(abs(value) for value in noise_aware) <= 0.03, noise_aware
 
 
 def test_recalibration_relabelling_negates_the_offset():
@@ -4291,7 +4312,7 @@ def test_recalibration_ignores_row_order():
             fit(z, y)
         finally:
             math.fsum = real
-        assert len(calls) >= 40 and set(calls) == {len(z)}, "the score is not summed by math.fsum: {}".format(calls[:3])
+        assert len(calls) >= 81 and set(calls) == {len(z)}, "the score is not summed by math.fsum: {}".format(calls[:3])
 
 
 def test_recalibration_refuses_one_class_and_reports_no_root():
@@ -4321,6 +4342,104 @@ def test_recalibration_refuses_one_class_and_reports_no_root():
     error = raised_value_error(lambda: fits[0](np.zeros(100), mostly_home))
     assert isinstance(error, recalibration.NoRoot), error
     assert issubclass(recalibration.NoRoot, ValueError)
+
+
+def test_recalibration_e2_survives_contradicted_tails():
+    # P07's logit is unclipped, so a few frames sit far past the 3.9 nats of a clipped home, and an away label at a high
+    # z weighs about 1/epsilon times a home label there. A single bisection read the score at the bracket's two ends,
+    # where such rows decide its sign, and raised NoRoot on every seed of three of these four layouts although the
+    # likelihood has a good interior maximum at the truth. The grid finds it, and z is not clipped (that would bias it).
+    from pipeline.evidence import recalibration
+    for tail_share, tail_z, contradicting in ((0.05, 12.0, 0.5), (0.03, 8.0, 1.0)):
+        for sides in ("both", "home"):
+            for seed in range(2):
+                z, y = recal_tailed(seed, tail_share, tail_z, contradicting, sides)
+                found = recalibration.noise_aware_offset(z, y, epsilon=RECAL_EPSILON)
+                where = (tail_share, tail_z, contradicting, sides, seed, found)
+                if (contradicting, sides) == (1.0, "home"):
+                    # All the tail's labels say away, on home's side only: the labelled home share falls by 3% and the
+                    # prior step with it (offset = s + 0.06), so what is held to the truth there is the maximum, s,
+                    # within the noise of its own (about 0.03).
+                    assert abs(found.s) <= 0.1, where
+                else:
+                    assert abs(found.offset) <= 0.05, where
+
+
+def test_recalibration_takes_the_best_interior_maximum():
+    # Two groups of 6,000 frames whose models miss by -6.4 and +3.9 nats, the left one's evidence the stronger (class
+    # means +-1.5 against +-1.0): the likelihood has an interior maximum near each offset and the left one is higher.
+    # The fit is the higher one, and with the teams swapped it is the other: neither the first root nor the last.
+    from pipeline.evidence import recalibration
+    rng = np.random.default_rng(631642)
+    left, right = recal_sample(rng, 6000, 0.5, -6.4, mean=1.5), recal_sample(rng, 6000, 0.5, 3.9, mean=1.0)
+    z, y = np.concatenate([left[0], right[0]]), np.concatenate([left[1], right[1]])
+    grid = np.round(np.arange(-10.0, 10.0 + 0.025, 0.05), 10)
+    values = np.array([recal_loglik(z, y, s) for s in grid])
+    peaks = [i for i in range(1, len(grid) - 1) if values[i] > values[i - 1] and values[i] >= values[i + 1]]
+    near_left = [i for i in peaks if abs(grid[i] + 6.4) < 0.5]
+    near_right = [i for i in peaks if abs(grid[i] - 3.9) < 0.5]
+    assert near_left and near_right, "no interior maximum near each group's offset: {}".format(grid[peaks])
+    best = max(near_left, key=lambda i: values[i])
+    assert values[best] > max(values[i] for i in near_right) + 100, "the left maximum must be the higher one"
+    assert values[best] == max(values[i] for i in peaks), "and the highest of all"
+    found = recalibration.noise_aware_offset(z, y, epsilon=RECAL_EPSILON)
+    assert abs(found.s - grid[best]) <= 0.05, (found, grid[best])
+    swapped = recalibration.noise_aware_offset(-z, 1 - y, epsilon=RECAL_EPSILON)
+    assert abs(swapped.s + found.s) <= 1e-9 and swapped.s > 5.0, (found, swapped)
+    order = np.random.default_rng(0).permutation(len(z))                 # nor does the choice care for the row order
+    assert recalibration.noise_aware_offset(z[order], y[order], epsilon=RECAL_EPSILON) == found
+
+
+def test_recalibration_reports_no_root_when_the_likelihood_rises_to_an_end():
+    # Every label against its z, and no |z| under 3: the likelihood is lowest at s = 0 and rises towards both ends, so
+    # there is no maximum inside the bracket (E1's is concave and has one, at 0). NoRoot says both causes.
+    from pipeline.evidence import recalibration
+    z = np.where(np.arange(1000) % 2 == 0, 3.0, -3.0)
+    y = (z < 0).astype(np.int64)
+    error = raised_value_error(lambda: recalibration.noise_aware_offset(z, y, epsilon=RECAL_EPSILON))
+    assert isinstance(error, recalibration.NoRoot), error
+    for words in ("recalibration", "noise_aware_offset", "10.0 nats off", "contradict"):
+        assert words in str(error), (words, str(error))
+    assert abs(recalibration.balanced_offset(z, y).offset) < 1e-9
+    # and the same for an offset beyond the bracket, where the likelihood also rises to an end
+    error = raised_value_error(lambda: recalibration.noise_aware_offset(np.full(100, 30.0), np.arange(100) % 2,
+                                                                        epsilon=RECAL_EPSILON))
+    assert isinstance(error, recalibration.NoRoot), error
+
+
+def test_recalibration_root_search_reads_a_fixed_grid_and_keeps_the_best_crossing():
+    from pipeline.evidence import recalibration
+    seen = []
+
+    def score(s):       # + up to -4.3, - to 0.9, + to 5.7, - beyond: maxima at -4.3 and 5.7, a minimum at 0.9
+        seen.append(s)
+        return -(s + 4.3) * (s - 0.9) * (s - 5.7)
+
+    root = recalibration._root(score, lambda s: s, "probe")
+    assert abs(root - 5.7) <= 1e-9, root
+    assert seen[:81] == [-10.0 + 0.25 * k for k in range(81)], "the first reads are the grid, the ends included"
+    assert len(seen) == 81 + 2 * 38, "then a bisection of each of the two crossing cells: {} reads".format(len(seen))
+    assert abs(recalibration._root(score, lambda s: -s, "probe") + 4.3) <= 1e-9
+    assert abs(recalibration._root(score, lambda s: -abs(s - 0.9), "probe") - 5.7) <= 1e-9, "never the minimum at 0.9"
+    assert abs(recalibration._root(score, lambda s: 0.0, "probe") + 4.3) <= 1e-9, "an exact tie goes to the smaller s"
+    assert abs(recalibration._root(lambda s: 2.0 - s, lambda s: 0.0, "probe") - 2.0) <= 1e-9, "a root on the grid"
+    assert abs(recalibration._root(lambda s: 9.9 - s, lambda s: 0.0, "probe") - 9.9) <= 1e-9, "a root in the last cell"
+    assert abs(recalibration._root(lambda s: -9.9 - s, lambda s: 0.0, "probe") + 9.9) <= 1e-9, "and in the first"
+    for flat in (lambda s: s, lambda s: 1.0, lambda s: -1.0, lambda s: 0.0):          # no cell goes from + to -
+        error = raised_value_error(lambda: recalibration._root(flat, lambda s: 0.0, "probe"))
+        assert isinstance(error, recalibration.NoRoot) and "probe" in str(error), error
+
+
+def test_recalibration_scores_are_the_derivatives_of_their_likelihoods():
+    # The score finds the maxima and the likelihood chooses among them, so they must be one function and its derivative.
+    from pipeline.evidence import recalibration
+    z, y = recal_sample(np.random.default_rng(8), 3000, 0.6, 0.3)
+    home = y == 1
+    for name, (score, loglik) in (("E2", recalibration._noise_aware_objective(z, home, RECAL_EPSILON)),
+                                  ("E1", recalibration._balanced_objective(z, home))):
+        for s in (-6.0, -2.5, -0.4, 0.0, 0.7, 3.0, 8.0):
+            numeric = (loglik(s + 1e-4) - loglik(s - 1e-4)) / 2e-4
+            assert abs(numeric - score(s)) <= 1e-4 + 1e-5 * abs(score(s)), (name, s, numeric, score(s))
 
 
 def test_recalibration_block_offsets_leave_one_block_out():
@@ -4399,12 +4518,34 @@ def test_recalibration_block_offsets_leave_one_block_out():
     assert (alone[0].fallback, alone[0].rows_home, alone[0].rows_away) == ("few rows", 0, 0), alone
 
 
+def test_recalibration_refuses_overlapping_blocks():
+    from functools import partial
+    from pipeline.evidence import recalibration
+    fit = partial(recalibration.noise_aware_offset, epsilon=RECAL_EPSILON)
+    z, y, rows, blocks = recal_frames()
+    overlapping = ([(100, 6100), (6000, 12300)], [(100, 6100), (100, 6100)], [(12500, 18500), (100, 12600)],
+                   [(100, 6100), (6300, 12300), (12000, 18500)], [(100, 6100), (200, 300)])
+    for bad in overlapping:
+        expect_error(ValueError, lambda: recalibration.block_offsets(z, y, rows, bad, fit=fit), "recalibration",
+                     "overlap")
+        expect_error(ValueError, lambda: recalibration.adapted_logit(z, bad, [0.0] * len(bad)), "recalibration",
+                     "overlap")
+    expect_error(ValueError, lambda: recalibration.block_offsets(z, y, rows, overlapping[0], fit=fit), "overlap",
+                 "(100, 6100)", "(6000, 12300)")                              # the message names the two blocks
+    # blocks that touch do not overlap, and the result follows the order given, whatever the order of the frames
+    found = recalibration.block_offsets(z, y, rows, blocks, fit=fit)
+    reordered = recalibration.block_offsets(z, y, rows, [blocks[2], blocks[0], blocks[1]], fit=fit)
+    assert reordered == [found[2], found[0], found[1]], (found, reordered)
+    assert recalibration.adapted_logit(z, [(0, 100), (100, 200)], [0.5, -0.5]).shape == z.shape
+
+
 def test_recalibration_constants_are_the_designs():
     # Fixed before any run (the design's section 2): to change one is a decision, not an edit.
     from pipeline.evidence import recalibration
     assert (recalibration.TEACHER_CONFIDENCE, recalibration.TEACHER_HOLD) == (0.99, 0.5)
     assert (recalibration.ALIVE_LEVEL, recalibration.MIN_ROWS, recalibration.PI_CLIP) == (0.5, 500, (0.05, 0.95))
-    assert (recalibration.BRACKET, recalibration.TOLERANCE, recalibration.OFFSET_DECIMALS) == ((-10.0, 10.0), 1e-12, 9)
+    assert (recalibration.BRACKET, recalibration.GRID_STEP) == ((-10.0, 10.0), 0.25)
+    assert (recalibration.TOLERANCE, recalibration.OFFSET_DECIMALS) == (1e-12, 9)
 
 
 def test_recalibration_adapted_logit():
@@ -4476,7 +4617,7 @@ def test_recalibration_teacher_labels():
         assert (y[90:100] == 1.0).all() and rows[90:100].all() and np.isnan(y[100:140]).all()
         y, rows = recalibration.teacher_labels(run, alive_model=model, teacher=dict(teacher, min_frames=25))
         assert np.isnan(y).all() and not rows.any()
-        # a row needs P(alive) >= 0.5: exactly 0.5 stays, a hair under goes
+        # a row needs the model's alive evidence >= 0.5 (it favours alive): exactly 0.5 stays, a hair under goes
         y, rows = recalibration.teacher_labels(run, alive_model=write_model(root, full=touch_dead_model(3.0, 0.0),
                                                                             name="level.json"), teacher=teacher)
         assert np.array_equal(rows, ~np.isnan(y)), "an alive probability of exactly 0.5 is a row"
