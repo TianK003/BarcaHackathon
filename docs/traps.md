@@ -312,6 +312,15 @@ does: 1.95 m/s in play and 1.12 m/s dead, against ours 0.30 and 0.04. Fit, or ga
 (here each state's median speed of the aim); R019's gate 4, a dead/alive ratio, caught it only indirectly. Cost: P09's
 simulator built and then dropped.
 
+**T48 — A helper wrapper derived with `sed` silently kept the main venv's interpreter, and a lab's requirements file downgraded the pipeline's numpy and pandas.**
+P20's install of the separate `.venv-pathcrf` ran through a wrapper made from the main venv's helper by substitution.
+One substitution did not match, the wrapper still pointed at the main `.venv`, and `pip install -r requirements-pathcrf.txt`
+(numpy 2.2.6, pandas 2.2.3) went into the pipeline's environment, replacing the pinned numpy 2.4.6 and pandas 3.0.6 for
+about 15 minutes (01:33 to 01:50 on 31 Oct). Nothing was committed or run in that state, but the CSV's output depends on
+those versions (T20, T21). Cost: a restore of the venv from its pins, `selftest.py --data`, and a check of `main.csv`'s
+sha256 (unchanged, `7ba575c0…`). Verify every substitution by reading the derived file, never assume it, and make the
+first heavy command of a new venv print `sys.prefix` and the interpreter's version before it installs anything.
+
 **T43 — An oracle that stops where the truth changes measures more than a source can deliver.** A12 sized P17's
 prize with a perfect 2 s vote for the restarting team (+0.0198 raw spellF1), and that vote stopped at the truth's next
 change of team. A real vote has a fixed length and cannot know that change: it keeps pushing after the restarting team's
