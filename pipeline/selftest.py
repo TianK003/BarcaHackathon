@@ -3796,6 +3796,253 @@ def test_shape_features_speed():
     assert elapsed < 6.0, "{:.2f} s for 160,000 frames x 30 slots (the budget is 6 s)".format(elapsed)
 
 
+# -- team features (P19) ----------------------------------------------------------------------------------------------
+#
+# Hand-built scenes in metres on the default pitch, the names spelled out here so that a reordered column cannot pass
+# by agreeing with itself. The ATD's speed channels are NaN (or random garbage) in every scene: nothing may read them.
+
+TEAM_BLOCK = ("ball_d1", "ball_d2", "closing", "rel_speed", "reach_s", "over11", "in_episode", "since_episode_s",
+              "until_episode_s")
+TEAM_SHARED = ("ball_speed_02", "ball_speed_05", "ball_speed_10", "ball_acc_02", "ball_acc_05", "ball_acc_10",
+               "ball_turn_02", "ball_turn_05", "ball_turn_10", "ball_line_m", "since_gap_s", "until_gap_s")
+TEAM_NAMES = (tuple("h_" + name for name in TEAM_BLOCK) + tuple("a_" + name for name in TEAM_BLOCK) + TEAM_SHARED
+              + SHAPE_NAMES)
+TEAM_COLUMN = {name: index for index, name in enumerate(TEAM_NAMES)}
+
+
+def team_matrix(players, ball, teams, graded):
+    from pipeline.evidence import team_features
+    names, X = team_features.features(play_inputs(players, ball, teams=teams, graded=graded))
+    assert names == TEAM_NAMES
+    return X
+
+
+def team_values(X, *names):
+    return [X[:, TEAM_COLUMN[name]] for name in names]
+
+
+def team_scene(seed, n=240, slots=16):
+    """shape_scene's two blocks and a ball that rides on slot 0 (0.4 m off it) and is lost for stretches of frames."""
+    players, teams, graded = shape_scene(seed, n=n, slots=slots)
+    rng = np.random.default_rng([seed, 19])
+    ball = players[:, 0] + np.array([0.4, 0.3])
+    lost = np.zeros(n, dtype=bool)
+    for start in rng.integers(0, n, size=6):
+        lost[start:start + rng.integers(5, 30)] = True
+    ball[lost] = np.nan
+    return players, ball, teams, graded
+
+
+def test_team_features_shape_and_names():
+    from pipeline.evidence import team_features
+    assert team_features.FEATURE_VERSION == 1
+    assert team_features.FEATURE_NAMES == TEAM_NAMES and len(TEAM_NAMES) == 56 and len(set(TEAM_NAMES)) == 56
+    assert TEAM_NAMES[-26:] == SHAPE_NAMES and team_features.COLUMN == TEAM_COLUMN
+    players, ball, teams, graded = team_scene(0)
+    X = team_matrix(players, ball, teams, graded)
+    assert X.shape == (len(players), 56) and X.dtype == np.float64
+    assert np.isfinite(X[graded[0][1]:graded[0][2]]).mean() > 0.5, "the scene must give the columns something to say"
+
+
+def test_team_features_constants_are_the_designs():
+    from pipeline.config import load_config
+    from pipeline.evidence import team_features
+    assert [int(round(seconds * 25)) for seconds in team_features.WINDOWS_S] == [5, 12, 25]
+    assert int(round(team_features.CLOSING_S * 25)) == 5
+    assert team_features.REACTION_S == 0.7 and team_features.REACH_SPEED == 5.0 and team_features.MAX_SLOTS == 11
+    assert team_features.EPISODE_CAP_S == 30.0 and team_features.GAP_CAP_S == 30.0
+    config = load_config(os.path.join(HERE, "configs", "main.toml"))
+    rule = [part.params for part in config.evidence if part.kind == "controlled_touch"]
+    assert len(rule) == 1
+    assert {key: rule[0][key] for key in team_features.TOUCH_RULE} == team_features.TOUCH_RULE, \
+        "TOUCH_RULE is main.toml's touch rule as of R013"
+    assert "duel_radius" not in rule[0], "main.toml leaves duel_radius at its default 1.0, as the features do"
+
+
+def test_team_features_known_values():
+    n = 100
+    players = np.tile(np.array([(50.0, 34.0), (53.0, 34.0), (60.0, 34.0)])[None], (n, 1, 1))
+    teams = np.array([0, 1, 1])
+    X = team_matrix(players, np.tile([50.5, 34.0], (n, 1)), teams, [(1, 0, n)])
+    got = dict(zip(TEAM_NAMES, X[50]))
+    want = {"h_ball_d1": 0.5, "a_ball_d1": 2.5, "a_ball_d2": 9.5, "h_closing": 0.0, "a_closing": 0.0,
+            "h_rel_speed": 0.0, "a_rel_speed": 0.0, "h_reach_s": 0.7 + 0.5 / 5.0, "a_reach_s": 0.7 + 2.5 / 5.0,
+            "h_over11": 0.0, "a_over11": 0.0, "ball_line_m": -34.0}
+    for name in TEAM_SHARED[:9]:
+        want[name] = 0.0
+    for name, expected in want.items():
+        assert abs(got[name] - expected) < 1e-12, (name, got[name], expected)
+    assert np.isnan(got["h_ball_d2"]), "one present slot has no second-nearest"
+    # a ball at 10 m/s along x: speed 10, no acceleration, no turn
+    ball = np.stack([20.0 + 10.0 / 25 * np.arange(n), np.full(n, 34.0)], axis=1)
+    X = team_matrix(players, ball, teams, [(1, 0, n)])
+    for tag in ("02", "05", "10"):
+        speed, acc, turn = team_values(X, "ball_speed_" + tag, "ball_acc_" + tag, "ball_turn_" + tag)
+        assert abs(speed[50] - 10.0) < 1e-9 and abs(acc[50]) < 1e-9 and turn[50] == 0.0, tag
+    # a right-angle turn at t = 50: +x before it, +y after it
+    t = np.arange(n)
+    ball = np.stack([np.where(t <= 50, 30.0 + 0.4 * (t - 50), 30.0), np.where(t <= 50, 34.0, 34.0 + 0.4 * (t - 50))],
+                    axis=1)
+    turn = team_values(team_matrix(players, ball, teams, [(1, 0, n)]), "ball_turn_02")[0]
+    assert abs(turn[50] - np.pi / 2) < 1e-12, turn[50]
+    assert turn[40] == 0.0 and turn[60] == 0.0, "a straight stretch turns by nothing"
+    # approaching: the nearest slot closes on a still ball at 5 m/s, so `closing` and `rel_speed` are 5
+    walking = walkers(n, 5.0, [(30.0, 34.0), (80.0, 34.0)], direction=(1.0, 0.0))
+    X = team_matrix(walking, np.tile([60.0, 34.0], (n, 1)), np.array([0, 1]), [(1, 0, n)])
+    closing, rel = team_values(X, "h_closing", "h_rel_speed")
+    assert abs(closing[50] - 5.0) < 1e-9 and abs(rel[50] - 5.0) < 1e-9
+    assert np.isnan(closing[3]) and np.isnan(closing[n - 3]), "closing needs 5 frames on each side inside the block"
+
+
+def episode_scene(n, home_frames, away_frames):
+    players = np.full((n, 2, 2), np.nan)
+    players[:, 0] = beside_ball(n, home_frames)
+    players[:, 1] = beside_ball(n, away_frames, offset=(-0.5, 0.0))
+    return players, np.tile([30.0, 30.0], (n, 1)), np.array([0, 1])
+
+
+def test_team_features_episodes():
+    from pipeline.contracts import RunContext
+    from pipeline.evidence import controlled_touch
+    players, ball, teams = episode_scene(200, range(50, 60), range(120, 130))
+    inputs = play_inputs(players, ball, teams=teams, graded=[(1, 0, 200)])
+    touch = controlled_touch.compute(RunContext(inputs=inputs, seed=0), radius=1.5, max_rel_speed=6.0, min_frames=1,
+                                     confidence=0.99, hold=0.5).home
+    assert np.flatnonzero(np.isfinite(touch)).tolist() == list(range(50, 60)) + list(range(120, 130)), "the scene"
+    assert (touch[50:60] > 0.5).all() and (touch[120:130] < 0.5).all()
+    X = team_matrix(players, ball, teams, [(1, 0, 200)])
+    h_in, a_in, h_since, h_until, a_since, a_until = team_values(
+        X, "h_in_episode", "a_in_episode", "h_since_episode_s", "h_until_episode_s", "a_since_episode_s",
+        "a_until_episode_s")
+    assert h_in.tolist() == [1.0 if 50 <= t < 60 else 0.0 for t in range(200)]
+    assert a_in.tolist() == [1.0 if 120 <= t < 130 else 0.0 for t in range(200)]
+    assert h_since[70] == (70 - 59) / 25 and h_since[40] == 30.0 and h_until[40] == 0.4 and h_until[55] == 0.0
+    assert h_since[55] == 0.0 and h_until[70] == 30.0, "no later episode: the cap"
+    assert a_until[70] == (120 - 70) / 25 and a_since[150] == (150 - 129) / 25
+    # an episode 40 s away is capped at 30 s
+    players, ball, teams = episode_scene(1300, range(1100, 1110), range(0))
+    X = team_matrix(players, ball, teams, [(1, 0, 1300)])
+    since, until = team_values(X, "h_since_episode_s", "h_until_episode_s")
+    assert since[1200] == (1200 - 1109) / 25 and until[10] == 30.0 and since[10] == 30.0, "44 s away"
+    # an episode never reaches across a block's edge
+    players, ball, teams = episode_scene(200, range(50, 60), range(0))
+    X = team_matrix(players, ball, teams, [(1, 0, 100), (2, 120, 200)])
+    since, until = team_values(X, "h_since_episode_s", "h_until_episode_s")
+    assert since[130] == 30.0 and until[120] == 30.0, "block 2 does not see block 1's episode"
+    assert until[0] == 2.0 and since[99] == (99 - 59) / 25
+
+
+def test_team_features_gaps():
+    n = 200
+    players = np.tile(np.array([(10.0, 10.0), (60.0, 30.0)])[None], (n, 1, 1))
+    ball = np.tile([30.0, 30.0], (n, 1))
+    ball[80:100] = np.nan
+    X = team_matrix(players, ball, np.array([0, 1]), [(1, 0, n)])
+    since, until = team_values(X, "since_gap_s", "until_gap_s")
+    assert since[120] == 0.8 and until[60] == 0.8 and since[10] == 30.0 and until[190] == 30.0
+    assert since[100] == 0.0 and until[79] == 1 / 25
+    assert np.isnan(since[80:100]).all() and np.isnan(until[80:100]).all()
+    ball_columns = [TEAM_COLUMN[name] for name in TEAM_SHARED]
+    assert np.isnan(X[80:100][:, ball_columns]).all(), "no ball, no ball column"
+    assert np.isnan(X[80:100][:, [TEAM_COLUMN[name] for name in ("h_ball_d1", "a_reach_s", "h_rel_speed")]]).all()
+    assert (X[80:100][:, TEAM_COLUMN["h_over11"]] == 0.0).all(), "over11 does not need the ball"
+
+
+def test_team_features_over11():
+    n = 50
+    players = np.zeros((n, 13, 2))
+    players[:, :, 0], players[:, :, 1] = np.linspace(5.0, 90.0, 13), 20.0
+    teams = np.array([0] * 12 + [1])
+    X = team_matrix(players, np.tile([30.0, 30.0], (n, 1)), teams, [(1, 0, n)])
+    assert (team_values(X, "h_over11")[0] == 1.0).all() and (team_values(X, "a_over11")[0] == 0.0).all()
+    players[:, 11] = np.nan
+    X = team_matrix(players, np.tile([30.0, 30.0], (n, 1)), teams, [(1, 0, n)])
+    assert (team_values(X, "h_over11")[0] == 0.0).all(), "11 present slots is not more than 11"
+
+
+def test_team_features_swap():
+    from pipeline.evidence import shape_features, team_features
+    for seed in range(6):
+        players, ball, teams, graded = team_scene(seed)
+        X = team_matrix(players, ball, teams, graded)
+        relabelled = team_matrix(players, ball, 1 - teams, graded)
+        swapped = team_features.swap(X)
+        assert swapped is not X and not np.shares_memory(swapped, X) and swapped.flags.writeable
+        assert np.array_equal(swapped, relabelled, equal_nan=True), "seed {}: swap is not exact".format(seed)
+        assert np.array_equal(team_features.swap(swapped), X, equal_nan=True), "swap is not an involution"
+        assert np.array_equal(swapped[:, 18:30], X[:, 18:30], equal_nan=True), "the shared columns are untouched"
+        assert np.array_equal(swapped[:, 30:], shape_features.swap(X[:, 30:]), equal_nan=True)
+        assert np.array_equal(swapped[:, :9], X[:, 9:18], equal_nan=True)
+        episodes = np.nansum(team_values(X, "h_in_episode", "a_in_episode"))
+    assert episodes > 0, "the scenes must include episodes"
+    expect_error(ValueError, lambda: team_features.swap(np.zeros((4, 26))), "team_features.swap", "56")
+    expect_error(ValueError, lambda: team_features.swap(np.zeros(())), "team_features.swap", "56")
+
+
+def test_team_features_ignore_speed_channels():
+    from pipeline.evidence import team_features
+    players, ball, teams, graded = team_scene(2)
+    pitch = np.array(PLAY_PITCH)
+    both = []
+    for seed in (1, 2):
+        atd = kinematics_atd(players / pitch, ball / pitch, seed=seed)
+        atd.slot_team[:] = teams
+        both.append(team_features.features(kinematics_inputs(atd, graded))[1])
+    assert np.array_equal(both[0], both[1], equal_nan=True), "a column reads the ATD's own speed channels (T31)"
+    assert np.isfinite(both[0]).any()
+
+
+def test_team_features_see_only_their_block():
+    rng = np.random.default_rng(13)
+    players, ball, teams, graded = team_scene(2)
+    (_, first_start, first_stop), (_, second_start, second_stop) = graded
+    base = team_matrix(players, ball, teams, graded)
+    moved, moved_ball = players.copy(), ball.copy()
+    moved[second_start:second_stop] = rng.random((second_stop - second_start, len(teams), 2)) * PLAY_PITCH
+    moved_ball[second_start:second_stop] = moved[second_start:second_stop, 0]
+    moved[first_stop:second_start], moved_ball[first_stop:second_start] = 7.0, 7.0
+    again = team_matrix(moved, moved_ball, teams, graded)
+    assert np.array_equal(base[:first_stop], again[:first_stop], equal_nan=True), "block 2 leaked into block 1"
+    assert np.isnan(again[:first_start]).all() and np.isnan(again[first_stop:second_start]).all()
+    assert np.isnan(again[second_stop:]).all(), "rows outside the blocks are all NaN"
+    assert not np.array_equal(base[second_start:second_stop], again[second_start:second_stop], equal_nan=True)
+    moved, moved_ball = players.copy(), ball.copy()
+    moved[:first_stop] = rng.random((first_stop, len(teams), 2)) * PLAY_PITCH
+    moved_ball[:first_stop] = moved[:first_stop, 0]
+    third = team_matrix(moved, moved_ball, teams, graded)
+    assert np.array_equal(base[second_start:], third[second_start:], equal_nan=True), "block 1 leaked into block 2"
+
+
+def test_team_features_memo_and_read_only():
+    from pipeline.evidence import team_features
+    players, ball, teams, graded = team_scene(7)
+    inputs = play_inputs(players, ball, teams=teams, graded=graded)
+    names, X = team_features.features(inputs)
+    assert not X.flags.writeable, "features must hand out read-only arrays"
+    again_names, again = team_features.features(inputs)
+    assert again is X and again_names is names, "features is remembered per Inputs object"
+    players, ball, teams, graded = team_scene(8)
+    other = team_features.features(play_inputs(players, ball, teams=teams, graded=graded))[1]
+    assert other is not X and not np.array_equal(other, X, equal_nan=True)
+
+
+def test_team_features_speed():
+    from pipeline.evidence import team_features
+    rng = np.random.default_rng(14)
+    n, slots = 140_000, 46
+    players = rng.random((n, slots, 2))
+    players[rng.random((n, slots)) < 0.4] = np.nan
+    ball = rng.random((n, 2))
+    ball[rng.random(n) < 0.4] = np.nan
+    inputs = kinematics_inputs(kinematics_atd(players, ball), [(1, 5_000, 70_000), (2, 75_000, 135_000)])
+    started = time.perf_counter()                   # from a fresh Inputs: the tracks and the Atd's masks are in it
+    team_features.features(inputs)
+    elapsed = time.perf_counter() - started
+    print("      team features speed: 125,000 graded frames x {} slots (tracks, shape and touch included) in {:.2f} "
+          "s".format(slots, elapsed))
+    assert elapsed < 10.0, "{:.2f} s for 125,000 frames x 46 slots (the budget is 10 s)".format(elapsed)
+
+
 # -- the shape possession source (P07) --------------------------------------------------------------------------------
 #
 # Hand-made artifacts whose trees are stumps on the shape features, so that every number is worked out here and not by
