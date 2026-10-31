@@ -7221,9 +7221,16 @@ measured.
 
 **Outcome.** P20 is dropped; the code is removed from the branch, recoverable at `2163406`.
 
-### R023 — P16 part 1: Metrica's sample games and the grain of our truth (draft, 2026-10-31)
+### R023 — P16 part 1: Metrica's sample games and the grain of our truth (declared, signed 2026-10-31)
 
-**Advisor (for Tian), unsigned: not declared until Tian signs or amends it; nothing has been downloaded or run.**
+**Signed by Tian on 2026-10-31, unamended, before any event file was fetched.** Drafted by the advisor (for Tian)
+overnight; the signature settles the three points the draft left to Tian:
+- **Licence:** the README's note suffices. The files are fetched at run time and never committed, and the technical
+  document acknowledges Metrica (the licence stop's third condition does not fire).
+- **Outcome "both":** the unweighted mean of the two pooled spellF1s (the advisor's rule), not a third truth of that
+  grain (P16's own text).
+- **Event grain against flag grain:** accepted as the limit stated below. The DFL calibration (the same derivation on
+  DFL's events against its flag) is not part of R023.
 
 Proposal: P16 · Part 1 only. Part 2 (the run) is written after Tian signs; amendments go in before any file is fetched.
 The source is advisor-02, Lane C. The research behind it (licence text, taxonomy, kloppy, StatsBomb, PathCRF) is the
