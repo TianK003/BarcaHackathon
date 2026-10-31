@@ -4,8 +4,8 @@
 0.0061 worse (0.3759 to 0.3820, where 0.002 better was needed) and rung 3 0.0838 worse, the transfer from touch frames
 to gaps (0.296) being nearly three times the teacher's noise (0.107); `docs/results.md`, R027 part 2a.
 
-Date: 2026-10-31. Proposal: `docs/proposals.md` P22 (b). Results entry to come: R027 (R027b if its one retry runs).
-Status: revised after an independent review (Fable 5.1, xhigh; `.superpowers/sdd/2026-10-31-p22b-selftrain/design-review.md`,
+Date: 2026-10-31. Proposal: `docs/proposals.md` P22 (b). Results entry: R027 (its retry R027b did not run).
+History: revised after an independent review (Fable 5.1, xhigh; `.superpowers/sdd/2026-10-31-p22b-selftrain/design-review.md`,
 verdict "proceed with changes", every finding resolved in the text below and listed in the appendix). Tian answered the
 four open questions on 2026-10-31 (section 9).
 

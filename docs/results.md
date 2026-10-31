@@ -7026,8 +7026,9 @@ of abs(0.5 - pi_true) = **0.0623**; ratio **0.8634**. The gate needs error <= 0.
 
 **What stays.** P22(c), the prior as asymmetric switch costs in the decoder, stays recorded in `docs/proposals.md` for the
 team, untested: it would use the same pi_hat, which this run shows is not a better guess than 0.5. P22(b), self-training,
-was not tried. The code (the prior on `shape_possession`, `label_shift.py`, its checks and the three configs) is removed in
-one commit, recoverable from `e303365`; `wrong_team.py` and its checks stay, since P19's transfer check reports A16's ratio.
+was not tried here (it was later that day, as R027). The code (the prior on `shape_possession`, `label_shift.py`, its
+checks and the three configs) is removed in one commit, recoverable from `e303365`; `wrong_team.py` and its checks stay,
+since P19's transfer check reports A16's ratio.
 `main.toml` was never changed, and `pipeline/` equals main's except for `wrong_team.py` and its checks.
 
 ### R021 — P19's team model where the ball is seen: feasibility, a two-stage grid, the bar and the transfer (2026-10-31, the overnight lane for Tian)
@@ -8622,7 +8623,7 @@ declared code and constants is removed and the step rerun once from the same com
 ran again from `1e5a5d2`.
 - The chain goes on to `context` after a 0, a 1 or a 4 alike, so the lost code changed nothing that ran.
 - The `context` log ends with the same empty `EXIT=`. It decides nothing, and its statistics are printed in full above
-  its verdict line, so it was not rerun.
+  its verdict line, so it was not rerun: a disclosed deviation from the errors rule's rerun.
 
 **The gate on `tracking`** (v3, seeds 0 to 2, two blocks a match). The frames are block k's alive frames with the
 served ball missing and z finite. Each block's offset is fitted on the other block's teacher rows, and every column is

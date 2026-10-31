@@ -966,16 +966,16 @@ Athletic: the count of possessions moved the other way on BAR-ATH.
       noise-aware: a forward correction at `main.toml`'s ε = 0.07, with the noise-corrected class share of those frames
       removed. On synthetic data a class-balanced fit is pulled about 0.1 towards the teacher's minority class.
     - **The labels:** `controlled_touch`'s episode frames at `main.toml`'s rule, without the frames `dead_ball_model`
-      calls dead, computed by the same code on DFL and on BAR-ATH. The decoded labels are not used: in the gaps they carry
-      P07 itself, and on BAR-ATH Smart Tagging too.
+      calls dead, computed by the same code on DFL and on BAR-ATH. The decoded labels are not used: in the gaps they
+      carry P07 itself, and on BAR-ATH Smart Tagging too.
     - **Where it runs:** at run time in a new source `shape_selftrain`, with no new artifact.
     - **Why the intercept:** R020's misses hint at a per-match offset, and P07's slope is about right (α 1.07 to 1.10).
       When a prediction model is updated for a new population, the simplest update holds and revisions overfit (Janssen
       et al. 2008), and self-training under shift needs strong regularisation (Kumar, Ma and Liang 2020). No offset has
       been measured yet: the gate's oracle is the first measurement.
     - **The tests:**
-      1. A gate on DFL, run from the tool before the source is built. It requires a pooled log-loss gain of at least 0.002
-         nats in the held-out half's gaps, and no match worse by more than 0.002.
+      1. A gate on DFL, run from the tool before the source is built. It requires a pooled log-loss gain of at least
+         0.002 nats in the held-out half's gaps, and no match worse by more than 0.002.
       2. The bar on the mean of the two truths: R025's form or a magnitude bar, Tian's choice.
       3. Label-free checks on BAR-ATH, among them Smart Tagging's votes in the gaps.
     - **One retry:** rung 3 (a team-aware linear head), only if rung 1 fails the gate and rung 3 passes it in the same
@@ -1078,7 +1078,7 @@ at 0.93). That is wrong exactly where a player handles a dead ball. A19 measures
 | **C** | Posterior edges: move each change to the median of the posterior over where it happened | S–M | +0.003 to +0.015 | The posterior is computed by `marginals` and not used yet; matters most in gaps, where P07 alone speaks | **do**, after B's gate → R025 |
 | **D** | The dead-ball prior and every source's calibration | S | 0 | The prior is already corrected (above); the calibration of the sources and of the posterior tells C what its posterior is worth | **do**, as a check → A19 |
 | **E** | P07 weighted apart in the gaps and where the ball is seen | S | 0 to +0.02 | In the gaps P07 is the only team signal, at the same weight as where touches speak | **do** → R026 |
-| **F** | P22(b): self-train P07 on our match's own touch pseudo-labels, cross-fit by half, the procedure tested on DFL first | M–L | 0 to +0.03 | The one idea aimed at the gaps, where a perfect team signal is worth +0.176 raw (A13) | **deferred** (Tian, 31 Oct): only if 4 days remain before the freeze |
+| **F** | P22(b): self-train P07 on our match's own touch pseudo-labels, cross-fit by half, the procedure tested on DFL first | M–L | 0 to +0.03 | The one idea aimed at the gaps, where a perfect team signal is worth +0.176 raw (A13) | **deferred** (Tian, 31 Oct), then run as P22(b) → R027, dropped at its gate; the original condition: only if 4 days remain before the freeze |
 | **G** | Bag P07's seven fold models | M | ≤ +0.005 | Less variance, better-calibrated gap probabilities; a fair benchmark needs 42 small models | not taken |
 | **H** | A soft duration prior in place of the hard 1.4 s minimum (semi-Markov) | M | −0.005 to +0.01 | The raw-against-coarse knob in another form, which A settles | not taken |
 | **I** | A learned switch hazard (an IOHMM: cheaper changes at loose balls, duels and passes in flight) | L | 0 to +0.015 | The best-supported idea in the literature, and the largest transfer risk from DFL to our match | not taken |
