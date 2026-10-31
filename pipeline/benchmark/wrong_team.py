@@ -83,8 +83,8 @@ def candidates(inputs, *, radius=RADIUS, max_rel_speed=MAX_REL_SPEED, duel_radiu
     """(n,) bool: graded, ball seen, the nearest present slot within `radius` and moving with the ball.
 
     The rule of `controlled_touch` (velocities from positions, the lowest slot index on a tie) without its duel test:
-    `duel_radius=None` skips it, a number applies it as `controlled_touch` does (no rival slot of the other team than the
-    nearest within it).
+    `duel_radius=None` skips it, a number applies it as `controlled_touch` does (no slot of the nearest slot's opposing
+    team within it).
     """
     ball = kinematics.ball_track(inputs)
     players = kinematics.player_track(inputs)
@@ -163,8 +163,9 @@ def measure(inputs):
     candidate = candidates(inputs)
     over = over_eleven(players.present, inputs.atd.slot_team)
     window = int(round(ONSET_WINDOW_S * inputs.fps))
-    return {"ratio": ratio(over, candidate, graded),
-            "surplus": ratio(surplus(players.present, inputs.atd.slot_team), candidate, graded),
+    stricter = ratio(surplus(players.present, inputs.atd.slot_team), candidate, graded)
+    stricter["verdict"] = "report only"                     # only `ratio` decides (A16 part 1)
+    return {"ratio": ratio(over, candidate, graded), "surplus": stricter,
             "onset": onset_ratio(over, candidate, kinematics.blocks(inputs), window)}
 
 

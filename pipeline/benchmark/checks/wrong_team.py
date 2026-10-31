@@ -167,6 +167,7 @@ def test_wrong_team_measure_against_plain_loops():
     candidate = wrong_team.candidates(inputs)
     assert cell["over_candidate_frames"] == sum(1 for frame in over if candidate[frame])
     assert out["surplus"]["candidate_frames"] == cell["candidate_frames"]
+    assert out["surplus"]["verdict"] == "report only", "only the over-11 ratio carries the rule's verdict"
     assert out["onset"]["onsets"] > 0
 
 

@@ -158,7 +158,11 @@ Measured on our match's ATD and the public GT. Aggregates only; each figure cite
   a median of 7.4 s, and 15.0% of those gaps last over a minute (A09).
 - A slot can carry the other team's player: a team shows more than 11 slots while the other shows fewer on 10.8% of
   the graded frames (17,156 of 158,857), in 108 episodes (63 with the home team in surplus, 45 away), median 2.7 s, p90
-  16 s, longest 50 s. This is a lower bound, because a swap inside 11 against 11 cannot be seen (T32, A07).
+  16 s, longest 50 s. This is a lower bound, because a swap inside 11 against 11 cannot be seen (T32, A07). They do
+  not show up more at the ball: the share of `controlled_touch`-style candidate frames with a team over 11 slots is
+  0.1097 against 0.1286 of all graded frames, a ratio of 0.85 against a declared 1.5, so the repair (P21) was dropped
+  and A14's bound on the player degradation (0.013) applies. The comparison is against all graded frames while the
+  candidates need the ball seen, so the ratio may partly reflect ball visibility (A16).
 - The speed is NaN on 7.8% of the present slot-frames, in 2,843 runs of a median of 21 frames (p90 69, longest 9,268)
   (A07). The position jitter, the RMS of the second difference, is 3.3 mm (A07).
 
@@ -680,7 +684,10 @@ classes balance exactly and the model has no prior to subtract and no notion of 
 - **No video, audio or homography, and Smart Tagging only as a vote.** Whatever uses them (P08, P14, P15) is checked on the
   public window for correctness only, with its strength fixed by a declared constant. P09 tried to simulate the camera
   on DFL from noise measured on our match and was dropped when the simulation failed two of its four fidelity gates
-  (R019). P08 was not checked on the public window before its
+  (R019). P22(a) shifted the shape model's logit by the home share that EM estimates from its own outputs, and was
+  dropped at its feasibility gate on the seven DFL matches (the share's mean error 0.0538 against 0.0623 for guessing
+  0.5, needing 0.75 of it; R020): the model's outputs are not a calibrated estimate of a match's possession share, and
+  no score was produced. P08 was not checked on the public window before its
   adoption, and its strength (weight 0.2, spread `frame`) was Tian's pick between two declared options: no constant came
   from the window. After the adoption `selftest.py --data` scored the window as a correctness check (macroF1 0.6986,
   spellF1 0.4000, against R013's 0.7152 and 0.4649; one possession moves spellF1 by about 0.06 there), and those figures

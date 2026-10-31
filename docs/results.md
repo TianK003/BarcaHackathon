@@ -41,6 +41,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R018 | 2026-10-30 | the referee's whistle (P10): a hand-built 2 to 4 kHz band-pass detector on the tactical audio, its feasibility gate and its bar against `main.toml`'s own decoded stoppages | — | — | — | — | dropped (R018, R018b: gate failed, ratio 1.52 / 1.51) |
 | R018b | 2026-10-30 | the whistle (P10), the one retry R018 allowed: the tonal threshold set to the match's own 98th percentile of tonal_db, the same gate and bar | — | — | — | — | dropped, code removed (fc9dbed): gate failed, ratio 1.51 (55 detections) |
 | R019 | 2026-10-30 | P09: the camera's aim in the shape model; part 1a: the camera's fit and fidelity gates (peak lag +-10 frames, peak correlation +-0.05, median error +-3.0 m, dead/alive speed ratio +-25%; the gap/visible ratio a WARN), declared before the first simulation; part 2a: the gates run | — | — | — | — | dropped 2026-10-31, code removed (8c4c959): `tracking` gates 2 and 4 failed (peak correlation 0.9115 vs ours 0.843, dead/alive speed ratio 0.575 vs 0.128), no retry |
+| R020 | 2026-10-31 | P22(a): an EM label-shift prior on the shape model (the home share from P07's own outputs, added to the logit at s in {0.25, 0.5, 1.0}); part 1: the feasibility gate (mean abs error of EM's share at most 0.75 x that of guessing 0.5), the grid, R014's bar, the BAR-ATH checks; part 2: the gate run | — | — | — | — | dropped 2026-10-31, code removed (recover from `e303365`): the gate failed, 0.0538 against 0.0623 (ratio 0.863, needs 0.75), and neither retry condition held; no grid ran |
 
 ### The four yardsticks on every profile, in one table
 
@@ -1711,12 +1712,15 @@ stands as written.
 **Onset (D3, report only):** 130 over-11 runs begin inside the graded blocks; 0.3769 of them lie within 1.0 s of a
 candidate frame, against 0.4755 of the graded frames: ratio 0.7926. It decides nothing.
 
-**Verdict: the ratio 0.8532 is below 1.5, so P21 is dropped by its declared rule** and the ceiling run is not run. Wrong-team
-surpluses are, if anything, rarer at the ball than elsewhere (all three ratios are below 1), so the benchmark's own
-placement, anywhere on the pitch, does not understate the cost, and A14's bound on all of `tracking`'s player degradation
-(0.013 raw) stands. The two effects that pull a state ratio towards 1 (part 1) cannot explain a value this far below it,
-and the onset ratio, which is free of the first, agrees in direction. The tool and its checks are kept, since P19's
-transfer check reports its ratio.
+**Verdict: the ratio 0.8532 is below 1.5, so P21 is dropped by its declared rule** and the ceiling run is not run. By
+part 1's logic, A14's bound on all of `tracking`'s player degradation (0.013 raw) applies. The reading is hedged: there
+is no sign on this measure that over-11 states cluster at the candidate frames, but the candidate frames need the ball
+seen while the comparison set is all graded frames, of which the ball is missing from 41% (A01 to A03). If over-11 states
+are more common where the ball is missing, a ratio below 1 may partly reflect ball visibility and not where swaps
+happen, and the onset ratio shares that denominator, so it is no independent support. A frequency ratio is not a
+cost, either. The rule was declared and the measure is the advisor's, so the verdict stands. The tool and its checks are
+kept, since P19's transfer check reports its ratio; a report-only line on graded frames with the ball seen would separate
+"at the ball" from "with the ball seen" and would have to be declared before that run.
 
 ## Experiments
 
@@ -6745,8 +6749,8 @@ drop), the bar's failure to the drop. After a drop, the prior, `label_shift.py`,
 removed in one commit that names the commit to recover them from.
 
 **Part 2, the feasibility run and the verdict** (2026-10-31). Everything below applies part 1 as written. The feasibility
-run (`label_shift.py feasibility`, `tracking` v3, 3 seeds, at the commit of part 1's clarification and the `grid` command)
-was the only run: no grid ran, and no spellF1 of any R020 config was produced or read. Aggregates only; pi_alive is
+run (`label_shift.py feasibility`, `tracking` v3, 3 seeds, 02:18:53 to 02:20:33; the code was `e303365`'s and the branch
+head `d67b152`, which changed only docs; the log ends `EXIT=0` and no seed flagged NOT CONVERGED) was the only run: no grid ran, and no spellF1 of any R020 config was produced or read. Aggregates only; pi_alive is
 quoted at the log's 3 decimals.
 
 | match | pi_true | pi_hat per seed | mean abs error | abs(0.5 - pi_true) | slope | pi_alive |
@@ -6770,18 +6774,22 @@ of abs(0.5 - pi_true) = **0.0623**; ratio **0.8634**. The gate needs error <= 0.
 2. **Retry (ii) does not fire.** Its condition needs a* outside [0.8, 1.25]; a* (the geometric mean of the per-match
    slopes) is 1.071, inside the band.
 3. **So there is no retry and P22(a) is dropped.**
-- **Advisor (for Tian):** no retry fired mechanically. Both of D1's conditions were false, so the advisor's order ends at
-  its third item and nothing was left to approve.
+- No retry fired: this is the order declared in part 1 (the advisor's section 4, D1, items i to iii) applied mechanically.
+  Both conditions were false, so it ends at its third item. It is not a new ruling by the advisor, and none was needed.
 
 **Readings, hedged** (they decide nothing; the verdict is the gate's):
-- J03WN1 carries most of the error: its pi_hat is about 0.35 against a true 0.53, an error of 0.18 that is 47% of the
-  sum of the seven matches' errors. Without it the mean error would be 0.033 against a baseline of 0.067, which is a
-  gate pass, so one match decides this verdict. J03WQQ goes the other way (0.53 against 0.44).
+- J03WN1 is the largest single error: its pi_hat is about 0.35 against a true 0.53, an error of 0.18 that is 47% of the
+  sum of the seven matches' errors, and J03WQQ goes the other way (0.53 against 0.44). This is not a near miss that one
+  match decides: leaving out J03WN1 would pass (0.033 against 0.067), but that is a post-hoc leave-one-out, and leaving
+  out any of the other six matches keeps the gate failing (ratios 0.77 to 1.20). EM's share is closer to the truth than
+  0.5 is on only 3 of the 7 matches (J03WOH, J03WPY, J03WR9).
 - The shape model's outputs are not a calibrated estimate of a match's possession share: the slopes sit near 1
   (0.94 to 1.16), so the shape of its logit is not the problem, but EM needs P(y|x) to transfer to the match, and a
   model trained on six other matches does not carry that for a match's share. This fits the research's caution
   (Saerens et al. 2002; Garg et al. [2020](https://arxiv.org/abs/2003.07554)) and is a reading, not a measurement.
-- The alive-only share is worse, not better (0.0735 against 0.0538), so the dead frames are not the cause.
+- On average the alive-only share is worse (0.0735 against 0.0538), so the dead frames do not appear to be the main
+  cause; on J03WN1 (0.124 against 0.178) and J03WQQ (0.027 against 0.086) it is better, which is why retry (i) was
+  declared at all, and it was not enough for the gate.
 
 **What stays.** P22(c), the prior as asymmetric switch costs in the decoder, stays recorded in `docs/proposals.md` for the
 team, untested: it would use the same pi_hat, which this run shows is not a better guess than 0.5. P22(b), self-training,

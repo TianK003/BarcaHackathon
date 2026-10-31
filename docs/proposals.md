@@ -866,7 +866,7 @@ nodes, one per line, it has gone to. Viterbi decodes the path, and impossible tr
 
 ### P21 — Wrong-team slots: measure the ceiling, then repair them
 
-**Status: dropped → [A16](results.md) (step 0: over-11 frames are 0.1097 of `controlled_touch`-style candidate frames against 0.1286 of graded frames, ratio 0.85, below the declared 1.5; the onset ratio, 0.79, agrees and decided nothing). A14's bound stands. `pipeline/benchmark/wrong_team.py` and its checks are kept, because P19's transfer check reports its ratio; no repair was built.**
+**Status: dropped → [A16](results.md) (step 0: over-11 frames are 0.1097 of `controlled_touch`-style candidate frames against 0.1286 of graded frames, ratio 0.85, below the declared 1.5; the onset ratio, 0.79, is report only and shares the ratio's denominator; a ratio below 1 may partly reflect ball visibility, as the candidates need the ball seen and the comparison is all graded frames). A14's bound stands. `pipeline/benchmark/wrong_team.py` and its checks are kept, because P19's transfer check reports its ratio; no repair was built.**
 
 **Why.** T32: on at least 10.8% of the graded frames a team shows more than 11 slots, because a slot has followed a
 player of the other side. `controlled_touch` takes the team of the nearest slot at confidence 0.93, so a swap next to the
@@ -919,7 +919,18 @@ Athletic: the count of possessions moved the other way on BAR-ATH.
     would check the model on its own training labels.
 - **(c) M, recorded 2026-10-31 (advisor, for the team; not pursued tonight):** the prior as asymmetric switch costs in the
   decoder, the decoder's own place for a class prior. It is a contract change and needs its own decoder grid, so the team
-  decides. R020 reads s = 1 as the frame-level Bayes value, not the decoder's prior.
+  decides. R020 reads s = 1 as the frame-level Bayes value, not the decoder's prior. It would use the same share as (a),
+  which failed R020's feasibility gate (0.0538 from the truth against 0.0623 for guessing 0.5), so it is untested but not
+  promising as it stands.
+- **Research (2026-10-31).** The estimator is Saerens, Latinne and Decaestecker's EM
+  ([Neural Computation 14(1), 2002](https://dipot.ulb.ac.be/dspace/bitstream/2013/68391/1/Decaestecker_NeuralComp02.pdf)),
+  taken with the training prior fixed at 0.5 (our rows are mirrored). Alexandari, Kundaje and Shrikumar
+  ([arXiv 1901.06852](https://arxiv.org/abs/1901.06852)) show EM beats the moment estimators once the model is calibrated,
+  and Garg et al. ([arXiv 2003.07554](https://arxiv.org/abs/2003.07554)) that it is consistent under calibration: from
+  them we took the calibration slope as a report-only diagnostic and temperature scaling as a pre-stated retry. Lipton,
+  Wang and Smola's BBSE ([arXiv 1802.03916](https://arxiv.org/abs/1802.03916)) was left out: its confusion matrix would
+  come from DFL, and whether it transfers is the doubt. Bourlard and Morgan's hybrid HMM (1994) says where a class prior
+  belongs, in the decoder, which is why (c) was recorded. R020 tested only the estimator's feasibility, and it failed.
 - **Validate:** simulate the procedure on DFL, leave one match out, each match in turn as the unlabelled target. A
   Bundesliga-to-Bundesliga shift is small, so expect "no harm" rather than a gain.
 
