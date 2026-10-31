@@ -6622,6 +6622,12 @@ It then goes through the tutorial's inference (`use_crf`, `decode="indep"`, 10 s
 
 **Stops.** No clean pass by 06:30: no verdict, no retry spent. No new heavy work after 08:30. A go stops at step 0, because step 1 (a GPU retraining, numpy inference for byte-identical CSVs) is Tian's.
 
+**Part 2a: the clean reproduction (2026-10-31, run by the controller; a correctness check, not the verdict).**
+- J03WR9 through their own preprocessing, inference and metric (`runner.py clean --match J03WR9`, 1 torch thread): **team accuracy 0.9164**, against the declared gate ≥ 0.884 (paper 0.924). **The gate passes.**
+- Edge accuracy 0.695 (tutorial 0.6964), event F1 0.756 (tutorial 0.7569), 17,168 five-fps steps (tutorial 17,168), inference 200 s.
+- `runner.py smoke` and `selftest.py --torch` passed. The checkpoint's sha256, recorded at the first verified fetch: `55757d9dca9777d60356ba368dc315867ea1ae38e90c332e935b9c5be72d83c9`.
+- The code of the runner was fixed against their real API before this run (device `cpu`, the touches as events, the four-value `inference`): usage fixes, named in `.superpowers/sdd/2026-10-31-p20-pathcrf/task-3-runner-report.md`.
+
 ## Submission log
 
 The form keeps only the last response before the deadline, so log every upload.
