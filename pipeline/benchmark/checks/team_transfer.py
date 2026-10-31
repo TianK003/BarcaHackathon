@@ -137,7 +137,7 @@ def test_team_transfer_prints_aggregates_only():
             else:
                 yield value
         assert all(leaf is None or isinstance(leaf, (bool, int, float)) for leaf in leaves(result)), "no list, no array"
-        assert "PASSES" in text or "FAILS" in text and "agreement" in text and len(lines) < 12
+        assert ("PASSES" in text or "FAILS" in text) and "agreement" in text and len(lines) < 12
         # the command: a stand-in for the data load, exit 0 whatever the verdict, aggregates written
         real, buffer = transfer.load_inputs, io.StringIO()
         inputs.data_dir = root

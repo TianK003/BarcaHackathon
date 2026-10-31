@@ -16,6 +16,7 @@
 Synthetic only: the configs are made from the repository's main.toml, read as a file, and no result of any run is used.
 """
 
+import json
 import os
 import tempfile
 
@@ -189,45 +190,117 @@ def test_team_grid_writes_the_same_bytes_twice():
         assert before == [os.path.getmtime(p) for p in first], "a file that already holds the bytes is not rewritten"
 
 
+STEMS = ["a", "b", "c", "d"]                 # a stand-in union of stems, the stage's choice "c" among them
+
+
 def choice(delta, p, coarse=0.0, alive=0.0, lomo_mean=0.01, wins=7, context_raw=0.0, context_coarse=0.0):
-    stage = {"chosen": "c", "reference": "main",
-             "versus": {"raw": {"pooled_delta": delta, "p_sign_flip": p}, "coarse": {"pooled_delta": coarse}},
-             "rows": {"c": {"alive_dead": 0.9731 + alive}, "main": {"alive_dead": 0.9731}}}
-    union = {"lomo": {"rule": {"raw": {"mean": lomo_mean, "wins": wins}}}}
-    context = {"versus": {"raw": {"pooled_delta": context_raw}, "coarse": {"pooled_delta": context_coarse}}}
+    """The three choose.py --out documents, with what the verdict reads and what it checks them by."""
+    meta = {"reference": "main", "metric": "spell", "profile": "tracking"}
+    stage = dict(meta, chosen="c", order=["a", "b", "c"],
+                 versus={"raw": {"pooled_delta": delta, "p_sign_flip": p}, "coarse": {"pooled_delta": coarse}},
+                 rows={"c": {"alive_dead": round(0.9731 + alive, 9)}, "main": {"alive_dead": 0.9731}})
+    union = dict(meta, chosen="d", order=list(STEMS), lomo={"rule": {"raw": {"mean": lomo_mean, "wins": wins}}})
+    context = dict(meta, profile="context", chosen="c", order=["c"],
+                   versus={"raw": {"pooled_delta": context_raw}, "coarse": {"pooled_delta": context_coarse}})
     return stage, union, context
 
 
+def V(*arguments, **keywords):
+    return grid.verdict(*choice(*arguments, **keywords), STEMS)
+
+
+def test_team_grid_verdict_refuses_the_wrong_files():
+    good = choice(0.01, 0.01)
+    assert grid.verdict(*good, STEMS)["chosen"] == "c"
+
+    def refused(edit, *fragments, stems=STEMS):
+        stage, union, context = (dict(document) for document in choice(0.01, 0.01))
+        edit(stage, union, context)
+        expect_error(ValueError, lambda: grid.verdict(stage, union, context, stems), "team_grid", "refused", *fragments)
+
+    for position, name in enumerate(("stage", "union", "context")):
+        def wrong_reference(*documents, position=position):
+            documents[position]["reference"] = "r013_retune"
+        refused(wrong_reference, name, "reference")
+
+        def wrong_profile(*documents, position=position):
+            documents[position]["profile"] = "gaps"
+        refused(wrong_profile, name, "profile")
+
+        def wrong_metric(*documents, position=position):
+            documents[position]["metric"] = "macro"
+        refused(wrong_metric, name, "metric")
+
+        def missing_key(*documents, position=position):
+            del documents[position]["order"]
+        refused(missing_key, name, "choose.py")
+    refused(lambda s, u, c: u.update(profile="context"), "union", "tracking")          # the veto's file as the union
+    refused(lambda s, u, c: c.update(profile="tracking"), "context", "context")         # the bar's file as the context
+    refused(lambda s, u, c: c.update(chosen="d", order=["d"]), "context", "c")           # another config's context run
+    refused(lambda s, u, c: c.update(order=["c", "d"]), "context")
+    refused(lambda s, u, c: s.update(chosen="z"), "z")                                  # a choice outside the union
+    refused(lambda s, u, c: u.update(order=["a", "b", "c"]), "union", "declared")        # a union missing a config
+    refused(lambda s, u, c: u.update(order=["a", "c", "b", "d"]), "union", "order")      # the declared order, changed
+    refused(lambda s, u, c: None, "union", stems=["a", "b", "c"])                        # declared stems differ
+    refused(lambda s, u, c: u.update(order=["a", "b", "c", "d", "d"]), "union")
+    # a CLI refusal is an exit code of 1 and a sentence, not a verdict
+    import contextlib
+    import io
+    with tempfile.TemporaryDirectory() as root:
+        paths = []
+        for name, document in zip(("stage", "union", "context"), choice(0.01, 0.01)):
+            document = dict(document, reference="other") if name == "union" else document
+            paths.append(write_text(root, name + ".json", json.dumps(document)))
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = grid.main(["verdict", "--stage", paths[0], "--union", paths[1], "--context", paths[2],
+                              "--union-configs"] + grid.stage1(grid.DEFAULT_MAIN, os.path.join(root, "grid")))
+        assert code == 1 and "FAILED" in buffer.getvalue() and "refused" in buffer.getvalue(), buffer.getvalue()
+        assert "PASSES" not in buffer.getvalue() and "raw delta" not in buffer.getvalue(), "no verdict is printed"
+
+
+def test_team_grid_stage1_validates_scopes_before_writing():
+    with tempfile.TemporaryDirectory() as root:
+        out = os.path.join(root, "out")
+        expect_error(ValueError, lambda: grid.stage1(grid.DEFAULT_MAIN, out, scopes=("all", "bogus")), "team_grid",
+                     "scope", "bogus")
+        assert not os.path.exists(out), "no file is written for a grid that is refused"
+        # a config whose shape_possession has no scope has no place in the union: the scope is never guessed
+        (written,) = [p for p in grid.stage1(grid.DEFAULT_MAIN, root) if p.endswith("w0500_all.toml")]
+        text = "\n".join(read_lines(written)) + "\n"
+        bare = write_text(root, "no_scope_key.toml", text.replace('scope = "all"', "# no scope", 1))
+        expect_error(ValueError, lambda: grid.union_order([bare]), "team_grid", "scope")
+
+
 def test_team_grid_verdict_is_mechanical():
-    result = grid.verdict(*choice(0.0050, 0.0500))
+    result = V(0.0050, 0.0500)
     assert result["passes"] is True and result["retry_2b"] is False and result["chosen"] == "c"
     assert result["raw"]["passes"] and result["lomo"]["passes"] and not any(v["fires"] for v in result["vetoes"].values())
-    assert grid.verdict(*choice(0.0047, 0.01))["raw"]["passes"] is False, "-0.0003 under the threshold is a miss"
-    assert grid.verdict(*choice(0.0050, 0.0501))["raw"]["passes"] is False, "p 0.0500 passes and 0.0501 fails"
-    assert grid.verdict(*choice(0.02, 0.0500))["raw"]["passes"] is True
+    assert V(0.0047, 0.01)["raw"]["passes"] is False, "-0.0003 under the threshold is a miss"
+    assert V(0.0050, 0.0501)["raw"]["passes"] is False, "p 0.0500 passes and 0.0501 fails"
+    assert V(0.02, 0.0500)["raw"]["passes"] is True
     # each veto fires alone, at -0.0051 and not at -0.005
     for name, key in (("coarse", "coarse"), ("context_raw", "context_raw"), ("context_coarse", "context_coarse"),
                       ("alive_dead", "alive")):
-        hit = grid.verdict(*choice(0.01, 0.01, **{key: -0.0051}))
+        hit = V(0.01, 0.01, **{key: -0.0051})
         assert [n for n, v in hit["vetoes"].items() if v["fires"]] == [name], name
         assert hit["passes"] is False
-        if name != "alive_dead":                      # a difference of two F1s is not exactly -0.005 in binary
-            assert grid.verdict(*choice(0.01, 0.01, **{key: -0.005}))["vetoes"][name]["fires"] is False, name
+        assert V(0.01, 0.01, **{key: -0.005})["vetoes"][name]["fires"] is False, name   # the edge is not a miss
     # the LOMO: 5 wins fails, 6 passes, a zero or negative mean fails
-    assert grid.verdict(*choice(0.01, 0.01, wins=5))["lomo"]["passes"] is False
-    assert grid.verdict(*choice(0.01, 0.01, wins=5))["passes"] is False
-    assert grid.verdict(*choice(0.01, 0.01, wins=6))["lomo"]["passes"] is True
-    assert grid.verdict(*choice(0.01, 0.01, lomo_mean=0.0))["lomo"]["passes"] is False
-    assert grid.verdict(*choice(0.01, 0.01, lomo_mean=-0.001))["lomo"]["passes"] is False
+    assert V(0.01, 0.01, wins=5)["lomo"]["passes"] is False
+    assert V(0.01, 0.01, wins=5)["passes"] is False
+    assert V(0.01, 0.01, wins=6)["lomo"]["passes"] is True
+    assert V(0.01, 0.01, lomo_mean=0.0)["lomo"]["passes"] is False
+    assert V(0.01, 0.01, lomo_mean=-0.001)["lomo"]["passes"] is False
     # Stage 2b is pre-approved only if raw and the LOMO pass and only a coarse or context veto fires
-    assert grid.verdict(*choice(0.01, 0.01, coarse=-0.01))["retry_2b"] is True
-    assert grid.verdict(*choice(0.01, 0.01, context_raw=-0.01))["retry_2b"] is True
-    assert grid.verdict(*choice(0.01, 0.01, context_coarse=-0.01, coarse=-0.01))["retry_2b"] is True
-    assert grid.verdict(*choice(0.01, 0.01, coarse=-0.01, alive=-0.01))["retry_2b"] is False
-    assert grid.verdict(*choice(0.01, 0.01, alive=-0.01))["retry_2b"] is False
-    assert grid.verdict(*choice(0.0047, 0.01, coarse=-0.01))["retry_2b"] is False, "the raw bar must pass"
-    assert grid.verdict(*choice(0.01, 0.0501, coarse=-0.01))["retry_2b"] is False
-    assert grid.verdict(*choice(0.01, 0.01, coarse=-0.01, wins=5))["retry_2b"] is False, "the LOMO must pass"
-    assert grid.verdict(*choice(0.01, 0.01))["retry_2b"] is False, "nothing to retry when it passes"
-    lines = grid.render_verdict(grid.verdict(*choice(0.0047, 0.01, coarse=-0.01)))
+    assert V(0.01, 0.01, coarse=-0.01)["retry_2b"] is True
+    assert V(0.01, 0.01, context_raw=-0.01)["retry_2b"] is True
+    assert V(0.01, 0.01, context_coarse=-0.01, coarse=-0.01)["retry_2b"] is True
+    assert V(0.01, 0.01, coarse=-0.01, alive=-0.01)["retry_2b"] is False
+    assert V(0.01, 0.01, alive=-0.01)["retry_2b"] is False
+    assert V(0.0047, 0.01, coarse=-0.01)["retry_2b"] is False, "the raw bar must pass"
+    assert V(0.01, 0.0501, coarse=-0.01)["retry_2b"] is False
+    assert V(0.01, 0.01, coarse=-0.01, wins=5)["retry_2b"] is False, "the LOMO must pass"
+    assert V(0.01, 0.01)["retry_2b"] is False, "nothing to retry when it passes"
+    lines = grid.render_verdict(V(0.0047, 0.01, coarse=-0.01))
     assert any("NOT met" in line for line in lines) and any("FIRES" in line for line in lines)

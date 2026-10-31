@@ -5,6 +5,7 @@
                                                               [--min-possession 35 50 75] [--out-dir DIR]
     python pipeline/benchmark/team_grid.py order CONFIG.toml ...
     python pipeline/benchmark/team_grid.py verdict --stage S.json --union U.json --context C.json
+                                                   --union-configs STAGE1.toml ... STAGE2.toml ...
 
 What is declared (docs/results.md R021 part 1) and what this file does with it
 -----------------------------------------------------------------------------
@@ -63,6 +64,8 @@ BAR_DELTA = 0.005                   # R014's: the chosen config's raw pooled del
 BAR_P = 0.05                        # and its exact sign-flip p
 VETO = -0.005                       # a delta below this vetoes
 LOMO_WINS = 6                       # of 7 matches
+REFERENCE = "main"                  # what every document is a comparison with
+PROFILE, CONTEXT = "tracking", "context"
 
 
 # -- the configs ------------------------------------------------------------------------------------------------------
@@ -93,11 +96,12 @@ def stage1(main_path=DEFAULT_MAIN, folder=DEFAULT_FOLDER, weights=WEIGHTS, scope
     at = decoder
     while at > 0 and lines[at - 1].startswith("#"):
         at -= 1
+    for name in scopes:
+        if name not in SCOPES:
+            raise ValueError("team_grid: scope must be one of {}, got {!r}".format(SCOPES, name))
     paths = []
     for weight in weights:
         for name in scopes:
-            if name not in SCOPES:
-                raise ValueError("team_grid: scope must be one of {}, got {!r}".format(SCOPES, name))
             amended = list(lines)
             amended[description] = body[:-1] + ' + team_model (P19, R021) at weight {}; shape_possession scope {}"'.format(
                 _number(weight), name)
@@ -156,7 +160,10 @@ def union_order(paths):
         if len(team) != 1 or len(shape) != 1:
             raise ValueError("team_grid: {} must have one team_model and one shape_possession entry, it has {} and {}"
                              .format(path, len(team), len(shape)))
-        scope = shape[0].params.get("scope", "gaps")
+        scope = shape[0].params.get("scope")
+        if scope not in SCOPES:
+            raise ValueError("team_grid: {} must give its shape_possession entry a scope ({}), got {!r}".format(
+                path, " or ".join(SCOPES), scope))
         key = (team[0].weight, SCOPES.index(scope), config.decoder.params["switch_team"],
                config.decoder.params["min_possession"])
         keyed.append((key, config))
@@ -174,13 +181,19 @@ def _same(a, b):
 
 # -- the verdict ------------------------------------------------------------------------------------------------------
 
-def verdict(stage_choice, union_choice, context_choice):
+def verdict(stage_choice, union_choice, context_choice, union_stems):
     """The declared bar on the `choose.py --out` documents, mechanically. See the module docstring.
 
     `stage_choice` is the choice of the stage whose chosen config is tested (reference main, profile tracking),
     `union_choice` the choice over the union of the stages' distinct configs (its `lomo`), `context_choice` a
-    `--profile context` run of main and the chosen config alone. Returns {raw, vetoes, lomo, passes, retry_2b}.
+    `--profile context` run of main and the chosen config alone, and `union_stems` the declared union (`union_order` of
+    the stages' paths). ValueError, loudly, unless each document is the one it should be: the reference is main, the
+    profile is tracking for the first two and context for the third, the metric is the spellF1, the chosen config is the
+    one the stage chose and is in the union, the context run holds that one config, and the union's stems are
+    `union_stems` exactly, in that order. A verdict on the wrong file would be a number that means nothing.
+    Returns {chosen, raw, vetoes, lomo, passes, retry_2b}.
     """
+    _check_documents(stage_choice, union_choice, context_choice, list(union_stems))
     chosen, reference = stage_choice["chosen"], stage_choice["reference"]
     raw = stage_choice["versus"]["raw"]
     bar = {"delta": raw["pooled_delta"], "p": raw["p_sign_flip"]}
@@ -189,7 +202,8 @@ def verdict(stage_choice, union_choice, context_choice):
     deltas = {"coarse": stage_choice["versus"]["coarse"]["pooled_delta"],
               "context_raw": context_choice["versus"]["raw"]["pooled_delta"],
               "context_coarse": context_choice["versus"]["coarse"]["pooled_delta"],
-              "alive_dead": rows[chosen]["alive_dead"] - rows[reference]["alive_dead"]}
+              # the reports carry the F1s to 9 decimals: the difference is rounded there, so that -0.005 is -0.005
+              "alive_dead": round(rows[chosen]["alive_dead"] - rows[reference]["alive_dead"], 9)}
     vetoes = {name: {"delta": delta, "fires": bool(delta < VETO)} for name, delta in deltas.items()}
     entry = union_choice["lomo"]["rule"]["raw"]
     lomo = {"mean": entry["mean"], "wins": entry["wins"], "passes": bool(entry["mean"] > 0 and entry["wins"] >= LOMO_WINS)}
@@ -197,6 +211,31 @@ def verdict(stage_choice, union_choice, context_choice):
     passes = bar["passes"] and not fired and lomo["passes"]
     retry = bool(bar["passes"] and lomo["passes"] and fired and "alive_dead" not in fired)
     return {"chosen": chosen, "raw": bar, "vetoes": vetoes, "lomo": lomo, "passes": passes, "retry_2b": retry}
+
+
+def _check_documents(stage, union, context, union_stems):
+    def refuse(sentence):
+        raise ValueError("team_grid: verdict refused: {}".format(sentence))
+
+    for name, document, profile in (("stage", stage, PROFILE), ("union", union, PROFILE), ("context", context, CONTEXT)):
+        for key in ("reference", "profile", "metric", "chosen", "order"):
+            if key not in document:
+                refuse("the {} file has no {!r}; it is not a choose.py --out file".format(name, key))
+        if document["reference"] != REFERENCE:
+            refuse("the {} file's reference is {!r}, not {!r}".format(name, document["reference"], REFERENCE))
+        if document["profile"] != profile:
+            refuse("the {} file is of profile {!r}, it must be {!r}".format(name, document["profile"], profile))
+        if document["metric"] != "spell":
+            refuse("the {} file's metric is {!r}, it must be 'spell'".format(name, document["metric"]))
+    chosen = stage["chosen"]
+    if context["chosen"] != chosen or list(context["order"]) != [chosen]:
+        refuse("the context file is of {} (chosen {!r}), not of the stage's chosen config {!r} alone".format(
+            list(context["order"]), context["chosen"], chosen))
+    if chosen not in union_stems:
+        refuse("the stage's chosen config {!r} is not in the declared union".format(chosen))
+    if list(union["order"]) != union_stems:
+        refuse("the union file's configs {} are not the declared union {}, in order".format(
+            list(union["order"]), union_stems))
 
 
 def render_verdict(result):
@@ -256,6 +295,8 @@ def main(argv=None):
     final.add_argument("--stage", required=True)
     final.add_argument("--union", required=True)
     final.add_argument("--context", required=True)
+    final.add_argument("--union-configs", nargs="+", required=True, metavar="CONFIG",
+                       help="the stages' configs, Stage 1's first: the declared union that --union must be of")
     args = parser.parse_args(argv)
     try:
         if args.command == "stage1":
@@ -271,7 +312,7 @@ def main(argv=None):
             for path in (args.stage, args.union, args.context):
                 with open(path, encoding="utf-8") as handle:
                     documents.append(json.load(handle))
-            result = verdict(*documents)
+            result = verdict(*documents, union_order(args.union_configs))
             for line in render_verdict(result):
                 print(line)
         return 0
