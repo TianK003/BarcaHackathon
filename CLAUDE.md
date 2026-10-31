@@ -168,7 +168,7 @@ keeps that convention: its scripts swap their own folder on `sys.path` for the r
   `restarts` (the stoppages' anatomy, the restart vote's stats, its configs), `dfl_events` (the DFL restart events,
   diagnostics), `headroom` (a config beside variants whose evidence is the truth: what a perfect source would add;
   its `plus_` variants measure `main.toml` itself, A13), `tag_stats` (Smart Tagging's votes against our own
-  pseudo-labels on BAR-ATH, R017), `label_diff` (how a config changes BAR-ATH's labels, aggregates only) and `checks/`
+  pseudo-labels on BAR-ATH, R017), `label_diff` (how a config changes BAR-ATH's labels, aggregates only), `wrong_team` (P21 step 0, dropped in A16: the ratio of over-11 slot frames at the ball to all graded frames, kept for P19's transfer check) and `checks/`
   (what `selftest.py` runs). Degradations are fitted once per version on
   label-free statistics of our tracking, then frozen, never tuned towards a score (T26, T37). The Calibration and every
   degraded `Atd` hold BAR-ATH's masks and counts: print none of it, and write no CSV of BAR-ATH labels.

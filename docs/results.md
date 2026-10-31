@@ -41,6 +41,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R018 | 2026-10-30 | the referee's whistle (P10): a hand-built 2 to 4 kHz band-pass detector on the tactical audio, its feasibility gate and its bar against `main.toml`'s own decoded stoppages | — | — | — | — | dropped (R018, R018b: gate failed, ratio 1.52 / 1.51) |
 | R018b | 2026-10-30 | the whistle (P10), the one retry R018 allowed: the tonal threshold set to the match's own 98th percentile of tonal_db, the same gate and bar | — | — | — | — | dropped, code removed (fc9dbed): gate failed, ratio 1.51 (55 detections) |
 | R019 | 2026-10-30 | P09: the camera's aim in the shape model; part 1a: the camera's fit and fidelity gates (peak lag +-10 frames, peak correlation +-0.05, median error +-3.0 m, dead/alive speed ratio +-25%; the gap/visible ratio a WARN), declared before the first simulation; part 2a: the gates run | — | — | — | — | dropped 2026-10-31, code removed (8c4c959): `tracking` gates 2 and 4 failed (peak correlation 0.9115 vs ours 0.843, dead/alive speed ratio 0.575 vs 0.128), no retry |
+| R020 | 2026-10-31 | P22(a): an EM label-shift prior on the shape model (the home share from P07's own outputs, added to the logit at s in {0.25, 0.5, 1.0}); part 1: the feasibility gate (mean abs error of EM's share at most 0.75 x that of guessing 0.5), the grid, R014's bar, the BAR-ATH checks; part 2: the gate run | — | — | — | — | dropped 2026-10-31, code removed (recover from `e303365`): the gate failed, 0.0538 against 0.0623 (ratio 0.863, needs 0.75), and neither retry condition held; no grid ran |
 
 ### The four yardsticks on every profile, in one table
 
@@ -1651,6 +1652,75 @@ Confounds, which keep these from being read as a convention:
 - Four changes are not a distribution: the intervals for `into_dead` and `out_of_dead` are of values, not statistics.
 
 Inspection only (RULES.md, `f8f2629`, T27): nothing is set from these numbers; a timing constant comes from other games (P16).
+
+### A16 — P21 step 0: do wrong-team slots cluster at the ball? (2026-10-31, Tian)
+Proposal: P21 · Commit: part 1 (this declaration, with `pipeline/benchmark/wrong_team.py` and its checks) is committed
+before the run it governs; the run's result is part 2.
+
+**Part 1, declared before the run** (2026-10-31). The tool is built and unit-tested on synthetic data only, and no number
+of this entry has been seen. It is the advisor's measure, for the team (`.superpowers/sdd/run-2026-10-31/advisor-01.md`,
+section 2, Lane C item 5, and section 4.3).
+
+**Why.** T32: on at least 10.8% of the graded frames a team shows more than 11 slots, because a slot has followed a
+player of the other side. `controlled_touch` takes the team of the nearest slot, so a swap next to the ball injects a
+confident wrong team. The benchmark places its wrong-team episodes at the closest home and away pair anywhere on the
+pitch, not at the ball, and A14 bounds what all of `tracking`'s player degradation costs `main.toml` (0.0129 raw). If our
+swaps do not cluster at the ball, that bound applies and P21 stops. An identity switch is an occlusion-and-contact event
+(Wojke, Bewley and Paulus, [DeepSORT, arXiv 1703.07402](https://arxiv.org/abs/1703.07402); Cui et al.,
+[SportsMOT, arXiv 2304.05170](https://arxiv.org/abs/2304.05170)), and a swap across the two teams needs a near-total
+overlap of players of opposite sides, which in football is a challenge for the ball.
+
+**The definitions** (`pipeline/benchmark/wrong_team.py`, one run on BAR-ATH, aggregates only):
+- A **graded frame** is inside the graded blocks (`games.half_video_blocks`); only graded frames count anywhere.
+- A **candidate frame** is `controlled_touch`'s rule **without its duel test**: graded, the ball seen, the nearest
+  present slot within 1.5 m and moving with the ball (|v_ball - v_nearest| <= 6 m/s), velocities from successive
+  positions (T31). 1.5 m and 6 m/s are `main.toml`'s own `controlled_touch` figures (a check holds them equal).
+- A team is **over 11** on its **present slots**: a frame is over 11 if either team has more than 11 present slots.
+- The **ratio** is (the share of candidate frames that are over 11) over (the share of all graded frames that are over
+  11). It is computed from the counts, so that an exact 1.5 is exact.
+
+**The rule (decides P21): the ratio is strict, below 1.5 means P21 is dropped.** At 1.5 or above the result is reported
+and the proposal's ceiling run (`main.toml` on `tracking` with its wrong-team episodes switched off) is not run, because
+it would not measure swaps at the ball. A ratio that cannot be computed (no candidate frame, or no over-11 frame) is
+reported as undefined and decides nothing.
+
+**Reported, and deciding nothing:**
+- `surplus`, T32's stricter definition (one team over 11 and the other under 11, which a real match cannot show), with the
+  same ratio.
+- **D3 (Advisor, for Tian), the onset ratio, report only:** the share of the first frames of over-11 runs (inside the
+  graded blocks; a run that begins on a block's first frame is carried in and not counted) that lie within 1 s of a
+  candidate frame of the same block, over the share of graded frames that do. It separates a swap's onset from the
+  persisting state, which the 1.5 rule cannot do. **No rule and no decision rests on it**, and it never changes the
+  verdict of the ratio above.
+
+**The expected direction.** Above 1, pulled towards 1 by two effects: the measure is a state and a surplus persists after
+its swap (median 2.7 s, p90 16 s, T32) while the ball moves on, and set-piece crowding overlaps players away from the
+ball, with the taker. So a ratio below 1.5 does not prove that swaps never start at the ball, and the advisor's rule
+stands as written.
+
+**The run** (HEAVY, once; it loads BAR-ATH): `$PY pipeline/benchmark/wrong_team.py`, writing
+`data/runs/wrong_team/ratio.json`. The tool stays after this lane, because P19's transfer check reports its ratio.
+
+**Part 2, the run and the verdict** (2026-10-31, after `072516c`). `wrong_team.py` ran once on BAR-ATH and wrote
+`data/runs/wrong_team/ratio.json`; everything below applies part 1 as written. Aggregates only:
+
+| measure | candidate frames | graded frames | over 11 on candidates | over 11 on graded | ratio |
+|---|---|---|---|---|---|
+| over 11 (the rule) | 35,533 | 158,857 | 0.1097 | 0.1286 | **0.8532** |
+| `surplus` (T32's stricter definition, reported) | 35,533 | 158,857 | 0.0977 | 0.1080 | 0.9048 |
+
+**Onset (D3, report only):** 130 over-11 runs begin inside the graded blocks; 0.3769 of them lie within 1.0 s of a
+candidate frame, against 0.4755 of the graded frames: ratio 0.7926. It decides nothing.
+
+**Verdict: the ratio 0.8532 is below 1.5, so P21 is dropped by its declared rule** and the ceiling run is not run. By
+part 1's logic, A14's bound on all of `tracking`'s player degradation (0.013 raw) applies. The reading is hedged: there
+is no sign on this measure that over-11 states cluster at the candidate frames, but the candidate frames need the ball
+seen while the comparison set is all graded frames, of which the ball is missing from 41% (A01 to A03). If over-11 states
+are more common where the ball is missing, a ratio below 1 may partly reflect ball visibility and not where swaps
+happen, and the onset ratio shares that denominator, so it is no independent support. A frequency ratio is not a
+cost, either. The rule was declared and the measure is the advisor's, so the verdict stands. The tool and its checks are
+kept, since P19's transfer check reports its ratio; a report-only line on graded frames with the ball seen would separate
+"at the ball" from "with the ball seen" and would have to be declared before that run.
 
 ## Experiments
 
@@ -6563,6 +6633,286 @@ puts every file under `pipeline/` back to `bfeee45` (main before P08 and P10): `
 2 and 3 were never declared. Gitignored leftovers on the machine that ran it: `data/runs/camera/` and
 `data/cache/benchmark/camera/`. After the removal: `pipeline/selftest.py` 185/185, `pipeline/benchmark/selftest.py` 416
 checks; after the merge of main: 191/191 and 424 checks. `main.toml` unchanged (`pipeline/` equals main's).
+
+### R020 — P22(a): an EM label-shift prior on the shape model, its feasibility, the grid and the bar (2026-10-31, Tian)
+Proposal: P22 · Commit: part 1 (this declaration, the source's prior, `label_shift.py` and the three configs) is
+committed before any run it governs, and was clarified once, before any run, by "R020 part 1: clarified before any run";
+the runs' commits are in part 2.
+
+**Part 1, declared before any run** (2026-10-31). Nothing below was chosen from a score, and no number of this entry has
+been seen: the prior (`pipeline/evidence/shape_possession.py`), the tools (`pipeline/benchmark/label_shift.py`) and the
+configs are built and unit-tested on synthetic data only. The rulings marked "Advisor (for Tian)" are the advisor's
+for the team, made overnight and binding (`.superpowers/sdd/run-2026-10-31/advisor-01.md`, section 4).
+
+**Why.** The shape model was trained on the seven DFL matches, every row shown twice and mirrored, so its prior is
+exactly 0.5 (R011). Our match's home share is unknown, and a per-match share of possession is a class prior that the
+model's own outputs estimate without labels: Saerens, Latinne and Decaestecker's EM
+([Neural Computation 14(1), 2002](https://dipot.ulb.ac.be/dspace/bitstream/2013/68391/1/Decaestecker_NeuralComp02.pdf)),
+which Alexandari, Kundaje and Shrikumar ([arXiv 1901.06852](https://arxiv.org/abs/1901.06852)) find beats the moment
+estimators once the model is calibrated, and Garg et al. ([arXiv 2003.07554](https://arxiv.org/abs/2003.07554)) show
+consistent under calibration. The DFL matches' home shares of alive training rows span 43.9% to 62.9% (R011), so
+there is a shift to correct. The share is never taken from published statistics of this match (rule 2, T26): it comes from
+EM on our own model's outputs and from nothing else.
+
+**The estimator.** Per served match and seed (an `Inputs`), EM runs on the symmetrised, unclipped logit z over every
+graded frame with an opinion, whatever the scope; training prior 0.5, start 0.5, update pi <- mean(sigmoid(z + logit pi)),
+stop at |delta pi| < 1e-6 or 200 iterations. A share within 1e-6 of 0 or 1 raises (`EM_SHARE_BOUND`). Then home =
+clip(sigmoid(z + s * logit(pi_hat)), 0.02, 0.98) where the scope speaks. On DFL each match is read by its fold
+(`folds[inputs.game]`), BAR-ATH by `full`.
+- **Advisor (for Tian), D2:** s = 1 is the frame-level Bayes posterior, **not the decoder's prior**. The decoder counts
+  a per-frame prior once a frame, scaled by the weight 0.2, so s = 1 is not claimed to be the decoder's correct prior,
+  and s is a choice and not a derivation. D2, the prior as asymmetric switch costs in the decoder, is a contract change
+  and is not pursued tonight: it is recorded in `docs/proposals.md` as P22(c) for the team. The HMM already multiplies
+  the shift by the weight, so s is not scaled by the weight again (that would discount it twice).
+
+**The feasibility gate**, run first and on its own (**Advisor (for Tian), D4**), from `label_shift.py feasibility` on
+`tracking` v3, 3 seeds, before the grid runs:
+- pi_true per match is the raw truth's home share of the alive graded frames. error = the mean over matches of the mean
+  over seeds of |pi_hat - pi_true|; baseline = the mean over matches of |0.5 - pi_true|.
+- **It passes iff error <= 0.75 x baseline.** A miss by any margin is a miss. If it fails, the grid does not run and no
+  F1 is produced; what follows is the D1 retry rule below, and nothing else.
+- **Advisor (for Tian), D1, report only:** the same run reports per match the calibration slope a* of the logit against
+  the truth on the alive frames (slope-only fit, all seeds pooled; 1 is calibrated) and pi_hat over the truth's alive
+  frames only (EM with the dead frames masked out; the mean over seeds). They decide nothing about passing. They name
+  the cause of the one retry, **for a failure of this gate only**, in this order, so that only one can fire, and they
+  are pre-approved by the advisor (section 4), so no further approval is needed:
+  1. **Retry (i), if the gate computed on pi_hat over the truth's alive frames passes and the gate computed on pi_hat
+     over all graded frames fails:** EM over the frames where `dead_ball_model` P(alive) >= 0.5;
+  2. **else retry (ii), if a* is outside [0.8, 1.25]:** EM on z / T, with T fitted per target match on the other six
+     matches' out-of-fold predictions. a* is pooled as the geometric mean of the per-match slopes, so that it is
+     log-symmetric against the band;
+  3. **else** P22(a) is dropped.
+  At most one retry; if it fails the gate or, later, the bar, the lane is dropped. A retry has its own part 1 (R020b)
+  before its run.
+- **The grid's check (Advisor, for Tian, D4):** every pi_hat, per match and per seed, is printed at 9 decimals by the
+  feasibility run (and written to its JSON). The grid run must log the same value for every match and seed, to the last
+  digit, or the lane stops; the controller compares the two.
+
+**Candidates.** `main.toml` (LF sha256 at this declaration `124a38ad019995e276cdd6d1094f764e226e167408c0adaa7c32c466bac25873`,
+`git show 69de5ba:pipeline/configs/main.toml | sha256sum`) plus `prior = "em"` at **s in {0.25, 0.5, 1.0}** (Advisor, for
+Tian: 0.25 is the conservative point if the per-frame overcounting argument is right, three points show whether there is a
+dose-response, and s = 0.1 would fall inside the band): `pipeline/benchmark/configs/r020/r020_s025.toml`, `r020_s050.toml`
+and `r020_s100.toml`, each `main.toml` plus the two keys and nothing else. The check
+(`test_label_shift_r020_configs_are_main_plus_the_prior`) compares each config's text with `main.toml`'s text with the two
+prior keys and the config's header removed, so it holds before and after the adoption. Not re-chosen: the touch rule, the
+dead-ball model, P07's weight 0.2, scope, `min_prob`, the decoder 4/32/35/25, the shift +1/-2/0, Smart Tagging. The shift
+is not re-derived: s_b measures the pipeline's lag at changes of team, and a constant tilt delays changes towards the
+minority team as much as it advances those towards the majority. This is a reading, not a measurement.
+
+**The runs.**
+
+```bash
+$PY pipeline/benchmark/label_shift.py feasibility --profile tracking --seeds 3          # first, alone: the gate
+$PY pipeline/benchmark/run.py pipeline/configs/main.toml pipeline/benchmark/configs/nearest_w50.toml \
+    pipeline/benchmark/configs/nearest_w125.toml pipeline/benchmark/configs/r020/r020_s025.toml \
+    pipeline/benchmark/configs/r020/r020_s050.toml pipeline/benchmark/configs/r020/r020_s100.toml \
+    --profile tracking --seeds 3 --truth both --drop-match-only                          # only if the gate passed
+```
+
+The references must reproduce to the last digit (`main` 0.5430 raw / 0.5593 coarse, `nearest_w50` 0.2018 raw,
+`nearest_w125` 0.2226 coarse), or the lane stops. After the choice: the chosen config and `main.toml` on
+`--profile context --seeds 3 --truth both --drop-match-only`.
+
+**The selection** is `choose.py`'s house rule as R013 applied it: `choose.py --reference main r020_s025 r020_s050
+r020_s100`, over the three candidates only (`main.toml` is the reference, never a candidate). The anchor is the config
+with the best pooled `tracking` raw spellF1; the candidates within 0.005 of it are tied; among the tied, the higher
+pooled coarse spellF1 wins, compared exactly; a remaining tie goes to the smaller s (the stems' order). Leave-one-match-out
+is reported and decides nothing. Nothing is added after the results.
+
+**The bar** (R014's). The chosen config's `tracking` raw pooled delta over `main.toml` must be >= +0.005, with sign-flip
+p <= 0.05. **The veto:** not adopted if any of these is below -0.005: the `tracking` coarse delta, the `context` raw
+delta, the `context` coarse delta, or the pooled `tracking` alive/dead F1 minus `main.toml`'s. A miss by any margin is a
+miss. **A failure of the bar drops P22(a)**; no retry follows unless the advisor approves one with a cause named from the
+logged aggregates (advisor-01 section 3.3), and that retry needs its own part 1 (R020b) first. The D1 retry paths above
+apply to a failure of the feasibility gate and to nothing else.
+
+**The BAR-ATH checks, before adopting** (`label_shift.py bar-ath --strength S`, run for S = 0.25, 0.5 and 1.0, only the
+chosen one counts):
+- pi_hat (with `full`) is reported. **Outside [0.39, 0.68] the lane stops for the advisor's sign-off**, with `label_diff`
+  aggregates.
+- R011's `touch_agreement`, shifted at the chosen s, must be >= the unshifted value - 0.005.
+- The same sha256 on two runs; `D` within 1 point of `main.toml`'s; no `X` in a graded block. The possessions per half are
+  reported.
+- The public window may be scored after the decision, as a correctness check only (T01).
+
+**P21 step 0** is a separate measurement, A16, with its own declaration and rule there. Nothing in R020 depends on it.
+
+**Adoption.** If everything passes, and P19's grid configs do not exist yet, the chosen config becomes `main.toml` and is
+kept as `pipeline/configs/r020_label_shift.toml`. "Do not exist yet" is checked by the controller at P22's adoption
+commit: `git ls-tree -r --name-only origin/p19-team-model` lists no `pipeline/benchmark/configs/r021*` (or whatever path
+P19's plan names), and none exists in any worktree (advisor-01 section 1: P22 merges only before them, then `main.toml` is
+frozen until P19's verdict). The sha256 of the CSV goes to the submission log; it is not uploaded. The merge is
+`--no-ff`, after both synthetic suites and `selftest.py --data` pass on the merged tree. Nothing is half-adopted at 08:30.
+
+**If the gate or the bar fails.** As above: the gate's failure leads to the D1 order (one pre-approved retry, else the
+drop), the bar's failure to the drop. After a drop, the prior, `label_shift.py`, its checks and the three configs are
+removed in one commit that names the commit to recover them from.
+
+**Part 2, the feasibility run and the verdict** (2026-10-31). Everything below applies part 1 as written. The feasibility
+run (`label_shift.py feasibility`, `tracking` v3, 3 seeds, 02:18:53 to 02:20:33; the code was `e303365`'s and the branch
+head `d67b152`, which changed only docs; the log ends `EXIT=0` and no seed flagged NOT CONVERGED) was the only run: no grid ran, and no spellF1 of any R020 config was produced or read. Aggregates only; pi_alive is
+quoted at the log's 3 decimals.
+
+| match | pi_true | pi_hat per seed | mean abs error | abs(0.5 - pi_true) | slope | pi_alive |
+|---|---|---|---|---|---|---|
+| J03WMX | 0.4581 | 0.4015, 0.4007, 0.4061 | 0.0554 | 0.0419 | 0.936 | 0.373 |
+| J03WN1 | 0.5326 | 0.3497, 0.3547, 0.3610 | 0.1775 | 0.0326 | 1.057 | 0.409 |
+| J03WOH | 0.5438 | 0.5424, 0.5447, 0.5206 | 0.0085 | 0.0438 | 1.160 | 0.619 |
+| J03WOY | 0.4957 | 0.4568, 0.4613, 0.4630 | 0.0353 | 0.0043 | 1.050 | 0.434 |
+| J03WPY | 0.6284 | 0.6193, 0.6187, 0.6361 | 0.0088 | 0.1284 | 1.116 | 0.748 |
+| J03WQQ | 0.4390 | 0.5263, 0.5290, 0.5203 | 0.0862 | 0.0610 | 1.073 | 0.466 |
+| J03WR9 | 0.6240 | 0.6260, 0.6147, 0.6273 | 0.0049 | 0.1240 | 1.123 | 0.646 |
+
+**The gate's arithmetic.** error = the mean over the seven matches of the mean abs error = **0.0538**; baseline = the mean
+of abs(0.5 - pi_true) = **0.0623**; ratio **0.8634**. The gate needs error <= 0.75 x baseline = 0.0467. 0.0538 > 0.0467:
+**FAIL**, by the rule as declared (a miss by any margin is a miss, and this one is not a close call).
+
+**The retry order, evaluated as declared** (a failure of the gate is the only thing it applies to):
+1. **Retry (i) does not fire.** Its condition needs the gate on pi_hat over the truth's alive frames to pass. That error is
+   the mean over matches of abs(pi_alive - pi_true) = 0.0735 (from the log's 3-decimal pi_alive), a ratio of 1.18 to the
+   baseline, far above 0.75: the gate on the alive frames fails too.
+2. **Retry (ii) does not fire.** Its condition needs a* outside [0.8, 1.25]; a* (the geometric mean of the per-match
+   slopes) is 1.071, inside the band.
+3. **So there is no retry and P22(a) is dropped.**
+- No retry fired: this is the order declared in part 1 (the advisor's section 4, D1, items i to iii) applied mechanically.
+  Both conditions were false, so it ends at its third item. It is not a new ruling by the advisor, and none was needed.
+
+**Readings, hedged** (they decide nothing; the verdict is the gate's):
+- J03WN1 is the largest single error: its pi_hat is about 0.35 against a true 0.53, an error of 0.18 that is 47% of the
+  sum of the seven matches' errors, and J03WQQ goes the other way (0.53 against 0.44). This is not a near miss that one
+  match decides: leaving out J03WN1 would pass (0.033 against 0.067), but that is a post-hoc leave-one-out, and leaving
+  out any of the other six matches keeps the gate failing (ratios 0.77 to 1.20). EM's share is closer to the truth than
+  0.5 is on only 3 of the 7 matches (J03WOH, J03WPY, J03WR9).
+- The shape model's outputs are not a calibrated estimate of a match's possession share: the slopes sit near 1
+  (0.94 to 1.16), so the shape of its logit is not the problem, but EM needs P(y|x) to transfer to the match, and a
+  model trained on six other matches does not carry that for a match's share. This fits the research's caution
+  (Saerens et al. 2002; Garg et al. [2020](https://arxiv.org/abs/2003.07554)) and is a reading, not a measurement.
+- On average the alive-only share is worse (0.0735 against 0.0538), so the dead frames do not appear to be the main
+  cause; on J03WN1 (0.124 against 0.178) and J03WQQ (0.027 against 0.086) it is better, which is why retry (i) was
+  declared at all, and it was not enough for the gate.
+
+**What stays.** P22(c), the prior as asymmetric switch costs in the decoder, stays recorded in `docs/proposals.md` for the
+team, untested: it would use the same pi_hat, which this run shows is not a better guess than 0.5. P22(b), self-training,
+was not tried. The code (the prior on `shape_possession`, `label_shift.py`, its checks and the three configs) is removed in
+one commit, recoverable from `e303365`; `wrong_team.py` and its checks stay, since P19's transfer check reports A16's ratio.
+`main.toml` was never changed, and `pipeline/` equals main's except for `wrong_team.py` and its checks.
+
+### R022 — P20 step 0: PathCRF's published checkpoint on its held-out match, against P07 on the gap frames (2026-10-31, lane B)
+Proposal: P20 · Part 1, declared before any run · Advisor (for Tian): advisor-01 §1 Lane B and §3, with the rulings of §6 on D1–D4 (below).
+
+**Advisor rulings on D1–D4 (advisor-01 §6).**
+- **D1 (segmentation), accepted with two clarifications.** Advisor (for Tian): a run is a maximal stretch that `main.toml` decodes H or A, and a change between H and A does not cut it, so that `main.toml`'s team boundaries do not leak into the competitor's input. `main.toml`'s sha256 is pinned below and the windows are prepared from that file, whatever merges later.
+- **D2 (complete tracks), accepted.** Advisor (for Tian): the share of node-frames that are interpolated or held is reported. A node with no observed frame in a window is a pad node, as in their code.
+- **D3 (per-window inference), accepted.** Advisor (for Tian): the context lost at window edges is a cost of the adapter, charged to PathCRF and not corrected.
+- **D4 (team and frames), accepted.** Advisor (for Tian): the team of a frame is the decoded sender's; an outside node or silence counts as wrong; the primary set is rule 5 ∩ `main.toml` decodes H or A; the literal rule-5 set is reported beside it, and P07 must reproduce 0.8495 on 96,442 frames there or the lane stops.
+- **Go threshold unchanged.** Advisor (for Tian): PathCRF ≥ P07 + 0.04 pooled over seeds 0 to 2 and ≥ +0.02 on each seed, raw truth, on the primary set. If raw misses and the coarse truth alone meets the threshold, it is a no-go with a note for Tian (a P16 question), not a retry.
+
+**What is run.** PathCRF (Kim et al., KDD 2026; arXiv 2602.12080 v2). The code is at repository hyunsungkim-ds/pathcrf, commit `1b7c6f85a6b78c92e4543fde72ca2b86a933f997`, under MPL-2.0. The checkpoints have no licence of their own and are read as the repository's. The model is trial 140, Dynamic Masked CRF: file `saved/140/model/state_dict_best_acc.pt`, 19,325,114 bytes, git blob `f8e48952d01d6d70db986948962822478884a336`, sha256 recorded at the first verified fetch. It is loaded with `weights_only=True` on the CPU with one torch thread, in `.venv-pathcrf` (`requirements-pathcrf.txt`). Nothing of it is in `pipeline/`. The pins of the comparison:
+- `main.toml`, sha256 of its LF bytes `124a38ad019995e276cdd6d1094f764e226e167408c0adaa7c32c466bac25873`;
+- P07's `pipeline/models/shape_possession_hgb.json`, sha256 `641e0bad7438a5a987f4aa8ac54ea48302b22d2f7375ea655e67a8ded1802974`.
+
+**Precondition, met from the repository.** The test match is J03WR9, validation J03WQQ, and training J03WMX, J03WN1, J03WOH, J03WOY and J03WPY. Three things show it:
+- `train.py` sorts the files, and the checkpoint's `args.json` says `lomocv` with `cv_fold_idx` 6;
+- the tutorial evaluates J03WR9;
+- the paper's test counts (91 episodes, 1,831 events) are the tutorial's output on J03WR9.
+
+**Correctness, not the verdict.** Clean J03WR9 goes through their own preprocessing:
+- kloppy 3.18.0's sportec loader with `only_alive=False`;
+- their touches from the synchronised events in the repository;
+- their kinematics.
+
+It then goes through the tutorial's inference (`use_crf`, `decode="indep"`, 10 s windows, `correct_episode_lasts`) and the tutorial's metric (`compute_true_pred_poss`, split mode: per-frame team accuracy over in-play frames, where both sides are derived from events). **Pass iff ≥ 0.884** (0.924 − 0.04). Edge accuracy and event F1 are reported beside the tutorial's 0.6964 and 0.7569, not gated. A failure is a usage error to fix, and each fix is named in part 2. With no pass by 06:30 the lane stops with no verdict and no retry spent.
+
+**The adapter (advisor rule 4, with D1–D4).**
+- **Windows.** They tile the maximal runs of H or A (an H/A change does not cut a run) that `main.toml` (with `--drop-match-only`) decodes inside each graded block of that seed. A run becomes ⌈L/250⌉ windows of near-equal length; a run under 16 frames gets none.
+- **Nodes.** Inside a window, a slot's maximal present runs are pieces, each in its metadata team (wrong-team slots kept).
+- **Joins.** A piece that ends is joined to one that begins, in the same metadata team, when the frames from the last seen to the first seen are at most 50 (2 s) and the two positions are at most 5.0 m apart. The joins are greedy by smallest gap, then smallest distance, then lower slots; each end and each start is used once, and chains are allowed.
+- **At most 11 per team.** The chains with the fewest observed frames are dropped (ties: the higher first slot).
+- **Filling.** A join's gap is filled linearly, and a node is held at its first or last position to the window's edges. The share of node-frames filled or held is reported.
+- **Inference.** Coordinates are x × 105 and y × 68. Their `calculate_running_features` runs per window. Each window is one `inference_episode` (CRF, `decode="indep"`, `last_node=None`). The 5-fps state is held forward by their `ffill`.
+- **Team.** The team is the decoded sender's, by name. An outside sender is out of play.
+
+**Frames and scores.** Per seed s ∈ {0, 1, 2} of profile `tracking` v3:
+- **Literal set:** graded, raw truth H or A, served ball missing.
+- **Primary set:** the literal set where `main.toml` also decodes H or A.
+- **P07:** the J03WR9 fold, served as `train_shape._tally` serves it (scope `all`, `min_prob` 0.02); it names home iff home ≥ 0.5, and a silent frame is wrong.
+- **PathCRF:** a frame is right iff its sender's team is the truth's. Out of play and silent are wrong.
+- **Pooling:** over seeds by frames.
+
+**The reference that must reproduce.** P07 on the literal frames, scored as R011 scored it (silent frames left out), pooled over the three seeds: **96,442 frames and accuracy 0.8495**, both exactly (the accuracy to four decimals), or the lane stops.
+
+**Go/no-go (advisor rule 6).** On the primary frames, raw truth: **go iff PathCRF − P07 ≥ +0.04 pooled over seeds 0 to 2, and ≥ +0.02 on each seed.** It is mechanical and exact: the deltas are compared as fractions of integer counts on the same frames, and a miss by any margin is a miss. A raw miss with a coarse-truth pass is a no-go, with a note.
+
+**Reported, not gated:**
+- clean: PathCRF run by their own protocol on the clean match, scored on each seed's primary frames;
+- the coarse truth on the primary frames;
+- the out-of-play share and the silent share;
+- the literal set;
+- accuracy of both models by window class (with a join; with a team over 11 slots at once; neither; frames outside any window);
+- the adapter's counts, and the interpolated or held node-frame share.
+
+**Retry (pre-approved, advisor 3.3).** Only if the loss sits on windows with joined or wrong-team nodes. That holds iff the pooled verdict is a no-go while, on the primary frames in windows with neither a join nor a team over 11, PathCRF − P07 ≥ +0.04 pooled. R022b then declares one change aimed at those windows in its own part 1, with the same bar. Otherwise, or if R022b fails, P20 is dropped, its code removed, and the recoverable commit recorded.
+
+**Stops.** No clean pass by 06:30: no verdict, no retry spent. No new heavy work after 08:30. A go stops at step 0, because step 1 (a GPU retraining, numpy inference for byte-identical CSVs) is Tian's.
+
+**Part 2a: the clean reproduction (2026-10-31, run by the controller; a correctness check, not the verdict).**
+- J03WR9 through their own preprocessing, inference and metric (`runner.py clean --match J03WR9`, one torch thread):
+  **team accuracy 0.9164**, against the declared gate of at least 0.884 (paper 0.924). **The gate passes.**
+- Edge accuracy 0.695 (tutorial 0.6964), event F1 0.756 (tutorial 0.7569), 17,168 five-fps steps (tutorial 17,168),
+  inference 200 s.
+- `runner.py smoke` and `selftest.py --torch` passed. The checkpoint's sha256, recorded at the first verified fetch:
+  `55757d9dca9777d60356ba368dc315867ea1ae38e90c332e935b9c5be72d83c9`.
+- The runner was fixed against their real API before this run (device `cpu`, the touches as events, the four-value
+  `inference`): usage fixes, in commits `5e437a9` to `c05d3e3`.
+
+**Part 2b: the verdict (2026-10-31, lane B; runner and adapter at commit `2163406`, runs by the controller).**
+Commands, in this order: `adapter.py prepare --match J03WR9 --profile tracking --seeds 0 1 2` (28 s),
+`runner.py degraded --match J03WR9 --profile tracking --seeds 0 1 2` (one torch thread, 165 to 181 s a seed, 387 to 389
+windows a seed, none skipped), `score.py --match J03WR9 --profile tracking --seeds 0 1 2`. `main.toml` stood at its
+pinned sha256 `124a38ad…`.
+- **The reference reproduced exactly:** P07 on the literal frames, silent left out, gave 96,442 frames and 0.8495.
+- **Primary set, 90,449 frames (graded, truth H or A, ball missing, `main.toml` decodes H or A), pooled over seeds 0
+  to 2:** P07 0.8522, PathCRF 0.8571, **Δ +0.0049**. Per seed Δ: seed 0 −0.0031, seed 1 −0.0006, seed 2 +0.0170
+  (the per-seed frames and accuracies were not recorded in this entry).
+- **Verdict: NO-GO.** The pooled Δ is below +0.04 and every seed is below +0.02. By part 1's declared condition,
+  applied mechanically by the scorer (retry allowed: False), the retry did not fire: it needs at least +0.04 on the
+  windows with neither a join nor a team over 11, and that class gave −0.0110. No advisor ruling was made on it.
+
+| set (pooled) | frames | P07 | PathCRF | Δ | PathCRF out of play | PathCRF silent |
+|---|---|---|---|---|---|---|
+| primary (raw truth) | 90,449 | 0.8522 | 0.8571 | +0.0049 | 0.023 | 0.000 |
+| literal (raw truth) | 96,442 | 0.8495 | 0.8038 | −0.0457 | 0.022 | 0.062 |
+| primary, coarse truth | 90,449 | 0.8501 | 0.8319 | −0.0182 | 0.023 | 0.000 |
+| primary; PathCRF by their protocol on the clean match, P07 on degraded tracking | 90,449 | 0.8522 | 0.9172 | +0.0650 | 0.001 | 0.000 |
+| window with a join | 33,942 | 0.8629 | 0.8840 | +0.0211 | 0.019 | 0.000 |
+| window with a team over 11 | 22,941 | 0.8525 | 0.8720 | +0.0195 | 0.015 | 0.000 |
+| window with neither | 44,131 | 0.8424 | 0.8314 | −0.0110 | 0.028 | 0.000 |
+| outside any window | 0 | – | – | – | – | – |
+
+The classes with a join and with a team over 11 overlap; "neither" is the retry class (no join and no team over 11 at
+one frame; the adapter still pads, holds and drops chains beyond 11 in those windows). The clean row mixes two things:
+PathCRF's number is their own protocol on the clean match (the truth's own in-play episodes, true identities,
+whole-episode inference), P07's is the degraded tracking's. P07 was never run on clean tracking. All the clean run's
+frames mapped to rows (146,810 mapped, none unmapped, alive agreement 1.0). The held or interpolated node-frame share
+was 0.0504. The adapter, per seed: 387 to 389 windows, about 85,000 rows covered, no short run, 175 to 211 joins, 91 to
+118 windows with a team over 11, 243 to 282 dropped nodes, 86 to 120 padded nodes per team, `main.toml` decoding D on
+0.417 to 0.422 of the graded frames.
+
+**Readings, hedged.** PathCRF by its own protocol on the clean match scored 0.9172 on these frames, against 0.8571
+under our degradation and the adapter (and P07's 0.8522 on degraded tracking). The run cannot separate the degraded
+tracking, the adapter's completions (D1 to D4) and the segmentation (their in-play episodes from the truth against
+`main.toml`'s), so the fall is a possibility to investigate, not a finding about where the constraint lies. Under the
+coarse truth PathCRF is below P07 (−0.0182). By window class, PathCRF does best on the windows with joins (+0.0211,
+33,942 frames) and with a team over 11 (+0.0195, 22,941), the windows the adapter repaired most, and worst on those
+with neither (−0.0110); this is the opposite of the retry's premise, and both leads are below the bar. Step 1 (a GPU
+retraining on degraded copies) is not pursued tonight and is Tian's call.
+
+**What the numbers do not say.** One held-out match. J03WR9 is a Fortuna Düsseldorf home game, as are four of the other
+benchmark matches. The 92.4% of the paper is event-split possession on in-play frames, not DFL's flag. The adapter's
+completions (D1 to D4) are charged to PathCRF, and a model retrained on degraded copies could do better. BAR-ATH is not
+measured.
+
+**Outcome.** P20 is dropped; the code is removed from the branch, recoverable at `2163406`.
 
 ### R021 — P19's team model where the ball is seen: feasibility, a two-stage grid, the bar and the transfer (2026-10-31, the overnight lane for Tian)
 

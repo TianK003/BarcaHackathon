@@ -90,6 +90,10 @@ module of its topic:
     label_diff.py
                  label_diff: the shares, possessions per half, changes in ball gaps and moved D onsets worked out on
                  hand-built codes, and that the printout holds figures and no frame (synthetic only)
+    wrong_team.py
+                 wrong_team: the over-11 and surplus rules, the candidate frames as controlled_touch's without its duel
+                 test, the ratio at the rule's edge, the constants held equal to main.toml's, D3's onset ratio and the
+                 printout (synthetic only)
     harness.py   the harness itself: what it collects, how it reports NOT RUN, the console set-up, and that no check
                  module imports another one
     common.py    what several modules share, and no checks of its own: the synthetic DFL match, the random one
@@ -116,7 +120,9 @@ what two of them share goes to common.py (test_a_check_module_imports_no_other_c
 
 from pipeline.benchmark.checks import (
     calibration, cap, choose, context, conventions, dead_ball, degrade, dfl, dfl_events, fidelity, harness, hazard, headroom,
-    inputs, label_diff, restarts, run, score, shape, sources, tag_stats, team, team_grid, team_transfer, tracking, touch, truth)
+    inputs, label_diff, restarts, run, score, shape, sources, tag_stats, team, team_grid, team_transfer, tracking, touch, truth,
+    wrong_team)
 
 MODULES = (sources, dfl, dfl_events, truth, inputs, score, run, choose, hazard, calibration, degrade, cap, tracking, context,
-           fidelity, headroom, touch, dead_ball, conventions, restarts, shape, label_diff, tag_stats, team, team_grid, team_transfer, harness)
+           fidelity, headroom, touch, dead_ball, conventions, restarts, shape, label_diff, wrong_team, tag_stats, team,
+           team_grid, team_transfer, harness)

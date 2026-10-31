@@ -36,9 +36,9 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P17](#p17--the-restart-team-channel) | Restart-team channel: who restarts after a stoppage, from the players' arrangement | facts 3, 5 (the hold points at the old team after most stoppages) | S–M | ceiling +0.0198 raw (A12); delivered +0.0040 raw at best, bar not met (R014) | dropped → R014, R014b (the source and the decoder's restart states stay, off by default) |
 | [P18](#p18--the-offpitch-profile-dfls-ball-hidden-off-the-pitch-as-ours-is-and-p05-retrained-on-it) | offpitch profile: DFL's ball hidden off the pitch as ours is, and P05 retrained on it | T39 (P05 overstated by the visible out-of-play ball) | M | A13: a perfect dead-ball source adds +0.029 raw on tracking; main.toml on offpitch 0.5509 raw / 0.5296 coarse; hiding the out-of-play ball cost today's P05 0.013 alive/dead F1 (R015) | dropped → R015, R015b (our tracker's off-pitch ball cannot be reproduced by a simple rule; code removed) |
 | [P19](#p19--a-learned-team-model-where-the-ball-is-seen) | A learned team model where the ball is seen: P05's recipe applied to the team | fact 3; A13's largest lever (+0.194 raw where the ball is seen) | M (feasibility S) | guess +0.02 to +0.05 raw; fully benchmarkable | in progress, R021 (part 1 declared) |
-| [P20](#p20--ball-free-possession-paths-pathcrf-on-our-slots) | Ball-free possession paths: PathCRF (KDD 2026), trained on the same DFL matches | fact 1; A13's gaps (+0.176 raw) | S test, L to adopt | medium–high, uncertain: 92.4% team accuracy without the ball on clean tracking, unknown on ours | idea |
-| [P21](#p21--wrong-team-slots-measure-the-ceiling-then-repair-them) | Wrong-team slots: measure the ceiling, then repair from tracking or jersey colours | T32 | S test, M | low on the benchmark: all of `tracking`'s player degradation costs `main.toml` 0.013 (A14) | idea |
-| [P22](#p22--the-shape-model-adapted-to-our-two-teams-without-labels) | The shape model adapted to our two teams without labels | fact 1 | S–M | low: guess +0.00 to +0.02 | idea |
+| [P20](#p20--ball-free-possession-paths-pathcrf-on-our-slots) | Ball-free possession paths: PathCRF (KDD 2026), trained on the same DFL matches | fact 1; A13's gaps (+0.176 raw) | S test, L to adopt | measured: +0.0049 pooled on the gap frames (needed +0.04); PathCRF's own protocol on the clean match reached 0.9172, against P07's 0.8522 on degraded tracking (not like for like) | dropped → R022 (step 0 no-go: +0.0049 under our degradation and the adapter, needed +0.04; code removed, recoverable at `2163406`) |
+| [P21](#p21--wrong-team-slots-measure-the-ceiling-then-repair-them) | Wrong-team slots: measure the ceiling, then repair from tracking or jersey colours | T32 | S test, M | low on the benchmark: all of `tracking`'s player degradation costs `main.toml` 0.013 (A14) | dropped → A16 (step 0's ratio 0.85 < 1.5; the tool is kept for P19's transfer report) |
+| [P22](#p22--the-shape-model-adapted-to-our-two-teams-without-labels) | The shape model adapted to our two teams without labels | fact 1 | S–M | low: guess +0.00 to +0.02 | (a) dropped → R020 (feasibility gate failed: 0.0538 against 0.0623, ratio 0.863 > 0.75); (b) and (c) not tried |
 | [P03](#p03--one-command-deterministic-cached) | One-command, deterministic, cached pipeline | reproducibility | S–M | enabling | done → R001 |
 | [P04](#p04--sticky-ownership-from-controlled-touches) | Sticky ownership from controlled touches | facts 3, 5 | S | high: +0.1421 raw at the chosen decoder (R010) | done → R008, R010; rule re-chosen → R013 |
 | [P05](#p05--a-real-dead-ball-detector) | Dead-ball detector | fact 4 | M | high: +0.1661 raw at the chosen decoder, on a benchmark that overstates it (R010, T38, T39) | done → R009, R010 |
@@ -304,13 +304,14 @@ unchanged (sha256 `0ebdfbec...`).
      grain than to the coarse one.
 2. **Next: P19's feasibility test (half a day), then P19.** The team where the ball is seen holds the largest headroom
    (+0.194 raw, A13). It is fully benchmarkable and needs no new asset.
-3. **In parallel: P20's step 0 (one to two days).** Run PathCRF's published checkpoint on the one DFL match it never
-   trained on, clean and degraded to `tracking` v3, against P07 on the same gap frames. If it wins by the declared
-   margin, P20 is the bet for the gaps. Its retraining needs a GPU and DFL data only.
+3. **P20's step 0: done, no-go (R022).** PathCRF's published checkpoint on the one DFL match it never trained on,
+   degraded to `tracking` v3, against P07 on the same gap frames: +0.0049 pooled against the +0.04 declared (PathCRF's
+   own protocol on the clean match reached 0.9172, against P07's 0.8522 on degraded tracking: not like for like). The retry condition did not hold, so P20 is dropped and its code removed (recoverable at
+   `2163406`). A GPU retraining on degraded copies was not pursued; that is Tian's call.
 4. **Cheap, only if a person is free:**
-   - P21's step 0: do our identity swaps cluster at the ball? A14 already bounds all of the benchmark's player
-     degradation at 0.013 for `main.toml`.
-   - P22(a), the label-shift prior.
+   - ~~P21's step 0: do our identity swaps cluster at the ball? A14 already bounds all of the benchmark's player
+     degradation at 0.013 for `main.toml`.~~ Dropped (A16): ratio 0.85, below the declared 1.5.
+   - ~~P22(a), the label-shift prior.~~ Dropped (R020): the feasibility gate failed, ratio 0.863 against 0.75.
    - ~~P10 with a pretrained audio tagger.~~ Dropped (R018, R018b): only the hand-built band-pass was tried, the tagger was not.
 5. **P16 still decides more than any of these.** Every ball-rich change so far has split the two truths: R010's decoder,
    R013's touch rule, and now A14's ball. Knowing our truth's grain says which of them helps on our match.
@@ -852,7 +853,23 @@ nodes, one per line, it has gone to. Viterbi decodes the path, and impossible tr
   hashed on an AMD and an Intel machine early.
 - MPL-2.0 is file-level copyleft. It is fine in a public repo, but its files keep their licence headers.
 
+**Step 0, measured (R022, 2026-10-31).**
+- **Licence and split:** MPL-2.0 for the code, with no separate licence for the weights (read as the repository's). The
+  checkpoint's test match is J03WR9 (validation J03WQQ, training the other five), shown by its `args.json`
+  (`lomocv`, fold 6), the tutorial and the paper's test counts.
+- **What the 92.4% is:** event-split possession on in-play frames after their own preprocessing, not DFL's flag. Their
+  protocol reproduced on the clean match (team accuracy 0.9164, edge accuracy 0.695, event F1 0.756).
+- **Pins:** commit `1b7c6f85…`, 27 files by blob SHA-1 and sha256; torch 2.11.0, numpy 2.2.6, pandas 2.2.3 in a
+  separate venv.
+- **The adapter:** windows on the maximal H or A runs of `main.toml`, pieces joined within 2 s and 5 m, at most 11
+  nodes a team, gaps filled linearly (D1 to D4, advisor-01 section 6).
+- **Result:** on 90,449 primary frames PathCRF 0.8571 against P07 0.8522, Δ +0.0049 (needed +0.04 pooled and +0.02 per
+  seed); PathCRF by its own protocol on the clean match 0.9172, not like for like (the truth's in-play episodes, true
+  identities); −0.0182 under the coarse truth. The retry condition was false. Dropped.
+
 ### P21 — Wrong-team slots: measure the ceiling, then repair them
+
+**Status: dropped → [A16](results.md) (step 0: over-11 frames are 0.1097 of `controlled_touch`-style candidate frames against 0.1286 of graded frames, ratio 0.85, below the declared 1.5; the onset ratio, 0.79, is report only and shares the ratio's denominator; a ratio below 1 may partly reflect ball visibility, as the candidates need the ball seen and the comparison is all graded frames). A14's bound stands. `pipeline/benchmark/wrong_team.py` and its checks are kept, because P19's transfer check reports its ratio; no repair was built.**
 
 **Why.** T32: on at least 10.8% of the graded frames a team shows more than 11 slots, because a slot has followed a
 player of the other side. `controlled_touch` takes the team of the nearest slot at confidence 0.93, so a swap next to the
@@ -885,6 +902,8 @@ coarse (`gaps` 0.5559 and 0.5719 against `tracking` 0.5430 and 0.5593).
 
 ### P22 — The shape model adapted to our two teams without labels
 
+**Status: (a) dropped → [R020](results.md) (the feasibility gate failed: EM's share was 0.0538 from the true one on average against 0.0623 for guessing 0.5, a ratio of 0.863 against the declared 0.75; neither retry condition held, so no grid ran and no F1 was produced). The code was removed in one commit, recoverable from `e303365`. (b) and (c) were not tried.**
+
 **Why.** P07 was trained on German teams only, and R011 warns that the benchmark's gain is not a forecast for Barça and
 Athletic: the count of possessions moved the other way on BAR-ATH.
 - **Belief:** part of that gap is a shift in priors and features that can be corrected without labels.
@@ -901,6 +920,20 @@ Athletic: the count of possessions moved the other way on BAR-ATH.
   - The pseudo-labels are made by an algorithm and decided by no person, so they are allowed.
   - Train on one half and check on the other. Without that split, R011's transfer gate (agreement with the touch rule)
     would check the model on its own training labels.
+- **(c) M, recorded 2026-10-31 (advisor, for the team; not pursued tonight):** the prior as asymmetric switch costs in the
+  decoder, the decoder's own place for a class prior. It is a contract change and needs its own decoder grid, so the team
+  decides. R020 reads s = 1 as the frame-level Bayes value, not the decoder's prior. It would use the same share as (a),
+  which failed R020's feasibility gate (0.0538 from the truth against 0.0623 for guessing 0.5), so it is untested but not
+  promising as it stands.
+- **Research (2026-10-31).** The estimator is Saerens, Latinne and Decaestecker's EM
+  ([Neural Computation 14(1), 2002](https://dipot.ulb.ac.be/dspace/bitstream/2013/68391/1/Decaestecker_NeuralComp02.pdf)),
+  taken with the training prior fixed at 0.5 (our rows are mirrored). Alexandari, Kundaje and Shrikumar
+  ([arXiv 1901.06852](https://arxiv.org/abs/1901.06852)) show EM beats the moment estimators once the model is calibrated,
+  and Garg et al. ([arXiv 2003.07554](https://arxiv.org/abs/2003.07554)) that it is consistent under calibration: from
+  them we took the calibration slope as a report-only diagnostic and temperature scaling as a pre-stated retry. Lipton,
+  Wang and Smola's BBSE ([arXiv 1802.03916](https://arxiv.org/abs/1802.03916)) was left out: its confusion matrix would
+  come from DFL, and whether it transfers is the doubt. Bourlard and Morgan's hybrid HMM (1994) says where a class prior
+  belongs, in the decoder, which is why (c) was recorded. R020 tested only the estimator's feasibility, and it failed.
 - **Validate:** simulate the procedure on DFL, leave one match out, each match in turn as the unlabelled target. A
   Bundesliga-to-Bundesliga shift is small, so expect "no harm" rather than a gain.
 

@@ -81,7 +81,7 @@ coarse truth), inside the noise (section 5).
 | Public 5-minute ground truth | only to check the pipeline, and to inspect | RULES.md rule 2 (23 Oct 2026): "not training data and not a tuning set". It checks every file (valid, deterministic, each source's agreement; the score is not used to choose, T01) and it supplies the 20 changes (12 of team, 4 into `D`, 4 out of it) that A11 inspects, to understand how our truth flips against label-free events. Nothing is trained, calibrated or chosen on it, and no constant of the submission config comes from it (the audit in section 5). The one place the pipeline read it as an input was R012's g, which came out 0 for every type and is now retired, so the shift is s_b alone, from DFL. Nothing of this match was hand-labelled |
 | Labelled tracking of other matches: the DFL/IDSSE open data, 7 matches (P01) | yes, to validate, to train P05's dead-ball model and P07's shape model, and to measure P02's lag | Bassek et al. 2025 (reference below), CC BY 4.0. We use the 25 Hz positions of players and ball, the ball's alive/dead flag and the team in possession on every frame (they give the truth: `D` where dead, otherwise the team), and the match information (teams, roles, pitch, halves). The tracking is degraded to look like ours and run through our pipeline. The ball's alive/dead flag trains the dead-ball model (every fifth graded frame of the degraded matches, and each benchmark match is read by the model that never saw it). The team in possession trains the shape model of P07 (every fifth alive graded frame, each also as its team-swapped mirror, from 26 features that do not read the ball, and again each benchmark match is read by the model fitted without it); it is also used for validation and to measure the touch rule's confidence. For P02 the same matches give the pipeline's own latency against DFL's flag (R012) and DFL's flag timed against the same label-free events (A11). Nothing else is trained on it (P13 is an idea) |
 | The DFL/IDSSE event files (the restart events); kloppy's DFL loader and download | the restart events only, as a diagnostic (P17); the loader and the download dropped | The raw events, one of the three files of a match, are read for the restart events only (below, and the labelled-data list), never by the pipeline and never to choose or fit anything. kloppy's loader drops every dead-ball frame by default and its download fails (T30), so our own parser (`pipeline/benchmark/dfl.py`) reads the positions, and kloppy only cross-checks it: 0 disagreements (A05) |
-| Other external datasets or pretrained models | no | Nothing beyond the DFL/IDSSE matches above is used: P13 (more labelled tracking, such as SkillCorner's open data) and P14 (a pretrained soccer-ball detector) are ideas, not done |
+| Other external datasets or pretrained models | no | Nothing beyond the DFL/IDSSE matches above is used: P13 (more labelled tracking, such as SkillCorner's open data) and P14 (a pretrained soccer-ball detector) are ideas, not done; PathCRF's published checkpoint (P20, MPL-2.0) was run on a held-out DFL match, did not beat P07 under our degradation (R022), and was dropped |
 
 **The DFL/IDSSE data: sources, citation, licence.** Seven full matches, two Bundesliga and five 2. Bundesliga, 25 Hz.
 Reference: Bassek, M., Rein, R., Weber, H. and Memmert, D. (2025). An integrated dataset of spatiotemporal and event
@@ -158,7 +158,11 @@ Measured on our match's ATD and the public GT. Aggregates only; each figure cite
   a median of 7.4 s, and 15.0% of those gaps last over a minute (A09).
 - A slot can carry the other team's player: a team shows more than 11 slots while the other shows fewer on 10.8% of
   the graded frames (17,156 of 158,857), in 108 episodes (63 with the home team in surplus, 45 away), median 2.7 s, p90
-  16 s, longest 50 s. This is a lower bound, because a swap inside 11 against 11 cannot be seen (T32, A07).
+  16 s, longest 50 s. This is a lower bound, because a swap inside 11 against 11 cannot be seen (T32, A07). They do
+  not show up more at the ball: the share of `controlled_touch`-style candidate frames with a team over 11 slots is
+  0.1097 against 0.1286 of all graded frames, a ratio of 0.85 against a declared 1.5, so the repair (P21) was dropped
+  and A14's bound on the player degradation (0.013) applies. The comparison is against all graded frames while the
+  candidates need the ball seen, so the ratio may partly reflect ball visibility (A16).
 - The speed is NaN on 7.8% of the present slot-frames, in 2,843 runs of a median of 21 frames (p90 69, longest 9,268)
   (A07). The position jitter, the RMS of the second difference, is 3.3 mm (A07).
 
@@ -680,7 +684,10 @@ classes balance exactly and the model has no prior to subtract and no notion of 
 - **No video, audio or homography, and Smart Tagging only as a vote.** Whatever uses them (P08, P14, P15) is checked on the
   public window for correctness only, with its strength fixed by a declared constant. P09 tried to simulate the camera
   on DFL from noise measured on our match and was dropped when the simulation failed two of its four fidelity gates
-  (R019). P08 was not checked on the public window before its
+  (R019). P22(a) shifted the shape model's logit by the home share that EM estimates from its own outputs, and was
+  dropped at its feasibility gate on the seven DFL matches (the share's mean error 0.0538 against 0.0623 for guessing
+  0.5, needing 0.75 of it; R020): the model's outputs are not a calibrated estimate of a match's possession share, and
+  no score was produced. P08 was not checked on the public window before its
   adoption, and its strength (weight 0.2, spread `frame`) was Tian's pick between two declared options: no constant came
   from the window. After the adoption `selftest.py --data` scored the window as a correctness check (macroF1 0.6986,
   spellF1 0.4000, against R013's 0.7152 and 0.4649; one possession moves spellF1 by about 0.06 there), and those figures
