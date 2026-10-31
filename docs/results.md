@@ -45,6 +45,9 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R021 | 2026-10-31 | P19: a learned team model where the ball is seen (boosted trees on the ball, the nearest slots of both teams, the touch episodes and P07's shape, trained on the seven DFL matches); part 1: the feasibility gate (50 (P19 right - main right) >= frames in 6 of 7 matches and pooled), a 17-config grid, R014's bar plus the LOMO, the BAR-ATH transfer; part 2a: the gate run | — | — | — | — | dropped 2026-10-31, code removed (recover from `15e7e14`): the gate failed, +0.0160 pooled against +0.020 and 3 of 7 matches against 6 (all seven positive); no grid ran |
 | R023 | 2026-10-31 | P16: the grain of H/A/D derived from Metrica's three public sample games' events (`metrica-sports/sample-data` at `e706dd5`, event files only), by a rule taken from Metrica's event definitions; part 1 signed by Tian before any fetch, part 2 the run (`pipeline/benchmark/metrica.py`) | — | — | — | — (a measurement, not a config) | **outcome both**: 6.20 possessions per alive minute (class both, 5.31 to 7.03) and a median of 4.72 s (class raw, under 4.83 s), 1,117 possessions in 3 games, all valid; choices declared from now on rank on the mean of the raw and coarse pooled spellF1s; nothing reopened, `main.toml` untouched |
 | R024 | 2026-10-31 | P23 A: R013's touch rule, decoder and P07 weight re-chosen under R023's objective (the mean of the raw and coarse spellF1s, maximin tie-break): Stage A′ from R013's 192 reports, Stage C′ re-run at its setting (144 configs) | 0.7007 | 0.4000 | 19 / — | 0.5363 raw and 0.5764 coarse (mean 0.5563) against `main`'s 0.5430 and 0.5593 (mean 0.5511): mean Δ +0.0052, p 0.0469, 6 wins in 7 (raw -0.0067, coarse +0.0171) | **adopted**: the touch hold 0.60 → 0.55, the decoder, P07's weight and the shift unchanged; guard passed (`context` mean +0.0010), bar met; BAR-ATH: 399 possessions (413), `D` 36.0%, 1.66% of graded frames relabelled; `main.csv` `e6496a9b…` |
+| A19 | 2026-10-31 | P23 B and D: `main.toml`'s IoU ladder decomposed and its calibration (`diagnose.py`) | — | — | — | mean clean-pair ladder loss 0.0704 (merge 0.0254, split 0.0273); the posterior 4–5× too sharp (Platt α 0.19 team, 0.27 alive), the sources near calibrated | measurement: R025's gate passed |
+| R025, R025b | 2026-10-31 | P23 C: posterior edges, then on a posterior tempered at T = 5 (the one retry) | — | — | — | mean Δ -0.0010 (2 wins) and -0.0282 (0 wins) against `main` | **dropped**: guard failed both times; code removed |
+| R026 | 2026-10-31 | P23 E: P07 weighted apart in the gaps (6 configs) | — | — | — | the identity scored as `main`; every heavier gap weight -0.010 to -0.020 on the mean | **dropped**: no config beat `main`; no retry (advisor); code removed |
 
 ### The four yardsticks on every profile, in one table
 
@@ -8201,6 +8204,52 @@ R026's own results. If it fails too, E is dropped and the `"visible"` scope remo
 **Review.** An independent reviewer read A19 and R024 to R026 before any run: 14 findings, all resolved in the text
 above. The one blocker was R024's extension, which could be read two ways.
 
+**Part 2, the run** (2026-10-31).
+- **The base** is `main.toml` as R024 left it, since C was dropped, with w* = 0.2.
+- **The code:** the `"visible"` scope, `6bbae1d` and `4b3f8e9`.
+- **The configs** (`57013a1`) come from a generator, and every line other than the two P07 blocks and the header is
+  `main.toml`'s.
+- **The run:** one throttled process from a detached checkout of `57013a1`, EXIT=0: `run.py pipeline/configs/main.toml
+  <the six in the declared order> --profile tracking --seeds 3 --truth both --drop-match-only`.
+- **The selection:** `choose.py --reference main --objective mean <the six in that order> --out
+  data/runs/r026/choice.json`.
+
+| config (w_vis, w_gap) | mean | raw | coarse | possessions / min | mean Δ vs `main` [p, wins] | raw Δ | coarse Δ |
+|---|---|---|---|---|---|---|---|
+| `main` | 0.5563 | 0.5363 | 0.5764 | 3.06 | | | |
+| **`r026_v200_g200`** (0.2, 0.2) | **0.5563** | 0.5363 | 0.5764 | 3.06 | +0.0000 | +0.0000 | +0.0000 |
+| `r026_v100_g200` (0.1, 0.2) | 0.5492 | 0.5396 | 0.5589 | 3.11 | -0.0071 [0.0312, 1] | +0.0033 | -0.0174 |
+| `r026_v200_g400` (0.2, 0.4) | 0.5460 | 0.5338 | 0.5582 | 3.22 | -0.0103 [0.0156, 0] | -0.0025 | -0.0182 |
+| `r026_v200_g600` (0.2, 0.6) | 0.5421 | 0.5332 | 0.5511 | 3.29 | -0.0142 [0.0156, 0] | -0.0031 | -0.0253 |
+| `r026_v100_g400` (0.1, 0.4) | 0.5393 | 0.5372 | 0.5414 | 3.27 | -0.0170 [0.0156, 0] | +0.0010 | -0.0350 |
+| `r026_v100_g600` (0.1, 0.6) | 0.5360 | 0.5372 | 0.5348 | 3.35 | -0.0203 [0.0156, 0] | +0.0009 | -0.0416 |
+
+- **The identity check passes.** (0.2, 0.2) scores as `main.toml` to the last digit under both truths. The split
+  changes nothing at equal weights, as `6bbae1d`'s check said it would.
+- **The rule chooses the identity**, `main.toml`'s own weights. It is the best mean, and alone in its band.
+- **No config passes the guard** (Δ > 0), and the extension (a choice at w_gap = 0.6) does not fire.
+- **The belief is falsified on the benchmark.**
+  - A heavier gap weight does not make a change inside a gap believed sooner to good effect. It makes more of them:
+    3.22 to 3.35 possessions a minute against 3.06. It loses on the coarse truth in every config (-0.018 to -0.042), and
+    on raw as well at w_vis 0.2.
+  - Lowering the visible weight to 0.1 helps raw a little (+0.003) and costs coarse four to five times as much.
+  - A19 had already shown no reason to weight the gaps apart: P07's α is 1.07 where the ball is seen and 1.10 where
+    it is missing.
+
+**Verdict: R026 fails** (the rule keeps `main.toml`'s weights; no candidate beats it).
+
+**No retry: the advisor (for Tian, 31 Oct) ruled E dropped.**
+- **A19 names no cause.** P07 is calibrated alike in both ball states. Its weight of 0.2 corrects for counting
+  correlated frames as independent, not for a difference between the two.
+- **R026's own results reject the belief outright.**
+- **A gap weight below 0.2 would be the opposite hypothesis, not a retry.** R011's gaps-only grid makes it a
+  near-certain non-result: a flat optimum, with the mean of the two truths 0.5148 at 0.1 and 0.5154 at 0.2. Even a
+  small gain would fall inside the tie band, where the rule picks the identity first, so it could not be adopted.
+  It can only come back as a new proposal, at low priority.
+
+**The code is removed in one commit,** `4690545`: the reverts of `6bbae1d` and `4b3f8e9` (the `"visible"` scope
+and its checks), and `pipeline/benchmark/configs/r026/`. It is recoverable from `57013a1`. `main.toml` is unchanged
+(R024's, `e6496a9b…`).
 
 ## Submission log
 
@@ -8236,6 +8285,11 @@ R014 and R014b (2026-10-26) left `main.toml` unchanged: neither met its bar, so 
 `main.toml` was rewritten a fifth time by R017 (2026-10-30): P08 `smart_tagging` (per frame, `r017_frame`) adopted.
 It now produces sha256 `7ba575c0982aacb9765b39c406e4ff5c9ddb82ca37cfa2b7f101417431fc3d7c` (commit 56916f2). It was
 NOT uploaded.
+
+`main.toml` was rewritten a sixth time by R024 (2026-10-31, P23 A): the touch hold re-chosen under R023's
+objective, 0.60 to 0.55. It now produces sha256
+`e6496a9b9805217ef085e52ed69cbb27a42b95368d65c1d188b4a2f339b61170` (commit `3943962`), identical to
+`r024_both.toml`'s file. R025, R025b and R026 left it unchanged (C and E dropped). It has NOT been uploaded.
 
 Before each upload:
 1. Regenerate the file from a clean clone, ideally on a second machine, and compare the sha256 ([T21](traps.md)).

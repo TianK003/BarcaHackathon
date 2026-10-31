@@ -39,7 +39,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P20](#p20--ball-free-possession-paths-pathcrf-on-our-slots) | Ball-free possession paths: PathCRF (KDD 2026), trained on the same DFL matches | fact 1; A13's gaps (+0.176 raw) | S test, L to adopt | measured: +0.0049 pooled on the gap frames (needed +0.04); PathCRF's own protocol on the clean match reached 0.9172, against P07's 0.8522 on degraded tracking (not like for like) | dropped → R022 (step 0 no-go: +0.0049 under our degradation and the adapter, needed +0.04; code removed, recoverable at `2163406`) |
 | [P21](#p21--wrong-team-slots-measure-the-ceiling-then-repair-them) | Wrong-team slots: measure the ceiling, then repair from tracking or jersey colours | T32 | S test, M | low on the benchmark: all of `tracking`'s player degradation costs `main.toml` 0.013 (A14) | dropped → A16 (step 0's ratio 0.85 < 1.5; the tool is kept for P19's transfer report) |
 | [P22](#p22--the-shape-model-adapted-to-our-two-teams-without-labels) | The shape model adapted to our two teams without labels | fact 1 | S–M | low: guess +0.00 to +0.02 | (a) dropped → R020 (feasibility gate failed: 0.0538 against 0.0623, ratio 0.863 > 0.75); (b) and (c) not tried |
-| [P23](#p23--the-hmm-backbone-reviewed-nine-ideas-five-taken) | The HMM backbone reviewed: re-choose under R023's objective (A), decompose the IoU ladder (B), posterior edges (C), calibration (D), a gap weight for P07 (E) | fact 5; the decoder's placement of changes; fact 1 (E) | S each | low: +0.01 to +0.03 for the lot (the advisor's estimate) | doing → R024 (A), A19 (B, D), R025 (C), R026 (E); F deferred, G to I not taken |
+| [P23](#p23--the-hmm-backbone-reviewed-nine-ideas-five-taken) | The HMM backbone reviewed: re-choose under R023's objective (A), decompose the IoU ladder (B), posterior edges (C), calibration (D), a gap weight for P07 (E) | fact 5; the decoder's placement of changes; fact 1 (E) | S each | low: +0.01 to +0.03 for the lot (the advisor's estimate); measured: A +0.0052 on the mean (R024) | done: A adopted → R024; B, D measured → A19; C dropped → R025, R025b; E dropped → R026; F deferred, G to I not taken |
 | [P03](#p03--one-command-deterministic-cached) | One-command, deterministic, cached pipeline | reproducibility | S–M | enabling | done → R001 |
 | [P04](#p04--sticky-ownership-from-controlled-touches) | Sticky ownership from controlled touches | facts 3, 5 | S | high: +0.1421 raw at the chosen decoder (R010) | done → R008, R010; rule re-chosen → R013 |
 | [P05](#p05--a-real-dead-ball-detector) | Dead-ball detector | fact 4 | M | high: +0.1661 raw at the chosen decoder, on a benchmark that overstates it (R010, T38, T39) | done → R009, R010 |
@@ -979,11 +979,20 @@ Athletic: the count of possessions moved the other way on BAR-ATH.
 
 ### P23 — The HMM backbone reviewed: nine ideas, five taken
 
-**Status: doing (Claude, for Tian).** Tian took A to E on 31 Oct and deferred F; G, H and I were not taken.
-- A → [R024](results.md);
-- B and D → [A19](results.md);
-- C → [R025](results.md), built only if A19's gate passes;
-- E → [R026](results.md).
+**Status: done (Claude, for Tian, 31 Oct).** Tian took A to E and deferred F; G, H and I were not taken.
+- **A → [R024](results.md): adopted.** The touch hold moves from 0.60 to 0.55. The mean of the two truths is +0.0052
+  (p 0.0469, 6 wins in 7); `main.csv` is `e6496a9b…`.
+- **B and D → [A19](results.md): measured.** The IoU ladder is mostly edges on otherwise right pairs (0.070 of
+  spellF1 on the mean). The sources are near calibrated; the decoder's posterior is about five times too sharp.
+- **C → [R025](results.md), [R025b](results.md): dropped.** The gate passed. R025 moved edges by 1 frame (mean
+  -0.0010), and its one retry, a posterior tempered at T = 5 (the advisor's ruling), moved them by 3 and made them
+  worse (mean -0.0282, 0 wins). The code was removed, recoverable from `171d0bb`.
+- **E → [R026](results.md): dropped.** Every heavier gap weight lost on the mean (-0.010 to -0.020): it cut more
+  possessions, which the coarse truth punishes. The rule kept `main.toml`'s weights, and the advisor ruled no retry
+  (A19 shows P07 calibrated alike with the ball seen or missing). The code was removed, recoverable from `57013a1`.
+- **What P23 leaves:** `main.toml` gains R024's hold. The decoder's remaining loss is in where the evidence changes,
+  not in where the decoder puts the change given the evidence. F (P22(b), the evidence in the gaps) is the one idea
+  left aimed there.
 
 **Why.** On 31 Oct Tian asked for a review of the decoder against the literature:
 - is the HMM the right model?
@@ -1025,7 +1034,8 @@ which is the ensemble this design supports. The only ensemble with a mechanism b
 from 0.670 at IoU 0.3 to 0.401 at 0.7 (raw). The advisor's count says most of it is merged and split possessions instead.
 `main.toml` predicts 6,279 possessions, against 9,183 in the raw truth and 4,977 in the coarse. Under the raw truth we
 merge (recall 0.56), and under the coarse truth we split (precision 0.61), and moving an edge fixes neither. B measures the
-split before C is built.
+split before C is built. *A19's answer:* the review's first reading was nearer. On the mean of the two
+truths, the clean pairs lose 0.070 up the ladder, against 0.025 for merges and 0.027 for splits.
 
 **A finding made while declaring D.** The review said the decoder's `log(2a)` assumes a 50/50 dead-ball prior, a bias of
 logit(0.55) ≈ 0.2 nats a frame towards play. That bias is not there:
