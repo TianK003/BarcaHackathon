@@ -455,3 +455,108 @@ def test_window_frame_layout():
     assert sorted(used) == sorted("{}_{}".format(n, a) for n in names[:21] for a in "xy"), "one x and y per used node"
     assert not frame[used].isna().any().any(), "no NaN in a used node column"
     assert not any(c.startswith("away_10") for c in frame.columns), "no column for the unused node"
+
+
+# -- score -----------------------------------------------------------------------------------------
+
+def test_tally_exact():
+    import numpy as np
+    from pathcrf_lab import score
+    truth = np.array([0, 0, 0, 1, 1, 2, 3, 0], dtype=np.int8)           # H H H A A D X H
+    home = np.array([0.9, 0.2, np.nan, 0.1, 0.8, 0.9, 0.9, 0.5])
+    path = np.array([1, 1, 0, 0, 2, 1, 1, -1], dtype=np.int8)
+    got = score.tally(truth, np.array([1, 1, 1, 1, 1, 0, 0, 1], dtype=bool), home, path)
+    assert got == {"frames": 6, "p07_right": 3, "pathcrf_right": 3, "out": 1, "silent_pathcrf": 1, "silent_p07": 1}, \
+        "tally is {}".format(got)
+
+
+def test_out_of_play_and_silent_are_wrong():
+    import numpy as np
+    from pathcrf_lab import score
+    truth = np.array([0, 1], dtype=np.int8)
+    got = score.tally(truth, np.ones(2, dtype=bool), np.array([np.nan, np.nan]), np.array([score.OUT, score.SILENT]))
+    assert got["pathcrf_right"] == 0 and got["p07_right"] == 0 and got["out"] == 1 and got["silent_pathcrf"] == 1, \
+        "an outside sender and a silent frame must both be wrong: {}".format(got)
+
+
+def _part(frames, p07, pathcrf):
+    return {"frames": frames, "p07_right": p07, "pathcrf_right": pathcrf, "out": 0, "silent_pathcrf": 0,
+            "silent_p07": 0}
+
+
+def test_verdict_is_mechanical_and_exact():
+    from pathcrf_lab import score
+    seeds = [_part(10000, 9000, 9000 + 399)] * 3
+    assert not score.verdict(seeds, score.pooled(seeds))["go"], "+399 in 10,000 pooled is a no-go"
+    seeds = [_part(10000, 9000, 9400), _part(10000, 9000, 9400), _part(10000, 9000, 9199)]
+    got = score.verdict(seeds, score.pooled(seeds))
+    assert not got["go"] and "seed 2" in got["reason"], "one seed at +199 in 10,000 is a no-go: {}".format(got)
+    seeds = [_part(100, 90, 94)] * 3
+    got = score.verdict(seeds, score.pooled(seeds))
+    assert got["go"], "90 against 94 in 100 on every seed is exactly +0.04, a go (floats get it wrong): {}".format(got)
+    assert not score.verdict(seeds[:2] + [_part(100, 90, 93)], score.pooled(seeds[:2] + [_part(100, 90, 93)]))["go"], \
+        "pooled +0.0367 is a no-go"
+
+
+def test_pooled_is_by_frames_not_a_mean_of_seeds():
+    from pathcrf_lab import score
+    parts = [_part(100, 50, 60), _part(900, 450, 450)]
+    total = score.pooled(parts)
+    assert total["frames"] == 1000 and total["pathcrf_right"] == 510 and total["p07_right"] == 500, "pooled sums"
+    assert score.delta(total) == score.Fraction(1, 100), "pooled by frames is +0.01, not the seeds' mean of +0.05"
+
+
+def test_coarse_uses_the_coarse_codes():
+    import numpy as np
+    from pathcrf_lab import score
+    from pipeline.benchmark import truth as truths
+    raw = np.array([0] * 200 + [1] * 25 + [0] * 200 + [2] * 20, dtype=np.int8)   # a 1 s spell of A between H's
+    coarse = truths.coarse_codes(raw, [(1, 0, len(raw))], 25)
+    assert (coarse != raw).any(), "the sandwiched spell must be absorbed"
+    wanted = np.ones(len(raw), dtype=bool) & (raw != 2)
+    home = np.full(len(raw), 0.9)
+    path = np.ones(len(raw), dtype=np.int8)       # PathCRF says home throughout
+    assert score.tally(raw, wanted, home, path)["pathcrf_right"] == 400 and \
+        score.tally(coarse, wanted, home, path)["pathcrf_right"] == 425, "only the coarse tally changes"
+
+
+def test_reference_gate():
+    from pathcrf_lab import score
+    assert score.reference_gate([{"frames": 96442, "right": round(0.8495 * 96442)}])[0], "96,442 at 0.8495 must pass"
+    assert not score.reference_gate([{"frames": 96441, "right": round(0.8495 * 96441)}])[0], "96,441 frames must stop"
+    assert not score.reference_gate([{"frames": 96442, "right": round(0.8494 * 96442)}])[0], "0.8494 must stop"
+
+
+def test_clean_alignment():
+    import numpy as np
+    from types import SimpleNamespace
+    from pathcrf_lab import score
+    match = SimpleNamespace(frame_number=np.array([5, 6, 7, -1, 9]), n_frames=5, graded=((1, 0, 3),), fps=25,
+                            ball_status=np.array([1, 1, 0, -1, 1]), ball_possession=np.array([0, 1, -1, -1, 0]),
+                            match_id="X")
+    npz = {"frame_number": np.array([5, 6, 7, 8]), "team": np.array([1, 0, 2, 1], dtype=np.int8),
+           "alive": np.array([True, True, False, True])}
+    _, alignment = score.clean_codes_with(match, npz, np.array([0, 1, 2, 3, 3], dtype=np.int8))
+    assert alignment["unmapped"] == 1 and alignment["mapped"] == 3, "frame 8 is not in the match: {}".format(alignment)
+    assert alignment["alive_agreement"] == 1.0, "alive agrees on the three mapped graded rows"
+
+
+def test_retry_condition():
+    from pathcrf_lab import score
+    good = {"neither": _part(1000, 800, 840)}
+    assert score.retry_allowed(good) and not score.retry_allowed(good, go=True), "a no-go with +0.04 on neither retries"
+    assert not score.retry_allowed({"neither": _part(1000, 800, 839)}), "+0.039 on neither does not retry"
+    assert not score.retry_allowed({}), "no neither class: no retry"
+
+
+def test_score_prints_aggregates_only():
+    from pathcrf_lab import score
+    part = _part(1000, 800, 840)
+    report = {"match": "J03WR9", "profile": "tracking", "seeds": [0, 1, 2],
+              "reference": {"ok": True, "frames": 96442, "accuracy": 0.8495}, "clean_alignment": None,
+              "clean_used": False, "pooled": {"primary": part, "literal": part}, "held_share": 0.05,
+              "verdict": {"go": False, "pooled_delta": 0.04, "per_seed_delta": [0.04, 0.04, 0.04], "reason": "x"},
+              "retry_allowed": False}
+    for line in score.render(report):
+        assert len(line) <= 200, "a printed line is {} characters".format(len(line))
+        assert len(re.findall(r"\d+\.?\d*", line)) <= 12, "a printed line holds more than 12 numbers: {}".format(line)
