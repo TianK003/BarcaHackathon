@@ -356,3 +356,78 @@ def test_label_shift_one_sided_scenes_raise():
             inputs = shape_inputs(*shape_scene(seed))
             inputs.game = "BAR-ATH"
             assert 0.0 < shape_possession.em_prior(shape_possession.logit_home(inputs, path))["prior_home"] < 1.0
+
+
+# -- the grid's identity check (D4) -----------------------------------------------------------------------------------
+
+def test_label_shift_grid_spy_and_comparison():
+    from pipeline.contracts import RunContext
+    from pipeline.evidence import REGISTRY
+    inputs = bar_ath_inputs()
+    real = (shape_possession.logit_home, shape_possession.em_prior)
+    with tempfile.TemporaryDirectory() as root:
+        path = write_shape_model(root, name="full.json", full=shape_model(0.0, -1.0, 2.0))
+
+        def source(game, seed, strength):
+            inputs.game, inputs.seed = game, seed
+            return REGISTRY["shape_possession"](RunContext(inputs=inputs, seed=0), model=path, scope="all",
+                                                prior="em", prior_strength=strength).home
+        with label_shift.ShareSpy() as spy:
+            first = source("M1", 0, 0.5)
+            source("M1", 1, 1.0)
+            source("M2", 0, 0.25)
+            REGISTRY["shape_possession"](RunContext(inputs=inputs, seed=0), model=path, scope="all")   # no prior: no EM
+        assert (shape_possession.logit_home, shape_possession.em_prior) == real, "the spy puts the functions back"
+        assert [(m, s) for m, s, _ in spy.shares] == [("M1", 0), ("M1", 1), ("M2", 0)], spy.shares
+        share = shape_possession.em_prior(shape_possession.logit_home(inputs, path))["prior_home"]
+        assert all(value == share for _, _, value in spy.shares), "the same inputs, the same share"
+        assert np.array_equal(first, source("M1", 0, 0.5), equal_nan=True), "the spy changes no value"
+        try:
+            with label_shift.ShareSpy():
+                raise RuntimeError("boom")
+        except RuntimeError:
+            pass
+        assert (shape_possession.logit_home, shape_possession.em_prior) == real, "restored after an error too"
+
+        def feasibility_of(**shares):
+            return {"per_match": {match_id: {"seeds": [{"pi_hat": v} for v in values]}
+                                  for match_id, values in shares.items()}}
+        expected = feasibility_of(M1=[share, share + 4e-10], M2=[share])
+        # at 9 decimals: 4e-10 below the rounding step is equal, 1e-8 is not
+        out = label_shift.compare_shares([("M1", 0, share), ("M1", 1, share), ("M2", 0, share), ("M1", 0, share)],
+                                         expected)
+        assert out == {"recorded": 4, "matched": 4, "mismatched": 0, "missing": 0, "verdict": "MATCH"}, out
+        off = label_shift.compare_shares([("M1", 0, share + 1e-8), ("M1", 1, share), ("M2", 0, share)], expected)
+        assert (off["matched"], off["mismatched"], off["missing"], off["verdict"]) == (2, 1, 0, "MISMATCH"), off
+        gone = label_shift.compare_shares([("M1", 0, share), ("M1", 1, share)], expected)
+        assert (gone["missing"], gone["verdict"]) == (1, "MISMATCH"), gone
+        stray = label_shift.compare_shares([("M9", 0, share), ("M1", 0, share), ("M1", 1, share), ("M2", 0, share)],
+                                           expected)
+        assert (stray["mismatched"], stray["verdict"]) == (1, "MISMATCH"), "a pair the feasibility run lacks"
+        assert label_shift.compare_shares([], expected)["verdict"] == "MISMATCH", "nothing recorded is not a match"
+        assert "MISMATCH" in label_shift.render_grid(off)[0] and "MATCH" in label_shift.render_grid(out)[0]
+
+        # grid(): run.py's own main is called with the declared command, the spy is on, the exit code is passed on
+        feasibility = os.path.join(root, "feasibility.json")
+        with open(feasibility, "w", encoding="utf-8") as handle:
+            json.dump(expected, handle)
+        called = []
+
+        def runner(argv):
+            called.append(argv)
+            source("M1", 0, 0.5)
+            source("M1", 1, 0.5)
+            source("M2", 0, 0.5)
+            return 0
+        code, comparison = label_shift.grid(feasibility, ["--data-dir", root], runner=runner)
+        assert code == 0 and comparison["verdict"] == "MATCH", comparison
+        argv = called[0]
+        stems = [os.path.basename(a)[:-5] for a in argv if a.endswith(".toml")]
+        assert stems == ["main", "nearest_w50", "nearest_w125", "r020_s025", "r020_s050", "r020_s100"], stems
+        assert argv[len(stems):] == ["--profile", "tracking", "--seeds", "3", "--truth", "both",
+                                     "--drop-match-only", "--data-dir", root], argv
+        assert all(os.path.exists(a) for a in argv if a.endswith(".toml")), "every config is a real file"
+        assert label_shift.grid(feasibility, runner=lambda argv: 1)[0] == 1, "run.py's failure is passed on"
+        assert (shape_possession.logit_home, shape_possession.em_prior) == real
+        parsed = label_shift.build_parser().parse_args(["grid"])
+        assert parsed.command == "grid" and parsed.feasibility is None

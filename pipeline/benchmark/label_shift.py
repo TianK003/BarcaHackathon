@@ -263,6 +263,91 @@ def render_bar_ath(result):
                 TOUCH_SLACK, "PASS" if touch["passes"] else "FAIL")]
 
 
+# -- the grid, with D4's identity check ---------------------------------------------------------------------------------
+
+GRID_CONFIGS = (("pipeline", "configs", "main.toml"), ("pipeline", "benchmark", "configs", "nearest_w50.toml"),
+                ("pipeline", "benchmark", "configs", "nearest_w125.toml"),
+                ("pipeline", "benchmark", "configs", "r020", "r020_s025.toml"),
+                ("pipeline", "benchmark", "configs", "r020", "r020_s050.toml"),
+                ("pipeline", "benchmark", "configs", "r020", "r020_s100.toml"))    # R020's declared command, in order
+GRID_FLAGS = ("--profile", "tracking", "--seeds", "3", "--truth", "both", "--drop-match-only")
+
+
+class ShareSpy:
+    """Records the share that EM finds for each (match, seed) while the grid runs, without changing a value.
+
+    It wraps `shape_possession.logit_home` (to learn which served match and seed is being read: `inputs.game` and
+    `inputs.seed`) and `shape_possession.em_prior` (to record its answer, which it returns untouched). Use it as a
+    context manager: the module's own functions are put back on exit, raised or not.
+    """
+
+    def __init__(self):
+        self.shares = []                       # [(match id, seed, share)]
+        self._current = None
+
+    def __enter__(self):
+        self._logit_home, self._em_prior = shape_possession.logit_home, shape_possession.em_prior
+
+        def logit_home(inputs, model):
+            self._current = (inputs.game, inputs.seed)
+            return self._logit_home(inputs, model)
+
+        def em_prior(logits, **values):
+            found = self._em_prior(logits, **values)
+            if self._current is not None:
+                self.shares.append(self._current + (found["prior_home"],))
+            return found
+        shape_possession.logit_home, shape_possession.em_prior = logit_home, em_prior
+        return self
+
+    def __exit__(self, *exc):
+        shape_possession.logit_home, shape_possession.em_prior = self._logit_home, self._em_prior
+        return False
+
+
+def compare_shares(recorded, feasibility_result, decimals=run.DECIMALS):
+    """D4's check: every recorded (match, seed, share) equals the feasibility run's, at `decimals`; each of its
+    (match, seed) was recorded at least once. {recorded, matched, mismatched, missing, verdict}: counts only; the verdict
+    is "MATCH" or "MISMATCH" (a mismatch, a missing value, or nothing recorded).
+    """
+    expected = {}
+    for match_id, cell in feasibility_result["per_match"].items():
+        for seed, entry in enumerate(cell["seeds"]):
+            expected[(match_id, seed)] = round(entry["pi_hat"], decimals)
+    seen, matched, mismatched = set(), 0, 0
+    for match_id, seed, share in recorded:
+        seen.add((match_id, seed))
+        if expected.get((match_id, seed)) == round(share, decimals):
+            matched += 1
+        else:
+            mismatched += 1
+    missing = len(set(expected) - seen)
+    return {"recorded": len(recorded), "matched": matched, "mismatched": mismatched, "missing": missing,
+            "verdict": "MATCH" if recorded and not mismatched and not missing else "MISMATCH"}
+
+
+def grid(feasibility_path, extra=(), *, runner=None):
+    """R020's grid through run.py's own `main`, with every EM share recorded and compared with the feasibility run's.
+
+    `extra` are more arguments for run.py (a data directory, say); `runner` stands in for `run.main` in the checks.
+    Returns (run.py's exit code, the comparison): the reports are the ones `run.py` writes, from its own functions.
+    """
+    import json
+    with open(feasibility_path, encoding="utf-8") as handle:
+        expected = json.load(handle)
+    argv = [os.path.join(ROOT, *parts) for parts in GRID_CONFIGS] + list(GRID_FLAGS) + list(extra)
+    with ShareSpy() as spy:
+        code = (runner or run.main)(argv)
+    return code, compare_shares(spy.shares, expected)
+
+
+def render_grid(comparison):
+    return ["label_shift grid: {} pi_hat values recorded, {} equal to the feasibility run's at {} decimals, {} differ, "
+            "{} (match, seed) pairs never recorded: {}".format(
+                comparison["recorded"], comparison["matched"], run.DECIMALS, comparison["mismatched"],
+                comparison["missing"], comparison["verdict"])]
+
+
 # -- the command line -------------------------------------------------------------------------------------------------
 
 def build_parser():
@@ -280,6 +365,10 @@ def build_parser():
             command.add_argument("--seeds", type=int, default=run.DEFAULT_SEEDS, help="degradation seeds per match")
         else:
             command.add_argument("--strength", type=float, required=True, help="prior_strength, in (0, 1]")
+    command = commands.add_parser("grid", help="R020's grid through run.py, each EM share checked against feasibility")
+    command.add_argument("--data-dir", help="the data bundle (default: data/, or $MTAH_DATA_DIR)")
+    command.add_argument("--feasibility", help="the feasibility JSON (default: <data dir>/runs/label_shift/"
+                                               "feasibility.json)")
     return parser
 
 
@@ -288,6 +377,12 @@ def main(argv=None):
     if args.command == "feasibility" and args.seeds < 1:
         build_parser().error("--seeds must be at least 1")
     try:
+        if args.command == "grid":
+            path = args.feasibility or os.path.join(args.data_dir or games.DATA_DIR, *OUT_DIR, "feasibility.json")
+            code, comparison = grid(path, ["--data-dir", args.data_dir] if args.data_dir else [])
+            for line in render_grid(comparison):
+                print(line)
+            return 1 if code or comparison["verdict"] != "MATCH" else 0
         if args.command == "feasibility":
             result = feasibility(args.model, profile=args.profile, seeds=args.seeds, data_dir=args.data_dir, log=print)
             lines, name = render_feasibility(result), "feasibility.json"
