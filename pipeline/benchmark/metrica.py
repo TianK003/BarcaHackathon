@@ -548,7 +548,7 @@ def main(argv=None):
             out = args.out or os.path.join(args.data_dir or games.DATA_DIR, *OUT_DIR, "r023.json")
             run.write_json(out, run.plain(result))
             print("wrote     {}".format(run.shown(out)))
-    except (DownloadError, ValueError, KeyError, TypeError, OSError) as error:
+    except (DownloadError, ValueError, KeyError, TypeError, AttributeError, OSError) as error:
         print("FAILED    {}".format(error))
         return 1
     return 0

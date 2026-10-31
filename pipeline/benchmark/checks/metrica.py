@@ -316,6 +316,15 @@ def test_metrica_derive_rules_the_first_checks_left_out():
                                  ev(1, A, "PASS", 11, 14))
     assert codes[5:11] == [D] * 6 and codes[11:14] == [A] * 3
     assert stops == {"forced": 1, "ball out": 1, "fault received": 1}
+    # Each alone: a CHALLENGE never closes D; a RECOVERY does; FAULT RECEIVED stops at its start, FORCED at its end.
+    codes, _, _ = period_one(ev(1, H, "BALL OUT", 1, 5), ev(1, A, "CHALLENGE", 7, 8), ev(1, A, "PASS", 10, 12))
+    assert codes[5:10] == [D] * 5 and codes[10] == A
+    codes, _, _ = period_one(ev(1, H, "BALL OUT", 1, 5), ev(1, A, "RECOVERY", 7, 8), ev(1, A, "PASS", 10, 12))
+    assert codes[5:7] == [D] * 2 and codes[7:13] == [A] * 6
+    codes, _, _ = period_one(ev(1, H, "PASS", 1, 3), ev(1, H, "FAULT RECEIVED", 3, 8), ev(1, H, "SET PIECE", 10, 12))
+    assert codes[:3] == [H] * 3 and codes[3:10] == [D] * 7
+    codes, _, _ = period_one(ev(1, H, "PASS", 1, 3), ev(1, H, "PASS", 3, 8, "FORCED"), ev(1, A, "SET PIECE", 10, 12))
+    assert codes[:8] == [H] * 8 and codes[8:10] == [D] * 2 and codes[10] == A
     # SHOT, BALL LOST and CARRY close D like the declared restarts.
     for kind in ("SHOT", "BALL LOST", "CARRY"):
         codes, _, _ = period_one(ev(1, H, "BALL OUT", 1, 5), ev(1, A, kind, 8, 12))
@@ -327,7 +336,7 @@ def test_metrica_derive_rules_the_first_checks_left_out():
     # later change at that frame, so A never shows; the PASS sets A at 10.
     codes, _, _ = period_one(ev(1, H, "BALL LOST", 2, 9), ev(1, A, "BALL LOST", 3, 6), ev(1, A, "PASS", 10, 12))
     assert codes[:10] == [H] * 10 and codes[10:13] == [A] * 3
-    # A FAULT RECEIVED by the other team stops play and changes no team: the restart's team decides.
+    # A FAULT RECEIVED by the other team stops play; the restart's team decides who has the ball after it.
     codes, _, _ = period_one(ev(1, H, "PASS", 1, 5), ev(1, A, "FAULT RECEIVED", 5, 5), ev(1, H, "SET PIECE", 9, 12))
     assert codes[4] == H and codes[5:9] == [D] * 4 and codes[9:12] == [H] * 3
     # A stop with no restart runs to the span's end; one past the span's end gives no D (clipped).
