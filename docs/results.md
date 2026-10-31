@@ -1652,6 +1652,54 @@ Confounds, which keep these from being read as a convention:
 
 Inspection only (RULES.md, `f8f2629`, T27): nothing is set from these numbers; a timing constant comes from other games (P16).
 
+### A16 — P21 step 0: do wrong-team slots cluster at the ball? (2026-10-31, Tian)
+Proposal: P21 · Commit: part 1 (this declaration, with `pipeline/benchmark/wrong_team.py` and its checks) is committed
+before the run it governs; the run's result is part 2.
+
+**Part 1, declared before the run** (2026-10-31). The tool is built and unit-tested on synthetic data only, and no number
+of this entry has been seen. It is the advisor's measure, for the team (`.superpowers/sdd/run-2026-10-31/advisor-01.md`,
+section 2, Lane C item 5, and section 4.3).
+
+**Why.** T32: on at least 10.8% of the graded frames a team shows more than 11 slots, because a slot has followed a
+player of the other side. `controlled_touch` takes the team of the nearest slot, so a swap next to the ball injects a
+confident wrong team. The benchmark places its wrong-team episodes at the closest home and away pair anywhere on the
+pitch, not at the ball, and A14 bounds what all of `tracking`'s player degradation costs `main.toml` (0.0129 raw). If our
+swaps do not cluster at the ball, that bound applies and P21 stops. An identity switch is an occlusion-and-contact event
+(Wojke, Bewley and Paulus, [DeepSORT, arXiv 1703.07402](https://arxiv.org/abs/1703.07402); Cui et al.,
+[SportsMOT, arXiv 2304.05170](https://arxiv.org/abs/2304.05170)), and a swap across the two teams needs a near-total
+overlap of players of opposite sides, which in football is a challenge for the ball.
+
+**The definitions** (`pipeline/benchmark/wrong_team.py`, one run on BAR-ATH, aggregates only):
+- A **graded frame** is inside the graded blocks (`games.half_video_blocks`); only graded frames count anywhere.
+- A **candidate frame** is `controlled_touch`'s rule **without its duel test**: graded, the ball seen, the nearest
+  present slot within 1.5 m and moving with the ball (|v_ball - v_nearest| <= 6 m/s), velocities from successive
+  positions (T31). 1.5 m and 6 m/s are `main.toml`'s own `controlled_touch` figures (a check holds them equal).
+- A team is **over 11** on its **present slots**: a frame is over 11 if either team has more than 11 present slots.
+- The **ratio** is (the share of candidate frames that are over 11) over (the share of all graded frames that are over
+  11). It is computed from the counts, so that an exact 1.5 is exact.
+
+**The rule (decides P21): the ratio is strict, below 1.5 means P21 is dropped.** At 1.5 or above the result is reported
+and the proposal's ceiling run (`main.toml` on `tracking` with its wrong-team episodes switched off) is not run, because
+it would not measure swaps at the ball. A ratio that cannot be computed (no candidate frame, or no over-11 frame) is
+reported as undefined and decides nothing.
+
+**Reported, and deciding nothing:**
+- `surplus`, T32's stricter definition (one team over 11 and the other under 11, which a real match cannot show), with the
+  same ratio.
+- **D3 (Advisor, for Tian), the onset ratio, report only:** the share of the first frames of over-11 runs (inside the
+  graded blocks; a run that begins on a block's first frame is carried in and not counted) that lie within 1 s of a
+  candidate frame of the same block, over the share of graded frames that do. It separates a swap's onset from the
+  persisting state, which the 1.5 rule cannot do. **No rule and no decision rests on it**, and it never changes the
+  verdict of the ratio above.
+
+**The expected direction.** Above 1, pulled towards 1 by two effects: the measure is a state and a surplus persists after
+its swap (median 2.7 s, p90 16 s, T32) while the ball moves on, and set-piece crowding overlaps players away from the
+ball, with the taker. So a ratio below 1.5 does not prove that swaps never start at the ball, and the advisor's rule
+stands as written.
+
+**The run** (HEAVY, once; it loads BAR-ATH): `$PY pipeline/benchmark/wrong_team.py`, writing
+`data/runs/wrong_team/ratio.json`. The tool stays after this lane, because P19's transfer check reports its ratio.
+
 ## Experiments
 
 Copy this template for each run, and add a scoreboard row for anything worth comparing.
