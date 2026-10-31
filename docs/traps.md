@@ -385,6 +385,18 @@ import, and record that commit in the entry; or run them from a separate worktre
 `MTAH_DATA_DIR` if `dfl.py` differs). The failed run's output was discarded and the
 command run again.
 
+**T48 — A helper wrapper derived with `sed` silently kept the main venv's interpreter, and a lab's requirements file
+changed the pipeline's libraries.**
+P20's install of the separate `.venv-pathcrf` ran through a wrapper made from the main venv's helper by substitution.
+One substitution did not match, the wrapper still pointed at the main `.venv`, and `pip install -r
+requirements-pathcrf.txt` went into the pipeline's environment on 31 Oct from 01:33: numpy 2.4.6 became 2.2.6, pandas
+3.0.6 became 2.2.3, scipy 1.17.1 became 1.15.3, matplotlib 3.11.2 was removed and torch was added. The venv was restored
+from its pins and checked by about 01:40 (`selftest.py --data` passed at 01:40, `main.csv`'s sha256 was checked at
+01:42 and unchanged, `7ba575c0…`). Commits landed inside the window and the suites run in it were voided and re-run;
+no heavy run and no CSV came from that state. The output depends on those versions (T20, T21). Verify every
+substitution by reading the derived file, never assume it, and make the first heavy command of a new venv print
+`sys.prefix` and the interpreter's version before it installs anything.
+
 ## Rules and data handling
 
 **T25 — Data must never leave our machines the wrong way.**

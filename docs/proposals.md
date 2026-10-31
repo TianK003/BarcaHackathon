@@ -36,7 +36,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P17](#p17--the-restart-team-channel) | Restart-team channel: who restarts after a stoppage, from the players' arrangement | facts 3, 5 (the hold points at the old team after most stoppages) | S–M | ceiling +0.0198 raw (A12); delivered +0.0040 raw at best, bar not met (R014) | dropped → R014, R014b (the source and the decoder's restart states stay, off by default) |
 | [P18](#p18--the-offpitch-profile-dfls-ball-hidden-off-the-pitch-as-ours-is-and-p05-retrained-on-it) | offpitch profile: DFL's ball hidden off the pitch as ours is, and P05 retrained on it | T39 (P05 overstated by the visible out-of-play ball) | M | A13: a perfect dead-ball source adds +0.029 raw on tracking; main.toml on offpitch 0.5509 raw / 0.5296 coarse; hiding the out-of-play ball cost today's P05 0.013 alive/dead F1 (R015) | dropped → R015, R015b (our tracker's off-pitch ball cannot be reproduced by a simple rule; code removed) |
 | [P19](#p19--a-learned-team-model-where-the-ball-is-seen) | A learned team model where the ball is seen: P05's recipe applied to the team | fact 3; A13's largest lever (+0.194 raw where the ball is seen) | M (feasibility S) | guess +0.02 to +0.05 raw; fully benchmarkable | idea |
-| [P20](#p20--ball-free-possession-paths-pathcrf-on-our-slots) | Ball-free possession paths: PathCRF (KDD 2026), trained on the same DFL matches | fact 1; A13's gaps (+0.176 raw) | S test, L to adopt | medium–high, uncertain: 92.4% team accuracy without the ball on clean tracking, unknown on ours | idea |
+| [P20](#p20--ball-free-possession-paths-pathcrf-on-our-slots) | Ball-free possession paths: PathCRF (KDD 2026), trained on the same DFL matches | fact 1; A13's gaps (+0.176 raw) | S test, L to adopt | measured: +0.0049 pooled on the gap frames (needed +0.04); PathCRF's own protocol on the clean match reached 0.9172, against P07's 0.8522 on degraded tracking (not like for like) | dropped → R022 (step 0 no-go: +0.0049 under our degradation and the adapter, needed +0.04; code removed, recoverable at `2163406`) |
 | [P21](#p21--wrong-team-slots-measure-the-ceiling-then-repair-them) | Wrong-team slots: measure the ceiling, then repair from tracking or jersey colours | T32 | S test, M | low on the benchmark: all of `tracking`'s player degradation costs `main.toml` 0.013 (A14) | idea |
 | [P22](#p22--the-shape-model-adapted-to-our-two-teams-without-labels) | The shape model adapted to our two teams without labels | fact 1 | S–M | low: guess +0.00 to +0.02 | idea |
 | [P03](#p03--one-command-deterministic-cached) | One-command, deterministic, cached pipeline | reproducibility | S–M | enabling | done → R001 |
@@ -304,9 +304,10 @@ unchanged (sha256 `0ebdfbec...`).
      grain than to the coarse one.
 2. **Next: P19's feasibility test (half a day), then P19.** The team where the ball is seen holds the largest headroom
    (+0.194 raw, A13). It is fully benchmarkable and needs no new asset.
-3. **In parallel: P20's step 0 (one to two days).** Run PathCRF's published checkpoint on the one DFL match it never
-   trained on, clean and degraded to `tracking` v3, against P07 on the same gap frames. If it wins by the declared
-   margin, P20 is the bet for the gaps. Its retraining needs a GPU and DFL data only.
+3. **P20's step 0: done, no-go (R022).** PathCRF's published checkpoint on the one DFL match it never trained on,
+   degraded to `tracking` v3, against P07 on the same gap frames: +0.0049 pooled against the +0.04 declared (PathCRF's
+   own protocol on the clean match reached 0.9172, against P07's 0.8522 on degraded tracking: not like for like). The retry condition did not hold, so P20 is dropped and its code removed (recoverable at
+   `2163406`). A GPU retraining on degraded copies was not pursued; that is Tian's call.
 4. **Cheap, only if a person is free:**
    - P21's step 0: do our identity swaps cluster at the ball? A14 already bounds all of the benchmark's player
      degradation at 0.013 for `main.toml`.
@@ -848,6 +849,20 @@ nodes, one per line, it has gone to. Viterbi decodes the path, and impossible tr
 - Byte-for-byte reproduction with a neural network in the path. As P14: one thread, committed weights, and the CSV
   hashed on an AMD and an Intel machine early.
 - MPL-2.0 is file-level copyleft. It is fine in a public repo, but its files keep their licence headers.
+
+**Step 0, measured (R022, 2026-10-31).**
+- **Licence and split:** MPL-2.0 for the code, with no separate licence for the weights (read as the repository's). The
+  checkpoint's test match is J03WR9 (validation J03WQQ, training the other five), shown by its `args.json`
+  (`lomocv`, fold 6), the tutorial and the paper's test counts.
+- **What the 92.4% is:** event-split possession on in-play frames after their own preprocessing, not DFL's flag. Their
+  protocol reproduced on the clean match (team accuracy 0.9164, edge accuracy 0.695, event F1 0.756).
+- **Pins:** commit `1b7c6f85…`, 27 files by blob SHA-1 and sha256; torch 2.11.0, numpy 2.2.6, pandas 2.2.3 in a
+  separate venv.
+- **The adapter:** windows on the maximal H or A runs of `main.toml`, pieces joined within 2 s and 5 m, at most 11
+  nodes a team, gaps filled linearly (D1 to D4, advisor-01 section 6).
+- **Result:** on 90,449 primary frames PathCRF 0.8571 against P07 0.8522, Δ +0.0049 (needed +0.04 pooled and +0.02 per
+  seed); PathCRF by its own protocol on the clean match 0.9172, not like for like (the truth's in-play episodes, true
+  identities); −0.0182 under the coarse truth. The retry condition was false. Dropped.
 
 ### P21 — Wrong-team slots: measure the ceiling, then repair them
 
