@@ -919,14 +919,25 @@ whether the same offsets are in the benchmark's range and agree with Smart Taggi
 `--seeds`, `--matches`) serves each match with its own fold and reports, on the alive frames with the served ball
 missing, the log-loss and accuracy of P07 and of rung 1 (E2, cross-fitted), E1, a single intercept and rung 3's head,
 with the oracles fitted on the truth (`b*_gap`, `b*_touch`), B, E/B, the error's noise and transfer parts, the band (the
-largest `|b*_gap|`) and the teacher's own figures; its exit code is 0 if rung 1 gains at least 0.002 nats pooled and
-harms no match by more than 0.002, 4 if only rung 3 does, 1 if neither. `bar-ath --gate-report PATH` reads the band from
-that report, and exits 0 if the Smart Tagging check passes (the adapted home agrees with the votes in the gaps at least
-as often as P07's minus 0.005), 1 if a check fails (whatever the band), 3 if every check passes but an offset is outside
-the band. An error is 2 in both, never python's own 1, which would read as a verdict. Reports hold aggregates only, at
-`<data dir>/runs/selftrain/`. The checks are in `checks/selftrain.py` (synthetic): every figure of the gate worked out
-again frame by frame on matches whose touch rule feeds the fits, the head against scipy, the decision at its edges, that
-no truth reaches the teacher or the offsets, and the exit codes.
+largest `|b*_gap|`) and the teacher's own figures. A match with no such frame is refused as soon as it has been
+measured. Its exit code is 0 if rung 1 gains at least 0.002 nats pooled and harms no match by more than 0.002, 4 if only
+rung 3 does, 1 if neither.
+
+`bar-ath --gate-report PATH` reads the band from that report, and only from the report of the run the band is defined
+over (profile tracking, all seven matches, seeds 0 to 2, which are 42 cells): any other is refused, exit 2, with each
+way it differs. The report it writes records the gate report's path, profile, matches, seeds and the number of cells the
+band is the largest of. It exits 0 if every check passes and every offset is inside the band (the Smart Tagging check
+passes if the adapted home agrees with the votes in the gaps at least as often as P07's minus 0.005, counted on the
+frames where P07 has a logit), 1 if a check fails (whatever the band), 3 if every check passes but an offset is outside
+the band. A block's figures are named for the rows they describe: `fit_*` for the rows its fit saw, the other block's
+teacher rows, and `own_*` for its own, and the printout keeps them apart as FIT rows and OWN frames. An error is 2 in
+both commands, never python's own 1, which would read as a verdict. Both take the teacher's rule, the models and c_team
+from `--config PATH`, which is `pipeline/configs/r024_both.toml` unless given: main.toml's entries as of R024, kept as
+the default because the adoption of P22(b) replaces main.toml's `shape_possession` entry with `shape_selftrain`, which
+the tool does not read. Reports hold aggregates only, at `<data dir>/runs/selftrain/`. The checks are in
+`checks/selftrain.py` (synthetic): every figure of the gate worked out again frame by frame on matches whose touch rule
+feeds the fits, the head against scipy, the decision at its edges, that no truth reaches the teacher or the offsets, the
+band's provenance, the labels of a block's figures, `--config`, and the exit codes.
 
 ## Conventions: when our truth flips, and the edge shift
 

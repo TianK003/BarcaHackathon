@@ -2,9 +2,9 @@
 docs/superpowers/specs/2026-10-31-p22b-selftrain-design.md, sections 6.1 and 6.4; the declaration is R027 part 1 in
 docs/results.md).
 
-    python pipeline/benchmark/selftrain.py gate [--profile tracking] [--seeds 3] [--matches ID ...] [--data-dir D]
-                                                [--no-write]
-    python pipeline/benchmark/selftrain.py bar-ath --gate-report PATH [--data-dir D] [--no-write]
+    python pipeline/benchmark/selftrain.py gate [--profile tracking] [--seeds 3] [--matches ID ...] [--config PATH]
+                                                [--data-dir D] [--no-write]
+    python pipeline/benchmark/selftrain.py bar-ath --gate-report PATH [--config PATH] [--data-dir D] [--no-write]
 
     report = gate(profile="tracking", seeds=3)                 # HEAVY: the seven DFL matches, one Inputs at a time
     rung1_go, rung3_go = gate_verdict(report["per_match"], report["pooled"])
@@ -17,9 +17,17 @@ team 93% of the time. So its episode frames are noisy labels for z, and a per-ha
 (`recalibration.noise_aware_offset`, E2, with the other half's frames) should make P07's evidence in the ball gaps more
 right. This tool asks that of the benchmark before any source exists, and then of our own match with no label at all.
 
+Settings. The teacher's rule (`controlled_touch`'s radius, speed, frames and duel radius), epsilon (1 - its confidence),
+the dead-ball and shape models, P07's clip and Smart Tagging's c_team are read by `settings()` from a config's entries,
+which is `--config PATH` of either command. The default is `DEFAULT_CONFIG`, `pipeline/configs/r024_both.toml`:
+main.toml's entries as of R024, identical to it outside its comments and description. It is not main.toml itself
+because the adoption of P22(b) replaces main.toml's `shape_possession` entry with `shape_selftrain`, which `settings()`
+does not read: the tool measures P07's source, so on the merged tree it, and the checks of it, would stop working. A
+later run (R027b) names whichever config it needs.
+
 `gate`. For each match, seed and graded block k it takes z from the match's own fold (a match whose fold is missing
 from the shape model or from the dead-ball model is an error: `full` saw it, and the gate would be in sample), the
-teacher's labels and rows (`recalibration.teacher_labels`, at `main.toml`'s rule and with its dead-ball mask), and
+teacher's labels and rows (`recalibration.teacher_labels`, at the config's rule and with its dead-ball mask), and
 the truth beside the inputs (`truth.truth_codes`, never through them: test_selftrain_never_reads_truth_through_inputs).
 Five logits are served, each as `clip(sigma(.), min_prob, 1 - min_prob)`:
 
@@ -43,32 +51,43 @@ block k's gate frames, and b*_touch on the other blocks' teacher rows that have 
 
 A cell whose oracle cannot be fitted (one class, no root) is left out of those means and counted. The teacher's own
 figures are reported per match (precision against the truth on its rows with an alive truth, home share, pi_hat, the
-share masked as dead, the rows per class) and so are the fallbacks (b = 0 and a reason).
+share masked as dead, the rows per class) and so are the fallbacks (b = 0 and a reason). A match that has no gate frame
+at all (an alive frame with the ball missing and P07 speaking) is refused as soon as it has been measured, before the
+next one is loaded.
 
 The decision, for rung 1 and for rung 3, on the report's numbers at 9 decimals: GO iff the pooled gain over base is at
 least GATE_MIN_GAIN (0.002 nats) and no match's log-loss is above its base by more than GATE_MAX_HARM (0.002); a miss by
 any margin is a miss (`gate_verdict`). Exit codes of `gate`: 0 rung 1 GO; 1 both NO-GO; 4 rung 1 NO-GO and rung 3 GO
 (the retry, R027b); 2 an error.
 
-`bar-ath`. On BAR-ATH's Inputs, scored by the `full` model, the same cross-fitted E2: per block its offset (and the
-fallback if it has one), pi_hat, the teacher's share, the share of the teacher's frames masked as dead, and the share of
-its rows on frames where a team shows more than 11 slots, per team (A16's definition). The check in the gaps is the one
-label-free look at them: on graded frames with the ball missing, P(alive) at least 0.5 and a Smart Tagging team vote
-(`smart_tagging.compute` at `main.toml`'s c_team, spread "frame"), the adapted home must agree with the vote at least as
-often as P07's minus TAG_MARGIN (0.005). The band is read from the gate report: an offset above it is a STOP, but only
-if every check passes, and a failed check wins whatever the band says. Exit codes of `bar-ath`: 0 every check passes;
-1 a check fails; 3 every check passes and an offset is outside the band; 2 an error. The held-out touch agreement is
-reported only.
+`bar-ath`. On BAR-ATH's Inputs, scored by the `full` model, the same cross-fitted E2. Per block it reports the offset b
+and its fallback, and then two groups of figures that describe different rows and are named for them. `fit_*` describes
+the rows the fit saw, the other block's teacher rows: their count per team, home share, pi_hat, the share of their
+frames masked as dead, and the share of them on frames where a team shows more than 11 slots, per team (A16's
+definition). `own_*` describes the block's own teacher rows, the ones the offset is served on: the same figures but
+pi_hat. The printout keeps them apart as FIT rows and OWN frames. The check in the gaps is the one label-free look at
+them: on graded frames with the ball missing, P(alive) at least 0.5, a Smart Tagging team vote (`smart_tagging.compute`
+at the config's c_team, spread "frame") and a finite z, the adapted home must agree with the vote at least as often as
+P07's minus TAG_MARGIN (0.005). The finite z is this tool's own filter, which the design's list of frames does not
+have: where nobody is tracked P07 has no `home` to be right or wrong with, and both agreements are counted on the same
+frames; it is kept on purpose. The band is read from the gate report, and only from that of the run it is defined
+over: profile `GATE_PROFILE`, all seven DFL matches and seeds 0, 1 and 2, which are its 42 cells. A report of any other
+run is refused, exit 2, with each way it differs, and the report written records the gate report's path, profile,
+matches, seeds and the number of cells the band is the largest of. An offset above the band is a STOP, but only if
+every check passes, and a failed check wins whatever the band says. Exit codes of `bar-ath`: 0 every check passes and
+every offset is inside the band; 1 a check fails; 3 every check passes and an offset is outside the band; 2 an error.
+The held-out touch agreement is reported only.
 
 An error is 2 and never a crash that looks like a verdict: python's own status for an uncaught exception is 1, which
 would read as "both NO-GO" or "a check failed", so `main` catches every exception, prints it and returns 2.
 
-Constants (settings read from `main.toml`'s entries, ε = round(1 - confidence, 12) = 0.07, the floor, the clip of pi_hat
+Constants (settings read from the config's entries, ε = round(1 - confidence, 12) = 0.07, the floor, the clip of pi_hat
 and the gate's limits) are the design's, fixed before any run and never chosen from a score. Determinism: every sum that
 decides a fit is `math.fsum` (rung 3's Newton too, so that the head is the same to the bit whatever the order of the
 rows and the number of threads), the offsets are `recalibration`'s, rounded to 9 decimals, and a report's floats are
 written at 9 decimals. Nothing per frame is printed or written: the reports hold per-block, per-match and pooled
-numbers, and no list longer than a match's seeds times its blocks.
+numbers, and no list longer than the seven matches (a match's cells, one for each seed and block, are 6 on the real
+run).
 """
 
 import argparse
@@ -94,7 +113,7 @@ import numpy as np  # noqa: E402
 import games  # noqa: E402
 from pipeline import run as pipeline_run  # noqa: E402  (importing pipeline also puts evaluation/ on sys.path)
 from pipeline.benchmark import calibration as calibration_module  # noqa: E402
-from pipeline.benchmark import conventions, degrade, dfl, run, wrong_team  # noqa: E402
+from pipeline.benchmark import conventions, degrade, dfl, run, sources, wrong_team  # noqa: E402
 from pipeline.benchmark import truth as truths  # noqa: E402
 from pipeline.benchmark.run import BenchmarkError  # noqa: E402
 from pipeline.benchmark.train_dead_ball import served_inputs  # noqa: E402
@@ -108,7 +127,12 @@ from pipeline.inputs import Inputs  # noqa: E402
 import possession_metrics as pm  # noqa: E402  isort:skip
 
 # Params
-DEFAULT_CONFIG = os.path.join(ROOT, "pipeline", "configs", "main.toml")
+# The config the settings are read from unless --config says another: main.toml's entries as of R024 (identical to it
+# outside its comments and description). Not main.toml itself: once P22(b) is adopted, main.toml's `shape_possession`
+# entry is replaced by `shape_selftrain`, which `settings()` does not read, and the tool, and the checks of it, would
+# stop working on the merged tree. The tool measures P07's source, so its default is a config that keeps P07's entry.
+DEFAULT_CONFIG = os.path.join(ROOT, "pipeline", "configs", "r024_both.toml")
+GATE_PROFILE = "tracking"       # BAR-ATH's band is read only from the gate run on this profile (all 7 matches, 3 seeds)
 GATE_MIN_GAIN = 0.002           # nats: the pooled log-loss of a rung must be this far below the base's, at least
 GATE_MAX_HARM = 0.002           # nats: and no match's may be above its base by more than this
 TAG_MARGIN = 0.005              # BAR-ATH's Smart Tagging check: adapted agreement >= P07's minus this
@@ -131,11 +155,11 @@ KINDS = {"teacher": "controlled_touch", "alive": "dead_ball_model", "shape": "sh
          "tags": "smart_tagging"}
 
 Settings = namedtuple("Settings", "teacher epsilon alive_model shape_model min_prob c_team")
-Settings.__doc__ = """What the tool reads of main.toml. `teacher` is controlled_touch's radius, max_rel_speed,
-    min_frames and duel_radius (a dict, checked by recalibration.check_teacher); `epsilon` is round(1 - its
-    confidence, 12), the share of the teacher's labels that are wrong; `alive_model` and `shape_model` are the paths of
-    the two models as the config writes them (relative to the repository root); `min_prob` is shape_possession's clip;
-    `c_team` is smart_tagging's confidence."""
+Settings.__doc__ = """What the tool reads of a config (DEFAULT_CONFIG's, main.toml's entries as of R024, unless --config
+    names another). `teacher` is controlled_touch's radius, max_rel_speed, min_frames and duel_radius (a dict, checked
+    by recalibration.check_teacher); `epsilon` is round(1 - its confidence, 12), the share of the teacher's labels that
+    are wrong; `alive_model` and `shape_model` are the paths of the two models as the config writes them (relative to
+    the repository root); `min_prob` is shape_possession's clip; `c_team` is smart_tagging's confidence."""
 Head = namedtuple("Head", "offset beta mean scale steps")
 Head.__doc__ = """Rung 3's fitted head: the intercept (E2 on z plus the head, rounded to 9 decimals), the coefficients
     on the standardised features (26 of them for the shape features), the standardisation (mean and scale per column,
@@ -155,7 +179,8 @@ def settings(config_path=DEFAULT_CONFIG):
     confidence for epsilon = round(1 - confidence, 12); `dead_ball_model`'s model; `shape_possession`'s model and
     min_prob (its own default if the entry has none); `smart_tagging`'s c_team. The config needs exactly one entry of
     each of those four kinds, and BenchmarkError (a ValueError) names the kind or the key that is missing. The default
-    is main.toml.
+    is DEFAULT_CONFIG, r024_both.toml: main.toml's entries as of R024, which stay readable after the adoption of P22(b)
+    has replaced main.toml's `shape_possession` entry (the module docstring says why).
     """
     config = load_config(config_path)
     where = os.path.basename(config.path)
@@ -200,7 +225,7 @@ def _key(params, key, kind, where):
 def _checked(config):
     """`config` as a Settings that the tool can run on: a ValueError names what is wrong, before anything is loaded."""
     if not isinstance(config, Settings):
-        raise BenchmarkError("selftrain: settings must be a selftrain.Settings (selftrain.settings() reads main.toml's)"
+        raise BenchmarkError("selftrain: settings must be a selftrain.Settings (selftrain.settings() reads a config's)"
                              ", got {}".format(type(config).__name__))
     epsilon = config.epsilon
     if isinstance(epsilon, bool) or not isinstance(epsilon, numbers.Real) or not 0.0 < epsilon < 0.5:
@@ -396,11 +421,13 @@ def gate(profile=run.DEFAULT_PROFILE, seeds=run.DEFAULT_SEEDS, match_ids=None, m
 
     `profile` and `seeds` are the benchmark's (the clean profile has seed 0 only); `match_ids` the matches to run
     (default all seven); `matches` is {id: DflMatch} to use instead of loading them from `data_dir` (the checks pass
-    synthetic ones); `settings` replaces `settings()` (main.toml's), and `calibration` is the Calibration a degraded
-    profile takes its masks from (read from its cache if none is given); `log` receives a line per match. BenchmarkError
-    for an unknown profile or match, a calibration given to the clean profile, and a match whose fold is missing from
-    the shape model or the dead-ball model, all of it before the first match is loaded; ValueError for a bad `seeds` or
-    settings. The report is JSON-ready but for the rounding of its floats (`run.plain` does that when it is written).
+    synthetic ones); `settings` replaces `settings()` (the base config's), and `calibration` is the Calibration a
+    degraded profile takes its masks from (read from its cache if none is given); `log` receives a line per match.
+    BenchmarkError for an unknown profile or match, a calibration given to the clean profile, and a match whose fold is
+    missing from the shape model or the dead-ball model, all of it before the first match is loaded, and for a match
+    with no gate frame (an alive frame with the ball missing and P07 speaking), as soon as that match has been measured
+    and before the next is loaded; ValueError for a bad `seeds` or settings. The report is JSON-ready but for the
+    rounding of its floats (`run.plain` does that when it is written).
     """
     seeds = _whole("seeds", seeds, 1)
     _check_profile(profile)
@@ -428,16 +455,16 @@ def gate(profile=run.DEFAULT_PROFILE, seeds=run.DEFAULT_SEEDS, match_ids=None, m
         cells[match_id] = []
         for seed in seed_list:
             cells[match_id] += _measure(match, codes, seed, profile, calibration, data_dir, config, shape_path)
+        if not sum(cell["gate"]["base"][0] for cell in cells[match_id]):
+            # as soon as this match is measured, not after the loop: each match still to come is minutes of work
+            raise BenchmarkError("selftrain: {} has no alive frame with the ball missing and P07 speaking under "
+                                 "profile {!r}, so the gate has nothing to be measured on there; use a profile that "
+                                 "hides the ball (gaps, tracking or context)".format(match_id, profile))
         log("gate      {}   {} seed(s) x {} blocks measured".format(match_id, len(seed_list), len(match.graded)))
         del match, codes
 
     per_match = {match_id: _summary(cells[match_id], oracle=True) for match_id in sorted(cells)}
     pooled = _summary([cell for match_id in sorted(cells) for cell in cells[match_id]], oracle=False)
-    for match_id, summary in per_match.items():
-        if not summary["gate_frames"]:
-            raise BenchmarkError("selftrain: {} has no alive frame with the ball missing and P07 speaking under "
-                                 "profile {!r}, so the gate has nothing to be measured on there; use a profile that "
-                                 "hides the ball (gaps, tracking or context)".format(match_id, profile))
     report = {"kind": "selftrain_gate", "profile": degrade.profile_record(profile), "seeds": list(seed_list),
               "matches": sorted(ids),
               "calibration": None if profile == run.CLEAN else {"sha256": calibration_module.digest(calibration),
@@ -727,16 +754,20 @@ def _gate_verdict_text(rung1_go, rung3_go):
 
 # -- BAR-ATH ----------------------------------------------------------------------------------------------------------
 
-def bar_ath(gate_report, data_dir=None, inputs=None, settings=None):
+def bar_ath(gate_report, data_dir=None, inputs=None, settings=None, gate_path=None):
     """The label-free checks on BAR-ATH's Inputs, scored by the `full` model; HEAVY on the real match. Aggregates only.
 
-    `gate_report` is the dict that `gate` wrote (its oracles' band is read from it); `inputs` replaces BAR-ATH's Inputs
+    `gate_report` is the dict that `gate` wrote (its oracles' band is read from it) and has to be the run that the band
+    is defined over, profile `GATE_PROFILE`, all seven matches, seeds 0 to 2 (`_provenance` refuses any other);
+    `gate_path` is where it was read from, which the report records if it is given; `inputs` replaces BAR-ATH's Inputs
     (the checks pass a synthetic one); `settings` replaces `settings()`. The module docstring has what is reported and
     what the exit code says: {kind, game, model, settings, band, gate_report, blocks, offset_gap, checks, touch,
-    failed_checks, outside_band, exit_code, verdict}. BenchmarkError for a gate report without a usable band, and
-    ValueError for settings that cannot run.
+    failed_checks, outside_band, exit_code, verdict}, where a block has b and its fallback, the `fit_*` figures of the
+    rows its fit saw and the `own_*` figures of its own. BenchmarkError for a gate report that is not that run or has
+    no usable band, all of it before BAR-ATH is loaded, and ValueError for settings that cannot run.
     """
     config = _checked(read_settings() if settings is None else settings)
+    source = _provenance(gate_report, gate_path)
     band = _band(gate_report)
     if inputs is None:
         inputs = Inputs(data_dir=data_dir)
@@ -761,17 +792,27 @@ def bar_ath(gate_report, data_dir=None, inputs=None, settings=None):
     adapted = recalibration.adapted_logit(z, blocks, found)
     usable, known = rows & np.isfinite(z), ~np.isnan(y)
     reported = []
-    for (start, stop), half, offset in zip(blocks, halves, found):
-        own = slice(start, stop)
-        pooled_rows = offset.rows_home + offset.rows_away
+    for k, ((start, stop), half, offset) in enumerate(zip(blocks, halves, found)):
+        own, pool = slice(start, stop), _pool(usable, blocks, k)
+        others = [(a, b) for j, (a, b) in enumerate(blocks) if j != k]
         reported.append({
-            "half": half, "b": offset.offset, "fallback": offset.fallback,
-            "share": _ratio(offset.rows_home, pooled_rows),
-            "pi_hat": offset.fitted.pi_hat if offset.fitted is not None else None,
-            "rows_home": offset.rows_home, "rows_away": offset.rows_away, "rows": int(usable[own].sum()),
-            "masked_share": _ratio(int((known[own] & ~rows[own]).sum()), int(known[own].sum())),
-            "over_home": _ratio(int((usable[own] & over_home[own]).sum()), int(usable[own].sum())),
-            "over_away": _ratio(int((usable[own] & over_away[own]).sum()), int(usable[own].sum()))})
+            "half": half,
+            # the offset this block is served, fitted on the OTHER blocks' teacher rows
+            "b": offset.offset, "fallback": offset.fallback,
+            # what describes the rows that fit saw: the other blocks' teacher rows
+            "fit_rows_home": offset.rows_home, "fit_rows_away": offset.rows_away,
+            "fit_share": _ratio(offset.rows_home, len(pool)),
+            "fit_pi_hat": offset.fitted.pi_hat if offset.fitted is not None else None,
+            "fit_masked_share": _ratio(sum(int((known[a:b] & ~rows[a:b]).sum()) for a, b in others),
+                                       sum(int(known[a:b].sum()) for a, b in others)),
+            "fit_over_home": _ratio(int(over_home[pool].sum()), len(pool)),
+            "fit_over_away": _ratio(int(over_away[pool].sum()), len(pool)),
+            # what describes the block's own frames: its own teacher rows, the ones the offset is served on
+            "own_rows": int(usable[own].sum()),
+            "own_share": _ratio(int((y[own][usable[own]] == 1).sum()), int(usable[own].sum())),
+            "own_masked_share": _ratio(int((known[own] & ~rows[own]).sum()), int(known[own].sum())),
+            "own_over_home": _ratio(int((usable[own] & over_home[own]).sum()), int(usable[own].sum())),
+            "own_over_away": _ratio(int((usable[own] & over_away[own]).sum()), int(usable[own].sum()))})
 
     graded = np.zeros(len(z), dtype=bool)
     for start, stop in blocks:
@@ -796,9 +837,7 @@ def bar_ath(gate_report, data_dir=None, inputs=None, settings=None):
     outside = [block["half"] for block in reported if abs(block["b"]) > band]
     code, text = bar_ath_verdict(failed, outside)
     return {"kind": "selftrain_bar_ath", "game": inputs.game, "model": key, "settings": _settings_record(config),
-            "band": band,
-            "gate_report": {"profile": gate_report.get("profile"), "seeds": gate_report.get("seeds")},
-            "blocks": reported,
+            "band": band, "gate_report": source, "blocks": reported,
             "offset_gap": abs(reported[0]["b"] - reported[1]["b"]) if len(reported) == 2 else None,
             "checks": {"smart_tagging_gaps": check},
             "touch": {"frames": touch[0], "base": _ratio(touch[1], touch[0]), "adapted": _ratio(touch[2], touch[0])},
@@ -848,6 +887,58 @@ def bar_ath_verdict(failed_checks, outside_band):
 def bar_ath_exit_code(report):
     """The exit code of a BAR-ATH report: bar_ath_verdict on its failed checks and its blocks outside the band."""
     return bar_ath_verdict(report["failed_checks"], report["outside_band"])[0]
+
+
+def _provenance(gate_report, path=None):
+    """{path, profile, matches, seeds, cells, band_cells}: what the band stands on, or a BenchmarkError that says how
+    the gate report is not the run that the band is defined over.
+
+    The STOP band of the design (6.4) is the largest |b*_gap| over the 42 cells of the gate on profile GATE_PROFILE, all
+    seven DFL matches and the default seeds, 0 to 2 (7 matches x 3 seeds x 2 halves). A report of a run on another
+    profile, on some of the matches or under other seeds has another band, one that means something else, so it is
+    refused whatever its band is, and every way it differs is named. `cells` counts the cells of the run and
+    `band_cells` those whose b*_gap could be fitted, which the band is the largest of; both are read from the matches'
+    oracle tables. `path` is where the report was read from, written as `run.shown` writes a path, or None.
+    """
+    if not isinstance(gate_report, dict):
+        raise BenchmarkError("selftrain: the gate report that the band is read from must be the JSON object that "
+                             "`selftrain.py gate` wrote, got {}; run `python pipeline/benchmark/selftrain.py gate` and "
+                             "give its report".format(type(gate_report).__name__))
+    every, seeds_wanted = sorted(sources.MATCH_IDS), list(_seed_list(GATE_PROFILE, run.DEFAULT_SEEDS))
+    profile, ids, seeds = gate_report.get("profile"), gate_report.get("matches"), gate_report.get("seeds")
+    name = profile.get("name") if isinstance(profile, dict) else None
+    problems = []
+    if name != GATE_PROFILE:
+        problems.append("it has no profile record" if name is None else "it is the run on profile {!r}, not {!r}"
+                        .format(name, GATE_PROFILE))
+    named = sorted(ids) if isinstance(ids, list) and all(isinstance(item, str) for item in ids) else []
+    if named != every:
+        missing, extra = [item for item in every if item not in named], [item for item in named if item not in every]
+        problems.append("it covers {} of the {} DFL matches{}{}".format(
+            len(named) - len(extra), len(every), ", without {}".format(", ".join(missing)) if missing else "",
+            ", and has {}, which {} not one of them".format(", ".join(extra), "is" if len(extra) == 1 else "are")
+            if extra else ""))
+    if seeds != seeds_wanted:
+        problems.append("it has seeds {}, not {}".format(seeds, seeds_wanted))
+    if problems:
+        raise BenchmarkError("selftrain: the gate report is not the run that the band is defined over: {}. The band is "
+                             "the largest |b*_gap| over the {} cells of `selftrain.py gate` on profile {} with all {} "
+                             "DFL matches and seeds {} (its defaults); run it with no --profile, --matches or --seeds "
+                             "and give that report".format("; ".join(problems), len(every) * len(seeds_wanted) * 2,
+                                                           GATE_PROFILE, len(every), seeds_wanted))
+    tables, cells, band_cells = gate_report.get("per_match"), 0, 0
+    for match_id in every:
+        table = tables.get(match_id) if isinstance(tables, dict) else None
+        oracle = table.get("oracle") if isinstance(table, dict) else None
+        counts = [oracle.get(key) if isinstance(oracle, dict) else None for key in ("cells", "cells_gap")]
+        if any(isinstance(count, bool) or not isinstance(count, numbers.Integral) or count < 0 for count in counts):
+            raise BenchmarkError("selftrain: the gate report has no per_match[{!r}]['oracle'] with the counts of its "
+                                 "cells (`cells`, `cells_gap`), which the band is counted from; give the report that "
+                                 "`selftrain.py gate` wrote".format(match_id))
+        cells, band_cells = cells + int(counts[0]), band_cells + int(counts[1])
+    return {"path": None if path is None else run.shown(path),
+            "profile": {"name": name, "version": profile.get("version")}, "matches": every, "seeds": list(seeds),
+            "cells": cells, "band_cells": band_cells}
 
 
 def _band(gate_report):
@@ -918,18 +1009,30 @@ def render_gate(report):
 
 
 def render_bar_ath(report):
-    """BAR-ATH's printed lines: a table per block, the band, the Smart Tagging check and the verdict. Figures only."""
-    check = report["checks"]["smart_tagging_gaps"]
-    lines = ["bar-ath   the gate's band {} (profile {}, seeds {}); every block is read with the offset fitted on the "
-             "other".format(_number(report["band"]), (report["gate_report"]["profile"] or {}).get("name", "?"),
-                            ",".join(str(s) for s in report["gate_report"]["seeds"] or [])),
-             "bar-ath   half {:>8} {:<9} {:>7} {:>7} {:>7} {:>11} {:>11} {:>12}".format(
-                 "b", "fallback", "pi_hat", "share", "masked", "over 11 H", "over 11 A", "rows")]
+    """BAR-ATH's printed lines: the band and where it stands, a table of the rows each fit saw (FIT rows) and one of the
+    block's own (OWN frames), the Smart Tagging check and the verdict. Figures only."""
+    check, source = report["checks"]["smart_tagging_gaps"], report["gate_report"]
+    lines = ["bar-ath   the gate's band {} over {} cells (profile {}, seeds {}, {} matches); a block is served the "
+             "offset fitted on the other".format(_number(report["band"]), source["band_cells"],
+                                                 source["profile"]["name"], ",".join(str(s) for s in source["seeds"]),
+                                                 len(source["matches"])),
+             "bar-ath   FIT rows, the other block's teacher rows, which the offset saw:",
+             "bar-ath   half {:>8} {:<9} {:>8} {:>8} {:>7} {:>6} {:>7} {:>10} {:>10}".format(
+                 "b", "fallback", "rows H", "rows A", "pi_hat", "share", "masked", "over 11 H", "over 11 A")]
     for block in report["blocks"]:
-        lines.append("bar-ath   {:>4} {:>8} {:<9} {:>7} {:>7} {:>7} {:>11} {:>11} {:>12}".format(
-            block["half"], _number(block["b"], "{:+.4f}"), block["fallback"] or "-", _number(block["pi_hat"], "{:.3f}"),
-            _number(block["share"], "{:.3f}"), _number(block["masked_share"], "{:.3f}"),
-            _number(block["over_home"], "{:.3f}"), _number(block["over_away"], "{:.3f}"), "{:,}".format(block["rows"])))
+        lines.append("bar-ath   {:>4} {:>8} {:<9} {:>8,} {:>8,} {:>7} {:>6} {:>7} {:>10} {:>10}".format(
+            block["half"], _number(block["b"], "{:+.4f}"), block["fallback"] or "-", block["fit_rows_home"],
+            block["fit_rows_away"], _number(block["fit_pi_hat"], "{:.3f}"), _number(block["fit_share"], "{:.3f}"),
+            _number(block["fit_masked_share"], "{:.3f}"), _number(block["fit_over_home"], "{:.3f}"),
+            _number(block["fit_over_away"], "{:.3f}")))
+    lines += ["bar-ath   OWN frames, this block's own teacher rows, which the offset is served on:",
+              "bar-ath   half {:>8} {:>6} {:>7} {:>10} {:>10}".format("rows", "share", "masked", "over 11 H",
+                                                                     "over 11 A")]
+    for block in report["blocks"]:
+        lines.append("bar-ath   {:>4} {:>8,} {:>6} {:>7} {:>10} {:>10}".format(
+            block["half"], block["own_rows"], _number(block["own_share"], "{:.3f}"),
+            _number(block["own_masked_share"], "{:.3f}"), _number(block["own_over_home"], "{:.3f}"),
+            _number(block["own_over_away"], "{:.3f}")))
     lines += [
         "bar-ath   |b1 - b2| {}".format(_number(report["offset_gap"])),
         "bar-ath   Smart Tagging in the gaps: {:,} frames, agreement P07 {}, adapted {} (difference {}, margin -{}): {}"
@@ -966,13 +1069,17 @@ def build_parser():
     gated.add_argument("--seeds", type=int, default=run.DEFAULT_SEEDS,
                        help="degradation seeds per match (default {})".format(run.DEFAULT_SEEDS))
     gated.add_argument("--matches", nargs="+", metavar="ID", help="the matches to run (default: all 7)")
-    gated.add_argument("--data-dir", help="the data bundle (default: data/, or $MTAH_DATA_DIR)")
-    gated.add_argument("--no-write", action="store_true", help="print only; write no report")
     barred = commands.add_parser("bar-ath", help="the label-free checks on BAR-ATH (HEAVY); aggregates only")
     barred.add_argument("--gate-report", required=True, metavar="PATH",
-                        help="the report that `gate` wrote on the tracking profile: its band is read from it")
-    barred.add_argument("--data-dir", help="the data bundle (default: data/, or $MTAH_DATA_DIR)")
-    barred.add_argument("--no-write", action="store_true", help="print only; write no report")
+                        help="the report that `gate` wrote with its defaults (profile tracking, all 7 matches, seeds "
+                             "0 to 2): its band is read from it, and from no other")
+    for command in (gated, barred):
+        command.add_argument("--config", default=DEFAULT_CONFIG, metavar="PATH",
+                             help="the config whose entries give the teacher, the models and c_team (default "
+                                  "pipeline/configs/r024_both.toml: main.toml's entries as of R024, which stay "
+                                  "readable after P22(b) is adopted into main.toml)")
+        command.add_argument("--data-dir", help="the data bundle (default: data/, or $MTAH_DATA_DIR)")
+        command.add_argument("--no-write", action="store_true", help="print only; write no report")
     return parser
 
 
@@ -983,8 +1090,10 @@ def main(argv=None):
         parser.error("--seeds must be at least 1")
     data_dir = args.data_dir or games.DATA_DIR
     try:
+        config = read_settings(args.config)
         if args.command == "gate":
-            report = gate(args.profile, args.seeds, match_ids=args.matches, data_dir=args.data_dir, log=print)
+            report = gate(args.profile, args.seeds, match_ids=args.matches, data_dir=args.data_dir, settings=config,
+                          log=print)
             lines = render_gate(report)
             path = report_path(data_dir, "gate", args.profile, args.matches, args.seeds)
             code = report["gate"]["exit_code"]
@@ -996,7 +1105,7 @@ def main(argv=None):
                 raise BenchmarkError("selftrain: cannot read the gate report {} ({}); run `python "
                                      "pipeline/benchmark/selftrain.py gate` first".format(
                                          args.gate_report, error)) from error
-            report = bar_ath(gate_report, data_dir=args.data_dir)
+            report = bar_ath(gate_report, data_dir=args.data_dir, settings=config, gate_path=args.gate_report)
             lines = render_bar_ath(report)
             path = report_path(data_dir, "bar-ath")
             code = report["exit_code"]

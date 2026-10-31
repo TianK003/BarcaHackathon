@@ -6,8 +6,11 @@ is worked out again here, frame by frame, from the same inputs and the estimator
 whose touch rule gives enough rows for the fits (a stretch of play is a stretch of carrying; the 500-row floor is the
 real one). What is held against it:
 
-* the settings are `main.toml`'s (the teacher's rule, epsilon, the two models, the clip, Smart Tagging's c_team), and a
-  config that lacks an entry is refused by name (test_selftrain_settings_read_main);
+* the settings are the base config's, r024_both.toml (main.toml's entries as of R024, which stay readable once P22(b)
+  has changed main.toml's shape entry): the teacher's rule, epsilon, the two models, the clip, Smart Tagging's c_team,
+  checked on the default directly and not against main.toml, and a config that lacks an entry is refused by name
+  (test_selftrain_settings_read_the_base_config); `--config` names another, for both commands
+  (test_selftrain_config_flag_names_the_config);
 * rung 3's head is the penalised, class-balanced fit that the design declares, against scipy's L-BFGS-B on the same
   objective, then an intercept that is E2 on z plus the head; standardised as declared; the same bits whatever the
   order of the rows; refusals (test_selftrain_head_fit_matches_scipy, test_selftrain_head_is_standardised_...);
@@ -21,12 +24,17 @@ real one). What is held against it:
   on some stretches keep every teacher row, every offset and every fit as they were, and move what is measured against
   the truth (the losses, the accuracy, the teacher's precision); the oracles are fitted on the truth too, but the
   class-balanced intercept does not care which class is called home, so the mirror leaves them as they were and only
-  the partial flip moves them; a match whose fold is missing is refused before it is loaded
-  (test_selftrain_never_reads_truth_through_inputs, test_selftrain_gate_refuses_what_would_score_in_sample);
+  the partial flip moves them; a match whose fold is missing is refused before it is loaded, and a match with no gate
+  frame as soon as it has been measured, before the next is loaded
+  (test_selftrain_never_reads_truth_through_inputs, test_selftrain_gate_refuses_what_would_score_in_sample,
+  test_selftrain_gate_refuses_a_match_with_no_gate_frame_at_once);
 * the report is aggregates and numbers, with no list longer than its table (test_selftrain_report_is_aggregates_only);
-* BAR-ATH's report: the offsets, the shares, the band and the Smart Tagging check worked out by a plain loop, the
-  check's edge at the margin, and the exit codes, a failed check winning over the band
-  (test_selftrain_bar_ath_band_and_tag_check, test_selftrain_tag_check_at_the_margin);
+* BAR-ATH's report: the offsets, the figures of the rows each fit saw (`fit_*`) and of each block's own (`own_*`,
+  told apart, and equal across the two blocks where they must be), the band and the Smart Tagging check worked out by
+  a plain loop, the check's edge at the margin, and the exit codes, a failed check winning over the band
+  (test_selftrain_bar_ath_band_and_tag_check, test_selftrain_tag_check_at_the_margin); the band read only from the
+  gate report of the tracking run on all seven matches and three seeds, any other refused before BAR-ATH is loaded,
+  and what it stands on recorded (test_selftrain_band_only_from_a_full_tracking_gate_report);
 * the command line, its file names and its exit codes: an error is 2 and never a crash that looks like a verdict
   (test_selftrain_command_line_exit_codes).
 
@@ -51,7 +59,7 @@ import types
 import numpy as np
 
 import possession_metrics as pm
-from pipeline.benchmark import conventions, selftrain, train_shape, truth
+from pipeline.benchmark import conventions, degrade, selftrain, sources, train_shape, truth
 from pipeline.benchmark import run as benchmark_run
 from pipeline.benchmark.checks.common import loading, strict_json, synthetic_calibration
 from pipeline.benchmark.dfl import DflMatch
@@ -225,19 +233,27 @@ def quietly(function, *arguments):
 
 # -- the settings -----------------------------------------------------------------------------------------------------
 
-def config_text(drop=(), confidence=0.93, extra_touch="", shape_extra=""):
+def config_text(drop=(), confidence=0.93, extra_touch="", shape_extra="", models=None):
+    """A config with the four entries `settings()` reads; `models` is (the dead-ball model, the shape model) as the
+    config writes them, the base config's two by default."""
+    alive, shape = models or ("pipeline/models/dead_ball_hgb.json", "pipeline/models/shape_possession_hgb.json")
     entries = {
         "controlled_touch": 'radius = 2.0\nmax_rel_speed = 5.0\nmin_frames = 2\nconfidence = {}\nhold = 0.6\n{}'.format(
             confidence, extra_touch),
-        "dead_ball_model": 'model = "pipeline/models/dead_ball_hgb.json"\n',
-        "shape_possession": 'model = "pipeline/models/shape_possession_hgb.json"\nscope = "all"\n' + shape_extra,
+        "dead_ball_model": 'model = "{}"\n'.format(alive),
+        "shape_possession": 'model = "{}"\nscope = "all"\n'.format(shape) + shape_extra,
         "smart_tagging": "c_team = 0.7\n"}
     parts = ['[[evidence]]\nkind = "{}"\n{}'.format(kind, body) for kind, body in entries.items() if kind not in drop]
     return "\n".join(parts) + '\n[decoder]\nkind = "majority_vote"\nhalf_width = 2\n'
 
 
-def test_selftrain_settings_read_main():
+def test_selftrain_settings_read_the_base_config():
+    # The default is the base config, r024_both.toml (main.toml's entries as of R024), and not main.toml: once P22(b) is
+    # adopted main.toml's shape_possession entry is shape_selftrain, which settings() does not read. So the values are
+    # checked here directly, and not against main.toml's, which a later commit is meant to change.
+    assert os.path.basename(selftrain.DEFAULT_CONFIG) == "r024_both.toml" and os.path.isfile(selftrain.DEFAULT_CONFIG)
     got = selftrain.settings()
+    assert got == selftrain.settings(selftrain.DEFAULT_CONFIG)
     assert isinstance(got, selftrain.Settings)
     assert got._fields == ("teacher", "epsilon", "alive_model", "shape_model", "min_prob", "c_team")
     teacher = got.teacher
@@ -277,6 +293,8 @@ def test_selftrain_constants_are_the_designs():
     assert (selftrain.GATE_MIN_GAIN, selftrain.GATE_MAX_HARM, selftrain.TAG_MARGIN) == (0.002, 0.002, 0.005)
     assert (selftrain.HEAD_PENALTY, selftrain.HEAD_TOLERANCE, selftrain.HEAD_MAX_STEPS) == (0.01, 1e-10, 50)
     assert selftrain.FOLDER == ("runs", "selftrain")
+    assert selftrain.GATE_PROFILE == "tracking", "the band is the largest |b*_gap| of the tracking gate's 42 cells"
+    assert len(sources.MATCH_IDS) == 7 and benchmark_run.DEFAULT_SEEDS == 3
     assert selftrain._calibration_for is train_shape._calibration_for, "imported, not copied"
     assert selftrain._seed_list is train_shape._seed_list, "imported, not copied"
     parser = selftrain.build_parser()
@@ -289,6 +307,12 @@ def test_selftrain_constants_are_the_designs():
         "context", 2, ["A", "B"], "D", True)
     args = parser.parse_args(["bar-ath", "--gate-report", "g.json", "--data-dir", "D", "--no-write"])
     assert (args.command, args.gate_report, args.data_dir, args.no_write) == ("bar-ath", "g.json", "D", True)
+    # both commands read the settings from --config, the base config's by default (a later run can name another)
+    assert selftrain.DEFAULT_CONFIG == os.path.join(selftrain.ROOT, "pipeline", "configs", "r024_both.toml")
+    assert parser.parse_args(["gate"]).config == parser.parse_args(["bar-ath", "--gate-report", "g.json"]).config == \
+        selftrain.DEFAULT_CONFIG
+    assert parser.parse_args(["gate", "--config", "old.toml"]).config == "old.toml"
+    assert parser.parse_args(["bar-ath", "--gate-report", "g.json", "--config", "old.toml"]).config == "old.toml"
     for bad in ([], ["bar-ath"], ["gate", "--seeds", "0"], ["nope"], ["gate", "--gate-report", "g.json"]):
         with contextlib.redirect_stderr(io.StringIO()):
             try:
@@ -820,6 +844,45 @@ def test_selftrain_gate_refuses_what_would_score_in_sample():
                                                     settings=settings._replace(shape_model="")), "model")
 
 
+def without_ball_gaps(match):
+    """`match` with the ball on every frame (the first position seen stands for the missing ones): under the clean
+    profile it has no frame where the served ball is missing, so no gate frame."""
+    ball = np.array(match.ball_xy)
+    lost = np.isnan(ball[:, 0])
+    ball[lost] = ball[~lost][0]
+    ball.setflags(write=False)
+    return dataclasses.replace(match, ball_xy=ball)
+
+
+def test_selftrain_gate_refuses_a_match_with_no_gate_frame_at_once():
+    """The match that has nothing to be measured on is refused as soon as it is measured, before the next one is
+    loaded: on the real seven that is minutes, not the whole run, that the refusal comes after."""
+    _, matches, settings, report = fixture()
+    seen_loads = []
+
+    class Late(dict):
+        def __getitem__(self, key):
+            seen_loads.append(key)
+            if key == "RND002":
+                raise AssertionError("match RND002 was loaded after RND001 was found to have no gate frame")
+            return super().__getitem__(key)
+
+    gapless = without_ball_gaps(matches["RND001"])
+    served = Late({"RND001": gapless, "RND002": matches["RND002"]})
+    message = expect_error(BenchmarkError, lambda: selftrain.gate("clean", 1, match_ids=["RND001", "RND002"],
+                                                                  matches=served, settings=settings),
+                           "selftrain", "RND001", "no alive frame", "ball missing", "clean", "gaps")
+    assert seen_loads == ["RND001"], "the first match was measured and the second never loaded: {}".format(seen_loads)
+    assert "RND002" not in message
+    # the same match with its gaps has frames (the fixture's own report), so it is the missing ball that the refusal is
+    # about, and a match that has frames is not refused; only the match that has none is named, wherever it stands
+    assert report["per_match"]["RND001"]["gate_frames"] > 1000
+    served = {"RND001": matches["RND001"], "RND002": without_ball_gaps(matches["RND002"])}
+    message = expect_error(BenchmarkError, lambda: selftrain.gate("clean", 1, matches=served, settings=settings),
+                           "RND002", "no alive frame")
+    assert "RND001" not in message
+
+
 def twisted(match):
     """`match` with its truth flipped, H for A and A for H, on the frames of every other hundred: some, not all."""
     possession = np.array(match.ball_possession)
@@ -965,10 +1028,11 @@ def test_selftrain_main_runs_both_commands_end_to_end():
     matches = {match_id: scene_match(match_id, seed) for seed, match_id in enumerate(ids)}
     inputs = scene_inputs()
     real_settings, real_inputs = selftrain.read_settings, selftrain.Inputs
+    configs = []
     try:
         with tempfile.TemporaryDirectory() as root, loading(lambda match_id: matches[match_id]):
             settings = synthetic_settings(root, ids=ids)
-            selftrain.read_settings = lambda: settings
+            selftrain.read_settings = lambda path=selftrain.DEFAULT_CONFIG: configs.append(path) or settings
             selftrain.Inputs = lambda data_dir=None: inputs
             flags = ["gate", "--profile", "clean", "--matches", *ids]
             written = []
@@ -986,26 +1050,59 @@ def test_selftrain_main_runs_both_commands_end_to_end():
             assert report["settings"]["epsilon"] == 0.07 and strict_json(written[0].decode("utf-8")) == report
             direct = selftrain.gate("clean", 1, match_ids=list(ids), settings=settings)
             assert benchmark_run.plain(direct) == report, "main writes the report that gate returns, rounded"
-            # bar-ath, from the gate report that was just written: its band is read from the file
+            # bar-ath on the report that was just written is refused: it is a clean run of two matches under one seed,
+            # and the band is only the tracking run's, over all seven matches and three seeds (exit 2, a sentence that
+            # says each way it differs, and nothing written)
             data = os.path.join(root, "data0")
             path = os.path.join(data, "runs", "selftrain", "gate-clean.m-J03WMX-J03WN1.json")
             code, text = quietly(selftrain.main, ["bar-ath", "--gate-report", path, "--data-dir", data])
+            assert code == 2 and "FAILED" in text and "'clean'" in text and "tracking" in text, (code, text)
+            assert "matches" in text and "seeds" in text, text
+            assert not os.path.exists(os.path.join(data, "runs", "selftrain", "bar-ath.json"))
+            # bar-ath on a full tracking report: its band is read from the file, and where it came from is recorded
+            full = full_gate_report(band=report["oracles"]["band"])
+            full_path = os.path.join(data, "runs", "selftrain", "gate-tracking.json")
+            benchmark_run.write_json(full_path, benchmark_run.plain(full))
+            code, text = quietly(selftrain.main, ["bar-ath", "--gate-report", full_path, "--data-dir", data])
             with open(os.path.join(data, "runs", "selftrain", "bar-ath.json"), encoding="utf-8") as handle:
                 barred = json.load(handle)
             assert code == barred["exit_code"], (code, barred["exit_code"])
             assert barred["band"] == report["oracles"]["band"] > 0, barred["band"]
-            assert barred["gate_report"] == {"profile": {"name": "clean", "version": 1}, "seeds": [0]}
-            assert barred == benchmark_run.plain(selftrain.bar_ath(report, inputs=inputs, settings=settings))
+            assert barred["gate_report"] == {"path": benchmark_run.shown(full_path),
+                                             "profile": degrade.profile_record("tracking"),
+                                             "matches": sorted(sources.MATCH_IDS), "seeds": [0, 1, 2], "cells": 42,
+                                             "band_cells": 42}, barred["gate_report"]
+            assert barred == benchmark_run.plain(selftrain.bar_ath(full, inputs=inputs, settings=settings,
+                                                                   gate_path=full_path))
             assert "Smart Tagging" in text and "bar-ath.json" in text and "verdict" in text, text
+            assert configs and set(configs) == {selftrain.DEFAULT_CONFIG}, "no --config: the base config's settings"
     finally:
         selftrain.read_settings, selftrain.Inputs = real_settings, real_inputs
 
 
 # -- BAR-ATH ----------------------------------------------------------------------------------------------------------
 
+def full_gate_report(band=0.5, profile="tracking", seeds=None, ids=None, per_match=6, missing=0):
+    """A gate report with what `bar_ath` demands of one, made by hand (no gate ran): the profile's record, the seven DFL
+    matches (or `ids`), seeds 0, 1 and 2 (or `seeds`), and for each match the oracle table of `per_match` cells (three
+    seeds and two blocks), the last `missing` of them without a gate oracle. The largest |b*_gap| of all is `band`.
+    Built by the estimators' own `oracle_means` and `oracle_summary`, so that it has the shape of a real one."""
+    ids = list(sources.MATCH_IDS) if ids is None else list(ids)
+    tables = {}
+    for index, match_id in enumerate(ids):
+        gaps = [(band if (index, k) == (0, 0) else band / 2.0) if k < per_match - missing else None
+                for k in range(per_match)]
+        tables[match_id] = {"oracle": selftrain.oracle_means([hand_cell(0.1, gap, 0.2) for gap in gaps])}
+    return {"kind": "selftrain_gate", "profile": degrade.profile_record(profile),
+            "seeds": [0, 1, 2] if seeds is None else list(seeds), "matches": sorted(ids), "per_match": tables,
+            "oracles": selftrain.oracle_summary({match_id: table["oracle"] for match_id, table in tables.items()})}
+
+
 def plain_bar_ath(inputs, settings):
-    """What bar_ath should say of `inputs`, by loops: per block the cross-fit E2 offset (None where a fallback), the
-    teacher's shares and the over-eleven shares; and the Smart Tagging frames with the two agreements."""
+    """What bar_ath should say of `inputs`, by loops: per block the cross-fit E2 offset (0.0 where it falls back), what
+    describes the rows that fit saw (the other block's teacher rows: their count, home share, masked share and over-
+    eleven shares) and what describes the block's own frames (the same, of its own teacher rows); and the Smart Tagging
+    frames with the two agreements."""
     epsilon, min_prob, floor = settings.epsilon, settings.min_prob, recalibration.MIN_ROWS
     run_context = RunContext(inputs=inputs, seed=0)
     path = settings.shape_model
@@ -1017,39 +1114,69 @@ def plain_bar_ath(inputs, settings):
     blocks = [(start, stop) for _, start, stop in inputs.graded]
     present, teams = inputs.atd.players_present, inputs.atd.slot_team
     usable = [bool(rows[f]) and math.isfinite(z[f]) for f in range(len(z))]
+
+    def figures(rows_used, known_frames):
+        """The shares of one set of teacher rows: home, masked as dead (among the teacher's frames) and over eleven."""
+        return {"rows": len(rows_used), "home": sum(int(y[f]) for f in rows_used),
+                "share": sum(int(y[f]) for f in rows_used) / len(rows_used),
+                "masked": sum(int(not rows[f]) for f in known_frames) / len(known_frames),
+                "over_home": sum(int(present[f][teams == 0].sum() > 11) for f in rows_used) / len(rows_used),
+                "over_away": sum(int(present[f][teams == 1].sum() > 11) for f in rows_used) / len(rows_used)}
     out = []
     for k, (start, stop) in enumerate(blocks):
-        pool = [f for j, (a, b) in enumerate(blocks) if j != k for f in range(a, b) if usable[f]]
+        others = [f for j, (a, b) in enumerate(blocks) if j != k for f in range(a, b)]
+        pool = [f for f in others if usable[f]]
         homes = sum(int(y[f]) for f in pool)
         offset = 0.0
         if homes >= floor and len(pool) - homes >= floor:
             offset = recalibration.noise_aware_offset(np.array([z[f] for f in pool]),
                                                       np.array([int(y[f]) for f in pool]), epsilon=epsilon).offset
-        own = [f for f in range(start, stop) if usable[f]]
-        known = [f for f in range(start, stop) if not math.isnan(y[f])]
-        home_over = sum(int(present[f][teams == 0].sum() > 11) for f in own)
-        away_over = sum(int(present[f][teams == 1].sum() > 11) for f in own)
-        out.append({"b": offset, "share": homes / len(pool),
-                    "masked": sum(int(not rows[f]) for f in known) / len(known),
-                    "home_over": home_over / len(own), "away_over": away_over / len(own), "own": len(own)})
+        out.append({"b": offset, "fit": figures(pool, [f for f in others if not math.isnan(y[f])]),
+                    "own": figures([f for f in range(start, stop) if usable[f]],
+                                   [f for f in range(start, stop) if not math.isnan(y[f])])})
     return out, z, vote, alive, blocks
 
 
 def test_selftrain_bar_ath_band_and_tag_check():
     root, _, settings, _ = fixture()
     inputs = scene_inputs()
-    gate_report = {"profile": {"name": "tracking", "version": 3}, "seeds": [0, 1, 2], "oracles": {"band": 5.0}}
+    gate_report = full_gate_report(band=5.0)
     report = selftrain.bar_ath(gate_report, inputs=inputs, settings=settings)
     plain, z, vote, alive, blocks = plain_bar_ath(inputs, settings)
     assert report["kind"] == "selftrain_bar_ath" and report["band"] == 5.0 and len(report["blocks"]) == 2
-    assert report["gate_report"] == {"profile": {"name": "tracking", "version": 3}, "seeds": [0, 1, 2]}
+    assert report["gate_report"] == {"path": None, "profile": degrade.profile_record("tracking"),
+                                     "matches": sorted(sources.MATCH_IDS), "seeds": [0, 1, 2], "cells": 42,
+                                     "band_cells": 42}, report["gate_report"]
     for got, want, (_, start, stop) in zip(report["blocks"], plain, inputs.graded):
         assert got["half"] in (1, 2) and got["fallback"] is None
         assert got["b"] == want["b"] and abs(got["b"]) > 1e-3, (got, want)
-        assert abs(got["share"] - want["share"]) <= 1e-12 and 0.2 < got["share"] < 0.8
-        assert 0.0 < got["pi_hat"] < 1.0 and got["rows"] == want["own"] > 500
-        assert abs(got["masked_share"] - want["masked"]) <= 1e-12 and got["masked_share"] > 0
-        assert got["over_home"] == want["home_over"] and got["over_away"] == want["away_over"]
+        # what the fit saw, the other block's teacher rows, named as such
+        assert (got["fit_rows_home"], got["fit_rows_away"]) == (want["fit"]["home"],
+                                                                want["fit"]["rows"] - want["fit"]["home"])
+        assert got["fit_rows_home"] + got["fit_rows_away"] > 1000
+        assert abs(got["fit_share"] - want["fit"]["share"]) <= 1e-12 and 0.2 < got["fit_share"] < 0.8
+        assert 0.0 < got["fit_pi_hat"] < 1.0
+        assert abs(got["fit_masked_share"] - want["fit"]["masked"]) <= 1e-12 and got["fit_masked_share"] > 0
+        assert got["fit_over_home"] == want["fit"]["over_home"] and got["fit_over_away"] == want["fit"]["over_away"]
+        # and the block's own frames, named as such
+        assert got["own_rows"] == want["own"]["rows"] > 500
+        assert abs(got["own_share"] - want["own"]["share"]) <= 1e-12 and 0.2 < got["own_share"] < 0.8
+        assert abs(got["own_masked_share"] - want["own"]["masked"]) <= 1e-12 and got["own_masked_share"] > 0
+        assert got["own_over_home"] == want["own"]["over_home"] and got["own_over_away"] == want["own"]["over_away"]
+        unlabelled = {"share", "pi_hat", "rows", "rows_home", "rows_away", "masked_share", "over_home", "over_away"}
+        assert not unlabelled & set(got), "an unlabelled figure would not say which rows it describes"
+    # with two blocks the other block's teacher rows are the block's own: what one block's fit saw is what the other
+    # block is, and the two labels are told apart because the blocks are not alike
+    first, second = report["blocks"]
+    assert (first["fit_rows_home"] + first["fit_rows_away"], first["fit_share"], first["fit_masked_share"],
+            first["fit_over_home"], first["fit_over_away"]) == (
+        second["own_rows"], second["own_share"], second["own_masked_share"], second["own_over_home"],
+        second["own_over_away"])
+    assert (second["fit_rows_home"] + second["fit_rows_away"], second["fit_share"], second["fit_masked_share"],
+            second["fit_over_home"], second["fit_over_away"]) == (
+        first["own_rows"], first["own_share"], first["own_masked_share"], first["own_over_home"],
+        first["own_over_away"])
+    assert first["fit_masked_share"] != first["own_masked_share"] and first["fit_share"] != first["own_share"]
     assert abs(report["offset_gap"] - abs(plain[0]["b"] - plain[1]["b"])) <= 1e-12
     # the Smart Tagging check: the frames, then the two agreements, by a plain loop
     frames = [f for _, start, stop in inputs.graded for f in range(start, stop)
@@ -1069,8 +1196,9 @@ def test_selftrain_bar_ath_band_and_tag_check():
     assert abs(check["difference"] - (adapted_share - base_share)) <= 1e-12
     assert sum(b["frames"] for b in report["checks"]["smart_tagging_gaps"]["blocks"]) == len(frames)
     assert report["touch"]["frames"] > 500 and 0.0 <= report["touch"]["adapted"] <= 1.0
-    assert any(block["over_home"] > 0 for block in report["blocks"]) and any(block["over_away"] > 0
-                                                                              for block in report["blocks"])
+    for side in ("fit", "own"):
+        assert any(block[side + "_over_home"] > 0 for block in report["blocks"]), side
+        assert any(block[side + "_over_away"] > 0 for block in report["blocks"]), side
 
     # the exit codes: a failed check wins over the band. TAG_MARGIN is read when the check is made, so that it can be
     # set to what always passes (1.0) and what never does (-1.0): adapted >= base - margin
@@ -1101,23 +1229,86 @@ def test_selftrain_bar_ath_band_and_tag_check():
             (([], []), ([], [2]), (["x"], []), (["x"], [1, 2]))] == [0, 3, 1, 1]
     assert "STOP" in selftrain.bar_ath_verdict([], [2])[1] and "whatever the band says" in selftrain.bar_ath_verdict(
         ["x"], [2])[1]
-    # the band is read from the gate report, a number, or an error that says where
-    for bad in ({}, {"oracles": {}}, {"oracles": {"band": None}}, {"oracles": {"band": -0.1}},
-                {"oracles": {"band": float("nan")}}, {"oracles": {"band": True}}):
-        expect_error(BenchmarkError, lambda: selftrain.bar_ath(bad, inputs=inputs, settings=settings), "selftrain",
-                     "band", "gate")
-    # lines of figures, no frame
+    # the band is read from a gate report that has a usable one: a number of 0 or more, or an error that says where
+    for bad in ({}, {"band": None}, {"band": -0.1}, {"band": float("nan")}, {"band": True}, {"band": "0.5"}):
+        expect_error(BenchmarkError, lambda: selftrain.bar_ath(dict(gate_report, oracles=bad), inputs=inputs,
+                                                              settings=settings), "selftrain", "band", "gate")
+    # lines of figures, no frame; the two groups of figures say which rows they describe
     lines = selftrain.render_bar_ath(report)
     assert all(len(line) <= 140 for line in lines) and any("Smart Tagging" in line for line in lines)
     assert any("verdict" in line for line in lines) and len(lines) <= 14, len(lines)
+    text = "\n".join(lines)
+    assert "FIT rows" in text and "OWN frames" in text and "the other block's teacher rows" in text
+    assert text.index("FIT rows") < text.index("OWN frames"), "the fit's rows come first, then the block's own frames"
+    fit_at, own_at = lines.index(next(line for line in lines if "FIT rows" in line)), lines.index(
+        next(line for line in lines if "OWN frames" in line))
+    for table, label in ((lines[fit_at + 2:own_at], "fit"), (lines[own_at + 2:own_at + 4], "own")):
+        assert len(table) == 2, label
+        for line, block in zip(table, report["blocks"]):
+            assert "{:.3f}".format(block[label + "_masked_share"]) in line, (label, line)
+            assert "{:.3f}".format(block[label + "_over_home"]) in line, (label, line)
     # a match too short for the floor falls back on both blocks, says so, and leaves P07 as it is: offset 0, the same
     # agreement, no pi_hat, and nothing outside the band
     short = selftrain.bar_ath(gate_report, inputs=scene_inputs(7, rows=(900, 800)), settings=settings)
     assert [block["fallback"] for block in short["blocks"]] == ["few rows", "few rows"], short["blocks"]
-    assert [block["b"] for block in short["blocks"]] == [0.0, 0.0] and short["blocks"][0]["pi_hat"] is None
+    assert [block["b"] for block in short["blocks"]] == [0.0, 0.0] and short["blocks"][0]["fit_pi_hat"] is None
     assert short["checks"]["smart_tagging_gaps"]["difference"] == 0.0 and short["exit_code"] == 0
-    assert short["blocks"][0]["rows_home"] < 500 or short["blocks"][0]["rows_away"] < 500
+    assert short["blocks"][0]["fit_rows_home"] < 500 or short["blocks"][0]["fit_rows_away"] < 500
+    assert short["blocks"][0]["own_rows"] > 0 and short["blocks"][0]["fit_masked_share"] is not None
     assert any("few rows" in line for line in selftrain.render_bar_ath(short))
+
+
+def test_selftrain_band_only_from_a_full_tracking_gate_report():
+    """The band is the largest |b*_gap| of the 42 cells of the gate on profile tracking, all seven DFL matches and seeds
+    0 to 2. A report of any other run is refused, before BAR-ATH is loaded and with each way it differs, and what the
+    band stands on is recorded."""
+    root, _, settings, _ = fixture()
+    inputs = scene_inputs()
+    seven, real_inputs = sorted(sources.MATCH_IDS), selftrain.Inputs
+
+    def refused(gate_report, *fragments):
+        def load(data_dir=None):
+            raise AssertionError("BAR-ATH was loaded for a gate report that is not the tracking run")
+        selftrain.Inputs = load
+        try:
+            return expect_error(BenchmarkError, lambda: selftrain.bar_ath(gate_report, settings=settings), "selftrain",
+                                "band", *fragments)
+        finally:
+            selftrain.Inputs = real_inputs
+    # the accepted case, and the record of what the band stands on: the path as the printout shows it, the profile, the
+    # matches and the seeds, the cells of the run and the cells the band is the largest of
+    path = os.path.join(root, "gate-tracking.json")
+    got = selftrain.bar_ath(full_gate_report(band=2.5), inputs=inputs, settings=settings, gate_path=path)
+    assert got["band"] == 2.5 and got["gate_report"] == {
+        "path": benchmark_run.shown(path), "profile": degrade.profile_record("tracking"), "matches": seven,
+        "seeds": [0, 1, 2], "cells": 42, "band_cells": 42}, got["gate_report"]
+    # a cell whose gate oracle could not be fitted is in the run and not among the cells the band is the largest of
+    got = selftrain.bar_ath(full_gate_report(band=2.5, missing=2), inputs=inputs, settings=settings)
+    assert (got["gate_report"]["cells"], got["gate_report"]["band_cells"], got["gate_report"]["path"]) == (
+        42, 28, None), got["gate_report"]
+    # the other profiles are refused, by name
+    for name in ("context", "gaps", "clean"):
+        refused(full_gate_report(profile=name), "profile", "'{}'".format(name), "tracking")
+    # a subset of the matches is refused and the missing ones are named, whichever they are
+    message = refused(full_gate_report(ids=seven[:6]), "matches", "6 of the 7", seven[6])
+    assert all(match_id not in message for match_id in seven[:6]), message
+    refused(full_gate_report(ids=seven[:2]), "matches", "2 of the 7", *seven[2:])
+    refused(full_gate_report(ids=seven[1:]), "matches", seven[0])
+    refused(full_gate_report(ids=seven + ["J03ZZZ"]), "matches", "J03ZZZ", "not one of them")
+    # fewer seeds, or other ones
+    refused(full_gate_report(seeds=[0]), "seeds", "[0]", "[0, 1, 2]")
+    refused(full_gate_report(seeds=[0, 1]), "seeds", "[0, 1]")
+    refused(full_gate_report(seeds=[1, 2, 3]), "seeds", "[1, 2, 3]")
+    # every way a report differs is said at once
+    message = refused(full_gate_report(profile="context", ids=seven[:3], seeds=[0]), "profile", "matches", "seeds")
+    assert "'context'" in message and seven[3] in message and "[0]" in message, message
+    # what is not a gate report, and one without the tables the cells are counted in
+    for junk in (None, "gate-tracking.json", [], {}, {"profile": "tracking"}):
+        refused(junk, "gate")
+    refused(dict(full_gate_report(), per_match={}), "per_match", seven[0])
+    refused(dict(full_gate_report(), per_match={match_id: {} for match_id in seven}), "oracle", seven[0])
+    # the three that are the run's own: the tool writes exactly these for the default `gate`
+    assert selftrain.GATE_PROFILE == "tracking" and sorted(sources.MATCH_IDS) == seven
 
 
 def test_selftrain_tag_check_at_the_margin():
@@ -1240,3 +1431,56 @@ def test_selftrain_command_line_exit_codes():
     assert selftrain.report_path("D", "bar-ath") == os.path.join("D", "runs", "selftrain", "bar-ath.json")
     assert selftrain.report_path("D", "gate", "clean", ["B", "A"], 1) == os.path.join(
         "D", "runs", "selftrain", "gate-clean.m-A-B.json"), "the clean profile has no seeds to count"
+
+
+def test_selftrain_config_flag_names_the_config():
+    """Both commands read their settings from `--config` (the base config's if it is not given), so that a re-run can
+    name another; here a temporary config with another confidence and c_team, over the synthetic models, is what the
+    report says it was made with."""
+    ids = ("J03WMX", "J03WN1")
+    matches = {match_id: scene_match(match_id, seed) for seed, match_id in enumerate(ids)}
+    inputs, real_inputs = scene_inputs(), selftrain.Inputs
+    try:
+        with tempfile.TemporaryDirectory() as root, loading(lambda match_id: matches[match_id]):
+            models = synthetic_settings(root, ids=ids)
+            old = write_text(root, "pre_adoption.toml", config_text(confidence=0.9, models=(
+                models.alive_model.replace("\\", "/"), models.shape_model.replace("\\", "/"))))
+            wanted = selftrain.settings(old)
+            assert (wanted.epsilon, wanted.c_team, wanted.teacher["radius"]) == (0.1, 0.7, 2.0)
+            assert selftrain.settings().epsilon == 0.07 != wanted.epsilon, "the base config's own are another"
+            data = os.path.join(root, "data")
+            # gate: the report's settings are the named config's, and so is what was fitted with them
+            code, text = quietly(selftrain.main, ["gate", "--profile", "clean", "--matches", *ids, "--config", old,
+                                                  "--data-dir", data])
+            assert code in (0, 1, 4), (code, text)
+            path = os.path.join(data, "runs", "selftrain", "gate-clean.m-J03WMX-J03WN1.json")
+            with open(path, encoding="utf-8") as handle:
+                report = json.load(handle)
+            assert report["settings"] == benchmark_run.plain(selftrain._settings_record(wanted)), report["settings"]
+            assert report["settings"]["epsilon"] == 0.1 and report["settings"]["c_team"] == 0.7
+            assert report == benchmark_run.plain(selftrain.gate("clean", 1, match_ids=list(ids), settings=wanted)), \
+                "main with --config is gate with those settings"
+            # bar-ath: the same, on BAR-ATH's stand-in, from a full tracking gate report
+            selftrain.Inputs = lambda data_dir=None: inputs
+            full_path = os.path.join(data, "runs", "selftrain", "gate-tracking.json")
+            benchmark_run.write_json(full_path, benchmark_run.plain(full_gate_report(band=5.0)))
+            code, text = quietly(selftrain.main, ["bar-ath", "--gate-report", full_path, "--config", old,
+                                                  "--data-dir", data])
+            with open(os.path.join(data, "runs", "selftrain", "bar-ath.json"), encoding="utf-8") as handle:
+                barred = json.load(handle)
+            assert code == barred["exit_code"] and barred["settings"] == report["settings"], barred["settings"]
+            assert barred == benchmark_run.plain(selftrain.bar_ath(full_gate_report(band=5.0), inputs=inputs,
+                                                                   settings=wanted, gate_path=full_path))
+            # a config that is not there, or lacks an entry, is an error 2 that names it, and nothing is written
+            before = sorted(os.listdir(os.path.join(data, "runs", "selftrain")))
+            lacking = write_text(root, "lacking.toml", config_text(drop=("smart_tagging",)))
+            for flags, named in ((["gate", "--matches", *ids], os.path.join(root, "absent.toml")),
+                                 (["gate", "--matches", *ids], lacking),
+                                 (["bar-ath", "--gate-report", full_path], os.path.join(root, "absent.toml")),
+                                 (["bar-ath", "--gate-report", full_path], lacking)):
+                code, text = quietly(selftrain.main, flags + ["--config", named, "--data-dir", data])
+                assert code == 2 and "FAILED" in text and os.path.basename(named) in text, (flags, code, text)
+                assert named != lacking or "smart_tagging" in text, text
+            assert sorted(os.listdir(os.path.join(data, "runs", "selftrain"))) == before
+    finally:
+        selftrain.Inputs = real_inputs
