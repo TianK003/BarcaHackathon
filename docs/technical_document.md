@@ -873,10 +873,12 @@ python3.11 -m venv .venv                     # Windows: py -3.11 -m venv .venv
 ```
 
 Expected sha256 of `main.csv` (R017): `7ba575c0982aacb9765b39c406e4ff5c9ddb82ca37cfa2b7f101417431fc3d7c` (the run prints
-it; the same with `OPENBLAS_NUM_THREADS=1`). The first run parses the tracking into `data/cache/` once. Every run then
-computes the play features and the shape features and walks the trees: about 17 s in all with the cache warm (the run of
-25 Oct that wrote R011's file: 0.5 s for the inputs, 14.9 s for the evidence, 0.9 s for the decoder and 0.8 s for the
-output), on [hardware].
+it). A17 checked it from a fresh clone of the pushed repository, a new venv from the requirements files and a data folder
+with no caches: the same sha256 on two runs at one BLAS thread and on a third at the default threads, and both trained
+models and the benchmark's 0.5430 / 0.5593 came back exactly. The first run parses the tracking into `data/cache/` once
+(7.4 s in A17). Every run then computes the play features and the shape features and walks the trees: 13 s with the cache
+warm and 20 s cold in A17, on an AMD Ryzen 5 5500U (6 cores), 15.3 GB RAM, Windows 11, CPU only. A second machine (another
+processor or operating system) has not been tried yet (T20, T21).
 
 The two trained models that `main.toml` reads, `dead_ball_hgb.json` and `shape_possession_hgb.json`, are committed as
 JSON under `pipeline/models/` and read with numpy only, so the CSV needs no scikit-learn. Two commands in
