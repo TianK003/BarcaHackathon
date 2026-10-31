@@ -6564,6 +6564,64 @@ puts every file under `pipeline/` back to `bfeee45` (main before P08 and P10): `
 `data/cache/benchmark/camera/`. After the removal: `pipeline/selftest.py` 185/185, `pipeline/benchmark/selftest.py` 416
 checks; after the merge of main: 191/191 and 424 checks. `main.toml` unchanged (`pipeline/` equals main's).
 
+### R022 — P20 step 0: PathCRF's published checkpoint on its held-out match, against P07 on the gap frames (2026-10-31, lane B)
+Proposal: P20 · Part 1, declared before any run · Advisor (for Tian): advisor-01 §1 Lane B and §3, with the rulings of §6 on D1–D4 (below).
+
+**Advisor rulings on D1–D4 (advisor-01 §6).**
+- **D1 (segmentation), accepted with two clarifications.** Advisor (for Tian): a run is a maximal stretch that `main.toml` decodes H or A, and a change between H and A does not cut it, so that `main.toml`'s team boundaries do not leak into the competitor's input. `main.toml`'s sha256 is pinned below and the windows are prepared from that file, whatever merges later.
+- **D2 (complete tracks), accepted.** Advisor (for Tian): the share of node-frames that are interpolated or held is reported. A node with no observed frame in a window is a pad node, as in their code.
+- **D3 (per-window inference), accepted.** Advisor (for Tian): the context lost at window edges is a cost of the adapter, charged to PathCRF and not corrected.
+- **D4 (team and frames), accepted.** Advisor (for Tian): the team of a frame is the decoded sender's; an outside node or silence counts as wrong; the primary set is rule 5 ∩ `main.toml` decodes H or A; the literal rule-5 set is reported beside it, and P07 must reproduce 0.8495 on 96,442 frames there or the lane stops.
+- **Go threshold unchanged.** Advisor (for Tian): PathCRF ≥ P07 + 0.04 pooled over seeds 0 to 2 and ≥ +0.02 on each seed, raw truth, on the primary set. If raw misses and the coarse truth alone meets the threshold, it is a no-go with a note for Tian (a P16 question), not a retry.
+
+**What is run.** PathCRF (Kim et al., KDD 2026; arXiv 2602.12080 v2). The code is at repository hyunsungkim-ds/pathcrf, commit `1b7c6f85a6b78c92e4543fde72ca2b86a933f997`, under MPL-2.0. The checkpoints have no licence of their own and are read as the repository's. The model is trial 140, Dynamic Masked CRF: file `saved/140/model/state_dict_best_acc.pt`, 19,325,114 bytes, git blob `f8e48952d01d6d70db986948962822478884a336`, sha256 recorded at the first verified fetch. It is loaded with `weights_only=True` on the CPU with one torch thread, in `.venv-pathcrf` (`requirements-pathcrf.txt`). Nothing of it is in `pipeline/`. The pins of the comparison:
+- `main.toml`, sha256 of its LF bytes `124a38ad019995e276cdd6d1094f764e226e167408c0adaa7c32c466bac25873`;
+- P07's `pipeline/models/shape_possession_hgb.json`, sha256 `641e0bad7438a5a987f4aa8ac54ea48302b22d2f7375ea655e67a8ded1802974`.
+
+**Precondition, met from the repository.** The test match is J03WR9, validation J03WQQ, and training J03WMX, J03WN1, J03WOH, J03WOY and J03WPY. Three things show it:
+- `train.py` sorts the files, and the checkpoint's `args.json` says `lomocv` with `cv_fold_idx` 6;
+- the tutorial evaluates J03WR9;
+- the paper's test counts (91 episodes, 1,831 events) are the tutorial's output on J03WR9.
+
+**Correctness, not the verdict.** Clean J03WR9 goes through their own preprocessing:
+- kloppy 3.18.0's sportec loader with `only_alive=False`;
+- their touches from the synchronised events in the repository;
+- their kinematics.
+
+It then goes through the tutorial's inference (`use_crf`, `decode="indep"`, 10 s windows, `correct_episode_lasts`) and the tutorial's metric (`compute_true_pred_poss`, split mode: per-frame team accuracy over in-play frames, where both sides are derived from events). **Pass iff ≥ 0.884** (0.924 − 0.04). Edge accuracy and event F1 are reported beside the tutorial's 0.6964 and 0.7569, not gated. A failure is a usage error to fix, and each fix is named in part 2. With no pass by 06:30 the lane stops with no verdict and no retry spent.
+
+**The adapter (advisor rule 4, with D1–D4).**
+- **Windows.** They tile the maximal runs of H or A (an H/A change does not cut a run) that `main.toml` (with `--drop-match-only`) decodes inside each graded block of that seed. A run becomes ⌈L/250⌉ windows of near-equal length; a run under 16 frames gets none.
+- **Nodes.** Inside a window, a slot's maximal present runs are pieces, each in its metadata team (wrong-team slots kept).
+- **Joins.** A piece that ends is joined to one that begins, in the same metadata team, when the frames from the last seen to the first seen are at most 50 (2 s) and the two positions are at most 5.0 m apart. The joins are greedy by smallest gap, then smallest distance, then lower slots; each end and each start is used once, and chains are allowed.
+- **At most 11 per team.** The chains with the fewest observed frames are dropped (ties: the higher first slot).
+- **Filling.** A join's gap is filled linearly, and a node is held at its first or last position to the window's edges. The share of node-frames filled or held is reported.
+- **Inference.** Coordinates are x × 105 and y × 68. Their `calculate_running_features` runs per window. Each window is one `inference_episode` (CRF, `decode="indep"`, `last_node=None`). The 5-fps state is held forward by their `ffill`.
+- **Team.** The team is the decoded sender's, by name. An outside sender is out of play.
+
+**Frames and scores.** Per seed s ∈ {0, 1, 2} of profile `tracking` v3:
+- **Literal set:** graded, raw truth H or A, served ball missing.
+- **Primary set:** the literal set where `main.toml` also decodes H or A.
+- **P07:** the J03WR9 fold, served as `train_shape._tally` serves it (scope `all`, `min_prob` 0.02); it names home iff home ≥ 0.5, and a silent frame is wrong.
+- **PathCRF:** a frame is right iff its sender's team is the truth's. Out of play and silent are wrong.
+- **Pooling:** over seeds by frames.
+
+**The reference that must reproduce.** P07 on the literal frames, scored as R011 scored it (silent frames left out), pooled over the three seeds: **96,442 frames and accuracy 0.8495**, both exactly (the accuracy to four decimals), or the lane stops.
+
+**Go/no-go (advisor rule 6).** On the primary frames, raw truth: **go iff PathCRF − P07 ≥ +0.04 pooled over seeds 0 to 2, and ≥ +0.02 on each seed.** It is mechanical and exact: the deltas are compared as fractions of integer counts on the same frames, and a miss by any margin is a miss. A raw miss with a coarse-truth pass is a no-go, with a note.
+
+**Reported, not gated:**
+- clean: PathCRF run by their own protocol on the clean match, scored on each seed's primary frames;
+- the coarse truth on the primary frames;
+- the out-of-play share and the silent share;
+- the literal set;
+- accuracy of both models by window class (with a join; with a team over 11 slots at once; neither; frames outside any window);
+- the adapter's counts, and the interpolated or held node-frame share.
+
+**Retry (pre-approved, advisor 3.3).** Only if the loss sits on windows with joined or wrong-team nodes. That holds iff the pooled verdict is a no-go while, on the primary frames in windows with neither a join nor a team over 11, PathCRF − P07 ≥ +0.04 pooled. R022b then declares one change aimed at those windows in its own part 1, with the same bar. Otherwise, or if R022b fails, P20 is dropped, its code removed, and the recoverable commit recorded.
+
+**Stops.** No clean pass by 06:30: no verdict, no retry spent. No new heavy work after 08:30. A go stops at step 0, because step 1 (a GPU retraining, numpy inference for byte-identical CSVs) is Tian's.
+
 ## Submission log
 
 The form keeps only the last response before the deadline, so log every upload.
