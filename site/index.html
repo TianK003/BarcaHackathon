@@ -731,7 +731,6 @@ const DATA = {
 
   nextSteps: [
     { title: "P19: a learned team model where the ball is seen", text: "A13's largest lever: a perfect team where the ball is seen adds +0.194 raw / +0.231 coarse. Feasibility first (half a day): leave-one-match-out per-frame accuracy against the touch rule and its hold. Fully benchmarkable (“After A14”, item 2)." },
-    { title: "P20 step 0: PathCRF's checkpoint against P07", text: "A ball-free possession model (KDD 2026) trained on the same seven DFL matches; 92.4% team accuracy without the ball, on clean tracking. One to two days: its held-out match, clean and degraded, against P07 on the same gap frames." },
     { title: "The grain of our truth (P16)", text: "Every ball-rich change splits the two truths: R010's decoder, R013's touch rule, A14's ball. Metrica's sample games, in our provider's conventions, are how to learn which truth ours resembles." },
     { title: "Not now: a video ball detector (P14)", text: "A14: the ball is about 6 px wide, smaller than a ViT patch (T46), and a perfect ball in our gaps is worth +0.10 raw but only +0.02 coarse. A half-day zero-shot test only if someone is free." },
     { title: "The deliverables", text: "Regenerate `main.toml`'s file from a clean clone on a second machine, make the repo public as the last step, condense the technical document, and decide before the freeze how much of the benchmark's gain to believe (a decision, not a run: T38, T39, R011). Our advice, not a rule: upload the file early as a safety copy. See [Work to do](#work)." }
@@ -789,7 +788,7 @@ const DATA = {
       built: "R001 · 2026-10-22; sources since",
       summary: "Each source reads the whole match and gives an opinion on every frame; it never decides a label. Deciding (weighing the sources, keeping possessions as intervals, paying for every change) is the decoder's job, so a new source plugs in without touching it and a better decoder improves every source at once. `main.toml` runs four: `controlled_touch`, `shape_possession` and `smart_tagging` for `home`, `dead_ball_model` for `alive`.",
       contract: "**Out:** one `Evidence(alive, home)` per source, float64 per frame in [0, 1], NaN = no opinion. `alive` = P(ball in play); `home` = P(home has it | in play). Read together: P(H) = alive·home, P(A) = alive·(1 − home), P(D) = 1 − alive.",
-      planned: [{ title: "A13 says where", text: "The team side holds the remaining score: a perfect team where the ball is seen is worth +0.194 raw and in the gaps +0.176, a perfect dead ball only +0.029." }, "P19", "P20", "P22", "P11", "P13"],
+      planned: [{ title: "A13 says where", text: "The team side holds the remaining score: a perfect team where the ball is seen is worth +0.194 raw and in the gaps +0.176, a perfect dead ball only +0.029." }, "P19", "P22", "P11", "P13"],
       traps: ["T12", "T14", "T38", "T39"],
       files: [
         { label: "evidence/README.md", href: "../pipeline/evidence/README.md" },
@@ -1128,7 +1127,7 @@ const DATA = {
           "It never saw Barça or Athletic: the benchmark's gain is not a forecast, and the count of possessions moved the other way on our match (down 2.4% where the benchmark's rose 16%, R011).",
           "Shape lags a turnover: a team needs seconds to reshape, so it is good on who has the ball and weak on when it changed; touches and the decoder place the edges.",
           "Wrong-team slots move its features (T32). It uses means, percentiles and shares, never a minimum or maximum, to limit that.",
-          "Next on this question: P20 (PathCRF, a stronger model of the same thing) and P22 (adapting this one to our teams without labels)."
+          "Next on this question: P22 (adapting this one to our teams without labels). P20 (PathCRF, a stronger model of the same thing) was measured and dropped (R022)."
         ],
         files: [
           { label: "shape_possession.py", href: "../pipeline/evidence/shape_possession.py" },
@@ -1368,8 +1367,7 @@ const DATA = {
     { id: "P18", anchor: "p18--the-offpitch-profile-dfls-ball-hidden-off-the-pitch-as-ours-is-and-p05-retrained-on-it", title: "offpitch profile: DFL's ball hidden off the pitch as ours is, and P05 retrained on it", attacks: "T39", effort: "M", impact: "A13: a perfect dead-ball source adds +0.029 raw; hiding the out-of-play ball cost today's P05 0.013 alive/dead F1 (R015)", status: "dropped", note: "dropped → R015, R015b (code removed)" },
     { id: "P19", anchor: "p19--a-learned-team-model-where-the-ball-is-seen", title: "A learned team model where the ball is seen: P05's recipe applied to the team", attacks: "fact 3; A13's largest lever (+0.194 raw where the ball is seen)", effort: "M (feasibility S)", impact: "guess +0.02 to +0.05 raw; fully benchmarkable", status: "idea", stage: "evidence",
       next: "Boosted trees on the ball, the two nearest players of each team, the touch episodes on either side and P07's shape, trained on DFL's `BallPossession`. Feasibility first: leave-one-match-out per-frame accuracy against the touch rule and its hold; go if at least 2 points better in 6 of 7 matches." },
-    { id: "P20", anchor: "p20--ball-free-possession-paths-pathcrf-on-our-slots", title: "Ball-free possession paths: PathCRF (KDD 2026), trained on the same DFL matches", attacks: "fact 1; A13's gaps (+0.176 raw)", effort: "S test, L to adopt", impact: "medium–high, uncertain: 92.4% team accuracy without the ball on clean tracking, unknown on ours", status: "idea", stage: "evidence",
-      next: "Step 0: its published checkpoint (MPL-2.0) on the one DFL match it never trained on, clean and degraded to `tracking` v3 with a slot-stitching adapter, against P07 on the same gap frames; go if at least 4 points better. Retraining needs a GPU and DFL data only." },
+    { id: "P20", anchor: "p20--ball-free-possession-paths-pathcrf-on-our-slots", title: "Ball-free possession paths: PathCRF (KDD 2026), trained on the same DFL matches", attacks: "fact 1; A13's gaps (+0.176 raw)", effort: "S test, L to adopt", impact: "measured: +0.0049 pooled on the gap frames, bar +0.04 (R022)", status: "dropped", note: "dropped → R022 (code removed)" },
     { id: "P21", anchor: "p21--wrong-team-slots-measure-the-ceiling-then-repair-them", title: "Wrong-team slots: measure the ceiling, then repair from tracking or jersey colours", attacks: "T32", effort: "S test, M", impact: "low on the benchmark: all of `tracking`'s player degradation costs `main.toml` 0.013 (A14)", status: "idea", stage: "inputs",
       next: "Step 0 (an hour): do our identity swaps cluster at the ball? If the share of touch candidates with a team over 11 slots is not well above 10.8%, drop it. Else repair by trajectory continuity, or by unsupervised jersey-colour clustering through the homography." },
     { id: "P22", anchor: "p22--the-shape-model-adapted-to-our-two-teams-without-labels", title: "The shape model adapted to our two teams without labels", attacks: "fact 1", effort: "S–M", impact: "low: guess +0.00 to +0.02", status: "idea", stage: "evidence",

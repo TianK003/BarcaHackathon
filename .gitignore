@@ -63,6 +63,7 @@ organizers/
 __pycache__/
 *.py[cod]
 .venv/
+.venv-pathcrf/
 venv/
 env/
 .DS_Store
