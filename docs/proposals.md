@@ -38,7 +38,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P19](#p19--a-learned-team-model-where-the-ball-is-seen) | A learned team model where the ball is seen: P05's recipe applied to the team | fact 3; A13's largest lever (+0.194 raw where the ball is seen) | M (feasibility S) | measured: +0.0160 pooled per-frame accuracy against `main.toml`'s decoded labels, gate +0.020 (R021) | dropped → R021 (feasibility: +0.0160 pooled against +0.020, 3 of 7 matches against 6; no spellF1) |
 | [P20](#p20--ball-free-possession-paths-pathcrf-on-our-slots) | Ball-free possession paths: PathCRF (KDD 2026), trained on the same DFL matches | fact 1; A13's gaps (+0.176 raw) | S test, L to adopt | measured: +0.0049 pooled on the gap frames (needed +0.04); PathCRF's own protocol on the clean match reached 0.9172, against P07's 0.8522 on degraded tracking (not like for like) | dropped → R022 (step 0 no-go: +0.0049 under our degradation and the adapter, needed +0.04; code removed, recoverable at `2163406`) |
 | [P21](#p21--wrong-team-slots-measure-the-ceiling-then-repair-them) | Wrong-team slots: measure the ceiling, then repair from tracking or jersey colours | T32 | S test, M | low on the benchmark: all of `tracking`'s player degradation costs `main.toml` 0.013 (A14) | dropped → A16 (step 0's ratio 0.85 < 1.5; the tool is kept for P19's transfer report) |
-| [P22](#p22--the-shape-model-adapted-to-our-two-teams-without-labels) | The shape model adapted to our two teams without labels | fact 1 | S–M | low: guess +0.00 to +0.02 | (a) dropped → R020 (feasibility gate failed: 0.0538 against 0.0623, ratio 0.863 > 0.75); (b) and (c) not tried |
+| [P22](#p22--the-shape-model-adapted-to-our-two-teams-without-labels) | The shape model adapted to our two teams without labels | fact 1 | S–M | low: guess +0.00 to +0.02 | (a) dropped → R020 (feasibility gate failed: 0.0538 against 0.0623, ratio 0.863 > 0.75); (b) designing → R027 (rung 1: a per-half intercept on P07 from the touch rule's labels); (c) not tried |
 | [P23](#p23--the-hmm-backbone-reviewed-nine-ideas-five-taken) | The HMM backbone reviewed: re-choose under R023's objective (A), decompose the IoU ladder (B), posterior edges (C), calibration (D), a gap weight for P07 (E) | fact 5; the decoder's placement of changes; fact 1 (E) | S each | low: +0.01 to +0.03 for the lot (the advisor's estimate); measured: A +0.0052 on the mean (R024) | done: A adopted → R024; B, D measured → A19; C dropped → R025, R025b; E dropped → R026; F deferred, G to I not taken |
 | [P03](#p03--one-command-deterministic-cached) | One-command, deterministic, cached pipeline | reproducibility | S–M | enabling | done → R001 |
 | [P04](#p04--sticky-ownership-from-controlled-touches) | Sticky ownership from controlled touches | facts 3, 5 | S | high: +0.1421 raw at the chosen decoder (R010) | done → R008, R010; rule re-chosen → R013; hold re-chosen → R024 (0.55) |
@@ -940,7 +940,7 @@ coarse (`gaps` 0.5559 and 0.5719 against `tracking` 0.5430 and 0.5593).
 
 ### P22 — The shape model adapted to our two teams without labels
 
-**Status: (a) dropped → [R020](results.md) (the feasibility gate failed: EM's share was 0.0538 from the true one on average against 0.0623 for guessing 0.5, a ratio of 0.863 against the declared 0.75; neither retry condition held, so no grid ran and no F1 was produced). The code was removed in one commit, recoverable from `e303365`. (b) and (c) were not tried.**
+**Status: (a) dropped → [R020](results.md) (the feasibility gate failed: EM's share was 0.0538 from the true one on average against 0.0623 for guessing 0.5, a ratio of 0.863 against the declared 0.75; neither retry condition held, so no grid ran and no F1 was produced). The code was removed in one commit, recoverable from `e303365`. (b) being designed (2026-10-31, R027, below); (c) not tried.**
 
 **Why.** P07 was trained on German teams only, and R011 warns that the benchmark's gain is not a forecast for Barça and
 Athletic: the count of possessions moved the other way on BAR-ATH.
@@ -958,6 +958,19 @@ Athletic: the count of possessions moved the other way on BAR-ATH.
   - The pseudo-labels are made by an algorithm and decided by no person, so they are allowed.
   - Train on one half and check on the other. Without that split, R011's transfer gate (agreement with the touch rule)
     would check the model on its own training labels.
+  - **Expanded 2026-10-31** (Tian: "start working on P22(b)"; design in
+    `docs/superpowers/specs/2026-10-31-p22b-selftrain-design.md`, run R027). The design starts at the simplest rung of
+    a ladder of updates (intercept, recalibration, extension, retrained trees):
+    - **Rung 1:** a class-balanced logistic intercept on P07's logit, fitted on the other half's frames.
+    - **The labels:** `controlled_touch`'s episode frames at `main.toml`'s rule, the same code on DFL and on BAR-ATH.
+      The decoded labels are not used: in the gaps they carry P07 itself, and on BAR-ATH Smart Tagging too.
+    - **Where it runs:** at run time in a new source `shape_selftrain`, with no new artifact.
+    - **Why the intercept:** R020 and A19 put P07's error on a new match in an offset, not in its slope (α 1.07 to 1.10).
+      Updating a model for a new population works with the simplest update, and revisions overfit (Janssen et al. 2008).
+      Self-training under shift needs strong regularisation (Kumar, Ma and Liang 2020).
+    - **The tests:** a gate on DFL (P07's held-out log-loss in the gaps), then R025's bar on the mean of the two truths,
+      then label-free checks on BAR-ATH.
+    - **One retry:** rung 2, only for a named cause.
 - **(c) M, recorded 2026-10-31 (advisor, for the team; not pursued tonight):** the prior as asymmetric switch costs in the
   decoder, the decoder's own place for a class prior. It is a contract change and needs its own decoder grid, so the team
   decides. R020 reads s = 1 as the frame-level Bayes value, not the decoder's prior. It would use the same share as (a),
