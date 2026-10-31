@@ -136,3 +136,26 @@ def test_recorded_sha256_is_enforced():
 def replace_sha256(pinned, sha256):
     from dataclasses import replace
     return replace(pinned, sha256=sha256)
+
+
+# -- runner, torch-free helpers --------------------------------------------------------------------
+
+def test_team_code_by_name_not_block():
+    from pathcrf_lab import runner
+    names = ["home_3", "home_pad_9", "away_0", "away_pad_10", "out_left", "out_right", "out_bottom", "out_top"]
+    got = [runner.team_code(name) for name in names]
+    assert got == [1, 1, 0, 0, 2, 2, 2, 2], "team codes by name are {}".format(got)
+    try:
+        runner.team_code("x")
+    except ValueError as error:
+        assert "'x'" in str(error), "the error must name the value: {}".format(error)
+    else:
+        raise AssertionError("a node name that is none of home_, away_, out_ must raise")
+
+
+def test_codes_from_senders_silent():
+    import numpy as np
+    from pathcrf_lab import runner
+    codes = runner.codes_from_senders([float("nan"), None, "home_1", "away_2", "out_top"])
+    assert codes.dtype == np.int8, "dtype is {}, expected int8".format(codes.dtype)
+    assert codes.tolist() == [-1, -1, 1, 0, 2], "codes are {}".format(codes.tolist())

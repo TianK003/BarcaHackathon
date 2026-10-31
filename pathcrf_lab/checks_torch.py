@@ -27,3 +27,36 @@ def _need_torch_and_repo():
 
 def test_torch_and_repo_present():
     _need_torch_and_repo()
+
+
+def test_one_thread_after_prepare():
+    _need_torch_and_repo()
+    from pathcrf_lab import runner
+    torch = runner.prepare_torch()
+    assert torch.get_num_threads() == 1, "{} torch threads after prepare_torch".format(torch.get_num_threads())
+
+
+def test_load_model_weights_only_on_a_synthetic_checkpoint():
+    _need_torch_and_repo()
+    import tempfile
+    from pathcrf_lab import runner, sources
+    torch = runner.prepare_torch()
+    repo = sources.repo_dir()
+    runner._repo(repo)
+    from models.utils import build_model, load_trial_args
+    seeded = build_model(load_trial_args(os.path.join(repo, "saved", str(runner.TRIAL))), "cpu")
+    with tempfile.TemporaryDirectory() as folder:
+        good = os.path.join(folder, "good.pt")
+        torch.save(seeded.state_dict(), good)
+        model = runner.load_model(repo, checkpoint=good)
+        mine, theirs = seeded.state_dict(), model.state_dict()
+        assert mine.keys() == theirs.keys() and all(torch.equal(mine[k], theirs[k]) for k in mine), \
+            "the loaded weights are not the saved ones"
+        bad = os.path.join(folder, "bad.pt")
+        torch.save({"weights": object()}, bad)
+        try:
+            runner.load_model(repo, checkpoint=bad)
+        except Exception:
+            pass
+        else:
+            raise AssertionError("a checkpoint holding a pickled object was loaded under weights_only=True")
