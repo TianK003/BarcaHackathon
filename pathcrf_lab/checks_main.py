@@ -159,3 +159,18 @@ def test_codes_from_senders_silent():
     codes = runner.codes_from_senders([float("nan"), None, "home_1", "away_2", "out_top"])
     assert codes.dtype == np.int8, "dtype is {}, expected int8".format(codes.dtype)
     assert codes.tolist() == [-1, -1, 1, 0, 2], "codes are {}".format(codes.tolist())
+
+
+def test_synthetic_window_has_their_layout():
+    import numpy as np
+    from pathcrf_lab import runner
+    window = runner.synthetic_window()
+    assert window.shape == (250, 22 * 6), "the window is {}, expected 250 frames of 22 x 6 columns".format(window.shape)
+    assert not window.isna().any().any(), "the synthetic window must have no NaN: their inference skips such windows"
+    for team in ("home", "away"):
+        for k in range(11):
+            for suffix in ("x", "y", "vx", "vy", "speed", "accel"):
+                assert "{}_{}_{}".format(team, k, suffix) in window.columns, "missing {}_{}_{}".format(team, k, suffix)
+    assert window[["home_0_x", "away_0_x"]].mean().tolist() == sorted(window[["home_0_x", "away_0_x"]].mean().tolist()), \
+        "home_0 (left keeper) must sit at the lower x"
+    assert np.array_equal(window.to_numpy(), runner.synthetic_window().to_numpy()), "the window must be seeded"

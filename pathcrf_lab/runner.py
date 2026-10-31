@@ -82,7 +82,11 @@ def prepare_torch():
 
 
 def _repo(repo_dir):
-    """Put their repository at the end of sys.path, so that `models`, `datatools` and `set_transformer` import."""
+    """Put their repository at the end of sys.path, so that `models`, `datatools` and `set_transformer` import.
+
+    No bytecode is written, so that importing their modules leaves the pinned tree as fetched.
+    """
+    sys.dont_write_bytecode = True
     if repo_dir not in sys.path:
         sys.path.append(repo_dir)
 
@@ -114,12 +118,14 @@ def _quiet(call, *args, **kwargs):
 
 
 def clean(match_id, *, dfl_dir, repo_dir, work_dir):
-    """Their protocol on one match, as the tutorial runs it; returns the scores (team_acc is the correctness gate).
+    """Their protocol on one match, as datatools/preprocess.py's main block and the tutorial run it.
 
-    The steps are the tutorial's cells: kloppy's sportec loader through their SportecData (only_alive=False), their
-    Preprocessor and touches, the running features, written to parquet and read back as the tutorial does, then
-    `inference` (CRF, decode="indep", 10 s windows, correct_episode_lasts), `detect_events`, and the metric of cells 21
-    and 25: per-frame team accuracy of the event-split possession, truth events against predicted events.
+    `dfl_dir` holds the match's three DFL files (matchinformation, events_raw, positions_raw_observed). The steps:
+    SportecData (kloppy, only_alive=False), Preprocessor on the synchronised events in the repository, touches, the
+    possession merged into the tracking, the running features, both written to parquet and read back; then
+    `inference` (CRF, decode="indep", 10 s windows, correct_episode_lasts), `detect_events`, and the metric: per-frame
+    team accuracy of the event-split possession, truth touches against the events decoded from the path. Returns the
+    scores; team_acc is the correctness gate.
     """
     import time
     import pandas as pd
@@ -128,88 +134,103 @@ def clean(match_id, *, dfl_dir, repo_dir, work_dir):
     model = load_model(repo_dir)
     import datatools.sportec_data as sportec_data
     for name in ("META_DIR", "EVENT_DIR", "TRACKING_DIR"):
-        setattr(sportec_data, name, dfl_dir)  # the XML is read: <TRACKING_DIR>_parquet does not exist
-    from datatools.sportec_data import SportecData
-    from datatools.preprocess import Preprocessor
-    from datatools.utils import calculate_running_features
-    from datatools.postprocess import detect_events
-    from datatools.evaluate_events import align_true_and_pred, simplify_events
+        setattr(sportec_data, name, dfl_dir)  # read at call time; <TRACKING_DIR>_parquet does not exist: the XML is read
     from applications.team_poss import compute_true_pred_poss
+    from datatools.evaluate_events import align_true_and_pred
+    from datatools.postprocess import detect_events, simplify_events
+    from datatools.preprocess import Preprocessor
+    from datatools.sportec_data import SportecData
+    from datatools.utils import calculate_running_features
     from inference import inference
 
     prints = 0
-    events = pd.read_parquet(os.path.join(repo_dir, "data", "sportec_synced", match_id + ".parquet"))
+    synced = pd.read_parquet(os.path.join(repo_dir, "data", "sportec_synced", match_id + ".parquet"))
     data, n = _quiet(SportecData, match_id, load_tracking=True)
     prints += n
     tracking = data.tracking.reset_index(drop=True)
-    for column in ("timestamp", "ball_x", "ball_y"):
-        tracking[column] = tracking[column].round(2)
+    tracking[["timestamp", "ball_x", "ball_y"]] = tracking[["timestamp", "ball_x", "ball_y"]].round(2)
 
-    pre = Preprocessor(events, tracking)
+    pre = Preprocessor(synced, tracking)
     touches, n = _quiet(pre.detect_touches)
     prints += n
-    merged, n = _quiet(pre.merge_tracking_poss, touches)
-    prints += n
-    # calculate_running_features: per player per period at 25 Hz, as the tutorial applies it to the merged tracking.
+    merged = pre.merge_tracking_poss(touches)
     processed, n = _quiet(calculate_running_features, merged)
     prints += n
     os.makedirs(work_dir, exist_ok=True)
     processed.to_parquet(os.path.join(work_dir, "tracking_processed.parquet"))
-    events.to_parquet(os.path.join(work_dir, "event_processed.parquet"))
+    touches.to_parquet(os.path.join(work_dir, "event_processed.parquet"))
     tracking = pd.read_parquet(os.path.join(work_dir, "tracking_processed.parquet"))
     events = pd.read_parquet(os.path.join(work_dir, "event_processed.parquet"))
 
     started = time.perf_counter()
-    (micro_pred, stats), n = _quiet(inference, model, tracking, use_crf=True, decode="indep",
-                                    window_seconds=WINDOW_SECONDS, correct_episode_lasts=True)
+    (_, _, micro_pred, stats), n = _quiet(inference, model, tracking, use_crf=True, decode="indep",
+                                          correct_episode_lasts=True, window_seconds=WINDOW_SECONDS, fps=FPS,
+                                          sample_freq=SAMPLE_FREQ)
     prints += n
     seconds = time.perf_counter() - started
-    pred_events, n = _quiet(detect_events, micro_pred, tracking)
+    pred_events, n = _quiet(detect_events, tracking, micro_pred)
     prints += n
 
-    true_events = simplify_events(events)
-    frames = compute_true_pred_poss(true_events, pred_events, tracking)
-    team_acc = float((frames.true_team == frames.pred_team).mean())
-    scores, n = _quiet(align_true_and_pred, events, pred_events, threshold=1.0)
+    frames = compute_true_pred_poss(simplify_events(events), pred_events, tracking)
+    team_acc = float((frames["true_team"] == frames["pred_team"]).mean())
+    (scores, _), n = _quiet(align_true_and_pred, events, pred_events, threshold=1.0)
     prints += n
     total = scores.loc["total"]
 
-    result = {"match": match_id, "team_acc": team_acc, "edge_acc": float(stats["edge_acc"]),
-              "src_acc": float(stats["src_acc"]), "dst_acc": float(stats["dst_acc"]),
-              "n_frames": int(stats["n_frames"]), "ev_precision": float(total["precision"]),
-              "ev_recall": float(total["recall"]), "ev_f1": float(total["f1"]), "inference_s": round(seconds, 1),
-              "their_prints": prints, "torch": torch.__version__, "threads": torch.get_num_threads()}
+    result = {"match": match_id, "team_acc": team_acc, "edge_acc": float(stats.get("edge_acc", float("nan"))),
+              "src_acc": float(stats.get("src_acc", float("nan"))),
+              "dst_acc": float(stats.get("dst_acc", float("nan"))), "n_frames": int(stats["n_frames"]),
+              "ev_precision": float(total["precision"]), "ev_recall": float(total["recall"]),
+              "ev_f1": float(total["f1"]), "inference_s": round(seconds, 1), "their_prints": prints,
+              "torch": torch.__version__, "threads": torch.get_num_threads()}
+    ordered = tracking.set_index("frame_id").sort_index()
     np.savez_compressed(os.path.join(work_dir, "clean.npz"),
-                        frame_number=micro_pred["frame_id"].to_numpy(),
-                        team=codes_from_senders(micro_pred["edge_src"].to_numpy()),
-                        alive=(micro_pred["ball_state"] == "alive").to_numpy(),
-                        episode=micro_pred["episode_id"].to_numpy())
+                        frame_number=ordered.index.to_numpy(),
+                        team=codes_from_senders(micro_pred["edge_src"].reindex(ordered.index).to_numpy()),
+                        alive=(ordered["ball_state"] == "alive").to_numpy(),
+                        episode=ordered["episode_id"].to_numpy())
     return result
 
 
+def synthetic_window(seed=0, frames=250):
+    """A seeded window of 22 random walkers in the preprocessed layout their inference_episode reads.
+
+    Columns `<team>_<k>_{x,y,vx,vy,speed,accel}` for 11 home and 11 away players (home_0 and away_0 are the keepers,
+    kept at the two ends), no NaN, no outside nodes (their code adds them). Velocities are finite differences at 25 Hz:
+    the layout is what is under test, not the smoothing. Imports nothing of theirs.
+    """
+    import pandas as pd
+    rng = np.random.default_rng([seed, 22])
+    steps = np.cumsum(rng.normal(0.0, 0.05, size=(frames, 22, 2)), axis=0)
+    start = rng.uniform([10.0, 10.0], [95.0, 58.0], size=(22, 2))
+    start[0] = (5.0, 34.0)
+    start[11] = (100.0, 34.0)
+    xy = np.clip(start[None] + steps, 0.0, [PITCH[0], PITCH[1]])
+    vel = np.gradient(xy, 1.0 / FPS, axis=0)
+    speed = np.linalg.norm(vel, axis=2)
+    accel = np.abs(np.gradient(speed, 1.0 / FPS, axis=0))
+    columns = {}
+    for i in range(22):
+        name = "{}_{}".format("home" if i < 11 else "away", i % 11)
+        for suffix, values in (("x", xy[:, i, 0]), ("y", xy[:, i, 1]), ("vx", vel[:, i, 0]), ("vy", vel[:, i, 1]),
+                               ("speed", speed[:, i]), ("accel", accel[:, i])):
+            columns["{}_{}".format(name, suffix)] = values
+    return pd.DataFrame(columns)
+
+
 def smoke(repo_dir):
-    """The real checkpoint on one seeded synthetic window of 22 random walkers; prints counts only. Returns 0."""
+    """The real checkpoint on one seeded synthetic window, through their inference_episode; counts only. Returns 0."""
     torch = prepare_torch()
     model = load_model(repo_dir)
     print("torch {} threads {} keys matched (strict load, weights_only)".format(
         torch.__version__, torch.get_num_threads()))
-    _repo(repo_dir)
-    import pandas as pd
-    from datatools.utils import calculate_running_features  # noqa: F401  (their kinematics on the walkers)
     from inference import inference_episode
-    rng = np.random.default_rng([0, 22])
-    steps = int(WINDOW_SECONDS * FPS)
-    start = rng.uniform([10, 10], [95, 58], size=(22, 2))
-    walk = start[:, None, :] + np.cumsum(rng.normal(0, 0.05, size=(22, steps, 2)), axis=1)
-    print("synthetic window: {} nodes x {} frames, seeded; calling their inference_episode".format(*walk.shape[:2]))
-    out = inference_episode(model, pd.DataFrame(walk.reshape(22, -1).T), use_crf=True, decode="indep",
-                            window_seconds=WINDOW_SECONDS, last_node=None)
-    senders = None if out is None else getattr(out, "edge_src", None)
-    if senders is None:
-        print("inference_episode returned {}: the smoke call is wrong for this API; read their inference.py".format(
-            "None" if out is None else type(out).__name__))
-        return 1
-    codes = codes_from_senders(list(senders))
+    window = synthetic_window()
+    _, _, micro, order, _ = inference_episode(
+        model, window, left_gk="home_0", right_gk="away_0", use_crf=True, decode="indep", last_node=None,
+        evaluate=False, window_seconds=WINDOW_SECONDS, fps=FPS, sample_freq=SAMPLE_FREQ, device="cpu")
+    codes = codes_from_senders(micro["edge_src"].to_numpy())
+    print("{} nodes in order, {} frames decoded".format(len(order), len(micro)))
     print("decoded team codes: " + ", ".join("{}={}".format(name, int((codes == value).sum()))
                                              for name, value in (("home", 1), ("away", 0), ("out", OUT),
                                                                  ("silent", SILENT))))
@@ -230,7 +251,8 @@ def main(argv=None, data_dir=None):
     if args.command == "smoke":
         return smoke(repo_dir)
     work = os.path.join(data, "cache", "pathcrf", args.match, "clean")
-    result = clean(args.match, dfl_dir=os.path.join(data, "external", "dfl"), repo_dir=repo_dir, work_dir=work)
+    dfl_dir = os.path.join(data, "external", "dfl", args.match)
+    result = clean(args.match, dfl_dir=dfl_dir, repo_dir=repo_dir, work_dir=work)
     for key, value in result.items():
         print("{:<13} {}".format(key, value))
     out = os.path.join(data, "runs", "pathcrf")
