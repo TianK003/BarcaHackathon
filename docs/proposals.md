@@ -35,7 +35,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P16](#p16--metricas-sample-games-in-our-ground-truth-providers-conventions) | Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing | boundary timing, grain | M | medium | idea |
 | [P17](#p17--the-restart-team-channel) | Restart-team channel: who restarts after a stoppage, from the players' arrangement | facts 3, 5 (the hold points at the old team after most stoppages) | S–M | ceiling +0.0198 raw (A12); delivered +0.0040 raw at best, bar not met (R014) | dropped → R014, R014b (the source and the decoder's restart states stay, off by default) |
 | [P18](#p18--the-offpitch-profile-dfls-ball-hidden-off-the-pitch-as-ours-is-and-p05-retrained-on-it) | offpitch profile: DFL's ball hidden off the pitch as ours is, and P05 retrained on it | T39 (P05 overstated by the visible out-of-play ball) | M | A13: a perfect dead-ball source adds +0.029 raw on tracking; main.toml on offpitch 0.5509 raw / 0.5296 coarse; hiding the out-of-play ball cost today's P05 0.013 alive/dead F1 (R015) | dropped → R015, R015b (our tracker's off-pitch ball cannot be reproduced by a simple rule; code removed) |
-| [P19](#p19--a-learned-team-model-where-the-ball-is-seen) | A learned team model where the ball is seen: P05's recipe applied to the team | fact 3; A13's largest lever (+0.194 raw where the ball is seen) | M (feasibility S) | guess +0.02 to +0.05 raw; fully benchmarkable | idea |
+| [P19](#p19--a-learned-team-model-where-the-ball-is-seen) | A learned team model where the ball is seen: P05's recipe applied to the team | fact 3; A13's largest lever (+0.194 raw where the ball is seen) | M (feasibility S) | guess +0.02 to +0.05 raw; fully benchmarkable | in progress, R021 (part 1 declared) |
 | [P20](#p20--ball-free-possession-paths-pathcrf-on-our-slots) | Ball-free possession paths: PathCRF (KDD 2026), trained on the same DFL matches | fact 1; A13's gaps (+0.176 raw) | S test, L to adopt | medium–high, uncertain: 92.4% team accuracy without the ball on clean tracking, unknown on ours | idea |
 | [P21](#p21--wrong-team-slots-measure-the-ceiling-then-repair-them) | Wrong-team slots: measure the ceiling, then repair from tracking or jersey colours | T32 | S test, M | low on the benchmark: all of `tracking`'s player degradation costs `main.toml` 0.013 (A14) | idea |
 | [P22](#p22--the-shape-model-adapted-to-our-two-teams-without-labels) | The shape model adapted to our two teams without labels | fact 1 | S–M | low: guess +0.00 to +0.02 | idea |
@@ -767,6 +767,9 @@ its belief and what would falsify it, starts with a feasibility test that reads 
 protocol and bar declared before its runs. Every impact figure below is a guess until that test has run.
 
 ### P19 — A learned team model where the ball is seen
+
+**Status:** in progress. R021 part 1 (the declaration: model, features, feasibility, grid, bar, transfer) is committed
+before any run.
 
 **Why.** `main.toml` has no learned team source where the ball is seen. `controlled_touch` is a fixed rule with four
 constants, three of them on the edges of R013's grid, and it speaks on only 36.9% of the ball-visible frames on BAR-ATH;

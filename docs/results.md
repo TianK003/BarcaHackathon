@@ -6564,6 +6564,151 @@ puts every file under `pipeline/` back to `bfeee45` (main before P08 and P10): `
 `data/cache/benchmark/camera/`. After the removal: `pipeline/selftest.py` 185/185, `pipeline/benchmark/selftest.py` 416
 checks; after the merge of main: 191/191 and 424 checks. `main.toml` unchanged (`pipeline/` equals main's).
 
+### R021 — P19's team model where the ball is seen: feasibility, a two-stage grid, the bar and the transfer (2026-10-31, the overnight lane for Tian)
+
+Proposal: P19 · Branch `p19-team-model` · Decisions marked "Advisor (for Tian)" were made by the project's advisor,
+standing in for Tian, in `.superpowers/sdd/run-2026-10-31/advisor-01.md` (sections 2, 3 and 5, 31 Oct 2026, before any
+run). The commits of the runs are in part 2; the one retry, if it runs, is R021b.
+
+**Part 1, declared before any run** (2026-10-31). Nothing below was chosen from a score of this entry. No run of R021 has
+been made when this part is committed.
+
+**Why.** A13 puts the largest remaining headroom of `main.toml` where the ball is seen and the team is wrong: a perfect
+team source there is worth +0.194 raw. `controlled_touch` is a fixed rule that speaks on 36.9% of the ball-visible frames
+of BAR-ATH; elsewhere the decoder holds the last team. P05 showed what boosted trees trained on DFL's flags did for the
+dead ball (+0.1661 raw), and P19 applies the same recipe to the team.
+- **Belief:** a model that reads the ball, the nearest players of both teams and the touch episodes on either side of a
+  frame names the team more often than the rule and its hold do.
+- **Falsified if:** out of fold, it is not better per frame than the rule and its hold on the same frames (the
+  feasibility's go below).
+
+**The model.** `sklearn` `HistGradientBoostingClassifier` with `train_dead_ball.HGB_SETTINGS`, imported and never tuned.
+- Target: raw `BallPossession`. Rows: every 5th graded frame from each block's start with truth H or A and the served
+  ball visible, `tracking` v3, seeds 0 to 2. Each row is added with its `swap` mirror and the label flipped;
+  `prior_home` 0.5.
+- A fold per match (trained on the other six) plus `full`. `pipeline/models/team_model_hgb.json` is under 10 MB,
+  `feature_version` 1, fitted on DFL only.
+- The dry run (one match, one seed, row counts and per-feature NaN shares only) must give J03WMX seed 0 (256,107 −
+  98,966) / 3 / 5 = **10,476** rows, accepted in [8,381, 12,571]; all 21 (match, seed) pairs (1,659,315 − 677,900) / 5 =
+  196,283 rows (R011's table).
+
+**The 56 features** (`pipeline/evidence/team_features.py`, from positions only, T31; nothing reads across a graded
+block's edge, T11):
+- *Per team, 9 columns each, `h_*` then `a_*`:*
+
+| column | definition |
+|---|---|
+| `ball_d1`, `ball_d2` | distance of the team's nearest and second-nearest present slot to the ball |
+| `closing` | the nearest slot's approach to the ball, (d(t − 5) − d(t + 5)) / 0.4 s |
+| `rel_speed` | \|v_ball − v_slot\| for that slot |
+| `reach_s` | time to reach, min over slots with a velocity of 0.7 s + \|p + 0.7 s·v − b\| / 5 m/s |
+| `over11` | 1.0 if the team shows more than 11 present slots (T32: a flag, no slot dropped, metadata teams kept) |
+| `in_episode` | 1.0 inside a kept control episode of the team, by `controlled_touch`'s own code frozen at `main.toml`'s 1.5 m / 6 m/s / 1 frame (duel radius 1.0) |
+| `since_episode_s`, `until_episode_s` | seconds to the team's last and next kept frame, 0 inside, capped at 30 |
+
+- *Shared, 12:* ball speed, \|acceleration\| and turn angle over ±0.2, 0.5 and 1 s; the signed distance beyond the nearest
+  line; seconds since and until the ball's visible run, capped at 30.
+- *P07's 26 shape features*, unchanged.
+
+Advisor (for Tian), D1: the time to reach uses a top speed of **5 m/s**, as Spearman (2018) and Shaw's implementation of
+it give it. The frozen design said 7 m/s, which is Shaw's maximum acceleration in m/s², not a speed. Nothing had run,
+and the change is an affine map of the minimum distance, so the trees' quantile bins are unchanged.
+Advisor (for Tian), C1: no duplicate present-slots column. P07's `h_n` and `a_n` carry the counts; `over11` stays, so
+T32 is named in the feature list.
+
+**The source** `team_model(run, *, model, min_prob=0.02)`: `home` = clip(sigmoid((r(x) − r(swap x)) / 2), 0.02, 0.98) on
+the graded frames with the ball visible, NaN everywhere else; `alive` NaN. Relabelling the slots' teams gives 1 − p to
+1e-12. The fold of the match in `inputs.game` is used if the artifact has it, else `full`.
+
+**What is not re-chosen.** `controlled_touch` (R013's rule and its hold 0.60); `dead_ball_model`; `shape_possession`'s
+weight 0.2 (only its scope is an axis); `smart_tagging` (match-only; every config of this entry carries it and runs
+with `--drop-match-only`, as R017); `switch_dead` and `min_dead`; the HGB settings; `team_model`'s `min_prob`.
+"Instead of `controlled_touch`" is excluded: its hold carries the team into the gaps, where P19 is silent.
+
+**Feasibility** (the go/no-go, before any grid; `train_team.py --feasibility`, out of fold; an artifact without its fold
+is refused). The frames are the graded frames with truth H or A, the served ball visible and `main.toml`'s decoded label
+H or A (its dead-ball errors are not credited to P19). P19 says H at p ≥ 0.5; the comparator is `main.toml`'s decoded
+label on the same frames.
+- **Go iff** 50·(p19_right − main_right) ≥ frames (a gain of at least 0.020 in accuracy, as an integer comparison) in at
+  least 6 of the 7 matches, seeds pooled per match, **and** in the pool of all seven. A miss by any margin is a miss.
+- Reported with it: the rule and its hold (`controlled_touch` at `main.toml`'s parameters, hold 0.60), silent frames
+  counted as wrong, with the silent share; log-loss against the rule (silent = 0.5); the coarse truth; and the frame
+  classes (in an episode, in the hold, silent; a team over 11 slots or not).
+
+**The pause before training** (Advisor (for Tian), §3.1, quoted): "Pause before (re)training: I approve on part 1
+committed, nothing chosen from a score; synthetic tests green (swap gives 1 − p to 1e-12, determinism across threads,
+truth never through inputs, export equals sklearn to 1e-12, existing configs byte-identical); a one-match one-seed dry
+run printing only row counts and per-feature NaN shares (no all-NaN or constant column, rows within 20% of estimate);
+reviewer sign-off; projected peak ≤ 8 GB."
+
+**Stage 1 (8 configs, only after a go).** `team_model` weight {0.1, 0.25, 0.5, 1.0} × `shape_possession` scope {all,
+gaps}; decoder and shift as `main.toml` (hmm 4/32/35/25, `shift_edges` +1 / −2 / 0). Stems
+`r021a_w{0100,0250,0500,1000}_{all,gaps}` in `pipeline/benchmark/configs/r021/`, each `main.toml`'s text with the
+intended lines changed (a `load_config` round-trip check). Tie order, the order the stems are given to `choose.py`:
+by weight, then `all` before `gaps`.
+
+**Stage 2 (9 configs, always after a go, at Stage 1's choice).** `switch_team` {4, 8, 16} × `min_possession` {35, 50,
+75}. Stems `r021b_t{04,08,16}_mp{035,050,075}`; tie order by `switch_team`, then `min_possession`. `r021b_t04_mp035` must
+score as Stage 1's choice to the last digit (it is that config).
+
+**The rule** (R008 to R014's, `choose.py --reference main` on `tracking`): the best pooled raw spellF1; every config
+within 0.005 of it is tied; among the tied the best pooled coarse; then the stem order above. A choice on an edge of a
+grid is reported as one and the grid is not extended.
+
+**The bar** (R014's, unchanged): the chosen config's `tracking` raw pooled delta over `main.toml` is at least +0.005 with
+an exact sign-flip p of at most 0.05.
+- **The veto:** not adopted if any of these is below −0.005: the `tracking` coarse pooled delta, the `context` raw delta,
+  the `context` coarse delta (both sensitivity checks, R005), or the pooled alive/dead F1 on `tracking` (raw report)
+  minus `main.toml`'s.
+- **Plus the leave-one-match-out.** Advisor (for Tian), C2: `choose.py --reference main` over the **16 distinct configs**
+  of both stages (Stage 2's `r021b_t04_mp035` is Stage 1's choice, so it is not counted twice), the stems in the declared
+  tie order, as R013 did. The whole rule's raw mean delta must be above 0 with at least 6 wins in 7. Each stage's own
+  LOMO (Stage 1's 8 configs, Stage 2's 9) is reported beside it. The union LOMO runs slightly optimistic, because Stage
+  2's candidates exist only through Stage 1's full-data choice; the requirement stays as written. If Stage 2b runs, its
+  LOMO is over the union of all three stages in the same order.
+- Why a LOMO on top of R014's bar: 17 configs in two stages is in-sample selection, and +0.005 stays as the tie band.
+
+**The shift,** by R012's rule as R013 applied it: the chosen config's form without `[[refine]]` has its lag measured
+(`conventions.py latency`, `tracking`, 3 seeds) and the rule gives the shift.
+
+**The transfer and the label checks on BAR-ATH** (label-free, aggregates only, before adopting). On graded frames with
+the ball visible and a Smart Tagging team vote (0 or 1): 100·(p19_right − rule_right) ≥ −frames, that is P19 `full`'s
+agreement with the votes is at least the rule-with-hold's minus 0.01 (the rule is `controlled_touch` at `main.toml`'s
+parameters with hold 0.60, silent = wrong). Smart Tagging's votes are an independent pseudo-label: they are in neither P19
+nor the rule. Plus: two runs of the final config give the same sha256; the `D` share is within 1 point of `main.toml`'s;
+no `X` in a graded block; the possessions per half are reported (WARN beyond ±25% of `main.toml`'s, T33), with P21's
+ratio beside it. The public window is a correctness check only and weighs in on nothing (T01, T27).
+
+**Stage 2b, the one retry** (Advisor (for Tian), §3.3). One retry only, with a cause named from logged aggregates, its
+own part 1 first (R021b) and the same bar. Pre-approved: if raw passes and only a coarse or `context` veto fires,
+`min_possession` {75, 100, 150} × `switch_team` {8, 16, 32}, stems `r021c_t{08,16,32}_mp{075,100,150}` (T33: the
+coarse truth prefers longer possessions). Not a retry: more values on one axis, HGB tuning, a new truth or profile. A
+second failure: drop P19, remove its code and record the recoverable commit.
+
+**Adoption** (Advisor (for Tian), §3.5). If the bar is met, the veto does not fire and the checks pass, the chosen
+config becomes `pipeline/configs/main.toml` (kept as its own file as well); its new sha256 goes to the submission log and
+the file is not uploaded; both synthetic suites and `selftest.py --data` pass on the merged tree, merged `--no-ff`.
+Nothing is half-adopted at 08:30, and no new heavy work starts after it.
+
+**The reference.** `main.toml` as it is on `main` when Stage 1's configs are generated (its file writes sha256
+`7ba575c0...`, R017, today). Every benchmark run lists `pipeline/configs/main.toml` first and must reproduce `main`'s
+last numbers to the last digit (0.5430 raw and 0.5593 coarse, R013 and R017; R020's if P22 is adopted first) or the lane
+stops. `main.toml` is frozen for this lane from then until the verdict. Runs use `--profile tracking --seeds 3 --truth
+both --drop-match-only`, one process at a time, throttled.
+
+**What it cannot settle.**
+- DFL's grain (T33): the raw truth cuts possessions finer than ours may, so the coarse truth is read beside it.
+- The train-to-match shift in the ball-dynamics columns: the trees learn the ball's speed and turn from DFL degraded as
+  `tracking` v3 and are asked about ours (research.md); the transfer check measures agreement, not accuracy.
+- Neither team of our match is in training (R011).
+
+**Deviation D1's status:** settled by Advisor (for Tian), §5.1: 5 m/s (above).
+
+**Cost:** about 3 h of heavy runs in all (training 7 folds and `full`, the feasibility, 17 configs on two truths and
+`context`, the latency, the transfer).
+
+**Part 2, the runs and the verdict:** to be written after the runs.
+
 ## Submission log
 
 The form keeps only the last response before the deadline, so log every upload.
