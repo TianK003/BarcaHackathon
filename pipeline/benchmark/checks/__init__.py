@@ -88,6 +88,14 @@ module of its topic:
                  calibration's figures and a known miscalibration recovered, and diagnose() end to end: the declared
                  layout, the runner's spellF1, every measure's frames tallied, no long list, the file, what it refuses
                  (synthetic only)
+    selftrain.py P22(b)'s gate and its BAR-ATH checks (R027): the settings read from the base config, r024_both.toml,
+                 or from `--config`, rung 3's head against scipy's optimiser and its standardisation, the gate's
+                 variants, strata, touch agreement, cross-fit offsets, oracles and teacher figures worked out frame by
+                 frame, the decision at its edges, a match with no gate frame refused as soon as it is measured, that
+                 no truth reaches the teacher or the offsets, the aggregates-only report, BAR-ATH's band (read only
+                 from a full tracking gate report, with what it stands on recorded), the figures of the rows each fit
+                 saw told from the block's own, its Smart Tagging check, and the exit codes, an error being 2 and a
+                 failed check winning over the band (synthetic only)
     harness.py   the harness itself: what it collects, how it reports NOT RUN, the console set-up, and that no check
                  module imports another one
     common.py    what several modules share, and no checks of its own: the synthetic DFL match, the random one
@@ -114,9 +122,9 @@ what two of them share goes to common.py (test_a_check_module_imports_no_other_c
 
 from pipeline.benchmark.checks import (
     calibration, cap, choose, context, conventions, dead_ball, degrade, dfl, dfl_events, diagnose, fidelity, harness,
-    hazard, headroom, inputs, label_diff, metrica, restarts, run, score, shape, sources, tag_stats, tracking, touch,
-    truth, wrong_team)
+    hazard, headroom, inputs, label_diff, metrica, restarts, run, score, selftrain, shape, sources, tag_stats, tracking,
+    touch, truth, wrong_team)
 
 MODULES = (sources, dfl, dfl_events, truth, inputs, score, run, choose, hazard, calibration, degrade, cap, tracking, context,
            fidelity, headroom, touch, dead_ball, conventions, restarts, shape, label_diff, wrong_team, tag_stats, metrica,
-           diagnose, harness)
+           diagnose, selftrain, harness)
