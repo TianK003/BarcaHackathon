@@ -332,7 +332,9 @@ const DATA = {
     { p: "P12", name: "Free X", status: "dropped" },
     { p: "P17", name: "Restart team", status: "dropped" },
     { p: "P18", name: "Offpitch profile", status: "dropped" },
-    { p: "P20", name: "PathCRF paths", status: "dropped" }
+    { p: "P20", name: "PathCRF paths", status: "dropped" },
+    { p: "P21", name: "Wrong-team slots", status: "dropped" },
+    { p: "P22", name: "EM label-shift prior (a)", status: "dropped" }
   ],
 
   /* Every measured proposal. dr / dc are shown as the entry states them (R008 to R011 are over the yardsticks, not over the
@@ -367,7 +369,11 @@ const DATA = {
     { prop: "P09", feature: "Camera aim in the shape model", entry: "R019", date: "2026-10-30", dr: "—", dc: "—", status: "dropped",
       why: "The simulated camera failed two of four fidelity gates on `tracking` (peak correlation 0.9115 against ours 0.843; dead/alive speed ratio 0.575 against 0.128); no retry, code removed. No benchmark number." },
     { prop: "P20", feature: "PathCRF checkpoint on its held-out match (step 0)", entry: "R022", date: "2026-10-31", dr: "—", dc: "—", status: "dropped",
-      why: "Team accuracy on the gap frames, 90,449 primary frames: PathCRF 0.8571 against P07 0.8522, Δ +0.0049 pooled (declared bar +0.04; PathCRF by its own protocol on the clean match 0.9172, not like for like). No retry; code removed. A measurement, not a spellF1 entry." }
+      why: "Team accuracy on the gap frames, 90,449 primary frames: PathCRF 0.8571 against P07 0.8522, Δ +0.0049 pooled (declared bar +0.04; PathCRF by its own protocol on the clean match 0.9172, not like for like). No retry; code removed. A measurement, not a spellF1 entry." },
+    { prop: "P21", feature: "Wrong-team slots at the ball (step 0)", entry: "A16", date: "2026-10-31", dr: "—", dc: "—", status: "dropped",
+      why: "Step 0 only: over-11 frames are 0.1097 of the candidate frames against 0.1286 of graded frames, ratio 0.8532 against the declared 1.5; A14's bound stands. The measuring tool is kept. No benchmark number." },
+    { prop: "P22", feature: "EM label-shift prior on the shape model (a)", entry: "R020", date: "2026-10-31", dr: "—", dc: "—", status: "dropped",
+      why: "Dropped at the feasibility gate: EM's share was 0.0538 from the true one on average against 0.0623 for guessing 0.5 (ratio 0.863, gate 0.75), one match carrying 47% of the error; neither retry condition held. No grid ran, no F1 was produced; code removed." }
   ],
   statuses: {
     adopted: { label: "adopted", cls: "ok", glyph: "✓" },
