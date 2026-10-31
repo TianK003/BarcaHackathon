@@ -10,8 +10,7 @@
 **Terms.** The *benchmark* is seven open DFL/IDSSE matches of other games, their tracking degraded to look like ours
 (our ball-gap pattern, tracklet lengths, wrong-team slots). Its *fidelity gates* are statistics the copy must match ours
 within tolerances fixed in advance. *Pooled spellF1* is the official scorer's spellF1 over all seven matches' halves as
-one file, scored against a *raw* and a *coarse* truth (section 5). *Nats* are units of log-likelihood, in which the
-decoder weighs evidence against its switch costs.
+one file, scored against a *raw* and a *coarse* truth (section 5).
 
 ## 1. Approach
 
@@ -25,9 +24,10 @@ frame P(ball in play) (`alive`) and P(home has it | in play) (`home`), or no opi
 per graded half, a *refiner* adjusts the edges, and the *output* stage writes and validates the CSV.
 
 **The decoder** (P06) is a three-state hidden Markov model over `H`, `A` and `D`, decoded by Viterbi. Each source
-adds its log-likelihood to the states it speaks for; silence adds nothing. A change of team costs 4 nats, a change into
-or out of `D` 32, a run of `H` or `A` lasts at least 35 frames (1.4 s) and a run of `D` at least 25 (R010, R013). A
-possession is then an interval whose two edges must be paid for, which is what spellF1 scores.
+adds its log-likelihood to the states it speaks for; silence adds nothing. A change of team costs 4 nats (units of
+log-likelihood), a change into or out of `D` 32, a run of `H` or `A` lasts at least 35 frames (1.4 s) and a run of `D`
+at least 25 (R010, R013). A possession is then an interval whose two edges must be paid for, which is what spellF1
+scores.
 
 **Four sources:** `controlled_touch` (P04, `home`), a control rule where the ball is seen (section 4);
 `dead_ball_model` (P05, `alive`), boosted trees on 30 play features (R009); `shape_possession` (P07, `home`), boosted
@@ -74,8 +74,6 @@ that: they train on a CPU, and each feature can be checked against how our track
 - **P19, a learned team model where the ball is seen** (R021): out-of-fold per-frame accuracy +0.0160 over `main.toml`'s
   decoded labels, pooled, where +0.020 was needed in the pool and in 6 of the 7 matches; 3 matches reached it.
 
-Not built: more labelled tracking (P13), the broadcast (P15), and the ideas of section 6.
-
 ### Labelled data
 
 We labelled nothing by hand, on any game. The labelled data used are all about other games:
@@ -102,12 +100,9 @@ three ways:
 Smart Tagging is automatic, without manual review (FAQ.md), and the pseudo-labels behind its constant 0.76 came from an
 algorithm, decided by no person. Its strength (per frame, weight 0.2) was Tian's pick of two declared options, made
 after seeing label-free aggregates of our own predictions (the `D` share, possessions per half, frames changed); no
-score or label entered it (R017). We degrade the DFL tracking and say so, as CC BY 4.0 asks;
-pipeline/benchmark/sources.py checks each DFL file's size and md5.
+score or label entered it (R017). We degrade the DFL tracking and say so, as CC BY 4.0 asks.
 
 ## 3. Missing and noisy tracking
-
-Measured on our match (aggregates only), and what the pipeline does about each.
 
 - **Long ball gaps.** Gaps under 2 s hold 0.1% of the missing frames and the p90 gap is 34 s (A01); coverage falls
   through each half (section 6). *Response:* no interpolation. The decoder keeps its state, and the shape model and the
@@ -187,18 +182,15 @@ baselines on the benchmark score `smooth50` 0.2018 / 0.1842 and `smooth125` 0.16
 - R011, + shape model, 0.5159 / 0.5591: +0.0942 raw, 7 in 7.
 - R012, + edge shift, 0.5164 / 0.5592: +0.0005 raw (p 0.5000), adopted because its rule says so, not because it helps.
 - R013, touch rule and decoder re-chosen, 0.5430 / 0.5593: +0.0267 raw (p 0.0156, 7 in 7), level coarse (+0.0001).
-- R017, + Smart Tagging: the tag votes' agreement with our touch-rule pseudo-labels, 0.761 against a bar of 0.75. The
-  benchmark has no tags, so their strength is untested (section 6).
-
-The full record's section 5 traces every constant of `main.toml` to its entry.
+- R017, + Smart Tagging: the tag votes' agreement 0.761 against a bar of 0.75; their strength is untested (section 6).
 
 **On our match, without labels:** `D` 35.93% of the graded frames, 413 possessions, no `X` in a graded block, the same
 sha256 twice (R017). The shape model agrees with the touch episodes on 0.8251 of 41,052 frames, above its declared gate
 of 0.7486 (R011).
 
 **Where the remaining score is** (A13). On the benchmark a perfect team would add +0.1942 raw where the ball is seen
-and +0.1764 in the gaps, a perfect dead ball only +0.0290, which is why P19 to P22 attacked the team. The benchmark
-overstates the dead ball (section 6), so the split may differ on our match.
+and +0.1764 in the gaps, a perfect dead ball only +0.0290. The benchmark overstates the dead ball (section 6), so the
+split may differ on our match.
 
 ## 6. Limitations
 
@@ -241,7 +233,7 @@ py -3.11 -m venv .venv                         # macOS/Linux: python3.11 -m venv
 ```
 
 - **One command** goes from `data/` to the CSV, written with LF line endings and validated by the official checks
-  (without `--out`: `evaluation/results/main.csv`). Its sha256 is the header's, the same on two runs (R017).
+  (without `--out`: `evaluation/results/main.csv`).
 - **Pins:** Python 3.11.9, and every package the pipeline imports at an exact version in `requirements-pipeline.txt`
   (numpy 2.4.6, pandas 3.0.6). Both models are JSON under `pipeline/models/`, kept LF by `.gitattributes` and read with
   numpy only.
@@ -253,11 +245,14 @@ py -3.11 -m venv .venv                         # macOS/Linux: python3.11 -m venv
 .venv/Scripts/python pipeline/benchmark/train_dead_ball.py --model hgb --verify  # retrains P05's model, compares (R009)
 .venv/Scripts/python pipeline/benchmark/train_shape.py --verify                  # the same for P07's (R011)
 .venv/Scripts/python pipeline/benchmark/run.py pipeline/configs/main.toml --drop-match-only --truth both
-                                                                                  # 0.5430 raw, 0.5593 coarse (R017)
 .venv/Scripts/python pipeline/selftest.py --data       # rebuilds the organisers' four baselines byte for byte
 ```
 
-[A17: reproduction from a fresh clone, filled in by the controller]
+**From a fresh clone** (A17). The pushed repository (`5f0145c`) was cloned and run in a new Python 3.11.9 venv built
+from the requirements files, with a data folder holding only the raw bundle and no caches. `main.csv` came out as
+`7ba575c0…` on two runs at one BLAS thread and on a third at the default threads; the validator and all the self-tests passed, both
+models retrained identical to the committed files, and the benchmark returned 0.5430 / 0.5593 to the last digit. The
+machine was an AMD Ryzen 5 5500U with 15.3 GB RAM, Windows 11, CPU only; a second machine has not been tried yet.
 
 ## References
 
