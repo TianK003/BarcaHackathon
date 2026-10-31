@@ -6623,33 +6623,61 @@ It then goes through the tutorial's inference (`use_crf`, `decode="indep"`, 10 s
 **Stops.** No clean pass by 06:30: no verdict, no retry spent. No new heavy work after 08:30. A go stops at step 0, because step 1 (a GPU retraining, numpy inference for byte-identical CSVs) is Tian's.
 
 **Part 2a: the clean reproduction (2026-10-31, run by the controller; a correctness check, not the verdict).**
-- J03WR9 through their own preprocessing, inference and metric (`runner.py clean --match J03WR9`, 1 torch thread): **team accuracy 0.9164**, against the declared gate ≥ 0.884 (paper 0.924). **The gate passes.**
-- Edge accuracy 0.695 (tutorial 0.6964), event F1 0.756 (tutorial 0.7569), 17,168 five-fps steps (tutorial 17,168), inference 200 s.
-- `runner.py smoke` and `selftest.py --torch` passed. The checkpoint's sha256, recorded at the first verified fetch: `55757d9dca9777d60356ba368dc315867ea1ae38e90c332e935b9c5be72d83c9`.
-- The code of the runner was fixed against their real API before this run (device `cpu`, the touches as events, the four-value `inference`): usage fixes, named in `.superpowers/sdd/2026-10-31-p20-pathcrf/task-3-runner-report.md`.
+- J03WR9 through their own preprocessing, inference and metric (`runner.py clean --match J03WR9`, one torch thread):
+  **team accuracy 0.9164**, against the declared gate of at least 0.884 (paper 0.924). **The gate passes.**
+- Edge accuracy 0.695 (tutorial 0.6964), event F1 0.756 (tutorial 0.7569), 17,168 five-fps steps (tutorial 17,168),
+  inference 200 s.
+- `runner.py smoke` and `selftest.py --torch` passed. The checkpoint's sha256, recorded at the first verified fetch:
+  `55757d9dca9777d60356ba368dc315867ea1ae38e90c332e935b9c5be72d83c9`.
+- The runner was fixed against their real API before this run (device `cpu`, the touches as events, the four-value
+  `inference`): usage fixes, in commits `5e437a9` to `c05d3e3`.
 
 **Part 2b: the verdict (2026-10-31, lane B; runner and adapter at commit `2163406`, runs by the controller).**
-Commands, in this order: `adapter.py prepare --match J03WR9 --profile tracking --seeds 0 1 2` (28 s), `runner.py degraded --match J03WR9 --profile tracking --seeds 0 1 2` (one torch thread, 165 to 181 s a seed, 387 to 389 windows a seed, none skipped), `score.py --match J03WR9 --profile tracking --seeds 0 1 2`. The logs of the last two are `p20-degraded` and `p20-score` under `.superpowers/sdd/run-2026-10-30/logs/`; `main.toml` stood at its pinned sha256 `124a38ad…`.
+Commands, in this order: `adapter.py prepare --match J03WR9 --profile tracking --seeds 0 1 2` (28 s),
+`runner.py degraded --match J03WR9 --profile tracking --seeds 0 1 2` (one torch thread, 165 to 181 s a seed, 387 to 389
+windows a seed, none skipped), `score.py --match J03WR9 --profile tracking --seeds 0 1 2`. `main.toml` stood at its
+pinned sha256 `124a38ad…`.
 - **The reference reproduced exactly:** P07 on the literal frames, silent left out, gave 96,442 frames and 0.8495.
-- **Primary set, 90,449 frames (graded, truth H or A, ball missing, `main.toml` decodes H or A), pooled over seeds 0 to 2:** P07 0.8522, PathCRF 0.8571, **Δ +0.0049**. Per seed Δ: seed 0 −0.0031, seed 1 −0.0006, seed 2 +0.0170.
-- **Verdict: NO-GO.** The pooled Δ is below +0.04 and every seed is below +0.02. Advisor (for Tian): the retry did not fire mechanically, because the declared condition is a no-go with at least +0.04 on the windows with neither a join nor a team over 11, and that class gave −0.0110.
+- **Primary set, 90,449 frames (graded, truth H or A, ball missing, `main.toml` decodes H or A), pooled over seeds 0
+  to 2:** P07 0.8522, PathCRF 0.8571, **Δ +0.0049**. Per seed Δ: seed 0 −0.0031, seed 1 −0.0006, seed 2 +0.0170
+  (the per-seed frames and accuracies were not recorded in this entry).
+- **Verdict: NO-GO.** The pooled Δ is below +0.04 and every seed is below +0.02. By part 1's declared condition,
+  applied mechanically by the scorer (retry allowed: False), the retry did not fire: it needs at least +0.04 on the
+  windows with neither a join nor a team over 11, and that class gave −0.0110. No advisor ruling was made on it.
 
-| set (pooled) | frames | P07 | PathCRF | Δ | out of play | silent |
+| set (pooled) | frames | P07 | PathCRF | Δ | PathCRF out of play | PathCRF silent |
 |---|---|---|---|---|---|---|
 | primary (raw truth) | 90,449 | 0.8522 | 0.8571 | +0.0049 | 0.023 | 0.000 |
 | literal (raw truth) | 96,442 | 0.8495 | 0.8038 | −0.0457 | 0.022 | 0.062 |
 | primary, coarse truth | 90,449 | 0.8501 | 0.8319 | −0.0182 | 0.023 | 0.000 |
-| primary, PathCRF on the clean match | 90,449 | 0.8522 | 0.9172 | +0.0650 | 0.001 | 0.000 |
+| primary; PathCRF by their protocol on the clean match, P07 on degraded tracking | 90,449 | 0.8522 | 0.9172 | +0.0650 | 0.001 | 0.000 |
 | window with a join | 33,942 | 0.8629 | 0.8840 | +0.0211 | 0.019 | 0.000 |
 | window with a team over 11 | 22,941 | 0.8525 | 0.8720 | +0.0195 | 0.015 | 0.000 |
 | window with neither | 44,131 | 0.8424 | 0.8314 | −0.0110 | 0.028 | 0.000 |
 | outside any window | 0 | – | – | – | – | – |
 
-The classes with a join and with a team over 11 overlap; "neither" is the retry class. The clean run's frames all mapped to rows (146,810 mapped, none unmapped, alive agreement 1.0). The held or interpolated node-frame share was 0.0504. The adapter, per seed: 387 to 389 windows, about 85,000 rows covered, no short run, 175 to 211 joins, 91 to 118 windows with a team over 11, 243 to 282 dropped nodes, 86 to 120 padded nodes per team, `main.toml` decoding D on 0.417 to 0.422 of the graded frames.
+The classes with a join and with a team over 11 overlap; "neither" is the retry class (no join and no team over 11 at
+one frame; the adapter still pads, holds and drops chains beyond 11 in those windows). The clean row mixes two things:
+PathCRF's number is their own protocol on the clean match (the truth's own in-play episodes, true identities,
+whole-episode inference), P07's is the degraded tracking's. P07 was never run on clean tracking. All the clean run's
+frames mapped to rows (146,810 mapped, none unmapped, alive agreement 1.0). The held or interpolated node-frame share
+was 0.0504. The adapter, per seed: 387 to 389 windows, about 85,000 rows covered, no short run, 175 to 211 joins, 91 to
+118 windows with a team over 11, 243 to 282 dropped nodes, 86 to 120 padded nodes per team, `main.toml` decoding D on
+0.417 to 0.422 of the graded frames.
 
-**Readings, hedged.** PathCRF's lead on clean tracking (+0.0650 on these frames; 0.9172 against P07's 0.8522) almost vanishes under our degradation (+0.0049), so in the gaps the tracking quality, not the model, looks like the binding constraint. Under the coarse truth it is below P07 (−0.0182), and where the adapter had nothing to repair it is below too (−0.0110). Step 1 (a GPU retraining on degraded copies) is not pursued tonight and is Tian's call. The only nearer thing to a lead is the windows with joins (+0.0211, 33,942 frames), which is below the bar and is not the retry condition.
+**Readings, hedged.** PathCRF by its own protocol on the clean match scored 0.9172 on these frames, against 0.8571
+under our degradation and the adapter (and P07's 0.8522 on degraded tracking). The run cannot separate the degraded
+tracking, the adapter's completions (D1 to D4) and the segmentation (their in-play episodes from the truth against
+`main.toml`'s), so the fall is a possibility to investigate, not a finding about where the constraint lies. Under the
+coarse truth PathCRF is below P07 (−0.0182). By window class, PathCRF does best on the windows with joins (+0.0211,
+33,942 frames) and with a team over 11 (+0.0195, 22,941), the windows the adapter repaired most, and worst on those
+with neither (−0.0110); this is the opposite of the retry's premise, and both leads are below the bar. Step 1 (a GPU
+retraining on degraded copies) is not pursued tonight and is Tian's call.
 
-**What the numbers do not say.** One held-out match. J03WR9 is a Fortuna Düsseldorf home game, as are four of the other benchmark matches. The 92.4% of the paper is event-split possession on in-play frames, not DFL's flag. The adapter's completions (D1 to D4) are charged to PathCRF, and a retrained model on degraded copies could do better. BAR-ATH is not measured.
+**What the numbers do not say.** One held-out match. J03WR9 is a Fortuna Düsseldorf home game, as are four of the other
+benchmark matches. The 92.4% of the paper is event-split possession on in-play frames, not DFL's flag. The adapter's
+completions (D1 to D4) are charged to PathCRF, and a model retrained on degraded copies could do better. BAR-ATH is not
+measured.
 
 **Outcome.** P20 is dropped; the code is removed from the branch, recoverable at `2163406`.
 
