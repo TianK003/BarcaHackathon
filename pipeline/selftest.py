@@ -4184,6 +4184,368 @@ def test_run_end_to_end_synthetic_shape_possession():
         expect_error(ConfigError, lambda: load_config(unknown), "shape_possession", "radius")
 
 
+# -- the recalibration helper (P22(b)) --------------------------------------------------------------------------------
+#
+# The synthetic data of the design's section 2: z | home is N(1.2, 2.4) and z | away N(-1.2, 2.4), 2.4 being the
+# variance, which makes z the exact log-likelihood ratio (a Gaussian's has a variance of twice its mean). The model
+# under test says z - b_true, so b_true is what a fit must recover, and the teacher's labels are the true classes
+# flipped at a rate per class. The fits run on arrays; the teacher's rows run on a hand-built touch scene.
+
+RECAL_EPSILON = 0.07
+RECAL_BLOCKS = [(100, 6100), (6300, 12300), (12500, 18500)]    # three graded blocks of an 18,600-frame match
+RECAL_PLANTED = (-0.6, 0.5, 0.6)                              # the offset each block's model is missing
+
+
+def recal_sample(rng, n, share, b_true, flip_home=0.07, flip_away=0.07):
+    """(z, y): the model's logit and the teacher's noisy 0/1 labels of n rows, `share` of them truly home."""
+    truth = (rng.random(n) < share).astype(np.int64)
+    ratio = np.where(truth == 1, 1.2, -1.2) + rng.normal(size=n) * np.sqrt(2.4)
+    flipped = rng.random(n) < np.where(truth == 1, flip_home, flip_away)
+    return ratio - b_true, np.where(flipped, 1 - truth, truth)
+
+
+def recal_frames(seed=0, rate=0.45):
+    """(z, y, rows, blocks) as P07 and teacher_labels would give them over the three blocks: z on every frame, y a float
+    that is NaN where the teacher says nothing, rows where it speaks (a share `rate` of each block's frames). The
+    ungraded frames between the blocks hold rows too, one class at a wrong z: they would move a fit that read them."""
+    rng = np.random.default_rng([seed, 1000])
+    z, y, rows = np.full(18600, np.nan), np.full(18600, np.nan), np.zeros(18600, dtype=bool)
+    for (start, stop), planted in zip(RECAL_BLOCKS, RECAL_PLANTED):
+        block_z, block_y = recal_sample(rng, stop - start, 0.5, planted)
+        speaks = rng.random(stop - start) < rate
+        z[start:stop], y[start:stop], rows[start:stop] = block_z, np.where(speaks, block_y, np.nan), speaks
+    for start, stop in ((6100, 6300), (12300, 12500)):
+        z[start:stop], y[start:stop], rows[start:stop] = -5.0, 1.0, True
+    return z, y, rows, list(RECAL_BLOCKS)
+
+
+def raised_value_error(function):
+    """The ValueError that `function` raises, or an AssertionError if it raises nothing."""
+    try:
+        function()
+    except ValueError as error:
+        return error
+    raise AssertionError("expected a ValueError, nothing was raised")
+
+
+def test_recalibration_e2_recovers_offsets():
+    from pipeline.evidence import recalibration
+    cell = 0
+    for share in (0.35, 0.5, 0.65):
+        for b_true in (-0.5, 0.0, 0.5):
+            errors = []
+            for seed in range(5):
+                z, y = recal_sample(np.random.default_rng([seed, cell]), 20000, share, b_true)
+                errors.append(abs(recalibration.noise_aware_offset(z, y, epsilon=RECAL_EPSILON).offset - b_true))
+            assert np.mean(errors) <= 0.03, "share {}, b_true {}: mean |error| {:.4f}".format(
+                share, b_true, np.mean(errors))
+            cell += 1
+
+
+def test_recalibration_e1_leans_to_the_minority():
+    # Why E2 is the one served. At a home share of 0.65 the away rows are the minority and the dirtier ones (12% of the
+    # labelled-away rows are truly home at 7% noise, against 4% of the labelled-home rows that are truly away), and
+    # E1's weights, balanced on the noisy classes, pull it towards them. E2 corrects the noise and does not lean.
+    from pipeline.evidence import recalibration
+    balanced, noise_aware = [], []
+    for seed in range(5):
+        z, y = recal_sample(np.random.default_rng([seed, 100]), 20000, 0.65, 0.0)
+        balanced.append(recalibration.balanced_offset(z, y).offset)
+        noise_aware.append(recalibration.noise_aware_offset(z, y, epsilon=RECAL_EPSILON).offset)
+    assert np.mean(balanced) < -0.05 and max(balanced) < -0.05, balanced
+    assert abs(np.mean(noise_aware)) <= 0.03, noise_aware
+
+
+def test_recalibration_relabelling_negates_the_offset():
+    # Swapping the two teams (z -> -z, y -> 1 - y) negates the offset, through the fit, the prior's logit and its clip.
+    from functools import partial
+    from pipeline.evidence import recalibration
+    clipped = []
+    cases = ((0.5, 0.0), (0.65, 0.5), (0.35, -0.5), (0.97, 0.2), (0.03, -0.2))   # the last two reach the clip of pi_hat
+    for index, (share, b_true) in enumerate(cases):
+        z, y = recal_sample(np.random.default_rng([7, index]), 8000, share, b_true)
+        for fit in (partial(recalibration.noise_aware_offset, epsilon=RECAL_EPSILON), recalibration.balanced_offset):
+            one, other = fit(z, y), fit(-z, 1 - y)
+            assert abs(one.offset + other.offset) <= 1e-9, (share, one, other)
+            assert abs(one.share + other.share - 1.0) <= 1e-12, (share, one, other)
+            if one.pi_hat is not None:                                   # E2: the prior's logit and its clip
+                assert abs(one.pi_hat + other.pi_hat - 1.0) <= 1e-12, (share, one, other)
+                clipped.append(one.pi_hat in recalibration.PI_CLIP)
+    assert clipped == [False, False, False, True, True], "the clip of pi_hat was not exercised: {}".format(clipped)
+
+
+def test_recalibration_ignores_row_order():
+    from functools import partial
+    from pipeline.evidence import recalibration
+    z, y = recal_sample(np.random.default_rng(5), 5000, 0.6, 0.3)
+    for fit in (partial(recalibration.noise_aware_offset, epsilon=RECAL_EPSILON), recalibration.balanced_offset):
+        base = fit(z, y)
+        for seed in range(3):
+            order = np.random.default_rng(seed).permutation(len(z))
+            assert fit(z[order], y[order]) == base, (fit, seed)       # every field, bit for bit
+        # What makes that so: every sum that decides an offset is an exact math.fsum. (A plain sum would give the same
+        # offset here, to the bit, so the order is not what shows it: count the calls.)
+        calls, real = [], math.fsum
+        math.fsum = lambda values: calls.append(len(values)) or real(values)
+        try:
+            fit(z, y)
+        finally:
+            math.fsum = real
+        assert len(calls) >= 40 and set(calls) == {len(z)}, "the score is not summed by math.fsum: {}".format(calls[:3])
+
+
+def test_recalibration_refuses_one_class_and_reports_no_root():
+    from functools import partial
+    from pipeline.evidence import recalibration
+    fits = (partial(recalibration.noise_aware_offset, epsilon=RECAL_EPSILON), recalibration.balanced_offset)
+    z = np.linspace(-3.0, 3.0, 60)
+    for fit in fits:
+        for label in (0, 1):
+            error = raised_value_error(lambda: fit(z, np.full(60, label)))
+            assert not isinstance(error, recalibration.NoRoot) and "both classes" in str(error), error
+    # Every home row at z = +50 and every away row at -50: the score is about 1e-16 at the bracket's ends, but its sign
+    # is right, so there is a root, where the two classes' terms balance. (A sigma * (1 - sigma) made as 1 - sigma
+    # rounds to 0 on the home rows here and loses the root.)
+    z = np.concatenate([np.full(60, 50.0), np.full(40, -50.0)])
+    y = np.concatenate([np.ones(60, dtype=np.int64), np.zeros(40, dtype=np.int64)])
+    found = recalibration.noise_aware_offset(z, y, epsilon=RECAL_EPSILON)
+    assert abs(found.s - 0.5 * math.log(60 / 40)) < 1e-9, found
+    assert abs(recalibration.balanced_offset(z, y).offset) < 1e-9, "balanced classes at +-50 are balanced at b = 0"
+    # None: z = -30 everywhere says the model is 30 nats off, and the root (s = 30 + logit of the share) is outside the
+    # bracket. Nor does a model with no signal and 98% home rows have one, since 0.98 is above 1 - epsilon.
+    y = np.arange(100) % 2
+    for fit in fits:
+        error = raised_value_error(lambda: fit(np.full(100, -30.0), y))
+        assert isinstance(error, recalibration.NoRoot) and "recalibration" in str(error), error
+    mostly_home = np.concatenate([np.ones(98, dtype=np.int64), np.zeros(2, dtype=np.int64)])
+    error = raised_value_error(lambda: fits[0](np.zeros(100), mostly_home))
+    assert isinstance(error, recalibration.NoRoot), error
+    assert issubclass(recalibration.NoRoot, ValueError)
+
+
+def test_recalibration_block_offsets_leave_one_block_out():
+    from functools import partial
+    from pipeline.evidence import recalibration
+    fit = partial(recalibration.noise_aware_offset, epsilon=RECAL_EPSILON)
+    z, y, rows, blocks = recal_frames()
+
+    def frames(*indices):   # a mask of the frames of these blocks
+        mask = np.zeros(len(z), dtype=bool)
+        for index in indices:
+            mask[blocks[index][0]:blocks[index][1]] = True
+        return mask
+
+    def fitted_on(mask, labels=y):
+        return fit(z[mask], labels[mask].astype(np.int64))
+
+    found = recalibration.block_offsets(z, y, rows, blocks, fit=fit)
+    assert len(found) == 3
+    for k in range(3):
+        pool = frames(*[j for j in range(3) if j != k]) & rows & np.isfinite(z)
+        expected = fitted_on(pool)
+        assert found[k].offset == expected.offset and found[k].fitted == expected and found[k].fallback is None, k
+        assert (found[k].rows_home, found[k].rows_away) == (int((y[pool] == 1).sum()), int((y[pool] == 0).sum()))
+        assert min(found[k].rows_home, found[k].rows_away) > 2000
+        # the check has teeth: no planted offset is the mean of the other two, so the block's own rows would give
+        # another offset
+        assert abs(fitted_on(frames(k) & rows).offset - found[k].offset) > 0.3, k
+    # block k's own labels never reach block k's offset, and every other block's offset moves when they change
+    for k, (start, stop) in enumerate(blocks):
+        relabelled = y.copy()
+        relabelled[start:stop] = 1.0 - relabelled[start:stop]          # NaN stays NaN
+        again = recalibration.block_offsets(z, relabelled, rows, blocks, fit=fit)
+        assert again[k] == found[k], "block {}'s offset moved with its own labels".format(k)
+        assert all(again[j].offset != found[j].offset for j in range(3) if j != k)
+    # the floor: 500 rows of a class fit and 499 do not, whichever class is short
+    for label, counted in ((0, "rows_away"), (1, "rows_home")):
+        order = np.flatnonzero(frames(1, 2) & rows & np.isfinite(z) & (y == label))      # block 0's pool, one class
+        for keep, fallback in ((499, "few rows"), (500, None)):
+            thinned = rows.copy()
+            thinned[order[keep:]] = False
+            result = recalibration.block_offsets(z, y, thinned, blocks, fit=fit)[0]
+            assert getattr(result, counted) == keep and result.fallback == fallback, (label, keep, result)
+            if fallback:
+                assert result.offset == 0.0 and result.fitted is None, result
+            else:
+                expected = fitted_on(frames(1, 2) & thinned & np.isfinite(z))
+                assert result.fitted == expected and result.offset == expected.offset, result
+    # a frame whose z is NaN is no row: 500 away rows, one of them without a z, are 499
+    order = np.flatnonzero(frames(1, 2) & rows & np.isfinite(z) & (y == 0))
+    thinned = rows.copy()
+    thinned[order[500:]] = False
+    holed = z.copy()
+    holed[order[0]] = np.nan
+    result = recalibration.block_offsets(holed, y, thinned, blocks, fit=fit)[0]
+    assert (result.rows_away, result.fallback, result.offset) == (499, "few rows", 0.0), result
+    assert recalibration.block_offsets(z, y, thinned, blocks, fit=fit)[0].rows_away == 500
+    # what `fit` is given: the finite z of the pool and its labels as 0/1 integers
+    seen = []
+
+    def recorded(z_rows, y_rows):
+        seen.append((z_rows.dtype, y_rows.dtype, set(np.unique(y_rows).tolist()), bool(np.isfinite(z_rows).all())))
+        return fit(z_rows, y_rows)
+
+    assert recalibration.block_offsets(holed, y, rows, blocks, fit=recorded) == \
+        recalibration.block_offsets(holed, y, rows, blocks, fit=fit)
+    assert seen == [(np.float64, np.int64, {0, 1}, True)] * 3, seen
+    # no exception, and a reason: one class only, no root, no other block
+    small, flat = [(0, 100), (100, 200)], np.zeros(200)
+    labels = np.concatenate([np.ones(98), np.zeros(2), np.ones(100)])
+    only = recalibration.block_offsets(flat, labels, np.ones(200, dtype=bool), small, fit=fit, min_rows=2)
+    assert [b.fallback for b in only] == ["few rows", "no root"], only
+    assert [b.offset for b in only] == [0.0, 0.0] and [b.fitted for b in only] == [None, None], only
+    assert [(b.rows_home, b.rows_away) for b in only] == [(100, 0), (98, 2)], only
+    alone = recalibration.block_offsets(z, y, rows, [blocks[0]], fit=fit)
+    assert (alone[0].fallback, alone[0].rows_home, alone[0].rows_away) == ("few rows", 0, 0), alone
+
+
+def test_recalibration_constants_are_the_designs():
+    # Fixed before any run (the design's section 2): to change one is a decision, not an edit.
+    from pipeline.evidence import recalibration
+    assert (recalibration.TEACHER_CONFIDENCE, recalibration.TEACHER_HOLD) == (0.99, 0.5)
+    assert (recalibration.ALIVE_LEVEL, recalibration.MIN_ROWS, recalibration.PI_CLIP) == (0.5, 500, (0.05, 0.95))
+    assert (recalibration.BRACKET, recalibration.TOLERANCE, recalibration.OFFSET_DECIMALS) == ((-10.0, 10.0), 1e-12, 9)
+
+
+def test_recalibration_adapted_logit():
+    from pipeline.evidence import recalibration
+    z = np.random.default_rng(2).normal(size=100) * 3.0
+    z[[12, 45, 70]] = np.nan                                             # one inside a block, one between, one inside
+    z.flags.writeable = False                                            # P07's logits are read-only
+    blocks = [(10, 40), (50, 90)]
+    adapted = recalibration.adapted_logit(z, blocks, [0.5, -0.25])
+    expected = z.copy()
+    expected[10:40] += 0.5
+    expected[50:90] += -0.25
+    assert adapted.dtype == np.float64 and adapted.flags.writeable and adapted is not z
+    assert np.array_equal(adapted, expected, equal_nan=True)
+    outside = np.ones(100, dtype=bool)
+    outside[10:40] = outside[50:90] = False
+    assert np.array_equal(adapted[outside], z[outside], equal_nan=True), "frames outside the blocks are untouched"
+    assert np.array_equal(np.isnan(adapted), np.isnan(z)), "NaN stays NaN, and nothing becomes NaN"
+    # the offsets may be what block_offsets returned, and zero offsets give z back exactly
+    given = [recalibration.BlockOffset(0.5, 1, 1, None, None), recalibration.BlockOffset(-0.25, 1, 1, None, None)]
+    assert np.array_equal(recalibration.adapted_logit(z, blocks, given), adapted, equal_nan=True)
+    assert np.array_equal(recalibration.adapted_logit(z, blocks, [0.0, 0.0]), z, equal_nan=True)
+    assert np.array_equal(recalibration.adapted_logit(z, [], []), z, equal_nan=True)
+
+
+def touch_dead_model(alive_leaf, dead_leaf, prior=0.5):
+    """A dead-ball model of one stump, in the artifact's format: the ball beyond the touchline gets `dead_leaf` as its
+    raw log-odds of alive and any other frame (the ball inside, or not seen) `alive_leaf`."""
+    return {"prior_alive": prior, "baseline": 0.0,
+            "trees": [stump(PLAY_COLUMN["ball_outside_m"], 0.5, alive_leaf, dead_leaf, missing_left=1)]}
+
+
+def teacher_scene():
+    """A run over 200 frames in one block. The ball is still at mid-pitch, missing on 70-79 and still 3 m beyond the
+    touchline from 120 on (a throw-in). Home controls it on 10-29 and 140-159, away on 50-69 and 170-189. On 90-99 both
+    stand beside it, home at 0.6 m and away at 0.9 m: a duel at the default duel radius of 1.0."""
+    n = 200
+    ball = np.tile([30.0, 30.0], (n, 1))
+    ball[70:80] = np.nan
+    ball[120:] = [30.0, -3.0]
+    out = (30.0, -3.0)
+    home = np.fmax.reduce([beside_ball(n, range(10, 30)), beside_ball(n, range(90, 100), (0.6, 0.0)),
+                           beside_ball(n, range(140, 160), ball=out)])
+    away = np.fmax.reduce([beside_ball(n, range(50, 70)), beside_ball(n, range(90, 100), (-0.9, 0.0)),
+                           beside_ball(n, range(170, 190), ball=out)])
+    run = touch_scene(n, ball=ball, slots={0: home, 1: away})
+    run.inputs.game, run.inputs.kickoffs = "BAR-ATH", {}
+    return run
+
+
+def test_recalibration_teacher_labels():
+    from pipeline.evidence import recalibration
+    teacher = {"radius": 1.5, "max_rel_speed": 6.0, "min_frames": 1}
+    run = teacher_scene()
+    expected = np.full(200, np.nan)
+    expected[10:30] = expected[140:160] = 1.0                             # home's episodes
+    expected[50:70] = expected[170:190] = 0.0                             # away's: nothing between them, no hold
+    with tempfile.TemporaryDirectory() as root:
+        model = write_model(root, full=touch_dead_model(3.0, -3.0), name="throw_in.json")
+        y, rows = recalibration.teacher_labels(run, alive_model=model, teacher=teacher)
+        assert y.shape == rows.shape == (200,) and y.dtype == np.float64 and rows.dtype == np.bool_
+        assert np.array_equal(y, expected, equal_nan=True), "y is 1 or 0 on the kept episodes only: {}".format(
+            np.flatnonzero(np.nan_to_num(y, nan=-1.0) != np.nan_to_num(expected, nan=-1.0)))
+        want = np.zeros(200, dtype=bool)
+        want[10:30] = want[50:70] = True                                  # the throw-in's frames are dead: no rows
+        assert np.array_equal(rows, want), np.flatnonzero(rows != want)
+        # the table reaches the rule: a duel radius of 0.5 makes 90-99 home's, a min_frames of 25 drops every episode
+        y, rows = recalibration.teacher_labels(run, alive_model=model, teacher=dict(teacher, duel_radius=0.5))
+        assert (y[90:100] == 1.0).all() and rows[90:100].all() and np.isnan(y[100:140]).all()
+        y, rows = recalibration.teacher_labels(run, alive_model=model, teacher=dict(teacher, min_frames=25))
+        assert np.isnan(y).all() and not rows.any()
+        # a row needs P(alive) >= 0.5: exactly 0.5 stays, a hair under goes
+        y, rows = recalibration.teacher_labels(run, alive_model=write_model(root, full=touch_dead_model(3.0, 0.0),
+                                                                            name="level.json"), teacher=teacher)
+        assert np.array_equal(rows, ~np.isnan(y)), "an alive probability of exactly 0.5 is a row"
+        y, rows = recalibration.teacher_labels(run, alive_model=write_model(root, full=touch_dead_model(3.0, -0.001),
+                                                                            name="under.json"), teacher=teacher)
+        assert np.array_equal(np.flatnonzero(rows), np.r_[10:30, 50:70])
+        # the table is checked before anything is computed: a model file that is not there is not what is complained of
+        with_hold = dict(teacher, hold=0.6)
+        absent = os.path.join(root, "absent.json")
+        expect_error(ValueError, lambda: recalibration.teacher_labels(run, alive_model=absent, teacher=with_hold),
+                     "teacher", "hold")
+        expect_error(ValueError, lambda: recalibration.teacher_labels(run, alive_model=absent, teacher=teacher),
+                     "dead_ball_model", "absent.json")
+    assert recalibration.check_teacher(teacher) == dict(teacher, duel_radius=1.0), "duel_radius defaults to 1.0"
+    assert recalibration.check_teacher(dict(teacher, duel_radius=0.8))["duel_radius"] == 0.8
+    for key, value in (("hold", 0.6), ("confidence", 0.93)):
+        expect_error(ValueError, lambda: recalibration.check_teacher(dict(teacher, **{key: value})), "teacher", key,
+                     "fixes")
+    misspelt = {"radious": 1.5, "max_rel_speed": 6.0, "min_frames": 1}
+    expect_error(ValueError, lambda: recalibration.check_teacher(misspelt), "teacher", "radious", "radius")
+    for key in teacher:
+        short = {k: v for k, v in teacher.items() if k != key}
+        expect_error(ValueError, lambda: recalibration.check_teacher(short), "teacher", key)
+    for bad in (None, [1.5, 6.0, 1], "radius", 1.5):
+        expect_error(ValueError, lambda: recalibration.check_teacher(bad), "teacher", "table")
+
+
+def test_recalibration_rejects_bad_arguments():
+    from functools import partial
+    from pipeline.evidence import recalibration
+    z, y = np.linspace(-2.0, 2.0, 40), np.arange(40) % 2
+    for bad in (0.0, 0.5, -0.1, 0.7, True, "0.07", None, float("nan")):
+        expect_error(ValueError, lambda: recalibration.noise_aware_offset(z, y, epsilon=bad), "recalibration",
+                     "epsilon")
+    recalibration.noise_aware_offset(z, y, epsilon=np.float64(0.07))      # a number from a sweep is fine
+    for fit in (partial(recalibration.noise_aware_offset, epsilon=0.07), recalibration.balanced_offset):
+        expect_error(ValueError, lambda: fit(np.where(np.arange(40) == 3, np.nan, z), y), "recalibration", "finite")
+        expect_error(ValueError, lambda: fit(np.where(np.arange(40) == 3, np.inf, z), y), "recalibration", "finite")
+        expect_error(ValueError, lambda: fit(z, np.where(np.arange(40) == 3, 2, y)), "recalibration", "0 or 1")
+        expect_error(ValueError, lambda: fit(z, np.where(np.arange(40) == 3, np.nan, y)), "recalibration", "0 or 1")
+        expect_error(ValueError, lambda: fit(z[:30], y), "recalibration", "one length")
+        expect_error(ValueError, lambda: fit(z[:0], y[:0]), "recalibration", "both classes")
+        fit(z, y.astype(np.float64))                                      # 0.0 and 1.0 are labels too
+        fit(z, y.astype(bool))
+    z, y, rows, blocks = recal_frames()
+    fit = partial(recalibration.noise_aware_offset, epsilon=0.07)
+    for bad in (0, -1, 1.5, True, None, "500"):
+        expect_error(ValueError, lambda: recalibration.block_offsets(z, y, rows, blocks, fit=fit, min_rows=bad),
+                     "recalibration", "min_rows")
+    for bad in ([(0, 18601)], [(-1, 10)], [(50, 10)], [(1, 2, 3)], [10], [("a", 5)]):
+        expect_error(ValueError, lambda: recalibration.block_offsets(z, y, rows, bad, fit=fit), "recalibration",
+                     "blocks")
+        expect_error(ValueError, lambda: recalibration.adapted_logit(z, bad, [0.0]), "recalibration", "blocks")
+    expect_error(ValueError, lambda: recalibration.block_offsets(z, y[:-1], rows, blocks, fit=fit), "recalibration",
+                 "one length")
+    expect_error(ValueError, lambda: recalibration.block_offsets(z, y, rows[:-1], blocks, fit=fit), "recalibration",
+                 "one length")
+    unlabelled = rows.copy()
+    unlabelled[200] = True
+    labels = y.copy()
+    labels[200] = np.nan
+    expect_error(ValueError, lambda: recalibration.block_offsets(z, labels, unlabelled, blocks, fit=fit),
+                 "recalibration", "0 or 1")
+    expect_error(ValueError, lambda: recalibration.adapted_logit(z, blocks, [0.1, 0.2]), "recalibration", "offsets")
+    for bad in (float("nan"), float("inf")):
+        expect_error(ValueError, lambda: recalibration.adapted_logit(z, blocks, [0.1, bad, 0.2]), "recalibration",
+                     "finite")
+
+
 # -- the dead-ball model (P05) ----------------------------------------------------------------------------------------
 #
 # A hand-made artifact of a couple of trees, so that every number is worked out here and not by the trainer. Its one
