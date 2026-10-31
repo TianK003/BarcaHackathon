@@ -329,6 +329,23 @@ transition costs `switch_restart` on top. Any value above about 2.6 decodes like
 grid were guaranteed by the grid, not observed. Before declaring a penalty grid, compute the largest evidence the
 penalty competes with and put the grid's values on both sides of it; a value above it is a duplicate of `inf`.
 
+**T50 — A decoder's posterior is a product of per-frame terms, so it is several times too sharp, and a rule that reads
+it barely moves; tempering it does not say which way to move.** The `hmm` adds one emission a frame over frames that are
+strongly correlated, so its marginals count the same evidence many times. A19 measured them four to five times too
+sharp (Platt α 0.27 for alive, 0.19 for the team), while each source alone is near calibrated (`dead_ball_model` 1.00,
+P07 1.07 to 1.10). R025 moved each change to the posterior's median, which sat within a frame or so of Viterbi's: 55%
+of the changes moved, by a median of 1 frame, and the score did not move (mean of the two truths -0.0010, 2 wins in 7).
+R025b, the one retry, tempered the posterior at T = 5 from A19's α: the edges moved by a median of 3 frames, but frames
+of weak evidence are as often the old possession's tail as the new one's start, so the edges' errors widened and the
+score fell (-0.0282, 0 wins in 7). Cost: two declared experiments, their code and their benchmark runs, then the code
+removed (recoverable from `171d0bb`). R025's gate was on the prize (A19's clean-pair ladder loss, 0.0704), and A19 had
+already shown the posterior too sharp for the mechanism. Before building on a decoder's posterior:
+- measure its calibration first (`pipeline/benchmark/diagnose.py`), and gate on the mechanism as well as on the prize;
+- do not read `posterior = true`'s array as a probability: where the evidence is not flat, a threshold or a median on
+  it falls on Viterbi's own frame;
+- a flatter posterior spreads an edge without saying where the truth is; what is left of the edges' loss is where the
+  evidence changes, which a better source, not a rule on the posterior, has to fix.
+
 ## Reproducibility and environment
 
 **T20 — Use the team venv.** It runs Python 3.11.9 in `.venv`, with numpy 2.4.6, pandas 3.0.6 and kloppy 3.18.0.

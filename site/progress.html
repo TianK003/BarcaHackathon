@@ -282,7 +282,7 @@ const DATA = {
   title: "Progress",
   subtitle: "The benchmark spellF1 of main.toml by entry, and the feature that moved it",
   asOf: "2026-10-31",
-  footer: "As of 2026-10-31 (R023: our provider's grain is between the two truths, so choices now rank on their mean). [docs/results.md](../docs/results.md) is the source of truth; this page only repeats it. Benchmark scores rank versions of our pipeline on other matches; they are not our leaderboard score.",
+  footer: "As of 2026-10-31 (P23 done: R024 re-chose R013's grids on the mean of the two truths and moved the hold to 0.55; A19 measured where the decoder loses; R025, R025b and R026 were dropped). [docs/results.md](../docs/results.md) is the source of truth; this page only repeats it. Benchmark scores rank versions of our pipeline on other matches; they are not our leaderboard score.",
   links: [
     { href: "index.html", label: "← Team overview", cls: "home" },
     { href: "rules.html", label: "Rules" }
@@ -311,13 +311,21 @@ const DATA = {
     { id: "R012", date: "2026-10-25", raw: 0.5164, coarse: 0.5592, adopted: true, dr: 0.0005, dc: 0.0000, prop: "P02",
       what: "+ P02 shift_edges (+1 / −2 / 0 frames)", note: "Inside noise (p 0.5000, 4 wins in 7); adopted because its declared rule says so, not because it is shown to help." },
     { id: "R013", date: "2026-10-26", raw: 0.5430, coarse: 0.5593, adopted: true, dr: 0.0267, dc: 0.0001, prop: "P04 + P06 + P07",
-      what: "Touch rule and decoder re-chosen: today's `main.toml`", note: "Radius 1.5 m, 6 m/s, 1 frame, hold 0.60; hmm 4/32/35/25. Raw +0.0267, p 0.0156, 7 wins in 7; coarse flat (T33)." },
+      what: "Touch rule and decoder re-chosen", note: "Radius 1.5 m, 6 m/s, 1 frame, hold 0.60; hmm 4/32/35/25. Raw +0.0267, p 0.0156, 7 wins in 7; coarse flat (T33). `main.toml` until R024 (with R017's votes on top, which the benchmark cannot score)." },
     { id: "R014", date: "2026-10-26", raw: 0.5470, coarse: 0.5564, adopted: false, dr: 0.0040, dc: -0.0029, prop: "P17",
       what: "P17's restart vote (`r014_t025_b0`)", note: "Bar not met (+0.0040 raw, p 0.0938); coarse is lower." },
     { id: "R014b", date: "2026-10-26", raw: 0.5433, coarse: 0.5589, adopted: false, dr: 0.0003, dc: -0.0004, prop: "P17",
-      what: "P17's restart states in the decoder (`r014b_s04_b1`)", note: "Bar not met (+0.0003 raw, p 0.8125); P17 dropped." }
+      what: "P17's restart states in the decoder (`r014b_s04_b1`)", note: "Bar not met (+0.0003 raw, p 0.8125); P17 dropped." },
+    { id: "R024", date: "2026-10-31", raw: 0.5363, coarse: 0.5764, adopted: true, dr: -0.0067, dc: 0.0171, prop: "P23 A",
+      what: "R013's grids re-chosen on the mean of the two truths: today's `main.toml`", note: "Only the hold moved, 0.60 to 0.55; the decoder, P07's weight and the shift came back unchanged. Ranked on the mean since R023: +0.0052 (p 0.0469, 6 wins in 7), from a raw loss and a coarse gain." },
+    { id: "R025", date: "2026-10-31", raw: 0.5361, coarse: 0.5745, adopted: false, dr: -0.0002, dc: -0.0018, prop: "P23 C",
+      what: "Posterior edges (`r025_final`)", note: "Guard failed: mean −0.0010, 2 wins in 7. The posterior is too sharp for its median to leave Viterbi's edge (A19)." },
+    { id: "R025b", date: "2026-10-31", raw: 0.5121, coarse: 0.5441, adopted: false, dr: -0.0242, dc: -0.0323, prop: "P23 C",
+      what: "Posterior edges on a posterior tempered at T = 5 (`r025b_final`)", note: "The one retry. Guard failed: mean −0.0282, 0 wins in 7; the edges moved 3 frames and their errors widened. C dropped." },
+    { id: "R026", date: "2026-10-31", raw: 0.5396, coarse: 0.5589, adopted: false, dr: 0.0033, dc: -0.0174, prop: "P23 E",
+      what: "P07 at 0.1 where the ball is seen, 0.2 in the gaps (`r026_v100_g200`)", note: "The best of R026's five configs that differ from `main.toml`, mean −0.0071; every heavier gap weight lost more. No config beat `main.toml`; E dropped." }
   ],
-  chartCaption: "Pooled spellF1 of `main.toml` on the benchmark at each entry that scored it. Filled points were adopted and are joined by the step line, which is the running `main.toml`; hollow points are candidates that were tried and not adopted. Points are spaced by entry, not by date. Select a point (hover, tab, tap) for its feature and its change over the previous adopted point. R015 to R019 changed no score on the benchmark and are in the ledger. Today's `main.toml` also carries P08 (R017), which no benchmark can score (DFL has no tags); `--drop-match-only` switches it off and reproduces R013's numbers.",
+  chartCaption: "Pooled spellF1 of `main.toml` on the benchmark at each entry that scored it. Filled points were adopted and are joined by the step line, which is the running `main.toml`; hollow points are candidates that were tried and not adopted. Points are spaced by entry, not by date. Select a point (hover, tab, tap) for its feature and its change over the previous adopted point. R015 to R023 and A19 changed no score on the benchmark and are in the ledger. Since R023 a choice ranks on the mean of the two truths, so R024 is adopted with a lower raw and a higher coarse score. Today's `main.toml` also carries P08 (R017), which no benchmark can score (DFL has no tags); `--drop-match-only` switches it off and reproduces R024's numbers.",
 
   /* Each proposal's final status: drives the counts on the cards. P12's shift is counted under P02. */
   features: [
@@ -336,6 +344,8 @@ const DATA = {
     { p: "P20", name: "PathCRF paths", status: "dropped" },
     { p: "P21", name: "Wrong-team slots", status: "dropped" },
     { p: "P22", name: "EM label-shift prior (a)", status: "dropped" },
+    { p: "P23 C", name: "Posterior edges", status: "dropped" },
+    { p: "P23 E", name: "P07 weighted apart in the gaps", status: "dropped" },
     { p: "P16", name: "The grain of our provider (Metrica's sample games)", status: "measured" }
   ],
 
@@ -355,7 +365,7 @@ const DATA = {
     { prop: "P02", feature: "Edge shift (+1 / −2 / 0 frames)", entry: "R012", date: "2026-10-25", dr: "+0.0005", dc: "+0.0000", status: "adopted",
       why: "Inside noise; adopted by the declared rule, which reads the lag the pipeline has on DFL." },
     { prop: "P04 + P06 + P07", feature: "Touch rule and decoder re-chosen", entry: "R013", date: "2026-10-26", dr: "+0.0267", dc: "+0.0001", status: "adopted",
-      why: "Today's `main.toml`. Raw +0.0267 (7 wins in 7); coarse flat, the truths disagree on possession length (T33)." },
+      why: "`main.toml` until R024. Raw +0.0267 (7 wins in 7); coarse flat, the truths disagree on possession length (T33)." },
     { prop: "P17", feature: "Restart-team vote", entry: "R014", date: "2026-10-26", dr: "+0.0040", dc: "−0.0029", status: "dropped",
       why: "Bar not met (p 0.0938); the coarse truth goes down." },
     { prop: "P17", feature: "Restart states in the decoder", entry: "R014b", date: "2026-10-26", dr: "+0.0003", dc: "−0.0004", status: "dropped",
@@ -379,14 +389,22 @@ const DATA = {
     { prop: "P22", feature: "EM label-shift prior on the shape model (a)", entry: "R020", date: "2026-10-31", dr: "—", dc: "—", status: "dropped",
       why: "Dropped at the feasibility gate: EM's share was 0.0538 from the true one on average against 0.0623 for guessing 0.5 (ratio 0.863, gate 0.75), one match carrying 47% of the error; neither retry condition held. No grid ran, no F1 was produced; code removed." },
     { prop: "P16", feature: "Metrica's sample games: the grain of our provider's possession", entry: "R023", date: "2026-10-31", dr: "—", dc: "—", status: "measured",
-      why: "A measurement that sets the objective, not a feature. Possession derived from the events of 3 anonymised games by a rule declared before the fetch: 6.20 per alive minute (class both, 5.31 to 7.03) and a median of 4.72 s (class raw, under 4.83 s). Outcome **both**: choices declared from now on rank on the mean of the raw and coarse pooled spellF1s. `main.toml` untouched; the switch timing is not measured." }
+      why: "A measurement that sets the objective, not a feature. Possession derived from the events of 3 anonymised games by a rule declared before the fetch: 6.20 per alive minute (class both, 5.31 to 7.03) and a median of 4.72 s (class raw, under 4.83 s). Outcome **both**: choices declared from now on rank on the mean of the raw and coarse pooled spellF1s. `main.toml` untouched; the switch timing is not measured." },
+    { prop: "P23 A", feature: "R013's touch rule, decoder and P07 weight re-chosen on the mean of the two truths", entry: "R024", date: "2026-10-31", dr: "−0.0067", dc: "+0.0171", status: "adopted",
+      why: "Today's `main.toml`: only the hold moved, 0.60 to 0.55. Mean of the two truths +0.0052 (p 0.0469, 6 wins in 7), the objective since R023; `context` +0.0010. BAR-ATH: 399 possessions (413), `D` 36.00%, 1.66% of graded frames relabelled; `main.csv` `e6496a9b…`, not yet regenerated from a fresh clone." },
+    { prop: "P23 B, D", feature: "The IoU ladder decomposed; the calibration of the sources and the decoder's posterior", entry: "A19", date: "2026-10-31", dr: "—", dc: "—", status: "measured",
+      why: "A measurement, not a feature. The fall from IoU 0.3 to 0.7 is mostly edges on otherwise right possessions (0.0704 on the mean; merges 0.0254, splits 0.0273), which passed R025's gate (0.015). The sources are near calibrated (dead ball α 1.00, P07 1.07 to 1.10); the posterior is 4 to 5 times too sharp (α 0.19 team, 0.27 alive). New tool `diagnose.py`." },
+    { prop: "P23 C", feature: "Posterior edges, then on a posterior tempered at T = 5", entry: "R025, R025b", date: "2026-10-31", dr: "−0.0002, −0.0242", dc: "−0.0018, −0.0323", status: "dropped",
+      why: "Guard failed twice: the posterior's median moved edges by 1 frame (mean −0.0010, 2 wins in 7), and the one retry, tempered at T = 5 (the advisor's ruling), moved them 3 frames and widened their errors (mean −0.0282, 0 wins). Code removed, recoverable from `171d0bb` (T50)." },
+    { prop: "P23 E", feature: "P07 weighted apart in the gaps and where the ball is seen", entry: "R026", date: "2026-10-31", dr: "−0.0031 to +0.0033", dc: "−0.0416 to −0.0174", status: "dropped",
+      why: "Six configs; the rule kept `main.toml`'s weights (0.2, 0.2), which scored as `main.toml` to the last digit. Every heavier gap weight added possessions (3.22 to 3.35 a minute against 3.06) and lost on the mean (−0.010 to −0.020), the coarse truth most. No retry (the advisor: A19 shows P07 calibrated alike in both ball states). Code removed, recoverable from `57013a1`." }
   ],
   statuses: {
     adopted: { label: "adopted", cls: "ok", glyph: "✓" },
     dropped: { label: "dropped", cls: "bad", glyph: "✕" },
     tried: { label: "tried, not adopted", cls: "bad", glyph: "✕" },
     unbenchmarked: { label: "adopted, not benchmarkable", cls: "info", glyph: "◎" },
-    measured: { label: "measured, sets the objective", cls: "info", glyph: "◇" }
+    measured: { label: "measured, not a feature", cls: "info", glyph: "◇" }
   },
 
   publicWindow: {
@@ -397,7 +415,8 @@ const DATA = {
       { id: "R011", what: "+ P07 shape", spell: "0.4000", macro: "0.7151", poss: "20" },
       { id: "R012", what: "+ P02 shift", spell: "0.4000", macro: "0.7159", poss: "20" },
       { id: "R013", what: "Touch rule and decoder re-chosen", spell: "0.4649", macro: "0.7152", poss: "20" },
-      { id: "R017", what: "+ P08 team votes (seen after Tian's pick)", spell: "0.4000", macro: "0.6986", poss: "—" }
+      { id: "R017", what: "+ P08 team votes (seen after Tian's pick)", spell: "0.4000", macro: "0.6986", poss: "—" },
+      { id: "R024", what: "Hold 0.55, on the mean of the two truths", spell: "0.4000", macro: "0.7007", poss: "19" }
     ]
   },
 

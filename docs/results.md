@@ -44,6 +44,10 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R020 | 2026-10-31 | P22(a): an EM label-shift prior on the shape model (the home share from P07's own outputs, added to the logit at s in {0.25, 0.5, 1.0}); part 1: the feasibility gate (mean abs error of EM's share at most 0.75 x that of guessing 0.5), the grid, R014's bar, the BAR-ATH checks; part 2: the gate run | — | — | — | — | dropped 2026-10-31, code removed (recover from `e303365`): the gate failed, 0.0538 against 0.0623 (ratio 0.863, needs 0.75), and neither retry condition held; no grid ran |
 | R021 | 2026-10-31 | P19: a learned team model where the ball is seen (boosted trees on the ball, the nearest slots of both teams, the touch episodes and P07's shape, trained on the seven DFL matches); part 1: the feasibility gate (50 (P19 right - main right) >= frames in 6 of 7 matches and pooled), a 17-config grid, R014's bar plus the LOMO, the BAR-ATH transfer; part 2a: the gate run | — | — | — | — | dropped 2026-10-31, code removed (recover from `15e7e14`): the gate failed, +0.0160 pooled against +0.020 and 3 of 7 matches against 6 (all seven positive); no grid ran |
 | R023 | 2026-10-31 | P16: the grain of H/A/D derived from Metrica's three public sample games' events (`metrica-sports/sample-data` at `e706dd5`, event files only), by a rule taken from Metrica's event definitions; part 1 signed by Tian before any fetch, part 2 the run (`pipeline/benchmark/metrica.py`) | — | — | — | — (a measurement, not a config) | **outcome both**: 6.20 possessions per alive minute (class both, 5.31 to 7.03) and a median of 4.72 s (class raw, under 4.83 s), 1,117 possessions in 3 games, all valid; choices declared from now on rank on the mean of the raw and coarse pooled spellF1s; nothing reopened, `main.toml` untouched |
+| R024 | 2026-10-31 | P23 A: R013's touch rule, decoder and P07 weight re-chosen under R023's objective (the mean of the raw and coarse spellF1s, maximin tie-break): Stage A′ from R013's 192 reports, Stage C′ re-run at its setting (144 configs) | 0.7007 | 0.4000 | 19 / — | 0.5363 raw and 0.5764 coarse (mean 0.5563) against `main`'s 0.5430 and 0.5593 (mean 0.5511): mean Δ +0.0052, p 0.0469, 6 wins in 7 (raw -0.0067, coarse +0.0171) | **adopted**: the touch hold 0.60 → 0.55, the decoder, P07's weight and the shift unchanged; guard passed (`context` mean +0.0010), bar met; BAR-ATH: 399 possessions (413), `D` 36.0%, 1.66% of graded frames relabelled; `main.csv` `e6496a9b…` |
+| A19 | 2026-10-31 | P23 B and D: `main.toml`'s IoU ladder decomposed and its calibration (`diagnose.py`) | — | — | — | mean clean-pair ladder loss 0.0704 (merge 0.0254, split 0.0273); the posterior 4–5× too sharp (Platt α 0.19 team, 0.27 alive), the sources near calibrated | measurement: R025's gate passed |
+| R025, R025b | 2026-10-31 | P23 C: posterior edges, then on a posterior tempered at T = 5 (the one retry) | — | — | — | mean Δ -0.0010 (2 wins) and -0.0282 (0 wins) against `main` | **dropped**: guard failed both times; code removed |
+| R026 | 2026-10-31 | P23 E: P07 weighted apart in the gaps (6 configs) | — | — | — | the identity scored as `main`; every heavier gap weight -0.010 to -0.020 on the mean | **dropped**: no config beat `main`; no retry (advisor); code removed |
 
 ### The four yardsticks on every profile, in one table
 
@@ -1787,6 +1791,168 @@ free-memory guard; the folder and the Python were deleted after, and WSL was shu
 configs, at one thread. Not run on Linux (the advisor's limit for a crash-prone laptop): the default-thread run, the two
 `--verify` runs and the benchmark. Not tried at all: another processor (an Intel CPU), where float results of the same
 wheels could still differ (T20).
+
+### A19 — The IoU ladder decomposed, and the calibration of the sources and the posterior (P23 B and D; declared 2026-10-31, Tian)
+Proposal: P23 (B, D) · Commit: part 1 (this declaration) is committed before any run of it; the run's commit is in part
+2.
+
+**Part 1, declared before any run** (2026-10-31).
+
+**Why, B.** `main.toml`'s pooled spellF1 on `tracking` falls from 0.670 at IoU 0.3 to 0.401 at 0.7 (raw truth; 0.679 to
+0.423 coarse). Part of that is edges placed a few frames off on possessions that are otherwise right, which R025's
+posterior edges could recover. Part is predicted possessions that span two true ones of their team (merges) or true ones
+cut into several (splits), which moving an edge cannot fix. `main.toml` predicts 6,279 possessions against 9,183 raw and
+4,977 coarse. The decomposition says how much is edges: R025's ceiling, and its gate.
+
+**Why, D.** The review (P23) named a 50/50 alive prior in the decoder's `log(2a)`, but `dead_ball_model` already
+subtracts logit(prior_alive), and P07's prior is 0.5 by construction. What is left is whether each source's probability
+means what it says, and whether the decoder's posterior is calibrated. R025 reads that posterior. One 50/50 assumption
+does remain, on team evidence under `D`: `hmm` adds w · log(2h) and w · log(2(1 − h)) to H and A and nothing to D, so
+wherever a team source speaks, the better alive state sits w · log(2 · max(h, 1 − h)) above `D`. That is 0.62 nats a
+frame for a touch episode at confidence 0.93, 0.18 for the hold at 0.60, and up to 0.14 for P07 at 0.2. It is wrong
+exactly where a player handles a dead ball, and the ball is visible on 66% of dead frames (A01). D measures it (below).
+
+**What runs.** `main.toml` as it stands when A19 runs: after R024, whatever R024 decides. It runs with
+`--drop-match-only` (Smart Tagging is dropped), on `tracking` v3, 3 seeds and all seven matches. It is run by a new
+`pipeline/benchmark/diagnose.py`, one throttled process. The module writes aggregates of DFL only, to
+`data/runs/diagnose/<stem>.json`. Nothing of BAR-ATH is read.
+
+**B, the ladder,** per truth (raw and coarse), pooled over the 42 halves (7 matches x 3 seeds x 2 halves):
+- **Spells and matching.** The spells are the scorer's: `pm.possession_spells` on the filled codes, per graded half.
+  The matching is the scorer's too: `pm.spell_overlaps`, then the greedy pass of `pm.matched_gt_flags`, which also
+  records the matched pairs. The greedy pass runs down one list sorted by IoU, so the matching at θ is the matching at
+  0.3 cut at θ. Every pair matched at 0.3 but not at θ is the ladder's loss at θ.
+- **Classes.** Each pair matched at 0.3, true spell g and predicted spell p, is put in one class by its same-team
+  overlaps:
+  - **clean:** p overlaps no other true spell of its team, and g no other predicted spell of its team;
+  - **merge:** p overlaps 2 or more true spells of its team, and g only p;
+  - **split:** g overlaps 2 or more predicted spells of its team, and p only g;
+  - **both:** both of the above.
+- **Reported:**
+  - n_gt and n_pred;
+  - per θ, the matched count and the ladder's loss by class, in pairs and in spellF1 units: a pair lost at θ costs
+    2 / (n_gt + n_pred) in F1 at θ, and a fifth of that in spellF1;
+  - the share of predicted spells that overlap 2 or more true spells of their team, and of true spells that overlap 2
+    or more predicted ones;
+  - the spells unmatched at 0.3, by whether they overlap any spell of their team;
+  - the clean pairs' IoU (median, and the share at or above each θ), and their signed edge errors in frames: predicted
+    start minus true start, and predicted end minus true end (median, interquartile range, and the share within ±5
+    frames).
+- **The clean-pair ladder loss.** The pooled spellF1 if every clean pair matched at 0.3 were also matched at every θ,
+  minus the actual pooled spellF1. Reported per truth and as the mean of the two (R023's objective). It is not a bound
+  on what R025 can gain: moving an edge can also raise a split pair's IoU, or lift a pair below 0.3 into a match, and
+  the figure assumes perfect edges. It is the loss that edges alone explain, and R025's gate.
+- **The split- and merge-pair ladder losses,** the same figure for the split, merge and both classes, reported beside
+  it and gating nothing.
+
+**D, calibration.** Against the raw truth only, the frame-level truth (the coarse truth is a grain construct).
+- Each source of the config, on the graded frames where it speaks, pooled. Every learned model is out of fold: a
+  match's model never saw it.
+  - The `home` sources (`controlled_touch`, `shape_possession`) are measured against the truth's team on the truth's
+    alive frames. `shape_possession` is also split into ball-visible and ball-missing frames.
+  - The `alive` source (`dead_ball_model`) is measured against the truth's alive.
+- The decoder's posterior: `hmm.marginals` at the config's own parameters, on the emissions of the config's sources,
+  before `shift_edges`. Two measures:
+  - P(H) + P(A) against alive, on all graded frames and split by whether a team source speaks on the frame (any
+    source with a finite `home`). β on the frames where one speaks measures the 50/50 assumption above;
+  - P(H) / (P(H) + P(A)) against the team, on the truth's alive frames.
+- **Metrics:**
+  - log-loss and Brier;
+  - ECE over 10 equal-width bins, and the reliability table;
+  - a Platt fit by maximum likelihood, logit P(truth) = α · logit(p) + β: α below 1 is overconfident, above 1
+    underconfident, and β is a bias.
+
+  For a source at weight w, the decoder reads w · logit(p). Its α is the weight that would make the source calibrated
+  on its own, reported beside w (frames are not independent, so this is a reading, not a target).
+
+**What A19 decides.** Nothing is adopted from it; it only sets R025's gate.
+- **R025 is built only if the clean-pair ladder loss, as the mean of the two truths, is at least 0.015.** The advisor's
+  estimate is that posterior edges recover a third of it at best, and a third of 0.015 is the 0.005 tie band. Below the
+  gate, R025 is not built, and the entry says so.
+- D's numbers are reported. R025's one retry, if it needs one, may only be named from A19's numbers or R025's own.
+
+**Cost.** One decode of the config on 42 halves plus the posterior, about 10 minutes.
+
+**Review.** An independent reviewer read A19 and R024 to R026 before any run: 14 findings, all resolved in the text
+above. The one blocker was R024's extension, which could be read two ways.
+
+**Part 2, the run** (2026-10-31). Part 1's motivating figures (6,279 predicted possessions; 0.670 to 0.401 up the
+ladder) are R017's file's. The run below is on R024's, as part 1 says. The code is `diagnose.py` (`907fdea`, plus a fix
+after its task review, `7612a1b`).
+The review found the definitions exact, cross-checked the posterior against `hmm.decode(posterior=True)`, and asked for
+checks that pin the calibration's (p, y) and the posterior's parameters; nine mutations it tried are now caught. One
+addition came out of the review, reported and gating nothing: `main.toml`'s P07 speaks on every graded frame where a
+slot is present, so the declared team_speaks / team_silent split is nearly all "speaks". Beside it, the alive posterior
+is also broken down by which team sources speak on the frame.
+
+Command, from a detached checkout of `3943962` (R024's adopted `main.toml`), one throttled process, 14:10 to 14:13,
+EXIT=0: `python pipeline/benchmark/diagnose.py pipeline/configs/main.toml --profile tracking --seeds 3
+--drop-match-only` (`smart_tagging` dropped). The report is `data/runs/diagnose/main.json` (aggregates of DFL only).
+
+**B, the ladder.** Pooled over 42 halves. A pair lost at θ costs 2 / (n_gt + n_pred) of F1 at θ; the losses are in
+spellF1 units, summed over θ and divided by 5.
+
+| | raw truth | coarse truth | mean |
+|---|---|---|---|
+| true / predicted possessions | 9,183 / 6,131 | 4,977 / 6,131 | |
+| F1 at IoU 0.3, 0.4, 0.5, 0.6, 0.7 | 0.666, 0.615, 0.543, 0.468, 0.390 | 0.695, 0.651, 0.582, 0.516, 0.438 | |
+| pooled spellF1 | 0.5363 | 0.5764 | 0.5563 |
+| pairs matched at 0.3: clean, merge, split, both | 3,969; 937; 172; 20 | 3,218; 51; 586; 5 | |
+| **ladder loss, clean pairs** | **0.0722** | **0.0686** | **0.0704** |
+| ladder loss, merge pairs | 0.0463 | 0.0045 | 0.0254 |
+| ladder loss, split pairs | 0.0097 | 0.0449 | 0.0273 |
+| ladder loss, both | 0.0014 | 0.0006 | 0.0010 |
+| predicted spells over 2+ true ones of their team (merges) | 17.7% | 1.0% | |
+| true spells under 2+ predicted ones of their team (splits) | 2.3% | 13.2% | |
+| clean pairs' IoU: median; share at least 0.5, 0.7 | 0.827; 88.0%, 68.2% | 0.850; 90.0%, 72.4% | |
+| clean pairs' start error, frames: median [quartiles]; within ±5 | +0 [-5, +14]; 45.5% | +0 [-3, +20]; 44.4% | |
+| clean pairs' end error, frames: median [quartiles]; within ±5 | +0 [-6, +22]; 37.4% | +0 [-5, +28]; 34.7% | |
+| unmatched at 0.3, true: overlapping a spell of their team / alone | 1,713 / 2,372 | 297 / 820 | |
+| unmatched at 0.3, predicted: overlapping / alone | 572 / 461 | 1,046 / 1,225 | |
+
+- **The ladder is mostly edges, not merges and splits.** Of the 0.130 that spellF1 loses from IoU 0.3 to its mean
+  (raw), 0.072 is on clean pairs, 0.046 on merges and 0.010 on splits. Coarse: 0.069, 0.004 and 0.045. Under each truth
+  it is clean pairs first, then the expected failure (merges under the fine raw truth, splits under the coarse one).
+  The review's first reading (most of it edges) was nearer than the advisor's correction (most of it merges and splits).
+  The counts were right that we merge under raw and split under coarse, but those cost less than the edges.
+- **The edge errors are skewed late.** The median error is 0 at both ends, but the upper quartile is +14 to +28
+  frames against -3 to -6 below: when an edge is wrong, the predicted possession most often starts and, more so, ends
+  late. Half a second or more, on a third of the clean pairs' ends.
+- **The gate: R025 is built.** The mean clean-pair ladder loss is 0.0704, against the gate's 0.015.
+
+**D, calibration** (raw truth, graded frames; for a source, frames where it speaks; Platt: logit P(truth) = α · logit(p) +
+β):
+
+| measure | frames | log-loss | Brier | ECE | α | β | weight |
+|---|---|---|---|---|---|---|---|
+| `controlled_touch` home | 980,223 | 0.465 | 0.151 | 0.170 | 1.22 | +0.14 | 1.0 |
+| `dead_ball_model` alive | 3,007,932 | 0.085 | 0.024 | 0.005 | 1.00 | +0.19 | 1.0 |
+| `shape_possession` home | 1,659,315 | 0.363 | 0.114 | 0.016 | 1.08 | +0.13 | 0.2 |
+| ... where the ball is seen | 981,415 | 0.355 | 0.111 | 0.018 | 1.07 | +0.16 | 0.2 |
+| ... where the ball is missing | 677,900 | 0.376 | 0.119 | 0.017 | 1.10 | +0.07 | 0.2 |
+| posterior alive, every graded frame | 3,007,932 | 0.331 | 0.029 | 0.028 | **0.27** | -0.02 | |
+| ... where a team source speaks (all of them) / where none does | 3,007,932 / 0 | | | | | | |
+| ... where `controlled_touch` and P07 speak | 1,746,228 | 0.021 | 0.003 | 0.002 | 0.49 | -0.26 | |
+| ... where only P07 speaks | 1,261,704 | 0.761 | 0.065 | 0.064 | 0.21 | -0.03 | |
+| posterior home (team, on alive frames) | 1,659,315 | 1.002 | 0.117 | 0.109 | **0.19** | +0.14 | |
+
+- **The sources are close to calibrated as likelihoods.** `dead_ball_model`'s α is 1.00. Its β of +0.19 is
+  logit(0.55), the training prior it subtracts by design (a likelihood, not a posterior: the 50/50 bias the review named
+  is not there). P07's α is 1.07 to 1.10 with the ball seen or missing alike, so its probabilities are about right on
+  their own, and its weight of 0.2 is the decoder's correction for counting correlated frames as independent, not a
+  calibration. `controlled_touch`'s two fixed votes (0.93 in an episode, 0.55 on hold since R024) are conservative: α 1.22.
+- **The posterior is far too sharp.** α is 0.27 for alive and 0.19 for the team: the decoder's log-odds are about four
+  to five times what the outcomes support, and its team posterior has a log-loss of 1.00. That is what a product of
+  per-frame terms over correlated frames gives. For R025 it means the posterior's crossings will mostly sit where
+  Viterbi's edges are, except where the evidence is flat: the advisor's "too sharp → no change" risk.
+- **The 50/50 assumption on team evidence under `D`** cannot be isolated as declared: a team source speaks on every
+  graded frame (P07's scope `all`), so "where none does" is empty. Where the touch rule speaks, β is -0.26 at α 0.49: the
+  posterior over-states play there, as the reviewer's reading predicts, but the measure confounds it with the
+  posterior's sharpness. Nothing is changed on it.
+
+**What A19 changes.** R025 is built. Its one retry, if one is needed, has a named cause available from here: a posterior
+four to five times too sharp, which a temperature on the posterior (the emissions and the switch costs divided by one
+constant) would flatten, so that the median of the change's position moves off Viterbi's mode.
 
 ## Experiments
 
@@ -7460,6 +7626,635 @@ spellF1s, both reported. R023 reopens no past choice, and `main.toml` is untouch
 `7ba575c0…`). Whether to re-choose anything that the raw truth decided alone (R013's Stage C picked the raw best
 with a coarse tie-break) is the team's decision.
 
+### R024 — R013 re-chosen under R023's objective: the touch rule, the decoder and P07's weight on the mean of the two truths (P23 A; declared 2026-10-31, Tian)
+Proposal: P23 (A), P04, P06, P07 · Commit: part 1 (this declaration) is committed before any selection or run of it;
+the commits of the selection and the runs are in part 2.
+
+**Part 1, declared before any selection** (2026-10-31). Tian chose to re-choose on 31 Oct (P23 A), which is the team's
+decision that R023 left open.
+
+**What was seen before this was written.** R013's printed tables, and nothing else of its 336 reports under the new
+objective:
+- Stage C's coarse-ward corner, `r013c_t08_mp050_w500`, scored 0.5134 raw and 0.6017 coarse;
+- Stage A's `r013a_r15_v06_k1_h55` scored 0.5403 raw and 0.5662 coarse;
+- both are above `main.toml` (0.5430, 0.5593) on the mean of the two.
+
+The rule below was written knowing those rows, and nothing in it was chosen to reach or avoid either. The means
+follow from them: 0.5576 for the corner, 0.5512 for `main.toml`, 0.5533 for `h55` against 0.5479 for `h60`. Three
+consequences were therefore foreseeable, and are stated here so that a reader can judge the rule:
+- Stage A′ will very likely not keep R013's setting (`h55` is 0.0054 above it, just outside the band), so Stage C′ is
+  likely to run, about two hours, and not the no-run branch;
+- the corner sits on exactly the three upper edges that the extension below names;
+- the maximin tie-break counts against that corner (its min is 0.5134) relative to balanced configs. Since the raw score
+  is below the coarse one for most balanced configs, "the larger min(raw, coarse)" is in practice "the best raw score
+  within the band" over most of the grid, the reverse of R013's coarse tie-break.
+
+The rule is symmetric over every edge it names, declared before any selection, and bounded ("nothing more is added").
+
+**Why.** R023 (outcome both) set the objective of every choice declared after it: the unweighted mean of the pooled
+raw and coarse spellF1s. R013 chose its two stages on the raw truth alone, with the coarse truth as a tie-break. The
+two truths pull the same knobs in opposite directions (R013: fewer possessions for coarse, more for raw), so the mean may
+pick another point on that trade-off.
+
+**What is re-chosen, and what is not.**
+- **Re-chosen, as in R013:**
+  - Stage A: `controlled_touch`'s radius, `max_rel_speed`, `min_frames` and `hold` (192 settings, each at its
+    measured `confidence`);
+  - Stage C: switch_team, min_possession and P07's weight (144 configs).
+- **Not re-chosen**, for R013's reasons:
+  - the `dead_ball_model` and its weight;
+  - switch_dead 32 and min_dead 25;
+  - P07's scope `all` and `min_prob`;
+  - the trained models.
+- **Smart Tagging's settings stay as R017 set them** (c_team 0.76, spread `frame`, weight 0.2; Tian's pick). The source
+  is MATCH_ONLY, so the benchmark cannot choose them.
+
+**The objective and the rule.**
+- **Objective:** the mean of the pooled `tracking` raw and coarse spellF1s. Each is the scorer's pooled figure over 7
+  matches x 3 seeds x 2 halves.
+- **Tie band:** 0.005 on the objective. Every config within it of the best is tied.
+- **Among the tied:** the larger min(raw, coarse), that is the config that does best under whichever truth is worse for
+  it. This is the hedge R023's "both" asks for.
+- **A tie left over:** R013's declared orders. In Stage A: the larger `min_frames`, then the smaller radius, the
+  smaller `max_rel_speed` and the smaller `hold`. In Stage C: the larger switch_team, then the larger min_possession and
+  the smaller weight. The stems are given to `choose.py` in that order.
+- **Leave-one-match-out:** as R013's, with each match's mean of the two truths in place of its raw score. Two rules are
+  reported: the objective alone, and the whole rule.
+- **The tool:** `choose.py --objective mean`, added for this entry with its checks. `--objective raw`, the default, is
+  R008 to R016's rule unchanged.
+
+**The reference run.** `choose.py --reference main` reads `main`'s own report, which must hold `main.toml`'s current text
+(R017 changed it). So, before Stage A′, one throttled run writes it: `run.py pipeline/configs/main.toml --truth both
+--drop-match-only`, `tracking` v3, 3 seeds. It must score 0.5430 raw and 0.5593 coarse (R013's, A17's), a reproduction
+check. Every Δ below is against today's `main.toml` on the benchmark, not R012's.
+
+**Stage A′.** `choose.py --objective mean` on R013's 192 Stage A reports (written at `c086d23`). No runs.
+
+**Stage C′.**
+- If Stage A′ chooses R013's own setting (`r013a_r15_v06_k1_h60`), Stage C′ is `choose.py --objective mean` on R013's
+  144 Stage C reports (written at `7000847`). No runs.
+- Otherwise, Stage C′ runs R013's Stage C values at Stage A′'s setting:
+  - switch_team {1, 2, 3, 4, 6, 8} x min_possession {1, 10, 15, 25, 35, 50} x weight {0.1, 0.2, 0.3, 0.5};
+  - 144 configs, `pipeline/benchmark/configs/r024/r024c_t{TT}_mp{MMM}_w{WWW}.toml`: R013's Stage C text with the touch
+    block replaced;
+  - run as R013's were: `tracking` v3, 3 seeds, `--truth both`, `main.toml` first as the reference, one throttled
+    process at a time;
+  - then `choose.py --objective mean` on them.
+
+  The config at switch_team 4, min_possession 25 and weight 0.2 is Stage A′'s config itself. It must score as its Stage A
+  report to the last digit.
+
+**One extension, declared now.** It runs only if Stage C′'s choice sits on an edge of its grid in one of these:
+- switch_team 8 (upper);
+- min_possession 50 (upper);
+- the weight 0.1 or 0.5.
+
+The extension then runs at Stage A′'s setting, as the Cartesian product of these value sets:
+- on each axis where the choice is on an edge, that edge and the two values beyond it: switch_team 8, 10, 12;
+  min_possession 50, 65, 80; the weight 0.1, 0.07, 0.05 below or 0.5, 0.7, 1.0 above;
+- on every other axis, the choice's value alone.
+
+That makes 2, 8 or 26 new configs for one, two or three edge axes (the one combination of edge values already run in
+Stage C′ is not run again).
+
+The lower edges switch_team 1 and min_possession 1 are not extended: a minimum of 1 frame is no minimum, and a switch
+below 1 nat is flicker. The selection is repeated on Stage C′ and the extension together, by the same rule. **Nothing
+more is added**: a choice on the extension's own edge is reported as one.
+
+**Reproduction.** The reports were written at `c086d23` and `7000847`, and the code has moved since. The final config is
+run again at this entry's commit in the guard runs below, and it must score as its R013 report (or Stage C′'s) to the
+last digit under both truths. If it does not, the entry stops and says so: a choice from stale reports would compare
+different code.
+
+**The shift, by R012's rule** (as R013 applied it). If the final config differs from `main.toml` anywhere before the
+refiner:
+- the lag of its form without `shift_edges` is measured: `conventions.py latency <config> dfl`, `tracking`, raw truth,
+  3 seeds;
+- s_b is minus the rounded median lag per type, and 0 below 30 matched changes;
+- s_b is kept only if the config with it passes the guard below against the config without it: the objective's Δ > 0
+  on `tracking`, and not below -0.005 on `context`. Otherwise there is no shift. This is R013's shift rule with its
+  per-truth veto replaced by the guard's form, for the guard's reason.
+
+**Adoption.** The final config is Stage C′'s choice with the shift that rule gives. It is compared with `main.toml` as
+it is now (`main.csv` sha256 `7ba575c0…`).
+- **The guard:**
+  - the pooled Δ of the objective is > 0 on `tracking`;
+  - on `context`, a sensitivity profile and a veto only (T38), the objective's Δ is not below -0.005.
+
+  Each truth's Δ is reported on both profiles, and none of them is a veto. R023's "both" ranks on the mean, and a move
+  along the raw-against-coarse trade-off is the mean's to judge.
+- **The bar,** reported and not required, as in R013 (a re-choice of existing constants): the `tracking` objective Δ > 0,
+  with an exact sign-flip p ≤ 0.05 over the seven per-match deltas of the objective.
+- **Label-free checks on BAR-ATH,** as R013's:
+  - the file valid, and the same sha256 twice;
+  - no `X` in a graded block;
+  - the `D` share of the graded frames within [30%, 62%].
+
+  Reported beside them: the possessions per graded minute; the H, A and D shares; the graded frames relabelled
+  (`label_diff.py`); `controlled_touch`'s episode share. Also Smart Tagging's agreement with the new touch rule's
+  pseudo-labels (`tag_stats.py`), reported and not acted on: R017's c_team 0.76 stays.
+- **If everything passes,** `main.toml` becomes the final config (Smart Tagging as it is), and
+  `pipeline/configs/r024_both.toml` is written with it. If the final config is `main.toml`'s own, or the guard or a
+  check fails, `main.toml` is unchanged.
+
+**The public window** is a correctness check only (T01). It is run once, after the adoption is decided.
+
+**What the entry cannot settle.** R023's limit (an event-tagged grain, not a flag grain); the benchmark's overstatement
+of P05 (T38, T39); P07 never having seen our teams. A move along the raw-against-coarse trade-off is the objective's,
+not a forecast for BAR-ATH.
+
+**Cost.** The reference run (about 10 minutes); nothing else if Stage A′ keeps R013's setting and Stage C′'s choice is
+inside its grid. Otherwise about two hours of throttled runs for Stage C′, up to 30 minutes for an extension, and about
+40 for the shift and the guard.
+
+**Review.** An independent reviewer read A19 and R024 to R026 before any run: 14 findings, all resolved in the text
+above. The one blocker was R024's extension, which could be read two ways.
+
+**Part 2, after the runs** (2026-10-31). Everything below applies part 1 as written. The part 1 commit is `647cd46`.
+
+**The tool.** `choose.py --objective mean` (`344e181`, and a fix after its task review, `24d4439`). The review found
+the rule exact and asked for one more check: one that fails if the lomo's floor is taken as the mean of the per-match
+minimums instead of min(raw mean, coarse mean). It also ran ten mutations of the code, and the checks now catch all ten.
+The raw objective is unchanged to the bit: a check compares it with the code before the change.
+
+**The reference run** (`647cd46`, 12:11 to 12:15, one throttled process, EXIT=0): `main` scored **0.5430 raw and
+0.5593 coarse**, R013's and A17's figures to the last digit.
+
+**Stage A′** (`python pipeline/benchmark/choose.py --reference main --objective mean <R013's 192 Stage A stems in the
+declared order> --top 25 --out data/runs/r024/stage_a_choice.json`). R013's reports loaded unchanged: same configs,
+matches, seeds, profile and Calibration.
+
+| config | mean | raw | coarse | possessions / min | mean Δ vs `main` [p, wins] |
+|---|---|---|---|---|---|
+| `main` | 0.5511 | 0.5430 | 0.5593 | 3.13 | |
+| **`r013a_r15_v06_k1_h55`** | **0.5532** | 0.5403 | 0.5662 | 3.19 | +0.0021 [0.4375, 3] |
+| `r013a_r15_v06_k2_h55` | 0.5510 | 0.5354 | 0.5667 | 3.17 | -0.0001 [0.8438, 3] |
+| `r013a_r15_v06_k1_h60` (R013's choice) | 0.5479 | 0.5473 | 0.5485 | 3.27 | -0.0032 [0.0469, 1] |
+
+- **Stage A′'s choice: the hold moves from 0.60 to 0.55**, with radius 1.5 m, 6 m/s and 1 frame unchanged.
+  - The best mean is `h55`. Two settings are tied, and `h55` has the larger min(raw, coarse) (0.5403 against 0.5354).
+  - The deltas here are against today's `main`, at R013's Stage C decoder. Stage A's configs ran at R012's decoder (4
+    / 32 / 25 / 25).
+- **Leave-one-match-out.** The objective alone picks `h55` in all seven folds. The whole rule picks `h60` in two
+  (J03WN1, J03WOY): there `h60`'s six-match mean falls inside the band and its min is the larger. The held-out mean Δ is
+  -0.0012 (p 0.4844).
+- So Stage C′ ran, as part 1 foresaw.
+
+**Stage C′'s runs.** The configs are `11cdff7`: R013's 144 texts with the hold at 0.55, every other line R013's (a
+generator checked it). They ran from a detached checkout of it, header `11cdff7`, no `+dirty`, as six throttled
+processes, one per switch_team value, `main.toml` first in each (12:28 to 13:40, all EXIT=0). In every log `main`
+scores 0.5430 and 0.5593. `r024c_t04_mp025_w200`, which is Stage A′'s config itself, scores 0.5403 and 0.5662 as its
+Stage A report did, to the last digit.
+
+**The choice** (`choose.py --reference main --objective mean <the 144 stems in the declared order> --top 30 --out
+data/runs/r024/stage_c_choice.json`):
+
+| config | mean | raw | coarse | min | possessions / min | mean Δ vs `main` [p, wins] | raw Δ | coarse Δ |
+|---|---|---|---|---|---|---|---|---|
+| `main` | 0.5511 | 0.5430 | 0.5593 | 0.5430 | 3.13 | | | |
+| `r024c_t06_mp050_w200` (the best mean) | 0.5601 | 0.5178 | 0.6023 | 0.5178 | 2.74 | | | |
+| `r024c_t04_mp050_w200` | 0.5587 | 0.5274 | 0.5899 | 0.5274 | 2.89 | | | |
+| `r024c_t08_mp050_w200` (the best coarse) | 0.5586 | 0.5057 | 0.6116 | 0.5057 | 2.61 | | | |
+| `r024c_t06_mp025_w200` | 0.5577 | 0.5297 | 0.5856 | 0.5297 | 2.98 | | | |
+| **`r024c_t04_mp035_w200`** | **0.5563** | 0.5363 | 0.5764 | **0.5363** | 3.06 | +0.0052 [0.0469, 6] | -0.0067 [0.0625, 1] | +0.0171 [0.0156, 7] |
+| `r024c_t02_mp025_w100` (the best raw) | 0.5423 | 0.5489 | 0.5358 | 0.5358 | | | | |
+
+- **The rule.** The best mean is `t06_mp050_w200`, 0.5601. Fourteen configs are within 0.005 of it: switch_team 4 to
+  8, min_possession 15 to 50, weights 0.2 and 0.3. The largest min(raw, coarse) among them is `t04_mp035_w200`'s
+  (0.5363; the next is `t06_mp025_w200`'s, 0.5297).
+- **Stage C′'s choice is switch_team 4, min_possession 35 and weight 0.2**, `main.toml`'s own decoder and weight, now
+  at hold 0.55.
+  - It is inside the grid on all three axes, so no extension ran.
+  - Against `main` it is **+0.0052 on the mean** (mean per match +0.0048 [+0.0010, +0.0087], p 0.0469, 6 wins and 1
+    loss). That splits into -0.0067 raw (1 win) and +0.0171 coarse (7 wins).
+- **The objective climbs towards the coarse corner, and the tie-break holds it back.**
+  - Along each axis at the other two's choice, the mean rises with min_possession (0.5361, 0.5418, 0.5460, 0.5532,
+    0.5563, 0.5587 for 1 to 50) and with switch_team (0.5344 to 0.5578 for 1 to 8).
+  - It peaks in P07's weight at 0.2 (0.5480, 0.5563, 0.5475, 0.5379 for 0.1 to 0.5).
+  - Raw falls and coarse rises along the first two axes. The maximin is what keeps the choice interior and balanced,
+    as part 1 foresaw.
+  - 21 of the 144 configs are above `main` on the mean.
+- **Leave-one-match-out.**
+  - The objective alone picks `t06_mp050` in every fold: held out +0.0074 mean (p 0.0312, 6 wins), -0.0262 raw (0
+    wins), +0.0411 coarse.
+  - The whole rule picks the choice in five folds, `t04_mp050_w200` (J03WMX) and `t06_mp025_w200` (J03WN1) in one each:
+    held out +0.0035 mean [-0.0004, +0.0074], p 0.1562, 5 wins; -0.0111 raw, +0.0181 coarse.
+
+**The shift, by R012's rule** (`bee0944`: `r024_preshift.toml`, the choice without `shift_edges`; `python
+pipeline/benchmark/conventions.py latency pipeline/benchmark/configs/r024/r024_preshift.toml dfl --profile tracking
+--seeds 3 --truth raw`, throttled, EXIT=0). The lag pooled over 7 matches and 3 seeds:
+- team -1.0 frame (43% of 7,053 changes matched; -1 on six matches, 0 on one);
+- into `D` +2.0 (51% of 2,130);
+- out of `D` +0.0 (78% of 2,097).
+
+So s_b is again **+1, -2, 0**, `main.toml`'s, and the final config is Stage C′'s choice as it stands.
+
+**The guard runs** (`bee0944`, two throttled processes: `run.py pipeline/configs/main.toml <the choice>
+r024_preshift.toml --profile tracking|context --seeds 3 --truth both --drop-match-only`, both EXIT=0). The choice
+scores as in Stage C′ (0.5363, 0.5764), the reproduction part 1 asks for.
+
+| profile | `main` raw / coarse | final raw / coarse | raw Δ | coarse Δ | **mean Δ** [mean per match, 90% t] | p | wins / losses |
+|---|---|---|---|---|---|---|---|
+| `tracking`: the guard and the bar | 0.5430 / 0.5593 | 0.5363 / 0.5764 | -0.0067 | +0.0171 | **+0.0052** [+0.0010, +0.0087] | 0.0469 | 6 / 1 |
+| `context`: sensitivity only | 0.5489 / 0.5642 | 0.5394 / 0.5756 | -0.0094 | +0.0114 | **+0.0010** [-0.0033, +0.0047] | 0.7500 | 4 / 3 |
+
+- **The guard passes:** +0.0052 > 0 on `tracking`, and +0.0010 on `context`, above -0.005.
+- **The shift's guard passes:** the final config against `r024_preshift` is +0.0001 on the mean on `tracking` and
+  +0.0000 on `context`, so s_b is kept, inside the noise as in R012 and R013.
+- **The bar (reported, not required) is met:** p 0.0469, 6 wins in 7.
+- Pooled macroF1 on `tracking` is 0.8903 raw and 0.8909 coarse (`main` 0.8895, 0.8878); alive/dead F1 is 0.9730
+  (0.9731); 3.06 possessions per graded minute (3.13).
+
+**The label-free checks on BAR-ATH** (`d2e626c`: `pipeline/run.py pipeline/configs/r024_both.toml` twice, then
+`label_diff.py pipeline/configs/main.toml pipeline/configs/r024_both.toml`, throttled; aggregates over the 158,857
+graded frames):
+
+| | `main.toml` before (`7ba575c0`) | the final config (`e6496a9b`) | declared rule |
+|---|---|---|---|
+| valid, the same sha256 twice | yes | yes | yes |
+| `X` frames inside the graded blocks | 0 | 0 | none |
+| `D` share of the graded frames | 35.93% | 36.00% | within [30%, 62%] |
+| H, A of the graded frames | | 38.0%, 26.0% | reported |
+| possessions (per graded minute) | 413 (3.8997) | 399 (3.7675), mean 10.2 s | reported |
+| graded frames relabelled | | 1.66% (0.2% of them where the ball is not seen); `D` onsets 108, 7 moved by a median of -2 frames | reported |
+
+All three checks pass.
+- **What was not re-run.** Smart Tagging's agreement with the touch pseudo-labels (`tag_stats.py`) and
+  `controlled_touch`'s episode share are unchanged by construction. `tag_stats.py` uses a fixed rule
+  (`conventions.TOUCH`, hold 0.5), and a hold changes no kept episode. R017's c_team 0.76 stays.
+- **The possessions move the same way on both,** fewer: 3.13 to 3.06 a minute on the benchmark, 3.90 to 3.77 on
+  BAR-ATH.
+
+**The public window** (a correctness check only, T01; run once after the adoption was decided, `pipeline/run.py
+pipeline/configs/main.toml --score` at `3943962`): macroF1 0.7007, spellF1 0.4000, alive/dead F1 0.9225, 19
+possessions against the truth's 17 (R017's file: 0.6986, 0.4000). The file is `e6496a9b…` again. It chose nothing;
+one possession moves its spellF1 about 0.06.
+
+Verdict: **adopted. `main.toml` is R024's final config** (`3943962`), `main.toml` with the hold at 0.55, which is
+`pipeline/configs/r024_both.toml`. `main.csv` is sha256
+`e6496a9b9805217ef085e52ed69cbb27a42b95368d65c1d188b4a2f339b61170` (not uploaded).
+- The guard passes, and the bar is met as well.
+- The label-free checks pass.
+- The decoder, P07's weight and the shift came back unchanged: re-chosen under the mean of the two truths, only the
+  hold moved.
+
+**The limits, and what the numbers do not say.**
+- **The gain is the mean's, not raw's.** On DFL's raw truth the new file is 0.0067 below the old (1 win in 7). If our
+  truth is DFL-fine, this change costs a little; R023 says the evidence points between the two truths, and the
+  objective is the declared rule's.
+- **The rule's leave-one-match-out estimate is weaker than the choice's own.** It is +0.0035, p 0.1562, against
+  +0.0052, p 0.0469. Stage A′'s whole-rule lomo picked R013's `h60` in two folds of seven.
+- **The objective alone would have gone further towards coarse** (`t06_mp050`, 2.74 possessions a minute against the
+  coarse truth's 2.48). The maximin tie-break stopped it at `main`'s decoder. That is the declared hedge working, and
+  it means the choice sits near the raw truth's side of the band.
+- The limits of R013 and R023 still hold: T38 and T39, P07 never having seen our teams, and an event-tagged grain.
+
+### R025 — Posterior edges: each change moved to where the decoder's posterior puts it (P23 C; declared 2026-10-31, Tian)
+Proposal: P23 (C), P06 · Commit: part 1 (this declaration) is committed before any run of it; the code and the runs
+are in part 2.
+
+**Part 1, declared before any run** (2026-10-31).
+
+**The gate.** R025 is built only if A19's clean-pair ladder loss, as the mean of the two truths, is at least 0.015.
+Otherwise no code is written, and the entry records the figure and stops.
+
+**Belief.** Viterbi places a change where the single best path puts it. Where the evidence is spread (a gap in which
+only P07 speaks, or a stretch with no evidence, where the tie rule puts the change on the stretch's first frame), the
+frame the change happened on is uncertain. The median of the posterior over that frame minimises the expected absolute
+error of the edge (the median minimises E|X − c|). Edges nearer the truth raise the IoU of pairs that are otherwise
+right, which is the top of the ladder. **Falsified if** the guard or the bar below fails.
+
+**The mechanism.** A decoder option of `hmm`: `edges = "viterbi"`, the default and today's labels, or `"posterior"`.
+With `"posterior"`:
+- The labels are first the Viterbi path. P is `marginals` under the same model (`posterior = true`'s array).
+- Take each pair of adjacent runs, u on [a, b) and v on [b, c), with different labels. Their change may move within
+  W = [b − ⌊(b − a − 1) / 2⌋, b + ⌊(c − b − 1) / 2⌋]. A change can take at most ⌊(n − 1) / 2⌋ frames from each of
+  its two runs, n being the run's length. So a run keeps at least one frame even when both of its changes move into it,
+  and the windows of two changes never overlap.
+- Say t **favours v** when P[t, v] ≥ P[t, u] and P[t, v] > 0. The change moves only when the posterior crosses inside
+  W: when W's first frame does not favour v and some later frame of W does. Then b′ is the first frame of W that
+  favours v. That is the earliest frame at which the new label is at least as likely as the old one: the median of the
+  change's position when P[t, u] + P[t, v] ≈ 1 and the posterior changes once inside W.
+- Otherwise b′ = b, Viterbi's own frame. That covers two cases: W's first frame already favours v (the crossing lies
+  before W, inside a stretch the Viterbi path holds at a low posterior), or no frame of W does. The change never jumps
+  to a window's edge on evidence outside the window.
+- Every change moves this way, between teams and into and out of `D`, independently of the others. The block's first
+  and last frames are not changes.
+- Reported: the share of changes moved, by kind; the median and the quartiles of |b′ − b|; and the shares left in place
+  because the crossing lies before W or after it.
+
+The labels then no longer honour min_possession and min_dead: a moved change can leave a run shorter than the minimum.
+The possessions per graded minute (benchmark and BAR-ATH) show what that does.
+
+`shift_edges` runs after the decoder as it does today, at the shift R012's rule gives for the new config (as in R024).
+
+**The configs.** `main.toml` as it stands when R025 runs (after R024 and A19), with `edges = "posterior"`:
+- `pipeline/benchmark/configs/r025/r025_post.toml`, with `main.toml`'s `shift_edges`;
+- `r025_preshift.toml`, without it, for the lag.
+
+There is one candidate, so there is no selection. `r025_post` is the candidate before the lag is known. The final config
+is `r025_preshift` with the shift that R012's rule gives it (R024's form of the rule), which is `r025_post` only if that
+shift is `main.toml`'s.
+
+**The runs.** `tracking` v3, 3 seeds, all seven matches, `--truth both`, `--drop-match-only`. `main.toml` first, as the
+reference. Then `context`, for the guard. One throttled process at a time.
+
+**Adoption.** A new mechanism, so the bar is required, as for R016:
+- **the guard:** the objective's pooled Δ > 0 on `tracking`, and not below -0.005 on `context`;
+- **the bar:** the `tracking` objective Δ > 0 with an exact sign-flip p ≤ 0.05 over the seven per-match deltas;
+- **label-free checks on BAR-ATH,** as R024's, plus the graded frames relabelled and the decoder's time on BAR-ATH,
+  which must stay within the one command's minutes.
+
+Each truth's Δ is reported, and the Δ of pairs matched at each IoU (A19's ladder, recomputed for the candidate). If all
+of it passes, `main.toml` takes `edges = "posterior"`, and `pipeline/configs/r025_posterior.toml` is written with it.
+
+**One retry.** R025b, declared before its run, is named only from a cause in A19's numbers or in R025's own per-truth or
+per-edge-type results. If it fails too, C is dropped and its code removed in one commit.
+
+**Review.** An independent reviewer read A19 and R024 to R026 before any run: 14 findings, all resolved in the text
+above. The one blocker was R024's extension, which could be read two ways.
+
+**Part 2, the run** (2026-10-31). The gate passed (A19: a mean clean-pair ladder loss of 0.0704, against 0.015).
+
+**The code.** `hmm`'s `edges = "posterior"`, `posterior_edges` and their checks are `f5beaa5`, plus a fix after the
+task review, `f68b8ee`.
+- **The review:** spec compliance exact, and 16 of 16 mutations of the rule caught.
+- **What the fix changed:** the |b′ − b| counts are exact rather than capped at 50 frames; the declared lopsided
+  reach is documented; and `diagnose.py` reports the rule's counts on the benchmark.
+- **One extra outcome.** The rule has a fifth one, "at b": the posterior crosses inside W exactly on Viterbi's frame,
+  so nothing moves. It is reported beside "earlier", "later", "before" and "after".
+- **The reach is lopsided, as declared.** A crossing on W's first frame counts as "before", so a move earlier reaches
+  W's second frame at most.
+- **The default path is today's code,** so `main.toml` still writes `e6496a9b…`.
+
+**The configs** (`0d5c65f`, `b94da6b`): `r025_post.toml` and `r025_preshift.toml`, as declared, and `r025_final.toml`.
+
+**The lag** (`conventions.py latency pipeline/benchmark/configs/r025/r025_preshift.toml dfl --profile tracking --seeds 3
+--truth raw --drop-match-only`, EXIT=0). A first attempt without `--drop-match-only` stopped at once on Smart Tagging,
+which a benchmark match cannot serve. Pooled lags:
+- team -2.0 frames (42% of 7,053 matched; Viterbi's was -1.0);
+- into `D` +1.0 (Viterbi's +2.0);
+- out of `D` +0.0.
+
+So R012's rule gives **s_b = +2, -1, 0**, not `main.toml`'s, and the final config is `r025_final.toml`: `r025_preshift`
+with that shift.
+
+**The guard runs** (`b94da6b`, two throttled processes: `run.py pipeline/configs/main.toml r025_final.toml
+r025_preshift.toml --profile tracking|context --seeds 3 --truth both --drop-match-only`, EXIT=0). `main` scores as in
+R024.
+
+| profile | `main` raw / coarse | final raw / coarse | raw Δ | coarse Δ | **mean Δ** [mean per match, 90% t] | p | wins / losses |
+|---|---|---|---|---|---|---|---|
+| `tracking`: the guard and the bar | 0.5363 / 0.5764 | 0.5361 / 0.5745 | -0.0002 | -0.0018 | **-0.0010** [-0.0022, +0.0002] | 0.1875 | 2 / 5 |
+| `context`: sensitivity only | 0.5394 / 0.5756 | 0.5396 / 0.5758 | +0.0002 | +0.0001 | +0.0002 [-0.0016, +0.0016] | 0.9219 | 3 / 4 |
+
+The shift's own guard passes: final against preshift is +0.0006 on `tracking` (6 wins) and +0.0009 on `context`.
+
+**What the rule did** (`diagnose.py pipeline/benchmark/configs/r025/r025_final.toml --profile tracking --seeds 3
+--drop-match-only`; graded blocks, before any refiner):
+
+| kind | changes | earlier | later | at b | before | after | moved |
+|---|---|---|---|---|---|---|---|
+| team | 4,052 | 2,417 | 726 | 864 | 44 | 1 | 77.6% |
+| into `D` | 2,075 | 425 | 265 | 1,385 | 0 | 0 | 33.3% |
+| out of `D` | 2,040 | 314 | 354 | 1,371 | 1 | 0 | 32.7% |
+| all | 8,167 | 3,156 | 1,345 | 3,620 | 45 | 1 | 55.1% |
+
+- **The moves are tiny.** |b′ − b| among the moved changes has a median of 1 frame (quartiles 1 and 3).
+- **The ladder is unchanged.** The mean clean-pair loss is 0.0718, against `main`'s 0.0704. The clean pairs' edge
+  errors keep the same late skew (end quartiles -6 and +22 frames, raw). The pairs matched at IoU 0.3, 0.4, 0.5,
+  0.6, 0.7 are 5,095, 4,713, 4,156, 3,583, 2,977 under raw (A19's `main`: 5,098, 4,707, 4,160, 3,580, 2,986), and
+  3,860, 3,617, 3,221, 2,835, 2,422 under coarse (3,860, 3,615, 3,230, 2,866, 2,435).
+- **Why nothing moved:** A19's diagnosis. The posterior is four to five times too sharp, so its median sits on
+  Viterbi's mode, one frame from it at most. Team changes moved mostly one frame earlier, and the re-derived shift (+2
+  instead of +1) put them back.
+
+**The verdict on R025: the guard fails** (-0.0010 on the mean, 2 wins in 7), so it is not adopted, and `main.toml` is
+unchanged.
+
+**The one retry, ruled by the advisor (for Tian, 31 Oct, who had said to keep going without asking).** R025's own
+numbers name the cause that A19 foresaw: a posterior too sharp for its median to leave Viterbi's mode. So R025b
+below tempers the posterior used for the edges, at one constant from A19. If R025b fails as well, C is dropped and
+its code removed in one commit.
+
+### R025b — Posterior edges on a tempered posterior, T = 5 (P23 C's one retry; declared 2026-10-31, Tian's advisor)
+Proposal: P23 (C), P06 · Commit: part 1 (this declaration) is committed before the code and before any run.
+
+**Part 1, declared before any run** (2026-10-31).
+
+**The cause, from R025 and A19.** R025 moved 55% of the changes, but by a median of 1 frame, and left the
+clean-pair ladder loss (0.072) and the late skew of the edges as they were. A19 measured the decoder's posterior as
+about five times too sharp where an edge is uncertain, that is in the gaps:
+- the team posterior's Platt α is 0.19, so 1/α = 5.3;
+- the alive posterior's α is 0.21 where only P07 speaks, so 1/α = 4.8.
+
+Both round to **T = 5**, one temperature for the whole model, not one per kind of change. The alive α of 0.27 over
+every frame is lifted by the frames where the touch rule speaks (α 0.49). The edges there are sharp already, and
+tempering moves them little.
+
+**Belief.** Near a Viterbi edge, the score of putting the change elsewhere falls slowly on the side where the
+evidence is weak and fast on the side where it is strong. At T = 1 the posterior's mass sits on the mode, so the
+median is Viterbi's frame. Tempered, the median moves towards the weak side, by an amount that depends on how weak
+that side is. That is a different move for each edge, so the re-derived shift cannot absorb all of it, and what is
+left should be a narrower spread of edge errors. **Falsified if** the guard or the bar fails.
+
+**The mechanism.** A decoder key `edge_temperature`, default 1. With `edges = "posterior"`, the posterior used for
+the edges is `marginals(emissions / T, switch_team / T, switch_dead / T, min_possession, min_dead)`, with the
+minimums unchanged. Viterbi's labels are untouched: scaling every score by 1/T changes no maximum. R025's rule then
+applies as declared. A T other than 1 without `edges = "posterior"` is refused, since nothing would read it.
+Checks:
+- T = 1 gives R025's labels to the byte;
+- `edges = "viterbi"` is unchanged;
+- the tempered posterior equals that `marginals` call;
+- T must be finite and above 0.
+
+**The configs.** `main.toml` (R024's) with `edges = "posterior"` and `edge_temperature = 5`:
+- `pipeline/benchmark/configs/r025/r025b_preshift.toml`, without `shift_edges`, for the lag;
+- `r025b_final.toml`, the same with the shift that R012's rule gives it.
+
+**T = 5 is final.** No second value is tried, not even after a near-pass.
+
+**The runs.** R025's:
+- the lag by R012's rule on `r025b_preshift`, with `--drop-match-only`;
+- the guard runs on `tracking` and `context`, `--truth both --drop-match-only`, `main.toml` first.
+
+**Adoption.** R025's rules, all required:
+- the guard: the objective's Δ > 0 on `tracking`, and not below -0.005 on `context`;
+- the bar: sign-flip p ≤ 0.05 over the seven per-match deltas;
+- the label-free checks on BAR-ATH.
+
+**A readout of the mechanism,** reported and gating nothing. `diagnose.py` on `r025b_final`, with its edge counts
+taken on the tempered posterior that the decoder uses, reports:
+- the share of changes moved;
+- the quartiles of the move's size;
+- the clean-pair edge errors' quartiles under both truths, against `main.toml`'s (A19).
+
+The belief predicts moves of several frames, not 1, and a narrower spread after the shift. Moves of 2 frames or less
+would mean the mechanism never engaged, and the entry will say so.
+
+**Time box.** Declared, built, run and logged by the end of 1 Nov, or C is dropped. E (R026) starts as soon as C is
+settled.
+
+**If it fails,** C is dropped, and its code is removed in one commit:
+- the `edges` option, `posterior_edges` and the temperature in `hmm.py`;
+- `pipeline/benchmark/configs/r025/`;
+- `diagnose.py`'s edge counts.
+
+The results stay logged here and in R025, and R026 runs on `main.toml` without `edges`.
+
+**Part 2, the run** (2026-10-31).
+
+**The code** is `171d0bb`: `edge_temperature` in `hmm`, its checks, and `diagnose.py` counting the edges on the
+tempered posterior. The configs are `3452f74` and `0349a24`.
+
+**The lag** (`conventions.py latency pipeline/benchmark/configs/r025/r025b_preshift.toml dfl --profile tracking
+--seeds 3 --truth raw --drop-match-only`, EXIT=0). Pooled lags:
+- team -3.0 frames (40% matched; quartiles -13 and +15, against -9 and +18 at T = 1 in R025 and -8 and +18 for Viterbi
+  in R024);
+- into `D` +1.0;
+- out of `D` -1.0.
+
+So s_b is **+3, -1, +1**, and `r025b_final.toml` is `r025b_preshift` with it.
+
+**The guard runs** (`0349a24`, throttled, `--truth both --drop-match-only`). Claude Code's memory-pressure reaper
+stopped the first attempt a minute in. Nothing was written, no process survived it, and Tian restarted the chain. The
+second attempt ended EXIT=0.
+
+| profile | `main` raw / coarse | final raw / coarse | raw Δ | coarse Δ | **mean Δ** [mean per match, 90% t] | p | wins / losses |
+|---|---|---|---|---|---|---|---|
+| `tracking`: the guard and the bar | 0.5363 / 0.5764 | 0.5121 / 0.5441 | -0.0242 | -0.0323 | **-0.0282** [-0.0333, -0.0232] | 0.0156 | 0 / 7 |
+| `context`: sensitivity only | 0.5394 / 0.5756 | 0.5122 / 0.5415 | -0.0272 | -0.0341 | -0.0307 [-0.0354, -0.0260] | 0.0156 | 0 / 7 |
+
+Pooled macroF1 on `tracking` fell to 0.8596 raw (`main` 0.8903), and alive/dead F1 to 0.9719 (0.9730). The shift
+helped inside R025b (final against preshift +0.0013 on the mean), not enough to matter.
+
+**The readout.** This time the mechanism engaged:
+
+| kind | changes | earlier | later | at b | before | after | moved |
+|---|---|---|---|---|---|---|---|
+| team | 4,052 | 2,744 | 559 | 258 | 491 | 0 | 81.5% |
+| into `D` | 2,075 | 886 | 519 | 667 | 0 | 3 | 67.7% |
+| out of `D` | 2,040 | 544 | 677 | 810 | 9 | 0 | 59.9% |
+| all | 8,167 | 4,174 | 1,755 | 1,735 | 500 | 3 | 72.6% |
+
+- |b′ − b| among the moved has a median of 3 frames (quartiles 1 and 9), against R025's 1.
+- **The edges got worse, not better.** The spread widened. The raw clean pairs' start error has quartiles -11 and +9
+  (A19: -5 and +14), and their end error -14 and +17 (A19: -6 and +22). Within ±5 frames fell from 45.5% to 40.8% at
+  the start, and from 37.4% to 30.9% at the end. Under the coarse truth the same: start quartiles -13 and +10 (A19:
+  -3 and +20), end -19 and +19 (-5 and +28), within ±5 frames 41.3% and 30.6% (44.4% and 34.7%).
+- **The ladder moved the wrong way.** The mean clean-pair loss rose to 0.0833 (0.0704), and the raw pooled spellF1
+  fell to 0.5121.
+
+The belief was that a tempered median moves each edge towards its weak-evidence side, which is where the truth lies.
+The edges moved, but the weak side was not where the truth was: frames of weak evidence are as often the tail of the
+old possession as the start of the new one. The narrowing of the spread that the belief predicted did not happen.
+
+**Verdict: R025b fails** (the guard: -0.0282 on the mean, 0 wins in 7). **C is dropped.** Its code was removed in one
+commit, as R025b part 1 declared:
+- the reverts of `f5beaa5`, `f68b8ee` and `171d0bb`;
+- `pipeline/benchmark/configs/r025/`.
+
+`hmm.py`, `pipeline/selftest.py`, `diagnose.py` and its checks are byte for byte as they were before C. The code is
+recoverable from `171d0bb`. `main.toml` is unchanged (R024's, `e6496a9b…`), and R026 runs on it.
+
+**What C leaves.** A19's diagnosis stands: the decoder's posterior is about five times too sharp, and the IoU ladder is
+mostly edges. Moving edges by the posterior, sharp or tempered, does not recover them. The edges' errors come from
+where the evidence changes, not from where the decoder puts the change given that evidence.
+
+### R026 — P07 weighted apart in the gaps and where the ball is seen (P23 E; declared 2026-10-31, Tian)
+Proposal: P23 (E), P07 · Commit: part 1 (this declaration) is committed before any run of it; the code, the configs
+and the runs are in part 2.
+
+**Part 1, declared before any run** (2026-10-31).
+
+**Belief.** Where the ball is missing, P07 is the only team source. At weight w it moves the H-against-A log-odds by
+w · logit(h) a frame: 0.32 nats at w = 0.2 and h = 0.83. A lasting change of team inside a gap pays switch_team (4)
+once, so it needs about 13 frames of consistent evidence, and a contrary blip about 25. P07 is right on only part of
+the gap frames, so in practice it takes longer, in gaps with a median of 10.7 s. Where the ball is seen, the touch rule
+speaks (logit 0.93 = 2.6 nats an episode frame), and P07 at the same weight adds little but noise. R011 chose one weight
+for both kinds of frame (scope `all`), and it peaked at 0.2. Two weights let the gap weight rise without the visible
+frames'. **Falsified if** no config of the grid passes the guard and the bar.
+
+**The risk.** P07 never saw our teams, so a heavier weight transfers less, and the benchmark cannot measure by how much
+(R011). Its label-free transfer check (`touch_agreement` 0.8251 against the gate's 0.7486) is the model's, which a
+weight does not change. So it is not a gate here; the possessions per graded minute on BAR-ATH are reported.
+
+**The mechanism.** A third `scope` of `shape_possession`, `"visible"`: only where the ball is present. It is the
+complement of `"gaps"` within `"all"`, with the same model, logits and clip. `main.toml`'s one P07 source becomes two,
+named `shape_visible` (scope `visible`, weight w_vis) and `shape_gaps` (scope `gaps`, weight w_gap). The two sit next to
+each other at the one source's place in `[[evidence]]` (before `smart_tagging`). The decoder sums its sources in that
+order, and only one of the two speaks on any frame, so at equal weights the emissions are the one source's to the bit
+(added with its checks, `6bbae1d`).
+
+**The grid.** The base is `main.toml` as it stands when R026 runs: after R024 and R025, with `edges` if R025 adopted it.
+Take w* as P07's weight in that file: 0.2, unless R024 changes it.
+- w_vis {w*/2, w*} x w_gap {w*, 2w*, 3w*}: 6 configs, `pipeline/benchmark/configs/r026/r026_v{VVV}_g{GGG}.toml` (the
+  weights in thousandths).
+- The config w_vis = w_gap = w* must score as `main.toml` to the last digit under both truths. The split then changes
+  nothing.
+
+**The selection.** `choose.py --objective mean`, with R024's rule: the band 0.005, the larger min(raw, coarse) among
+the tied, then this order. (w*, w*) comes first; then the smaller w_gap; then, at a given w_gap, the larger w_vis. The
+stems are given in that order.
+
+**One extension, declared now.** If the choice has w_gap = 3w*, the extension runs at the chosen w_vis: w_gap {4w*, 5w*}.
+The selection is repeated on the eight configs. Nothing more is added.
+
+**Adoption.** As R025's: the guard, the bar (required), and the label-free checks on BAR-ATH. If all pass, `main.toml`
+takes the two sources, and `pipeline/configs/r026_gap_weight.toml` is written with it.
+
+**One retry.** R026b, declared before its run, is named only from a cause in A19's calibration of P07 by ball state or in
+R026's own results. If it fails too, E is dropped and the `"visible"` scope removed in one commit.
+
+**Review.** An independent reviewer read A19 and R024 to R026 before any run: 14 findings, all resolved in the text
+above. The one blocker was R024's extension, which could be read two ways.
+
+**Part 2, the run** (2026-10-31).
+- **The base** is `main.toml` as R024 left it, since C was dropped, with w* = 0.2.
+- **The code:** the `"visible"` scope, `6bbae1d` and `4b3f8e9`.
+- **The configs** (`57013a1`) come from a generator, and every line other than the two P07 blocks and the header is
+  `main.toml`'s.
+- **The run:** one throttled process from a detached checkout of `57013a1`, EXIT=0: `run.py pipeline/configs/main.toml
+  <the six in the declared order> --profile tracking --seeds 3 --truth both --drop-match-only`.
+- **The selection:** `choose.py --reference main --objective mean <the six in that order> --out
+  data/runs/r026/choice.json`.
+
+| config (w_vis, w_gap) | mean | raw | coarse | possessions / min | mean Δ vs `main` [p, wins] | raw Δ | coarse Δ |
+|---|---|---|---|---|---|---|---|
+| `main` | 0.5563 | 0.5363 | 0.5764 | 3.06 | | | |
+| **`r026_v200_g200`** (0.2, 0.2) | **0.5563** | 0.5363 | 0.5764 | 3.06 | +0.0000 | +0.0000 | +0.0000 |
+| `r026_v100_g200` (0.1, 0.2) | 0.5492 | 0.5396 | 0.5589 | 3.11 | -0.0071 [0.0312, 1] | +0.0033 | -0.0174 |
+| `r026_v200_g400` (0.2, 0.4) | 0.5460 | 0.5338 | 0.5582 | 3.22 | -0.0103 [0.0156, 0] | -0.0025 | -0.0182 |
+| `r026_v200_g600` (0.2, 0.6) | 0.5421 | 0.5332 | 0.5511 | 3.29 | -0.0142 [0.0156, 0] | -0.0031 | -0.0253 |
+| `r026_v100_g400` (0.1, 0.4) | 0.5393 | 0.5372 | 0.5414 | 3.27 | -0.0170 [0.0156, 0] | +0.0010 | -0.0350 |
+| `r026_v100_g600` (0.1, 0.6) | 0.5360 | 0.5372 | 0.5348 | 3.35 | -0.0203 [0.0156, 0] | +0.0009 | -0.0416 |
+
+- **The identity check passes.** (0.2, 0.2) scores as `main.toml` to the last digit under both truths. The split
+  changes nothing at equal weights, as `6bbae1d`'s check said it would.
+- **The rule chooses the identity**, `main.toml`'s own weights. It is the best mean, and alone in its band.
+- **No config passes the guard** (Δ > 0), and the extension (a choice at w_gap = 0.6) does not fire.
+- **The belief is falsified on the benchmark.**
+  - A heavier gap weight does not make a change inside a gap believed sooner to good effect. It makes more of them:
+    3.22 to 3.35 possessions a minute against 3.06. It loses on the coarse truth in every config (-0.018 to -0.042), and
+    on raw as well at w_vis 0.2.
+  - Lowering the visible weight to 0.1 helps raw a little (+0.003) and costs coarse four to five times as much.
+  - A19 had already shown no reason to weight the gaps apart: P07's α is 1.07 where the ball is seen and 1.10 where
+    it is missing.
+
+**Verdict: R026 fails** (the rule keeps `main.toml`'s weights; no candidate beats it).
+
+**No retry: the advisor (for Tian, 31 Oct) ruled E dropped.**
+- **A19 names no cause.** P07 is calibrated alike in both ball states. Its weight of 0.2 corrects for counting
+  correlated frames as independent, not for a difference between the two.
+- **R026's own results reject the belief outright.**
+- **A gap weight below 0.2 would be the opposite hypothesis, not a retry.** R011's gaps-only grid makes it a
+  near-certain non-result: a flat optimum, with the mean of the two truths 0.5148 at 0.1 and 0.5154 at 0.2. Even a
+  small gain would fall inside the tie band, where the rule picks the identity first, so it could not be adopted.
+  It can only come back as a new proposal, at low priority.
+
+**The code is removed in one commit,** `4690545`: the reverts of `6bbae1d` and `4b3f8e9` (the `"visible"` scope
+and its checks), and `pipeline/benchmark/configs/r026/`. It is recoverable from `57013a1`. `main.toml` is unchanged
+(R024's, `e6496a9b…`).
 
 ## Submission log
 
@@ -7495,6 +8290,11 @@ R014 and R014b (2026-10-26) left `main.toml` unchanged: neither met its bar, so 
 `main.toml` was rewritten a fifth time by R017 (2026-10-30): P08 `smart_tagging` (per frame, `r017_frame`) adopted.
 It now produces sha256 `7ba575c0982aacb9765b39c406e4ff5c9ddb82ca37cfa2b7f101417431fc3d7c` (commit 56916f2). It was
 NOT uploaded.
+
+`main.toml` was rewritten a sixth time by R024 (2026-10-31, P23 A): the touch hold re-chosen under R023's
+objective, 0.60 to 0.55. It now produces sha256
+`e6496a9b9805217ef085e52ed69cbb27a42b95368d65c1d188b4a2f339b61170` (commit `3943962`), identical to
+`r024_both.toml`'s file. R025, R025b and R026 left it unchanged (C and E dropped). It has NOT been uploaded.
 
 Before each upload:
 1. Regenerate the file from a clean clone, ideally on a second machine, and compare the sha256 ([T21](traps.md)).

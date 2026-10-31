@@ -14,6 +14,8 @@ R002 to R012).
 python pipeline/benchmark/sources.py          # data -> data/external/dfl/   (21 files, 2.6 GB, size and md5 checked)
 python pipeline/benchmark/run.py CONFIG ...   # configs -> scores, intervals, comparisons, one JSON report per config
 python pipeline/benchmark/choose.py --reference main STEM ...   # a grid's declared rule applied to its reports, + LOMO
+python pipeline/benchmark/choose.py --reference main --objective mean STEM ...   # R023's objective: the mean of the two truths (R024)
+python pipeline/benchmark/diagnose.py CONFIG --drop-match-only   # A19: the IoU ladder decomposed, the sources' and the posterior's calibration
 python pipeline/benchmark/fidelity.py         # how far the degraded profile looks like our match (gates, warnings)
 python pipeline/benchmark/headroom.py CONFIG  # a config beside five variants whose evidence is the truth itself
 python pipeline/benchmark/label_diff.py REFERENCE CONFIG ...  # how configs change BAR-ATH's labels beside a reference, aggregates only (heavy)
@@ -756,7 +758,8 @@ thousandths (144 files).
 
 ```
 .venv/Scripts/python pipeline/benchmark/choose.py --reference main STEM [STEM ...] [--profile P] [--band 0.005]
-                                                  [--metric spell|macro] [--top N] [--data-dir D] [--out PATH]
+                                                  [--metric spell|macro] [--objective raw|mean] [--top N] [--data-dir D]
+                                                  [--out PATH]
 choice = choose.choose(stems, reference="main")
 ```
 
@@ -778,6 +781,32 @@ metric. The band is in the metric's units, so such a grid declares it (R016 pass
 0.005, and every other field is unchanged. The checks are `test_choose_applies_the_rule_and_matches_the_runner`,
 `test_choose_selects_on_macro_when_asked` and `test_choose_refuses_missing_stale_and_mixed_reports`
 (`checks/choose.py`, synthetic).
+
+`--objective mean` (`objective="mean"`, R024) is the rule of every choice declared after R023, whose outcome was
+"both". The objective is the mean of the raw and coarse pooled scores, and every config within the band of the best
+is tied. Among the tied, the larger min(raw, coarse) wins: the config that does best under whichever truth is worse for
+it. A tie that is left goes to the stem named first. The rows, the `versus` lines and the lomo gain a mean entry: its Δ
+is the mean of the two truths' Δs, and its p and wins are taken on the per-match means. The lomo's whole rule uses
+the six-match min(raw mean, coarse mean). `--objective raw`, the default, is R008 to R016's rule to the bit (a check
+compares it with the code before the change).
+
+## A19's diagnosis: the ladder and the calibration
+
+```
+.venv/Scripts/python pipeline/benchmark/diagnose.py CONFIG [--profile P] [--seeds N] [--matches ID ...] [--drop-match-only]
+                                                    [--data-dir D] [--no-write]
+```
+
+`diagnose.py` (A19, P23 B and D) runs a config on the benchmark once and writes `<data dir>/runs/diagnose/<stem>.json`,
+aggregates of DFL only. It has two parts.
+- **The ladder.** For each truth it decomposes where spellF1 goes between IoU 0.3 and 0.7: every pair the scorer
+  matches at 0.3 is clean, merge, split or both by its same-team overlaps, and each class's loss up the ladder is
+  given in spellF1 units. The clean pairs' edge errors are reported too.
+- **The calibration.** Each source and the hmm's posterior against the raw truth: log-loss, Brier, ECE, the reliability
+  table and a Platt fit (α below 1 is overconfident).
+
+Its matching is the scorer's own (`pm.matched_gt_flags`), and the code checks it on every half. Its pooled spellF1
+must equal `score.pooled`'s.
 
 ## Dead-ball model
 

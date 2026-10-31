@@ -39,8 +39,9 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P20](#p20--ball-free-possession-paths-pathcrf-on-our-slots) | Ball-free possession paths: PathCRF (KDD 2026), trained on the same DFL matches | fact 1; A13's gaps (+0.176 raw) | S test, L to adopt | measured: +0.0049 pooled on the gap frames (needed +0.04); PathCRF's own protocol on the clean match reached 0.9172, against P07's 0.8522 on degraded tracking (not like for like) | dropped → R022 (step 0 no-go: +0.0049 under our degradation and the adapter, needed +0.04; code removed, recoverable at `2163406`) |
 | [P21](#p21--wrong-team-slots-measure-the-ceiling-then-repair-them) | Wrong-team slots: measure the ceiling, then repair from tracking or jersey colours | T32 | S test, M | low on the benchmark: all of `tracking`'s player degradation costs `main.toml` 0.013 (A14) | dropped → A16 (step 0's ratio 0.85 < 1.5; the tool is kept for P19's transfer report) |
 | [P22](#p22--the-shape-model-adapted-to-our-two-teams-without-labels) | The shape model adapted to our two teams without labels | fact 1 | S–M | low: guess +0.00 to +0.02 | (a) dropped → R020 (feasibility gate failed: 0.0538 against 0.0623, ratio 0.863 > 0.75); (b) and (c) not tried |
+| [P23](#p23--the-hmm-backbone-reviewed-nine-ideas-five-taken) | The HMM backbone reviewed: re-choose under R023's objective (A), decompose the IoU ladder (B), posterior edges (C), calibration (D), a gap weight for P07 (E) | fact 5; the decoder's placement of changes; fact 1 (E) | S each | low: +0.01 to +0.03 for the lot (the advisor's estimate); measured: A +0.0052 on the mean (R024) | done: A adopted → R024; B, D measured → A19; C dropped → R025, R025b; E dropped → R026; F deferred, G to I not taken |
 | [P03](#p03--one-command-deterministic-cached) | One-command, deterministic, cached pipeline | reproducibility | S–M | enabling | done → R001 |
-| [P04](#p04--sticky-ownership-from-controlled-touches) | Sticky ownership from controlled touches | facts 3, 5 | S | high: +0.1421 raw at the chosen decoder (R010) | done → R008, R010; rule re-chosen → R013 |
+| [P04](#p04--sticky-ownership-from-controlled-touches) | Sticky ownership from controlled touches | facts 3, 5 | S | high: +0.1421 raw at the chosen decoder (R010) | done → R008, R010; rule re-chosen → R013; hold re-chosen → R024 (0.55) |
 | [P05](#p05--a-real-dead-ball-detector) | Dead-ball detector | fact 4 | M | high: +0.1661 raw at the chosen decoder, on a benchmark that overstates it (R010, T38, T39) | done → R009, R010 |
 | [P06](#p06--global-decoding-per-half-hmm--hidden-semi-markov) | Global decoder (HMM / semi-Markov) per half | fact 5 | M | high | done → R006–R007, A10; decoder re-chosen → R010, R013 |
 | [P07](#p07--possession-without-the-ball-team-shape-and-movement) | Possession without the ball: team shape | fact 1 | M | high: +0.0942 raw at the chosen decoder, on a benchmark whose gain is not a forecast for our match (R011) | done → R011; weight re-chosen → R013 |
@@ -973,6 +974,116 @@ Athletic: the count of possessions moved the other way on BAR-ATH.
   belongs, in the decoder, which is why (c) was recorded. R020 tested only the estimator's feasibility, and it failed.
 - **Validate:** simulate the procedure on DFL, leave one match out, each match in turn as the unlabelled target. A
   Bundesliga-to-Bundesliga shift is small, so expect "no harm" rather than a gain.
+
+## The decoder revisited (added 31 Oct)
+
+### P23 — The HMM backbone reviewed: nine ideas, five taken
+
+**Status: done (Claude, for Tian, 31 Oct).** Tian took A to E and deferred F; G, H and I were not taken.
+- **A → [R024](results.md): adopted.** The touch hold moves from 0.60 to 0.55. The mean of the two truths is +0.0052
+  (p 0.0469, 6 wins in 7); `main.csv` is `e6496a9b…`.
+- **B and D → [A19](results.md): measured.** The IoU ladder is mostly edges on otherwise right pairs (0.070 of
+  spellF1 on the mean). The sources are near calibrated; the decoder's posterior is about five times too sharp.
+- **C → [R025](results.md), [R025b](results.md): dropped.** The gate passed. R025 moved edges by 1 frame (mean
+  -0.0010), and its one retry, a posterior tempered at T = 5 (the advisor's ruling), moved them by 3 and made them
+  worse (mean -0.0282, 0 wins). The code was removed, recoverable from `171d0bb`.
+- **E → [R026](results.md): dropped.** Every heavier gap weight lost on the mean (-0.010 to -0.020): it cut more
+  possessions, which the coarse truth punishes. The rule kept `main.toml`'s weights, and the advisor ruled no retry
+  (A19 shows P07 calibrated alike with the ball seen or missing). The code was removed, recoverable from `57013a1`.
+- **What P23 leaves:** `main.toml` gains R024's hold. The decoder's remaining loss is in where the evidence changes,
+  not in where the decoder puts the change given the evidence. F (P22(b), the evidence in the gaps) is the one idea
+  left aimed there.
+
+**Why.** On 31 Oct Tian asked for a review of the decoder against the literature:
+- is the HMM the right model?
+- should we ensemble?
+- where is it weak, and what would improve it?
+
+An advisor (Fable 5.1, extra-high effort) checked the ideas and commented on each. This section is the review's record,
+and the four entries above are its declared tests.
+
+**The backbone: keep it.**
+- **It is the standard design.** A per-frame classifier is decoded by a model that enforces sensible segments. This is
+  the hybrid HMM of speech recognition, which reads scaled likelihoods (Bourlard and Morgan 1994), and the design of
+  temporal action segmentation, which is scored by a segment F1 at IoU thresholds close to spellF1 (Ding, Sener and Yao's
+  survey). A learned possession model still sits under such a decoder (Borghesi et al. 2023, a TCN).
+- **The decoder is not the limit.** With perfect evidence it scores 0.918 raw and 0.969 coarse (A13). Real evidence
+  leaves about 0.38 on the table.
+- **Its knobs are spent.** R013's Stage C had ten configs within 0.005 of each other, and its choice is interior on
+  every axis.
+- **Learned replacements fell short here.** P19 gained +0.016 per frame (R021) and P20 +0.005 in the gaps (R022).
+
+**Its weak points.**
+- The hard minimum possession, 35 frames (1.4 s), rules out every shorter possession, however strong the evidence.
+- A change of team costs the same everywhere: in a dribble, in a 50-50 duel, during a pass in flight.
+- Each frame's evidence is counted as if it were independent of its neighbours. The weights correct for this in part.
+- Viterbi returns the single best path, which is not the path that maximises the expected spellF1. In a stretch with no
+  evidence, its tie rule puts a change on the stretch's first frame.
+- One P07 weight serves both kinds of frame, ball-visible and ball-missing. Where the ball is missing, P07 is the only
+  team source (`controlled_touch`'s hold votes only where the ball is visible, outside its episodes). At weight 0.2 it
+  moves the H-against-A log-odds by 0.2 x logit(0.83) ≈ 0.32 nats a frame when it is right, against switch_team 4. A
+  lasting change inside a gap needs about 13 frames of consistent evidence, and a contrary blip about 25. P07 is right
+  on only part of the gap frames, so in practice it takes longer. (The review first said 40 frames, from the one-sided
+  0.10 nats of log(2h). The declarations' reviewer corrected it.)
+
+**Ensembles: not of decoders.** Several decoder settings on the same evidence share the same errors, so their medoid lands
+in the middle of the plateau, which can be chosen directly. The sources are already combined as a product of experts,
+which is the ensemble this design supports. The only ensemble with a mechanism behind it is bagging P07 (G).
+
+**A correction made during the review.** Claude first put most of the ladder loss on badly placed edges: spellF1 falls
+from 0.670 at IoU 0.3 to 0.401 at 0.7 (raw). The advisor's count says most of it is merged and split possessions instead.
+`main.toml` predicts 6,279 possessions, against 9,183 in the raw truth and 4,977 in the coarse. Under the raw truth we
+merge (recall 0.56), and under the coarse truth we split (precision 0.61), and moving an edge fixes neither. B measures the
+split before C is built. *A19's answer:* the review's first reading was nearer. On the mean of the two
+truths, the clean pairs lose 0.070 up the ladder, against 0.025 for merges and 0.027 for splits.
+
+**A finding made while declaring D.** The review said the decoder's `log(2a)` assumes a 50/50 dead-ball prior, a bias of
+logit(0.55) ≈ 0.2 nats a frame towards play. That bias is not there:
+- `dead_ball_model` has subtracted logit(prior_alive) since P05 (its step 4), as scaled likelihoods require;
+- P07's prior is 0.5 by construction (mirrored rows; the file is refused otherwise).
+
+So D is the calibration check alone, and it adopts nothing. The declarations' reviewer found one 50/50 assumption that
+does remain: team evidence under `D`. `hmm` adds a team source's terms to H and A and nothing to D, so wherever a team
+source speaks, play is favoured over a stoppage by w · log(2 · max(h, 1 − h)) a frame (0.62 nats for a touch episode
+at 0.93). That is wrong exactly where a player handles a dead ball. A19 measures it, and changes nothing.
+
+| | idea | effort | expected gain | what it brings | decision |
+|---|---|---|---|---|---|
+| **A** | Re-choose R013's touch rule, decoder and P07 weight under R023's objective (the mean of the two truths), from R013's 336 existing reports | S | +0.005 to +0.015 | R023 changed the target, and every config was scored under both truths. The advisor called it the largest lever left | **do** → R024 |
+| **B** | Decompose the IoU ladder into merged, split and edge losses | S | none by itself | Sets C's ceiling and gate; says whether merging or splitting costs more | **do** → A19 |
+| **C** | Posterior edges: move each change to the median of the posterior over where it happened | S–M | +0.003 to +0.015 | The posterior is computed by `marginals` and not used yet; matters most in gaps, where P07 alone speaks | **do**, after B's gate → R025 |
+| **D** | The dead-ball prior and every source's calibration | S | 0 | The prior is already corrected (above); the calibration of the sources and of the posterior tells C what its posterior is worth | **do**, as a check → A19 |
+| **E** | P07 weighted apart in the gaps and where the ball is seen | S | 0 to +0.02 | In the gaps P07 is the only team signal, at the same weight as where touches speak | **do** → R026 |
+| **F** | P22(b): self-train P07 on our match's own touch pseudo-labels, cross-fit by half, the procedure tested on DFL first | M–L | 0 to +0.03 | The one idea aimed at the gaps, where a perfect team signal is worth +0.176 raw (A13) | **deferred** (Tian, 31 Oct): only if 4 days remain before the freeze |
+| **G** | Bag P07's seven fold models | M | ≤ +0.005 | Less variance, better-calibrated gap probabilities; a fair benchmark needs 42 small models | not taken |
+| **H** | A soft duration prior in place of the hard 1.4 s minimum (semi-Markov) | M | −0.005 to +0.01 | The raw-against-coarse knob in another form, which A settles | not taken |
+| **I** | A learned switch hazard (an IOHMM: cheaper changes at loose balls, duels and passes in flight) | L | 0 to +0.015 | The best-supported idea in the literature, and the largest transfer risk from DFL to our match | not taken |
+
+**Not recommended**, by both the advisor and Claude:
+- **Minimum Bayes risk decoding over sampled paths.** It has the right objective but the wrong posterior: ours is a
+  product of grid-chosen exponents, not a calibrated one. A diffuse posterior favours fewer, longer runs, which drifts
+  towards the coarse truth, so a gain could not be told apart from a change of grain.
+- **A medoid of the plateau's configs.** No diversity, and R023 settles the hedge it would provide.
+- **A CRF or structured perceptron.** It trains on a per-frame surrogate of a segment metric, for five weights that the
+  grid already fits directly.
+- **A deep sequence model.** Seven labelled matches and degraded tracking; P19 and P20 already fell short.
+
+**Order.** A, then B and D, then C, then E. One heavy process at a time. Every Δ is taken against `main.toml` as it
+stands when the entry runs. F comes after E, only if at least four days remain before the freeze.
+
+**Sources.**
+- Yu, [Hidden semi-Markov models](https://www.cs.ubc.ca/~murphyk/Teaching/CS540-Spring10/projects/Yu-hsmm09.pdf) (2010).
+- Lea et al., [Segmental spatiotemporal CNNs](https://arxiv.org/pdf/1602.02995).
+- Ding, Sener and Yao, [Temporal action segmentation: a survey](https://arxiv.org/pdf/2210.10352).
+- Ishikawa et al., [ASRF](https://arxiv.org/pdf/2007.06866), action boundaries against over-segmentation.
+- Kumar and Byrne, [segmental minimum Bayes risk decoding](https://www.isca-archive.org/icslp_2002/kumar02_icslp.html);
+  Freitag et al., [sampling for MBR](https://arxiv.org/pdf/2305.09860).
+- [hmmTMB](https://arxiv.org/pdf/2211.14139) and
+  [LaMa](https://cran.csail.mit.edu/web/packages/LaMa/vignettes/Inhomogeneous_HMMs.html), covariate-dependent transitions.
+- [Hybrid HMM/NN scaled likelihoods](https://www.inf.ed.ac.uk/teaching/courses/asr/2024-25/asr10-hybrid_hmm_nn.pdf)
+  (Edinburgh ASR notes).
+- Link and Hoernig, [individual ball possession in soccer](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5503225/);
+  Borghesi et al., [TCNs for ball possession](https://iris.polito.it/handle/11583/2976470) (2023).
 
 ## Cheap signals worth checking
 

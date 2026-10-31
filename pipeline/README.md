@@ -123,8 +123,9 @@ half_width = 50
 
 | config | what it is |
 |---|---|
-| [`main.toml`](configs/main.toml) | the team's current pipeline, i.e. the file we would submit today (not uploaded): `controlled_touch` (1.5 m, 6 m/s, 1 frame, hold 0.60), `shape_possession` (weight 0.2, every graded frame) and `smart_tagging` (P08: Smart Tagging's team votes, c_team 0.76, per frame, weight 0.2) for `home`, the gradient-boosted `dead_ball_model` for `alive`, the `hmm` decoder (4 / 32 / 35 / 25) and `shift_edges` (team +1, into_dead -2, out_of_dead 0). P05 was chosen in R009 and R010 and P07's model in R011; R013 chose the touch rule, `switch_team`, `min_possession` and P07's weight again with no window-derived value in any candidate, and re-derived the shift by R012's rule, all on the benchmark; R017 then added `smart_tagging` at Tian's pick of its strength (untested on any benchmark, DFL has no tags, so the benchmark runs this file with `--drop-match-only`) (it overstates P05 for our match, T38, T39, and its gains are not a forecast for it) |
-| [`r017_frame.toml`](configs/r017_frame.toml) | R017's adopted config, written when it was chosen: R013's file plus `smart_tagging` per frame at weight 0.2; it is the named copy of `main.toml` and writes the same CSV (sha256 `7ba575c0…`) |
+| [`main.toml`](configs/main.toml) | the team's current pipeline, i.e. the file we would submit today (not uploaded): `controlled_touch` (1.5 m, 6 m/s, 1 frame, hold 0.55), `shape_possession` (weight 0.2, every graded frame) and `smart_tagging` (P08: Smart Tagging's team votes, c_team 0.76, per frame, weight 0.2) for `home`, the gradient-boosted `dead_ball_model` for `alive`, the `hmm` decoder (4 / 32 / 35 / 25) and `shift_edges` (team +1, into_dead -2, out_of_dead 0). P05 was chosen in R009 and R010 and P07's model in R011; R013 chose the touch rule, `switch_team`, `min_possession` and P07's weight again with no window-derived value in any candidate, and re-derived the shift by R012's rule, all on the benchmark; R017 then added `smart_tagging` at Tian's pick of its strength (untested on any benchmark, DFL has no tags, so the benchmark runs this file with `--drop-match-only`); R024 re-chose R013's two stages under R023's objective, the mean of the raw and coarse pooled spellF1s, and moved only the hold, from 0.60 to 0.55 (benchmark 0.5363 raw and 0.5764 coarse, mean +0.0052, p 0.0469, 6 wins in 7; sha256 `e6496a9b…`) (the benchmark overstates P05 for our match, T38, T39, and its gains are not a forecast for it) |
+| [`r024_both.toml`](configs/r024_both.toml) | R024's adopted config, written when it was chosen: R017's file with the hold at 0.55; it is the named copy of `main.toml` and writes the same CSV (sha256 `e6496a9b…`) |
+| [`r017_frame.toml`](configs/r017_frame.toml) | R017's adopted config, written when it was chosen: R013's file plus `smart_tagging` per frame at weight 0.2; it writes the file `main.toml` wrote before R024 (sha256 `7ba575c0…`) |
 | [`r017_tag.toml`](configs/r017_tag.toml) | R017's other strength, not adopted: `smart_tagging` at one observation per tag, weight 1.0 |
 | [`r013_retune.toml`](configs/r013_retune.toml) | R013's final config, written when it was chosen; it writes the file `main.toml` wrote before R017 (sha256 `0ebdfbec…`) |
 | [`p02_shift.toml`](configs/p02_shift.toml) | R012's choice, written when it was chosen: R011's config plus the shift; it writes the file `main.toml` wrote before R013 |
@@ -211,7 +212,9 @@ needs the video's homography or the Smart Tagging stops the run and names the as
   3.7 s) and how fine ours are is not known ([A06](../docs/results.md), [T33](../docs/traps.md)), so `--truth coarse`
   absorbs every possession under 5 s that sits between two possessions of the other team. Run both and read them side
   by side: a choice that depends on possession length and ranks differently under the two is a warning, not a licence
-  to pick the truth that suits. Absolute spellF1 on the benchmark is not our leaderboard's under either truth.
+  to pick the truth that suits. Since R023 a declared choice ranks on the unweighted mean of the two pooled spellF1s,
+  each reported (`choose.py --objective mean`, first used by R024). Absolute spellF1 on the benchmark is not our
+  leaderboard's under either truth.
 - **The yardstick check.** `nearest_w{0,25,50,125}.toml` are the organisers' four baselines decoded per half, and a
   change has to beat them here before it is worth anything. They are also the benchmark's own test: the check holds in
   its robust part (`w0` is last under both truths, R002 to R004c), the rest of the order follows the truth, and neither
@@ -310,7 +313,8 @@ pipeline/
 ├── configs/             main.toml (current pipeline), smooth50_repro.toml (regression), p06_hmm.toml (P06),
 │                        p45_hmm.toml (P04 + P05, R010), p07_shape.toml (+ P07, R011),
 │                        p02_shift.toml (+ P02's shift, R012), r013_retune.toml (R013's file, main.toml's
-│                        before R017), r017_frame.toml (R017: main.toml's file), r017_tag.toml (R017, not adopted)
+│                        before R017), r017_frame.toml (R017's file, main.toml's before R024), r017_tag.toml
+│                        (R017, not adopted), r024_both.toml (R024: main.toml's file)
 ├── inputs/              stage 1: Inputs, the ATD cache                       README.md
 ├── evidence/            stage 2: REGISTRY, nearest_player, ball_presence,    README.md
 │                        controlled_touch, dead_ball_rules, dead_ball_model,
@@ -321,5 +325,5 @@ pipeline/
 ├── refine/              stage 4: REGISTRY, shift_edges                       README.md
 ├── output/              stage 5: write, validate, summarise, score, manifest README.md
 └── benchmark/           validation (P01): degraded DFL matches; headroom.py, tag_stats.py  README.md
-                         train_shape.py (P07), conventions.py (P02)
+                         train_shape.py (P07), conventions.py (P02), diagnose.py (A19)
 ```
