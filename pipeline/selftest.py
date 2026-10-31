@@ -4084,6 +4084,148 @@ def test_shape_possession_remembers_its_scores_per_inputs():
             trees.score = real
 
 
+def test_shape_possession_em_prior_recovers_a_known_share():
+    from pipeline.evidence import shape_possession, trees
+    rng = np.random.default_rng([22, 1])
+    n = 200_000
+    for share in (0.3, 0.5, 0.62, 0.7):
+        y = rng.random(n) < share
+        z = 2.0 * rng.normal(np.where(y, 1.0, -1.0), 1.0)       # the calibrated logit under a balanced prior
+        found = shape_possession.em_prior(z)
+        assert found["converged"] and found["frames"] == n, (share, found)
+        assert abs(found["prior_home"] - y.mean()) < 0.01, "{}: EM says {}".format(share, found["prior_home"])
+        if share != 0.5:
+            plain = float(np.mean(trees.sigmoid(z)))
+            assert abs(plain - y.mean()) > 0.02, "{}: the plain average is as good ({})".format(share, plain)
+
+
+def test_shape_possession_em_prior_edge_cases():
+    from pipeline.evidence import shape_possession
+    em = shape_possession.em_prior
+    assert em(np.full(10, np.nan)) == {"prior_home": 0.5, "iterations": 0, "converged": True, "frames": 0}
+    flat = em(np.zeros(50))
+    assert flat["prior_home"] == 0.5 and flat["iterations"] == 1 and flat["converged"], flat
+    rng = np.random.default_rng([22, 2])
+    z = 2.0 * rng.normal(np.where(rng.random(5_000) < 0.65, 1.0, -1.0), 1.0)
+    holes = np.insert(z, rng.integers(0, len(z), 300), np.nan)
+    assert em(holes) == em(z), "a NaN is not a frame"
+    assert em(z) == em(z.copy()), "two calls differ"
+    mirror = em(-z)
+    assert abs(mirror["prior_home"] - (1.0 - em(z)["prior_home"])) < 1e-12, "the share is not antisymmetric"
+    shy = 1e-4 * np.where(np.arange(1_000) % 10 < 9, 1.0, -1.0)      # underconfident: EM crawls (research.md section 2)
+    slow = em(shy)
+    assert slow["iterations"] == shape_possession.EM_MAX_ITERATIONS and not slow["converged"], slow
+    assert slow["prior_home"] > em(shy, max_iterations=100)["prior_home"] > 0.5, \
+        "the share should still be moving away from 0.5"
+    expect_error(ValueError, lambda: em(np.full(20, 50.0)), "prior", "shape_possession", "0 or 1")
+
+
+def test_shape_possession_prior_none_is_byte_identical():
+    with tempfile.TemporaryDirectory() as root:
+        path = write_shape_model(root)
+        for seed in (0, 3, 5):
+            inputs = shape_inputs(*shape_scene(seed))
+            for scope in ("gaps", "all"):
+                for min_prob in (0.02, 0.3):
+                    plain = shape_home(inputs, path, scope=scope, min_prob=min_prob)
+                    none = shape_home(inputs, path, scope=scope, min_prob=min_prob, prior="none")
+                    assert plain.tobytes() == none.tobytes(), (seed, scope, min_prob)
+
+
+def test_shape_possession_prior_em_shifts_the_logit():
+    from pipeline.evidence import shape_possession, trees
+    with tempfile.TemporaryDirectory() as root:
+        path = write_shape_model(root)
+        players, teams, graded = shape_scene(0)             # the home block is ahead on 20% of its frames with a gap
+        inputs = shape_inputs(players, teams, graded)
+        X = shape_matrix(players, teams, graded)
+        gap = X[:, SHAPE_COLUMN["adv_gap"]]
+        z_all = np.where(np.isnan(gap), 0.0, np.sign(gap)) * STUMP_LOGIT
+        known = ~np.isnan(shape_home(inputs, path, scope="all"))
+        pi = shape_possession.em_prior(z_all[known])["prior_home"]
+        assert abs(pi - 0.5) > 0.1, "the scene must be lopsided, got pi = {}".format(pi)
+        seen = inputs.atd.ball_present
+        recorded = []
+        real = shape_possession.em_prior
+        shape_possession.em_prior = lambda logits, **kw: recorded.append(np.array(logits)) or real(logits, **kw)
+        try:
+            for strength in (0.5, 1.0):
+                for scope in ("gaps", "all"):
+                    for min_prob in (0.02, 0.4):
+                        home = shape_home(inputs, path, scope=scope, min_prob=min_prob, prior="em",
+                                          prior_strength=strength)
+                        speaks = known & ~seen if scope == "gaps" else known
+                        expected = np.clip(trees.sigmoid(z_all + strength * np.log(pi / (1.0 - pi))), min_prob,
+                                           1.0 - min_prob)
+                        assert np.array_equal(~np.isnan(home), speaks), (strength, scope, min_prob)
+                        assert np.allclose(home[speaks], expected[speaks], rtol=0, atol=1e-12), \
+                            (strength, scope, min_prob)
+        finally:
+            shape_possession.em_prior = real
+        assert len(recorded) == 8
+        z_model = shape_possession.logit_home(inputs, path)
+        assert not z_model.flags.writeable
+        for read_by_em in recorded:
+            assert np.array_equal(read_by_em[~np.isnan(read_by_em)], z_model[~np.isnan(z_model)]), \
+                "EM must read the unclipped logit of every graded frame with an opinion, whatever scope and clip"
+        assert np.abs(z_model[~np.isnan(z_model)]).max() == STUMP_LOGIT, "the logit is not clipped"
+
+
+def test_shape_possession_prior_keeps_antisymmetry():
+    with tempfile.TemporaryDirectory() as root:
+        lopsided = {"baseline": 0.9, "prior_home": 0.5, "trees": [
+            stump(SHAPE_COLUMN["h_adv_mean"], 50.0, -0.8, 1.7, missing_left=1),
+            stump(SHAPE_COLUMN["a_vel_adv"], 0.0, 0.6, -0.3),
+            stump(SHAPE_COLUMN["adv_gap"], 0.0, -1.0, 2.0)]}
+        path = write_shape_model(root, full=lopsided)
+        for seed in range(6):
+            players, teams, graded = shape_scene(seed)
+            values = dict(scope="all", prior="em", prior_strength=1.0)
+            home = shape_home(shape_inputs(players, teams, graded), path, **values)
+            relabelled = shape_home(shape_inputs(players, 1 - teams, graded), path, **values)
+            known = ~np.isnan(home)
+            assert known.sum() > 100 and np.array_equal(known, ~np.isnan(relabelled)), seed
+            assert np.allclose(home[known], 1.0 - relabelled[known], rtol=0, atol=1e-12), \
+                "seed {}: with the prior, relabelling the teams is not 1 - home".format(seed)
+
+
+def test_shape_possession_prior_parameters():
+    with tempfile.TemporaryDirectory() as root:
+        path = write_shape_model(root)
+        inputs = shape_inputs(*shape_scene(0))
+        for bad in ("EM", "", None, True, 1):
+            expect_error(ValueError, lambda: shape_home(inputs, path, prior=bad, prior_strength=0.5),
+                         "shape_possession", "prior", "none", "em")
+        for bad in (None, 0, -0.5, 1.5, float("nan"), float("inf"), True, "0.5"):
+            expect_error(ValueError, lambda: shape_home(inputs, path, prior="em", prior_strength=bad),
+                         "shape_possession", "prior_strength")
+        expect_error(ValueError, lambda: shape_home(inputs, path, prior_strength=0.5), "shape_possession",
+                     "prior_strength is read only with prior = \"em\"")
+        expect_error(ValueError, lambda: shape_home(inputs, path, prior="none", prior_strength=0.5),
+                     "shape_possession", "prior_strength is read only")
+        shape_home(inputs, path, prior="em", prior_strength=np.float64(0.5))
+        shape_home(inputs, path, prior="em", prior_strength=1)
+
+
+def test_shape_possession_prior_walks_the_trees_once():
+    from pipeline.evidence import trees
+    with tempfile.TemporaryDirectory() as root:
+        path = write_shape_model(root)
+        inputs = shape_inputs(*shape_scene(0))
+        calls = []
+        real = trees.score
+        trees.score = lambda model, X: calls.append(len(X)) or real(model, X)
+        try:
+            shape_home(inputs, path, scope="all")
+            walked = len(calls)
+            assert walked >= 1
+            shape_home(inputs, path, scope="gaps", prior="em", prior_strength=0.5)
+            shape_home(inputs, path, scope="all", prior="em", prior_strength=1.0, min_prob=0.3)
+            assert len(calls) == walked, "the prior walked the trees again"
+        finally:
+            trees.score = real
+
+
 def test_shape_possession_refuses_infinite_features():
     from pipeline.evidence import shape_features
     with tempfile.TemporaryDirectory() as root:
@@ -4182,6 +4324,16 @@ def test_run_end_to_end_synthetic_shape_possession():
                          "shape_possession")
         unknown = write_text(root, "unknown.toml", text.replace("min_prob = 0.1", "min_prob = 0.1\nradius = 2"))
         expect_error(ConfigError, lambda: load_config(unknown), "shape_possession", "radius")
+        keys = "min_prob = 0.1\nprior = \"em\"\nprior_strength = 0.5"
+        prior = write_text(root, "prior.toml", text.replace("min_prob = 0.1", keys))
+        shifted = run(load_config(prior), inputs, os.path.join(root, "prior.csv"), log=quiet)
+        output.validate(os.path.join(root, "prior.csv"), SYNTHETIC_FRAMES, shifted.codes)
+        shifted_home = shifted.evidence["shape_possession"].home
+        assert np.array_equal(np.isnan(shifted_home), np.isnan(source.home)), "the prior moves values, not coverage"
+        assert np.nanmin(shifted_home) >= 0.1 and np.nanmax(shifted_home) <= 0.9
+        orphan = write_text(root, "orphan.toml", text.replace("min_prob = 0.1", "min_prob = 0.1\nprior_strength = 0.5"))
+        expect_error(ValueError, lambda: run(load_config(orphan), inputs, os.path.join(root, "orphan.csv"), log=quiet),
+                     "shape_possession", "prior_strength")
 
 
 # -- the dead-ball model (P05) ----------------------------------------------------------------------------------------
