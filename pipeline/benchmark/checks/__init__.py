@@ -76,6 +76,10 @@ module of its topic:
     label_diff.py
                  label_diff: the shares, possessions per half, changes in ball gaps and moved D onsets worked out on
                  hand-built codes, and that the printout holds figures and no frame (synthetic only)
+    label_shift.py
+                 label_shift: the share of home on hand-built codes, the advisor's gate at its edge, the calibration
+                 slope, the feasibility on planted matches (each match read by its own fold, no truth through the
+                 inputs, aggregates only) and the checks on a synthetic BAR-ATH (synthetic only)
     harness.py   the harness itself: what it collects, how it reports NOT RUN, the console set-up, and that no check
                  module imports another one
     common.py    what several modules share, and no checks of its own: the synthetic DFL match, the random one
@@ -102,7 +106,7 @@ what two of them share goes to common.py (test_a_check_module_imports_no_other_c
 
 from pipeline.benchmark.checks import (
     calibration, cap, choose, context, conventions, dead_ball, degrade, dfl, dfl_events, fidelity, harness, hazard, headroom,
-    inputs, label_diff, restarts, run, score, shape, sources, tag_stats, tracking, touch, truth)
+    inputs, label_diff, label_shift, restarts, run, score, shape, sources, tag_stats, tracking, touch, truth)
 
 MODULES = (sources, dfl, dfl_events, truth, inputs, score, run, choose, hazard, calibration, degrade, cap, tracking, context,
-           fidelity, headroom, touch, dead_ball, conventions, restarts, shape, label_diff, tag_stats, harness)
+           fidelity, headroom, touch, dead_ball, conventions, restarts, shape, label_diff, label_shift, tag_stats, harness)

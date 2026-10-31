@@ -34,6 +34,8 @@ import numpy as np
 
 import possession_metrics as pm
 from pipeline.benchmark import degrade, dfl, hazard, truth
+from pipeline.benchmark import train_shape as trainer
+from pipeline.evidence import shape_features
 from pipeline.selftest import make_synthetic_bundle, synthetic_inputs, write_text
 
 # Params
@@ -898,3 +900,39 @@ def match_only_source(needs_homography=False):
 
 PROBE_CONFIG = ('scope = "halves"\n\n[[evidence]]\nkind = "nearest_player"\n\n[[evidence]]\n'
                 'kind = "probe_match_only"\nname = "{name}"\n\n[decoder]\nkind = "majority_vote"\nhalf_width = 2\n')
+
+
+# -- the planted matches: a truth that the 26 shape features solve (P07's trainer, P22's feasibility) ---------------------
+
+FOLD_IDS = ("RND001", "RND002", "RND003")
+PLANTED_ROWS = (2500, 2000)                  # graded frames of a planted match: enough rows for a fold to split
+PLANTED_SEEDS, PLANTED_STRIDE = 2, 5
+
+
+def planted_match(match_id, seed):
+    """A DflMatch whose truth is a function of its players alone: home has the ball when it is the more advanced team.
+
+    Every graded frame is alive. The label is the sign of `adv_gap`, or, where a team is absent and the gap is NaN, the
+    sign of `n_diff` (the team that is there has the ball): antisymmetric, so that a model can learn it from the rows
+    and their mirrors. The `gaps` profile leaves the players as they are, so every seed of it has these features."""
+    base = random_match(match_id, seed=seed, rows=PLANTED_ROWS, gap=25)
+    inputs = trainer.served_inputs(base, "gaps", 0, synthetic_calibration(), None)
+    X = shape_features.features(inputs)[1]
+    gap, n_diff = X[:, shape_features.COLUMN["adv_gap"]], X[:, shape_features.COLUMN["n_diff"]]
+    with np.errstate(invalid="ignore"):
+        home = np.where(np.isnan(gap), n_diff > 0, gap > 0)
+    inside = np.asarray(base.frame_number) >= 0
+    possession = np.where(inside, np.where(home, 0, 1), -1).astype(np.int8)
+    status = np.where(inside, 1, -1).astype(np.int8)
+    possession.setflags(write=False)
+    status.setflags(write=False)
+    return dataclasses.replace(base, ball_status=status, ball_possession=possession)
+
+
+@functools.lru_cache(maxsize=1)
+def planted():
+    """(matches, artifact): three planted matches, and the artifact trained on them with the `gaps` profile."""
+    matches = {match_id: planted_match(match_id, seed) for seed, match_id in enumerate(FOLD_IDS)}
+    artifact = trainer.train("gaps", PLANTED_SEEDS, PLANTED_STRIDE, matches=matches,
+                             calibration=synthetic_calibration())
+    return matches, artifact

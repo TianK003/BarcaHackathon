@@ -46,8 +46,8 @@ import numpy as np
 from pipeline.benchmark import conventions, sources, train_dead_ball, truth
 from pipeline.benchmark import train_shape as trainer
 from pipeline.benchmark.calibration import digest as calibration_digest
-from pipeline.benchmark.checks.common import (A, H, NotRun, leaks, loading, random_match, strict_json,
-                                              synthetic_calibration, synthetic_matches, tracked_match,
+from pipeline.benchmark.checks.common import (A, FOLD_IDS, H, NotRun, PLANTED_SEEDS, PLANTED_STRIDE, leaks, loading,
+                                              planted, random_match, strict_json, synthetic_calibration, synthetic_matches, tracked_match,
                                               tracking_calibration)
 from pipeline.benchmark.run import BenchmarkError
 from pipeline.contracts import RunContext
@@ -57,9 +57,6 @@ from pipeline.selftest import expect_error, play_inputs, shape_model, write_shap
 # Params
 NAMES = shape_features.FEATURE_NAMES
 COLUMN = shape_features.COLUMN
-FOLD_IDS = ("RND001", "RND002", "RND003")
-PLANTED_ROWS = (2500, 2000)                  # graded frames of a planted match: enough rows for a fold to split
-PLANTED_SEEDS, PLANTED_STRIDE = 2, 5
 
 
 # -- helpers ----------------------------------------------------------------------------------------------------------
@@ -97,35 +94,6 @@ def quietly(function, *arguments):
     with contextlib.redirect_stdout(buffer):
         result = function(*arguments)
     return result, buffer.getvalue()
-
-
-def planted_match(match_id, seed):
-    """A DflMatch whose truth is a function of its players alone: home has the ball when it is the more advanced team.
-
-    Every graded frame is alive. The label is the sign of `adv_gap`, or, where a team is absent and the gap is NaN, the
-    sign of `n_diff` (the team that is there has the ball): antisymmetric, so that a model can learn it from the rows
-    and their mirrors. The `gaps` profile leaves the players as they are, so every seed of it has these features."""
-    base = random_match(match_id, seed=seed, rows=PLANTED_ROWS, gap=25)
-    inputs = trainer.served_inputs(base, "gaps", 0, synthetic_calibration(), None)
-    X = shape_features.features(inputs)[1]
-    gap, n_diff = X[:, COLUMN["adv_gap"]], X[:, COLUMN["n_diff"]]
-    with np.errstate(invalid="ignore"):
-        home = np.where(np.isnan(gap), n_diff > 0, gap > 0)
-    inside = np.asarray(base.frame_number) >= 0
-    possession = np.where(inside, np.where(home, 0, 1), -1).astype(np.int8)
-    status = np.where(inside, 1, -1).astype(np.int8)
-    possession.setflags(write=False)
-    status.setflags(write=False)
-    return dataclasses.replace(base, ball_status=status, ball_possession=possession)
-
-
-@functools.lru_cache(maxsize=1)
-def planted():
-    """(matches, artifact): three planted matches, and the artifact trained on them with the `gaps` profile."""
-    matches = {match_id: planted_match(match_id, seed) for seed, match_id in enumerate(FOLD_IDS)}
-    artifact = trainer.train("gaps", PLANTED_SEEDS, PLANTED_STRIDE, matches=matches,
-                             calibration=synthetic_calibration())
-    return matches, artifact
 
 
 @functools.lru_cache(maxsize=1)
@@ -711,6 +679,22 @@ def test_shape_touch_agreement_counts_kept_frames():
         loose = play_inputs(players, ball + np.array([30.0, 0.0]), teams=teams, graded=graded)
         loose.game = "BAR-ATH"
         assert trainer.touch_agreement(loose, model=aligned) == {"frames": 0, "agreement": None}
+
+
+def test_touch_agreement_prior_none_is_unchanged():
+    players, teams, ball, graded = touch_scene()
+    inputs = play_inputs(players, ball, teams=teams, graded=graded)
+    inputs.game = "BAR-ATH"
+    with tempfile.TemporaryDirectory() as root:
+        path = touch_model(root, "m.json")
+        default = trainer.touch_agreement(inputs, model=path)
+        assert default["frames"] > 0 and default["agreement"] == 1.0
+        assert trainer.touch_agreement(inputs, model=path, prior="none") == default
+        shifted = trainer.touch_agreement(inputs, model=path, prior="em", prior_strength=1.0)
+        assert shifted["frames"] == default["frames"], "the prior moves values, not coverage"
+        expect_error(ValueError, lambda: trainer.touch_agreement(inputs, model=path, prior_strength=0.5),
+                     "shape_possession", "prior_strength")
+        expect_error(TypeError, lambda: trainer.touch_agreement(inputs, model=path, radius=2), "radius")
 
 
 def test_shape_touch_agreement_uses_the_conventions_rule_and_the_fold():
