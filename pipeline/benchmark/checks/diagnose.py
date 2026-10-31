@@ -9,8 +9,10 @@ spellF1 of the ladder is score.pooled's to the last bits. The calibration recove
 overconfident by a factor of two in the logit, a constant), and its log-loss, Brier score and ECE are worked out on a
 handful of numbers. End to end, diagnose() runs on the synthetic matches of checks/common.py: its report has the layout
 A19 declares, the ladder's spellF1 is the runner's, the frames each measure counts are those an independent tally finds,
-the posterior's rows lie in [0, 1], and no list in the report is longer than an aggregate's. The matches are random
-flags and tracking: their scores mean nothing. No check reads data.
+the posterior's rows lie in [0, 1], and no list in the report is longer than an aggregate's. With edges = "posterior"
+the report's R025 counts are hmm.posterior_edges' over the decoder's own labels and posterior, block by block; with
+edges = "viterbi" there are none. The matches are random flags and tracking: their scores mean nothing. No check reads
+data.
 """
 
 import contextlib
@@ -98,7 +100,7 @@ switch_dead = 8
 min_possession = 3
 min_dead = 3
 """
-REPORT_KEYS = {"config", "profile", "seeds", "matches", "dropped_match_only", "ladder", "calibration",
+REPORT_KEYS = {"config", "profile", "seeds", "matches", "dropped_match_only", "ladder", "calibration", "edges",
                "tracking_calibration", "git", "data_dir"}
 LADDER_FIGURES = ("spell_f1", "clean_loss", "split_loss", "merge_loss", "both_loss")
 
@@ -445,6 +447,7 @@ def test_diagnose_end_to_end_on_synthetic_matches():
         report = diagnose.diagnose(path, profile="gaps", seeds=1, matches=matches,
                                    calibration=synthetic_calibration(), data_dir=root, log=lines.append)
         assert set(report) == REPORT_KEYS, sorted(report)
+        assert report["edges"] is None, "edges = \"viterbi\" (the default) has no R025 counts"
         assert report["config"]["stem"] == "main_like" and len(report["config"]["sha256"]) == 64, report["config"]
         assert report["profile"]["name"] == "gaps" and report["seeds"] == [0], report
         assert report["matches"] == sorted(matches) and report["dropped_match_only"] == [], report
@@ -495,6 +498,7 @@ def test_diagnose_end_to_end_on_synthetic_matches():
         json.dumps(report, allow_nan=False)
         text = "\n".join(lines)
         assert "ladder" in text and "posterior" in text and "clean" in text and "team sources" in text, text
+        assert "R025: the decoder's changes" not in text, "no edge counts without edges = \"posterior\""
 
         # Team evidence only where the ball is seen: the posterior's alive frames split both ways, as the tally says.
         other = diagnose.diagnose(write_text(root, "nearest_only.toml", NEAREST_ONLY), profile="gaps", seeds=1,
@@ -504,6 +508,60 @@ def test_diagnose_end_to_end_on_synthetic_matches():
         alive = other["calibration"]["posterior"]["alive"]
         assert alive["team_speaks"]["n"] > 0 and alive["team_silent"]["n"] > 0, alive
         assert set(other["calibration"]["posterior"]["alive_by_team_sources"]) == {"nearest_player", "none"}
+        assert other["edges"] is None, other["edges"]
+        # edges = "viterbi" said out loud is the default: still no counts.
+        named = diagnose.diagnose(write_text(root, "named.toml", NEAREST_ONLY + 'edges = "viterbi"\n'), profile="gaps",
+                                  seeds=1, matches=matches, calibration=synthetic_calibration(), log=quiet)
+        assert named["edges"] is None and named["calibration"] == other["calibration"], named["edges"]
+
+
+def test_diagnose_counts_the_posterior_edges():
+    """With edges = "posterior" in [decoder], report["edges"] is hmm.posterior_edges' stats summed over every graded
+    block, as a tally finds them by calling the decoder as the pipeline does (hmm.decode at the config's parameters with
+    edges = "viterbi" and posterior = true, then posterior_edges on its labels and posterior): diagnose's own route
+    (hmm.viterbi and hmm.marginals on the emissions it builds) must give the same changes, moved the same way. The
+    render prints a row per kind and the quartiles of |b' - b|; edge_quartiles is worked out on a handful of counts.
+    The switches are cheap (0.5 and 1 nat): at NEAREST_ONLY's 4 and 8 the random tracking of the synthetic matches
+    decodes to one run a half, and there would be no change to count.
+    """
+    matches = synthetic_matches()
+    text = NEAREST_ONLY.replace("switch_team = 4", "switch_team = 0.5").replace("switch_dead = 8", "switch_dead = 1")
+    text += 'edges = "posterior"\n'
+    with tempfile.TemporaryDirectory() as root:
+        lines = []
+        report = diagnose.diagnose(write_text(root, "edges.toml", text), profile="gaps", seeds=1, matches=matches,
+                                   calibration=synthetic_calibration(), log=lines.append)
+        config = load_config(write_text(root, "tally.toml", text))
+    assert config.decoder.params["edges"] == "posterior", config.decoder.params
+    parameters = dict(config.decoder.params, edges="viterbi")
+    expected = {}
+    for match in matches.values():
+        atd = benchmark_run.make_atd(match, "gaps", 0, synthetic_calibration())
+        inputs = match_inputs.MatchInputs(match, atd, profile="gaps", seed=0)
+        _, sources = benchmark_run.predict(config, inputs)
+        context = RunContext(inputs=inputs, seed=config.seed)
+        for half, start, stop in match.graded:
+            block = BlockContext(run=context, block=Block(half=half, start=start, stop=stop),
+                                 evidence={name: source.window(start, stop) for name, source in sources.items()})
+            decoded = hmm.decode(block, posterior=True, **parameters)
+            hmm.posterior_edges(decoded.labels, decoded.posterior, stats=expected)
+    assert report["edges"] == benchmark_run.plain(expected), (report["edges"], expected)
+    changes = {kind: sum(expected[kind].values()) for kind in hmm.EDGE_KINDS}
+    moved = sum(expected[kind]["earlier"] + expected[kind]["later"] for kind in hmm.EDGE_KINDS)
+    assert min(changes.values()) > 0 and moved > 0, (changes, moved)
+    assert sum(expected["shift"].values()) == sum(changes.values()), expected["shift"]
+    json.dumps(report, allow_nan=False)
+    text = "\n".join(lines)
+    assert "R025: the decoder's changes" in text and "|b' - b| in frames, moved" in text, text
+    for kind in hmm.EDGE_KINDS + ("all",):
+        assert any(line.split()[:1] == [kind] for line in lines), (kind, text)
+
+    # edge_quartiles on [0, 0, 1, 3] (all) and [1, 3] (moved), by numpy's linear rule, from int or text keys.
+    for shift in ({0: 2, 1: 1, 3: 1, 7: 0}, {"0": 2, "1": 1, "3": 1}):
+        assert diagnose.edge_quartiles(shift) == {"n": 4, "q25": 0.0, "median": 0.5, "q75": 1.5}, shift
+        assert diagnose.edge_quartiles(shift, moved_only=True) == {"n": 2, "q25": 1.5, "median": 2.0, "q75": 2.5}
+    assert diagnose.edge_quartiles({0: 5}, moved_only=True) == {"n": 0, "q25": None, "median": None, "q75": None}
+    assert diagnose.edge_quartiles({}) == {"n": 0, "q25": None, "median": None, "q75": None}
 
 
 def test_diagnose_command_line_writes_the_report():
@@ -605,6 +663,11 @@ def test_diagnose_refuses_a_non_hmm_decoder():
                      lambda: diagnose.diagnose(write_text(root, "restart.toml", restart), profile="clean",
                                                data_dir=root, log=quiet),
                      "restart", "restart_source")
+        unknown = NEAREST_ONLY + 'edges = "median"\n'
+        expect_error(benchmark_run.BenchmarkError,
+                     lambda: diagnose.diagnose(write_text(root, "unknown.toml", unknown), profile="clean",
+                                               data_dir=root, log=quiet),
+                     "unknown", "edges", "'median'", "'posterior'")
         for reserved in ("posterior", "none", "other"):
             named = NEAREST_ONLY.replace('kind = "ball_presence"',
                                          'kind = "ball_presence"\nname = "{}"'.format(reserved))

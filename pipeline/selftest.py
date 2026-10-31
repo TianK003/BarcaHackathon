@@ -2938,10 +2938,10 @@ def edge_stats(changes):
     """The stats posterior_edges should fill for `changes`, a list of (kind, outcome, |b' - b|), written out here."""
     from pipeline.decode import hmm
     stats = {kind: dict.fromkeys(hmm.EDGE_OUTCOMES, 0) for kind in hmm.EDGE_KINDS}
-    stats["shift"] = [0] * (hmm.SHIFT_BINS + 2)
+    stats["shift"] = {}
     for kind, outcome, shift in changes:
         stats[kind][outcome] += 1
-        stats["shift"][min(shift, hmm.SHIFT_BINS + 1)] += 1
+        stats["shift"][shift] = stats["shift"].get(shift, 0) + 1
     return stats
 
 
@@ -3008,24 +3008,42 @@ def test_hmm_edges_default_is_viterbi():
 
 def test_hmm_edges_posterior_moves_viterbi_by_its_own_posterior():
     """edges = "posterior" is posterior_edges applied to the Viterbi labels and the posterior = true array, which is
-    handed back unchanged when posterior = true asks for it too: what lets a report count the moves of a decode."""
+    handed back unchanged when posterior = true asks for it too: what lets a report count the moves of a decode. Each
+    decode computes the posterior once (a counter on hmm.marginals), and edges = "viterbi" without posterior = true not
+    at all."""
     from pipeline.decode import REGISTRY, hmm
+    computed = []
+    original = hmm.marginals
+
+    def counted(*arguments):
+        computed.append(len(arguments[0]))
+        return original(*arguments)
+
     relabelled = 0
-    for case in range(16):
-        rng = np.random.default_rng([6, 7100 + case])
-        n_frames = int(rng.integers(1, 1200))
-        homes, alives, weights = hmm_random_scene(rng, n_frames)
-        costs = hmm_random_costs(rng, longest=30)
-        ctx = hmm_context(homes, alives, weights=weights)
-        plain = REGISTRY["hmm"](ctx, posterior=True, **costs)
-        expected = hmm.posterior_edges(plain.labels, plain.posterior)
-        moved = REGISTRY["hmm"](ctx, edges="posterior", **costs)
-        both = REGISTRY["hmm"](ctx, edges="posterior", posterior=True, **costs)
-        assert moved.posterior is None and both.posterior is not None, case
-        for labels in (moved.labels, both.labels):
-            assert labels.dtype == np.int8 and np.array_equal(labels, expected), case
-        assert np.array_equal(both.posterior, plain.posterior), case
-        relabelled += int((expected != plain.labels).sum())
+    hmm.marginals = counted
+    try:
+        for case in range(16):
+            rng = np.random.default_rng([6, 7100 + case])
+            n_frames = int(rng.integers(1, 1200))
+            homes, alives, weights = hmm_random_scene(rng, n_frames)
+            costs = hmm_random_costs(rng, longest=30)
+            ctx = hmm_context(homes, alives, weights=weights)
+            plain = REGISTRY["hmm"](ctx, posterior=True, **costs)
+            expected = hmm.posterior_edges(plain.labels, plain.posterior)
+            del computed[:]
+            moved = REGISTRY["hmm"](ctx, edges="posterior", **costs)
+            assert computed == [n_frames], (case, computed)
+            both = REGISTRY["hmm"](ctx, edges="posterior", posterior=True, **costs)
+            assert computed == [n_frames] * 2, (case, computed)
+            REGISTRY["hmm"](ctx, edges="viterbi", **costs)
+            assert computed == [n_frames] * 2, (case, computed)
+            assert moved.posterior is None and both.posterior is not None, case
+            for labels in (moved.labels, both.labels):
+                assert labels.dtype == np.int8 and np.array_equal(labels, expected), case
+            assert np.array_equal(both.posterior, plain.posterior), case
+            relabelled += int((expected != plain.labels).sum())
+    finally:
+        hmm.marginals = original
     assert relabelled >= 20, "only {} frames relabelled in 16 decodes: the moves were hardly tested".format(relabelled)
 
 
@@ -3066,9 +3084,10 @@ def test_hmm_posterior_edges_hand_built():
         ("A" * 7 + "H", "AAAAAHHH", "AAAAAHHH", [("team", "earlier", 2)]),
         ("AAAA", "HHHH", "AAAA", []),
         ("", "", "", []),
-        # |b' - b| at the histogram's last bin and past it.
+        # A wide window: |b' - b| is counted exactly however far the change moves (W = [61, 179] here).
         ("H" * 120 + "A" * 120, "H" * 170 + "A" * 70, "H" * 170 + "A" * 70, [("team", "later", 50)]),
-        ("H" * 120 + "A" * 120, "H" * 175 + "A" * 65, "H" * 175 + "A" * 65, [("team", "later", 55)]),
+        ("H" * 120 + "A" * 120, "H" * 179 + "A" * 61, "H" * 179 + "A" * 61, [("team", "later", 59)]),
+        ("H" * 120 + "A" * 120, "H" * 62 + "A" * 178, "H" * 62 + "A" * 178, [("team", "earlier", 58)]),
     ]
     total, everything = {}, []
     for labels, rows, expected, changes in cases:
@@ -3094,7 +3113,7 @@ def test_hmm_posterior_edges_never_lose_a_run():
     from pipeline.contracts import A, D, H
     from pipeline.decode import hmm
     seen = dict.fromkeys(hmm.EDGE_OUTCOMES, 0)
-    ties = 0
+    ties = at_bound = 0
     for case in range(200):
         rng = np.random.default_rng([6, 7200 + case])
         labels = [int(rng.choice([H, A, D]))]
@@ -3116,7 +3135,13 @@ def test_hmm_posterior_edges_never_lose_a_run():
         assert got.dtype == np.int8 and got.shape == codes.shape, case
         old, new = edge_runs(codes), edge_runs(got)
         assert [run[0] for run in new] == [run[0] for run in old] == labels, "case {}: the runs changed".format(case)
-        assert min(stop - start for _, start, stop in new) >= 1, case
+        # A run of n frames gives at most (n - 1) // 2 to the change before it (moved later) and one fewer to the change
+        # after it (moved earlier: W's first frame is never reached), so it keeps at least this many: 1 for n = 1 and 2
+        # or more for every longer run, where the run sequence above proves only 1.
+        for (_, start, stop), (_, first, last) in zip(old, new):
+            n, most = stop - start, (stop - start - 1) // 2
+            assert last - first >= n - most - max(0, most - 1), (case, n, last - first)
+            at_bound += last - first == n - most - max(0, most - 1) and n >= 5
         reference, changes = posterior_edges_by_the_rule(codes, posterior)
         assert np.array_equal(got, reference), "case {}: {} labels differ from the rule's".format(
             case, int((got != reference).sum()))
@@ -3126,8 +3151,9 @@ def test_hmm_posterior_edges_never_lose_a_run():
             ties += tie
         assert stats == edge_stats([(kind, outcome, abs(moved - b)) for b, moved, _, _, kind, outcome, _ in changes]), \
             case
-    # A check in which some branch of the rule never ran, or no tie ever decided a move, would prove nothing about it.
-    assert min(seen.values()) >= 30 and ties >= 20, (seen, ties)
+    # A check in which some branch of the rule never ran, no tie ever decided a move, or no run of 5 frames or more was
+    # cut from both ends as far as the rule allows, would prove nothing about it.
+    assert min(seen.values()) >= 30 and ties >= 20 and at_bound >= 3, (seen, ties, at_bound)
 
 
 def test_hmm_posterior_edges_centre_a_stretch_without_evidence():

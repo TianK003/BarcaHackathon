@@ -11,7 +11,7 @@ restart_source (P17), D splits into two restart states.
     posterior = false      # true: also return P(H), P(A), P(D) per frame (default false: Decoded.posterior is None)
     restart_source = "restart_team"   # optional: the evidence source whose `home` says who restarts (default: none)
     switch_restart = inf   # nats a restart by the other team costs on top of switch_dead (default inf: forbidden)
-    edges = "viterbi"      # "posterior": each change moved to the posterior's median inside its window (R025)
+    edges = "viterbi"      # "posterior": changes at the posterior's median (default "viterbi": Viterbi's own frames)
 
 The model
 ---------
@@ -170,6 +170,11 @@ nowhere). A change never jumps to a window's edge on evidence outside the window
 teams and into and out of D, each computed from the Viterbi path independently of the others and then applied; the
 block's first and last frames are not changes. `posterior_edges` is the rule, and counts what it did (its docstring).
 
+The reach is lopsided, as declared. A crossing on W's first frame counts as "before", so a move earlier reaches W's
+second frame at most, and a change whose earlier run has 1 or 2 frames (W then starts on b) never moves earlier, while a
+move later reaches W's last frame. More "later" than "earlier" moves in the counts are partly this, not a finding about
+the evidence.
+
 The reading. The first frame at which the new label is at least as likely as the old one is the median of the change's
 position when P[t, u] + P[t, v] is close to 1 and the posterior crosses once inside W: P[t, v] is then the probability
 that the change has happened by frame t. Across a stretch without evidence, where every single change scores the same,
@@ -178,9 +183,9 @@ that is the stretch's middle; Viterbi's tie put the change on its first frame.
 What it costs. One `marginals` per block on top of the Viterbi, computed whether or not posterior = true asks for it
 back (with it, the same array is returned), and a loop over the changes: test_hmm_speed's 80,000 frames with both
 minimums at 50 take about 2.2 s, as with posterior = true, against 0.2 s for the Viterbi alone; the moves themselves
-take about 2 ms (31 Oct 2026). The labels no longer honour min_possession and min_dead: a moved change can leave a run
-shorter than its minimum, never empty. edges = "posterior" with restart_source is refused, as posterior = true is: the
-restart states have no posterior.
+take about 2 ms (31 Oct 2026; one run, apart from the 0.33 s of "How it is solved", measured on 26 Oct). The labels no
+longer honour min_possession and min_dead: a moved change can leave a run shorter than its minimum, never empty.
+edges = "posterior" with restart_source is refused, as posterior = true is: the restart states have no posterior.
 
 What it does not do yet
 -----------------------
@@ -216,7 +221,6 @@ CHUNK = 4096                  # frames per step of the posterior's final normali
 EDGES = ("viterbi", "posterior")                     # decode's `edges`: Viterbi's own frames, or the posterior's (R025)
 EDGE_KINDS = ("team", "into_d", "out_of_d")          # posterior_edges' stats: H <-> A, into D, out of D
 EDGE_OUTCOMES = ("earlier", "later", "at_b", "before", "after")   # ... what the rule did with a change (its docstring)
-SHIFT_BINS = 50               # ... |b' - b| is counted in bins 0..SHIFT_BINS, then one bin for anything larger
 
 
 def decode(ctx, *, switch_team, switch_dead, min_possession=1, min_dead=1, eps=EPS, posterior=False,
@@ -527,8 +531,9 @@ def posterior_edges(labels, posterior, stats=None):
                                  "at_b"               the posterior crosses inside W, on b itself: b' = b
                                  "before"             W's first frame already favours v: left on b
                                  "after"              no frame of W favours v: left on b
-        stats["shift"]         SHIFT_BINS + 2 counts of |b' - b| over every change of every kind: bin d for d =
-                               0..SHIFT_BINS, then one bin for more. The moved changes are bins 1 and up.
+        stats["shift"]         {d: count}: how many changes, of every kind, have |b' - b| = d, exactly (d an int; a d
+                               no change has is absent). The moved changes are the keys d >= 1. A dict written to
+                               JSON comes back with text keys: convert them with int() before adding to it again.
     """
     labels = np.asarray(labels)
     if labels.ndim != 1:
@@ -549,7 +554,7 @@ def posterior_edges(labels, posterior, stats=None):
             counts = stats.setdefault(kind, {})
             for outcome in EDGE_OUTCOMES:
                 counts.setdefault(outcome, 0)
-        shift = stats.setdefault("shift", [0] * (SHIFT_BINS + 2))
+        shift = stats.setdefault("shift", {})
 
     moved = labels.astype(np.int8)  # a copy: the input is never written
     # The runs' bounds: run k is [bounds[k], bounds[k + 1]), and each change is a pair of runs u = [a, b), v = [b, c).
@@ -572,7 +577,8 @@ def posterior_edges(labels, posterior, stats=None):
             moved[b:edge] = u
         if stats is not None:
             stats["into_d" if v == D else "out_of_d" if u == D else "team"][outcome] += 1
-            shift[min(abs(edge - b), SHIFT_BINS + 1)] += 1
+            distance = abs(edge - b)
+            shift[distance] = shift.get(distance, 0) + 1
     return moved
 
 
