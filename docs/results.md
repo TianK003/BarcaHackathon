@@ -1870,7 +1870,84 @@ exactly where a player handles a dead ball, and the ball is visible on 66% of de
 
 **Cost.** One decode of the config on 42 halves plus the posterior, about 10 minutes.
 
-**Review.** An independent reviewer read A19 and R024 to R026 before any run: 14 findings, all resolved in the text above. The one blocker was R024's extension, which could be read two ways.
+**Review.** An independent reviewer read A19 and R024 to R026 before any run: 14 findings, all resolved in the text
+above. The one blocker was R024's extension, which could be read two ways.
+
+**Part 2, the run** (2026-10-31). The code is `diagnose.py` (`907fdea`, plus a fix after its task review, `7612a1b`).
+The review found the definitions exact, cross-checked the posterior against `hmm.decode(posterior=True)`, and asked for
+checks that pin the calibration's (p, y) and the posterior's parameters; nine mutations it tried are now caught. One
+addition came out of the review, reported and gating nothing: `main.toml`'s P07 speaks on every graded frame where a
+slot is present, so the declared team_speaks / team_silent split is nearly all "speaks". Beside it, the alive posterior
+is also broken down by which team sources speak on the frame.
+
+Command, from a detached checkout of `3943962` (R024's adopted `main.toml`), one throttled process, 14:10 to 14:13,
+EXIT=0: `python pipeline/benchmark/diagnose.py pipeline/configs/main.toml --profile tracking --seeds 3
+--drop-match-only` (`smart_tagging` dropped). The report is `data/runs/diagnose/main.json` (aggregates of DFL only).
+
+**B, the ladder.** Pooled over 42 halves. A pair lost at θ costs 2 / (n_gt + n_pred) of F1 at θ; the losses are in
+spellF1 units, summed over θ and divided by 5.
+
+| | raw truth | coarse truth | mean |
+|---|---|---|---|
+| true / predicted possessions | 9,183 / 6,131 | 4,977 / 6,131 | |
+| F1 at IoU 0.3, 0.4, 0.5, 0.6, 0.7 | 0.666, 0.615, 0.543, 0.468, 0.390 | 0.695, 0.651, 0.582, 0.516, 0.438 | |
+| pooled spellF1 | 0.5363 | 0.5764 | 0.5563 |
+| pairs matched at 0.3: clean, merge, split, both | 3,969; 937; 172; 20 | 3,218; 51; 586; 5 | |
+| **ladder loss, clean pairs** | **0.0722** | **0.0686** | **0.0704** |
+| ladder loss, merge pairs | 0.0463 | 0.0045 | 0.0254 |
+| ladder loss, split pairs | 0.0097 | 0.0449 | 0.0273 |
+| ladder loss, both | 0.0014 | 0.0006 | 0.0010 |
+| predicted spells over 2+ true ones of their team (merges) | 17.7% | 1.0% | |
+| true spells under 2+ predicted ones of their team (splits) | 2.3% | 13.2% | |
+| clean pairs' IoU: median; share at least 0.5, 0.7 | 0.827; 88.0%, 68.2% | 0.850; 90.0%, 72.4% | |
+| clean pairs' start error, frames: median [quartiles]; within ±5 | +0 [-5, +14]; 45.5% | +0 [-3, +20]; 44.4% | |
+| clean pairs' end error, frames: median [quartiles]; within ±5 | +0 [-6, +22]; 37.4% | +0 [-5, +28]; 34.7% | |
+| unmatched at 0.3, true: overlapping a spell of their team / alone | 1,713 / 2,372 | 297 / 820 | |
+| unmatched at 0.3, predicted: overlapping / alone | 572 / 461 | 1,046 / 1,225 | |
+
+- **The ladder is mostly edges, not merges and splits.** Of the 0.130 that spellF1 loses from IoU 0.3 to its mean
+  (raw), 0.072 is on clean pairs, 0.046 on merges and 0.010 on splits. Coarse: 0.069, 0.004 and 0.045. Under each truth
+  it is clean pairs first, then the expected failure (merges under the fine raw truth, splits under the coarse one).
+  The review's first reading (most of it edges) was nearer than the advisor's correction (most of it merges and splits).
+  The counts were right that we merge under raw and split under coarse, but those cost less than the edges.
+- **The edge errors are skewed late.** The median error is 0 at both ends, but the upper quartile is +14 to +28
+  frames against -3 to -6 below: when an edge is wrong, the predicted possession most often starts and, more so, ends
+  late. Half a second or more, on a third of the clean pairs' ends.
+- **The gate: R025 is built.** The mean clean-pair ladder loss is 0.0704, against the gate's 0.015.
+
+**D, calibration** (raw truth, graded frames; for a source, frames where it speaks; Platt: logit P(truth) = α · logit(p) +
+β):
+
+| measure | frames | log-loss | Brier | ECE | α | β | weight |
+|---|---|---|---|---|---|---|---|
+| `controlled_touch` home | 980,223 | 0.465 | 0.151 | 0.170 | 1.22 | +0.14 | 1.0 |
+| `dead_ball_model` alive | 3,007,932 | 0.085 | 0.024 | 0.005 | 1.00 | +0.19 | 1.0 |
+| `shape_possession` home | 1,659,315 | 0.363 | 0.114 | 0.016 | 1.08 | +0.13 | 0.2 |
+| ... where the ball is seen | 981,415 | 0.355 | 0.111 | 0.018 | 1.07 | +0.16 | 0.2 |
+| ... where the ball is missing | 677,900 | 0.376 | 0.119 | 0.017 | 1.10 | +0.07 | 0.2 |
+| posterior alive, every graded frame | 3,007,932 | 0.331 | 0.029 | 0.028 | **0.27** | -0.02 | |
+| ... where a team source speaks (all of them) / where none does | 3,007,932 / 0 | | | | | | |
+| ... where `controlled_touch` and P07 speak | 1,746,228 | 0.021 | 0.003 | 0.002 | 0.49 | -0.26 | |
+| ... where only P07 speaks | 1,261,704 | 0.761 | 0.065 | 0.064 | 0.21 | -0.03 | |
+| posterior home (team, on alive frames) | 1,659,315 | 1.002 | 0.117 | 0.109 | **0.19** | +0.14 | |
+
+- **The sources are close to calibrated as likelihoods.** `dead_ball_model`'s α is 1.00. Its β of +0.19 is
+  logit(0.55), the training prior it subtracts by design (a likelihood, not a posterior: the 50/50 bias the review named
+  is not there). P07's α is 1.07 to 1.10 with the ball seen or missing alike, so its probabilities are about right on
+  their own, and its weight of 0.2 is the decoder's correction for counting correlated frames as independent, not a
+  calibration. `controlled_touch`'s two fixed votes (0.93 in an episode, 0.60 on hold) are conservative: α 1.22.
+- **The posterior is far too sharp.** α is 0.27 for alive and 0.19 for the team: the decoder's log-odds are about four
+  to five times what the outcomes support, and its team posterior has a log-loss of 1.00. That is what a product of
+  per-frame terms over correlated frames gives. For R025 it means the posterior's crossings will mostly sit where
+  Viterbi's edges are, except where the evidence is flat: the advisor's "too sharp → no change" risk.
+- **The 50/50 assumption on team evidence under `D`** cannot be isolated as declared: a team source speaks on every
+  graded frame (P07's scope `all`), so "where none does" is empty. Where the touch rule speaks, β is -0.26 at α 0.49: the
+  posterior over-states play there, as the reviewer's reading predicts, but the measure confounds it with the
+  posterior's sharpness. Nothing is changed on it.
+
+**What A19 changes.** R025 is built. Its one retry, if one is needed, has a named cause available from here: a posterior
+four to five times too sharp, which a temperature on the posterior (the emissions and the switch costs divided by one
+constant) would flatten, so that the median of the change's position moves off Viterbi's mode.
 
 ## Experiments
 
@@ -7889,7 +7966,8 @@ of it passes, `main.toml` takes `edges = "posterior"`, and `pipeline/configs/r02
 **One retry.** R025b, declared before its run, is named only from a cause in A19's numbers or in R025's own per-truth or
 per-edge-type results. If it fails too, C is dropped and its code removed in one commit.
 
-**Review.** An independent reviewer read A19 and R024 to R026 before any run: 14 findings, all resolved in the text above. The one blocker was R024's extension, which could be read two ways.
+**Review.** An independent reviewer read A19 and R024 to R026 before any run: 14 findings, all resolved in the text
+above. The one blocker was R024's extension, which could be read two ways.
 
 ### R026 — P07 weighted apart in the gaps and where the ball is seen (P23 E; declared 2026-10-31, Tian)
 Proposal: P23 (E), P07 · Commit: part 1 (this declaration) is committed before any run of it; the code, the configs
@@ -7936,7 +8014,8 @@ takes the two sources, and `pipeline/configs/r026_gap_weight.toml` is written wi
 **One retry.** R026b, declared before its run, is named only from a cause in A19's calibration of P07 by ball state or in
 R026's own results. If it fails too, E is dropped and the `"visible"` scope removed in one commit.
 
-**Review.** An independent reviewer read A19 and R024 to R026 before any run: 14 findings, all resolved in the text above. The one blocker was R024's extension, which could be read two ways.
+**Review.** An independent reviewer read A19 and R024 to R026 before any run: 14 findings, all resolved in the text
+above. The one blocker was R024's extension, which could be read two ways.
 
 
 ## Submission log
