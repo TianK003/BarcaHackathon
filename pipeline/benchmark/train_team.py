@@ -95,6 +95,9 @@ COPIES = 4                                    # the binned copy, the augmented c
 GO_MATCHES = 6                                # matches (of 7) that must each gain the margin
 GO_NUMERATOR = 50                             # 50 * (p19_right - main_right) >= frames: a gain of 0.020 in accuracy
 FEASIBILITY_FOLDER = ("runs", "r021")
+ROW_WINDOW = (8_381, 12_571)                  # the dry run's rows, J03WMX seed 0: 10,476 estimated, within 20%
+ROW_WINDOW_RUN = ("tracking", 1, DEFAULT_STRIDE, ["J03WMX"])    # the one dry run that the window is about
+PEAK_LIMIT_GB = 8.0                           # the pause's projected peak, advisor-01.md section 3.1
 
 
 # -- the rows ---------------------------------------------------------------------------------------------------------
@@ -290,12 +293,23 @@ def peak_memory_bytes():
         return None
 
 
-def dry_run(profile, seeds, match_ids, stride=DEFAULT_STRIDE, matches=None, calibration=None, data_dir=None, log=None):
+def dry_run(profile, seeds, match_ids, stride=DEFAULT_STRIDE, matches=None, calibration=None, data_dir=None, log=None,
+            row_window="declared", peak_limit_gb=PEAK_LIMIT_GB):
     """Aggregates of the rows of `match_ids` and nothing fitted: the numbers the pause before training reads.
 
     {profile, seeds, stride, per_match: {id: {rows, home_share, x_bytes}}, rows, nan_share: {feature: share},
-    all_nan: [names], constant: [names], peak_memory_bytes, projected_peak_gb}. A column is constant when its finite
-    values are all one number. One match is enough: no fold is fitted. No row and no per-frame value is returned.
+    all_nan: [names], constant: [names], constant_values: {name: value}, peak_memory_bytes, projected_peak_gb,
+    projection_basis, checks: {rows: {window, ok}, projection: {limit_gb, ok}}, ok}. A column is constant when its
+    finite values are all one number. One match is enough: no fold is fitted. No row and no per-frame value is
+    returned.
+
+    The two gates of the pause are held here and not only printed. `row_window` is (low, high) rows, inclusive, which
+    the run must land in; "declared" means ROW_WINDOW for the one run it is about (J03WMX, `tracking`, 1 seed, stride 5)
+    and no window for any other, None means no window. The projected peak is the training set's bytes (the augmented
+    rows of the whole run, 196,283 x 2 x 56 x 8, times the copies the binning and the fit make) plus a baseline: this
+    process's peak where the platform says it, else the bytes of the rows gathered (the helper cannot measure the peak
+    everywhere); it must be at most `peak_limit_gb`. `ok` is false for an all-NaN or a constant column, a row count
+    outside the window or a projection over the limit.
     """
     gathered = _gather(profile, seeds, stride, 1, matches, calibration, data_dir, match_ids, log)
     ids = sorted(gathered.data)
@@ -308,14 +322,26 @@ def dry_run(profile, seeds, match_ids, stride=DEFAULT_STRIDE, matches=None, cali
                 and X[finite[:, i], i].min() == X[finite[:, i], i].max()]
     peak = peak_memory_bytes()
     training_gb = TRAINING_ROWS * 2 * len(names) * 8 * COPIES / 1e9
+    row_bytes = sum(int(gathered.data[match_id][0].nbytes) for match_id in ids)
+    projected = (row_bytes if peak is None else peak) / 1e9 + training_gb
+    if row_window == "declared":
+        row_window = ROW_WINDOW if (profile, seeds, stride, list(match_ids or [])) == (
+            ROW_WINDOW_RUN[0], ROW_WINDOW_RUN[1], ROW_WINDOW_RUN[2], ROW_WINDOW_RUN[3]) else None
+    rows_ok = None if row_window is None else bool(row_window[0] <= len(X) <= row_window[1])
+    projection_ok = bool(projected <= peak_limit_gb)
+    constant_values = {name: float(X[finite[:, names.index(name)], names.index(name)][0]) for name in constant}
+    ok = not all_nan and not constant and rows_ok is not False and projection_ok
     return {"profile": profile, "seeds": gathered.seeds, "stride": stride,
             "per_match": {match_id: {"rows": int(len(gathered.data[match_id][1])),
                                      "home_share": float(gathered.data[match_id][1].mean())
                                      if len(gathered.data[match_id][1]) else None,
                                      "x_bytes": int(gathered.data[match_id][0].nbytes)} for match_id in ids},
             "rows": int(len(X)), "nan_share": nan_share, "all_nan": all_nan, "constant": constant,
-            "peak_memory_bytes": peak,
-            "projected_peak_gb": None if peak is None else peak / 1e9 + training_gb}
+            "constant_values": constant_values, "peak_memory_bytes": peak, "projected_peak_gb": projected,
+            "projection_basis": "peak" if peak is not None else "row bytes",
+            "checks": {"rows": {"window": None if row_window is None else list(row_window), "ok": rows_ok},
+                       "projection": {"limit_gb": peak_limit_gb, "ok": projection_ok}},
+            "ok": bool(ok)}
 
 
 def render_dry_run(report):
@@ -328,11 +354,22 @@ def render_dry_run(report):
     for name, share in report["nan_share"].items():
         lines.append("dry run   NaN {:>6.1%}  {}".format(share, name))
     lines.append("dry run   all-NaN columns: {}".format(", ".join(report["all_nan"]) or "none"))
-    lines.append("dry run   constant columns: {}".format(", ".join(report["constant"]) or "none"))
+    lines.append("dry run   constant columns: {}".format(
+        ", ".join("{} (always {:g})".format(name, report["constant_values"][name]) for name in report["constant"])
+        or "none"))
     peak, projected = report["peak_memory_bytes"], report["projected_peak_gb"]
-    lines.append("dry run   peak memory {}; projected peak of the full run {}".format(
-        "unknown" if peak is None else "{:.2f} GB".format(peak / 1e9),
-        "unknown" if projected is None else "{:.2f} GB".format(projected)))
+    lines.append("dry run   peak memory {}; projected peak of the full run {:.2f} GB (from {})".format(
+        "unknown" if peak is None else "{:.2f} GB".format(peak / 1e9), projected, report["projection_basis"]))
+    rows, projection = report["checks"]["rows"], report["checks"]["projection"]
+    if rows["ok"] is None:
+        verdict = "not checked (not the declared run)"
+    else:
+        verdict = "{} the window [{:,}, {:,}]".format("PASS, inside" if rows["ok"] else "FAIL, outside",
+                                                      *rows["window"])
+    lines.append("dry run   rows {:,}: {}".format(report["rows"], verdict))
+    lines.append("dry run   projected peak {}: {:.2f} GB against {:g} GB".format(
+        "PASS" if projection["ok"] else "FAIL", projected, projection["limit_gb"]))
+    lines.append("dry run   {}".format("OK" if report["ok"] else "FAILED: the pause's conditions are not met"))
     return lines
 
 
@@ -388,7 +425,10 @@ def feasibility(artifact, config_path, profile="tracking", seeds=3, matches=None
     for tally in tallies.values():
         _add(pooled, tally)
     cells = {match_id: _cell(tallies[match_id]) for match_id in sorted(tallies)}
-    return {"profile": profile, "seeds": len(seed_list), "config": config.stem, "per_match": cells,
+    with open(config.path, "rb") as handle:
+        config_sha256 = hashlib.sha256(handle.read().replace(b"\r\n", b"\n")).hexdigest()
+    return {"profile": profile, "seeds": len(seed_list), "config": config.stem, "config_sha256": config_sha256,
+            "model_sha256": hashlib.sha256(dumps(artifact).encode("utf-8")).hexdigest(), "per_match": cells,
             "pooled": _cell(pooled), "go": go(cells)}
 
 
@@ -407,7 +447,8 @@ def go(cells):
 
 
 def _gain(cell):
-    return GO_NUMERATOR * (cell["p19"]["right"] - cell["main"]["right"]) >= cell["frames"]
+    """The integer test of one cell; a cell with no frame is no win."""
+    return cell["frames"] > 0 and GO_NUMERATOR * (cell["p19"]["right"] - cell["main"]["right"]) >= cell["frames"]
 
 
 # A tally is sums of integers and floats: frames, rights and log-loss sums, so that seeds and matches pool exactly.
@@ -494,7 +535,7 @@ def _cell(tally):
                         "log_loss": ratio(p19_loss, frames)},
                 "main": {"right": part["main"], "accuracy": ratio(part["main"], frames)},
                 "rule": {"right": rule_right, "accuracy": ratio(rule_right, frames), "silent": silent,
-                         "log_loss": ratio(rule_loss, frames)}}
+                         "silent_share": ratio(silent, frames), "log_loss": ratio(rule_loss, frames)}}
 
     cell = scored(tally["raw"])
     cell["coarse"] = scored(tally["coarse"])
@@ -512,16 +553,19 @@ def render_feasibility(report):
 
     lines = ["feasible  profile {}, {} seed(s), against {}: out of fold, seeds pooled per match".format(
                  report["profile"], report["seeds"], report["config"]),
-             "feasible  {:<8} {:>10} | {:>8} {:>8} {:>8} | {:>8} {:>8} | {:>8} {:>8} {:>8} | {:>3}".format(
-                 "match", "frames", "p19 acc", "main acc", "rule acc", "p19 ll", "rule ll", "silent", "coarse19",
-                 "coarse m", "win")]
+             "feasible  {:<8} {:>10} | {:>8} {:>8} {:>8} | {:>8} {:>8} | {:>16} {:>8} {:>8} | {:>3}".format(
+                 "match", "frames", "p19 acc", "main acc", "rule acc", "p19 ll", "rule ll", "rule silent",
+                 "coarse19", "coarse m", "win")]
     for name, cell in list(sorted(report["per_match"].items())) + [("pooled", report["pooled"])]:
         win = _gain(cell)
-        lines.append("feasible  {:<8} {:>10,} | {:>8} {:>8} {:>8} | {:>8} {:>8} | {:>8,} {:>8} {:>8} | {:>3}".format(
-            name, cell["frames"], number(cell["p19"]["accuracy"]), number(cell["main"]["accuracy"]),
-            number(cell["rule"]["accuracy"]), number(cell["p19"]["log_loss"]), number(cell["rule"]["log_loss"]),
-            cell["rule"]["silent"], number(cell["coarse"]["p19"]["accuracy"]),
-            number(cell["coarse"]["main"]["accuracy"]), "yes" if win else "no"))
+        share = cell["rule"]["silent_share"]
+        silent = "{:,} ({})".format(cell["rule"]["silent"], "-" if share is None else "{:.1%}".format(share))
+        lines.append(
+            "feasible  {:<8} {:>10,} | {:>8} {:>8} {:>8} | {:>8} {:>8} | {:>16} {:>8} {:>8} | {:>3}".format(
+                name, cell["frames"], number(cell["p19"]["accuracy"]), number(cell["main"]["accuracy"]),
+                number(cell["rule"]["accuracy"]), number(cell["p19"]["log_loss"]),
+                number(cell["rule"]["log_loss"]), silent, number(cell["coarse"]["p19"]["accuracy"]),
+                number(cell["coarse"]["main"]["accuracy"]), "yes" if win else "no"))
     for name, part in report["pooled"]["classes"].items():
         lines.append("feasible  class {:<10} {:>10,} frames, p19 {} main {}".format(
             name, part["frames"], number(part["p19"]["accuracy"]), number(part["main"]["accuracy"])))
@@ -583,7 +627,7 @@ def main(argv=None):
             report = dry_run(args.profile, args.seeds, args.matches, args.stride, data_dir=args.data_dir, log=print)
             for line in render_dry_run(report):
                 print(line)
-            return 1 if report["all_nan"] or report["constant"] else 0
+            return 0 if report["ok"] else 1
         if args.feasibility:
             try:
                 with open(path, encoding="utf-8") as handle:

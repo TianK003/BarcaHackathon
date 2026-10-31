@@ -1,25 +1,30 @@
 """Checks of P19's team-model trainer (pipeline/benchmark/train_team.py) and what it writes.
 
 The trainer is train_shape's with `team_features`' 56 columns and a row only where the served ball is visible: it fits
-P05's classifier on the benchmark's degraded tracking to say which team has the ball, shows every row twice (as it is, and
-with the teams exchanged and the label flipped), and writes one model per held-out match and `full` as JSON, which
+P05's classifier on the benchmark's degraded tracking to say which team has the ball, shows every row twice (as it is,
+and with the teams exchanged and the label flipped), and writes one model per held-out match and `full` as JSON, which
 pipeline/evidence/team_model.py runs with numpy alone. What is held against it here:
 
-* the rows are what the Design says: every `stride`-th frame of a graded block from its start, kept where the truth is H
-  or A and the served ball is visible, 1 for H (test_team_rows_take_every_stride_th_alive_visible_frame); no truth
+* the rows are what the Design says: every `stride`-th frame of a graded block from its start, kept where the truth is
+  H or A and the served ball is visible, 1 for H (test_team_rows_take_every_stride_th_alive_visible_frame); no truth
   reaches the features (test_team_trainer_never_passes_truth); the folds never see the match they are scored on
   (test_team_trainer_folds_exclude_the_held_out_match);
-* the augmentation balances the classes exactly (test_team_augmentation_is_balanced); a model is the export of the fit on
-  those rows with P05's settings (test_team_fit_is_p05s_settings_on_the_augmented_rows); the export is the model, to 1e-12
-  and NaN included (test_team_export_matches_sklearn); the same bytes on 1 and 4 threads
+* the augmentation balances the classes exactly (test_team_augmentation_is_balanced); a model is the export of the fit
+  on those rows with P05's settings (test_team_fit_is_p05s_settings_on_the_augmented_rows); the export is the model, to
+  1e-12 and NaN included (test_team_export_matches_sklearn); the same bytes on 1 and 4 threads
   (test_team_training_is_deterministic_across_threads);
 * the file is the whole chain (test_team_artifact_round_trip) and `--verify` fails on anything but source hashes
   (test_team_verify_ignores_only_source_hashes);
 * the dry run is aggregates and flags the columns that cannot carry information
-  (test_team_dry_run_is_aggregates_and_flags_dead_columns), the peak-memory helper returns a positive int or None;
-* the feasibility counts the declared frames, worked out frame by frame here (test_team_feasibility_counts_the_declared_
-  frames), its go rule is an integer test (test_team_feasibility_go_rule_is_integer_and_mechanical), it refuses a missing
-  fold, it reads the rule from the config, and it returns aggregates.
+  (test_team_dry_run_is_aggregates_and_flags_dead_columns); it exits 1 on a dead column, on a row count outside the
+  declared window and on a projected peak over 8 GB (test_team_dry_run_exit_code_and_pause_gates); the peak-memory
+  helper returns a positive int or None;
+* the feasibility counts the declared frames, worked out on a hand-built scene with the truth's D frames, the decoder's
+  D and X frames, a silent rule frame, a hold frame, an episode frame and an over-11 frame, the expected counts written
+  as literals (test_team_feasibility_counts_the_declared_frames_by_hand), and again by plain loops on a planted scene
+  (test_team_feasibility_counts_the_declared_frames); its go rule is an integer test
+  (test_team_feasibility_go_rule_is_integer_and_mechanical); a match with no frame is no win; it refuses a missing
+  fold, reads the rule from the config, records the hashes of what it scored, and returns aggregates.
 
 Everything runs on arrays and synthetic matches made here (checks/common.py): none reads data, and none of the numbers
 printed is a figure of any match. The one fixture that takes a few seconds, three matches whose truth is a function of
@@ -472,7 +477,8 @@ def test_team_dry_run_is_aggregates_and_flags_dead_columns():
                            log=print)
     json.dumps(report, allow_nan=False)
     assert sorted(report) == sorted(["profile", "seeds", "stride", "per_match", "rows", "nan_share", "all_nan",
-                                     "constant", "peak_memory_bytes", "projected_peak_gb"])
+                                     "constant", "constant_values", "peak_memory_bytes", "projected_peak_gb",
+                                     "projection_basis", "checks", "ok"])
     gathered = trainer.gather("gaps", 2, 5, matches=matches, calibration=calibration, match_ids=["RND001",
                                                                                               "RND002"]).data
     assert sorted(report["per_match"]) == ["RND001"] and report["rows"] == len(gathered["RND001"][1])
@@ -483,9 +489,9 @@ def test_team_dry_run_is_aggregates_and_flags_dead_columns():
     X = gathered["RND001"][0]
     assert abs(report["nan_share"]["h_ball_d1"] - float(np.isnan(X[:, COLUMN["h_ball_d1"]]).mean())) < 1e-12
     assert "h_over11" in report["constant"] and "a_over11" in report["constant"], "3 slots a side are never over 11"
-    if report["projected_peak_gb"] is not None:
-        extra = 196_283 * 2 * 56 * 8 * 4 / 1e9
-        assert abs(report["projected_peak_gb"] - (report["peak_memory_bytes"] / 1e9 + extra)) < 1e-9
+    extra = 196_283 * 2 * 56 * 8 * 4 / 1e9
+    baseline = report["peak_memory_bytes"] if report["peak_memory_bytes"] is not None else X.nbytes
+    assert abs(report["projected_peak_gb"] - (baseline / 1e9 + extra)) < 1e-9
     assert "RND001" in text, "the log line of the match"
     # an all-NaN column is named, and the command exits 1 on either kind
     real = team_features.features
@@ -600,7 +606,8 @@ def test_team_feasibility_go_rule_is_integer_and_mechanical():
     six = trainer.go(cells_of(20, 20, 20, 20, 20, 20, -500))
     assert six == {"wins": 6, "pooled": False, "go": False}, six
     assert trainer.go(cells_of(40, 40, 40, 40, 40, 40, -100)) == {"wins": 6, "pooled": True, "go": True}
-    assert trainer.go(cells_of(40, 40, 40, 40, 40, 40, -101)) == {"wins": 6, "pooled": False, "go": False},         "the pool is the integer test as well: 50 * 140 = 7000 passes, 50 * 139 does not"
+    assert trainer.go(cells_of(40, 40, 40, 40, 40, 40, -101)) == {"wins": 6, "pooled": False, "go": False}, \
+        "the pool is the integer test as well: 50 * 140 = 7000 passes, 50 * 139 does not"
     assert trainer.GO_MATCHES == 6 and trainer.GO_NUMERATOR == 50
 
 
@@ -660,3 +667,153 @@ def test_team_feasibility_is_aggregates():
     assert max(cell["frames"] for cell in report["per_match"].values()) < 10 ** 6
     text = "\n".join(trainer.render_feasibility(report))
     assert "GO" in text and all(match_id in text for match_id in FOLD_IDS) and "pooled" in text
+
+
+# -- the pause's gates, the exit code and the hand-built feasibility scene ---------------------------------------------
+
+def varying_over11(real):
+    """team_features.features with the columns that a small synthetic match leaves constant (3 slots a side never
+    pass 11, and no episode is near enough) made to vary, so that no column is constant in it."""
+    def features(inputs):
+        names, X = real(inputs)
+        X = np.array(X)
+        for step, name in enumerate(("h_over11", "a_over11", "h_in_episode", "a_in_episode", "h_since_episode_s",
+                                     "a_since_episode_s", "h_until_episode_s", "a_until_episode_s")):
+            X[:, COLUMN[name]] = (np.arange(len(X)) // (step + 1)) % 3
+        return names, X
+    return features
+
+
+def test_team_dry_run_exit_code_and_pause_gates():
+    from pipeline.benchmark.checks.common import loading
+    matches = {"J03WMX": random_match("J03WMX", rows=(700, 600)), "J03WN1": random_match("J03WN1", seed=1)}
+    flags = ["--dry-run", "--profile", "clean", "--seeds", "1", "--matches", "J03WMX"]
+    with loading(lambda match_id: matches[match_id]):
+        code, text = quietly(trainer.main, flags)
+        assert code == 1 and "FAILED" in text, text
+        assert "h_over11 (always 0)" in text and "a_over11 (always 0)" in text, "a constant column's value is printed"
+        # all-NaN and constant columns each fail the command on their own
+        real = team_features.features
+        team_features.features = varying_over11(real)
+        try:
+            code, text = quietly(trainer.main, flags)
+            assert code == 0 and "constant columns: none" in text and "OK" in text, text
+            varied = varying_over11(real)
+
+            def blanked(inputs):
+                names_, X_ = varied(inputs)
+                X_ = np.array(X_)
+                X_[:, COLUMN["ball_line_m"]] = np.nan
+                return names_, X_
+            team_features.features = blanked
+            code, text = quietly(trainer.main, flags)
+            assert code == 1 and "all-NaN columns: ball_line_m" in text, text
+            team_features.features = varied
+            # the gates: the row window and the projected peak are held, not only printed
+            kwargs = dict(matches=matches, match_ids=["J03WMX"])
+            base = trainer.dry_run("clean", 1, ["J03WMX"], 5, matches=matches)
+            assert base["ok"] is True and base["checks"]["rows"] == {"window": None, "ok": None}
+            rows = base["rows"]
+            assert rows > 0
+            inside = trainer.dry_run("clean", 1, ["J03WMX"], 5, matches=matches, row_window=(rows, rows))
+            assert inside["checks"]["rows"] == {"window": [rows, rows], "ok": True} and inside["ok"] is True
+            for window in ((rows + 1, rows + 10), (0, rows - 1)):
+                outside = trainer.dry_run("clean", 1, ["J03WMX"], 5, matches=matches, row_window=window)
+                assert outside["checks"]["rows"]["ok"] is False and outside["ok"] is False, window
+            tight = trainer.dry_run("clean", 1, ["J03WMX"], 5, matches=matches, peak_limit_gb=0.0)
+            assert tight["checks"]["projection"] == {"limit_gb": 0.0, "ok": False} and tight["ok"] is False
+            assert base["checks"]["projection"]["ok"] is True and base["projected_peak_gb"] < 8.0
+            extra = trainer.TRAINING_ROWS * 2 * 56 * 8 * trainer.COPIES / 1e9
+            floor = (base["peak_memory_bytes"] or base["per_match"]["J03WMX"]["x_bytes"]) / 1e9 + extra
+            assert abs(base["projected_peak_gb"] - floor) < 1e-9, "the peak or the row bytes, plus the training set"
+            assert base["projection_basis"] in ("peak", "row bytes")
+            # the declared window is enforced for the declared run, whatever else is true of it
+            declared = trainer.dry_run("tracking", 1, ["J03WMX"], 5, matches={"J03WMX": tracked_match("J03WMX")},
+                                       calibration=tracking_calibration())
+            assert declared["checks"]["rows"]["window"] == [8381, 12571] and declared["checks"]["rows"]["ok"] is False
+            assert declared["ok"] is False, "a few hundred rows are not 10,476"
+            lines = "\n".join(trainer.render_dry_run(declared))
+            assert "FAIL, outside the window [8,381, 12,571]" in lines and "projected peak PASS" in lines
+        finally:
+            team_features.features = real
+    assert trainer.ROW_WINDOW == (8381, 12571) and trainer.PEAK_LIMIT_GB == 8.0
+
+
+class Stand:
+    """What _seed_tally reads of an Inputs and of the sources, made of hand-built arrays."""
+
+
+def hand_scene():
+    """Twelve frames: (truth, coarse, decoded, ball visible, P19 home, rule value, over 11). See the test."""
+    D, X = trainer.pm.D, trainer.pm.X
+    rows = [
+        (H, H, H, True, 0.9, 0.93, 0),            # 0 kept: P19 right, main right, rule right, an episode
+        (A, H, H, True, 0.2, 0.07, 0),            # 1 kept: P19 right, main wrong, rule right, an episode (coarse H)
+        (H, H, H, True, 0.3, 0.60, 0),            # 2 kept: P19 wrong, main right, rule right, the hold
+        (A, A, A, True, 0.6, np.nan, 0),          # 3 kept: P19 wrong, main right, rule silent (wrong), silent
+        (D, D, D, True, 0.5, 0.93, 0),            # 4 truth D and decoded D: out
+        (H, H, D, True, 0.9, 0.93, 0),            # 5 decoded D: out (main's dead-ball error is not P19's credit)
+        (D, D, H, True, 0.9, 0.93, 0),            # 6 truth D, decoded H: out
+        (H, H, X, True, 0.9, 0.93, 0),            # 7 decoded X: out
+        (H, H, H, False, np.nan, 0.93, 0),        # 8 the ball is not seen: out
+        (A, A, A, True, 0.1, 0.07, 1),            # 9 kept: P19 right, main right, rule right, an episode, over 11
+        (X, X, H, False, np.nan, np.nan, 0),      # 10 outside the graded blocks: out
+        (H, H, H, True, np.nan, 0.93, 0)]         # 11 P19 has no opinion: out
+    return [np.array([row[i] for row in rows]) for i in range(7)]
+
+
+def test_team_feasibility_counts_the_declared_frames_by_hand():
+    """The frames of the cell, worked out on twelve hand-built frames, the expected counts written as literals."""
+    import math
+    from types import SimpleNamespace
+    truth, coarse, decoded, visible, home, rule, over = hand_scene()
+    truth, coarse, decoded = (array.astype(np.int8) for array in (truth, coarse, decoded))
+    X = np.zeros((12, len(NAMES)))
+    X[:, COLUMN["h_over11"]] = over
+    config = SimpleNamespace(stem="hand")
+    inputs = Stand()
+    patched = {(run, "predict"): lambda c, i: (decoded, None),
+               (trainer.team_model, "compute"): lambda r, model: SimpleNamespace(home=home),
+               (trainer.controlled_touch, "compute"): lambda r, **p: SimpleNamespace(home=rule),
+               (trainer.kinematics, "ball_track"): lambda i: SimpleNamespace(visible=visible),
+               (trainer.team_features, "features"): lambda i: (NAMES, X)}
+    real = {key: getattr(*key) for key in patched}
+    for (owner, name), function in patched.items():
+        setattr(owner, name, function)
+    try:
+        part = trainer._seed_tally(config, {"confidence": 0.93, "hold": 0.6}, inputs, truth, coarse, "unused")
+    finally:
+        for (owner, name), function in real.items():
+            setattr(owner, name, function)
+    cell = trainer._cell({"raw": part["raw"], "coarse": part["coarse"], "classes": part["classes"]})
+    # frames 0, 1, 2, 3 and 9 are the only ones with truth H or A, decoded H or A, the ball seen and P19 speaking
+    assert cell["frames"] == 5
+    assert (cell["p19"]["right"], cell["main"]["right"], cell["rule"]["right"], cell["rule"]["silent"]) == (3, 4, 4, 1)
+    assert cell["rule"]["silent_share"] == 0.2
+    assert abs(cell["rule"]["log_loss"] * 5 - (3 * -math.log(0.93) - math.log(0.6) + math.log(2.0))) < 1e-12
+    assert cell["coarse"]["frames"] == 5 and (cell["coarse"]["p19"]["right"], cell["coarse"]["main"]["right"]) == (2, 5)
+    classes = {name: (c["frames"], c["p19"]["right"], c["main"]["right"]) for name, c in cell["classes"].items()}
+    assert classes == {"episode": (3, 3, 2), "hold": (1, 0, 1), "silent": (1, 0, 1), "over11": (1, 1, 1),
+                       "not_over11": (4, 2, 3)}, classes
+    # without the exclusions the same scene would count more: these are the frames the conditions remove
+    assert int(((truth == H) | (truth == A)).sum()) == 9 and int(((decoded == H) | (decoded == A)).sum()) == 9
+
+
+def test_team_feasibility_reports_silent_share_hashes_and_refuses_empty_wins():
+    import hashlib
+    matches, artifact = planted()
+    with tempfile.TemporaryDirectory() as root:
+        path = config_file(root, 0.6)
+        report = trainer.feasibility(artifact, path, "gaps", 1, matches=matches, calibration=synthetic_calibration())
+        with open(path, "rb") as handle:
+            assert report["config_sha256"] == hashlib.sha256(handle.read().replace(b"\r\n", b"\n")).hexdigest()
+    assert report["model_sha256"] == hashlib.sha256(trainer.dumps(artifact).encode("utf-8")).hexdigest()
+    for cell in list(report["per_match"].values()) + [report["pooled"]]:
+        rule = cell["rule"]
+        assert rule["silent_share"] == rule["silent"] / cell["frames"]
+    assert "(" in "\n".join(trainer.render_feasibility(report)), "the silent share is printed beside the count"
+    # a match with no frame is not a win, even though 50 * 0 >= 0
+    empty = {"frames": 0, "p19": {"right": 0}, "main": {"right": 0}}
+    assert trainer.go(dict(cells_of(*[20] * 6), E=empty)) == {"wins": 6, "pooled": True, "go": True}
+    assert trainer.go(dict(cells_of(*[20] * 5), E=empty, F=empty))["wins"] == 5
+    assert trainer._gain(empty) is False
