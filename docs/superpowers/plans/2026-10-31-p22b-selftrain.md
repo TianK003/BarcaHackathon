@@ -190,8 +190,10 @@ earlier lanes.
   key, model)` (the fold `inputs.game` if the artifact has it, else `full`); `smart_tagging.compute(run, *, c_team,
   spread)`; `wrong_team._counts(present, slot_team)`.
 - **Produces:**
-  - `settings(config_path="pipeline/configs/main.toml") -> Settings(teacher, epsilon, alive_model, shape_model,
-    min_prob, c_team)`, read from `main.toml`'s entries:
+  - `settings(config_path=DEFAULT_CONFIG) -> Settings(teacher, epsilon, alive_model, shape_model, min_prob, c_team)`.
+    `DEFAULT_CONFIG` is `pipeline/configs/r024_both.toml`: today identical to `main.toml` outside comments and the
+    description, and unchanged by an adoption. That ruling came from R027's declaration review, finding 5. The values
+    read:
     - `controlled_touch`'s radius, max_rel_speed, min_frames and duel_radius (default 1.0);
     - ε = round(1 − confidence, 12);
     - `dead_ball_model`'s model; `shape_possession`'s model and min_prob; `smart_tagging`'s c_team.
@@ -369,14 +371,39 @@ Scripts in `.superpowers/bin/`, written in the style of `r025-guard.ps1`: steps 
 cool-down, and the chain stops at the first non-zero exit **except where an exit code is a verdict** (the gate's 1 and
 4, and `bar-ath`'s 1 and 3 are verdicts, not errors). Every log ends with `EXIT=<code>`.
 
+`<data>` is `C:/Users/Tian/Desktop/BarcaHackathon/data`, written in full: a relative `data/` names the run worktree's
+own folder.
+
 | script | steps |
 |---|---|
-| `r027-gate.ps1` | `selftrain.py gate --profile tracking --seeds 3 --data-dir <data>`, then `selftrain.py gate --profile context --seeds 3 --data-dir <data>` (report only) |
-| `r027-lag.ps1` | `conventions.py latency pipeline/benchmark/configs/r027/r027_preshift.toml dfl --profile tracking --seeds 3 --truth raw --drop-match-only --data-dir <data>` |
-| `r027-bar.ps1` | `run.py pipeline/configs/main.toml <cfg>/r027_final.toml <cfg>/r027_preshift.toml --profile tracking --seeds 3 --truth both --drop-match-only --data-dir <data>`, the same on `--profile context`, then `diagnose.py <cfg>/<candidate>.toml --profile tracking --seeds 3 --drop-match-only --data-dir <data>` |
-| `r027-barath.ps1` | `selftrain.py bar-ath --gate-report <data>/runs/selftrain/gate-tracking.json --data-dir <data>`, then `pipeline/run.py <candidate>` twice, then `label_diff.py pipeline/configs/main.toml <candidate>` |
+| `r027-gate.ps1` | `selftrain.py gate --profile tracking --seeds 3`, then `selftrain.py gate --profile context --seeds 3` (report only). The chain goes on after the tracking run's verdicts 0, 1 and 4, and stops only at 2. |
+| `r027-lag.ps1` | `conventions.py latency pipeline/benchmark/configs/r027/r027_preshift.toml dfl --profile tracking --seeds 3 --truth raw --drop-match-only` |
+| `r027-bar.ps1` | `run.py pipeline/configs/main.toml <cfg>/r027_final.toml <cfg>/r027_preshift.toml --profile tracking --seeds 3 --truth both --drop-match-only`, then the same on `--profile context`. Nothing else. |
+| `r027-choose` (light, run directly) | `choose.py --reference r027_preshift --objective mean r027_final --profile tracking --data-dir <data> --out <data>/runs/r027/guard-tracking.json`, the same on `context` into `guard-context.json`. Then, with `<candidate>` the guard's verdict, `choose.py --reference main --objective mean <candidate> --profile tracking --data-dir <data> --out <data>/runs/r027/bar-tracking.json`, and the same on `context` into `bar-context.json`. |
+| `r027-diagnose.ps1` | `diagnose.py <cfg>/<candidate>.toml --profile tracking --seeds 3 --drop-match-only` (reported only) |
+| `r027-barath.ps1` | `selftrain.py bar-ath --gate-report <data>/runs/selftrain/gate-tracking.json`, then `pipeline/run.py <candidate>` twice, then `label_diff.py pipeline/configs/main.toml <candidate>` |
 
-`<candidate>` is the bar's verdict on the shift: `r027_final`, or `r027_preshift` if the shift's guard failed.
+The heavy steps omit `--data-dir`, because `heavy-p22b.ps1` sets `MTAH_DATA_DIR` to `<data>`.
+
+`<candidate>` is the guard's verdict on the shift: `r027_final`, or `r027_preshift` if the shift's guard failed.
+
+**Reading the numbers.** The bar, the vetoes and the guard are read from `choose.py`'s JSON (`--out`, 9 decimals), never
+its 4-decimal printout:
+- the objective's pooled Δ is `versus.mean.pooled_delta`, the per-match Δs `versus.mean.match_deltas`, and the p
+  `versus.mean.p_sign_flip`;
+- each truth's Δ is `versus.raw.pooled_delta` and `versus.coarse.pooled_delta`;
+- the alive/dead F1 is `rows.<stem>.alive_dead`.
+
+The reference's reproduction is the one comparison at 4 decimals: `rows.main.raw.spell` and `rows.main.coarse.spell`,
+rounded to 4, must be 0.5363 and 0.5764.
+
+**Errors** (R027 part 1). An exit 2, a crash or a log that ends without `EXIT=` is not a verdict:
+- **a clear cause outside the declared code** (memory under the guard, a locked or missing file, a full disk): remove
+  the cause and rerun that step once from the same commit. A second failure goes to the advisor;
+- **a reaped run** is rerun only with Tian's leave (the house rule), and the lane waits for Tian there;
+- **a traceback inside the declared code** goes to the advisor. Any fix is logged in part 2 as a deviation before the
+  rerun;
+- **a `context` gate run that still fails** does not hold the lane, since it decides nothing.
 
 - [ ] **5.1 The gate.** Detach the run worktree at the commit holding Tasks 1, 2 and 4, and run `r027-gate.ps1`.
   Meanwhile Task 3 runs in its worktree.
@@ -458,7 +485,7 @@ Any failure is DROP.
 | `bar-ath` exit 3 (b outside the band) | STOP, advisor (adopt or drop) |
 | `bar-ath` exit 1, a different sha256 twice, D share > 1 point off, or an `X` in a graded block | DROP |
 | everything passes | ADOPT (automatically if Q4 is yes) |
-| a crash, a reaped run or anything unforeseen | rerun once if the cause is clear (a reaped run is rerun only if Tian allowed it), else STOP for the advisor |
+| an exit 2, a crash or a log without `EXIT=` | the Errors rules of Task 5: a clear outside cause is removed and the step rerun once; a reaped run waits for Tian; a traceback in the declared code goes to the advisor |
 
 **The advisor** is an opus agent briefed with the design, R027 and the aggregates. It rules on the STOPs and the
 unforeseen. Each ruling goes into the ledger as `Advisor (for Tian): <decision> — <reason>` and into the handoff for
