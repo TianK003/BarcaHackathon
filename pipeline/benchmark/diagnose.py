@@ -122,6 +122,7 @@ IOUS = score.IOUS                     # the scorer's IoUs, 0.3 ... 0.7
 FLOOR = IOUS[0]                       # the matching at 0.3, of which the matching at every other IoU is a cut
 CLASSES = ("clean", "merge", "split", "both")   # a matched pair's class (A19), in the order they are reported
 EDGE_TOLERANCE = 5                    # frames: the share of the clean pairs' edge errors within +- this
+# EDGE_TOLERANCE is named in the report's key "within_5": change both together.
 GATE = 0.015                          # A19: R025 is built only if the mean clean-pair ladder loss is at least this
 BINS = 10                             # equal-width bins of the ECE and the reliability table
 CLIP = 1e-6                           # p is clipped to [CLIP, 1 - CLIP] for the log-loss and Platt's logit

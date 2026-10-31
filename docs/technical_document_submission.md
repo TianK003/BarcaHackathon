@@ -255,7 +255,7 @@ py -3.11 -m venv .venv                         # macOS/Linux: python3.11 -m venv
 
 **From a fresh clone** (A17, A18). R024's file, `e6496a9b…`, came out the same on every run in our working repository
 but has not yet been regenerated from a fresh clone or on a second machine. R017's file (`7ba575c0…`, hold 0.60; the
-pipeline's code is unchanged since) has: the pushed repository (`5f0145c`), cloned into a new Python 3.11.9 venv with
+and the pipeline's code outside the benchmark and the configs is the same at R024's merge) has: the pushed repository (`5f0145c`), cloned into a new Python 3.11.9 venv with
 only the raw bundle, gave it on three runs (one at the default BLAS threads), the self-tests passed, both models
 retrained identical and the benchmark returned its scores to the last digit (AMD Ryzen 5 5500U, Windows 11, CPU only).
 Under Linux (A18: WSL 2, the same laptop) the file was the same; another processor is untried.

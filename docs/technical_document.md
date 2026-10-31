@@ -953,7 +953,9 @@ it). R024 wrote it twice (`r024_both.toml`, its label-free check) and `main.toml
 `main.toml` with `--drop-match-only` scores 0.5363 / 0.5764 on the benchmark. **It has not yet been regenerated from a
 fresh clone or on a second machine.** A17 and A18 below checked R017's file,
 `7ba575c0982aacb9765b39c406e4ff5c9ddb82ca37cfa2b7f101417431fc3d7c`, which `pipeline/configs/r017_frame.toml` still
-writes; between A17's commit (`5f0145c`) and R024 the pipeline's code did not change, only `main.toml`'s hold. A17
+writes. At the merge of P23 the pipeline's code outside `benchmark/` and `configs/` is A17's (`5f0145c`) again. R024's
+file was first written at `3943962`, while R026's later-reverted `"visible"` scope was present (it does not touch scope
+`all`: R026's identity check), and it was written again at the branch's last commit (`48c790c`), the same. A17
 checked it from a fresh clone of the pushed repository, a new venv from the requirements files and a data folder
 with no caches: the same sha256 on two runs at one BLAS thread and on a third at the default threads, and both trained
 models and the benchmark's 0.5430 / 0.5593 came back exactly. The first run parses the tracking into `data/cache/` once

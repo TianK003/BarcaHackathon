@@ -1876,7 +1876,9 @@ exactly where a player handles a dead ball, and the ball is visible on 66% of de
 **Review.** An independent reviewer read A19 and R024 to R026 before any run: 14 findings, all resolved in the text
 above. The one blocker was R024's extension, which could be read two ways.
 
-**Part 2, the run** (2026-10-31). The code is `diagnose.py` (`907fdea`, plus a fix after its task review, `7612a1b`).
+**Part 2, the run** (2026-10-31). Part 1's motivating figures (6,279 predicted possessions; 0.670 to 0.401 up the
+ladder) are R017's file's. The run below is on R024's, as part 1 says. The code is `diagnose.py` (`907fdea`, plus a fix
+after its task review, `7612a1b`).
 The review found the definitions exact, cross-checked the posterior against `hmm.decode(posterior=True)`, and asked for
 checks that pin the calibration's (p, y) and the posterior's parameters; nine mutations it tried are now caught. One
 addition came out of the review, reported and gating nothing: `main.toml`'s P07 speaks on every graded frame where a
@@ -8020,7 +8022,9 @@ The shift's own guard passes: final against preshift is +0.0006 on `tracking` (6
 
 - **The moves are tiny.** |b′ − b| among the moved changes has a median of 1 frame (quartiles 1 and 3).
 - **The ladder is unchanged.** The mean clean-pair loss is 0.0718, against `main`'s 0.0704. The clean pairs' edge
-  errors keep the same late skew (end quartiles -6 and +22 frames, raw).
+  errors keep the same late skew (end quartiles -6 and +22 frames, raw). The pairs matched at IoU 0.3, 0.4, 0.5,
+  0.6, 0.7 are 5,095, 4,713, 4,156, 3,583, 2,977 under raw (A19's `main`: 5,098, 4,707, 4,160, 3,580, 2,986), and
+  3,860, 3,617, 3,221, 2,835, 2,422 under coarse (3,860, 3,615, 3,230, 2,866, 2,435).
 - **Why nothing moved:** A19's diagnosis. The posterior is four to five times too sharp, so its median sits on
   Viterbi's mode, one frame from it at most. Team changes moved mostly one frame earlier, and the re-derived shift (+2
   instead of +1) put them back.
@@ -8136,7 +8140,8 @@ helped inside R025b (final against preshift +0.0013 on the mean), not enough to 
 - |b′ − b| among the moved has a median of 3 frames (quartiles 1 and 9), against R025's 1.
 - **The edges got worse, not better.** The spread widened. The raw clean pairs' start error has quartiles -11 and +9
   (A19: -5 and +14), and their end error -14 and +17 (A19: -6 and +22). Within ±5 frames fell from 45.5% to 40.8% at
-  the start, and from 37.4% to 30.9% at the end.
+  the start, and from 37.4% to 30.9% at the end. Under the coarse truth the same: start quartiles -13 and +10 (A19:
+  -3 and +20), end -19 and +19 (-5 and +28), within ±5 frames 41.3% and 30.6% (44.4% and 34.7%).
 - **The ladder moved the wrong way.** The mean clean-pair loss rose to 0.0833 (0.0704), and the raw pooled spellF1
   fell to 0.5121.
 
