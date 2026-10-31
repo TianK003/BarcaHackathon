@@ -2,8 +2,8 @@
 
 Date: 2026-10-31. Proposal: `docs/proposals.md` P22 (b). Results entry to come: R027 (R027b if its one retry runs).
 Status: revised after an independent review (Fable 5.1, xhigh; `.superpowers/sdd/2026-10-31-p22b-selftrain/design-review.md`,
-verdict "proceed with changes", every finding resolved in the text below and listed in the appendix). Tian's answers to
-section 9 are still needed before part 1 of R027 is written.
+verdict "proceed with changes", every finding resolved in the text below and listed in the appendix). Tian answered the
+four open questions on 2026-10-31 (section 9).
 
 ## 1. Why
 
@@ -365,16 +365,15 @@ cause-named retry after a failed bar, and anything the flow does not foresee.
   - BAR-ATH a few minutes.
 - **End:** about two days, well before the freeze (13 to 14 Nov).
 
-## 9. Questions for Tian (before implementation)
+## 9. Tian's answers (2026-10-31, before implementation)
 
-1. **The rung.** Start at rung 1 (one intercept per half), with rung 3 measured in the same gate run as the one retry,
-   or go straight to retraining the trees (rung 4)?
-2. **The bar.** (i) R025's house bar (sign-flip p ≤ 0.05, about 6 consistent wins in 7), or (ii) the magnitude bar with
-   a no-harm veto (pooled Δ ≥ +0.005, no match below −0.005)? The belief expects a gain on the few matches with an
-   offset and next to nothing elsewhere, which (i) can hardly see.
-3. **After the gate.** Continue to the benchmark automatically when the gate passes (the research bar's pause is the gate
-   itself)?
-4. **Adoption.** Switch `main.toml` automatically when everything passes, or stop before switching it?
+1. **The rung:** rung 1, with rung 3 measured in the same gate run as the one retry (R027b).
+2. **The bar:** (ii), the magnitude bar with a no-harm veto, declared before any run.
+   - On `tracking`, the objective's pooled Δ is ≥ +0.005 and no match's Δ is below −0.005.
+   - The vetoes are the `context` objective and the `tracking` alive/dead F1, neither below −0.005.
+   - The sign-flip p is reported and decides nothing.
+3. **After the gate:** a pass continues to the lag and the bar automatically.
+4. **Adoption:** if everything passes, `main.toml` is switched automatically (the CSV is not uploaded).
 
 ## Appendix: the review's findings and where they went
 
