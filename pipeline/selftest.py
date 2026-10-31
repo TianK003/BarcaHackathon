@@ -3928,54 +3928,6 @@ def test_shape_possession_scope():
         assert not np.isnan(home[lonely]).any()
 
 
-def shape_scope_inputs(seed):
-    """Synthetic inputs with a ball that is missing on 40% of the frames, for the scope checks."""
-    players, teams, graded = shape_scene(seed)
-    n = len(players)
-    ball = np.random.default_rng(100 + seed).random((n, 2)) * PLAY_PITCH
-    ball[np.random.default_rng(200 + seed).random(n) < 0.4] = np.nan
-    return shape_inputs(players, teams, graded, ball)
-
-
-def test_shape_possession_visible_is_the_complement_of_gaps():
-    with tempfile.TemporaryDirectory() as root:
-        path = write_shape_model(root)
-        for seed in (0, 2, 3, 6):
-            inputs = shape_scope_inputs(seed)
-            home_all = shape_home(inputs, path, scope="all")
-            home_gaps = shape_home(inputs, path, scope="gaps")
-            home_visible = shape_home(inputs, path, scope="visible")
-            in_gaps, in_visible, in_all = (~np.isnan(h) for h in (home_gaps, home_visible, home_all))
-            assert in_gaps.any() and in_visible.any(), seed
-            assert not (in_gaps & in_visible).any(), "visible and gaps are disjoint"
-            assert np.array_equal(in_gaps | in_visible, in_all), "their union is all's known frames"
-            assert np.array_equal(in_visible, in_all & inputs.atd.ball_present), seed
-            assert np.array_equal(home_all[in_visible], home_visible[in_visible])
-            assert np.array_equal(home_all[in_gaps], home_gaps[in_gaps])
-
-
-def test_shape_split_scopes_decode_as_all():
-    from pipeline.contracts import Evidence, no_opinion
-    from pipeline.decode import hmm
-    with tempfile.TemporaryDirectory() as root:
-        path = write_shape_model(root)
-        for seed in (0, 3):
-            inputs = shape_scope_inputs(seed)
-            n = len(inputs.atd.ball_xy)
-            rng = np.random.default_rng(seed)
-            other_home = np.where(rng.random(n) < 0.3, np.nan, rng.random(n))
-            other = Evidence(alive=np.where(rng.random(n) < 0.5, np.nan, rng.random(n)), home=other_home,
-                             name="other", weight=1.0)
-            shapes = {scope: Evidence(alive=no_opinion(n), home=shape_home(inputs, path, scope=scope), name=scope)
-                      for scope in ("all", "visible", "gaps")}
-            for w in (0.1, 0.2, 0.5):
-                def at(scope):
-                    return Evidence(alive=shapes[scope].alive, home=shapes[scope].home, name=scope, weight=w)
-                whole = hmm.log_likelihoods([other, at("all")], n, 1e-6)
-                split = hmm.log_likelihoods([other, at("visible"), at("gaps")], n, 1e-6)
-                assert np.array_equal(whole, split), (seed, w)
-
-
 def test_shape_possession_fold_choice():
     with tempfile.TemporaryDirectory() as root:
         folds = {"FOLD1": shape_model(0.0, 1.0, -1.0), "FOLD2": shape_model(0.0, 3.0, -3.0)}
@@ -4060,7 +4012,7 @@ def test_shape_possession_parameters():
         inputs = shape_inputs(players, teams, graded)
         for bad in ("GAPS", "", "none", None, True, 1, ["gaps"]):
             expect_error(ValueError, lambda: shape_home(inputs, path, scope=bad), "shape_possession", "scope", "gaps",
-                         "all", "visible")
+                         "all")
         for bad in (0.0, 0.5, 0.6, -0.1, True, False, "0.1", None, float("nan"), float("inf")):
             expect_error(ValueError, lambda: shape_home(inputs, path, min_prob=bad), "shape_possession", "min_prob")
         for bad in (None, 5, "", True):
