@@ -32,7 +32,6 @@ the players alone, is trained once and shared; a check that changes an artifact 
 import collections
 import contextlib
 import copy
-import dataclasses
 import functools
 import hashlib
 import io
@@ -47,8 +46,8 @@ from pipeline.benchmark import conventions, sources, train_dead_ball, truth
 from pipeline.benchmark import train_shape as trainer
 from pipeline.benchmark.calibration import digest as calibration_digest
 from pipeline.benchmark.checks.common import (A, FOLD_IDS, H, NotRun, PLANTED_SEEDS, PLANTED_STRIDE, leaks, loading,
-                                              planted, random_match, strict_json, synthetic_calibration, synthetic_matches, tracked_match,
-                                              tracking_calibration)
+                                              planted, random_match, strict_json, synthetic_calibration,
+                                              synthetic_matches, tracked_match, tracking_calibration)
 from pipeline.benchmark.run import BenchmarkError
 from pipeline.contracts import RunContext
 from pipeline.evidence import controlled_touch, shape_features, shape_possession, trees

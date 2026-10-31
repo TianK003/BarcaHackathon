@@ -33,7 +33,7 @@ PROFILE = "gaps"                              # the planted artifact is trained 
 
 @functools.lru_cache(maxsize=1)
 def planted_feasibility():
-    """(result, the artifact's text): label_shift.feasibility on the planted matches and the artifact trained on them."""
+    """label_shift.feasibility on the planted matches, read by the artifact trained on them (cached)."""
     matches, artifact = planted()
     with tempfile.TemporaryDirectory() as root:
         path = os.path.join(root, "shape.json")
@@ -297,3 +297,51 @@ def test_label_shift_command_line():
             assert stop.code == 2, bad
         else:
             raise AssertionError("{} should be refused".format(bad))
+
+
+# -- R020's configs ---------------------------------------------------------------------------------------------------
+
+R020_STRENGTHS = {"r020_s025": 0.25, "r020_s050": 0.5, "r020_s100": 1.0}   # the advisor's grid, 2026-10-31
+
+
+def test_label_shift_r020_configs_are_main_plus_the_prior():
+    from pipeline.config import load_config
+    configs = os.path.join(label_shift.HERE, "configs")
+    main = load_config(os.path.join(label_shift.ROOT, "pipeline", "configs", "main.toml"))
+    assert [c.name for c in main.evidence].count("shape_possession") == 1
+    for stem, strength in R020_STRENGTHS.items():
+        path = os.path.join(configs, "r020", stem + ".toml")
+        assert os.path.exists(path), "{} is missing".format(path)
+        config = load_config(path)
+        assert config.stem == stem
+        assert (config.seed, config.scope) == (main.seed, main.scope)
+        assert config.decoder == main.decoder and config.refine == main.refine, "decoder and refiners are main.toml's"
+        assert [(c.name, c.kind, c.weight) for c in config.evidence] == [(c.name, c.kind, c.weight)
+                                                                          for c in main.evidence]
+        for ours, theirs in zip(config.evidence, main.evidence):
+            if ours.kind == "shape_possession":
+                assert ours.params == dict(theirs.params, prior="em", prior_strength=strength), ours.params
+                assert "prior" not in theirs.params, "main.toml has no prior yet"
+            else:
+                assert ours == theirs, "{}: another parameter than main.toml's".format(ours.name)
+    assert sorted(R020_STRENGTHS.values()) == [0.25, 0.5, 1.0]
+
+
+def test_label_shift_one_sided_scenes_raise():
+    """The shape scene's seeds 2 and 4, with the lopsided three-stump model, give EM a share of 0 or 1: it raises."""
+    from pipeline.selftest import SHAPE_COLUMN, shape_inputs, shape_scene, stump
+    lopsided = {"baseline": 0.9, "prior_home": 0.5, "trees": [
+        stump(SHAPE_COLUMN["h_adv_mean"], 50.0, -0.8, 1.7, missing_left=1),
+        stump(SHAPE_COLUMN["a_vel_adv"], 0.0, 0.6, -0.3),
+        stump(SHAPE_COLUMN["adv_gap"], 0.0, -1.0, 2.0)]}
+    with tempfile.TemporaryDirectory() as root:
+        path = write_shape_model(root, full=lopsided)
+        for seed in (2, 4):
+            inputs = shape_inputs(*shape_scene(seed))
+            inputs.game = "BAR-ATH"
+            expect_error(BenchmarkError, lambda: label_shift.bar_ath(0.5, model=path, inputs=inputs),
+                         "label_shift", "shape_possession", "0 or 1")
+        for seed in (0, 7):                                              # and two-sided ones do not
+            inputs = shape_inputs(*shape_scene(seed))
+            inputs.game = "BAR-ATH"
+            assert 0.0 < shape_possession.em_prior(shape_possession.logit_home(inputs, path))["prior_home"] < 1.0
