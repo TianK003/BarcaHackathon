@@ -232,7 +232,7 @@ py -3.11 -m venv .venv                         # macOS/Linux: python3.11 -m venv
 ```
 
 - **One command** from `data/` to the CSV, written with LF line endings and validated by the official checks. Expected
-  sha256 `7ba575c0…` (R017), the same on two runs and under one BLAS thread (R013, R017).
+  sha256 `7ba575c0…` (R017), the same on two runs (R017).
 - **Pins:** Python 3.11.9; every package the pipeline imports at an exact version in `requirements-pipeline.txt` (numpy
   2.4.6, pandas 3.0.6). Both models are JSON under `pipeline/models/`, LF by `.gitattributes`, read with numpy only.
 - **`--verify`:** with `requirements-benchmark.txt` and the DFL files (`pipeline/benchmark/sources.py --verify`),
