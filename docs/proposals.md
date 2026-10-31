@@ -959,18 +959,27 @@ Athletic: the count of possessions moved the other way on BAR-ATH.
   - Train on one half and check on the other. Without that split, R011's transfer gate (agreement with the touch rule)
     would check the model on its own training labels.
   - **Expanded 2026-10-31** (Tian: "start working on P22(b)"; design in
-    `docs/superpowers/specs/2026-10-31-p22b-selftrain-design.md`, run R027). The design starts at the simplest rung of
-    a ladder of updates (intercept, recalibration, extension, retrained trees):
-    - **Rung 1:** a class-balanced logistic intercept on P07's logit, fitted on the other half's frames.
-    - **The labels:** `controlled_touch`'s episode frames at `main.toml`'s rule, the same code on DFL and on BAR-ATH.
-      The decoded labels are not used: in the gaps they carry P07 itself, and on BAR-ATH Smart Tagging too.
+    `docs/superpowers/specs/2026-10-31-p22b-selftrain-design.md`, revised after an independent review, run R027). The
+    design starts at the simplest rung of a ladder of updates (intercept, recalibration, team-aware head, retrained
+    trees):
+    - **Rung 1:** one logistic intercept on P07's logit per half, fitted on the other half's frames. The estimator is
+      noise-aware: a forward correction at `main.toml`'s ε = 0.07, with the noise-corrected class share of those frames
+      removed. On synthetic data a class-balanced fit is pulled about 0.1 towards the teacher's minority class.
+    - **The labels:** `controlled_touch`'s episode frames at `main.toml`'s rule, without the frames `dead_ball_model`
+      calls dead, computed by the same code on DFL and on BAR-ATH. The decoded labels are not used: in the gaps they carry
+      P07 itself, and on BAR-ATH Smart Tagging too.
     - **Where it runs:** at run time in a new source `shape_selftrain`, with no new artifact.
-    - **Why the intercept:** R020 and A19 put P07's error on a new match in an offset, not in its slope (α 1.07 to 1.10).
-      Updating a model for a new population works with the simplest update, and revisions overfit (Janssen et al. 2008).
-      Self-training under shift needs strong regularisation (Kumar, Ma and Liang 2020).
-    - **The tests:** a gate on DFL (P07's held-out log-loss in the gaps), then R025's bar on the mean of the two truths,
-      then label-free checks on BAR-ATH.
-    - **One retry:** rung 2, only for a named cause.
+    - **Why the intercept:** R020's misses hint at a per-match offset, and P07's slope is about right (α 1.07 to 1.10).
+      When a prediction model is updated for a new population, the simplest update holds and revisions overfit (Janssen
+      et al. 2008), and self-training under shift needs strong regularisation (Kumar, Ma and Liang 2020). No offset has
+      been measured yet: the gate's oracle is the first measurement.
+    - **The tests:**
+      1. A gate on DFL, run from the tool before the source is built. It requires a pooled log-loss gain of at least 0.002
+         nats in the held-out half's gaps, and no match worse by more than 0.002.
+      2. The bar on the mean of the two truths: R025's form or a magnitude bar, Tian's choice.
+      3. Label-free checks on BAR-ATH, among them Smart Tagging's votes in the gaps.
+    - **One retry:** rung 3 (a team-aware linear head), only if rung 1 fails the gate and rung 3 passes it in the same
+      run.
 - **(c) M, recorded 2026-10-31 (advisor, for the team; not pursued tonight):** the prior as asymmetric switch costs in the
   decoder, the decoder's own place for a class prior. It is a contract change and needs its own decoder grid, so the team
   decides. R020 reads s = 1 as the frame-level Bayes value, not the decoder's prior. It would use the same share as (a),
