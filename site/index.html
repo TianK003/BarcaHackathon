@@ -661,10 +661,10 @@ footer { border-top: 1px solid var(--line); margin-top: 24px; padding: 16px 0 28
    =========================================================================================================== */
 const DATA = {
   asOf: "2026-10-31",
-  commit: "d11f31e",
+  commit: "a280b1e",
   title: "Possession pipeline · team overview",
   subtitle: "More than a Hack 2027, Phase 1 · FC Barcelona (H) vs Athletic Club (A), LaLiga 2024-25 MD2",
-  footer: "As of 2026-10-31 (main d11f31e). P19 to P22 were each dropped at their feasibility gates, P16 part 1 is an unsigned draft, and A17 and A18 regenerated the submission byte for byte from a fresh clone, on Windows and on Linux. Update DATA when an entry lands; the docs are the source of truth.",
+  footer: "As of 2026-10-31 (a280b1e, the commit R023 ran at). P19 to P22 were each dropped at their feasibility gates, R023 (P16) found our provider's grain between the two truths, so choices now rank on their mean, and A17 and A18 regenerated the submission byte for byte from a fresh clone, on Windows and on Linux. Update DATA when an entry lands; the docs are the source of truth.",
 
   /* ---------- Overview ---------- */
   onboarding: {
@@ -730,7 +730,7 @@ const DATA = {
   },
 
   nextSteps: [
-    { title: "The grain of our truth (P16)", text: "Every ball-rich change splits the two truths: R010's decoder, R013's touch rule, A14's ball. Metrica's sample games, in our provider's conventions, are how to learn which truth ours resembles." },
+    { title: "The grain of our truth: answered (R023)", text: "Every ball-rich change splits the two truths: R010's decoder, R013's touch rule, A14's ball. On Metrica's own sample games the event-derived grain falls between them (6.20 possessions per alive minute, median 4.72 s), so every choice declared from now on ranks on the mean of the raw and coarse pooled spellF1s. Whether to re-rank R013 is the team's call." },
     { title: "Not now: a video ball detector (P14)", text: "A14: the ball is about 6 px wide, smaller than a ViT patch (T46), and a perfect ball in our gaps is worth +0.10 raw but only +0.02 coarse. A half-day zero-shot test only if someone is free." },
     { title: "The deliverables", text: "Regenerate `main.toml`'s file from a clean clone on a second machine, make the repo public as the last step, fill the placeholders of [the technical document](../docs/technical_document_submission.md), and decide before the freeze how much of the benchmark's gain to believe (a decision, not a run: T38, T39, R011). Our advice, not a rule: upload the file early as a safety copy. See [Work to do](#work)." }
   ],
@@ -1293,7 +1293,7 @@ const DATA = {
           { v: "+0.0036", l: "alone, with the old sources", n: "R007: bar missed; it needs good evidence" }
         ],
         limits: [
-          "Its four numbers were chosen on DFL's fine-grained truth; the coarse truth prefers longer minimums (T33), and our truth's grain is unknown (P16).",
+          "Its four numbers were chosen on DFL's fine-grained truth; the coarse truth prefers longer minimums (T33), and R023 put our provider's grain between the two, so a re-choice would rank on their mean.",
           "The minimums are hard: a real possession under 1.4 s cannot be output, and the public window has ones of 0.76 s and 1.32 s. A duration prior (semi-Markov) would soften this.",
           "A transition price binds only below the largest evidence it competes with (T44): at 6.9 nats a frame the dead-ball model can pay for a stoppage quickly."
         ],
@@ -1360,8 +1360,8 @@ const DATA = {
       next: "Not a ViT: the ball is about 6 px wide (T46). If ever built, a stride-4 heatmap net at full resolution with stacked frames (FootAndBall or WASB-SBDT, MIT), trained on the ATD's own ball as algorithm-made pseudo-labels. Only test B may run now: zero-shot, half a day, CPU only (“After A14”, item 1)." },
     { id: "P15", anchor: "p15--broadcast-tracking-as-a-second-opinion", title: "Broadcast tracking as a second opinion", attacks: "facts 1, 4", effort: "L", impact: "medium", status: "idea", stage: "inputs",
       next: "Align the broadcast to the tactical feed by matching player configurations, a monotone time warp per shot; then fuse its ball and use “broadcast off the pitch” as stoppage evidence." },
-    { id: "P16", anchor: "p16--metricas-sample-games-in-our-ground-truth-providers-conventions", title: "Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing", attacks: "boundary timing, grain", effort: "M", impact: "medium", status: "idea", stage: "benchmark",
-      next: "Declare the adoption rule first, on the sample games alone; derive `H`, `A` and `D` from their events and tracking; measure the switch timing and the grain beside DFL's (A06). It decides whether R013's raw-truth gain helps on our match." },
+    { id: "P16", anchor: "p16--metricas-sample-games-in-our-ground-truth-providers-conventions", title: "Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing", attacks: "boundary timing, grain", effort: "M", impact: "medium", status: "partly", note: "partly done → R023 (the grain: both)", stage: "benchmark",
+      next: "R023 measured the grain (outcome both: rank on the mean of the two truths). Left: the switch timing on the sample games and its feeds to P04's back-dating, P05's `D` onset and P12's shift, each by a rule declared first." },
     { id: "P17", anchor: "p17--the-restart-team-channel", title: "Restart-team channel: who restarts after a stoppage, from the players' arrangement", attacks: "facts 3, 5", effort: "S–M", impact: "ceiling +0.0198 raw (A12); delivered +0.0040 raw at best, bar not met (R014)", status: "dropped", note: "dropped → R014, R014b (code stays, off)" },
     { id: "P18", anchor: "p18--the-offpitch-profile-dfls-ball-hidden-off-the-pitch-as-ours-is-and-p05-retrained-on-it", title: "offpitch profile: DFL's ball hidden off the pitch as ours is, and P05 retrained on it", attacks: "T39", effort: "M", impact: "A13: a perfect dead-ball source adds +0.029 raw; hiding the out-of-play ball cost today's P05 0.013 alive/dead F1 (R015)", status: "dropped", note: "dropped → R015, R015b (code removed)" },
     { id: "P19", anchor: "p19--a-learned-team-model-where-the-ball-is-seen", title: "A learned team model where the ball is seen: P05's recipe applied to the team", attacks: "fact 3; A13's largest lever (+0.194 raw where the ball is seen)", effort: "M (feasibility S)", impact: "measured: +0.0160 pooled per-frame accuracy against main.toml's decoded labels, gate +0.020 (R021)", status: "dropped", stage: "evidence",
@@ -1470,7 +1470,7 @@ const DATA = {
       "**The benchmark's conventions.** DFL's flags may flip at other moments than our truth's, and P04's back-dating, P05's `D` onset and the shift follow DFL. A11's leads (our `D` 2.5–3 s longer, our team flipping about a second earlier) are not measurements.",
       "**Seven matches,** five of them one club's home games: the intervals are wide, and selecting from hundreds of configs is optimistic (R013 chose from 336; its leave-one-match-out estimates agree).",
       "**The shape model never saw our teams.** P07's benchmark gain is not a forecast for BAR-ATH, and the possession count moved the other way on our match (down 2.4%, where the benchmark's went up 16%).",
-      "**The grain of our truth is unknown.** R013 is +0.0267 raw and level coarse; which truth ours resembles decides whether it helps (P16).",
+      "**The grain of our truth is only partly known.** R023 put our provider's event-derived grain between the two truths, so choices now rank on their mean; it is events, not the tracking flag our truth comes from. R013 is +0.0267 raw and level coarse, and was not re-ranked.",
       "**DFL tracks the ball out of play.** Two profiles that hide it were tried and dropped (R015, R015b), so how much of P05 transfers stays unmeasured (T39).",
       "**No video, audio, homography or Smart Tagging on the benchmark,** so P08, P09, P10, P14 and P15 cannot be validated there."
     ]
@@ -1528,8 +1528,8 @@ const DATA = {
       text: "PathCRF's published checkpoint on its held-out DFL match, degraded to `tracking` v3, against P07 on the same gap frames: 0.8571 against 0.8522, +0.0049 pooled (declared bar +0.04). Code removed. A measurement, not a spellF1 entry." },
     { date: "2026-10-31", title: "P21 step 0: wrong-team slots do not cluster at the ball", entries: "A16", outcome: "dropped", stages: ["inputs", "benchmark"],
       text: "Over-11 frames are 0.1097 of the candidate frames against 0.1286 of graded frames, ratio 0.85 against the declared 1.5; A14's bound stands. The measuring tool is kept." },
-    { date: "2026-10-31", title: "P16 part 1: Metrica's sample games and the grain of our truth (draft)", entries: "R023", outcome: "analysis", stages: ["benchmark"],
-      text: "An unsigned draft: not declared until Tian signs or amends it, and nothing has been downloaded or run." },
+    { date: "2026-10-31", title: "R023: our provider's grain is between the two truths", entries: "R023", outcome: "analysis", stages: ["benchmark"],
+      text: "Signed by Tian before any fetch, then run: H/A/D derived from the events of Metrica's three anonymised sample games by a declared rule gives 6.20 possessions per alive minute (class both) and a median of 4.72 s (class raw). Outcome **both**: choices declared from now on rank on the mean of the raw and coarse pooled spellF1s. `main.toml` untouched." },
     { date: "2026-10-31", title: "A17: the submission regenerated from a fresh clone", entries: "A17", outcome: "analysis", stages: ["output"],
       text: "A clone of the pushed repository, a new venv from the requirements files and the raw bundle with no caches: `main.csv` came out `7ba575c0…` on two runs and at the default threads, both models retrained identical, and the benchmark returned 0.5430 / 0.5593. One machine only." },
     { date: "2026-10-31", title: "A18: the submission regenerated on Linux", entries: "A18", outcome: "analysis", stages: ["output"],
