@@ -44,10 +44,10 @@ that: they train on a CPU, and each feature can be checked against how our track
 
 | asset | used | how, or why not |
 |---|---|---|
-| Tactical ATD | yes | Every source. Speeds from successive positions, never the speed channel (T31). |
-| Smart Tagging | team votes | The team votes passed their bar (section 5); the dead votes failed (0.409, bar 0.60) and were removed (R017). |
-| Tactical homography | no | Analysed only: the camera's aim has a median along-pitch error of 12.1 m (A03). P09 dropped (below). |
-| Tactical video, audio | no | The audio was decoded locally for P10, dropped. No LLM saw video or audio. |
+| Tactical ATD | yes | Every source. |
+| Smart Tagging | team votes | Team votes passed their bar (section 5); dead votes failed (0.409, bar 0.60) and were removed (R017). |
+| Tactical homography | no | Analysed only: the camera's aim has a median along-pitch error of 12.1 m (A03). |
+| Tactical video, audio | no | Audio decoded locally for P10 only; no LLM saw video or audio. |
 | Broadcast assets | no | Own 164,488-frame timeline, no mapping to the tactical frames (A04). |
 | Public 5-minute GT | check, inspection | See "About this match" below. |
 | DFL/IDSSE open data | yes | Trains P05 and P07; the benchmark (below). |
@@ -63,18 +63,21 @@ that: they train on a CPU, and each feature can be checked against how our track
   dead/alive speed ratio).
 - **P22(a), a label-shift prior on P07** (R020): EM's home share (Saerens et al. 2002) missed the truth by 0.0538 on
   average against 0.0623 for guessing 0.5, a ratio of 0.863 where 0.75 was needed.
-- **P21, wrong-team slot repair** (A16): worth it only if such slots cluster at the ball. A team had over 11 slots 0.85
-  times as often on the touch rule's candidate frames as on all graded frames, where 1.5 was needed (a measure that may
-  partly reflect ball visibility).
+- **P21, wrong-team slot repair** (A16): worth it only if such slots cluster at the ball: a team had over 11 slots 0.85
+  times as often on the touch rule's candidate frames as on all graded frames, where 1.5 was needed (which may partly
+  reflect ball visibility).
 - **P20 step 0, PathCRF** (R022): on J03WR9, the benchmark match it never trained on, it beat P07 on the gap frames by
   +0.0049 where +0.04 was needed.
 - **P19, a learned team model where the ball is seen** (R021): out-of-fold per-frame accuracy +0.0160 over `main.toml`'s
-  decoded labels, where +0.020 was needed pooled and in 6 of the 7 matches; 3 reached it.
-- **P23 C, edges placed by the decoder's posterior** (R025, R025b). A19 found most of what spellF1 loses from IoU 0.3 to
-  0.7 in edges on otherwise right possessions (0.070), but the posterior is four to five times too sharp: its median
-  moved edges by 1 frame, and tempered, by 3 the wrong way (mean of the two truths -0.0010, then -0.0282).
+  decoded labels, where +0.020 was needed pooled and in 6 of 7 matches; 3 reached it.
+- **P23 C, edges placed by the decoder's posterior** (R025, R025b): most of what spellF1 loses from IoU 0.3 to 0.7 is
+  edges on otherwise right possessions (0.070, A19), but the posterior is four to five times too sharp: its median
+  moved edges 1 frame, and tempered, 3 the wrong way (mean of the two truths -0.0010, then -0.0282).
 - **P23 E, P07 weighted apart in the gaps** (R026): every heavier gap weight added possessions and lost on the mean
   (-0.010 to -0.020).
+- **P22(b), P07 recalibrated per half from the touch rule's labels** (R027): on DFL its log-loss in the other half's
+  gaps rose 0.0061 where a 0.002 fall was needed; the touches' offset was not the gaps' (0.296 apart, label noise
+  0.107).
 
 ### Labelled data
 
@@ -88,11 +91,10 @@ We labelled nothing by hand, on any game. The labelled data used are all about o
 | Metrica's sample games' events | metrica-sports/sample-data at `e706dd5`; no licence, its README asks for acknowledgement (given here); fetched at run time, not redistributed | Metrica Sports, our ground truth's provider: event types, per its published definitions | 3 anonymised games, 7,300 events | R023's grain only; nothing trained |
 
 **About this match.** No tracking was corrected by hand, and no human-produced data about the match were used. No
-model was trained on the public 5-minute ground truth and no constant of `main.toml` was set on it. It was used in
-three ways:
+model was trained on the public 5-minute ground truth and no constant of `main.toml` was set on it. Its three uses:
 - **A correctness check** (alignment, a valid and deterministic file, each source's direction); section 5.
 - **An inspection to describe the truth,** which RULES.md allows. The window figures quoted here (77.8% and 66%, A01;
-  80.4%, A06; the timing of its changes, A11) describe it and set nothing.
+  80.4%, A06; the timing of its changes, A11) set nothing.
 - **Two inputs, both disclosed.** R009 chose the dead-ball source and its weight 1.0 in configs that all carried
   `nearest_player` at A01's window-derived 0.78 (not in `main.toml`). R013 re-chose the touch rule and the decoder
   without it, and declared why R009's choice stands: it rests on the out-of-fold log-loss (lower on 7 of 7 matches),
