@@ -7969,6 +7969,132 @@ per-edge-type results. If it fails too, C is dropped and its code removed in one
 **Review.** An independent reviewer read A19 and R024 to R026 before any run: 14 findings, all resolved in the text
 above. The one blocker was R024's extension, which could be read two ways.
 
+**Part 2, the run** (2026-10-31). The gate passed (A19: a mean clean-pair ladder loss of 0.0704, against 0.015).
+
+**The code.** `hmm`'s `edges = "posterior"`, `posterior_edges` and their checks are `f5beaa5`, plus a fix after the
+task review, `f68b8ee`.
+- **The review:** spec compliance exact, and 16 of 16 mutations of the rule caught.
+- **What the fix changed:** the |b′ − b| counts are exact rather than capped at 50 frames; the declared lopsided
+  reach is documented; and `diagnose.py` reports the rule's counts on the benchmark.
+- **One extra outcome.** The rule has a fifth one, "at b": the posterior crosses inside W exactly on Viterbi's frame,
+  so nothing moves. It is reported beside "earlier", "later", "before" and "after".
+- **The reach is lopsided, as declared.** A crossing on W's first frame counts as "before", so a move earlier reaches
+  W's second frame at most.
+- **The default path is today's code,** so `main.toml` still writes `e6496a9b…`.
+
+**The configs** (`0d5c65f`, `b94da6b`): `r025_post.toml` and `r025_preshift.toml`, as declared, and `r025_final.toml`.
+
+**The lag** (`conventions.py latency pipeline/benchmark/configs/r025/r025_preshift.toml dfl --profile tracking --seeds 3
+--truth raw --drop-match-only`, EXIT=0). A first attempt without `--drop-match-only` stopped at once on Smart Tagging,
+which a benchmark match cannot serve. Pooled lags:
+- team -2.0 frames (42% of 7,053 matched; Viterbi's was -1.0);
+- into `D` +1.0 (Viterbi's +2.0);
+- out of `D` +0.0.
+
+So R012's rule gives **s_b = +2, -1, 0**, not `main.toml`'s, and the final config is `r025_final.toml`: `r025_preshift`
+with that shift.
+
+**The guard runs** (`b94da6b`, two throttled processes: `run.py pipeline/configs/main.toml r025_final.toml
+r025_preshift.toml --profile tracking|context --seeds 3 --truth both --drop-match-only`, EXIT=0). `main` scores as in
+R024.
+
+| profile | `main` raw / coarse | final raw / coarse | raw Δ | coarse Δ | **mean Δ** [mean per match, 90% t] | p | wins / losses |
+|---|---|---|---|---|---|---|---|
+| `tracking`: the guard and the bar | 0.5363 / 0.5764 | 0.5361 / 0.5745 | -0.0002 | -0.0018 | **-0.0010** [-0.0022, +0.0002] | 0.1875 | 2 / 5 |
+| `context`: sensitivity only | 0.5394 / 0.5756 | 0.5396 / 0.5758 | +0.0002 | +0.0001 | +0.0002 [-0.0016, +0.0016] | 0.9219 | 3 / 4 |
+
+The shift's own guard passes: final against preshift is +0.0006 on `tracking` (6 wins) and +0.0009 on `context`.
+
+**What the rule did** (`diagnose.py pipeline/benchmark/configs/r025/r025_final.toml --profile tracking --seeds 3
+--drop-match-only`; graded blocks, before any refiner):
+
+| kind | changes | earlier | later | at b | before | after | moved |
+|---|---|---|---|---|---|---|---|
+| team | 4,052 | 2,417 | 726 | 864 | 44 | 1 | 77.6% |
+| into `D` | 2,075 | 425 | 265 | 1,385 | 0 | 0 | 33.3% |
+| out of `D` | 2,040 | 314 | 354 | 1,371 | 1 | 0 | 32.7% |
+| all | 8,167 | 3,156 | 1,345 | 3,620 | 45 | 1 | 55.1% |
+
+- **The moves are tiny.** |b′ − b| among the moved changes has a median of 1 frame (quartiles 1 and 3).
+- **The ladder is unchanged.** The mean clean-pair loss is 0.0718, against `main`'s 0.0704. The clean pairs' edge
+  errors keep the same late skew (end quartiles -6 and +22 frames, raw).
+- **Why nothing moved:** A19's diagnosis. The posterior is four to five times too sharp, so its median sits on
+  Viterbi's mode, one frame from it at most. Team changes moved mostly one frame earlier, and the re-derived shift (+2
+  instead of +1) put them back.
+
+**The verdict on R025: the guard fails** (-0.0010 on the mean, 2 wins in 7), so it is not adopted, and `main.toml` is
+unchanged.
+
+**The one retry, ruled by the advisor (for Tian, 31 Oct, who had said to keep going without asking).** R025's own
+numbers name the cause that A19 foresaw: a posterior too sharp for its median to leave Viterbi's mode. So R025b
+below tempers the posterior used for the edges, at one constant from A19. If R025b fails as well, C is dropped and
+its code removed in one commit.
+
+### R025b — Posterior edges on a tempered posterior, T = 5 (P23 C's one retry; declared 2026-10-31, Tian's advisor)
+Proposal: P23 (C), P06 · Commit: part 1 (this declaration) is committed before the code and before any run.
+
+**Part 1, declared before any run** (2026-10-31).
+
+**The cause, from R025 and A19.** R025 moved 55% of the changes, but by a median of 1 frame, and left the
+clean-pair ladder loss (0.072) and the late skew of the edges as they were. A19 measured the decoder's posterior as
+about five times too sharp where an edge is uncertain, that is in the gaps:
+- the team posterior's Platt α is 0.19, so 1/α = 5.3;
+- the alive posterior's α is 0.21 where only P07 speaks, so 1/α = 4.8.
+
+Both round to **T = 5**, one temperature for the whole model, not one per kind of change. The alive α of 0.27 over
+every frame is lifted by the frames where the touch rule speaks (α 0.49). The edges there are sharp already, and
+tempering moves them little.
+
+**Belief.** Near a Viterbi edge, the score of putting the change elsewhere falls slowly on the side where the
+evidence is weak and fast on the side where it is strong. At T = 1 the posterior's mass sits on the mode, so the
+median is Viterbi's frame. Tempered, the median moves towards the weak side, by an amount that depends on how weak
+that side is. That is a different move for each edge, so the re-derived shift cannot absorb all of it, and what is
+left should be a narrower spread of edge errors. **Falsified if** the guard or the bar fails.
+
+**The mechanism.** A decoder key `edge_temperature`, default 1. With `edges = "posterior"`, the posterior used for
+the edges is `marginals(emissions / T, switch_team / T, switch_dead / T, min_possession, min_dead)`, with the
+minimums unchanged. Viterbi's labels are untouched: scaling every score by 1/T changes no maximum. R025's rule then
+applies as declared. A T other than 1 without `edges = "posterior"` is refused, since nothing would read it.
+Checks:
+- T = 1 gives R025's labels to the byte;
+- `edges = "viterbi"` is unchanged;
+- the tempered posterior equals that `marginals` call;
+- T must be finite and above 0.
+
+**The configs.** `main.toml` (R024's) with `edges = "posterior"` and `edge_temperature = 5`:
+- `pipeline/benchmark/configs/r025/r025b_preshift.toml`, without `shift_edges`, for the lag;
+- `r025b_final.toml`, the same with the shift that R012's rule gives it.
+
+**T = 5 is final.** No second value is tried, not even after a near-pass.
+
+**The runs.** R025's:
+- the lag by R012's rule on `r025b_preshift`, with `--drop-match-only`;
+- the guard runs on `tracking` and `context`, `--truth both --drop-match-only`, `main.toml` first.
+
+**Adoption.** R025's rules, all required:
+- the guard: the objective's Δ > 0 on `tracking`, and not below -0.005 on `context`;
+- the bar: sign-flip p ≤ 0.05 over the seven per-match deltas;
+- the label-free checks on BAR-ATH.
+
+**A readout of the mechanism,** reported and gating nothing. `diagnose.py` on `r025b_final`, with its edge counts
+taken on the tempered posterior that the decoder uses, reports:
+- the share of changes moved;
+- the quartiles of the move's size;
+- the clean-pair edge errors' quartiles under both truths, against `main.toml`'s (A19).
+
+The belief predicts moves of several frames, not 1, and a narrower spread after the shift. Moves of 2 frames or less
+would mean the mechanism never engaged, and the entry will say so.
+
+**Time box.** Declared, built, run and logged by the end of 1 Nov, or C is dropped. E (R026) starts as soon as C is
+settled.
+
+**If it fails,** C is dropped, and its code is removed in one commit:
+- the `edges` option, `posterior_edges` and the temperature in `hmm.py`;
+- `pipeline/benchmark/configs/r025/`;
+- `diagnose.py`'s edge counts.
+
+The results stay logged here and in R025, and R026 runs on `main.toml` without `edges`.
+
 ### R026 — P07 weighted apart in the gaps and where the ball is seen (P23 E; declared 2026-10-31, Tian)
 Proposal: P23 (E), P07 · Commit: part 1 (this declaration) is committed before any run of it; the code, the configs
 and the runs are in part 2.
