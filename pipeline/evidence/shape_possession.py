@@ -53,8 +53,9 @@ What it does, in order
    evidence, and P07 (docs/proposals.md) is a source for the gaps. `scope = "all"` speaks on those frames too, to
    measure the source on its own, and `scope = "visible"` speaks on those frames only: the complement of "gaps" within
    "all" (R026), so that two sources of one model, "visible" at one weight and "gaps" at another, decode exactly as
-   "all" does when the weights are equal (the decoder sums its sources, and on every frame only one of the two speaks). A team that is present while the other is gone is not silent:
-   the missing team's columns are NaN, which the trees were fitted to handle.
+   "all" does when the weights are equal (the decoder sums its sources, and on every frame only one of the two
+   speaks). A team that is present while the other is gone is not silent: the missing team's columns are NaN, which
+   the trees were fitted to handle.
 
 Speed: with the features already computed, the first call on 140,000 frames and 300 trees of 15 leaves, which is two
 walks of the trees, takes 2 to 3.5 s on the development machine (test_shape_possession_speed prints it and holds it
