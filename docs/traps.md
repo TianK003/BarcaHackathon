@@ -397,6 +397,13 @@ no heavy run and no CSV came from that state. The output depends on those versio
 substitution by reading the derived file, never assume it, and make the first heavy command of a new venv print
 `sys.prefix` and the interpreter's version before it installs anything.
 
+**T49 — `git add -A <folder>` during a merge swept an untracked, gitignored-by-intent artifact into a commit.**
+P19's trained model (3.6 MB, never meant to be committed) sat untracked in `pipeline/models/` when the merge of `main`
+was committed with `git add -A docs pipeline`, and went into the merge commit. It was found before any push and the local
+merge commit was amended, so no pushed commit holds it. Before committing after a merge or a training run, read
+`git status --short` and add the files you mean by name; a model or a cache that must stay out of the history belongs in
+`.gitignore` or in `data/` before it exists.
+
 ## Rules and data handling
 
 **T25 — Data must never leave our machines the wrong way.**

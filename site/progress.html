@@ -332,6 +332,7 @@ const DATA = {
     { p: "P12", name: "Free X", status: "dropped" },
     { p: "P17", name: "Restart team", status: "dropped" },
     { p: "P18", name: "Offpitch profile", status: "dropped" },
+    { p: "P19", name: "Learned team model where the ball is seen", status: "dropped" },
     { p: "P20", name: "PathCRF paths", status: "dropped" },
     { p: "P21", name: "Wrong-team slots", status: "dropped" },
     { p: "P22", name: "EM label-shift prior (a)", status: "dropped" }
@@ -368,6 +369,8 @@ const DATA = {
       why: "Gate failed twice (whistles near stoppages 1.52 and 1.51 times chance, against a declared 2); code removed. No benchmark number." },
     { prop: "P09", feature: "Camera aim in the shape model", entry: "R019", date: "2026-10-30", dr: "—", dc: "—", status: "dropped",
       why: "The simulated camera failed two of four fidelity gates on `tracking` (peak correlation 0.9115 against ours 0.843; dead/alive speed ratio 0.575 against 0.128); no retry, code removed. No benchmark number." },
+    { prop: "P19", feature: "Learned team model where the ball is seen (feasibility)", entry: "R021", date: "2026-10-31", dr: "—", dc: "—", status: "dropped",
+      why: "Dropped at the feasibility gate: out of fold, 978,608 frames, per-frame accuracy 0.9087 against main.toml's decoded labels 0.8927, +0.0160 pooled (gate +0.020), 3 of 7 matches clearing it (6 needed), all seven positive and mostly on hold frames. The grid was not run; no spellF1; code removed." },
     { prop: "P20", feature: "PathCRF checkpoint on its held-out match (step 0)", entry: "R022", date: "2026-10-31", dr: "—", dc: "—", status: "dropped",
       why: "Team accuracy on the gap frames, 90,449 primary frames: PathCRF 0.8571 against P07 0.8522, Δ +0.0049 pooled (declared bar +0.04; PathCRF by its own protocol on the clean match 0.9172, not like for like). No retry; code removed. A measurement, not a spellF1 entry." },
     { prop: "P21", feature: "Wrong-team slots at the ball (step 0)", entry: "A16", date: "2026-10-31", dr: "—", dc: "—", status: "dropped",
