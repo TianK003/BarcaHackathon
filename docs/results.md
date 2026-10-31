@@ -44,6 +44,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R020 | 2026-10-31 | P22(a): an EM label-shift prior on the shape model (the home share from P07's own outputs, added to the logit at s in {0.25, 0.5, 1.0}); part 1: the feasibility gate (mean abs error of EM's share at most 0.75 x that of guessing 0.5), the grid, R014's bar, the BAR-ATH checks; part 2: the gate run | — | — | — | — | dropped 2026-10-31, code removed (recover from `e303365`): the gate failed, 0.0538 against 0.0623 (ratio 0.863, needs 0.75), and neither retry condition held; no grid ran |
 | R021 | 2026-10-31 | P19: a learned team model where the ball is seen (boosted trees on the ball, the nearest slots of both teams, the touch episodes and P07's shape, trained on the seven DFL matches); part 1: the feasibility gate (50 (P19 right - main right) >= frames in 6 of 7 matches and pooled), a 17-config grid, R014's bar plus the LOMO, the BAR-ATH transfer; part 2a: the gate run | — | — | — | — | dropped 2026-10-31, code removed (recover from `15e7e14`): the gate failed, +0.0160 pooled against +0.020 and 3 of 7 matches against 6 (all seven positive); no grid ran |
 | R023 | 2026-10-31 | P16: the grain of H/A/D derived from Metrica's three public sample games' events (`metrica-sports/sample-data` at `e706dd5`, event files only), by a rule taken from Metrica's event definitions; part 1 signed by Tian before any fetch, part 2 the run (`pipeline/benchmark/metrica.py`) | — | — | — | — (a measurement, not a config) | **outcome both**: 6.20 possessions per alive minute (class both, 5.31 to 7.03) and a median of 4.72 s (class raw, under 4.83 s), 1,117 possessions in 3 games, all valid; choices declared from now on rank on the mean of the raw and coarse pooled spellF1s; nothing reopened, `main.toml` untouched |
+| R024 | 2026-10-31 | P23 A: R013's touch rule, decoder and P07 weight re-chosen under R023's objective (the mean of the raw and coarse spellF1s, maximin tie-break): Stage A′ from R013's 192 reports, Stage C′ re-run at its setting (144 configs) | 0.7007 | 0.4000 | 19 / — | 0.5363 raw and 0.5764 coarse (mean 0.5563) against `main`'s 0.5430 and 0.5593 (mean 0.5511): mean Δ +0.0052, p 0.0469, 6 wins in 7 (raw -0.0067, coarse +0.0171) | **adopted**: the touch hold 0.60 → 0.55, the decoder, P07's weight and the shift unchanged; guard passed (`context` mean +0.0010), bar met; BAR-ATH: 399 possessions (413), `D` 36.0%, 1.66% of graded frames relabelled; `main.csv` `e6496a9b…` |
 
 ### The four yardsticks on every profile, in one table
 
@@ -7684,7 +7685,147 @@ not a forecast for BAR-ATH.
 inside its grid. Otherwise about two hours of throttled runs for Stage C′, up to 30 minutes for an extension, and about
 40 for the shift and the guard.
 
-**Review.** An independent reviewer read A19 and R024 to R026 before any run: 14 findings, all resolved in the text above. The one blocker was R024's extension, which could be read two ways.
+**Review.** An independent reviewer read A19 and R024 to R026 before any run: 14 findings, all resolved in the text
+above. The one blocker was R024's extension, which could be read two ways.
+
+**Part 2, after the runs** (2026-10-31). Everything below applies part 1 as written. The part 1 commit is `647cd46`.
+
+**The tool.** `choose.py --objective mean` (`344e181`, and a fix after its task review, `24d4439`). The review found
+the rule exact and asked for one more check: one that fails if the lomo's floor is taken as the mean of the per-match
+minimums instead of min(raw mean, coarse mean). It also ran ten mutations of the code, and the checks now catch all ten.
+The raw objective is unchanged to the bit: a check compares it with the code before the change.
+
+**The reference run** (`647cd46`, 12:11 to 12:15, one throttled process, EXIT=0): `main` scored **0.5430 raw and
+0.5593 coarse**, R013's and A17's figures to the last digit.
+
+**Stage A′** (`python pipeline/benchmark/choose.py --reference main --objective mean <R013's 192 Stage A stems in the
+declared order> --top 25 --out data/runs/r024/stage_a_choice.json`). R013's reports loaded unchanged: same configs,
+matches, seeds, profile and Calibration.
+
+| config | mean | raw | coarse | possessions / min | mean Δ vs `main` [p, wins] |
+|---|---|---|---|---|---|
+| `main` | 0.5511 | 0.5430 | 0.5593 | 3.13 | |
+| **`r013a_r15_v06_k1_h55`** | **0.5532** | 0.5403 | 0.5662 | 3.19 | +0.0021 [0.4375, 3] |
+| `r013a_r15_v06_k2_h55` | 0.5510 | 0.5354 | 0.5667 | 3.17 | -0.0001 [0.8438, 3] |
+| `r013a_r15_v06_k1_h60` (R013's choice) | 0.5479 | 0.5473 | 0.5485 | 3.27 | -0.0032 [0.0469, 1] |
+
+- **Stage A′'s choice: the hold moves from 0.60 to 0.55**, with radius 1.5 m, 6 m/s and 1 frame unchanged.
+  - The best mean is `h55`. Two settings are tied, and `h55` has the larger min(raw, coarse) (0.5403 against 0.5354).
+  - The deltas here are against today's `main`, at R013's Stage C decoder. Stage A's configs ran at R012's decoder (4
+    / 32 / 25 / 25).
+- **Leave-one-match-out.** The objective alone picks `h55` in all seven folds. The whole rule picks `h60` in two
+  (J03WN1, J03WOY): there `h60`'s six-match mean falls inside the band and its min is the larger. The held-out mean Δ is
+  -0.0012 (p 0.4844).
+- So Stage C′ ran, as part 1 foresaw.
+
+**Stage C′'s runs.** The configs are `11cdff7`: R013's 144 texts with the hold at 0.55, every other line R013's (a
+generator checked it). They ran from a detached checkout of it, header `11cdff7`, no `+dirty`, as six throttled
+processes, one per switch_team value, `main.toml` first in each (12:28 to 13:40, all EXIT=0). In every log `main`
+scores 0.5430 and 0.5593. `r024c_t04_mp025_w200`, which is Stage A′'s config itself, scores 0.5403 and 0.5662 as its
+Stage A report did, to the last digit.
+
+**The choice** (`choose.py --reference main --objective mean <the 144 stems in the declared order> --top 30 --out
+data/runs/r024/stage_c_choice.json`):
+
+| config | mean | raw | coarse | min | possessions / min | mean Δ vs `main` [p, wins] | raw Δ | coarse Δ |
+|---|---|---|---|---|---|---|---|---|
+| `main` | 0.5511 | 0.5430 | 0.5593 | 0.5430 | 3.13 | | | |
+| `r024c_t06_mp050_w200` (the best mean) | 0.5601 | 0.5178 | 0.6023 | 0.5178 | 2.74 | | | |
+| `r024c_t04_mp050_w200` | 0.5587 | 0.5274 | 0.5899 | 0.5274 | 2.89 | | | |
+| `r024c_t08_mp050_w200` (the best coarse) | 0.5586 | 0.5057 | 0.6116 | 0.5057 | 2.61 | | | |
+| `r024c_t06_mp025_w200` | 0.5577 | 0.5297 | 0.5856 | 0.5297 | 2.98 | | | |
+| **`r024c_t04_mp035_w200`** | **0.5563** | 0.5363 | 0.5764 | **0.5363** | 3.06 | +0.0052 [0.0469, 6] | -0.0067 [0.0625, 1] | +0.0171 [0.0156, 7] |
+| `r024c_t02_mp025_w100` (the best raw) | 0.5423 | 0.5489 | 0.5358 | 0.5358 | | | | |
+
+- **The rule.** The best mean is `t06_mp050_w200`, 0.5601. Fourteen configs are within 0.005 of it: switch_team 4 to
+  8, min_possession 15 to 50, weights 0.2 and 0.3. The largest min(raw, coarse) among them is `t04_mp035_w200`'s
+  (0.5363; the next is `t06_mp025_w200`'s, 0.5297).
+- **Stage C′'s choice is switch_team 4, min_possession 35 and weight 0.2**, `main.toml`'s own decoder and weight, now
+  at hold 0.55.
+  - It is inside the grid on all three axes, so no extension ran.
+  - Against `main` it is **+0.0052 on the mean** (mean per match +0.0048 [+0.0010, +0.0087], p 0.0469, 6 wins and 1
+    loss). That splits into -0.0067 raw (1 win) and +0.0171 coarse (7 wins).
+- **The objective climbs towards the coarse corner, and the tie-break holds it back.**
+  - Along each axis at the other two's choice, the mean rises with min_possession (0.5361, 0.5418, 0.5460, 0.5532,
+    0.5563, 0.5587 for 1 to 50) and with switch_team (0.5344 to 0.5578 for 1 to 8).
+  - It peaks in P07's weight at 0.2 (0.5480, 0.5563, 0.5475, 0.5379 for 0.1 to 0.5).
+  - Raw falls and coarse rises along the first two axes. The maximin is what keeps the choice interior and balanced,
+    as part 1 foresaw.
+  - 21 of the 144 configs are above `main` on the mean.
+- **Leave-one-match-out.**
+  - The objective alone picks `t06_mp050` in every fold: held out +0.0074 mean (p 0.0312, 6 wins), -0.0262 raw (0
+    wins), +0.0411 coarse.
+  - The whole rule picks the choice in five folds, `t04_mp050_w200` (J03WMX) and `t06_mp025_w200` (J03WN1) in one each:
+    held out +0.0035 mean [-0.0004, +0.0074], p 0.1562, 5 wins; -0.0111 raw, +0.0181 coarse.
+
+**The shift, by R012's rule** (`bee0944`: `r024_preshift.toml`, the choice without `shift_edges`; `python
+pipeline/benchmark/conventions.py latency pipeline/benchmark/configs/r024/r024_preshift.toml dfl --profile tracking
+--seeds 3 --truth raw`, throttled, EXIT=0). The lag pooled over 7 matches and 3 seeds:
+- team -1.0 frame (43% of 7,053 changes matched; -1 on six matches, 0 on one);
+- into `D` +2.0 (51% of 2,130);
+- out of `D` +0.0 (78% of 2,097).
+
+So s_b is again **+1, -2, 0**, `main.toml`'s, and the final config is Stage C′'s choice as it stands.
+
+**The guard runs** (`bee0944`, two throttled processes: `run.py pipeline/configs/main.toml <the choice>
+r024_preshift.toml --profile tracking|context --seeds 3 --truth both --drop-match-only`, both EXIT=0). The choice
+scores as in Stage C′ (0.5363, 0.5764), the reproduction part 1 asks for.
+
+| profile | `main` raw / coarse | final raw / coarse | raw Δ | coarse Δ | **mean Δ** [mean per match, 90% t] | p | wins / losses |
+|---|---|---|---|---|---|---|---|
+| `tracking`: the guard and the bar | 0.5430 / 0.5593 | 0.5363 / 0.5764 | -0.0067 | +0.0171 | **+0.0052** [+0.0010, +0.0087] | 0.0469 | 6 / 1 |
+| `context`: sensitivity only | 0.5489 / 0.5642 | 0.5394 / 0.5756 | -0.0094 | +0.0114 | **+0.0010** [-0.0033, +0.0047] | 0.7500 | 4 / 3 |
+
+- **The guard passes:** +0.0052 > 0 on `tracking`, and +0.0010 on `context`, above -0.005.
+- **The shift's guard passes:** the final config against `r024_preshift` is +0.0001 on the mean on `tracking` and
+  +0.0000 on `context`, so s_b is kept, inside the noise as in R012 and R013.
+- **The bar (reported, not required) is met:** p 0.0469, 6 wins in 7.
+- Pooled macroF1 on `tracking` is 0.8903 raw and 0.8909 coarse (`main` 0.8895, 0.8878); alive/dead F1 is 0.9730
+  (0.9731); 3.06 possessions per graded minute (3.13).
+
+**The label-free checks on BAR-ATH** (`d2e626c`: `pipeline/run.py pipeline/configs/r024_both.toml` twice, then
+`label_diff.py pipeline/configs/main.toml pipeline/configs/r024_both.toml`, throttled; aggregates over the 158,857
+graded frames):
+
+| | `main.toml` before (`7ba575c0`) | the final config (`e6496a9b`) | declared rule |
+|---|---|---|---|
+| valid, the same sha256 twice | yes | yes | yes |
+| `X` frames inside the graded blocks | 0 | 0 | none |
+| `D` share of the graded frames | 35.93% | 36.00% | within [30%, 62%] |
+| H, A of the graded frames | | 38.0%, 26.0% | reported |
+| possessions (per graded minute) | 413 (3.8997) | 399 (3.7675), mean 10.2 s | reported |
+| graded frames relabelled | | 1.66% (0.2% of them where the ball is not seen); `D` onsets 108, 7 moved by a median of -2 frames | reported |
+
+All three checks pass.
+- **What was not re-run.** Smart Tagging's agreement with the touch pseudo-labels (`tag_stats.py`) and
+  `controlled_touch`'s episode share are unchanged by construction. `tag_stats.py` uses a fixed rule
+  (`conventions.TOUCH`, hold 0.5), and a hold changes no kept episode. R017's c_team 0.76 stays.
+- **The possessions move the same way on both,** fewer: 3.13 to 3.06 a minute on the benchmark, 3.90 to 3.77 on
+  BAR-ATH.
+
+**The public window** (a correctness check only, T01; run once after the adoption was decided, `pipeline/run.py
+pipeline/configs/main.toml --score` at `3943962`): macroF1 0.7007, spellF1 0.4000, alive/dead F1 0.9225, 19
+possessions against the truth's 17 (R017's file: 0.6986, 0.4000). The file is `e6496a9b…` again. It chose nothing;
+one possession moves its spellF1 about 0.06.
+
+Verdict: **adopted. `main.toml` is R024's final config** (`3943962`), `main.toml` with the hold at 0.55, which is
+`pipeline/configs/r024_both.toml`. `main.csv` is sha256
+`e6496a9b9805217ef085e52ed69cbb27a42b95368d65c1d188b4a2f339b61170` (not uploaded).
+- The guard passes, and the bar is met as well.
+- The label-free checks pass.
+- The decoder, P07's weight and the shift came back unchanged: re-chosen under the mean of the two truths, only the
+  hold moved.
+
+**The limits, and what the numbers do not say.**
+- **The gain is the mean's, not raw's.** On DFL's raw truth the new file is 0.0067 below the old (1 win in 7). If our
+  truth is DFL-fine, this change costs a little; R023 says the evidence points between the two truths, and the
+  objective is the declared rule's.
+- **The rule's leave-one-match-out estimate is weaker than the choice's own.** It is +0.0035, p 0.1562, against
+  +0.0052, p 0.0469. Stage A′'s whole-rule lomo picked R013's `h60` in two folds of seven.
+- **The objective alone would have gone further towards coarse** (`t06_mp050`, 2.74 possessions a minute against the
+  coarse truth's 2.48). The maximin tie-break stopped it at `main`'s decoder. That is the declared hedge working, and
+  it means the choice sits near the raw truth's side of the band.
+- The limits of R013 and R023 still hold: T38 and T39, P07 never having seen our teams, and an event-tagged grain.
 
 ### R025 — Posterior edges: each change moved to where the decoder's posterior puts it (P23 C; declared 2026-10-31, Tian)
 Proposal: P23 (C), P06 · Commit: part 1 (this declaration) is committed before any run of it; the code and the runs
