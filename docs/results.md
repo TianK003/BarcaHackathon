@@ -6564,6 +6564,109 @@ puts every file under `pipeline/` back to `bfeee45` (main before P08 and P10): `
 `data/cache/benchmark/camera/`. After the removal: `pipeline/selftest.py` 185/185, `pipeline/benchmark/selftest.py` 416
 checks; after the merge of main: 191/191 and 424 checks. `main.toml` unchanged (`pipeline/` equals main's).
 
+### R020 — P22(a): an EM label-shift prior on the shape model, its feasibility, the grid and the bar (2026-10-31, Tian)
+Proposal: P22 · Commit: part 1 (this declaration, the source's prior, `label_shift.py` and the three configs) is
+committed before any run it governs; the runs' commits are in part 2.
+
+**Part 1, declared before any run** (2026-10-31). Nothing below was chosen from a score, and no number of this entry has
+been seen: the prior (`pipeline/evidence/shape_possession.py`), the tools (`pipeline/benchmark/label_shift.py`) and the
+configs are built and unit-tested on synthetic data only. The rulings marked "Advisor (for Tian)" are the advisor's
+for the team, made overnight and binding (`.superpowers/sdd/run-2026-10-31/advisor-01.md`, section 4).
+
+**Why.** The shape model was trained on the seven DFL matches, every row shown twice and mirrored, so its prior is
+exactly 0.5 (R011). Our match's home share is unknown, and a per-match share of possession is a class prior that the
+model's own outputs estimate without labels: Saerens, Latinne and Decaestecker's EM
+([Neural Computation 14(1), 2002](https://dipot.ulb.ac.be/dspace/bitstream/2013/68391/1/Decaestecker_NeuralComp02.pdf)),
+which Alexandari, Kundaje and Shrikumar ([arXiv 1901.06852](https://arxiv.org/abs/1901.06852)) find beats the moment
+estimators once the model is calibrated, and Garg et al. ([arXiv 2003.07554](https://arxiv.org/abs/2003.07554)) show
+consistent under calibration. The DFL matches' home shares of alive training rows span 43.9% to 62.9% (R011), so
+there is a shift to correct. The share is never taken from published statistics of this match (rule 2, T26): it comes from
+EM on our own model's outputs and from nothing else.
+
+**The estimator.** Per served match and seed (an `Inputs`), EM runs on the symmetrised, unclipped logit z over every
+graded frame with an opinion, whatever the scope; training prior 0.5, start 0.5, update pi <- mean(sigmoid(z + logit pi)),
+stop at |delta pi| < 1e-6 or 200 iterations. A share within 1e-6 of 0 or 1 raises (`EM_SHARE_BOUND`). Then home =
+clip(sigmoid(z + s * logit(pi_hat)), 0.02, 0.98) where the scope speaks. On DFL each match is read by its fold
+(`folds[inputs.game]`), BAR-ATH by `full`.
+- **Advisor (for Tian), D2:** s = 1 is the frame-level Bayes posterior, **not the decoder's prior**. The decoder counts
+  a per-frame prior once a frame, scaled by the weight 0.2, so s = 1 is not claimed to be the decoder's correct prior,
+  and s is a choice and not a derivation. D2, the prior as asymmetric switch costs in the decoder, is a contract change
+  and is not pursued tonight: it is recorded in `docs/proposals.md` as P22(c) for the team. The HMM already multiplies
+  the shift by the weight, so s is not scaled by the weight again (that would discount it twice).
+
+**The feasibility gate**, run first and on its own (**Advisor (for Tian), D4**), from `label_shift.py feasibility` on
+`tracking` v3, 3 seeds, before the grid runs:
+- pi_true per match is the raw truth's home share of the alive graded frames. error = the mean over matches of the mean
+  over seeds of |pi_hat - pi_true|; baseline = the mean over matches of |0.5 - pi_true|.
+- **It passes iff error <= 0.75 x baseline.** A miss by any margin is a miss. If it fails, P22(a) is dropped, the grid
+  does not run, and no F1 is ever produced.
+- **Advisor (for Tian), D1, report only:** the same run reports per match the calibration slope a* of the logit against
+  the truth on the alive frames (slope-only fit, all seeds pooled; 1 is calibrated) and pi_hat over the truth's alive
+  frames only (EM with the dead frames masked out). They decide nothing and are not part of the gate. They name the cause
+  for the one retry, in this order, so that only one can fire:
+  1. if the gate computed on pi_hat over the truth's alive frames passes and the gate on all frames fails, the retry is
+     EM over the frames where `dead_ball_model` P(alive) >= 0.5;
+  2. otherwise, if a* (the mean over the matches of the per-match slope) is outside [0.8, 1.25], the retry is EM on
+     z / T, with T fitted per target match on the other six matches' out-of-fold predictions;
+  3. otherwise there is no retry and the idea is dropped.
+- **The grid's check (Advisor, for Tian, D4):** the grid run must log the same pi_hat per match to the last digit as the
+  feasibility run, or the lane stops.
+
+**Candidates.** `main.toml` (LF sha256 at this declaration `124a38ad019995e276cdd6d1094f764e226e167408c0adaa7c32c466bac25873`,
+`git show HEAD:pipeline/configs/main.toml | sha256sum`) plus `prior = "em"` at **s in {0.25, 0.5, 1.0}** (Advisor, for
+Tian: 0.25 is the conservative point if the per-frame overcounting argument is right, three points show whether there is a
+dose-response, and s = 0.1 would fall inside the band): `pipeline/benchmark/configs/r020/r020_s025.toml`, `r020_s050.toml`
+and `r020_s100.toml`, each `main.toml` plus the two keys and nothing else (checked by
+`test_label_shift_r020_configs_are_main_plus_the_prior`). Not re-chosen: the touch rule, the dead-ball model, P07's weight
+0.2, scope, `min_prob`, the decoder 4/32/35/25, the shift +1/-2/0, Smart Tagging. The shift is not re-derived: s_b measures
+the pipeline's lag at changes of team, and a constant tilt delays changes towards the minority team as much as it
+advances those towards the majority. This is a reading, not a measurement.
+
+**The runs.**
+
+```bash
+$PY pipeline/benchmark/label_shift.py feasibility --profile tracking --seeds 3          # first, alone: the gate
+$PY pipeline/benchmark/run.py pipeline/configs/main.toml pipeline/benchmark/configs/nearest_w50.toml \
+    pipeline/benchmark/configs/nearest_w125.toml pipeline/benchmark/configs/r020/r020_s025.toml \
+    pipeline/benchmark/configs/r020/r020_s050.toml pipeline/benchmark/configs/r020/r020_s100.toml \
+    --profile tracking --seeds 3 --truth both --drop-match-only                          # only if the gate passed
+```
+
+The references must reproduce to the last digit (`main` 0.5430 raw / 0.5593 coarse, `nearest_w50` 0.2018 raw,
+`nearest_w125` 0.2226 coarse), or the lane stops. After the choice: the chosen config and `main.toml` on
+`--profile context --truth both --drop-match-only`.
+
+**The selection.** `choose.py --reference main r020_s025 r020_s050 r020_s100`: pooled `tracking` raw spellF1, a tie band
+of 0.005, then the best pooled coarse score among the tied, then **the smaller s** (the stems' order; Advisor, for Tian).
+Leave-one-match-out is reported and decides nothing. Nothing is added after the results.
+
+**The bar** (R014's). The chosen config's `tracking` raw pooled delta over `main.toml` must be >= +0.005, with sign-flip
+p <= 0.05. **The veto:** not adopted if any of these is below -0.005: the `tracking` coarse delta, the `context` raw
+delta, the `context` coarse delta, or the pooled `tracking` alive/dead F1 minus `main.toml`'s. A miss by any margin is a
+miss.
+
+**The BAR-ATH checks, before adopting** (`label_shift.py bar-ath --strength S`, run for S = 0.25, 0.5 and 1.0, only the
+chosen one counts):
+- pi_hat (with `full`) is reported. **Outside [0.39, 0.68] the lane stops for the advisor's sign-off**, with `label_diff`
+  aggregates.
+- R011's `touch_agreement`, shifted at the chosen s, must be >= the unshifted value - 0.005.
+- The same sha256 on two runs; `D` within 1 point of `main.toml`'s; no `X` in a graded block. The possessions per half are
+  reported.
+- The public window may be scored after the decision, as a correctness check only (T01).
+
+**P21 step 0 (A16)** is D3, report only (**Advisor (for Tian), D3**): the onset ratio separates a swap's onset from the
+persisting state, which the 1.5 rule cannot do. No rule and no decision rests on it.
+
+**Adoption.** If everything passes, and P19's grid configs do not exist yet (advisor-01 section 1: P22 merges only
+before them, then `main.toml` is frozen until P19's verdict), the chosen config becomes `main.toml` and is kept as
+`pipeline/configs/r020_label_shift.toml`. Its sha256 goes to the submission log; it is not uploaded. The merge is
+`--no-ff`, after both synthetic suites and `selftest.py --data` pass on the merged tree. Nothing is half-adopted at 08:30.
+
+**If the gate or the bar fails.** One retry (R020b) is allowed, only with a cause named from the logged aggregates (the
+D1 order above), with its own part 1 and the same gate and bar; more values on the s axis are not a retry. Otherwise, or
+after a second failure, P22(a) is dropped, and the prior, `label_shift.py`, its checks and the three configs are removed
+in one commit that names the commit to recover them from. The advisor decides whether a retry is warranted.
+
 ## Submission log
 
 The form keeps only the last response before the deadline, so log every upload.

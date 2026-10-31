@@ -898,6 +898,9 @@ Athletic: the count of possessions moved the other way on BAR-ATH.
   - The pseudo-labels are made by an algorithm and decided by no person, so they are allowed.
   - Train on one half and check on the other. Without that split, R011's transfer gate (agreement with the touch rule)
     would check the model on its own training labels.
+- **(c) M, recorded 2026-10-31 (advisor, for the team; not pursued tonight):** the prior as asymmetric switch costs in the
+  decoder, the decoder's own place for a class prior. It is a contract change and needs its own decoder grid, so the team
+  decides. R020 reads s = 1 as the frame-level Bayes value, not the decoder's prior.
 - **Validate:** simulate the procedure on DFL, leave one match out, each match in turn as the unlabelled target. A
   Bundesliga-to-Bundesliga shift is small, so expect "no harm" rather than a gain.
 
