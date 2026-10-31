@@ -661,10 +661,10 @@ footer { border-top: 1px solid var(--line); margin-top: 24px; padding: 16px 0 28
    =========================================================================================================== */
 const DATA = {
   asOf: "2026-10-31",
-  commit: "f695059",
+  commit: "104c9dc",
   title: "Possession pipeline · team overview",
   subtitle: "More than a Hack 2027, Phase 1 · FC Barcelona (H) vs Athletic Club (A), LaLiga 2024-25 MD2",
-  footer: "As of 2026-10-31 (f695059, the merge of P23). P23 reviewed the HMM decoder: R024 re-chose R013's grids on the mean of the two truths and moved the touch hold to 0.55 (`main.csv` `e6496a9b…`, not yet regenerated from a fresh clone; A17 and A18 checked R017's `7ba575c0…`), A19 found the remaining loss mostly in the edges, and posterior edges (R025, R025b) and a gap weight for P07 (R026) were dropped. P22(b), P07 recalibrated per half from the touch rule's own labels, was then dropped at R027's gate on DFL (pooled log-loss in the gaps +0.0061; no spellF1, code removed). Update DATA when an entry lands; the docs are the source of truth.",
+  footer: "As of 2026-10-31 (104c9dc, the merge of P22(b) after P23). P23 reviewed the HMM decoder: R024 re-chose R013's grids on the mean of the two truths and moved the touch hold to 0.55 (`main.csv` `e6496a9b…`, not yet regenerated from a fresh clone; A17 and A18 checked R017's `7ba575c0…`), A19 found the remaining loss mostly in the edges, and posterior edges (R025, R025b) and a gap weight for P07 (R026) were dropped. P22(b), P07 recalibrated per half from the touch rule's own labels, was then dropped at R027's gate on DFL (pooled log-loss in the gaps +0.0061; no spellF1, code removed). Update DATA when an entry lands; the docs are the source of truth.",
 
   /* ---------- Overview ---------- */
   onboarding: {
