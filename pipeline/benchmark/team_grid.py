@@ -223,8 +223,10 @@ def _check_documents(stage, union, context, union_stems):
                 refuse("the {} file has no {!r}; it is not a choose.py --out file".format(name, key))
         if document["reference"] != REFERENCE:
             refuse("the {} file's reference is {!r}, not {!r}".format(name, document["reference"], REFERENCE))
-        if document["profile"] != profile:
-            refuse("the {} file is of profile {!r}, it must be {!r}".format(name, document["profile"], profile))
+        # choose.py writes the profile as the runner's record, {"name", "version", ...}, not as a bare name
+        found = document["profile"].get("name") if isinstance(document["profile"], dict) else None
+        if found != profile:
+            refuse("the {} file is of profile {!r}, it must be {!r}".format(name, found, profile))
         if document["metric"] != "spell":
             refuse("the {} file's metric is {!r}, it must be 'spell'".format(name, document["metric"]))
     chosen = stage["chosen"]

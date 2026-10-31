@@ -16,13 +16,19 @@
 Synthetic only: the configs are made from the repository's main.toml, read as a file, and no result of any run is used.
 """
 
+import contextlib
+import functools
+import io
 import json
 import os
 import tempfile
 
+from pipeline.benchmark import choose
+from pipeline.benchmark import run as benchmark_run
 from pipeline.benchmark import team_grid as grid
+from pipeline.benchmark.checks.common import synthetic_calibration, synthetic_matches, yardstick_path
 from pipeline.config import load_config
-from pipeline.selftest import expect_error, write_text
+from pipeline.selftest import expect_error, quiet, write_text
 
 WEIGHT_STEMS = ("w0100", "w0250", "w0500", "w1000")
 
@@ -191,22 +197,91 @@ def test_team_grid_writes_the_same_bytes_twice():
 
 
 STEMS = ["a", "b", "c", "d"]                 # a stand-in union of stems, the stage's choice "c" among them
+YARDSTICKS = (50, 25, 0, 125)                # the reference first, as a grid's process lists main.toml first
+SEEDS = 2
+
+
+@functools.lru_cache(maxsize=1)
+def real_documents():
+    """The three documents as choose.py writes them (its own `choose` and the writer's `plain`), on synthetic reports.
+
+    {"profile": the runner's profile record, "stage", "union", "context", "stems", "chosen", "reference", "root"}: the
+    yardstick configs under the gaps profile with the synthetic Calibration, so that the shape of what team_grid reads
+    is the shape choose.py really writes and cannot drift from it in a fixture. Their numbers mean nothing.
+    """
+    paths = [yardstick_path(width) for width in YARDSTICKS]
+    stems = ["nearest_w{}".format(width) for width in YARDSTICKS[1:]]
+    root = tempfile.mkdtemp()
+    results = benchmark_run.evaluate_truths(paths, profile="gaps", matches=synthetic_matches(), seeds=SEEDS,
+                                            calibration=synthetic_calibration(), data_dir=root, log=quiet)
+    for result in results.values():
+        benchmark_run.write_reports(result, data_dir=root)
+    options = dict(profile="gaps", data_dir=root, match_ids=sorted(synthetic_matches()), seeds=SEEDS)
+    stage = choose.choose(stems[:2], "nearest_w50", **options)
+    union = choose.choose(stems, "nearest_w50", **options)
+    context = choose.choose([stage["chosen"]], "nearest_w50", **options)
+    written = {}
+    for name, made in (("stage", stage), ("union", union), ("context", context)):
+        path = os.path.join(root, name + ".json")
+        benchmark_run.write_json(path, benchmark_run.plain(made))          # as choose.py --out writes it
+        with open(path, encoding="utf-8") as handle:
+            written[name] = json.load(handle)
+    return dict(written, profile=written["stage"]["profile"], stems=stems, chosen=stage["chosen"],
+                reference="nearest_w50", root=root)
+
+
+def profile_record(name):
+    """The runner's profile record of `real_documents`, under another name: what a document of that profile holds."""
+    return dict(real_documents()["profile"], name=name)
 
 
 def choice(delta, p, coarse=0.0, alive=0.0, lomo_mean=0.01, wins=7, context_raw=0.0, context_coarse=0.0):
     """The three choose.py --out documents, with what the verdict reads and what it checks them by."""
-    meta = {"reference": "main", "metric": "spell", "profile": "tracking"}
+    meta = {"reference": "main", "metric": "spell", "profile": profile_record("tracking")}
     stage = dict(meta, chosen="c", order=["a", "b", "c"],
                  versus={"raw": {"pooled_delta": delta, "p_sign_flip": p}, "coarse": {"pooled_delta": coarse}},
                  rows={"c": {"alive_dead": round(0.9731 + alive, 9)}, "main": {"alive_dead": 0.9731}})
     union = dict(meta, chosen="d", order=list(STEMS), lomo={"rule": {"raw": {"mean": lomo_mean, "wins": wins}}})
-    context = dict(meta, profile="context", chosen="c", order=["c"],
+    context = dict(meta, profile=profile_record("context"), chosen="c", order=["c"],
                    versus={"raw": {"pooled_delta": context_raw}, "coarse": {"pooled_delta": context_coarse}})
     return stage, union, context
 
 
 def V(*arguments, **keywords):
     return grid.verdict(*choice(*arguments, **keywords), STEMS)
+
+
+def test_team_grid_verdict_reads_the_files_choose_writes():
+    """The verdict on documents that choose.py really wrote: its shapes, not the fixtures', pass the checks."""
+    real = real_documents()
+    assert isinstance(real["stage"]["profile"], dict) and real["stage"]["profile"]["name"] == "gaps", real["stage"]
+    # these files are a gaps run against nearest_w50: refused under the declared tracking/context/main
+    expect_error(ValueError, lambda: grid.verdict(real["stage"], real["union"], real["context"], real["stems"]),
+                 "refused", "reference")
+    saved = (grid.PROFILE, grid.CONTEXT, grid.REFERENCE, grid.union_order)
+    grid.PROFILE, grid.CONTEXT, grid.REFERENCE = "gaps", "gaps", real["reference"]
+    grid.union_order = lambda paths: list(real["stems"])
+    try:
+        result = grid.verdict(real["stage"], real["union"], real["context"], real["stems"])
+        assert result["chosen"] == real["chosen"]
+        assert set(result) == {"chosen", "raw", "vetoes", "lomo", "passes", "retry_2b"}
+        assert result["raw"]["delta"] == real["stage"]["versus"]["raw"]["pooled_delta"]
+        expect_error(ValueError, lambda: grid.verdict(real["stage"], real["union"], real["context"],
+                                                      real["stems"][::-1]), "refused", "declared")
+        grid.PROFILE = "tracking"
+        expect_error(ValueError, lambda: grid.verdict(real["stage"], real["union"], real["context"], real["stems"]),
+                     "stage", "'gaps'", "'tracking'")
+        grid.PROFILE = "gaps"
+        # the command on the real files: the verdict is printed and the exit code is 0
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = grid.main(["verdict", "--stage", os.path.join(real["root"], "stage.json"),
+                              "--union", os.path.join(real["root"], "union.json"),
+                              "--context", os.path.join(real["root"], "context.json"),
+                              "--union-configs", "unused.toml"])
+        assert code == 0 and "verdict   chosen {}".format(real["chosen"]) in buffer.getvalue(), buffer.getvalue()
+    finally:
+        grid.PROFILE, grid.CONTEXT, grid.REFERENCE, grid.union_order = saved
 
 
 def test_team_grid_verdict_refuses_the_wrong_files():
@@ -224,8 +299,12 @@ def test_team_grid_verdict_refuses_the_wrong_files():
         refused(wrong_reference, name, "reference")
 
         def wrong_profile(*documents, position=position):
-            documents[position]["profile"] = "gaps"
+            documents[position]["profile"] = profile_record("gaps")
         refused(wrong_profile, name, "profile")
+
+        def bare_name(*documents, position=position):               # a shape that choose.py does not write
+            documents[position]["profile"] = documents[position]["profile"]["name"]
+        refused(bare_name, name, "profile")
 
         def wrong_metric(*documents, position=position):
             documents[position]["metric"] = "macro"
@@ -234,8 +313,8 @@ def test_team_grid_verdict_refuses_the_wrong_files():
         def missing_key(*documents, position=position):
             del documents[position]["order"]
         refused(missing_key, name, "choose.py")
-    refused(lambda s, u, c: u.update(profile="context"), "union", "tracking")          # the veto's file as the union
-    refused(lambda s, u, c: c.update(profile="tracking"), "context", "context")         # the bar's file as the context
+    refused(lambda s, u, c: u.update(profile=profile_record("context")), "union", "tracking")   # veto file as union
+    refused(lambda s, u, c: c.update(profile=profile_record("tracking")), "context", "context")  # bar file as context
     refused(lambda s, u, c: c.update(chosen="d", order=["d"]), "context", "c")           # another config's context run
     refused(lambda s, u, c: c.update(order=["c", "d"]), "context")
     refused(lambda s, u, c: s.update(chosen="z"), "z")                                  # a choice outside the union
@@ -244,8 +323,6 @@ def test_team_grid_verdict_refuses_the_wrong_files():
     refused(lambda s, u, c: None, "union", stems=["a", "b", "c"])                        # declared stems differ
     refused(lambda s, u, c: u.update(order=["a", "b", "c", "d", "d"]), "union")
     # a CLI refusal is an exit code of 1 and a sentence, not a verdict
-    import contextlib
-    import io
     with tempfile.TemporaryDirectory() as root:
         paths = []
         for name, document in zip(("stage", "union", "context"), choice(0.01, 0.01)):
