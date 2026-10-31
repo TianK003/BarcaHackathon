@@ -1,0 +1,43 @@
+# R024 Stage C' (docs/results.md): R013 Stage C's text with Stage A''s controlled_touch (r013a_r15_v06_k1_h55), the hmm at
+# switch_team 4 and min_possession 35 (switch_dead 32, min_dead 25 as R010), and shape_possession at weight 0.5.
+#
+# The grid is switch_team {1, 2, 3, 4, 6, 8} x min_possession {1, 10, 15, 25, 35, 50} frames x weight {0.1, 0.2, 0.3,
+# 0.5}, 144 files. The choice is made on the benchmark by the rule R024 declared before any run, never on the public
+# window (docs/traps.md T01).
+
+description = "R024 Stage C' r024c_t04_mp035_w500: controlled_touch 1.5 m / 6.0 m/s / 1 frames / hold 0.55 (confidence 0.93) + dead_ball_model (hgb, pipeline/models/dead_ball_hgb.json) at weight 1.0 + shape_possession (hgb, pipeline/models/shape_possession_hgb.json) at weight 0.5, scope all, min_prob 0.02, hmm 4/32/35/25, decoded per half, then shift_edges team +1 / into_dead -2 / out_of_dead 0 frames."
+seed = 0
+scope = "halves"
+
+[[evidence]]
+kind = "controlled_touch"
+radius = 1.5                                  # metres: the nearest player must be this close
+max_rel_speed = 6.0                           # m/s: and move with the ball
+min_frames = 1                                # an episode shorter than this is dropped
+confidence = 0.93                             # touch_stats.py --grid r013: floor of the pooled agreement (93.1%)
+hold = 0.55                                   # the weak vote of the last team between episodes; 0.5 = off
+
+[[evidence]]
+kind = "dead_ball_model"
+weight = 1.0
+model = "pipeline/models/dead_ball_hgb.json"  # relative to the repo root
+
+[[evidence]]
+kind = "shape_possession"
+weight = 0.5                                          # an exponent on the source's likelihood
+model = "pipeline/models/shape_possession_hgb.json"   # relative to the repo root; a match with a fold gets it
+scope = "all"                                         # "gaps": ball missing only; "all": every graded frame
+min_prob = 0.02                                       # home is clipped to [0.02, 0.98]
+
+[decoder]
+kind = "hmm"
+switch_team = 4                               # nats a change of team (H <-> A) costs
+switch_dead = 32                              # nats a change into or out of D costs
+min_possession = 35                           # frames: no run of H or A shorter than this (1 is no minimum)
+min_dead = 25                                 # frames: no run of D shorter than this (1 is no minimum)
+
+[[refine]]
+kind = "shift_edges"
+team = 1                                      # frames: R012's s_b, the pipeline's own lag on DFL
+into_dead = -2
+out_of_dead = 0
