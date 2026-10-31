@@ -430,7 +430,7 @@ def _window_arrays(frames=60):
     rng = np.random.default_rng([8, 1])
     xy = np.full((frames, 22, 2), np.nan, dtype=np.float32)
     team = np.full(22, -1, dtype=np.int8)
-    names = np.array([""] * 22)
+    names = np.array([""] * 22, dtype="<U8")
     for row in range(21):
         side = 0 if row < 11 else 1
         base = rng.uniform((60, 5), (100, 63)) if side == 0 else rng.uniform((5, 5), (45, 63))
