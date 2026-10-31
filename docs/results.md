@@ -42,6 +42,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R018b | 2026-10-30 | the whistle (P10), the one retry R018 allowed: the tonal threshold set to the match's own 98th percentile of tonal_db, the same gate and bar | — | — | — | — | dropped, code removed (fc9dbed): gate failed, ratio 1.51 (55 detections) |
 | R019 | 2026-10-30 | P09: the camera's aim in the shape model; part 1a: the camera's fit and fidelity gates (peak lag +-10 frames, peak correlation +-0.05, median error +-3.0 m, dead/alive speed ratio +-25%; the gap/visible ratio a WARN), declared before the first simulation; part 2a: the gates run | — | — | — | — | dropped 2026-10-31, code removed (8c4c959): `tracking` gates 2 and 4 failed (peak correlation 0.9115 vs ours 0.843, dead/alive speed ratio 0.575 vs 0.128), no retry |
 | R020 | 2026-10-31 | P22(a): an EM label-shift prior on the shape model (the home share from P07's own outputs, added to the logit at s in {0.25, 0.5, 1.0}); part 1: the feasibility gate (mean abs error of EM's share at most 0.75 x that of guessing 0.5), the grid, R014's bar, the BAR-ATH checks; part 2: the gate run | — | — | — | — | dropped 2026-10-31, code removed (recover from `e303365`): the gate failed, 0.0538 against 0.0623 (ratio 0.863, needs 0.75), and neither retry condition held; no grid ran |
+| R021 | 2026-10-31 | P19: a learned team model where the ball is seen (boosted trees on the ball, the nearest slots of both teams, the touch episodes and P07's shape, trained on the seven DFL matches); part 1: the feasibility gate (50 (P19 right - main right) >= frames in 6 of 7 matches and pooled), a 17-config grid, R014's bar plus the LOMO, the BAR-ATH transfer; part 2a: the gate run | — | — | — | — | dropped 2026-10-31, code removed (recover from `15e7e14`): the gate failed, +0.0160 pooled against +0.020 and 3 of 7 matches against 6 (all seven positive); no grid ran |
 
 ### The four yardsticks on every profile, in one table
 
@@ -6797,6 +6798,248 @@ was not tried. The code (the prior on `shape_possession`, `label_shift.py`, its 
 one commit, recoverable from `e303365`; `wrong_team.py` and its checks stay, since P19's transfer check reports A16's ratio.
 `main.toml` was never changed, and `pipeline/` equals main's except for `wrong_team.py` and its checks.
 
+### R021 — P19's team model where the ball is seen: feasibility, a two-stage grid, the bar and the transfer (2026-10-31, the overnight lane for Tian)
+
+Proposal: P19 · Branch `p19-team-model` · Decisions marked "Advisor (for Tian)" were made by the project's advisor,
+standing in for Tian, in `.superpowers/sdd/run-2026-10-31/advisor-01.md` (sections 2, 3 and 5, 31 Oct 2026, before any
+run). The commits of the runs are in part 2; the one retry, if it runs, is R021b.
+
+**Part 1, declared before any run** (2026-10-31). Nothing below was chosen from a score of this entry. No run of R021 has
+been made when this part is committed.
+
+**Why.** A13 puts the largest remaining headroom of `main.toml` where the ball is seen and the team is wrong: a perfect
+team source there is worth +0.194 raw. `controlled_touch` is a fixed rule that speaks on 36.9% of the ball-visible frames
+of BAR-ATH; elsewhere the decoder holds the last team. P05 showed what boosted trees trained on DFL's flags did for the
+dead ball (+0.1661 raw), and P19 applies the same recipe to the team.
+- **Belief:** a model that reads the ball, the nearest players of both teams and the touch episodes on either side of a
+  frame names the team more often than the rule and its hold do.
+- **Falsified if:** out of fold, it is not better per frame than the rule and its hold on the same frames (the
+  feasibility's go below).
+
+**The model.** `sklearn` `HistGradientBoostingClassifier` with `train_dead_ball.HGB_SETTINGS`, imported and never tuned.
+- Target: raw `BallPossession`. Rows: every 5th graded frame from each block's start with truth H or A and the served
+  ball visible, `tracking` v3, seeds 0 to 2. Each row is added with its `swap` mirror and the label flipped;
+  `prior_home` 0.5.
+- A fold per match (trained on the other six) plus `full`. `pipeline/models/team_model_hgb.json` is under 10 MB,
+  `feature_version` 1, fitted on DFL only.
+- The dry run (one match, one seed, row counts and per-feature NaN shares only) must give J03WMX seed 0 (256,107 −
+  98,966) / 3 / 5 = **10,476** rows, accepted in [8,381, 12,571]; all 21 (match, seed) pairs (1,659,315 − 677,900) / 5 =
+  196,283 rows (R011's table).
+
+**The 56 features** (`pipeline/evidence/team_features.py`, from positions only, T31; nothing reads across a graded
+block's edge, T11):
+- *Per team, 9 columns each, `h_*` then `a_*`:*
+
+| column | definition |
+|---|---|
+| `ball_d1`, `ball_d2` | distance of the team's nearest and second-nearest present slot to the ball |
+| `closing` | the nearest slot's approach to the ball, (d(t − 5) − d(t + 5)) / 0.4 s |
+| `rel_speed` | \|v_ball − v_slot\| for that slot |
+| `reach_s` | time to reach, min over slots with a velocity of 0.7 s + \|p + 0.7 s·v − b\| / 5 m/s |
+| `over11` | 1.0 if the team shows more than 11 present slots (T32: a flag, no slot dropped, metadata teams kept) |
+| `in_episode` | 1.0 inside a kept control episode of the team, by `controlled_touch`'s own code frozen at `main.toml`'s 1.5 m / 6 m/s / 1 frame (duel radius 1.0) |
+| `since_episode_s`, `until_episode_s` | seconds to the team's last and next kept frame, 0 inside, capped at 30 |
+
+- *Shared, 12:* ball speed, \|acceleration\| and turn angle over ±0.2, 0.5 and 1 s; the signed distance beyond the nearest
+  line; seconds since and until the ball's visible run, capped at 30.
+- *P07's 26 shape features*, unchanged.
+
+Advisor (for Tian), D1: the time to reach uses a top speed of **5 m/s**, as Spearman (2018) and Shaw's implementation of
+it give it. The frozen design said 7 m/s, which is Shaw's maximum acceleration in m/s², not a speed. Nothing had run,
+and the change is an affine map of the minimum distance, so the trees' quantile bins are unchanged.
+Advisor (for Tian), C1: no duplicate present-slots column. P07's `h_n` and `a_n` carry the counts; `over11` stays, so
+T32 is named in the feature list.
+
+**The source** `team_model(run, *, model, min_prob=0.02)`: `home` = clip(sigmoid((r(x) − r(swap x)) / 2), 0.02, 0.98) on
+the graded frames with the ball visible, NaN everywhere else; `alive` NaN. Relabelling the slots' teams gives 1 − p to
+1e-12. The fold of the match in `inputs.game` is used if the artifact has it, else `full`.
+
+**What is not re-chosen.** `controlled_touch` (R013's rule and its hold 0.60); `dead_ball_model`; `shape_possession`'s
+weight 0.2 (only its scope is an axis); `smart_tagging` (match-only; every config of this entry carries it and runs
+with `--drop-match-only`, as R017); `switch_dead` and `min_dead`; the HGB settings; `team_model`'s `min_prob`.
+"Instead of `controlled_touch`" is excluded: its hold carries the team into the gaps, where P19 is silent.
+
+**Feasibility** (the go/no-go, before any grid; `train_team.py --feasibility`, out of fold; an artifact without its fold
+is refused). The frames are the graded frames with truth H or A, the served ball visible and `main.toml`'s decoded label
+H or A (its dead-ball errors are not credited to P19). P19 says H at p ≥ 0.5; the comparator is `main.toml`'s decoded
+label on the same frames.
+- **Go iff** 50·(p19_right − main_right) ≥ frames (a gain of at least 0.020 in accuracy, as an integer comparison) in at
+  least 6 of the 7 matches, seeds pooled per match, **and** in the pool of all seven. A miss by any margin is a miss.
+- Reported with it: the rule and its hold (`controlled_touch` at `main.toml`'s parameters, hold 0.60), silent frames
+  counted as wrong, with the silent share; log-loss against the rule (silent = 0.5); the coarse truth; and the frame
+  classes (in an episode, in the hold, silent; a team over 11 slots or not).
+
+**The pause before training** (Advisor (for Tian), §3.1, quoted): "Pause before (re)training: I approve on part 1
+committed, nothing chosen from a score; synthetic tests green (swap gives 1 − p to 1e-12, determinism across threads,
+truth never through inputs, export equals sklearn to 1e-12, existing configs byte-identical); a one-match one-seed dry
+run printing only row counts and per-feature NaN shares (no all-NaN or constant column, rows within 20% of estimate);
+reviewer sign-off; projected peak ≤ 8 GB."
+
+**Stage 1 (8 configs, only after a go).** `team_model` weight {0.1, 0.25, 0.5, 1.0} × `shape_possession` scope {all,
+gaps}; decoder and shift as `main.toml` (hmm 4/32/35/25, `shift_edges` +1 / −2 / 0). Stems
+`r021a_w{0100,0250,0500,1000}_{all,gaps}` in `pipeline/benchmark/configs/r021/`, each `main.toml`'s text with the
+intended lines changed (a `load_config` round-trip check). Tie order, the order the stems are given to `choose.py`:
+by weight, then `all` before `gaps`.
+
+**Stage 2 (9 configs, always after a go, at Stage 1's choice).** `switch_team` {4, 8, 16} × `min_possession` {35, 50,
+75}. Stems `r021b_t{04,08,16}_mp{035,050,075}`; tie order by `switch_team`, then `min_possession`. `r021b_t04_mp035` must
+score as Stage 1's choice to the last digit (it is that config).
+
+**The rule** (R008 to R014's, `choose.py --reference main` on `tracking`): the best pooled raw spellF1; every config
+within 0.005 of it is tied; among the tied the best pooled coarse; then the stem order above. A choice on an edge of a
+grid is reported as one and the grid is not extended.
+
+**The bar** (R014's, unchanged): the chosen config's `tracking` raw pooled delta over `main.toml` is at least +0.005 with
+an exact sign-flip p of at most 0.05.
+- **The veto:** not adopted if any of these is below −0.005: the `tracking` coarse pooled delta, the `context` raw delta,
+  the `context` coarse delta (both sensitivity checks, R005), or the pooled alive/dead F1 on `tracking` (raw report)
+  minus `main.toml`'s.
+- **Plus the leave-one-match-out.** Advisor (for Tian), C2: `choose.py --reference main` over the **16 distinct configs**
+  of both stages (Stage 2's `r021b_t04_mp035` is Stage 1's choice, so it is not counted twice), the stems in the declared
+  tie order, as R013 did. The whole rule's raw mean delta must be above 0 with at least 6 wins in 7. Each stage's own
+  LOMO (Stage 1's 8 configs, Stage 2's 9) is reported beside it. The union LOMO runs slightly optimistic, because Stage
+  2's candidates exist only through Stage 1's full-data choice; the requirement stays as written. If Stage 2b runs, its
+  LOMO is over the union of all three stages in the same order.
+- Why a LOMO on top of R014's bar: 17 configs in two stages is in-sample selection, and +0.005 stays as the tie band.
+
+**The shift,** by R012's rule as R013 applied it: the chosen config's form without `[[refine]]` has its lag measured
+(`conventions.py latency`, `tracking`, 3 seeds) and the rule gives the shift.
+
+**The transfer and the label checks on BAR-ATH** (label-free, aggregates only, before adopting). On graded frames with
+the ball visible and a Smart Tagging team vote (0 or 1): 100·(p19_right − rule_right) ≥ −frames, that is P19 `full`'s
+agreement with the votes is at least the rule-with-hold's minus 0.01 (the rule is `controlled_touch` at `main.toml`'s
+parameters with hold 0.60, silent = wrong). Smart Tagging's votes are an independent pseudo-label: they are in neither P19
+nor the rule. Plus: two runs of the final config give the same sha256; the `D` share is within 1 point of `main.toml`'s;
+no `X` in a graded block; the possessions per half are reported (WARN beyond ±25% of `main.toml`'s, T33), with P21's
+ratio beside it. The public window is a correctness check only and weighs in on nothing (T01, T27).
+
+**Stage 2b, the one retry** (Advisor (for Tian), §3.3). One retry only, with a cause named from logged aggregates, its
+own part 1 first (R021b) and the same bar. Pre-approved: if raw passes and only a coarse or `context` veto fires,
+`min_possession` {75, 100, 150} × `switch_team` {8, 16, 32}, stems `r021c_t{08,16,32}_mp{075,100,150}` (T33: the
+coarse truth prefers longer possessions). Not a retry: more values on one axis, HGB tuning, a new truth or profile. A
+second failure: drop P19, remove its code and record the recoverable commit.
+
+**Adoption** (Advisor (for Tian), §3.5). If the bar is met, the veto does not fire and the checks pass, the chosen
+config becomes `pipeline/configs/main.toml` (kept as its own file as well); its new sha256 goes to the submission log and
+the file is not uploaded; both synthetic suites and `selftest.py --data` pass on the merged tree, merged `--no-ff`.
+Nothing is half-adopted at 08:30, and no new heavy work starts after it.
+
+**The reference.** `main.toml` as it is on `main` when Stage 1's configs are generated (its file writes sha256
+`7ba575c0...`, R017, today). Every benchmark run lists `pipeline/configs/main.toml` first and must reproduce `main`'s
+last numbers to the last digit (0.5430 raw and 0.5593 coarse, R013 and R017; R020's if P22 is adopted first) or the lane
+stops. `main.toml` is frozen for this lane from then until the verdict. Runs use `--profile tracking --seeds 3 --truth
+both --drop-match-only`, one process at a time, throttled.
+
+**What it cannot settle.**
+- DFL's grain (T33): the raw truth cuts possessions finer than ours may, so the coarse truth is read beside it.
+- The train-to-match shift in the ball-dynamics columns: the trees learn the ball's speed and turn from DFL degraded as
+  `tracking` v3 and are asked about ours (research.md); the transfer check measures agreement, not accuracy.
+- Neither team of our match is in training (R011).
+
+**Deviation D1's status:** settled by Advisor (for Tian), §5.1: 5 m/s (above).
+
+**Cost:** about 3 h of heavy runs in all (training 7 folds and `full`, the feasibility, 17 configs on two truths and
+`context`, the latency, the transfer).
+
+**Amended before any run** (2026-10-31, on review, still before any run of this entry). Two sentences, nothing else
+changed. (1) If Stage 2b runs, its LOMO is over the union of all three stages with each distinct config counted once, in
+declared order: a stem that Stage 2b shares with Stage 2 (for example `r021c_t08_mp075` and `r021b_t08_mp075`, the same
+config) is kept at its first place and not counted again, as C2 does for Stage 1 and Stage 2. (2) "A miss by any margin
+is a miss" (Advisor (for Tian), §3.2) applies to every threshold of this entry, not only the feasibility's: the bar, each
+veto, the LOMO's sign and its 6 wins in 7, and the transfer's inequality are held as written, with no rounding.
+
+**Part 2a: the training and the feasibility run, and the verdict** (2026-10-31, run by the controller). Everything below
+applies part 1 as written (and its amendment); nothing was changed after the run. The grid, the bar and the transfer
+check were not run: the feasibility gate came first, as declared.
+
+**The runs.** Commit `15e7e14`, with `pipeline/benchmark/train_team.py` as of `10bb22b`; `tracking` v3, 3 seeds, all seven
+matches, one process at a time, throttled; every log ends `EXIT=0`. Both synthetic suites and `selftest.py --data` had
+passed on that commit (213 of 213 on the last).
+
+```bash
+python pipeline/benchmark/train_team.py                 # the seven folds and `full`
+python pipeline/benchmark/train_team.py --verify        # retrains and compares
+python pipeline/benchmark/train_team.py --feasibility   # out of fold, against main.toml's decoded labels
+```
+
+**The pause before training** (the conditions of Advisor (for Tian), §3.1, quoted in part 1). The dry run, J03WMX with one
+seed, gave 10,439 rows (46.8% home) against the declared 10,476, inside [8,381, 12,571], and no all-NaN and no constant
+column. The helper printed "peak memory unknown; projected peak of the full run unknown", so the projected peak of 8 GB or
+less was not measured; the controller substituted a rows-only projection of about 0.2 GB, which the advisor accepted with a
+caveat (§7.3). Advisor (for Tian), §7: training approved.
+
+**The model.** `pipeline/models/team_model_hgb.json`: 3,587,508 bytes (under the 10 MB limit), sha256
+`07eb5450b6fb2424974ee9d7523eba55afe5b7a176fe8caccfffbfac49668ee1`. `--verify` retrained it and reported it identical
+("is what the code trains"). The rows, at stride 5 with the served ball visible, are 23,611 to 31,898 per match, summed
+over the 3 seeds (home share 45.6% to 62.8%; 196,275 rows in all against the 196,283 declared). The file never reached a
+pushed commit: a local merge commit held it by mistake and was amended before any push, and with the code removed (Advisor
+(for Tian), §8.3) nothing reads it. The commit and the hash above restore it exactly: check out `15e7e14` and run the
+first command.
+
+**The feasibility** (P19 against `main.toml`'s decoded label on the frames that are graded, truth H or A, ball seen and
+decoded H or A; the rule is `controlled_touch` with its hold 0.60, silent frames wrong). Accuracy, then the coarse truth
+on its own frames, then the log-loss (the rule's silent frames scored at 0.5):
+
+| match | frames | P19 | main | rule | P19 − main | P19 coarse | main coarse | P19 log-loss | rule log-loss | rule silent | win |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| J03WMX | 156,781 | 0.9148 | 0.9008 | 0.8962 | +0.0140 | 0.9082 | 0.8997 | 0.2240 | 0.4182 | 198 (0.1%) | no |
+| J03WN1 | 117,577 | 0.8811 | 0.8550 | 0.8521 | +0.0261 | 0.8574 | 0.8353 | 0.2957 | 0.4788 | 46 (0.0%) | yes |
+| J03WOH | 125,206 | 0.9044 | 0.8884 | 0.8728 | +0.0160 | 0.8854 | 0.8710 | 0.2210 | 0.4378 | 198 (0.2%) | no |
+| J03WOY | 133,017 | 0.9001 | 0.8794 | 0.8548 | +0.0207 | 0.8689 | 0.8514 | 0.2526 | 0.4653 | 192 (0.1%) | yes |
+| J03WPY | 142,604 | 0.9132 | 0.8913 | 0.8794 | +0.0219 | 0.8983 | 0.8710 | 0.2073 | 0.4275 | 158 (0.1%) | yes |
+| J03WQQ | 144,515 | 0.9116 | 0.9044 | 0.8901 | +0.0072 | 0.8875 | 0.8927 | 0.2203 | 0.4348 | 145 (0.1%) | no |
+| J03WR9 | 158,908 | 0.9269 | 0.9176 | 0.9068 | +0.0093 | 0.9154 | 0.9103 | 0.1849 | 0.3923 | 254 (0.2%) | no |
+| pooled | 978,608 | 0.9087 | 0.8927 | 0.8806 | +0.0160 | 0.8905 | 0.8782 | 0.2268 | 0.4340 | 1,191 (0.1%) | no |
+
+By frame class, pooled (frames, P19, main, P19 − main):
+
+| class | frames | P19 | main | difference |
+|---|---|---|---|---|
+| in an episode | 425,729 | 0.9368 | 0.9333 | +0.0035 |
+| in the hold | 551,688 | 0.8869 | 0.8612 | +0.0257 |
+| the rule silent | 1,191 | 0.9278 | 0.9387 | −0.0109 |
+| a team over 11 slots | 93,077 | 0.8871 | 0.8576 | +0.0295 |
+| neither over 11 | 885,531 | 0.9110 | 0.8964 | +0.0146 |
+
+**The verdict, by the declared integer test (50 (P19 right − main right) ≥ frames).** 3 of the 7 matches win (J03WN1,
+J03WOY, J03WPY; 6 needed), and the pool does not: +0.0160 against the +0.020 declared. **NO GO.** The pooled gain is
+below the gate by 0.0040 and the matches fall short by three; a miss by any margin is a miss.
+
+**Advisor (for Tian), §8 ruling:** drop P19 as declared; the one retry is not spent, because no retry qualifies.
+- The mechanical reading is a no-go (§3.2 and this entry's amendment). The argument that a per-frame gate is the wrong
+  screen for a decoder vote is an argument against the gate itself, which was weighed when it was kept (§2) and accepted;
+  waiving it after seeing the result would be choosing after seeing.
+- The aggregates name no cause for a retry. The model works with a modest margin and no defect: all seven matches are
+  positive and its log-loss is about half the rule's. On episode frames the rule is already near its ceiling; on hold
+  frames the model already reads the deciding information. Reaching +0.020 in 6 of 7 would need roughly +0.034 on hold
+  frames, and a feature added for that would be a hope and not a cause, which §3.3 excludes.
+
+**Readings (hedged).**
+- *The belief held; the gate was something else.* Part 1's belief is that the model names the team more often than the
+  rule and its hold do. The rule column of the table says it did, in 7 of 7 matches: P19 − rule is +0.0186 (J03WMX, the
+  lowest), +0.0290, +0.0316, +0.0453, +0.0338, +0.0215 and +0.0201, +0.0281 pooled. What failed is the declared go, which
+  compares P19 with `main.toml`'s decoded labels, and those are already +0.0121 above the rule. Part 1 tied the falsifier
+  to that go, so the verdict stands; the two are different questions.
+- *The gain is consistent in sign but small, and nearly all of it is on hold frames.* Seven of seven matches are positive.
+  Frames times the per-frame difference: hold frames 551,688 × 0.0257 ≈ 14,180 of the ≈ 15,660 extra right frames
+  (about 90%); episode frames 425,729 × 0.0035 ≈ 1,490; frames with a team over 11 slots 93,077 × 0.0295 ≈ 2,750 (about
+  18%, overlapping the other classes). The rate is highest on the over-11 frames (+0.0295, 9.5% of the frames) but they
+  carry a small share of the gain. The coarse truth agrees in sign on six of seven matches and in the pool (+0.0123).
+- *What per-frame accuracy against the decoded labels says about a decoder vote is not measured, in either direction.* It
+  may be a strict screen: P19 was scored alone, without the decoder's smoothing, against the decoded output of every source
+  together. It may also overstate what P19 would add as a vote, because most of the gain is on hold frames, where the HMM
+  already keeps a team through a pass. The gate measured what was declared; how much a spellF1 grid would have moved is not
+  measured. The advisor reads the result as predicting a small effect (§8.4).
+- A grid run without the per-frame gate (for example the declared 17 configs under R014's bar plus the leave-one-match-out)
+  would be a new proposal for Tian, conceived after seeing this result and predicted to have a small effect, with its own
+  declaration. It is not made here.
+
+**Outcome.** P19 is dropped at the feasibility gate; the grid, the bar and the transfer check were not run, and no spellF1
+was produced (`main.toml` is unchanged; `pipeline/` equals main's after the removal). The code (`team_features.py`,
+`team_model.py` and its registry line, `train_team.py`, `team_grid.py`, `team_transfer.py`, their checks and README rows)
+is removed from the branch in one commit, recoverable at `15e7e14`; the model is restored from it by the command above and
+checked against the sha256 above. Gitignored leftovers on the machine that ran it: `data/runs/r021/`.
+
 ### R022 — P20 step 0: PathCRF's published checkpoint on its held-out match, against P07 on the gap frames (2026-10-31, lane B)
 Proposal: P20 · Part 1, declared before any run · Advisor (for Tian): advisor-01 §1 Lane B and §3, with the rulings of §6 on D1–D4 (below).
 
@@ -6913,6 +7156,133 @@ completions (D1 to D4) are charged to PathCRF, and a model retrained on degraded
 measured.
 
 **Outcome.** P20 is dropped; the code is removed from the branch, recoverable at `2163406`.
+
+### R023 — P16 part 1: Metrica's sample games and the grain of our truth (draft, 2026-10-31)
+
+**Advisor (for Tian), unsigned: not declared until Tian signs or amends it; nothing has been downloaded or run.**
+
+Proposal: P16 · Part 1 only. Part 2 (the run) is written after Tian signs; amendments go in before any file is fetched.
+The source is advisor-02, Lane C. The research behind it (licence text, taxonomy, kloppy, StatsBomb, PathCRF) is the
+[research note](research/2026-10-31-p16-metrica.md).
+
+**Question.** Is our ground truth's possession grain nearer DFL's raw flag or the coarse truth ([T33](traps.md), A06)?
+Every re-tune since R007 has split the two truths, so the answer sets which truth ranks every later choice.
+
+**Data.** [metrica-sports/sample-data](https://github.com/metrica-sports/sample-data) at commit
+`e706dd506b360d69d9d123d5b8026e7294b13996`, event files only, each checked by its git blob SHA:
+- `Sample_Game_1_RawEventsData.csv` `3c426dd4f442dd433bccf89e3634f91aa310cd8f`;
+- `Sample_Game_2_RawEventsData.csv` `decccd47c1d53960d290cb6679337eec83a8a97f`;
+- `Sample_Game_3_events.json` `992b4cb502f0b0bc1244174f014f3f7ecb6d38ef`, with `Sample_Game_3_metadata.xml`
+  `74b55a80f6aeeb8f8df7fd26e4b3a94e2cc1738d`.
+
+They are fetched into `data/external/metrica/` and never committed. No tracking file is fetched. A stdlib reader of
+our own, written in part 2, parses them: kloppy 3.18.0 has no loader for the CSV events, and its JSON loader drops
+SET PIECE events. kloppy only cross-checks game 3's type ids. Nothing of BAR-ATH, the public window or the public GT is
+read.
+
+**Derivation rule.** It is chosen from Metrica's `documentation/events-definitions.pdf` alone, and no constant in it
+comes from data.
+
+Per game, events are taken in file order, periods 1 and 2 only. Type and subtype names are matched case-insensitively:
+the CSV `Subtype` is split on `-`, and the JSON uses its names (ids only through kloppy 3.18.0's constants). Frames are
+the files' own start and end frames; a JSON event without a frame field takes round(time x 25). CARRY appears only in
+game 3's JSON (kloppy names it; the PDF does not), and it goes wherever PASS does below.
+
+0. **Span.** A period runs from its first event's start frame to its last event's end frame, inclusive. Frames outside
+   it are `X`.
+1. **Stops (`D` opens):**
+   - the end frame of a BALL OUT;
+   - the end frame of an event with subtype GOAL (a shot result or an own goal; GOAL KICK is a different subtype);
+   - the end frame of a SHOT with subtype OUT;
+   - the start frame of a FAULT RECEIVED, or of a CHALLENGE with subtype FAULT;
+   - the end frame of an event with subtype FORCED, END HALF or OFFSIDE.
+
+   Each stop is in the PDF: "Out of play: the ball went out of bounds or the referee has stopped play."
+2. **Restarts (`D` closes).** `D` closes at the start frame of the first later event of type SET PIECE, RECOVERY, PASS,
+   SHOT, BALL LOST or CARRY whose start frame is after the stop's. In the PDF, SET PIECE and RECOVERY "bring the ball back into play", and GOAL KICK is an
+   *Attempt* subtype, so a goal kick is a PASS and not a SET PIECE. CARD, FAULT RECEIVED, CHALLENGE and BALL OUT never
+   close `D`.
+   - `D` covers [stop, restart). With no restart, it runs to the span's end.
+   - Overlapping intervals merge.
+3. **Team, on the alive frames.** Walk the events in file order, keeping the current team T and the frame of the last
+   change t, with T unset at the period's first event. For an event e of team E:
+   - (a) if e is a RECOVERY, or e is a SET PIECE, PASS, SHOT, BALL LOST, BALL OUT or CARRY with E ≠ T, change to E at
+     max(start(e), t);
+   - (b) then, if e is a BALL LOST, change to the other team at max(end(e), t).
+
+   Each change sets T and t. A frame takes the team of the last change at or before it. The first event (the KICK OFF)
+   sets the team at the span's start. CHALLENGE, FAULT RECEIVED and CARD never change the team. **No split midpoints:**
+   a team holds until the frame of the event that changes it. Metrica's own definition says the same: possession lasts
+   "until … another player takes over possession". PathCRF's `split` mode would instead cut each gap at its midpoint.
+4. **Labels.** `D` on step 2's intervals. Elsewhere `Home` (game 3: the metadata's first team) → `H`, and the other
+   team → `A`.
+
+**Grain statistics, A06's.** `pipeline/benchmark/truth.py`'s `summary` runs on the three games laid end to end
+(`truth.concatenate`), exactly as A06's figures were computed:
+- **g**, possessions per alive minute;
+- **L**, the median possession length in seconds, pooled.
+
+Reported beside them, per game and pooled: the alive share, stoppages, possessions, the mean, the share under 5 s,
+spells of 2 or fewer and of 12 or fewer frames, and the stops by kind. The frame rate is 25 fps, checked in
+integrity check 3.
+
+**Decision rule.** The references are A06's pooled figures:
+- raw truth: **8.30 possessions per alive minute, median 3.68 s**;
+- coarse truth: **4.50 per alive minute, median 8.40 s**.
+
+The advisor's 4.58 and 2.48 count the same possessions per *graded* minute (668.4 min; A10, R002 on), not in A06's unit.
+Per graded minute the comparison would carry DFL's alive share against our event-derived `D`, so A06's
+per-alive-minute figures are used. The two pairs have the same ratio (1.84).
+- **Rate class.** The midpoint is m = sqrt(8.30 x 4.50) = 6.11 per alive minute.
+  - **both** if |ln(g / m)| ≤ ln 1.15, that is 5.31 ≤ g ≤ 7.03;
+  - otherwise **raw** if g > m (nearer 8.30 in log ratio);
+  - otherwise **coarse**.
+- **Median class.** The same rule on L, with m = sqrt(3.68 x 8.40) = 5.56 s: **both** from 4.83 to 6.39 s, otherwise
+  **raw** below 5.56 s and **coarse** above it.
+- **Outcome.** The rate class, except that if the rate class is raw or coarse and the median class is the other of the
+  two, the outcome is **both**. This is T33's "a disagreement is a warning".
+- **The objective it sets**, for choices declared after part 2:
+  - **raw:** ranked on the raw truth's pooled spellF1, with the coarse truth beside it. This is the current practice.
+  - **coarse:** ranked on the coarse truth, with the raw truth beside it.
+  - **both:** ranked on the unweighted mean of the two pooled spellF1s, each reported.
+
+  R023 reopens no past choice and does not touch `main.toml`. Reopening a past choice is the team's decision.
+
+**Licence stop.** The repository has no licence file. Its README's only terms are, verbatim: "Please be responsible
+with the use of this data." and "If you use it for anything public, please aknowledge the source." That reads as
+public use with acknowledgement. It grants no redistribution, hence fetch-only and nothing committed. The technical
+document acknowledges Metrica and says what was labelled (event types), by whom (the provider) and how much (3 games),
+by P13's rule. **R023 stops before any fetch if:**
+- the README at the pinned commit or at HEAD is not blob `03fb97acc3545cc7428d0a07485921c5a1d405c1`;
+- a licence file has appeared that forbids this use;
+- Tian rules the README's note insufficient for a public repository. Signing this part is that ruling.
+
+**What makes it invalid.** An invalid R023 gives no decision, and the current practice stays: the raw truth as the
+objective, the coarse truth beside it.
+1. This part is amended after any event file has been fetched.
+2. A file's blob SHA differs from the one above.
+3. A game fails an integrity check:
+   - a start frame is not round(start time x 25) to within 1;
+   - start frames decrease in file order within a period;
+   - a period does not begin with a SET PIECE KICK OFF;
+   - a type name is outside the PDF's nine and CARRY;
+   - an event has no end frame;
+   - game 3's names cannot be mapped.
+
+   A game that fails drops out: these checks concern the files' format, not the grain. With fewer than two games
+   left, R023 is invalid.
+4. The derived labels fail a sanity bound declared now. The bounds test the derivation, not the grain; DFL ranges
+   from 48.3% to 59.3% alive, with 92 to 113 stoppages a match (A06).
+   - the alive share is outside 40% to 70% in some game;
+   - the stoppages are outside 60 to 160 in some game.
+
+   Any one of these makes R023 invalid. No game is dropped for it, because these bounds correlate with the grain.
+5. Anything of BAR-ATH, the public window or the public GT is read for R023, or compared to gate it (P16).
+
+**A limit, stated with any verdict.** Our GT comes from corrected-tracking flags. R023 measures event-tagged possession
+under Metrica's event definition and this derivation. How far an event-derived grain sits from a flag grain is not
+measured. The same comparison on DFL's own events against its flag would measure it, and that is not part of R023.
+
 
 ## Submission log
 

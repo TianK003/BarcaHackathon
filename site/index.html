@@ -660,11 +660,11 @@ footer { border-top: 1px solid var(--line); margin-top: 24px; padding: 16px 0 28
    Text fields understand a little markdown: `code`, **bold** and [label](relative/link).
    =========================================================================================================== */
 const DATA = {
-  asOf: "2026-10-29",
-  commit: "d47ec20",
+  asOf: "2026-10-31",
+  commit: "main (31 Oct)",
   title: "Possession pipeline · team overview",
   subtitle: "More than a Hack 2027, Phase 1 · FC Barcelona (H) vs Athletic Club (A), LaLiga 2024-25 MD2",
-  footer: "As of 2026-10-29 (main at d47ec20, plus A14 and P19–P22 in the docs). Update DATA when an entry lands; the docs are the source of truth.",
+  footer: "As of 2026-10-31 (main, 31 Oct). P19 to P22 were each dropped at their feasibility gates, and P16 part 1 is an unsigned draft. Update DATA when an entry lands; the docs are the source of truth.",
 
   /* ---------- Overview ---------- */
   onboarding: {
@@ -730,7 +730,6 @@ const DATA = {
   },
 
   nextSteps: [
-    { title: "P19: a learned team model where the ball is seen", text: "A13's largest lever: a perfect team where the ball is seen adds +0.194 raw / +0.231 coarse. Feasibility first (half a day): leave-one-match-out per-frame accuracy against the touch rule and its hold. Fully benchmarkable (“After A14”, item 2)." },
     { title: "The grain of our truth (P16)", text: "Every ball-rich change splits the two truths: R010's decoder, R013's touch rule, A14's ball. Metrica's sample games, in our provider's conventions, are how to learn which truth ours resembles." },
     { title: "Not now: a video ball detector (P14)", text: "A14: the ball is about 6 px wide, smaller than a ViT patch (T46), and a perfect ball in our gaps is worth +0.10 raw but only +0.02 coarse. A half-day zero-shot test only if someone is free." },
     { title: "The deliverables", text: "Regenerate `main.toml`'s file from a clean clone on a second machine, make the repo public as the last step, fill the placeholders of [the technical document](../docs/technical_document_submission.md), and decide before the freeze how much of the benchmark's gain to believe (a decision, not a run: T38, T39, R011). Our advice, not a rule: upload the file early as a safety copy. See [Work to do](#work)." }
@@ -788,7 +787,7 @@ const DATA = {
       built: "R001 · 2026-10-22; sources since",
       summary: "Each source reads the whole match and gives an opinion on every frame; it never decides a label. Deciding (weighing the sources, keeping possessions as intervals, paying for every change) is the decoder's job, so a new source plugs in without touching it and a better decoder improves every source at once. `main.toml` runs four: `controlled_touch`, `shape_possession` and `smart_tagging` for `home`, `dead_ball_model` for `alive`.",
       contract: "**Out:** one `Evidence(alive, home)` per source, float64 per frame in [0, 1], NaN = no opinion. `alive` = P(ball in play); `home` = P(home has it | in play). Read together: P(H) = alive·home, P(A) = alive·(1 − home), P(D) = 1 − alive.",
-      planned: [{ title: "A13 says where", text: "The team side holds the remaining score: a perfect team where the ball is seen is worth +0.194 raw and in the gaps +0.176, a perfect dead ball only +0.029." }, "P19", "P22", "P11", "P13"],
+      planned: [{ title: "A13 says where", text: "The team side holds the remaining score: a perfect team where the ball is seen is worth +0.194 raw and in the gaps +0.176, a perfect dead ball only +0.029." }, "P22", "P11", "P13"],
       traps: ["T12", "T14", "T38", "T39"],
       files: [
         { label: "evidence/README.md", href: "../pipeline/evidence/README.md" },
@@ -1050,7 +1049,7 @@ const DATA = {
         limits: [
           "Silent in the ball gaps; the shape model is the only `home` source there.",
           "It takes the slot's team, so an identity swap next to the ball gives a confident wrong team (T32, P21).",
-          "Three of its constants sit on edges of R013's grid, and R013 advises no second round: a tighter rule covers even fewer of our frames (“After R013”, item 3). The next step on this side is P19, a learned model."
+          "Three of its constants sit on edges of R013's grid, and R013 advises no second round: a tighter rule covers even fewer of our frames (“After R013”, item 3). A learned team model was tried on this side and dropped at its feasibility gate (R021)."
         ],
         files: [
           { label: "controlled_touch.py", href: "../pipeline/evidence/controlled_touch.py" },
@@ -1365,8 +1364,8 @@ const DATA = {
       next: "Declare the adoption rule first, on the sample games alone; derive `H`, `A` and `D` from their events and tracking; measure the switch timing and the grain beside DFL's (A06). It decides whether R013's raw-truth gain helps on our match." },
     { id: "P17", anchor: "p17--the-restart-team-channel", title: "Restart-team channel: who restarts after a stoppage, from the players' arrangement", attacks: "facts 3, 5", effort: "S–M", impact: "ceiling +0.0198 raw (A12); delivered +0.0040 raw at best, bar not met (R014)", status: "dropped", note: "dropped → R014, R014b (code stays, off)" },
     { id: "P18", anchor: "p18--the-offpitch-profile-dfls-ball-hidden-off-the-pitch-as-ours-is-and-p05-retrained-on-it", title: "offpitch profile: DFL's ball hidden off the pitch as ours is, and P05 retrained on it", attacks: "T39", effort: "M", impact: "A13: a perfect dead-ball source adds +0.029 raw; hiding the out-of-play ball cost today's P05 0.013 alive/dead F1 (R015)", status: "dropped", note: "dropped → R015, R015b (code removed)" },
-    { id: "P19", anchor: "p19--a-learned-team-model-where-the-ball-is-seen", title: "A learned team model where the ball is seen: P05's recipe applied to the team", attacks: "fact 3; A13's largest lever (+0.194 raw where the ball is seen)", effort: "M (feasibility S)", impact: "guess +0.02 to +0.05 raw; fully benchmarkable", status: "idea", stage: "evidence",
-      next: "Boosted trees on the ball, the two nearest players of each team, the touch episodes on either side and P07's shape, trained on DFL's `BallPossession`. Feasibility first: leave-one-match-out per-frame accuracy against the touch rule and its hold; go if at least 2 points better in 6 of 7 matches." },
+    { id: "P19", anchor: "p19--a-learned-team-model-where-the-ball-is-seen", title: "A learned team model where the ball is seen: P05's recipe applied to the team", attacks: "fact 3; A13's largest lever (+0.194 raw where the ball is seen)", effort: "M (feasibility S)", impact: "measured: +0.0160 pooled per-frame accuracy against main.toml's decoded labels, gate +0.020 (R021)", status: "dropped", stage: "evidence",
+      note: "dropped → R021 (the feasibility gate failed: 3 of 7 matches won against the 6 needed, all seven positive; the grid was not run and no spellF1 was produced; code removed)" },
     { id: "P20", anchor: "p20--ball-free-possession-paths-pathcrf-on-our-slots", title: "Ball-free possession paths: PathCRF (KDD 2026), trained on the same DFL matches", attacks: "fact 1; A13's gaps (+0.176 raw)", effort: "S test, L to adopt", impact: "measured: +0.0049 pooled on the gap frames, bar +0.04 (R022)", status: "dropped", note: "dropped → R022 (code removed)" },
     { id: "P21", anchor: "p21--wrong-team-slots-measure-the-ceiling-then-repair-them", title: "Wrong-team slots: measure the ceiling, then repair from tracking or jersey colours", attacks: "T32", effort: "S test, M", impact: "low on the benchmark: all of `tracking`'s player degradation costs `main.toml` 0.013 (A14)", status: "dropped", stage: "inputs",
       note: "dropped → A16 (step 0: over-11 frames are 0.11 of the candidate frames against 0.13 of graded frames, ratio 0.85 against the declared 1.5; the measuring tool is kept)" },
@@ -1511,8 +1510,26 @@ const DATA = {
       text: "Hiding DFL's out-of-play ball: v1 failed the median-gap gate (15.04 s against 10.74 s) and cost today's P05 0.013 alive/dead F1; v2 could not reach our share past a line (0.258–0.262 against 0.0407). Code removed in `7b555eb`; `main.toml` unchanged." },
     { date: "2026-10-29", title: "A14: a video ball detector, debated and measured before building", entries: "A14, P14, P19–P22", outcome: "analysis", stages: ["inputs", "benchmark"],
       text: "The ball is about 6 px wide in the tactical video, smaller than a ViT patch (T46), and the tracker loses it inside the image, not at its edge. On the benchmark a perfect ball in our gaps is worth +0.10 raw but +0.02 coarse; both sides' declared rules say no full build. P19–P22 were added for the team side." },
+    { date: "2026-10-30", title: "P12 free_x dropped", entries: "R016", outcome: "dropped", stages: ["refine"],
+      text: "`X` inside `H` and `A` runs where the decoded label's posterior is below a threshold (four thresholds): the bar of +0.002 raw macroF1 was not met, the best config was 0.0003 below `main.toml`. Dropped; `main.toml` unchanged." },
     { date: "2026-10-30", title: "P08 smart_tagging team votes adopted", entries: "P08, R017", outcome: "adopted", stages: ["evidence"],
-      text: "The tags' team votes agree with our own touch-rule pseudo-labels at 0.761 (bar 0.75, passed); the dead votes agree with `dead_ball_model` at 0.409 (bar 0.60) and were dropped. Strength per frame at weight 0.2, at Tian's pick, untested on any benchmark (DFL has no tags). `main.toml`, sha256 `7ba575c0…`; the public window, a correctness check seen after the pick: macroF1 0.6986, spellF1 0.4000." }
+      text: "The tags' team votes agree with our own touch-rule pseudo-labels at 0.761 (bar 0.75, passed); the dead votes agree with `dead_ball_model` at 0.409 (bar 0.60) and were dropped. Strength per frame at weight 0.2, at Tian's pick, untested on any benchmark (DFL has no tags). `main.toml`, sha256 `7ba575c0…`; the public window, a correctness check seen after the pick: macroF1 0.6986, spellF1 0.4000." },
+    { date: "2026-10-30", title: "P10 referee's whistle dropped", entries: "R018, R018b", outcome: "dropped", stages: ["inputs", "evidence"],
+      text: "A hand-built 2 to 4 kHz band-pass detector on the tactical audio: whistles near stoppages at 1.52 times chance (R018) and, with the one retry (the threshold from the match's own 98th percentile), 1.51 (R018b), against the declared 2. Code removed." },
+    { date: "2026-10-30", title: "P09 camera aim dropped", entries: "R019", outcome: "dropped", stages: ["benchmark"],
+      text: "A simulated camera on DFL, fitted to ours, failed two of its four fidelity gates on `tracking` (peak correlation 0.9115 against ours 0.843; dead/alive speed ratio 0.575 against 0.128). No retry; code removed. No benchmark number." },
+    { date: "2026-10-30", title: "A15: descriptors of our truth's changes against DFL's", entries: "A15", outcome: "analysis", stages: ["benchmark"],
+      text: "P02's inspection extended: descriptors of how our ground truth changes, set beside DFL's on the benchmark's matches. A measurement only; it chose no constant (the public window is a check, never a tuning set)." },
+    { date: "2026-10-31", title: "P22(a) EM label-shift prior dropped", entries: "R020", outcome: "dropped", stages: ["evidence"],
+      text: "A home-share prior estimated by EM from the shape model's own outputs failed its feasibility gate: 0.0538 from the true share on average against 0.0623 for guessing 0.5 (ratio 0.863, gate 0.75). No grid ran; code removed." },
+    { date: "2026-10-31", title: "P19 learned team model dropped at its feasibility gate", entries: "R021", outcome: "dropped", stages: ["evidence", "benchmark"],
+      text: "Boosted trees on the ball, both teams' nearest slots, the touch episodes and the shape, trained on the seven DFL matches: per-frame accuracy 0.9087 against 0.8927 for `main.toml`'s decoded labels, +0.0160 pooled against the +0.020 declared, 3 of 7 matches clearing it (6 needed), all seven positive. No grid ran, no spellF1; code removed." },
+    { date: "2026-10-31", title: "P20 PathCRF dropped at step 0", entries: "R022", outcome: "dropped", stages: ["evidence", "benchmark"],
+      text: "PathCRF's published checkpoint on its held-out DFL match, degraded to `tracking` v3, against P07 on the same gap frames: 0.8571 against 0.8522, +0.0049 pooled (declared bar +0.04). Code removed. A measurement, not a spellF1 entry." },
+    { date: "2026-10-31", title: "P21 step 0: wrong-team slots do not cluster at the ball", entries: "A16", outcome: "dropped", stages: ["inputs", "benchmark"],
+      text: "Over-11 frames are 0.1097 of the candidate frames against 0.1286 of graded frames, ratio 0.85 against the declared 1.5; A14's bound stands. The measuring tool is kept." },
+    { date: "2026-10-31", title: "P16 part 1: Metrica's sample games and the grain of our truth (draft)", entries: "R023", outcome: "analysis", stages: ["benchmark"],
+      text: "An unsigned draft: not declared until Tian signs or amends it, and nothing has been downloaded or run." }
   ],
   outcomes: {
     adopted: { label: "adopted", cls: "ok", glyph: "✓" },
@@ -1675,7 +1692,7 @@ const DATA = {
     { href: "../docs/README.md", label: "docs/README.md", text: "What each team doc holds and when to update it." },
     { href: "../docs/proposals.md", label: "docs/proposals.md", text: "Ideas P01–P22 with effort, impact and status, and the “After …” recommendations." },
     { href: "../docs/results.md", label: "docs/results.md", text: "Every R and A entry with its numbers, the scoreboard and the submission log." },
-    { href: "../docs/traps.md", label: "docs/traps.md", text: "Pitfalls T01–T46: why they happen and what to do instead." },
+    { href: "../docs/traps.md", label: "docs/traps.md", text: "Pitfalls T01–T49: why they happen and what to do instead." },
     { href: "../docs/technical_document_submission.md", label: "docs/technical_document_submission.md", text: "Deliverable 3 at its submitted length: about 3,000 words." },
     { href: "../docs/technical_document.md", label: "docs/technical_document.md", text: "The full record behind deliverable 3." },
     { href: "../pipeline/README.md", label: "pipeline/README.md", text: "The pipeline's overview: diagram, contracts, configs, checks, validation." },
