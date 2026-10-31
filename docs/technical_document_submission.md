@@ -52,6 +52,7 @@ that: they train on a CPU, and each feature can be checked against how our track
 | Public 5-minute GT | check, inspection | See "About this match" below. |
 | DFL/IDSSE open data | yes | Trains P05 and P07; the benchmark (below). |
 | PathCRF checkpoint (Kim et al. 2026, MPL-2.0) | tried, dropped | Run only in R022, never on our match (below). |
+| Metrica's sample games (events) | measurement | Our provider's grain (R023, section 5). |
 
 **Tried and dropped**, each by a bar declared before its run:
 - **P17, the restarting team** (R014, R014b): +0.0040 raw at best (p 0.0938), bar +0.005 with p ≤ 0.05.
@@ -83,6 +84,7 @@ We labelled nothing by hand, on any game. The labelled data used are all about o
 | DFL/IDSSE `BallStatus` (alive or dead) and `BallPossession` (the team), every frame | Bassek et al. 2025, figshare, CC BY 4.0 | The provider, DFL, in its official match data. The paper does not say whether a person or the system sets the flags, and says all data are visually controlled by live operators and quality-checked after the game: we treat them as human-checked labels. | 7 full matches (2 Bundesliga, 5 2. Bundesliga, R002), 25 Hz, 668.4 graded minutes (A06). Rows: 601,602 for P05 (R009); 331,881 for P07, 663,762 with team-swapped mirrors (R011). | Training P05 and P07 (and P19, dropped, R021); the touch rule's confidence 0.93, measured against the flag (R013); validation, as the benchmark's truth; the pipeline's lag (R012) |
 | DFL/IDSSE events | DFL's raw event files, the same release; for J03WR9, the copy synchronised in PathCRF's repository | DFL's data collectors, trained human operators according to the paper | 681 restart events over the 7 matches (A12); one match's events (R022) | A diagnostic of P17's restart types (A12); R022's correctness check of PathCRF on the clean J03WR9. Nothing trained or chosen from them |
 | PathCRF checkpoint (a model trained on labels) | Kim et al. 2026, MPL-2.0 | Its authors, on possession derived from DFL's events: five of the seven matches for training, a sixth for validation | one checkpoint | R022's measurement only; dropped |
+| Metrica's sample games' events | metrica-sports/sample-data at `e706dd5`; no licence, its README asks for acknowledgement (given here); fetched at run time, not redistributed | Metrica Sports, our ground truth's provider: event types, per its published definitions | 3 anonymised games, 7,300 events | R023's grain only; nothing trained |
 
 **About this match.** No tracking was corrected by hand, and no human-produced data about the match were used. No
 model was trained on the public 5-minute ground truth and no constant of `main.toml` was set on it. It was used in
@@ -169,7 +171,9 @@ player degradation costs `main.toml` 0.0129 raw (A16, from A14's table).
 
 **Two truths.** DFL's flag gives 4.58 possessions per graded minute. Our grain is unknown, so every choice is also
 ranked under a coarse truth that absorbs possessions under 5 s between two of the other team: 2.48 a minute (R002; the
-5 s rule was written before the numbers were seen, A06). Disagreement is a warning (T33).
+5 s rule was written before the numbers were seen, A06). Disagreement is a warning (T33). On Metrica's own sample
+games, possession derived from their events has 6.20 possessions per alive minute (raw 8.30, coarse 4.50) and a median
+of 4.72 s; R023's declared outcome, "both", ranks later choices on the mean of the two truths.
 
 **Statistics.** Each change is compared with its reference through the seven matches' paired deltas: a 90%
 t-interval, an exact sign-flip test (the smallest possible p is 0.0156) and the number of matches won. Three seeds,
@@ -198,8 +202,9 @@ split may differ on our match.
   There the team rests on the shape model, trained on other teams, and on the tags. Where the ball is seen, the touch
   rule finds control on 36.9% of our frames, against 43.6% for the 2.0 m rule it replaced (R013); what the tighter rule
   loses here is not measured.
-- **Our truth's grain is unknown** (T33). DFL's flag gives 437 possessions a match, median 3.7 s, and the public window
+- **Our truth's grain is only partly known** (T33). DFL's flag gives 437 possessions a match, median 3.7 s, and the public window
   cannot say how ours compares: it is alive on 80.4% of its frames, livelier than 96% of DFL's 5-minute windows (A06).
+  R023 places our provider between the two, but from events, not the flag our truth comes from.
   R013's gain is raw only (section 5): if our truth is coarse, it may not help.
 - **The benchmark overstates the dead ball** (T38, T39). DFL tracks the ball out of play, and ours loses it near the
   lines: among the at-risk rows (frames where a gap could begin) the ball is beyond a line on 17.68% of DFL's against
@@ -217,7 +222,7 @@ split may differ on our match.
   truths, so a difference is not shown (A11), and nothing may be fitted to it.
 
 **With more time:**
-- learn our provider's grain and timing from its other games (P16);
+- learn our provider's switch timing from its other games (P16; its grain is R023's);
 - place the edges from pass events (P11);
 - retrain PathCRF on degraded copies (P20 step 1);
 - recover the ball from the video (P14).
@@ -264,6 +269,7 @@ has not been tried yet.
 - Kim, Lee, Seo, Ko, Yoon and Park (2026). PathCRF: Ball-Free Soccer Event Detection via Possession Path Inference
   from Player Trajectories. KDD 2026, arXiv:2602.12080. Code: github.com/hyunsungkim-ds/pathcrf (MPL-2.0).
 - Link and Hoernig (2017). Individual ball possession in soccer. *PLOS ONE*, PMC5503225.
+- Metrica Sports. Sample data. github.com/metrica-sports/sample-data, commit `e706dd5`.
 - Saerens, Latinne and Decaestecker (2002). Adjusting the outputs of a classifier to new a priori probabilities: a
   simple procedure. *Neural Computation* 14(1), 21-41. doi:10.1162/089976602753284446.
 - Vidal-Codina et al. (2022). Automatic event detection in football using tracking data. *Sports Engineering*.

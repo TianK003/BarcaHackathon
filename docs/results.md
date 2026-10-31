@@ -43,6 +43,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R019 | 2026-10-30 | P09: the camera's aim in the shape model; part 1a: the camera's fit and fidelity gates (peak lag +-10 frames, peak correlation +-0.05, median error +-3.0 m, dead/alive speed ratio +-25%; the gap/visible ratio a WARN), declared before the first simulation; part 2a: the gates run | — | — | — | — | dropped 2026-10-31, code removed (8c4c959): `tracking` gates 2 and 4 failed (peak correlation 0.9115 vs ours 0.843, dead/alive speed ratio 0.575 vs 0.128), no retry |
 | R020 | 2026-10-31 | P22(a): an EM label-shift prior on the shape model (the home share from P07's own outputs, added to the logit at s in {0.25, 0.5, 1.0}); part 1: the feasibility gate (mean abs error of EM's share at most 0.75 x that of guessing 0.5), the grid, R014's bar, the BAR-ATH checks; part 2: the gate run | — | — | — | — | dropped 2026-10-31, code removed (recover from `e303365`): the gate failed, 0.0538 against 0.0623 (ratio 0.863, needs 0.75), and neither retry condition held; no grid ran |
 | R021 | 2026-10-31 | P19: a learned team model where the ball is seen (boosted trees on the ball, the nearest slots of both teams, the touch episodes and P07's shape, trained on the seven DFL matches); part 1: the feasibility gate (50 (P19 right - main right) >= frames in 6 of 7 matches and pooled), a 17-config grid, R014's bar plus the LOMO, the BAR-ATH transfer; part 2a: the gate run | — | — | — | — | dropped 2026-10-31, code removed (recover from `15e7e14`): the gate failed, +0.0160 pooled against +0.020 and 3 of 7 matches against 6 (all seven positive); no grid ran |
+| R023 | 2026-10-31 | P16: the grain of H/A/D derived from Metrica's three public sample games' events (`metrica-sports/sample-data` at `e706dd5`, event files only), by a rule taken from Metrica's event definitions; part 1 signed by Tian before any fetch, part 2 the run (`pipeline/benchmark/metrica.py`) | — | — | — | — (a measurement, not a config) | **outcome both**: 6.20 possessions per alive minute (class both, 5.31 to 7.03) and a median of 4.72 s (class raw, under 4.83 s), 1,117 possessions in 3 games, all valid; choices declared from now on rank on the mean of the raw and coarse pooled spellF1s; nothing reopened, `main.toml` untouched |
 
 ### The four yardsticks on every profile, in one table
 
@@ -7221,9 +7222,16 @@ measured.
 
 **Outcome.** P20 is dropped; the code is removed from the branch, recoverable at `2163406`.
 
-### R023 — P16 part 1: Metrica's sample games and the grain of our truth (draft, 2026-10-31)
+### R023 — P16: Metrica's sample games and the grain of our truth (signed and run 2026-10-31: both)
 
-**Advisor (for Tian), unsigned: not declared until Tian signs or amends it; nothing has been downloaded or run.**
+**Signed by Tian on 2026-10-31, unamended, before any event file was fetched.** Drafted by the advisor (for Tian)
+overnight; the signature settles the three points the draft left to Tian:
+- **Licence:** the README's note suffices. The files are fetched at run time and never committed, and the technical
+  document acknowledges Metrica (the licence stop's third condition does not fire).
+- **Outcome "both":** the unweighted mean of the two pooled spellF1s (the advisor's rule), not a third truth of that
+  grain (P16's own text).
+- **Event grain against flag grain:** accepted as the limit stated below. The DFL calibration (the same derivation on
+  DFL's events against its flag) is not part of R023.
 
 Proposal: P16 · Part 1 only. Part 2 (the run) is written after Tian signs; amendments go in before any file is fetched.
 The source is advisor-02, Lane C. The research behind it (licence text, taxonomy, kloppy, StatsBomb, PathCRF) is the
@@ -7346,6 +7354,111 @@ objective, the coarse truth beside it.
 **A limit, stated with any verdict.** Our GT comes from corrected-tracking flags. R023 measures event-tagged possession
 under Metrica's event definition and this derivation. How far an event-derived grain sits from a flag grain is not
 measured. The same comparison on DFL's own events against its flag would measure it, and that is not part of R023.
+
+**Part 2, the run (2026-10-31).** The commits:
+- `85eb6cd`: part 1 signed;
+- `33fe1be`: `pipeline/benchmark/metrica.py` and its checks;
+- `a280b1e`: four more checks and one more caught error.
+
+Command, from the repo root, online so that the licence stop runs:
+
+```bash
+python pipeline/benchmark/metrica.py      # writes data/runs/metrica/r023.json (aggregates only)
+```
+
+- **Licence stop: did not fire.** The README is blob `03fb97ac…` at the pinned commit and at HEAD. GitHub's licence API
+  answers 404 (no licence file).
+- **Pins: all four verified** by git blob SHA, as declared:
+  - games 1 and 2's `RawEventsData.csv`;
+  - game 3's `events.json` and `metadata.xml`.
+
+  No tracking file was fetched. The files are in `data/external/metrica/` (gitignored), never committed.
+- **Integrity: all three games pass every declared check.** None dropped.
+- **Sanity bounds: all inside.** Alive shares are 0.594, 0.624 and 0.689 (bounds 0.40 to 0.70); stoppages 103, 101 and
+  103 (60 to 160). R023 is valid.
+
+**Disclosure: the files' format was read before the code was written.** Claude, the controller, did this at about 11:00
+on 31 Oct, after the signature at `85eb6cd` and before the readers existed. It was a format read only:
+- the CSV headers and counts of each Team, Period and Type value and of each subtype token;
+- whether every frame cell is an integer;
+- game 3's JSON keys, its (type id, name) and (subtype id, name) pairs, its team ids and its frame fields' types;
+- the metadata's team order and `idLocalTeam`, and the frame rate.
+
+No label was derived, no possession or stoppage was counted, and no grain figure was computed before the run.
+
+**Review.** An independent reviewer read part 1 and the code before the run. It found 8 points, all resolved before the
+run, and a re-review cleared it. One point could have changed the outcome: a subtype-id check that part 1 does not
+declare, and it was removed. Two more points could have aborted the run instead of reporting. A mutation pass then found
+four rules the checks did not pin, and they were pinned in `a280b1e`.
+
+**Rulings made before the run**, each with its cost if wrong:
+- **The undeclared subtype-id check was removed.** Game 3 is cross-checked on type ids only, as declared. If wrong, a
+  mislabelled subtype would go unnoticed. The format read found none disagreeing with kloppy's ids.
+- **An unreadable team fails integrity, so its game drops.** For game 3 this is the declared "names cannot be mapped".
+  For the CSV games it extends the format checks, which "concern the files' format, not the grain". If wrong, a game
+  could drop that the declaration would have aborted on. Moot: every team was read.
+- **Periods are laid end to end.** Each period's span is its own block with one `X` between them (`truth.concatenate`),
+  so a second period numbered from 0 would read the same. The summary is per span either way, so the cost if wrong is
+  nil.
+- **Any licence file stops the run**, where part 1 says one "that forbids this use". This is stricter than declared: a
+  person has to read a licence to tell. It can only halt a run, never change its outcome.
+- **The README is checked at `HEAD`, not at a branch name.** "At HEAD" is part 1's own wording. The cost if wrong is
+  nil.
+
+**The grain**, from `truth.summary` per game and pooled over the three laid end to end:
+
+| | game 1 | game 2 | game 3 (JSON) | pooled |
+|---|---|---|---|---|
+| events (periods 1 and 2) | 1,745 | 1,935 | 3,620 | 7,300 |
+| span minutes | 94.7 | 93.4 | 95.1 | 283.3 |
+| alive share | 0.594 | 0.624 | 0.689 | 0.636 |
+| possessions | 375 | 358 | 384 | 1,117 |
+| **per alive minute (g)** | 6.67 | 6.14 | 5.86 | **6.20** |
+| **median possession (L)** | 4.12 s | 4.54 s | 5.26 s | **4.72 s** |
+| mean possession | 9.00 s | 9.78 s | 10.24 s | 9.67 s |
+| share under 5 s | 0.531 | 0.520 | 0.492 | 0.514 |
+| possessions of ≤ 2 / ≤ 12 frames | 6 / 20 | 8 / 26 | 1 / 10 | 15 / 56 |
+| home share | 0.521 | 0.503 | 0.516 | 0.514 |
+| stoppages | 103 | 101 | 103 | 307 |
+| stoppage median | 17.56 s | 15.48 s | 11.12 s | 14.32 s |
+| stops with no restart | 2 | 3 | 2 | 7 |
+
+Stops by kind (an event may make two):
+
+| | ball out | challenge fault | fault received | shot out | forced | goal | offside | end half |
+|---|---|---|---|---|---|---|---|---|
+| game 1 | 51 | 59 | 22 | 12 | 4 | 4 | 1 | 1 |
+| game 2 | 49 | 51 | 20 | 11 | 7 | 5 | 1 | 1 |
+| game 3 | 64 | 38 | 12 | 6 | 7 | 3 | 4 | 2 |
+| pooled | 164 | 148 | 54 | 29 | 18 | 12 | 6 | 4 |
+
+**The decision, by the declared rule.**
+- **Rate class: both.** g = 6.20 lies inside 5.31 to 7.03, 1.5% above the midpoint 6.11.
+- **Median class: raw.** L = 4.72 s is below the band, 4.83 to 6.39 s, and below the midpoint 5.56 s.
+- **Outcome: both.** The rate class stands unless rate and median split raw against coarse, and they do not.
+
+R023 is valid, so **choices declared after it rank on the unweighted mean of the two pooled spellF1s, each truth
+reported beside it**. Before, the raw truth ranked and the coarse truth stood beside it.
+
+**Caveats, stated with the verdict.**
+- **The alive share is high.** At 0.59 to 0.69 it sits above DFL's 48% to 59% (A06). A06 measured r = −0.71 between a
+  window's alive share and its possessions per alive minute. So the rate here likely leans coarse-ward, against what a
+  DFL-like alive share would give. The event-derived `D` is the likely reason: it opens at an event's frame and closes
+  at the next restart event, which may be shorter than a tracking flag's stoppage.
+- **The median is close to the band's edge.** It sits 0.11 s under the lower edge (4.83 s). Both signals therefore lean
+  raw-ward of the midpoint without the rule calling it raw. Any reading beyond that is not the declared rule, and R023
+  gives none.
+- **The event grain is not the flag grain.** Our GT comes from corrected-tracking flags, and this is event-tagged
+  possession. How far the two sit apart is not measured. Tian accepted this limit when signing, and the DFL calibration
+  is not part of R023.
+- **Some challenge-fault stops are advantage plays.** The CHALLENGE-with-FAULT stops (148) include the ones tagged
+  ADVANTAGE, where play went on. The format read counted 20 ADVANTAGE tokens over the three games (5, 11, 4), an upper
+  bound on them. Each opens a short `D` that the next PASS closes. This is the declared rule, reported and not changed.
+
+**What it changes.** The objective of every choice declared from now on is the mean of the raw and coarse pooled
+spellF1s, both reported. R023 reopens no past choice, and `main.toml` is untouched (sha256 of `main.csv` still
+`7ba575c0…`). Whether to re-choose anything that the raw truth decided alone (R013's Stage C picked the raw best
+with a coarse tie-break) is the team's decision.
 
 
 ## Submission log

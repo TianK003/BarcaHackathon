@@ -282,7 +282,7 @@ const DATA = {
   title: "Progress",
   subtitle: "The benchmark spellF1 of main.toml by entry, and the feature that moved it",
   asOf: "2026-10-31",
-  footer: "As of 2026-10-31. [docs/results.md](../docs/results.md) is the source of truth; this page only repeats it. Benchmark scores rank versions of our pipeline on other matches; they are not our leaderboard score.",
+  footer: "As of 2026-10-31 (R023: our provider's grain is between the two truths, so choices now rank on their mean). [docs/results.md](../docs/results.md) is the source of truth; this page only repeats it. Benchmark scores rank versions of our pipeline on other matches; they are not our leaderboard score.",
   links: [
     { href: "index.html", label: "← Team overview", cls: "home" },
     { href: "rules.html", label: "Rules" }
@@ -335,11 +335,12 @@ const DATA = {
     { p: "P19", name: "Learned team model where the ball is seen", status: "dropped" },
     { p: "P20", name: "PathCRF paths", status: "dropped" },
     { p: "P21", name: "Wrong-team slots", status: "dropped" },
-    { p: "P22", name: "EM label-shift prior (a)", status: "dropped" }
+    { p: "P22", name: "EM label-shift prior (a)", status: "dropped" },
+    { p: "P16", name: "The grain of our provider (Metrica's sample games)", status: "measured" }
   ],
 
   /* Every measured proposal. dr / dc are shown as the entry states them (R008 to R011 are over the yardsticks, not over the
-     previous point); "—" = results.md has no benchmark number for it. status: adopted | dropped | unbenchmarked. */
+     previous point); "—" = results.md has no benchmark number for it. status: adopted | dropped | unbenchmarked | measured. */
   ledger: [
     { prop: "P06", feature: "hmm decoder, first grids (old sources)", entry: "R006, R007", date: "2026-10-25", dr: "−0.0066 (R006)", dc: "−0.0526 (R006)", status: "dropped",
       why: "R006's choice scores 0.1952 raw, below `nearest_w50`; R007's best (0.2053 raw, 0.1967 coarse) misses the bar. The hmm is back in R010 on better sources." },
@@ -376,13 +377,16 @@ const DATA = {
     { prop: "P21", feature: "Wrong-team slots at the ball (step 0)", entry: "A16", date: "2026-10-31", dr: "—", dc: "—", status: "dropped",
       why: "Step 0 only: over-11 frames are 0.1097 of the candidate frames against 0.1286 of graded frames, ratio 0.8532 against the declared 1.5; A14's bound stands. The measuring tool is kept. No benchmark number." },
     { prop: "P22", feature: "EM label-shift prior on the shape model (a)", entry: "R020", date: "2026-10-31", dr: "—", dc: "—", status: "dropped",
-      why: "Dropped at the feasibility gate: EM's share was 0.0538 from the true one on average against 0.0623 for guessing 0.5 (ratio 0.863, gate 0.75), one match carrying 47% of the error; neither retry condition held. No grid ran, no F1 was produced; code removed." }
+      why: "Dropped at the feasibility gate: EM's share was 0.0538 from the true one on average against 0.0623 for guessing 0.5 (ratio 0.863, gate 0.75), one match carrying 47% of the error; neither retry condition held. No grid ran, no F1 was produced; code removed." },
+    { prop: "P16", feature: "Metrica's sample games: the grain of our provider's possession", entry: "R023", date: "2026-10-31", dr: "—", dc: "—", status: "measured",
+      why: "A measurement that sets the objective, not a feature. Possession derived from the events of 3 anonymised games by a rule declared before the fetch: 6.20 per alive minute (class both, 5.31 to 7.03) and a median of 4.72 s (class raw, under 4.83 s). Outcome **both**: choices declared from now on rank on the mean of the raw and coarse pooled spellF1s. `main.toml` untouched; the switch timing is not measured." }
   ],
   statuses: {
     adopted: { label: "adopted", cls: "ok", glyph: "✓" },
     dropped: { label: "dropped", cls: "bad", glyph: "✕" },
     tried: { label: "tried, not adopted", cls: "bad", glyph: "✕" },
-    unbenchmarked: { label: "adopted, not benchmarkable", cls: "info", glyph: "◎" }
+    unbenchmarked: { label: "adopted, not benchmarkable", cls: "info", glyph: "◎" },
+    measured: { label: "measured, sets the objective", cls: "info", glyph: "◇" }
   },
 
   publicWindow: {
