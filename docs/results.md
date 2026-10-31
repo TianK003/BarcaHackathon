@@ -6797,123 +6797,6 @@ was not tried. The code (the prior on `shape_possession`, `label_shift.py`, its 
 one commit, recoverable from `e303365`; `wrong_team.py` and its checks stay, since P19's transfer check reports A16's ratio.
 `main.toml` was never changed, and `pipeline/` equals main's except for `wrong_team.py` and its checks.
 
-### R022 — P20 step 0: PathCRF's published checkpoint on its held-out match, against P07 on the gap frames (2026-10-31, lane B)
-Proposal: P20 · Part 1, declared before any run · Advisor (for Tian): advisor-01 §1 Lane B and §3, with the rulings of §6 on D1–D4 (below).
-
-**Advisor rulings on D1–D4 (advisor-01 §6).**
-- **D1 (segmentation), accepted with two clarifications.** Advisor (for Tian): a run is a maximal stretch that `main.toml` decodes H or A, and a change between H and A does not cut it, so that `main.toml`'s team boundaries do not leak into the competitor's input. `main.toml`'s sha256 is pinned below and the windows are prepared from that file, whatever merges later.
-- **D2 (complete tracks), accepted.** Advisor (for Tian): the share of node-frames that are interpolated or held is reported. A node with no observed frame in a window is a pad node, as in their code.
-- **D3 (per-window inference), accepted.** Advisor (for Tian): the context lost at window edges is a cost of the adapter, charged to PathCRF and not corrected.
-- **D4 (team and frames), accepted.** Advisor (for Tian): the team of a frame is the decoded sender's; an outside node or silence counts as wrong; the primary set is rule 5 ∩ `main.toml` decodes H or A; the literal rule-5 set is reported beside it, and P07 must reproduce 0.8495 on 96,442 frames there or the lane stops.
-- **Go threshold unchanged.** Advisor (for Tian): PathCRF ≥ P07 + 0.04 pooled over seeds 0 to 2 and ≥ +0.02 on each seed, raw truth, on the primary set. If raw misses and the coarse truth alone meets the threshold, it is a no-go with a note for Tian (a P16 question), not a retry.
-
-**What is run.** PathCRF (Kim et al., KDD 2026; arXiv 2602.12080 v2). The code is at repository hyunsungkim-ds/pathcrf, commit `1b7c6f85a6b78c92e4543fde72ca2b86a933f997`, under MPL-2.0. The checkpoints have no licence of their own and are read as the repository's. The model is trial 140, Dynamic Masked CRF: file `saved/140/model/state_dict_best_acc.pt`, 19,325,114 bytes, git blob `f8e48952d01d6d70db986948962822478884a336`, sha256 recorded at the first verified fetch. It is loaded with `weights_only=True` on the CPU with one torch thread, in `.venv-pathcrf` (`requirements-pathcrf.txt`). Nothing of it is in `pipeline/`. The pins of the comparison:
-- `main.toml`, sha256 of its LF bytes `124a38ad019995e276cdd6d1094f764e226e167408c0adaa7c32c466bac25873`;
-- P07's `pipeline/models/shape_possession_hgb.json`, sha256 `641e0bad7438a5a987f4aa8ac54ea48302b22d2f7375ea655e67a8ded1802974`.
-
-**Precondition, met from the repository.** The test match is J03WR9, validation J03WQQ, and training J03WMX, J03WN1, J03WOH, J03WOY and J03WPY. Three things show it:
-- `train.py` sorts the files, and the checkpoint's `args.json` says `lomocv` with `cv_fold_idx` 6;
-- the tutorial evaluates J03WR9;
-- the paper's test counts (91 episodes, 1,831 events) are the tutorial's output on J03WR9.
-
-**Correctness, not the verdict.** Clean J03WR9 goes through their own preprocessing:
-- kloppy 3.18.0's sportec loader with `only_alive=False`;
-- their touches from the synchronised events in the repository;
-- their kinematics.
-
-It then goes through the tutorial's inference (`use_crf`, `decode="indep"`, 10 s windows, `correct_episode_lasts`) and the tutorial's metric (`compute_true_pred_poss`, split mode: per-frame team accuracy over in-play frames, where both sides are derived from events). **Pass iff ≥ 0.884** (0.924 − 0.04). Edge accuracy and event F1 are reported beside the tutorial's 0.6964 and 0.7569, not gated. A failure is a usage error to fix, and each fix is named in part 2. With no pass by 06:30 the lane stops with no verdict and no retry spent.
-
-**The adapter (advisor rule 4, with D1–D4).**
-- **Windows.** They tile the maximal runs of H or A (an H/A change does not cut a run) that `main.toml` (with `--drop-match-only`) decodes inside each graded block of that seed. A run becomes ⌈L/250⌉ windows of near-equal length; a run under 16 frames gets none.
-- **Nodes.** Inside a window, a slot's maximal present runs are pieces, each in its metadata team (wrong-team slots kept).
-- **Joins.** A piece that ends is joined to one that begins, in the same metadata team, when the frames from the last seen to the first seen are at most 50 (2 s) and the two positions are at most 5.0 m apart. The joins are greedy by smallest gap, then smallest distance, then lower slots; each end and each start is used once, and chains are allowed.
-- **At most 11 per team.** The chains with the fewest observed frames are dropped (ties: the higher first slot).
-- **Filling.** A join's gap is filled linearly, and a node is held at its first or last position to the window's edges. The share of node-frames filled or held is reported.
-- **Inference.** Coordinates are x × 105 and y × 68. Their `calculate_running_features` runs per window. Each window is one `inference_episode` (CRF, `decode="indep"`, `last_node=None`). The 5-fps state is held forward by their `ffill`.
-- **Team.** The team is the decoded sender's, by name. An outside sender is out of play.
-
-**Frames and scores.** Per seed s ∈ {0, 1, 2} of profile `tracking` v3:
-- **Literal set:** graded, raw truth H or A, served ball missing.
-- **Primary set:** the literal set where `main.toml` also decodes H or A.
-- **P07:** the J03WR9 fold, served as `train_shape._tally` serves it (scope `all`, `min_prob` 0.02); it names home iff home ≥ 0.5, and a silent frame is wrong.
-- **PathCRF:** a frame is right iff its sender's team is the truth's. Out of play and silent are wrong.
-- **Pooling:** over seeds by frames.
-
-**The reference that must reproduce.** P07 on the literal frames, scored as R011 scored it (silent frames left out), pooled over the three seeds: **96,442 frames and accuracy 0.8495**, both exactly (the accuracy to four decimals), or the lane stops.
-
-**Go/no-go (advisor rule 6).** On the primary frames, raw truth: **go iff PathCRF − P07 ≥ +0.04 pooled over seeds 0 to 2, and ≥ +0.02 on each seed.** It is mechanical and exact: the deltas are compared as fractions of integer counts on the same frames, and a miss by any margin is a miss. A raw miss with a coarse-truth pass is a no-go, with a note.
-
-**Reported, not gated:**
-- clean: PathCRF run by their own protocol on the clean match, scored on each seed's primary frames;
-- the coarse truth on the primary frames;
-- the out-of-play share and the silent share;
-- the literal set;
-- accuracy of both models by window class (with a join; with a team over 11 slots at once; neither; frames outside any window);
-- the adapter's counts, and the interpolated or held node-frame share.
-
-**Retry (pre-approved, advisor 3.3).** Only if the loss sits on windows with joined or wrong-team nodes. That holds iff the pooled verdict is a no-go while, on the primary frames in windows with neither a join nor a team over 11, PathCRF − P07 ≥ +0.04 pooled. R022b then declares one change aimed at those windows in its own part 1, with the same bar. Otherwise, or if R022b fails, P20 is dropped, its code removed, and the recoverable commit recorded.
-
-**Stops.** No clean pass by 06:30: no verdict, no retry spent. No new heavy work after 08:30. A go stops at step 0, because step 1 (a GPU retraining, numpy inference for byte-identical CSVs) is Tian's.
-
-**Part 2a: the clean reproduction (2026-10-31, run by the controller; a correctness check, not the verdict).**
-- J03WR9 through their own preprocessing, inference and metric (`runner.py clean --match J03WR9`, one torch thread):
-  **team accuracy 0.9164**, against the declared gate of at least 0.884 (paper 0.924). **The gate passes.**
-- Edge accuracy 0.695 (tutorial 0.6964), event F1 0.756 (tutorial 0.7569), 17,168 five-fps steps (tutorial 17,168),
-  inference 200 s.
-- `runner.py smoke` and `selftest.py --torch` passed. The checkpoint's sha256, recorded at the first verified fetch:
-  `55757d9dca9777d60356ba368dc315867ea1ae38e90c332e935b9c5be72d83c9`.
-- The runner was fixed against their real API before this run (device `cpu`, the touches as events, the four-value
-  `inference`): usage fixes, in commits `5e437a9` to `c05d3e3`.
-
-**Part 2b: the verdict (2026-10-31, lane B; runner and adapter at commit `2163406`, runs by the controller).**
-Commands, in this order: `adapter.py prepare --match J03WR9 --profile tracking --seeds 0 1 2` (28 s),
-`runner.py degraded --match J03WR9 --profile tracking --seeds 0 1 2` (one torch thread, 165 to 181 s a seed, 387 to 389
-windows a seed, none skipped), `score.py --match J03WR9 --profile tracking --seeds 0 1 2`. `main.toml` stood at its
-pinned sha256 `124a38ad…`.
-- **The reference reproduced exactly:** P07 on the literal frames, silent left out, gave 96,442 frames and 0.8495.
-- **Primary set, 90,449 frames (graded, truth H or A, ball missing, `main.toml` decodes H or A), pooled over seeds 0
-  to 2:** P07 0.8522, PathCRF 0.8571, **Δ +0.0049**. Per seed Δ: seed 0 −0.0031, seed 1 −0.0006, seed 2 +0.0170
-  (the per-seed frames and accuracies were not recorded in this entry).
-- **Verdict: NO-GO.** The pooled Δ is below +0.04 and every seed is below +0.02. By part 1's declared condition,
-  applied mechanically by the scorer (retry allowed: False), the retry did not fire: it needs at least +0.04 on the
-  windows with neither a join nor a team over 11, and that class gave −0.0110. No advisor ruling was made on it.
-
-| set (pooled) | frames | P07 | PathCRF | Δ | PathCRF out of play | PathCRF silent |
-|---|---|---|---|---|---|---|
-| primary (raw truth) | 90,449 | 0.8522 | 0.8571 | +0.0049 | 0.023 | 0.000 |
-| literal (raw truth) | 96,442 | 0.8495 | 0.8038 | −0.0457 | 0.022 | 0.062 |
-| primary, coarse truth | 90,449 | 0.8501 | 0.8319 | −0.0182 | 0.023 | 0.000 |
-| primary; PathCRF by their protocol on the clean match, P07 on degraded tracking | 90,449 | 0.8522 | 0.9172 | +0.0650 | 0.001 | 0.000 |
-| window with a join | 33,942 | 0.8629 | 0.8840 | +0.0211 | 0.019 | 0.000 |
-| window with a team over 11 | 22,941 | 0.8525 | 0.8720 | +0.0195 | 0.015 | 0.000 |
-| window with neither | 44,131 | 0.8424 | 0.8314 | −0.0110 | 0.028 | 0.000 |
-| outside any window | 0 | – | – | – | – | – |
-
-The classes with a join and with a team over 11 overlap; "neither" is the retry class (no join and no team over 11 at
-one frame; the adapter still pads, holds and drops chains beyond 11 in those windows). The clean row mixes two things:
-PathCRF's number is their own protocol on the clean match (the truth's own in-play episodes, true identities,
-whole-episode inference), P07's is the degraded tracking's. P07 was never run on clean tracking. All the clean run's
-frames mapped to rows (146,810 mapped, none unmapped, alive agreement 1.0). The held or interpolated node-frame share
-was 0.0504. The adapter, per seed: 387 to 389 windows, about 85,000 rows covered, no short run, 175 to 211 joins, 91 to
-118 windows with a team over 11, 243 to 282 dropped nodes, 86 to 120 padded nodes per team, `main.toml` decoding D on
-0.417 to 0.422 of the graded frames.
-
-**Readings, hedged.** PathCRF by its own protocol on the clean match scored 0.9172 on these frames, against 0.8571
-under our degradation and the adapter (and P07's 0.8522 on degraded tracking). The run cannot separate the degraded
-tracking, the adapter's completions (D1 to D4) and the segmentation (their in-play episodes from the truth against
-`main.toml`'s), so the fall is a possibility to investigate, not a finding about where the constraint lies. Under the
-coarse truth PathCRF is below P07 (−0.0182). By window class, PathCRF does best on the windows with joins (+0.0211,
-33,942 frames) and with a team over 11 (+0.0195, 22,941), the windows the adapter repaired most, and worst on those
-with neither (−0.0110); this is the opposite of the retry's premise, and both leads are below the bar. Step 1 (a GPU
-retraining on degraded copies) is not pursued tonight and is Tian's call.
-
-**What the numbers do not say.** One held-out match. J03WR9 is a Fortuna Düsseldorf home game, as are four of the other
-benchmark matches. The 92.4% of the paper is event-split possession on in-play frames, not DFL's flag. The adapter's
-completions (D1 to D4) are charged to PathCRF, and a model retrained on degraded copies could do better. BAR-ATH is not
-measured.
-
-**Outcome.** P20 is dropped; the code is removed from the branch, recoverable at `2163406`.
-
 ### R021 — P19's team model where the ball is seen: feasibility, a two-stage grid, the bar and the transfer (2026-10-31, the overnight lane for Tian)
 
 Proposal: P19 · Branch `p19-team-model` · Decisions marked "Advisor (for Tian)" were made by the project's advisor,
@@ -7137,6 +7020,250 @@ was produced (`main.toml` is unchanged; `pipeline/` equals main's after the remo
 `team_model.py` and its registry line, `train_team.py`, `team_grid.py`, `team_transfer.py`, their checks and README rows)
 is removed from the branch in one commit, recoverable at `15e7e14`; the model is restored from it by the command above and
 checked against the sha256 above. Gitignored leftovers on the machine that ran it: `data/runs/r021/`.
+
+### R022 — P20 step 0: PathCRF's published checkpoint on its held-out match, against P07 on the gap frames (2026-10-31, lane B)
+Proposal: P20 · Part 1, declared before any run · Advisor (for Tian): advisor-01 §1 Lane B and §3, with the rulings of §6 on D1–D4 (below).
+
+**Advisor rulings on D1–D4 (advisor-01 §6).**
+- **D1 (segmentation), accepted with two clarifications.** Advisor (for Tian): a run is a maximal stretch that `main.toml` decodes H or A, and a change between H and A does not cut it, so that `main.toml`'s team boundaries do not leak into the competitor's input. `main.toml`'s sha256 is pinned below and the windows are prepared from that file, whatever merges later.
+- **D2 (complete tracks), accepted.** Advisor (for Tian): the share of node-frames that are interpolated or held is reported. A node with no observed frame in a window is a pad node, as in their code.
+- **D3 (per-window inference), accepted.** Advisor (for Tian): the context lost at window edges is a cost of the adapter, charged to PathCRF and not corrected.
+- **D4 (team and frames), accepted.** Advisor (for Tian): the team of a frame is the decoded sender's; an outside node or silence counts as wrong; the primary set is rule 5 ∩ `main.toml` decodes H or A; the literal rule-5 set is reported beside it, and P07 must reproduce 0.8495 on 96,442 frames there or the lane stops.
+- **Go threshold unchanged.** Advisor (for Tian): PathCRF ≥ P07 + 0.04 pooled over seeds 0 to 2 and ≥ +0.02 on each seed, raw truth, on the primary set. If raw misses and the coarse truth alone meets the threshold, it is a no-go with a note for Tian (a P16 question), not a retry.
+
+**What is run.** PathCRF (Kim et al., KDD 2026; arXiv 2602.12080 v2). The code is at repository hyunsungkim-ds/pathcrf, commit `1b7c6f85a6b78c92e4543fde72ca2b86a933f997`, under MPL-2.0. The checkpoints have no licence of their own and are read as the repository's. The model is trial 140, Dynamic Masked CRF: file `saved/140/model/state_dict_best_acc.pt`, 19,325,114 bytes, git blob `f8e48952d01d6d70db986948962822478884a336`, sha256 recorded at the first verified fetch. It is loaded with `weights_only=True` on the CPU with one torch thread, in `.venv-pathcrf` (`requirements-pathcrf.txt`). Nothing of it is in `pipeline/`. The pins of the comparison:
+- `main.toml`, sha256 of its LF bytes `124a38ad019995e276cdd6d1094f764e226e167408c0adaa7c32c466bac25873`;
+- P07's `pipeline/models/shape_possession_hgb.json`, sha256 `641e0bad7438a5a987f4aa8ac54ea48302b22d2f7375ea655e67a8ded1802974`.
+
+**Precondition, met from the repository.** The test match is J03WR9, validation J03WQQ, and training J03WMX, J03WN1, J03WOH, J03WOY and J03WPY. Three things show it:
+- `train.py` sorts the files, and the checkpoint's `args.json` says `lomocv` with `cv_fold_idx` 6;
+- the tutorial evaluates J03WR9;
+- the paper's test counts (91 episodes, 1,831 events) are the tutorial's output on J03WR9.
+
+**Correctness, not the verdict.** Clean J03WR9 goes through their own preprocessing:
+- kloppy 3.18.0's sportec loader with `only_alive=False`;
+- their touches from the synchronised events in the repository;
+- their kinematics.
+
+It then goes through the tutorial's inference (`use_crf`, `decode="indep"`, 10 s windows, `correct_episode_lasts`) and the tutorial's metric (`compute_true_pred_poss`, split mode: per-frame team accuracy over in-play frames, where both sides are derived from events). **Pass iff ≥ 0.884** (0.924 − 0.04). Edge accuracy and event F1 are reported beside the tutorial's 0.6964 and 0.7569, not gated. A failure is a usage error to fix, and each fix is named in part 2. With no pass by 06:30 the lane stops with no verdict and no retry spent.
+
+**The adapter (advisor rule 4, with D1–D4).**
+- **Windows.** They tile the maximal runs of H or A (an H/A change does not cut a run) that `main.toml` (with `--drop-match-only`) decodes inside each graded block of that seed. A run becomes ⌈L/250⌉ windows of near-equal length; a run under 16 frames gets none.
+- **Nodes.** Inside a window, a slot's maximal present runs are pieces, each in its metadata team (wrong-team slots kept).
+- **Joins.** A piece that ends is joined to one that begins, in the same metadata team, when the frames from the last seen to the first seen are at most 50 (2 s) and the two positions are at most 5.0 m apart. The joins are greedy by smallest gap, then smallest distance, then lower slots; each end and each start is used once, and chains are allowed.
+- **At most 11 per team.** The chains with the fewest observed frames are dropped (ties: the higher first slot).
+- **Filling.** A join's gap is filled linearly, and a node is held at its first or last position to the window's edges. The share of node-frames filled or held is reported.
+- **Inference.** Coordinates are x × 105 and y × 68. Their `calculate_running_features` runs per window. Each window is one `inference_episode` (CRF, `decode="indep"`, `last_node=None`). The 5-fps state is held forward by their `ffill`.
+- **Team.** The team is the decoded sender's, by name. An outside sender is out of play.
+
+**Frames and scores.** Per seed s ∈ {0, 1, 2} of profile `tracking` v3:
+- **Literal set:** graded, raw truth H or A, served ball missing.
+- **Primary set:** the literal set where `main.toml` also decodes H or A.
+- **P07:** the J03WR9 fold, served as `train_shape._tally` serves it (scope `all`, `min_prob` 0.02); it names home iff home ≥ 0.5, and a silent frame is wrong.
+- **PathCRF:** a frame is right iff its sender's team is the truth's. Out of play and silent are wrong.
+- **Pooling:** over seeds by frames.
+
+**The reference that must reproduce.** P07 on the literal frames, scored as R011 scored it (silent frames left out), pooled over the three seeds: **96,442 frames and accuracy 0.8495**, both exactly (the accuracy to four decimals), or the lane stops.
+
+**Go/no-go (advisor rule 6).** On the primary frames, raw truth: **go iff PathCRF − P07 ≥ +0.04 pooled over seeds 0 to 2, and ≥ +0.02 on each seed.** It is mechanical and exact: the deltas are compared as fractions of integer counts on the same frames, and a miss by any margin is a miss. A raw miss with a coarse-truth pass is a no-go, with a note.
+
+**Reported, not gated:**
+- clean: PathCRF run by their own protocol on the clean match, scored on each seed's primary frames;
+- the coarse truth on the primary frames;
+- the out-of-play share and the silent share;
+- the literal set;
+- accuracy of both models by window class (with a join; with a team over 11 slots at once; neither; frames outside any window);
+- the adapter's counts, and the interpolated or held node-frame share.
+
+**Retry (pre-approved, advisor 3.3).** Only if the loss sits on windows with joined or wrong-team nodes. That holds iff the pooled verdict is a no-go while, on the primary frames in windows with neither a join nor a team over 11, PathCRF − P07 ≥ +0.04 pooled. R022b then declares one change aimed at those windows in its own part 1, with the same bar. Otherwise, or if R022b fails, P20 is dropped, its code removed, and the recoverable commit recorded.
+
+**Stops.** No clean pass by 06:30: no verdict, no retry spent. No new heavy work after 08:30. A go stops at step 0, because step 1 (a GPU retraining, numpy inference for byte-identical CSVs) is Tian's.
+
+**Part 2a: the clean reproduction (2026-10-31, run by the controller; a correctness check, not the verdict).**
+- J03WR9 through their own preprocessing, inference and metric (`runner.py clean --match J03WR9`, one torch thread):
+  **team accuracy 0.9164**, against the declared gate of at least 0.884 (paper 0.924). **The gate passes.**
+- Edge accuracy 0.695 (tutorial 0.6964), event F1 0.756 (tutorial 0.7569), 17,168 five-fps steps (tutorial 17,168),
+  inference 200 s.
+- `runner.py smoke` and `selftest.py --torch` passed. The checkpoint's sha256, recorded at the first verified fetch:
+  `55757d9dca9777d60356ba368dc315867ea1ae38e90c332e935b9c5be72d83c9`.
+- The runner was fixed against their real API before this run (device `cpu`, the touches as events, the four-value
+  `inference`): usage fixes, in commits `5e437a9` to `c05d3e3`.
+
+**Part 2b: the verdict (2026-10-31, lane B; runner and adapter at commit `2163406`, runs by the controller).**
+Commands, in this order: `adapter.py prepare --match J03WR9 --profile tracking --seeds 0 1 2` (28 s),
+`runner.py degraded --match J03WR9 --profile tracking --seeds 0 1 2` (one torch thread, 165 to 181 s a seed, 387 to 389
+windows a seed, none skipped), `score.py --match J03WR9 --profile tracking --seeds 0 1 2`. `main.toml` stood at its
+pinned sha256 `124a38ad…`.
+- **The reference reproduced exactly:** P07 on the literal frames, silent left out, gave 96,442 frames and 0.8495.
+- **Primary set, 90,449 frames (graded, truth H or A, ball missing, `main.toml` decodes H or A), pooled over seeds 0
+  to 2:** P07 0.8522, PathCRF 0.8571, **Δ +0.0049**. Per seed Δ: seed 0 −0.0031, seed 1 −0.0006, seed 2 +0.0170
+  (the per-seed frames and accuracies were not recorded in this entry).
+- **Verdict: NO-GO.** The pooled Δ is below +0.04 and every seed is below +0.02. By part 1's declared condition,
+  applied mechanically by the scorer (retry allowed: False), the retry did not fire: it needs at least +0.04 on the
+  windows with neither a join nor a team over 11, and that class gave −0.0110. No advisor ruling was made on it.
+
+| set (pooled) | frames | P07 | PathCRF | Δ | PathCRF out of play | PathCRF silent |
+|---|---|---|---|---|---|---|
+| primary (raw truth) | 90,449 | 0.8522 | 0.8571 | +0.0049 | 0.023 | 0.000 |
+| literal (raw truth) | 96,442 | 0.8495 | 0.8038 | −0.0457 | 0.022 | 0.062 |
+| primary, coarse truth | 90,449 | 0.8501 | 0.8319 | −0.0182 | 0.023 | 0.000 |
+| primary; PathCRF by their protocol on the clean match, P07 on degraded tracking | 90,449 | 0.8522 | 0.9172 | +0.0650 | 0.001 | 0.000 |
+| window with a join | 33,942 | 0.8629 | 0.8840 | +0.0211 | 0.019 | 0.000 |
+| window with a team over 11 | 22,941 | 0.8525 | 0.8720 | +0.0195 | 0.015 | 0.000 |
+| window with neither | 44,131 | 0.8424 | 0.8314 | −0.0110 | 0.028 | 0.000 |
+| outside any window | 0 | – | – | – | – | – |
+
+The classes with a join and with a team over 11 overlap; "neither" is the retry class (no join and no team over 11 at
+one frame; the adapter still pads, holds and drops chains beyond 11 in those windows). The clean row mixes two things:
+PathCRF's number is their own protocol on the clean match (the truth's own in-play episodes, true identities,
+whole-episode inference), P07's is the degraded tracking's. P07 was never run on clean tracking. All the clean run's
+frames mapped to rows (146,810 mapped, none unmapped, alive agreement 1.0). The held or interpolated node-frame share
+was 0.0504. The adapter, per seed: 387 to 389 windows, about 85,000 rows covered, no short run, 175 to 211 joins, 91 to
+118 windows with a team over 11, 243 to 282 dropped nodes, 86 to 120 padded nodes per team, `main.toml` decoding D on
+0.417 to 0.422 of the graded frames.
+
+**Readings, hedged.** PathCRF by its own protocol on the clean match scored 0.9172 on these frames, against 0.8571
+under our degradation and the adapter (and P07's 0.8522 on degraded tracking). The run cannot separate the degraded
+tracking, the adapter's completions (D1 to D4) and the segmentation (their in-play episodes from the truth against
+`main.toml`'s), so the fall is a possibility to investigate, not a finding about where the constraint lies. Under the
+coarse truth PathCRF is below P07 (−0.0182). By window class, PathCRF does best on the windows with joins (+0.0211,
+33,942 frames) and with a team over 11 (+0.0195, 22,941), the windows the adapter repaired most, and worst on those
+with neither (−0.0110); this is the opposite of the retry's premise, and both leads are below the bar. Step 1 (a GPU
+retraining on degraded copies) is not pursued tonight and is Tian's call.
+
+**What the numbers do not say.** One held-out match. J03WR9 is a Fortuna Düsseldorf home game, as are four of the other
+benchmark matches. The 92.4% of the paper is event-split possession on in-play frames, not DFL's flag. The adapter's
+completions (D1 to D4) are charged to PathCRF, and a model retrained on degraded copies could do better. BAR-ATH is not
+measured.
+
+**Outcome.** P20 is dropped; the code is removed from the branch, recoverable at `2163406`.
+
+### R023 — P16 part 1: Metrica's sample games and the grain of our truth (draft, 2026-10-31)
+
+**Advisor (for Tian), unsigned: not declared until Tian signs or amends it; nothing has been downloaded or run.**
+
+Proposal: P16 · Part 1 only. Part 2 (the run) is written after Tian signs; amendments go in before any file is fetched.
+The source is advisor-02, Lane C. The research behind it (licence text, taxonomy, kloppy, StatsBomb, PathCRF) is the
+[research note](research/2026-10-31-p16-metrica.md).
+
+**Question.** Is our ground truth's possession grain nearer DFL's raw flag or the coarse truth ([T33](traps.md), A06)?
+Every re-tune since R007 has split the two truths, so the answer sets which truth ranks every later choice.
+
+**Data.** [metrica-sports/sample-data](https://github.com/metrica-sports/sample-data) at commit
+`e706dd506b360d69d9d123d5b8026e7294b13996`, event files only, each checked by its git blob SHA:
+- `Sample_Game_1_RawEventsData.csv` `3c426dd4f442dd433bccf89e3634f91aa310cd8f`;
+- `Sample_Game_2_RawEventsData.csv` `decccd47c1d53960d290cb6679337eec83a8a97f`;
+- `Sample_Game_3_events.json` `992b4cb502f0b0bc1244174f014f3f7ecb6d38ef`, with `Sample_Game_3_metadata.xml`
+  `74b55a80f6aeeb8f8df7fd26e4b3a94e2cc1738d`.
+
+They are fetched into `data/external/metrica/` and never committed. No tracking file is fetched. A stdlib reader of
+our own, written in part 2, parses them: kloppy 3.18.0 has no loader for the CSV events, and its JSON loader drops
+SET PIECE events. kloppy only cross-checks game 3's type ids. Nothing of BAR-ATH, the public window or the public GT is
+read.
+
+**Derivation rule.** It is chosen from Metrica's `documentation/events-definitions.pdf` alone, and no constant in it
+comes from data.
+
+Per game, events are taken in file order, periods 1 and 2 only. Type and subtype names are matched case-insensitively:
+the CSV `Subtype` is split on `-`, and the JSON uses its names (ids only through kloppy 3.18.0's constants). Frames are
+the files' own start and end frames; a JSON event without a frame field takes round(time x 25). CARRY appears only in
+game 3's JSON (kloppy names it; the PDF does not), and it goes wherever PASS does below.
+
+0. **Span.** A period runs from its first event's start frame to its last event's end frame, inclusive. Frames outside
+   it are `X`.
+1. **Stops (`D` opens):**
+   - the end frame of a BALL OUT;
+   - the end frame of an event with subtype GOAL (a shot result or an own goal; GOAL KICK is a different subtype);
+   - the end frame of a SHOT with subtype OUT;
+   - the start frame of a FAULT RECEIVED, or of a CHALLENGE with subtype FAULT;
+   - the end frame of an event with subtype FORCED, END HALF or OFFSIDE.
+
+   Each stop is in the PDF: "Out of play: the ball went out of bounds or the referee has stopped play."
+2. **Restarts (`D` closes).** `D` closes at the start frame of the first later event of type SET PIECE, RECOVERY, PASS,
+   SHOT, BALL LOST or CARRY whose start frame is after the stop's. In the PDF, SET PIECE and RECOVERY "bring the ball back into play", and GOAL KICK is an
+   *Attempt* subtype, so a goal kick is a PASS and not a SET PIECE. CARD, FAULT RECEIVED, CHALLENGE and BALL OUT never
+   close `D`.
+   - `D` covers [stop, restart). With no restart, it runs to the span's end.
+   - Overlapping intervals merge.
+3. **Team, on the alive frames.** Walk the events in file order, keeping the current team T and the frame of the last
+   change t, with T unset at the period's first event. For an event e of team E:
+   - (a) if e is a RECOVERY, or e is a SET PIECE, PASS, SHOT, BALL LOST, BALL OUT or CARRY with E ≠ T, change to E at
+     max(start(e), t);
+   - (b) then, if e is a BALL LOST, change to the other team at max(end(e), t).
+
+   Each change sets T and t. A frame takes the team of the last change at or before it. The first event (the KICK OFF)
+   sets the team at the span's start. CHALLENGE, FAULT RECEIVED and CARD never change the team. **No split midpoints:**
+   a team holds until the frame of the event that changes it. Metrica's own definition says the same: possession lasts
+   "until … another player takes over possession". PathCRF's `split` mode would instead cut each gap at its midpoint.
+4. **Labels.** `D` on step 2's intervals. Elsewhere `Home` (game 3: the metadata's first team) → `H`, and the other
+   team → `A`.
+
+**Grain statistics, A06's.** `pipeline/benchmark/truth.py`'s `summary` runs on the three games laid end to end
+(`truth.concatenate`), exactly as A06's figures were computed:
+- **g**, possessions per alive minute;
+- **L**, the median possession length in seconds, pooled.
+
+Reported beside them, per game and pooled: the alive share, stoppages, possessions, the mean, the share under 5 s,
+spells of 2 or fewer and of 12 or fewer frames, and the stops by kind. The frame rate is 25 fps, checked in
+integrity check 3.
+
+**Decision rule.** The references are A06's pooled figures:
+- raw truth: **8.30 possessions per alive minute, median 3.68 s**;
+- coarse truth: **4.50 per alive minute, median 8.40 s**.
+
+The advisor's 4.58 and 2.48 count the same possessions per *graded* minute (668.4 min; A10, R002 on), not in A06's unit.
+Per graded minute the comparison would carry DFL's alive share against our event-derived `D`, so A06's
+per-alive-minute figures are used. The two pairs have the same ratio (1.84).
+- **Rate class.** The midpoint is m = sqrt(8.30 x 4.50) = 6.11 per alive minute.
+  - **both** if |ln(g / m)| ≤ ln 1.15, that is 5.31 ≤ g ≤ 7.03;
+  - otherwise **raw** if g > m (nearer 8.30 in log ratio);
+  - otherwise **coarse**.
+- **Median class.** The same rule on L, with m = sqrt(3.68 x 8.40) = 5.56 s: **both** from 4.83 to 6.39 s, otherwise
+  **raw** below 5.56 s and **coarse** above it.
+- **Outcome.** The rate class, except that if the rate class is raw or coarse and the median class is the other of the
+  two, the outcome is **both**. This is T33's "a disagreement is a warning".
+- **The objective it sets**, for choices declared after part 2:
+  - **raw:** ranked on the raw truth's pooled spellF1, with the coarse truth beside it. This is the current practice.
+  - **coarse:** ranked on the coarse truth, with the raw truth beside it.
+  - **both:** ranked on the unweighted mean of the two pooled spellF1s, each reported.
+
+  R023 reopens no past choice and does not touch `main.toml`. Reopening a past choice is the team's decision.
+
+**Licence stop.** The repository has no licence file. Its README's only terms are, verbatim: "Please be responsible
+with the use of this data." and "If you use it for anything public, please aknowledge the source." That reads as
+public use with acknowledgement. It grants no redistribution, hence fetch-only and nothing committed. The technical
+document acknowledges Metrica and says what was labelled (event types), by whom (the provider) and how much (3 games),
+by P13's rule. **R023 stops before any fetch if:**
+- the README at the pinned commit or at HEAD is not blob `03fb97acc3545cc7428d0a07485921c5a1d405c1`;
+- a licence file has appeared that forbids this use;
+- Tian rules the README's note insufficient for a public repository. Signing this part is that ruling.
+
+**What makes it invalid.** An invalid R023 gives no decision, and the current practice stays: the raw truth as the
+objective, the coarse truth beside it.
+1. This part is amended after any event file has been fetched.
+2. A file's blob SHA differs from the one above.
+3. A game fails an integrity check:
+   - a start frame is not round(start time x 25) to within 1;
+   - start frames decrease in file order within a period;
+   - a period does not begin with a SET PIECE KICK OFF;
+   - a type name is outside the PDF's nine and CARRY;
+   - an event has no end frame;
+   - game 3's names cannot be mapped.
+
+   A game that fails drops out: these checks concern the files' format, not the grain. With fewer than two games
+   left, R023 is invalid.
+4. The derived labels fail a sanity bound declared now. The bounds test the derivation, not the grain; DFL ranges
+   from 48.3% to 59.3% alive, with 92 to 113 stoppages a match (A06).
+   - the alive share is outside 40% to 70% in some game;
+   - the stoppages are outside 60 to 160 in some game.
+
+   Any one of these makes R023 invalid. No game is dropped for it, because these bounds correlate with the grain.
+5. Anything of BAR-ATH, the public window or the public GT is read for R023, or compared to gate it (P16).
+
+**A limit, stated with any verdict.** Our GT comes from corrected-tracking flags. R023 measures event-tagged possession
+under Metrica's event definition and this derivation. How far an event-derived grain sits from a flag grain is not
+measured. The same comparison on DFL's own events against its flag would measure it, and that is not part of R023.
+
 
 ## Submission log
 
