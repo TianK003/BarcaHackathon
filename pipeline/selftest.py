@@ -2415,6 +2415,12 @@ def test_hmm_speed():
     seconds = time.perf_counter() - started
     print("      hmm: the same with posterior=True: {:.2f} s".format(seconds))
     assert decoded.posterior.shape == (n_frames, 3) and seconds < 10.0, "{:.2f} s for the posterior".format(seconds)
+    # edges = "posterior" (R025) pays the same posterior, plus a loop over the changes to move them.
+    started = time.perf_counter()
+    moved = REGISTRY["hmm"](ctx, switch_team=4.0, switch_dead=8.0, min_possession=50, min_dead=50, edges="posterior")
+    seconds = time.perf_counter() - started
+    print("      hmm: the same with edges=\"posterior\": {:.2f} s".format(seconds))
+    assert len(moved.labels) == n_frames and seconds < 10.0, "{:.2f} s for the posterior edges".format(seconds)
 
 
 # The hmm decoder's posterior: P(H), P(A), P(D) per frame, the marginal over the valid paths with weight exp(score).
@@ -2905,6 +2911,287 @@ def test_hmm_restart_states_refuse_posterior_and_unknown_source():
                  "switch_restart")
     expect_error(ValueError, lambda: hmm.restart_log_likelihoods(ctx.evidence, "s9", 10, hmm.EPS), "hmm",
                  "restart_source", "'s9'")
+
+
+# The hmm decoder's posterior edges (P23 C, R025). With edges = "posterior" each change of the Viterbi path moves to
+# the first frame of its window W at which the posterior favours the new label, if the posterior crosses inside W. The
+# rule is pinned here from R025's declaration: hand-built cases for each branch of it, and a frame-by-frame reading of
+# it written out below against which posterior_edges is run on random labels.
+
+EDGE_ROWS = {"H": (0.7, 0.2, 0.1), "A": (0.2, 0.7, 0.1), "D": (0.15, 0.15, 0.7),   # each favours its own label only
+             "=": (0.5, 0.5, 0.0),                                                # H and A tied, neither zero
+             "0": (0.0, 0.0, 1.0)}                                                # H and A tied at zero
+
+
+def edge_codes(text):
+    """int8 label codes from a string of H, A and D."""
+    from pipeline.contracts import A, D, H
+    return np.array([{"H": H, "A": A, "D": D}[letter] for letter in text], dtype=np.int8)
+
+
+def edge_posterior(text):
+    """An (len(text), 3) posterior with one EDGE_ROWS row per letter."""
+    return np.array([EDGE_ROWS[letter] for letter in text], dtype=np.float64).reshape(len(text), 3)
+
+
+def edge_stats(changes):
+    """The stats posterior_edges should fill for `changes`, a list of (kind, outcome, |b' - b|), written out here."""
+    from pipeline.decode import hmm
+    stats = {kind: dict.fromkeys(hmm.EDGE_OUTCOMES, 0) for kind in hmm.EDGE_KINDS}
+    stats["shift"] = [0] * (hmm.SHIFT_BINS + 2)
+    for kind, outcome, shift in changes:
+        stats[kind][outcome] += 1
+        stats["shift"][min(shift, hmm.SHIFT_BINS + 1)] += 1
+    return stats
+
+
+def edge_runs(labels):
+    """The runs of `labels` as [label, start, stop] lists."""
+    runs = []
+    for frame, label in enumerate(np.asarray(labels).tolist()):
+        if runs and runs[-1][0] == label:
+            runs[-1][2] = frame + 1
+        else:
+            runs.append([label, frame, frame + 1])
+    return runs
+
+
+def posterior_edges_by_the_rule(labels, posterior):
+    """R025's rule read frame by frame, from its declaration and not from the module: (new labels, one
+    (b, b', lo, hi, kind, outcome, decided_by_a_tie) per change of `labels`)."""
+    from pipeline.contracts import D
+    runs = edge_runs(labels)
+    moved = np.asarray(labels).tolist()
+    changes = []
+    for (u, a, b), (v, _, c) in zip(runs, runs[1:]):
+        lo, hi = b - (b - a - 1) // 2, b + (c - b - 1) // 2
+        favours = [posterior[t][v] >= posterior[t][u] and posterior[t][v] > 0 for t in range(lo, hi + 1)]
+        if favours[0]:
+            new, outcome = b, "before"
+        elif True not in favours:
+            new, outcome = b, "after"
+        else:
+            new = lo + favours.index(True)
+            outcome = "earlier" if new < b else "later" if new > b else "at_b"
+        for t in range(min(b, new), max(b, new)):
+            moved[t] = v if new < b else u
+        kind = "into_d" if v == D else "out_of_d" if u == D else "team"
+        tie = outcome in ("earlier", "later", "at_b") and posterior[new][v] == posterior[new][u]
+        changes.append((b, new, lo, hi, kind, outcome, tie))
+    return np.array(moved, dtype=np.int8), changes
+
+
+def test_hmm_edges_default_is_viterbi():
+    """edges = "viterbi" is today's decoder to the bit: the labels of the pinned old Viterbi, and the same posterior
+    when one is asked for."""
+    from pipeline.decode import REGISTRY, hmm
+    assert hmm.EDGES == ("viterbi", "posterior")
+    for case in range(40):
+        rng = np.random.default_rng([6, 7000 + case])
+        n_frames = int(rng.integers(1, 1500))
+        homes, alives, weights = hmm_random_scene(rng, n_frames)
+        costs = hmm_random_costs(rng)
+        ctx = hmm_context(homes, alives, weights=weights)
+        expected = hmm_viterbi_before_restart_states(hmm.log_likelihoods(ctx.evidence.values(), n_frames, hmm.EPS),
+                                                     **costs)
+        default, named = REGISTRY["hmm"](ctx, **costs), REGISTRY["hmm"](ctx, edges="viterbi", **costs)
+        assert default.posterior is None and named.posterior is None, case
+        for labels in (default.labels, named.labels):
+            assert labels.dtype == np.int8 and np.array_equal(labels, expected), "case {}: {} labels moved".format(
+                case, int((labels != expected).sum()))
+        if case % 4 == 0:
+            default = REGISTRY["hmm"](ctx, posterior=True, **costs)
+            named = REGISTRY["hmm"](ctx, posterior=True, edges="viterbi", **costs)
+            assert np.array_equal(default.labels, expected) and np.array_equal(named.labels, expected), case
+            assert np.array_equal(default.posterior, named.posterior), case
+
+
+def test_hmm_edges_posterior_moves_viterbi_by_its_own_posterior():
+    """edges = "posterior" is posterior_edges applied to the Viterbi labels and the posterior = true array, which is
+    handed back unchanged when posterior = true asks for it too: what lets a report count the moves of a decode."""
+    from pipeline.decode import REGISTRY, hmm
+    relabelled = 0
+    for case in range(16):
+        rng = np.random.default_rng([6, 7100 + case])
+        n_frames = int(rng.integers(1, 1200))
+        homes, alives, weights = hmm_random_scene(rng, n_frames)
+        costs = hmm_random_costs(rng, longest=30)
+        ctx = hmm_context(homes, alives, weights=weights)
+        plain = REGISTRY["hmm"](ctx, posterior=True, **costs)
+        expected = hmm.posterior_edges(plain.labels, plain.posterior)
+        moved = REGISTRY["hmm"](ctx, edges="posterior", **costs)
+        both = REGISTRY["hmm"](ctx, edges="posterior", posterior=True, **costs)
+        assert moved.posterior is None and both.posterior is not None, case
+        for labels in (moved.labels, both.labels):
+            assert labels.dtype == np.int8 and np.array_equal(labels, expected), case
+        assert np.array_equal(both.posterior, plain.posterior), case
+        relabelled += int((expected != plain.labels).sum())
+    assert relabelled >= 20, "only {} frames relabelled in 16 decodes: the moves were hardly tested".format(relabelled)
+
+
+def test_hmm_posterior_edges_hand_built():
+    """Each branch of R025's rule on a hand-built path and posterior, with the counts it reports."""
+    from pipeline.decode import hmm
+    one = "H" * 10 + "A" * 10                      # one change of team at b = 10; W = [6, 14]
+    cases = [  # (labels, posterior rows, expected labels, (kind, outcome, |b' - b|) of each change)
+        (one, "H" * 8 + "A" * 12, "H" * 8 + "A" * 12, [("team", "earlier", 2)]),
+        (one, "H" * 13 + "A" * 7, "H" * 13 + "A" * 7, [("team", "later", 3)]),
+        (one, "H" * 14 + "A" * 6, "H" * 14 + "A" * 6, [("team", "later", 4)]),       # W's last frame
+        (one, "H" * 10 + "A" * 10, one, [("team", "at_b", 0)]),                       # crosses on b itself
+        (one, "H" * 3 + "A" * 17, one, [("team", "before", 0)]),                      # crosses before W
+        (one, "H" * 6 + "A" * 14, one, [("team", "before", 0)]),                      # W's first frame favours A
+        (one, "H" * 7 + "A" * 13, "H" * 7 + "A" * 13, [("team", "earlier", 3)]),     # ... the next one: the earliest
+        (one, "H" * 15 + "A" * 5, one, [("team", "after", 0)]),                       # one frame past W
+        (one, "H" * 20, one, [("team", "after", 0)]),                                 # never
+        (one, "H" * 7 + "A" + "H" * 5 + "A" * 7, "H" * 7 + "A" * 13, [("team", "earlier", 3)]),  # turns back: first
+        # Ties: P_v = P_u favours the new label; P_v = P_u = 0 favours neither, at W's first frame or later.
+        (one, "H" * 8 + "=" + "A" * 11, "H" * 8 + "A" * 12, [("team", "earlier", 2)]),
+        (one, "H" * 8 + "0" + "A" * 11, "H" * 9 + "A" * 11, [("team", "earlier", 1)]),
+        (one, "H" * 6 + "0" + "A" * 13, "H" * 7 + "A" * 13, [("team", "earlier", 3)]),
+        (one, "H" * 6 + "0" * 9 + "A" * 5, one, [("team", "after", 0)]),
+        (one, "H" * 6 + "=" + "H" * 13, one, [("team", "before", 0)]),
+        # Into and out of D, each in its own window: H -> D at 10, W = [6, 14]; D -> A at 20, W = [16, 24].
+        ("H" * 10 + "D" * 10 + "A" * 10, "H" * 12 + "D" * 5 + "A" * 13, "H" * 12 + "D" * 5 + "A" * 13,
+         [("into_d", "later", 2), ("out_of_d", "earlier", 3)]),
+        # Both changes move into the run between them: it keeps the frames its posterior holds.
+        ("H" * 5 + "A" * 5 + "H" * 5, "H" * 7 + "A" * 2 + "H" * 6, "H" * 7 + "A" * 2 + "H" * 6,
+         [("team", "later", 2), ("team", "earlier", 1)]),
+        # Runs of 1 or 2 frames: W is b alone, so the change stays whatever the posterior says.
+        ("HAH", "HAH", "HAH", [("team", "before", 0), ("team", "before", 0)]),
+        ("HAH", "AHA", "HAH", [("team", "after", 0), ("team", "after", 0)]),
+        ("HHAADD", "AAHHAA", "HHAADD", [("team", "after", 0), ("into_d", "after", 0)]),
+        ("HHHAAA", "HHHHAA", "HHHHAA", [("team", "later", 1)]),                      # 3 frames: W = [2, 4]
+        # At the block's edges: a first or last run of one frame grows; a block of one run has no change.
+        ("H" + "A" * 7, "HHHAAAAA", "HHHAAAAA", [("team", "later", 2)]),
+        ("A" * 7 + "H", "AAAAAHHH", "AAAAAHHH", [("team", "earlier", 2)]),
+        ("AAAA", "HHHH", "AAAA", []),
+        ("", "", "", []),
+        # |b' - b| at the histogram's last bin and past it.
+        ("H" * 120 + "A" * 120, "H" * 170 + "A" * 70, "H" * 170 + "A" * 70, [("team", "later", 50)]),
+        ("H" * 120 + "A" * 120, "H" * 175 + "A" * 65, "H" * 175 + "A" * 65, [("team", "later", 55)]),
+    ]
+    total, everything = {}, []
+    for labels, rows, expected, changes in cases:
+        codes, posterior = edge_codes(labels), edge_posterior(rows)
+        before = codes.copy(), posterior.copy()
+        stats = {}
+        got = hmm.posterior_edges(codes, posterior, stats)
+        assert got.dtype == np.int8 and letters(got) == expected, (labels, rows, letters(got), expected)
+        assert stats == edge_stats(changes), (labels, rows, stats)
+        assert np.array_equal(hmm.posterior_edges(codes, posterior), got), (labels, rows)
+        assert np.array_equal(codes, before[0]) and np.array_equal(posterior, before[1]), "an input was written"
+        reference, _ = posterior_edges_by_the_rule(codes, posterior)
+        assert np.array_equal(reference, got), (labels, rows, letters(reference))
+        hmm.posterior_edges(codes, posterior, total)  # one dict over every case: the counts add up
+        everything += changes
+    assert total == edge_stats(everything), total
+
+
+def test_hmm_posterior_edges_never_lose_a_run():
+    """200 random paths (runs of 1 to 12 frames over H, A and D) with random posteriors, smooth or full of exact ties
+    and zeros: the runs are the same runs in the same order, each keeps a frame, every change stays in its window, the
+    labels are the rule's read frame by frame, and the counts are what the rule did."""
+    from pipeline.contracts import A, D, H
+    from pipeline.decode import hmm
+    seen = dict.fromkeys(hmm.EDGE_OUTCOMES, 0)
+    ties = 0
+    for case in range(200):
+        rng = np.random.default_rng([6, 7200 + case])
+        labels = [int(rng.choice([H, A, D]))]
+        for _ in range(int(rng.integers(0, 40))):
+            labels.append(int(rng.choice([state for state in (H, A, D) if state != labels[-1]])))
+        lengths = rng.integers(1, 13, size=len(labels))
+        codes = np.repeat(np.array(labels, dtype=np.int8), lengths)
+        n_frames = len(codes)
+        if case % 2 == 0:
+            raw = rng.random((n_frames, 3))
+        else:
+            raw = rng.integers(0, 3, size=(n_frames, 3)).astype(np.float64)
+            raw[raw.sum(axis=1) == 0] = 1.0
+        posterior = raw / raw.sum(axis=1, keepdims=True)
+        before = codes.copy()
+        stats = {}
+        got = hmm.posterior_edges(codes, posterior, stats)
+        assert np.array_equal(codes, before), "case {}: the labels were written".format(case)
+        assert got.dtype == np.int8 and got.shape == codes.shape, case
+        old, new = edge_runs(codes), edge_runs(got)
+        assert [run[0] for run in new] == [run[0] for run in old] == labels, "case {}: the runs changed".format(case)
+        assert min(stop - start for _, start, stop in new) >= 1, case
+        reference, changes = posterior_edges_by_the_rule(codes, posterior)
+        assert np.array_equal(got, reference), "case {}: {} labels differ from the rule's".format(
+            case, int((got != reference).sum()))
+        for (b, moved, lo, hi, _, outcome, tie), run in zip(changes, new[1:]):
+            assert run[1] == moved and (moved == b or lo < moved <= hi), (case, b, run[1], lo, hi)
+            seen[outcome] += 1
+            ties += tie
+        assert stats == edge_stats([(kind, outcome, abs(moved - b)) for b, moved, _, _, kind, outcome, _ in changes]), \
+            case
+    # A check in which some branch of the rule never ran, or no tie ever decided a move, would prove nothing about it.
+    assert min(seen.values()) >= 30 and ties >= 20, (seen, ties)
+
+
+def test_hmm_posterior_edges_centre_a_stretch_without_evidence():
+    """H evidence, 40 frames without any, then A evidence: Viterbi's tie puts the change on the stretch's first frame,
+    the posterior's median in the stretch's middle (where every single change scores the same, the paths are
+    symmetric about it)."""
+    from pipeline.contracts import A
+    gap, start = 40, 60
+    home = home_runs((VOTE, start), (np.nan, gap), (1.0 - VOTE, 60))
+    for switch_team in (4.0, 8.0):
+        for min_possession in (1, 10):
+            parameters = {"switch_team": switch_team, "min_possession": min_possession}
+            viterbi = hmm_labels(hmm_context(home), **parameters)
+            assert letters(viterbi) == "H" * start + "A" * (gap + 60), (parameters, letters(viterbi))
+            moved = hmm_labels(hmm_context(home), edges="posterior", **parameters)
+            change = int(np.flatnonzero(moved == A)[0])
+            assert letters(moved) == "H" * change + "A" * (len(home) - change), (parameters, letters(moved))
+            assert abs(change - (start + gap / 2)) <= 1, (parameters, change)
+
+
+def test_hmm_posterior_edges_refusals():
+    from pipeline.contracts import no_opinion
+    from pipeline.decode import REGISTRY, hmm
+    ctx = hmm_context([np.full(10, VOTE), no_opinion(10)])
+
+    def decode(**parameters):
+        return REGISTRY["hmm"](ctx, **dict({"switch_team": 1.0, "switch_dead": 1.0}, **parameters))
+
+    for bad in ("Posterior", "median", "", None, 1, True, ["posterior"], np.array(["posterior"])):
+        expect_error(ValueError, lambda: decode(edges=bad), "hmm", "edges", "'viterbi'", "'posterior'")
+    # The restart states have no posterior to read, as with posterior = true; edges = "viterbi" is today's path.
+    expect_error(ValueError, lambda: decode(edges="posterior", restart_source="s1"), "hmm", "edges", "posterior",
+                 "restart_source")
+    assert len(decode(edges="viterbi", restart_source="s1").labels) == 10
+    assert len(decode(edges=np.str_("posterior")).labels) == 10  # a value from a notebook is fine
+    # posterior_edges checks its own arguments: the labels' shape and codes, and the posterior's shape.
+    flat = np.full((3, 3), 1.0 / 3.0)
+    expect_error(ValueError, lambda: hmm.posterior_edges(np.zeros((3, 1), dtype=np.int8), flat), "hmm", "labels",
+                 "1-D")
+    expect_error(ValueError, lambda: hmm.posterior_edges(np.array([0, 3, 1], dtype=np.int8), flat), "hmm", "labels",
+                 "3")
+    expect_error(ValueError, lambda: hmm.posterior_edges(np.zeros(3, dtype=np.int8), np.zeros((4, 3))), "hmm",
+                 "posterior", "(3, 3)", "(4, 3)")
+    expect_error(ValueError, lambda: hmm.posterior_edges(np.zeros(3, dtype=np.int8), flat, stats=[]), "hmm",
+                 "stats")
+
+
+def test_run_end_to_end_synthetic_hmm_posterior_edges():
+    """edges = "posterior" in a config's [decoder] passes the signature check and runs through the pipeline."""
+    from pipeline import output
+    from pipeline.config import load_config
+    from pipeline.contracts import X
+    from pipeline.run import run
+    with tempfile.TemporaryDirectory() as root:
+        make_synthetic_bundle(root)
+        inputs = synthetic_inputs(root, graded=[(1, 50, 280), (2, 320, 560)])
+        config = load_config(write_text(root, "trial.toml", HMM_TRIAL_CONFIG + 'edges = "posterior"\n'))
+        assert config.decoder.params["edges"] == "posterior", config.decoder.params
+        out_path = os.path.join(root, "trial.csv")
+        result = run(config, inputs, out_path, log=quiet)
+        outside = np.ones(SYNTHETIC_FRAMES, dtype=bool)
+        outside[50:280] = outside[320:560] = False
+        assert (result.codes[outside] == X).all() and (result.codes[~outside] != X).all()
+        output.validate(out_path, SYNTHETIC_FRAMES, result.codes)
 
 
 # -- dead ball (P05) --------------------------------------------------------------------------------------------------
