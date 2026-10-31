@@ -1,0 +1,25 @@
+# requirements-pathcrf.txt: the separate venv for P20 step 0 (PathCRF's published checkpoint on its held-out DFL match).
+# Used by pathcrf_lab/runner.py only, never by pipeline/ or any selftest. It is not part of the submission.
+#   py -3.11 -m venv .venv-pathcrf
+#   .venv-pathcrf/Scripts/python -m pip install -r requirements-pathcrf.txt
+# Why each top-level pin (research, .superpowers/sdd/2026-10-31-p20-pathcrf/research.md section 4):
+#   torch 2.11.0           released between PathCRF's training (Feb 2026) and its code sync; the Windows PyPI wheel is CPU-only
+#   torch_geometric 2.7.0  pure Python; only Data and Batch are used
+#   numpy 2.2.6            numpy 2 era, compatible with torch 2.11, pandas 2.2.3 and scipy 1.15
+#   pandas 2.2.3           their code is pandas-2 style; pandas 3's copy-on-write and string dtype are a needless risk
+#   scipy 1.15.3           savgol_filter
+#   matplotlib 3.10.3      imported at the top of postprocess.py and team_poss.py
+#   pyarrow 20.0.0         the synced events are parquet
+#   kloppy 3.18.0          the team's version (T30, A05)
+#   rdp 0.8                used by preprocess.py; sdist only, builds with setuptools
+#   tqdm 4.67.1            progress bars, disabled with TQDM_DISABLE=1
+torch==2.11.0
+torch_geometric==2.7.0
+numpy==2.2.6
+pandas==2.2.3
+scipy==1.15.3
+matplotlib==3.10.3
+pyarrow==20.0.0
+kloppy==3.18.0
+rdp==0.8
+tqdm==4.67.1
