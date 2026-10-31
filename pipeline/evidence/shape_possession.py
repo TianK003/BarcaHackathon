@@ -5,8 +5,6 @@
     model = "pipeline/models/shape_possession_hgb.json"   # relative to the repository root
     scope = "gaps"                                        # "gaps": only where the ball is missing; "all": every frame
     min_prob = 0.02                                       # home is clipped to [min_prob, 1 - min_prob]
-    prior = "none"                                        # "em": add prior_strength * logit(the match's EM share)
-    prior_strength = 0.5                                  # (0, 1], read only with prior = "em"
 
 The ball is missing from our tracking on 41% of the graded frames, in long gaps (a median 10.7 s, docs/results.md A01),
 and `nearest_player` and `controlled_touch` are silent exactly there: both read the ball. A team in possession is more
@@ -40,21 +38,10 @@ What it does, in order
    `home` becomes `1 - home` to rounding, and whatever the trees learned that does not depend on which team is which
    (the baseline, a lean towards the first team) cancels. The cost is two walks of the trees a frame, which are
    remembered, below.
-4. The prior, off by default. The trainer's rows and their mirrors have exactly as many homes as aways, so
-   `prior_home` is 0.5, the classifier's p is already a likelihood and not a posterior that carries a class balance (the
-   decoder sets the class prior itself, pipeline/decode/, the recipe of hybrid HMMs, Bourlard and Morgan 1994); the file
-   is refused if it says otherwise. `dead_ball_model` has to subtract logit(prior_alive); here there is nothing to
-   subtract. With `prior = "none"`, the default, that is all there is and the logit goes on untouched. With
-   `prior = "em"` the match's own share of home frames is estimated from the model's outputs, by Saerens, Latinne and
-   Decaestecker's EM (2002): from pi = 0.5, repeat pi = mean(sigmoid(z + logit(pi))) over every graded frame with an
-   opinion (`em_prior`), and add `prior_strength * logit(pi)` to z. s = 1 is the frame-level Bayes posterior; the
-   decoder counts a per-frame prior once a frame, scaled by the evidence's weight (research.md section 4), so s is a
-   choice and not a derivation. EM's sample is every graded frame with an opinion whatever the scope, so pi is the
-   same for both scopes and every `min_prob`: it reads the memoised, symmetrised, unclipped logit, never the clipped
-   `home`. A share within EM_SHARE_BOUND of 0 or 1 cannot be shifted by and raises, on either side; no frame with
-   an opinion means 0.5 and no shift.
-   The share comes from the model's outputs and from nothing else, never from published statistics of the match (T26).
-   The shift is antisymmetric too: relabelling the teams turns pi into 1 - pi and z into -z.
+4. No prior correction. The trainer's rows and their mirrors have exactly as many homes as aways, so `prior_home` is
+   0.5, the classifier's p is already a likelihood and not a posterior that carries a class balance (the decoder sets
+   the class prior itself, pipeline/decode/, the recipe of hybrid HMMs, Bourlard and Morgan 1994); the file is refused
+   if it says otherwise. `dead_ball_model` has to subtract logit(prior_alive); here there is nothing to subtract.
 5. Clip `home` to [min_prob, 1 - min_prob]: a tree can be far more certain than seven matches deserve, and the decoder
    reads a probability as evidence of log(p / (1 - p)) nats a frame (ball_presence has the same reasoning). The default
    0.02 caps a frame at 3.9 nats; the clip is symmetric, so antisymmetry survives it.
@@ -88,11 +75,6 @@ NAME = "shape_possession"
 KINDS = ("hgb",)
 PRIOR_HOME = 0.5                                       # what a model of rows and their mirrors must say
 SCOPES = ("gaps", "all")
-PRIORS = ("none", "em")
-EM_TOLERANCE = 1e-6                                    # EM stops when the share moves by less than this ...
-EM_MAX_ITERATIONS = 200                                # ... or after this many updates
-EM_SHARE_BOUND = 1e-6                                  # a share outside [bound, 1 - bound] raises: logit(pi) would be
-                                                       # a shift of 14 nats, and float rounding must not decide it
 TRAINER = "pipeline/benchmark/train_shape.py"          # path form: the benchmark-import scan reads dotted names
 RETRAIN = "retrain it with `python {}`".format(TRAINER)
 
@@ -100,65 +82,26 @@ _MEMO = weakref.WeakKeyDictionary()                     # Inputs -> {(path, size
 _CACHE = {}                                            # absolute path -> ((size, mtime_ns), parsed artifact)
 
 
-def compute(run, *, model, scope="gaps", min_prob=0.02, prior="none", prior_strength=None):
-    """Evidence(alive = NaN; home = the model's symmetrised P(home has the ball), clipped, where `scope` says).
-
-    With prior = "em", the logit is shifted by prior_strength * logit(pi) first, pi the match's EM share of home frames.
-    """
+def compute(run, *, model, scope="gaps", min_prob=0.02):
+    """Evidence(alive = NaN; home = the model's symmetrised P(home has the ball), clipped, where `scope` says)."""
     scope = _scope(scope)
     min_prob = trees.check_min_prob(min_prob, NAME)
-    prior, prior_strength = _prior(prior, prior_strength)
+    path = trees.model_path(model, NAME, "pipeline/models/shape_possession_hgb.json")
+    artifact = load(path)
 
-    z = logit_home(run.inputs, model)                # NaN outside the blocks and where nobody is present
-    if prior == "em":
-        share = em_prior(z)["prior_home"]
-        z = z + prior_strength * np.log(share / (1.0 - share))
-    speaks = ~np.isnan(z)
+    inputs = run.inputs
+    key = inputs.game if inputs.game in artifact["folds"] else "full"
+    chosen = artifact["folds"][key] if key != "full" else artifact["full"]
+    logit_home = _logit_home(inputs, path, key, chosen)          # NaN outside the blocks and where nobody is present
+    speaks = ~np.isnan(logit_home)
     if scope == "gaps":
-        speaks &= ~run.inputs.atd.ball_present
-    home = np.full(len(z), np.nan)
-    home[speaks] = np.clip(trees.sigmoid(z[speaks]), min_prob, 1.0 - min_prob)
+        speaks &= ~inputs.atd.ball_present
+    home = np.full(len(logit_home), np.nan)
+    home[speaks] = np.clip(trees.sigmoid(logit_home[speaks]), min_prob, 1.0 - min_prob)
     home.flags.writeable = False
     alive = no_opinion(len(home))
     alive.flags.writeable = False
     return Evidence(alive=alive, home=home)
-
-
-def logit_home(inputs, model):
-    """The memoised, read-only (n,) logit (r(x) - r(swap(x))) / 2 of `model`'s file, the fold of `inputs.game` or `full`.
-
-    NaN outside the graded blocks and where nobody is present; unclipped, and the same whatever the scope. This is
-    what `compute` and `em_prior` read, and what the benchmark's label-shift tool reads beside the truth.
-    """
-    path = trees.model_path(model, NAME, "pipeline/models/shape_possession_hgb.json")
-    artifact = load(path)
-    key = inputs.game if inputs.game in artifact["folds"] else "full"
-    chosen = artifact["folds"][key] if key != "full" else artifact["full"]
-    return _logit_home(inputs, path, key, chosen)
-
-
-def em_prior(logits, *, tolerance=EM_TOLERANCE, max_iterations=EM_MAX_ITERATIONS):
-    """Saerens' EM for the share of home frames, with the training prior 0.5, over the finite entries of `logits`.
-
-    From pi = 0.5, repeat pi = mean(sigmoid(z + logit(pi))) until it moves by less than `tolerance` or after
-    `max_iterations` updates. Returns {"prior_home", "iterations", "converged", "frames"}. An overconfident model
-    converges fast; an underconfident one crawls and stops unconverged, and the flag says so (research.md section 2).
-    """
-    z = np.asarray(logits, dtype=np.float64)
-    z = z[np.isfinite(z)]
-    if not len(z):
-        return {"prior_home": 0.5, "iterations": 0, "converged": True, "frames": 0}
-    share, iterations, converged = 0.5, 0, False
-    while iterations < max_iterations and not converged:
-        updated = float(np.mean(trees.sigmoid(z + np.log(share / (1.0 - share)))))
-        iterations += 1
-        if not EM_SHARE_BOUND <= updated <= 1.0 - EM_SHARE_BOUND:
-            raise ValueError("{}: the EM share of home frames reached {} after {} updates, which is within {} of 0 or "
-                             "1 and cannot be shifted by; leave `prior` at \"none\" for this model and match"
-                             .format(NAME, updated, iterations, EM_SHARE_BOUND))
-        converged = abs(updated - share) < tolerance
-        share = updated
-    return {"prior_home": share, "iterations": iterations, "converged": converged, "frames": len(z)}
 
 
 def _logit_home(inputs, path, key, model):
@@ -212,18 +155,3 @@ def _scope(value):
         raise ValueError("{}: scope must be \"gaps\" (only where the ball is missing) or \"all\" (every graded "
                          "frame), got {!r}".format(NAME, value))
     return value
-
-
-def _prior(prior, strength):
-    if not isinstance(prior, str) or prior not in PRIORS:
-        raise ValueError("{}: prior must be \"none\" (no shift) or \"em\" (the match's EM share of home frames), "
-                         "got {!r}".format(NAME, prior))
-    if prior == "none":
-        if strength is not None:
-            raise ValueError("{}: prior_strength is read only with prior = \"em\", got {!r}".format(NAME, strength))
-        return prior, None
-    if (isinstance(strength, bool) or not isinstance(strength, numbers.Real) or not np.isfinite(strength)
-            or not 0.0 < strength <= 1.0):
-        raise ValueError("{}: prior_strength must be a number in (0, 1] with prior = \"em\" (above 1 shifts past "
-                         "Bayes' posterior), got {!r}".format(NAME, strength))
-    return prior, float(strength)

@@ -304,7 +304,7 @@ def verify(path, fresh):
 
 # -- the report -------------------------------------------------------------------------------------------------------
 
-def touch_agreement(inputs, model=DEFAULT_MODEL_PATH, **shape_values):
+def touch_agreement(inputs, model=DEFAULT_MODEL_PATH):
     """{"frames", "agreement"}: how often the shape says the team that has an episode of control.
 
     Among the frames inside the kept `controlled_touch` episodes of `conventions.TOUCH` (the rule of main.toml, with
@@ -312,11 +312,10 @@ def touch_agreement(inputs, model=DEFAULT_MODEL_PATH, **shape_values):
     on an away one) where `shape_possession` (scope "all", the model of `model`: the fold of `inputs.game` if it has
     one, else `full`) has an opinion, "frames" counts them and "agreement" is the share where (shape home >= 0.5)
     equals (the episode's team is home), or None if there is no such frame. Any Inputs will do, a benchmark match or our
-    own; no truth is read, and only two numbers come back. `shape_values` (`prior`, `prior_strength`) go to
-    `shape_possession.compute` as they are: P22(a) asks what a shifted source does to the agreement.
+    own; no truth is read, and only two numbers come back.
     """
     run_context = RunContext(inputs=inputs, seed=0)
-    shape = shape_possession.compute(run_context, model=model, scope="all", **shape_values).home
+    shape = shape_possession.compute(run_context, model=model, scope="all").home
     episode = controlled_touch.compute(run_context, **conventions.TOUCH).home
     kept = ~np.isnan(episode) & ~np.isnan(shape)
     frames = int(kept.sum())
