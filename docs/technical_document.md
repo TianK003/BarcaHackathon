@@ -4,6 +4,10 @@
 > Fill each section as decisions land, so that the last week is editing rather than writing. Delete these notes
 > before submitting.
 
+> **The version to upload is [`technical_document_submission.md`](technical_document_submission.md)**: about 3,000
+> words, the same seven sections, every number copied from `docs/results.md` with its entry. This file stays the full
+> record; when a decision changes, update both.
+
 - **Team:** [five names]
 - **Code:** [public repository URL], commit `<hash>`
 - **Submission:** `<team_name>.csv`, sha256 `<…>`

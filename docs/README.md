@@ -8,7 +8,8 @@ Our working notes for the Phase 1 entry. Read [proposals.md](proposals.md) befor
 | [proposals.md](proposals.md) | ideas to try, prioritised, with owner and status | you have an idea, start one, or finish one |
 | [results.md](results.md) | every experiment and analysis with its numbers, commit and command; the submission log | you ran something worth remembering — failures included |
 | [traps.md](traps.md) | pitfalls, why they happen, what to do instead | something cost you more than half an hour |
-| [technical_document.md](technical_document.md) | draft of the required technical document | a decision lands in the pipeline |
+| [technical_document.md](technical_document.md) | the full record behind the required technical document | a decision lands in the pipeline |
+| [technical_document_submission.md](technical_document_submission.md) | the technical document at its submitted length (about 3,000 words) | with the full record, when a decision changes it |
 
 The pipeline is documented next to its code: [pipeline/README.md](../pipeline/README.md) has the overview and the
 diagram, and each stage folder has its own README.
