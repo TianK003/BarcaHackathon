@@ -3973,8 +3973,7 @@ def test_team_features_swap():
         assert np.array_equal(swapped[:, 18:30], X[:, 18:30], equal_nan=True), "the shared columns are untouched"
         assert np.array_equal(swapped[:, 30:], shape_features.swap(X[:, 30:]), equal_nan=True)
         assert np.array_equal(swapped[:, :9], X[:, 9:18], equal_nan=True)
-        episodes = np.nansum(team_values(X, "h_in_episode", "a_in_episode"))
-    assert episodes > 0, "the scenes must include episodes"
+        assert np.nansum(team_values(X, "h_in_episode", "a_in_episode")) > 0, "seed {}: no episodes".format(seed)
     expect_error(ValueError, lambda: team_features.swap(np.zeros((4, 26))), "team_features.swap", "56")
     expect_error(ValueError, lambda: team_features.swap(np.zeros(())), "team_features.swap", "56")
 

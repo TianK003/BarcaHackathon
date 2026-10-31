@@ -22,7 +22,8 @@ the names and an (n, 56) float64 matrix, row i = frame i, in this order:
         in_episode         1.0 inside one of the team's control episodes: the frames controlled_touch keeps at
                            TOUCH_RULE, by controlled_touch's own code (hold off, confidence 0.99, so kept = non-NaN)
         since_episode_s,   0 inside an episode; else the seconds back to the team's last kept frame in the block, and
-        until_episode_s    forward to its next one, each capped at EPISODE_CAP_S (also where there is none)
+        until_episode_s    forward to its next one, each capped at EPISODE_CAP_S (also where there is none), so both
+                           saturate at 30 s: an episode 40 s away and no episode at all look the same
 
     shared      twelve columns of the ball alone: speed, acceleration and turning angle over 0.2, 0.5 and 1.0 s either
                 side (`ball_speed_02`, ...), the signed distance beyond the nearest pitch line (`ball_line_m`, minus
@@ -186,7 +187,8 @@ def _ball_columns(out, ball, start, stop, fps, pitch):
             np.abs(u[:, 0] * w[:, 1] - u[:, 1] * w[:, 0]), u[:, 0] * w[:, 0] + u[:, 1] * w[:, 1])
     out[:, SHARED_START + SHARED_COLUMNS.index("ball_line_m")] = kinematics.outside_m(position, pitch)
 
-    # the visible run each frame is in: seconds since it began and until it ends, 30 where it touches the block's edge
+    # the visible run each frame is in: seconds since it began and until it ends, 30 where it touches the block's edge.
+    # `since` counts from the run's first frame, `until` to its exclusive stop: the last visible frame is 1 / fps from it
     visible = ball.visible[start:stop]
     first, last = kinematics.runs(visible)
     length = last - first
