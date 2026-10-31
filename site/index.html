@@ -661,10 +661,10 @@ footer { border-top: 1px solid var(--line); margin-top: 24px; padding: 16px 0 28
    =========================================================================================================== */
 const DATA = {
   asOf: "2026-10-31",
-  commit: "a280b1e",
+  commit: "66e7b2e",
   title: "Possession pipeline · team overview",
   subtitle: "More than a Hack 2027, Phase 1 · FC Barcelona (H) vs Athletic Club (A), LaLiga 2024-25 MD2",
-  footer: "As of 2026-10-31 (a280b1e, the commit R023 ran at). P19 to P22 were each dropped at their feasibility gates, R023 (P16) found our provider's grain between the two truths, so choices now rank on their mean, and A17 and A18 regenerated the submission byte for byte from a fresh clone, on Windows and on Linux. Update DATA when an entry lands; the docs are the source of truth.",
+  footer: "As of 2026-10-31 (66e7b2e, the commit that closed P23). P23 reviewed the HMM decoder: R024 re-chose R013's grids on the mean of the two truths and moved the touch hold to 0.55 (`main.csv` `e6496a9b…`, not yet regenerated from a fresh clone; A17 and A18 checked R017's `7ba575c0…`), A19 found the remaining loss mostly in the edges, and posterior edges (R025, R025b) and a gap weight for P07 (R026) were dropped. Update DATA when an entry lands; the docs are the source of truth.",
 
   /* ---------- Overview ---------- */
   onboarding: {
@@ -683,8 +683,8 @@ const DATA = {
 
   cards: [
     {
-      label: "main.toml on the benchmark", hero: true, value: "0.5430", unit: "raw", second: "0.5593 coarse",
-      text: "Pooled spellF1 on the P01 benchmark: 7 DFL matches degraded to look like ours (profile `tracking` v3, 3 seeds). Chosen by [R013](../docs/results.md) on 2026-10-26.",
+      label: "main.toml on the benchmark", hero: true, value: "0.5363", unit: "raw", second: "0.5764 coarse",
+      text: "Pooled spellF1 on the P01 benchmark: 7 DFL matches degraded to look like ours (profile `tracking` v3, 3 seeds). Chosen by [R024](../docs/results.md) on 2026-10-31 on the mean of the two truths, 0.5563 (before it: 0.5430 raw, 0.5593 coarse, mean 0.5511).",
       note: "The organisers' smooth50 baseline on the same benchmark (`nearest_w50`): **0.2018** raw and **0.1842** coarse. The best yardstick under the coarse truth is `nearest_w125`, at **0.2226**.",
       flag: "A benchmark of other matches, not a full-match forecast. It overstates the dead-ball model for our match by an amount it cannot measure (T38, T39)."
     },
@@ -693,13 +693,13 @@ const DATA = {
       text: "`baseline_smooth50`, the organisers' published full-match score (R000c). We never see full-match scores ourselves, and benchmark scores are not our leaderboard's."
     },
     {
-      label: "Public window (5 min, 17 possessions)", value: "0.4000", unit: "spellF1", second: "macroF1 0.6986",
-      text: "`main.toml` as adopted by R017 (R013's file scored 0.4649 and 0.7152, with 20 possessions).",
+      label: "Public window (5 min, 17 possessions)", value: "0.4000", unit: "spellF1", second: "macroF1 0.7007",
+      text: "`main.toml` as adopted by R024, with 19 possessions (R017's file scored 0.4000 and 0.6986; R013's 0.4649 and 0.7152, with 20 possessions).",
       flag: "Correctness check only, never used to choose anything (rule `f8f2629`, T01)."
     },
     {
       label: "Submission", value: "Not uploaded", badge: "todo",
-      text: "The submission log in [docs/results.md](../docs/results.md) is empty. `main.toml` writes sha256 `7ba575c0…` (R017: R013's file plus `smart_tagging`; `r013_retune.toml` writes R013's, `r017_frame.toml` this one)."
+      text: "The submission log in [docs/results.md](../docs/results.md) is empty. `main.toml` writes sha256 `e6496a9b…` (R024: R017's file with the touch hold at 0.55; `r024_both.toml` writes it too, `r017_frame.toml` R017's `7ba575c0…` and `r013_retune.toml` R013's). Not yet regenerated from a fresh clone or on a second machine."
     }
   ],
 
@@ -712,7 +712,7 @@ const DATA = {
 
   today: {
     home: [
-      { name: "controlled_touch", channel: "home", params: "1.5 m · 6 m/s · 1 frame · hold 0.60", p: "P04" },
+      { name: "controlled_touch", channel: "home", params: "1.5 m · 6 m/s · 1 frame · hold 0.55", p: "P04" },
       { name: "shape_possession", channel: "home", params: "weight 0.2 · every graded frame", p: "P07" },
       { name: "smart_tagging", channel: "home", params: "c_team 0.76 · per frame · weight 0.2", p: "P08" }
     ],
@@ -721,23 +721,23 @@ const DATA = {
     ],
     decoder: { name: "hmm", params: "4 / 32 / 35 / 25, per half", p: "P06" },
     refine: { name: "shift_edges", params: "team +1 · into D −2 · out of D 0", p: "P02" },
-    output: { name: "main.csv", params: "sha256 7ba575c0…" },
+    output: { name: "main.csv", params: "sha256 e6496a9b…" },
     joinNote: "evidence cut into the two graded halves, each decoded on its own",
     text: [
-      "`main.toml` is P04 + P05 + P07 + P02, as R013 left them, plus P08's Smart Tagging team votes (R017: `smart_tagging`, c_team 0.76, per frame, weight 0.2, Tian's pick, untested on a benchmark). `controlled_touch` (radius 1.5 m, `max_rel_speed` 6 m/s, `min_frames` 1, hold 0.60, confidence 0.93) and `shape_possession` (weight 0.2 on every graded frame, `min_prob` 0.02) give `home`; the gradient-boosted `dead_ball_model` (weight 1.0) gives `alive`.",
-      "The `hmm` decodes each graded half on its own (`switch_team` 4, `switch_dead` 32, `min_possession` 35, `min_dead` 25), and `shift_edges` moves the edges (team +1, into_dead −2, out_of_dead 0 frames). Every constant was chosen on the benchmark by a rule declared before its run, or is a measurement or a fixed rule, and every choice but one had no window-derived value in any candidate. The exception (“After R013”): R009 chose the dead-ball source and its weight with window-derived values present, and R013 declared them out of scope, so they were not re-chosen without them. On our match it predicts `D` on 35.9% of the graded frames and 413 possessions (R017's label-free checks). The exception to the benchmark's choosing is P08: `smart_tagging`'s weight (0.2) and spread (per frame) are Tian's pick between two declared strengths, untested on any benchmark because DFL has no tags."
+      "`main.toml` is P04 + P05 + P07 + P02, as R013 left them, plus P08's Smart Tagging team votes (R017: `smart_tagging`, c_team 0.76, per frame, weight 0.2, Tian's pick, untested on a benchmark), with the touch hold re-chosen by R024 on the mean of the two truths. `controlled_touch` (radius 1.5 m, `max_rel_speed` 6 m/s, `min_frames` 1, hold 0.55, confidence 0.93) and `shape_possession` (weight 0.2 on every graded frame, `min_prob` 0.02) give `home`; the gradient-boosted `dead_ball_model` (weight 1.0) gives `alive`.",
+      "The `hmm` decodes each graded half on its own (`switch_team` 4, `switch_dead` 32, `min_possession` 35, `min_dead` 25), and `shift_edges` moves the edges (team +1, into_dead −2, out_of_dead 0 frames). Every constant was chosen on the benchmark by a rule declared before its run, or is a measurement or a fixed rule, and every choice but one had no window-derived value in any candidate. The exception (“After R013”): R009 chose the dead-ball source and its weight with window-derived values present, and R013 declared them out of scope, so they were not re-chosen without them. On our match it predicts `D` on 36.0% of the graded frames and 399 possessions (R024's label-free checks). The exception to the benchmark's choosing is P08: `smart_tagging`'s weight (0.2) and spread (per frame) are Tian's pick between two declared strengths, untested on any benchmark because DFL has no tags."
     ]
   },
 
   nextSteps: [
-    { title: "The grain of our truth: answered (R023)", text: "Every ball-rich change splits the two truths: R010's decoder, R013's touch rule, A14's ball. On Metrica's own sample games the event-derived grain falls between them (6.20 possessions per alive minute, median 4.72 s), so every choice declared from now on ranks on the mean of the raw and coarse pooled spellF1s. Whether to re-rank R013 is the team's call." },
+    { title: "The grain answered (R023), R013 re-chosen on it (R024)", text: "On Metrica's own sample games the event-derived grain falls between the two truths (6.20 possessions per alive minute, median 4.72 s), so every choice now ranks on the mean of the raw and coarse pooled spellF1s. R024 re-chose R013's grids on it: only the hold moved, 0.60 to 0.55 (+0.0052 on the mean, p 0.0469; raw −0.0067, coarse +0.0171). P23's review put the decoder's remaining loss in where the evidence changes; F (P22(b), the evidence in the gaps) is the one idea left aimed there." },
     { title: "Not now: a video ball detector (P14)", text: "A14: the ball is about 6 px wide, smaller than a ViT patch (T46), and a perfect ball in our gaps is worth +0.10 raw but only +0.02 coarse. A half-day zero-shot test only if someone is free." },
     { title: "The deliverables", text: "Regenerate `main.toml`'s file from a clean clone on a second machine, make the repo public as the last step, fill the placeholders of [the technical document](../docs/technical_document_submission.md), and decide before the freeze how much of the benchmark's gain to believe (a decision, not a run: T38, T39, R011). Our advice, not a rule: upload the file early as a safety copy. See [Work to do](#work)." }
   ],
 
   headroom: {
     base: { raw: "0.5430", coarse: "0.5593" },
-    caption: "Pooled spellF1 gained by adding a perfect source to `main.toml`'s own evidence (benchmark `tracking` v3, 3 seeds; every delta has 7 wins of 7 and sign-flip p 0.0156; `context` agrees within 0.02). Upper bounds: the oracles read the truth. The dead-ball model is already near-perfect on the benchmark (alive/dead F1 0.973), partly because DFL tracks the ball out of play (T39).",
+    caption: "Pooled spellF1 gained by adding a perfect source to `main.toml`'s own evidence, measured by A13 on `main.toml` as R013 left it and not again since R024's hold (benchmark `tracking` v3, 3 seeds; every delta has 7 wins of 7 and sign-flip p 0.0156; `context` agrees within 0.02). Upper bounds: the oracles read the truth. The dead-ball model is already near-perfect on the benchmark (alive/dead F1 0.973), partly because DFL tracks the ball out of play (T39).",
     rows: [
       { label: "Dead ball", variant: "alive", desc: "a perfect dead-ball detector", raw: 0.0290, coarse: 0.0390, rawCI: "[+0.0259, +0.0321]", coarseCI: "[+0.0332, +0.0446]" },
       { label: "Team where the ball is seen", variant: "plus_home_visible", desc: "the true team on frames where the tracking has the ball", raw: 0.1942, coarse: 0.2313, rawCI: "[+0.1821, +0.2046]", coarseCI: "[+0.2132, +0.2472]" },
@@ -813,7 +813,7 @@ const DATA = {
         { title: "Duration priors beyond the minimums (semi-Markov)", text: "Once a run is long enough it is as likely to last two minutes as five seconds; a prior over run lengths would replace the hard minimum." },
         { title: "Re-run the minimum-run part after any new source", text: "“After P06”, item 4: the minimums were chosen under the evidence of their day, so a new source reopens them, by a declared protocol." }
       ],
-      traps: ["T04", "T05", "T11", "T44"],
+      traps: ["T04", "T05", "T11", "T44", "T50"],
       files: [
         { label: "decode/README.md", href: "../pipeline/decode/README.md" },
         { label: "hmm.py", href: "../pipeline/decode/hmm.py" },
@@ -913,8 +913,8 @@ const DATA = {
       entries: "P06: R006, R007", built: ["2026-10-25", "R006"], retuned: null },
     { name: "controlled_touch", stage: "evidence", status: "main", channel: "home", explain: "controlled_touch",
       what: "P04: a player within `radius` of the ball, no opponent within the duel radius, moving with it for at least `min_frames`, makes a control episode; its vote starts on the episode's first frame (back-dating, T03), and `hold` gives a weak vote for the last controlling team between episodes, so a pass in flight keeps the old team. Silent where the ball is missing.",
-      params: "radius 1.5 m · max_rel_speed 6.0 m/s · min_frames 1 · hold 0.60 · confidence 0.93",
-      entries: "P04: R008 (24 configs), R010; re-chosen R013 (192 configs)", built: ["2026-10-25", "R008"], retuned: ["2026-10-26", "R013"] },
+      params: "radius 1.5 m · max_rel_speed 6.0 m/s · min_frames 1 · hold 0.55 · confidence 0.93",
+      entries: "P04: R008 (24 configs), R010; re-chosen R013 (192 configs); hold re-chosen R024", built: ["2026-10-25", "R008"], retuned: ["2026-10-31", "R024"] },
     { name: "dead_ball_rules", stage: "evidence", status: "off", label: "available · off", channel: "alive",
       what: "P05's fixed rules on the 30 play features: the ball beyond a line, still at a restart spot, a collective slowdown, a kick-off formation. Thresholds from the laws of the game, values measured (R009); the boosted trees beat it.",
       entries: "P05: R009", built: ["2026-10-25", "R009"], retuned: null },
@@ -925,7 +925,7 @@ const DATA = {
     { name: "shape_possession", stage: "evidence", status: "main", channel: "home", explain: "shape_possession",
       what: "P07: boosted trees on 26 features of how the two teams stand and move, none reading the ball, trained on the 7 DFL matches with the ball hidden and read symmetrically in the two teams. The only `home` evidence where the ball is missing (40.7% of the graded frames).",
       params: "model `shape_possession_hgb.json` · weight 0.2 · scope all · min_prob 0.02",
-      entries: "P07: R011 (12 configs); weight re-chosen R013", built: ["2026-10-25", "R011"], retuned: ["2026-10-26", "R013"] },
+      entries: "P07: R011 (12 configs); weight re-chosen R013, kept by R024", built: ["2026-10-25", "R011"], retuned: ["2026-10-31", "R024"] },
     { name: "restart_team", stage: "evidence", status: "dropped", label: "dropped · off", channel: "home",
       what: "P17: who restarts after a stoppage, read from the players' arrangement by five rules from the Laws of the Game. Ceiling +0.0198 raw (A12); delivered +0.0040 (R014), short of its bar. Stays in the code, off by default.",
       entries: "P17: A12, R014, R014b", built: ["2026-10-26", "A12"], retuned: ["2026-10-26", "R014b"] },
@@ -935,14 +935,17 @@ const DATA = {
     { name: "hmm", stage: "decode", status: "main", explain: "hmm",
       what: "P06: a three-state model (`H`, `A`, `D`) decoded by Viterbi once per half. Each source adds a log-likelihood ratio to the states it speaks for and a NaN adds nothing; a path pays `switch_team` for every change of team and `switch_dead` for every change into or out of `D`, and no run may be shorter than its minimum.",
       params: "switch_team 4 · switch_dead 32 · min_possession 35 · min_dead 25",
-      entries: "P06: R006, R007, A10; re-chosen R010 (72 configs), R013 (144 configs)", built: ["2026-10-25", "R006"], retuned: ["2026-10-26", "R013"] },
+      entries: "P06: R006, R007, A10; re-chosen R010 (72 configs), R013 (144 configs), kept by R024 (144 configs)", built: ["2026-10-25", "R006"], retuned: ["2026-10-31", "R024"] },
+    { name: "hmm posterior edges", stage: "decode", status: "dropped", label: "dropped · removed",
+      what: "P23 C: each change moved to the median of the decoder's posterior within its window (R025), then on a posterior tempered at T = 5 (R025b). The posterior is four to five times too sharp (A19, T50): the edges moved by a median of 1 frame, then by 3 the wrong way; mean of the two truths −0.0010, then −0.0282. Code removed in `515f26a` (recoverable from `171d0bb`).",
+      entries: "P23: R025, R025b", built: ["2026-10-31", "R025"], retuned: ["2026-10-31", "R025b"] },
     { name: "hmm restart states", stage: "decode", status: "dropped", label: "dropped · off",
       what: "`restart_source`: `D` split into “dead, home restarts” and “dead, away restarts”, so the decoder carries the restart team to wherever it ends `D`. +0.0003 raw (R014b, p 0.8125); off by default.",
       entries: "P17: R014b", built: ["2026-10-26", "R014b"], retuned: null },
     { name: "shift_edges", stage: "refine", status: "main", explain: "shift_edges",
       what: "P02: moves each kind of edge by a fixed number of frames, the pipeline's own lag on DFL negated; edges at a kick-off or next to an `X` never move, and nothing is added, removed or merged. +0.0005 raw, inside noise: adopted because its declared rule said so, not because it is shown to help.",
       params: "team +1 · into_dead −2 · out_of_dead 0",
-      entries: "P02: A11, R012; re-derived R013 (same values)", built: ["2026-10-25", "R012"], retuned: ["2026-10-26", "R013"] },
+      entries: "P02: A11, R012; re-derived R013 and R024 (same values)", built: ["2026-10-25", "R012"], retuned: ["2026-10-31", "R024"] },
     { name: "writer, validator, manifest", stage: "output", status: "main", label: "in use",
       what: "Writes the CSV in binary mode with LF endings (to a temporary file, then renamed), reads it back through the official `read_label_csv` and `validate_submission`, and writes `data/runs/<name>.json` (config, commit, dirty flag, versions, source hashes, sha256). Refuses any path git could commit.",
       entries: "P03, R001", built: ["2026-10-22", "R001"], retuned: null },
@@ -965,16 +968,24 @@ const DATA = {
       what: "Times when a truth's label changes against events our tracking shows (A11), measures the pipeline's own lag on DFL and applies P02's declared shift rule (R012).",
       entries: "P02: A11, R012", built: ["2026-10-25", "A11"], retuned: null },
     { name: "choose.py", stage: "benchmark", status: "tool", label: "tool",
-      what: "Applies a grid's declared rule to its reports: the best pooled raw spellF1, every config within 0.005 of it tied, the best coarse among the tied; plus the leave-one-match-out estimate.",
-      entries: "R008–R013's rule", built: null, retuned: null },
+      what: "Applies a grid's declared rule to its reports: the best pooled raw spellF1, every config within 0.005 of it tied, the best coarse among the tied; with `--objective mean` (R023's objective, R024), the mean of the raw and coarse, then the larger min(raw, coarse); plus the leave-one-match-out estimate.",
+      entries: "R008–R013's rule; R024's", built: null, retuned: null },
+    { name: "diagnose.py", stage: "benchmark", status: "tool", label: "tool",
+      what: "Splits a config's fall in spellF1 from IoU 0.3 to 0.7 by kind of matched pair (clean, merge, split) with the scorer's own matching, and measures the calibration of each source and of the decoder's posterior, on the benchmark. Aggregates of DFL only.",
+      entries: "P23: A19", built: ["2026-10-31", "A19"], retuned: null },
     { name: "profile offpitch", stage: "benchmark", status: "dropped", label: "dropped · removed",
       what: "P18: DFL's ball hidden off the pitch as ours is. v1 failed the median-gap gate (15.04 s against 10.74 s); v2 could not reach our share past a line (0.258–0.262 against 0.0407). Code removed in `7b555eb` (recoverable from `fb33b38`).",
-      entries: "P18: R015, R015b", built: ["2026-10-29", "R015"], retuned: ["2026-10-29", "R015b"] }
+      entries: "P18: R015, R015b", built: ["2026-10-29", "R015"], retuned: ["2026-10-29", "R015b"] },
+    { name: "shape_possession scope visible", stage: "evidence", status: "dropped", label: "dropped · removed", channel: "home",
+      what: "P23 E: P07 split into a source where the ball is seen and one in the gaps, each with its own weight (R026, 6 configs). The rule kept `main.toml`'s single weight; every heavier gap weight added possessions and lost on the mean (−0.010 to −0.020). Code removed in `4690545` (recoverable from `57013a1`).",
+      entries: "P23: R026", built: ["2026-10-31", "R026"], retuned: null }
   ],
 
   configs: [
-    { name: "main.toml", status: "main", label: "the submission config", text: "The team's current pipeline, the file we would submit today (not uploaded): R013's choice." },
-    { name: "r013_retune.toml", status: "baseline", label: "record", text: "R013's final config, written when it was chosen; it writes the same CSV as `main.toml` (the same sha256)." },
+    { name: "main.toml", status: "main", label: "the submission config", text: "The team's current pipeline, the file we would submit today (not uploaded): R013's choice, R017's Smart Tagging votes and R024's hold (sha256 `e6496a9b…`)." },
+    { name: "r024_both.toml", status: "baseline", label: "record", text: "R024's final config, written when it was chosen; it writes the same CSV as `main.toml` (the same sha256)." },
+    { name: "r017_frame.toml", status: "baseline", label: "record", text: "R017's choice: R013's config plus `smart_tagging`; the file `main.toml` wrote before R024 (`7ba575c0…`)." },
+    { name: "r013_retune.toml", status: "baseline", label: "record", text: "R013's final config, written when it was chosen; the file `main.toml` wrote before R017 (`0ebdfbec…`)." },
     { name: "p02_shift.toml", status: "baseline", label: "record", text: "R012's choice: R011's config plus the shift; the file `main.toml` wrote before R013." },
     { name: "p07_shape.toml", status: "baseline", label: "record", text: "R011's choice: R010's config plus `shape_possession`." },
     { name: "p45_hmm.toml", status: "baseline", label: "record", text: "R010's choice: `controlled_touch`, `dead_ball_model` and the `hmm`." },
@@ -1026,7 +1037,7 @@ const DATA = {
         intuition: [
           "The nearest player is the wrong team on 22% of in-play frames (T14): during a pass in flight, a duel or a deflection, someone is nearest without having the ball. Possession changes only when the other team **controls** the ball, so this source speaks only inside control episodes.",
           "A frame is a candidate when the ball is seen, its nearest player is within **1.5 m**, no opponent is within **1.0 m** of the ball, and ball and player move together (relative speed under **6 m/s**). A run of candidate frames for one team is an **episode**. Its vote starts on the episode's first frame, so confirming control costs no latency (back-dating, T03).",
-          "Between episodes a weak **hold** (0.60) keeps voting for the last team in control, so a pass in flight does not hand the ball over. Where the ball is missing it says nothing, and the shape model and the decoder carry those frames."
+          "Between episodes a weak **hold** (0.55) keeps voting for the last team in control, so a pass in flight does not hand the ball over. Where the ball is missing it says nothing, and the shape model and the decoder carry those frames."
         ],
         visual: "touch",
         strips: {
@@ -1034,12 +1045,13 @@ const DATA = {
           cap: "Illustration, made-up frames. While the ball is in flight the nearest player flickers; the touch rule holds the old team weakly (outlined) until the other team controls the ball, and its vote for the new team starts on the first frame of that control."
         },
         reads: "The ball's position and every player's position, with velocities derived from positions (never the ATD's speed channels, T31), and each slot's team.",
-        params: "`radius` 1.5 m · `max_rel_speed` 6.0 m/s · `min_frames` 1 · `duel_radius` 1.0 m · `hold` 0.60 · `confidence` 0.93",
+        params: "`radius` 1.5 m · `max_rel_speed` 6.0 m/s · `min_frames` 1 · `duel_radius` 1.0 m · `hold` 0.55 · `confidence` 0.93",
         built: [
           "Chosen by R013 on the benchmark: 192 settings of radius, relative speed, minimum frames and hold, with no window-derived value in any candidate. The settings trade off: on R008's grid the agreement fell from 95.8% to 91.9% as the share of ball-visible frames inside an episode rose from 26.7% to 47.6%.",
+          "R024 re-ranked the same 192 settings on the mean of the raw and coarse truth (R023's objective): only the hold moved, from 0.60 to 0.55.",
           "`confidence` is not tuned: it is the floor of the pooled share of episode frames whose team is right on DFL (93.1%, so 0.93)."
         ],
-        decoder: "On an episode frame `home` is 0.93 (or 0.07): log(0.93 / 0.07) = **2.59 nats** a frame between `H` and `A`. On a hold frame 0.60 (or 0.40): 0.41 nats. Elsewhere NaN, no opinion.",
+        decoder: "On an episode frame `home` is 0.93 (or 0.07): log(0.93 / 0.07) = **2.59 nats** a frame between `H` and `A`. On a hold frame 0.55 (or 0.45): 0.20 nats. Elsewhere NaN, no opinion.",
         kpis: [
           { v: "93%", l: "of episode frames name the right team", n: "pooled on the DFL benchmark: the confidence, measured (R013)" },
           { v: "43.4% · 36.9%", l: "of ball-visible frames inside an episode", n: "benchmark · our match (label-free, R013)" },
@@ -1100,7 +1112,7 @@ const DATA = {
         params: "`model` shape_possession_hgb.json · `weight` 0.2 · `scope` all · `min_prob` 0.02",
         built: [
           "Trained by `train_shape.py` on the alive frames of the seven DFL matches (`tracking` v3, three seeds, every 5th frame), each row with its mirror, so the classes balance exactly and `prior_home` is 0.5.",
-          "R011 chose weight 0.2 on every graded frame from 12 configs (weights 0.01 to 0.5, scope gaps or all), and R013 chose it again with the decoder (144 configs)."
+          "R011 chose weight 0.2 on every graded frame from 12 configs (weights 0.01 to 0.5, scope gaps or all), and R013 and R024 chose it again with the decoder (144 configs each)."
         ],
         decoder: "`home` is clipped to [0.02, 0.98] and weighted 0.2, so a frame adds at most 0.2 × log(0.98 / 0.02) = **0.78 nats** between `H` and `A`. Weak on purpose: where a touch episode speaks (2.59 nats) the touch wins, and in the gaps it is the only voice. It says nothing about `alive`.",
         kpis: [
@@ -1126,6 +1138,7 @@ const DATA = {
           "It never saw Barça or Athletic: the benchmark's gain is not a forecast, and the count of possessions moved the other way on our match (down 2.4% where the benchmark's rose 16%, R011).",
           "Shape lags a turnover: a team needs seconds to reshape, so it is good on who has the ball and weak on when it changed; touches and the decoder place the edges.",
           "Wrong-team slots move its features (T32). It uses means, percentiles and shares, never a minimum or maximum, to limit that.",
+          "A heavier weight in the gaps alone added possessions and lost on the mean (R026); A19 found it calibrated alike with the ball seen or missing.",
           "Next on this question: P22 (adapting this one to our teams without labels). P20 (PathCRF, a stronger model of the same thing) was measured and dropped (R022)."
         ],
         files: [
@@ -1218,7 +1231,7 @@ const DATA = {
           { v: "0.993–0.997", l: "held-out AUC, alive against dead", n: "range over the 7 held-out matches (R009)" },
           { v: "0.973", l: "alive/dead F1 on the benchmark", n: "overstated for our match: DFL tracks the ball out of play (T39)" },
           { v: "−0.1661", l: "raw spellF1 without it", n: "removed from R010's config (R010)" },
-          { v: "35.9%", l: "of our graded frames it helps call `D`", n: "label-free check on our match; the benchmark's truth is 44.8% (R013, A14)" }
+          { v: "36.0%", l: "of our graded frames it helps call `D`", n: "label-free check on our match (R024); the benchmark's truth is 44.8% (A14)" }
         ],
         charts: [
           { type: "reliability", title: "Is a predicted 80% really 80%? Calibration, held out",
@@ -1271,11 +1284,11 @@ const DATA = {
         formula: "where home h is known:   e[H] += w·log 2h     e[A] += w·log 2(1 − h)\nwhere alive a is known:  e[H], e[A] += w·log 2a     e[D] += w·log 2(1 − a)\npath score = Σ e[t, state] − 4 · (changes of team) − 32 · (changes into or out of D)",
         params: "`switch_team` 4 · `switch_dead` 32 · `min_possession` 35 · `min_dead` 25 · per graded half",
         built: [
-          "P06 built it (R006, R007); its four numbers were chosen on the benchmark with the sources they decode: R010 (72 configs) and R013 (144 configs, with P07's weight), each by a rule declared before its runs.",
+          "P06 built it (R006, R007); its four numbers were chosen on the benchmark with the sources they decode: R010 (72 configs) and R013 (144 configs, with P07's weight), each by a rule declared before its runs. R024 chose them again on the mean of the two truths and kept them.",
           "Alone, with the old window-derived sources, it did not clear its bar (R007: +0.0036 raw). It is what P04, P05 and P07 plug into."
         ],
         decoderTitle: "What it outputs",
-        decoder: "One label a frame (`H`, `A` or `D`) for each graded half, decoded on its own so nothing crosses halftime (T11); the runner writes `X` off the graded halves. It can also return P(H), P(A) and P(D) per frame (`posterior`, off in `main.toml`). The refiners then run on its labels.",
+        decoder: "One label a frame (`H`, `A` or `D`) for each graded half, decoded on its own so nothing crosses halftime (T11); the runner writes `X` off the graded halves. It can also return P(H), P(A) and P(D) per frame (`posterior`, off in `main.toml`), four to five times too sharp to read as probabilities (A19). The refiners then run on its labels.",
         nats: {
           title: "How hard each source can push, per frame",
           cap: "The largest difference in nats one frame of each source adds between the states it separates, at `main.toml`'s settings. A change of team costs 4 nats, a blip out and back 8, a stoppage in and out 64; hover a bar for how many frames of that source pay for each.",
@@ -1283,17 +1296,18 @@ const DATA = {
             { label: "dead_ball_model: in play against dead", v: 6.907, tip: "Clip 0.001, weight 1.0. Pays for a stoppage's two changes (64 nats) in 10 frames; no stoppage is shorter than 25 frames anyway." },
             { label: "controlled_touch episode: H against A", v: 2.587, tip: "Confidence 0.93. Pays for a change of team (4 nats) in 2 frames, for a blip out and back (8 nats) in 4." },
             { label: "shape_possession, at most: H against A", v: 0.778, tip: "0.2 × log(0.98 / 0.02). Pays for a change of team in 6 frames at its most confident, for a blip in 11." },
-            { label: "controlled_touch hold: H against A", v: 0.405, tip: "Hold 0.60. Pays for a change of team in 10 frames, a blip in 20: too weak to flip a team on its own, enough to keep one." }
+            { label: "controlled_touch hold: H against A", v: 0.201, tip: "Hold 0.55 (R024). Pays for a change of team in 20 frames, a blip in 40: too weak to flip a team on its own, enough to keep one." }
           ]
         },
         kpis: [
           { v: "4 · 32", l: "nats a change of team · into or out of `D`", n: "`switch_team`, `switch_dead` (R010, R013)" },
           { v: "35 · 25", l: "shortest possession · stoppage, in frames", n: "1.4 s and 1.0 s (R013)" },
-          { v: "0.918 · 0.969", l: "its ceiling with perfect evidence", n: "raw · coarse, against `main.toml`'s 0.543 · 0.559 (A13)" },
+          { v: "0.918 · 0.969", l: "its ceiling with perfect evidence", n: "raw · coarse, against R013's `main.toml`, 0.543 · 0.559 (A13)" },
           { v: "+0.0036", l: "alone, with the old sources", n: "R007: bar missed; it needs good evidence" }
         ],
         limits: [
-          "Its four numbers were chosen on DFL's fine-grained truth; the coarse truth prefers longer minimums (T33), and R023 put our provider's grain between the two, so a re-choice would rank on their mean.",
+          "Its four numbers were chosen on DFL's fine-grained truth; the coarse truth prefers longer minimums (T33). R024 chose them again on the mean of the two (R023) and kept them: the mean alone leans coarse, and the declared tie-break held them.",
+          "Most of what spellF1 loses from IoU 0.3 to 0.7 is edges on otherwise right possessions (A19); moving them by the posterior did not help (R025, R025b, T50).",
           "The minimums are hard: a real possession under 1.4 s cannot be output, and the public window has ones of 0.76 s and 1.32 s. A duration prior (semi-Markov) would soften this.",
           "A transition price binds only below the largest evidence it competes with (T44): at 6.9 nats a frame the dead-ball model can pay for a stoppage quickly."
         ],
@@ -1318,11 +1332,11 @@ const DATA = {
         },
         reads: "The decoded labels of one graded half, and nothing else.",
         params: "`team` +1 · `into_dead` −2 · `out_of_dead` 0 frames",
-        built: ["R012 measured the pipeline's own lag on DFL and adopted its negation by a declared rule; R013 re-derived it and got the same values. The rule's second half, a gap to our truth's convention read from the public window, is retired (T40)."],
+        built: ["R012 measured the pipeline's own lag on DFL and adopted its negation by a declared rule; R013 and R024 re-derived it and got the same values. The rule's second half, a gap to our truth's convention read from the public window, is retired (T40)."],
         decoderTitle: "Where it runs",
         decoder: "After the decoder, block by block, on its labels; so it cannot leak across halftime either.",
         kpis: [
-          { v: "+1 · −2 · 0", l: "frames: team · into `D` · out of `D`", n: "R012, re-derived in R013" },
+          { v: "+1 · −2 · 0", l: "frames: team · into `D` · out of `D`", n: "R012, re-derived in R013 and R024" },
           { v: "+0.0005", l: "raw spellF1 on the benchmark", n: "inside noise; adopted because its declared rule said so (R012)" }
         ],
         limits: ["DFL's flags may flip at other moments than our truth's (T40). A shift towards our convention would have to come from other games of our provider (P16), never from the public window."],
@@ -1370,7 +1384,9 @@ const DATA = {
     { id: "P21", anchor: "p21--wrong-team-slots-measure-the-ceiling-then-repair-them", title: "Wrong-team slots: measure the ceiling, then repair from tracking or jersey colours", attacks: "T32", effort: "S test, M", impact: "low on the benchmark: all of `tracking`'s player degradation costs `main.toml` 0.013 (A14)", status: "dropped", stage: "inputs",
       note: "dropped → A16 (step 0: over-11 frames are 0.11 of the candidate frames against 0.13 of graded frames, ratio 0.85 against the declared 1.5; the measuring tool is kept)" },
     { id: "P22", anchor: "p22--the-shape-model-adapted-to-our-two-teams-without-labels", title: "The shape model adapted to our two teams without labels", attacks: "fact 1", effort: "S–M", impact: "low: guess +0.00 to +0.02", status: "dropped", stage: "evidence",
-      note: "(a) dropped → R020 (the feasibility gate failed, ratio 0.863 against 0.75; code removed); (b) and (c) not tried" }
+      note: "(a) dropped → R020 (the feasibility gate failed, ratio 0.863 against 0.75; code removed); (b) and (c) not tried" },
+    { id: "P23", anchor: "p23--the-hmm-backbone-reviewed-nine-ideas-five-taken", title: "The HMM backbone reviewed: re-choose under R023's objective (A), decompose the IoU ladder (B), posterior edges (C), calibration (D), a gap weight for P07 (E)", attacks: "fact 5; the decoder's placement of changes; fact 1 (E)", effort: "S each", impact: "low: +0.01 to +0.03 for the lot (the advisor's estimate); measured: A +0.0052 on the mean (R024)", status: "done", stage: "decode",
+      note: "done: A adopted → R024; B, D measured → A19; C dropped → R025, R025b; E dropped → R026; F deferred, G to I not taken" }
   ],
 
   /* ---------- Traps (docs/traps.md) ---------- */
@@ -1403,7 +1419,8 @@ const DATA = {
     { id: "T43", title: "An oracle that stops where the truth changes measures more than a source can deliver.", line: "A12's +0.0198 restart ceiling became +0.0040 (R014): build an oracle with the real source's footprint." },
     { id: "T44", title: "A transition price binds only below the largest evidence it competes with.", line: "R014b's `switch_restart` grid could not differ: put a penalty grid on both sides of the largest evidence." },
     { id: "T45", title: "A degradation fitted to one statistic can move the others away.", line: "R015's offpitch v1 matched its statistic and failed the median gap: sweep every gate statistic with a cheap label-free script first." },
-    { id: "T46", title: "The ball is about 6 px wide in the tactical video, smaller than a vision transformer's patch.", line: "4.7 to 8.2 px (A14). Any detector that shrinks the frame first loses it: check the ball's pixel size before choosing a vision model." }
+    { id: "T46", title: "The ball is about 6 px wide in the tactical video, smaller than a vision transformer's patch.", line: "4.7 to 8.2 px (A14). Any detector that shrinks the frame first loses it: check the ball's pixel size before choosing a vision model." },
+    { id: "T50", title: "A decoder's posterior is several times too sharp, so a rule that reads it barely moves.", line: "A19: four to five times (Platt α 0.19 team, 0.27 alive). R025's posterior median moved edges 1 frame; tempered (R025b), 3 frames the wrong way. Measure the posterior's calibration, and gate on the mechanism, before building on it." }
   ],
   topTraps: ["T01", "T02", "T03", "T04", "T05", "T11", "T12", "T13", "T14", "T27", "T31", "T33", "T38", "T39", "T41", "T43", "T45", "T46"],
 
@@ -1440,7 +1457,7 @@ const DATA = {
     ],
     solution: [
       { name: "controlled_touch", p: "P04", role: "home where the ball is seen",
-        why: "The nearest player is wrong 22% of the time, and possession changes only when the other team gains controlled possession. A control episode is a player within 1.5 m of the ball, no opponent within the duel radius, moving with it; its vote (0.93) starts on the episode's first frame (back-dating, T03), and a weak hold (0.60) keeps the last controlling team through a pass in flight.",
+        why: "The nearest player is wrong 22% of the time, and possession changes only when the other team gains controlled possession. A control episode is a player within 1.5 m of the ball, no opponent within the duel radius, moving with it; its vote (0.93) starts on the episode's first frame (back-dating, T03), and a weak hold (0.55, R024) keeps the last controlling team through a pass in flight.",
         added: "Together with P05 and the re-tuned decoder: **+0.2199 raw** over `nearest_w50` (R010, 7 wins in 7). Removing it from R010's config loses 0.1421 raw." },
       { name: "dead_ball_model", p: "P05", role: "alive",
         why: "The ball is visible on 66% of dead frames and missing in long in-play gaps, so its presence cannot say `D`. Boosted trees on 30 play features, trained on the seven DFL matches degraded like ours, beat logistic regression and fixed rules (R009).",
@@ -1456,21 +1473,24 @@ const DATA = {
         added: "**+0.0005 raw**, inside noise (R012): adopted because its declared rule said so, not because it is shown to help." },
       { name: "R013 retune", p: "P04 · P06 · P07", role: "the constants again",
         why: "In R006 to R009 every candidate carried a value derived from the public window (`nearest_player` at 0.78 or `ball_presence`, A01), so the touch rule was chosen with them present. After the 23 Oct rule, R013 re-chose the touch rule (192 configs), then `switch_team`, `min_possession` and P07's weight (144 configs) on `main.toml`'s own evidence, with no window-derived value in any candidate.",
-        added: "**+0.0267 raw** (p 0.0156, 7 wins in 7) and +0.0001 coarse: a raw-truth gain (T33)." }
+        added: "**+0.0267 raw** (p 0.0156, 7 wins in 7) and +0.0001 coarse: a raw-truth gain (T33)." },
+      { name: "R024 re-choice", p: "P23 A", role: "the constants on the mean",
+        why: "R023 found our provider's grain between the two truths, so choices now rank on the mean of the raw and coarse pooled spellF1s. R024 re-ranked R013's two grids on it: only the touch hold moved (0.60 to 0.55); the decoder, P07's weight and the shift came back unchanged.",
+        added: "**+0.0052 on the mean** (p 0.0469, 6 wins in 7): −0.0067 raw, +0.0171 coarse." }
     ],
     validate: [
       "**P01's benchmark.** The seven DFL/IDSSE open matches (two Bundesliga, five 2. Bundesliga; CC BY 4.0). Their truth is built as ours is: `D` where `BallStatus` is dead, else the team in `BallPossession`. Configs run through the pipeline's own components and are scored by the official scorer, half by half.",
       "**Degraded to look like ours.** `tracking` v3, the default since R004c: our own missing-ball masks transplanted (their pattern, not their clock), our tracklets in 46 slots, wrong-team slots, NaN speeds, smoothing and low-count frames. On it, `fidelity.py` finds all eight gates and all ten checks pass (R004c). `context` (R005) places the gaps by the play, fails two of its gates and is a sensitivity check only, never the default.",
-      "**Two truths.** Raw is DFL's flag (437 possessions a match, median 3.7 s); coarse absorbs every possession under 5 s that sits between two of the other team. Our grain is unknown, so read both, and treat a disagreement as a warning (T33).",
+      "**Two truths.** Raw is DFL's flag (437 possessions a match, median 3.7 s); coarse absorbs every possession under 5 s that sits between two of the other team. Our grain is not known; R023 put our provider's between the two, so a choice now ranks on their mean, and both are read (T33).",
       "**Uncertainty.** 90% t-intervals over the seven per-match deltas, the exact sign-flip test (the smallest possible p is 2/128 = 0.0156) and wins of seven; never a bootstrap. A degradation seed moves a pooled spellF1 by up to about 0.015.",
-      "**The bar and the rule.** Each experiment declares its values, objective, selection rule and bar in docs/results.md before its runs. The usual rule (`choose.py`): the best pooled raw spellF1, ties within 0.005, then the best coarse, with a leave-one-match-out estimate. P06's bar: a delta above 0 with p ≤ 0.05 against `nearest_w50` raw and `nearest_w125` coarse.",
+      "**The bar and the rule.** Each experiment declares its values, objective, selection rule and bar in docs/results.md before its runs. The rule (`choose.py`): since R023, the best mean of the raw and coarse pooled spellF1s, ties within 0.005, then the larger min(raw, coarse) (`--objective mean`, R024); before it, the best raw, then the best coarse; with a leave-one-match-out estimate. P06's bar: a delta above 0 with p ≤ 0.05 against `nearest_w50` raw and `nearest_w125` coarse.",
       "**The caveats.** T38: `tracking`'s gaps are blind to the play, so gap-dependent choices are read on `context` too. T39: DFL tracks the ball out of play, so P05 looks near-perfect there; its benchmark score is an upper bound. Absolute benchmark spellF1 is not our leaderboard's."
     ],
     limits: [
       "**The benchmark's conventions.** DFL's flags may flip at other moments than our truth's, and P04's back-dating, P05's `D` onset and the shift follow DFL. A11's leads (our `D` 2.5–3 s longer, our team flipping about a second earlier) are not measurements.",
-      "**Seven matches,** five of them one club's home games: the intervals are wide, and selecting from hundreds of configs is optimistic (R013 chose from 336; its leave-one-match-out estimates agree).",
+      "**Seven matches,** five of them one club's home games: the intervals are wide, and selecting from hundreds of configs is optimistic (R013 chose from 336, and its leave-one-match-out estimates agree; R024 chose again from the same grids, and its rule holds out weaker, +0.0035, p 0.1562).",
       "**The shape model never saw our teams.** P07's benchmark gain is not a forecast for BAR-ATH, and the possession count moved the other way on our match (down 2.4%, where the benchmark's went up 16%).",
-      "**The grain of our truth is only partly known.** R023 put our provider's event-derived grain between the two truths, so choices now rank on their mean; it is events, not the tracking flag our truth comes from. R013 is +0.0267 raw and level coarse, and was not re-ranked.",
+      "**The grain of our truth is only partly known.** R023 put our provider's event-derived grain between the two truths, so choices now rank on their mean; it is events, not the tracking flag our truth comes from. R024 re-ranked R013 on that mean: +0.0052, which is −0.0067 raw and +0.0171 coarse, so if our truth is as fine as DFL's it costs a little.",
       "**DFL tracks the ball out of play.** Two profiles that hide it were tried and dropped (R015, R015b), so how much of P05 transfers stays unmeasured (T39).",
       "**No video, audio, homography or Smart Tagging on the benchmark,** so P08, P09, P10, P14 and P15 cannot be validated there."
     ]
@@ -1533,7 +1553,15 @@ const DATA = {
     { date: "2026-10-31", title: "A17: the submission regenerated from a fresh clone", entries: "A17", outcome: "analysis", stages: ["output"],
       text: "A clone of the pushed repository, a new venv from the requirements files and the raw bundle with no caches: `main.csv` came out `7ba575c0…` on two runs and at the default threads, both models retrained identical, and the benchmark returned 0.5430 / 0.5593. One machine only." },
     { date: "2026-10-31", title: "A18: the submission regenerated on Linux", entries: "A18", outcome: "analysis", stages: ["output"],
-      text: "Ubuntu 24.04 under WSL 2 on the same laptop, LF configs, a fresh venv and no cache: `7ba575c0…` on two runs and `selftest.py --data` 193 of 193. Another processor is still untried." }
+      text: "Ubuntu 24.04 under WSL 2 on the same laptop, LF configs, a fresh venv and no cache: `7ba575c0…` on two runs and `selftest.py --data` 193 of 193. Another processor is still untried." },
+    { date: "2026-10-31", title: "R024: R013 re-chosen on the mean of the two truths", entries: "P23 A, R024", outcome: "adopted", stages: ["evidence", "decode", "benchmark"],
+      text: "R013's two grids re-ranked under R023's objective (`choose.py --objective mean`, 192 reports, then 144 configs run at the new hold): only the touch hold moved, 0.60 to 0.55; the decoder, P07's weight and the shift came back unchanged. 0.5363 raw / 0.5764 coarse: +0.0052 on the mean (p 0.0469, 6 wins in 7), −0.0067 raw, +0.0171 coarse. On our match 399 possessions (413), `D` 36.0%, 1.66% of graded frames relabelled. `main.toml`, sha256 `e6496a9b…`; the public window, a correctness check: macroF1 0.7007, spellF1 0.4000." },
+    { date: "2026-10-31", title: "A19: where the decoder loses, and how calibrated it is", entries: "P23 B and D, A19", outcome: "analysis", stages: ["decode", "benchmark"],
+      text: "The fall from IoU 0.3 to 0.7 is mostly edges on otherwise right possessions (0.0704 of spellF1 on the mean of the two truths; merges 0.0254, splits 0.0273), and a wrong edge is most often late. The sources are near calibrated (`dead_ball_model` α 1.00, P07 1.07 to 1.10); the decoder's posterior is four to five times too sharp (α 0.19 team, 0.27 alive). New tool: `diagnose.py`." },
+    { date: "2026-10-31", title: "P23 C posterior edges dropped", entries: "R025, R025b", outcome: "dropped", stages: ["decode"],
+      text: "Each change moved to the median of the decoder's posterior: 55% moved, by a median of 1 frame, mean −0.0010 (2 wins in 7). The one retry, the posterior tempered at T = 5 (the advisor's ruling): moves of 3 frames that widened the edges' errors, mean −0.0282 (0 wins). Code removed in `515f26a` (T50)." },
+    { date: "2026-10-31", title: "P23 E: P07 weighted apart in the gaps, dropped", entries: "R026", outcome: "dropped", stages: ["evidence"],
+      text: "Six configs of a weight where the ball is seen and one in the gaps: the rule kept `main.toml`'s (0.2, 0.2), which scored as `main.toml` to the last digit; every heavier gap weight added possessions and lost on the mean (−0.010 to −0.020). No retry (the advisor's ruling); code removed in `4690545`." }
   ],
   outcomes: {
     adopted: { label: "adopted", cls: "ok", glyph: "✓" },
@@ -1551,9 +1579,13 @@ const DATA = {
     { id: "R010", date: "2026-10-25", raw: 0.4217, coarse: 0.4556, adopted: true, what: "P04 + P05 + the hmm (4/32/25/25)", note: "+0.2199 raw over `nearest_w50`." },
     { id: "R011", date: "2026-10-25", raw: 0.5159, coarse: 0.5591, adopted: true, what: "+ P07 shape_possession at weight 0.2", note: "+0.0942 raw over R010." },
     { id: "R012", date: "2026-10-25", raw: 0.5164, coarse: 0.5592, adopted: true, what: "+ P02 shift_edges (+1/−2/0)", note: "+0.0005 raw, inside noise; adopted by its rule." },
-    { id: "R013", date: "2026-10-26", raw: 0.5430, coarse: 0.5593, adopted: true, what: "Touch rule and decoder re-chosen (today's main.toml)", note: "+0.0267 raw, +0.0001 coarse." },
+    { id: "R013", date: "2026-10-26", raw: 0.5430, coarse: 0.5593, adopted: true, what: "Touch rule and decoder re-chosen", note: "+0.0267 raw, +0.0001 coarse." },
     { id: "R014", date: "2026-10-26", raw: 0.5470, coarse: 0.5564, adopted: false, what: "P17's restart vote (`r014_t025_b0`)", note: "Bar not met (+0.0040 raw, p 0.0938)." },
-    { id: "R014b", date: "2026-10-26", raw: 0.5433, coarse: 0.5589, adopted: false, what: "P17's restart states (`r014b_s04_b1`)", note: "Bar not met (+0.0003 raw, p 0.8125)." }
+    { id: "R014b", date: "2026-10-26", raw: 0.5433, coarse: 0.5589, adopted: false, what: "P17's restart states (`r014b_s04_b1`)", note: "Bar not met (+0.0003 raw, p 0.8125)." },
+    { id: "R024", date: "2026-10-31", raw: 0.5363, coarse: 0.5764, adopted: true, what: "R013's grids re-chosen on the mean of the two truths: hold 0.55 (today's main.toml)", note: "+0.0052 on the mean (p 0.0469, 6 wins in 7): −0.0067 raw, +0.0171 coarse." },
+    { id: "R025", date: "2026-10-31", raw: 0.5361, coarse: 0.5745, adopted: false, what: "P23 C: posterior edges (`r025_final`)", note: "Guard failed (mean −0.0010, 2 wins in 7)." },
+    { id: "R025b", date: "2026-10-31", raw: 0.5121, coarse: 0.5441, adopted: false, what: "P23 C's retry: posterior tempered at T = 5 (`r025b_final`)", note: "Guard failed (mean −0.0282, 0 wins in 7); C dropped." },
+    { id: "R026", date: "2026-10-31", raw: 0.5396, coarse: 0.5589, adopted: false, what: "P23 E: P07 at 0.1 where the ball is seen, 0.2 in the gaps (`r026_v100_g200`, the best that differs from main.toml)", note: "No config beat main.toml on the mean (this one −0.0071); E dropped." }
   ],
   progressionCaption: "Pooled spellF1 of `main.toml` on the benchmark (`tracking` v3, 7 DFL matches, 3 seeds) at each entry that changed it, with the candidates that did not make it. Filled points were adopted into `main.toml`; hollow points were not. Benchmark scores rank versions; they are not our leaderboard's.",
   publicWindow: {
@@ -1565,7 +1597,8 @@ const DATA = {
       { id: "R011", spell: "0.4000", macro: "0.7151", poss: "20" },
       { id: "R012", spell: "0.4000", macro: "0.7159", poss: "20" },
       { id: "R013", spell: "0.4649", macro: "0.7152", poss: "20" },
-      { id: "R017", spell: "0.4000", macro: "0.6986", poss: "—" }
+      { id: "R017", spell: "0.4000", macro: "0.6986", poss: "—" },
+      { id: "R024", spell: "0.4000", macro: "0.7007", poss: "19" }
     ]
   },
 
@@ -1577,9 +1610,9 @@ const DATA = {
     { title: "Public repo URL", status: "todo", label: "private",
       text: "The repository is private and must be made public by 17 Nov, as a deliberate final step. It must hold the source, pinned dependencies, install and run instructions, and the command that regenerates the CSV." },
     { title: "Technical document (`<team_name>.pdf` or `.md`)", status: "doing", label: "condensed",
-      text: "[docs/technical_document_submission.md](../docs/technical_document_submission.md) is the version to upload: the seven sections of the long one at deliverable length, every number from `docs/results.md` with its entry. It still has placeholders ([Team name], the five names, the repo URL, the commit); its section 7 carries A17's fresh-clone reproduction. [docs/technical_document.md](../docs/technical_document.md) stays the full record." },
+      text: "[docs/technical_document_submission.md](../docs/technical_document_submission.md) is the version to upload: the seven sections of the long one at deliverable length, every number from `docs/results.md` with its entry. It still has placeholders ([Team name], the five names, the repo URL, the commit); its section 7 carries A17's fresh-clone reproduction of R017's file and says that R024's has not had one yet. [docs/technical_document.md](../docs/technical_document.md) stays the full record." },
     { title: "Clean-clone reproduction on a second machine", status: "doing", label: "Windows and Linux done",
-      text: "A17 (31 Oct): a fresh clone on the team laptop regenerated `7ba575c0…` byte for byte, also at the default threads. A18: the same on Linux (WSL 2, same laptop, LF configs). Still to do: another processor, ideally an Intel machine (T20, T21)." },
+      text: "A17 (31 Oct): a fresh clone on the team laptop regenerated R017's `7ba575c0…` byte for byte, also at the default threads. A18: the same on Linux (WSL 2, same laptop, LF configs). R024 then changed the file to `e6496a9b…` (the hold only), which has not been regenerated from a fresh clone yet. Still to do: that, and another processor, ideally an Intel machine (T20, T21)." },
     { title: "Pinned dependencies", status: "done", label: "done",
       text: "[requirements-pipeline.txt](../requirements-pipeline.txt) pins what the pipeline imports (numpy 2.4.6, pandas 3.0.6; Python 3.11.9)." }
   ],
@@ -1599,7 +1632,7 @@ const DATA = {
 
   person: [
     { title: "P02: watch the public transitions, to understand", text: "Around each change of the public truth: where `D` begins and ends (the line, the whistle, the stoppage) and what restart follows. The file is written locally and no LLM reads it; what comes out is a note in aggregates, never a constant, a label or a frame-tied rule (T27, T40).", cmd: "python pipeline/benchmark/conventions.py public" },
-    { title: "Decide how much of the gain to believe", text: "A decision, not a run, on the benchmark and the label-free checks, with T38, T39 and R011's caveats; R013's is a raw-truth gain. Settle it before the freeze." },
+    { title: "Decide how much of the gain to believe", text: "A decision, not a run, on the benchmark and the label-free checks, with T38, T39 and R011's caveats; R013's is a raw-truth gain and R024's a coarse one. Settle it before the freeze." },
     { title: "Reproduce from a clean clone, then publish", text: "On a second machine, then make the repository public as the final step, and send the one form response (the last one before the deadline counts)." }
   ],
 
@@ -1694,9 +1727,9 @@ const DATA = {
   docs: [
     { href: "../CLAUDE.md", label: "CLAUDE.md", text: "The hard rules, every command, the architecture and the data facts that bite." },
     { href: "../docs/README.md", label: "docs/README.md", text: "What each team doc holds and when to update it." },
-    { href: "../docs/proposals.md", label: "docs/proposals.md", text: "Ideas P01–P22 with effort, impact and status, and the “After …” recommendations." },
+    { href: "../docs/proposals.md", label: "docs/proposals.md", text: "Ideas P01–P23 with effort, impact and status, and the “After …” recommendations." },
     { href: "../docs/results.md", label: "docs/results.md", text: "Every R and A entry with its numbers, the scoreboard and the submission log." },
-    { href: "../docs/traps.md", label: "docs/traps.md", text: "Pitfalls T01–T49: why they happen and what to do instead." },
+    { href: "../docs/traps.md", label: "docs/traps.md", text: "Pitfalls T01–T50: why they happen and what to do instead." },
     { href: "../docs/technical_document_submission.md", label: "docs/technical_document_submission.md", text: "Deliverable 3 at its submitted length: the file to upload." },
     { href: "../docs/technical_document.md", label: "docs/technical_document.md", text: "The full record behind deliverable 3." },
     { href: "../pipeline/README.md", label: "pipeline/README.md", text: "The pipeline's overview: diagram, contracts, configs, checks, validation." },
