@@ -661,10 +661,10 @@ footer { border-top: 1px solid var(--line); margin-top: 24px; padding: 16px 0 28
    =========================================================================================================== */
 const DATA = {
   asOf: "2026-10-31",
-  commit: "main (31 Oct)",
+  commit: "d11f31e",
   title: "Possession pipeline · team overview",
   subtitle: "More than a Hack 2027, Phase 1 · FC Barcelona (H) vs Athletic Club (A), LaLiga 2024-25 MD2",
-  footer: "As of 2026-10-31 (main, 31 Oct). P19 to P22 were each dropped at their feasibility gates, and P16 part 1 is an unsigned draft. Update DATA when an entry lands; the docs are the source of truth.",
+  footer: "As of 2026-10-31 (main d11f31e). P19 to P22 were each dropped at their feasibility gates, P16 part 1 is an unsigned draft, and A17 regenerated the submission byte for byte from a fresh clone. Update DATA when an entry lands; the docs are the source of truth.",
 
   /* ---------- Overview ---------- */
   onboarding: {
@@ -1529,7 +1529,9 @@ const DATA = {
     { date: "2026-10-31", title: "P21 step 0: wrong-team slots do not cluster at the ball", entries: "A16", outcome: "dropped", stages: ["inputs", "benchmark"],
       text: "Over-11 frames are 0.1097 of the candidate frames against 0.1286 of graded frames, ratio 0.85 against the declared 1.5; A14's bound stands. The measuring tool is kept." },
     { date: "2026-10-31", title: "P16 part 1: Metrica's sample games and the grain of our truth (draft)", entries: "R023", outcome: "analysis", stages: ["benchmark"],
-      text: "An unsigned draft: not declared until Tian signs or amends it, and nothing has been downloaded or run." }
+      text: "An unsigned draft: not declared until Tian signs or amends it, and nothing has been downloaded or run." },
+    { date: "2026-10-31", title: "A17: the submission regenerated from a fresh clone", entries: "A17", outcome: "analysis", stages: ["output"],
+      text: "A clone of the pushed repository, a new venv from the requirements files and the raw bundle with no caches: `main.csv` came out `7ba575c0…` on two runs and at the default threads, both models retrained identical, and the benchmark returned 0.5430 / 0.5593. One machine only." }
   ],
   outcomes: {
     adopted: { label: "adopted", cls: "ok", glyph: "✓" },
@@ -1573,9 +1575,9 @@ const DATA = {
     { title: "Public repo URL", status: "todo", label: "private",
       text: "The repository is private and must be made public by 17 Nov, as a deliberate final step. It must hold the source, pinned dependencies, install and run instructions, and the command that regenerates the CSV." },
     { title: "Technical document (`<team_name>.pdf` or `.md`)", status: "doing", label: "condensed",
-      text: "[docs/technical_document_submission.md](../docs/technical_document_submission.md) is the version to upload: the seven sections of the long one at deliverable length, every number from `docs/results.md` with its entry. It still has placeholders ([Team name], the five names, the repo URL, the commit) and waits for A17's fresh-clone reproduction in its section 7. [docs/technical_document.md](../docs/technical_document.md) stays the full record." },
-    { title: "Clean-clone reproduction on a second machine", status: "todo", label: "not done",
-      text: "Regenerate the file from a clean clone, ideally on a second machine, and compare the sha256 with `7ba575c0…` (T21)." },
+      text: "[docs/technical_document_submission.md](../docs/technical_document_submission.md) is the version to upload: the seven sections of the long one at deliverable length, every number from `docs/results.md` with its entry. It still has placeholders ([Team name], the five names, the repo URL, the commit); its section 7 carries A17's fresh-clone reproduction. [docs/technical_document.md](../docs/technical_document.md) stays the full record." },
+    { title: "Clean-clone reproduction on a second machine", status: "doing", label: "this machine done",
+      text: "A17 (31 Oct): a fresh clone on the team laptop regenerated `7ba575c0…` byte for byte, also at the default threads. Still to do: the same on a second machine, another processor or operating system (T20, T21)." },
     { title: "Pinned dependencies", status: "done", label: "done",
       text: "[requirements-pipeline.txt](../requirements-pipeline.txt) pins what the pipeline imports (numpy 2.4.6, pandas 3.0.6; Python 3.11.9)." }
   ],
