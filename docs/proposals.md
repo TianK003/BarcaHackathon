@@ -38,7 +38,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P19](#p19--a-learned-team-model-where-the-ball-is-seen) | A learned team model where the ball is seen: P05's recipe applied to the team | fact 3; A13's largest lever (+0.194 raw where the ball is seen) | M (feasibility S) | guess +0.02 to +0.05 raw; fully benchmarkable | idea |
 | [P20](#p20--ball-free-possession-paths-pathcrf-on-our-slots) | Ball-free possession paths: PathCRF (KDD 2026), trained on the same DFL matches | fact 1; A13's gaps (+0.176 raw) | S test, L to adopt | medium–high, uncertain: 92.4% team accuracy without the ball on clean tracking, unknown on ours | idea |
 | [P21](#p21--wrong-team-slots-measure-the-ceiling-then-repair-them) | Wrong-team slots: measure the ceiling, then repair from tracking or jersey colours | T32 | S test, M | low on the benchmark: all of `tracking`'s player degradation costs `main.toml` 0.013 (A14) | dropped → A16 (step 0's ratio 0.85 < 1.5; the tool is kept for P19's transfer report) |
-| [P22](#p22--the-shape-model-adapted-to-our-two-teams-without-labels) | The shape model adapted to our two teams without labels | fact 1 | S–M | low: guess +0.00 to +0.02 | idea |
+| [P22](#p22--the-shape-model-adapted-to-our-two-teams-without-labels) | The shape model adapted to our two teams without labels | fact 1 | S–M | low: guess +0.00 to +0.02 | (a) dropped → R020 (feasibility gate failed: 0.0538 against 0.0623, ratio 0.863 > 0.75); (b) and (c) not tried |
 | [P03](#p03--one-command-deterministic-cached) | One-command, deterministic, cached pipeline | reproducibility | S–M | enabling | done → R001 |
 | [P04](#p04--sticky-ownership-from-controlled-touches) | Sticky ownership from controlled touches | facts 3, 5 | S | high: +0.1421 raw at the chosen decoder (R010) | done → R008, R010; rule re-chosen → R013 |
 | [P05](#p05--a-real-dead-ball-detector) | Dead-ball detector | fact 4 | M | high: +0.1661 raw at the chosen decoder, on a benchmark that overstates it (R010, T38, T39) | done → R009, R010 |
@@ -310,7 +310,7 @@ unchanged (sha256 `0ebdfbec...`).
 4. **Cheap, only if a person is free:**
    - ~~P21's step 0: do our identity swaps cluster at the ball? A14 already bounds all of the benchmark's player
      degradation at 0.013 for `main.toml`.~~ Dropped (A16): ratio 0.85, below the declared 1.5.
-   - P22(a), the label-shift prior.
+   - ~~P22(a), the label-shift prior.~~ Dropped (R020): the feasibility gate failed, ratio 0.863 against 0.75.
    - ~~P10 with a pretrained audio tagger.~~ Dropped (R018, R018b): only the hand-built band-pass was tried, the tagger was not.
 5. **P16 still decides more than any of these.** Every ball-rich change so far has split the two truths: R010's decoder,
    R013's touch rule, and now A14's ball. Knowing our truth's grain says which of them helps on our match.
@@ -883,6 +883,8 @@ coarse (`gaps` 0.5559 and 0.5719 against `tracking` 0.5430 and 0.5593).
    - Decode to YUV planes with a pinned PyAV, as P14 would, so that the output reproduces.
 
 ### P22 — The shape model adapted to our two teams without labels
+
+**Status: (a) dropped → [R020](results.md) (the feasibility gate failed: EM's share was 0.0538 from the true one on average against 0.0623 for guessing 0.5, a ratio of 0.863 against the declared 0.75; neither retry condition held, so no grid ran and no F1 was produced). The code was removed in one commit, recoverable from `e303365`. (b) and (c) were not tried.**
 
 **Why.** P07 was trained on German teams only, and R011 warns that the benchmark's gain is not a forecast for Barça and
 Athletic: the count of possessions moved the other way on BAR-ATH.

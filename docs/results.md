@@ -6744,6 +6744,51 @@ frozen until P19's verdict). The sha256 of the CSV goes to the submission log; i
 drop), the bar's failure to the drop. After a drop, the prior, `label_shift.py`, its checks and the three configs are
 removed in one commit that names the commit to recover them from.
 
+**Part 2, the feasibility run and the verdict** (2026-10-31). Everything below applies part 1 as written. The feasibility
+run (`label_shift.py feasibility`, `tracking` v3, 3 seeds, at the commit of part 1's clarification and the `grid` command)
+was the only run: no grid ran, and no spellF1 of any R020 config was produced or read. Aggregates only; pi_alive is
+quoted at the log's 3 decimals.
+
+| match | pi_true | pi_hat per seed | mean abs error | abs(0.5 - pi_true) | slope | pi_alive |
+|---|---|---|---|---|---|---|
+| J03WMX | 0.4581 | 0.4015, 0.4007, 0.4061 | 0.0554 | 0.0419 | 0.936 | 0.373 |
+| J03WN1 | 0.5326 | 0.3497, 0.3547, 0.3610 | 0.1775 | 0.0326 | 1.057 | 0.409 |
+| J03WOH | 0.5438 | 0.5424, 0.5447, 0.5206 | 0.0085 | 0.0438 | 1.160 | 0.619 |
+| J03WOY | 0.4957 | 0.4568, 0.4613, 0.4630 | 0.0353 | 0.0043 | 1.050 | 0.434 |
+| J03WPY | 0.6284 | 0.6193, 0.6187, 0.6361 | 0.0088 | 0.1284 | 1.116 | 0.748 |
+| J03WQQ | 0.4390 | 0.5263, 0.5290, 0.5203 | 0.0862 | 0.0610 | 1.073 | 0.466 |
+| J03WR9 | 0.6240 | 0.6260, 0.6147, 0.6273 | 0.0049 | 0.1240 | 1.123 | 0.646 |
+
+**The gate's arithmetic.** error = the mean over the seven matches of the mean abs error = **0.0538**; baseline = the mean
+of abs(0.5 - pi_true) = **0.0623**; ratio **0.8634**. The gate needs error <= 0.75 x baseline = 0.0467. 0.0538 > 0.0467:
+**FAIL**, by the rule as declared (a miss by any margin is a miss, and this one is not a close call).
+
+**The retry order, evaluated as declared** (a failure of the gate is the only thing it applies to):
+1. **Retry (i) does not fire.** Its condition needs the gate on pi_hat over the truth's alive frames to pass. That error is
+   the mean over matches of abs(pi_alive - pi_true) = 0.0735 (from the log's 3-decimal pi_alive), a ratio of 1.18 to the
+   baseline, far above 0.75: the gate on the alive frames fails too.
+2. **Retry (ii) does not fire.** Its condition needs a* outside [0.8, 1.25]; a* (the geometric mean of the per-match
+   slopes) is 1.071, inside the band.
+3. **So there is no retry and P22(a) is dropped.**
+- **Advisor (for Tian):** no retry fired mechanically. Both of D1's conditions were false, so the advisor's order ends at
+  its third item and nothing was left to approve.
+
+**Readings, hedged** (they decide nothing; the verdict is the gate's):
+- J03WN1 carries most of the error: its pi_hat is about 0.35 against a true 0.53, an error of 0.18 that is 47% of the
+  sum of the seven matches' errors. Without it the mean error would be 0.033 against a baseline of 0.067, which is a
+  gate pass, so one match decides this verdict. J03WQQ goes the other way (0.53 against 0.44).
+- The shape model's outputs are not a calibrated estimate of a match's possession share: the slopes sit near 1
+  (0.94 to 1.16), so the shape of its logit is not the problem, but EM needs P(y|x) to transfer to the match, and a
+  model trained on six other matches does not carry that for a match's share. This fits the research's caution
+  (Saerens et al. 2002; Garg et al. [2020](https://arxiv.org/abs/2003.07554)) and is a reading, not a measurement.
+- The alive-only share is worse, not better (0.0735 against 0.0538), so the dead frames are not the cause.
+
+**What stays.** P22(c), the prior as asymmetric switch costs in the decoder, stays recorded in `docs/proposals.md` for the
+team, untested: it would use the same pi_hat, which this run shows is not a better guess than 0.5. P22(b), self-training,
+was not tried. The code (the prior on `shape_possession`, `label_shift.py`, its checks and the three configs) is removed in
+one commit, recoverable from `e303365`; `wrong_team.py` and its checks stay, since P19's transfer check reports A16's ratio.
+`main.toml` was never changed, and `pipeline/` equals main's except for `wrong_team.py` and its checks.
+
 ## Submission log
 
 The form keeps only the last response before the deadline, so log every upload.
