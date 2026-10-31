@@ -79,6 +79,14 @@ module of its topic:
                  artifact and --verify, the dry run's aggregates and dead columns, and the feasibility: its frames
                  and sums worked out in plain loops, the integer go rule, a missing fold refused, the rule read from
                  the config (synthetic only)
+    team_grid.py R021's grid: Stage 1's configs as main.toml's text plus the team_model block, Stage 2's two decoder
+                 lines, the declared names and tie order, the union of both stages with the earlier stem kept, the
+                 anchors that are refused, the same bytes twice, and the bar's verdict as plain arithmetic (synthetic
+                 only)
+    team_transfer.py
+                 P19's transfer check: the agreement with Smart Tagging's votes (a silent frame is wrong), the integer
+                 margin, the frames judged (graded, ball visible, a vote of 0 or 1) against a plain loop, and that
+                 only aggregates are printed and written (synthetic only)
     label_diff.py
                  label_diff: the shares, possessions per half, changes in ball gaps and moved D onsets worked out on
                  hand-built codes, and that the printout holds figures and no frame (synthetic only)
@@ -108,7 +116,7 @@ what two of them share goes to common.py (test_a_check_module_imports_no_other_c
 
 from pipeline.benchmark.checks import (
     calibration, cap, choose, context, conventions, dead_ball, degrade, dfl, dfl_events, fidelity, harness, hazard, headroom,
-    inputs, label_diff, restarts, run, score, shape, sources, tag_stats, team, tracking, touch, truth)
+    inputs, label_diff, restarts, run, score, shape, sources, tag_stats, team, team_grid, tracking, touch, truth)
 
 MODULES = (sources, dfl, dfl_events, truth, inputs, score, run, choose, hazard, calibration, degrade, cap, tracking, context,
-           fidelity, headroom, touch, dead_ball, conventions, restarts, shape, label_diff, tag_stats, team, harness)
+           fidelity, headroom, touch, dead_ball, conventions, restarts, shape, label_diff, tag_stats, team, team_grid, harness)
