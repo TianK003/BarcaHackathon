@@ -174,3 +174,249 @@ def test_synthetic_window_has_their_layout():
     assert window[["home_0_x", "away_0_x"]].mean().tolist() == sorted(window[["home_0_x", "away_0_x"]].mean().tolist()), \
         "home_0 (left keeper) must sit at the lower x"
     assert np.array_equal(window.to_numpy(), runner.synthetic_window().to_numpy()), "the window must be seeded"
+
+
+# -- adapter ---------------------------------------------------------------------------------------
+
+def _grid(n_frames, n_slots):
+    import numpy as np
+    return np.full((n_frames, n_slots, 2), np.nan)
+
+
+def _line(xy_m, slot, first, last, x, y=10.0, dx=0.0):
+    """Slot `slot` present on frames first..last (inclusive) at x (+ dx per frame), y."""
+    for k, frame in enumerate(range(first, last + 1)):
+        xy_m[frame, slot] = (x + dx * k, y)
+
+
+def _present(xy):
+    import numpy as np
+    return ~np.isnan(xy[:, :, 0])
+
+
+def test_alive_runs_inside_blocks_only():
+    import numpy as np
+    from pathcrf_lab import adapter
+    codes = np.full(200, 3, dtype=np.int8)
+    codes[10:30] = 0       # H, 20 frames
+    codes[30:40] = 1       # A directly after: one run, a change of team does not cut it
+    codes[40:60] = 2       # D
+    codes[60:75] = 1       # 15 frames: short
+    codes[100:116] = 0     # 16 frames: kept
+    codes[120:135] = 0     # 15 frames, then the block's edge at 130 cuts it
+    codes[150:170] = 0     # outside every block: never in a run
+    runs, short = adapter.alive_runs(codes, [(1, 0, 130), (2, 140, 150)])
+    assert runs == [(10, 40), (100, 116)], "runs are {}".format(runs)
+    assert short == [(60, 75), (120, 130)], "short runs are {}".format(short)
+
+
+def test_split_run_near_equal():
+    from pathcrf_lab import adapter
+
+    def lengths(a, b):
+        return [stop - start for start, stop in adapter.split_run(a, b)]
+
+    assert lengths(0, 250) == [250] and lengths(0, 251) == [126, 125] and lengths(7, 1007) == [250] * 4 \
+        and lengths(0, 16) == [16], "split_run lengths are off"
+    spans = adapter.split_run(100, 351)
+    assert spans[0][0] == 100 and spans[-1][1] == 351 and spans[0][1] == spans[1][0], "windows must tile the run"
+
+
+def test_join_limits_are_inclusive():
+    import numpy as np
+    from pathcrf_lab import adapter
+
+    def joined(gap, dist, other_team=False):
+        xy = _grid(200, 2)
+        _line(xy, 0, 0, 9, 0.0)
+        _line(xy, 1, 9 + gap, 9 + gap + 5, dist)
+        team = np.array([0, 1 if other_team else 0], dtype=np.int8)
+        return adapter.join(adapter.pieces(_present(xy), 0, 200), xy, team)[1]
+
+    assert joined(50, 5.0) == 1, "a gap of 50 frames and 5.0 m must join"
+    assert joined(51, 5.0) == 0, "a gap of 51 frames must not join"
+    assert joined(10, 5.0001) == 0, "5.0001 m must not join"
+    assert joined(10, 3.0, other_team=True) == 0, "pieces of different metadata teams must never join"
+
+
+def test_join_is_greedy_by_smallest_gap():
+    import numpy as np
+    from pathcrf_lab import adapter
+    team = np.zeros(4, dtype=np.int8)
+    xy = _grid(100, 4)
+    _line(xy, 0, 0, 9, 0.0)         # a ends at 9
+    _line(xy, 1, 12, 15, 1.0)       # b begins at 12 (gap 3)
+    _line(xy, 2, 19, 30, 2.0)       # c begins at 19 (gap 10 from a, 4 from b)
+    chains, n = adapter.join(adapter.pieces(_present(xy), 0, 100), xy, team)
+    assert n == 2 and [tuple(p.slot for p in c) for c in chains] == [(0, 1, 2)], \
+        "a-b (gap 3) is taken first, then b-c (gap 4): one chain a, b, c"
+    two = _grid(100, 3)
+    _line(two, 0, 0, 9, 0.0)
+    _line(two, 1, 12, 20, 1.0)      # gap 3
+    _line(two, 2, 19, 30, 2.0)      # gap 10: left alone, a's end is used once
+    chains, n = adapter.join(adapter.pieces(_present(two), 0, 100), two, np.zeros(3, dtype=np.int8))
+    assert n == 1 and sorted(tuple(p.slot for p in c) for c in chains) == [(0, 1), (2,)], \
+        "one ending piece, two beginnings: the gap of 3 joins and the other stays a node"
+
+
+def test_fill_linear_and_held_exact():
+    import numpy as np
+    from pathcrf_lab import adapter
+    xy = _grid(30, 2)
+    _line(xy, 0, 5, 9, 10.0)
+    _line(xy, 1, 14, 19, 14.0)
+    team = np.zeros(2, dtype=np.int8)
+    chains, _ = adapter.join(adapter.pieces(_present(xy), 0, 30), xy, team)
+    result = adapter.nodes(chains, xy, 0, 30, team)
+    track = result.xy[:, 0].astype(np.float64)
+    assert np.allclose(track[:5], (10.0, 10.0)) and np.allclose(track[20:], (14.0, 10.0)), "edges must be held"
+    gap = track[10:14, 0]
+    assert np.allclose(gap, 10.0 + 4.0 * np.arange(1, 5) / 5.0), "the gap must be linear, got {}".format(gap)
+    assert not np.isnan(track).any(), "a kept node has a NaN"
+    assert result.flags["held_frames"] == 5 + 4 + 10, "filled frames {}".format(result.flags["held_frames"])
+
+
+def test_over_eleven_drops_the_fewest_frames():
+    import numpy as np
+    from pathcrf_lab import adapter
+    xy = _grid(100, 12)
+    for slot in range(12):  # slots 5 and 9 are seen for 41 frames only: the tie for the fewest
+        _line(xy, slot, 0, 40 if slot in (5, 9) else 99, 3.0 * slot)
+    team = np.zeros(12, dtype=np.int8)
+    chains, _ = adapter.join(adapter.pieces(_present(xy), 0, 100), xy, team)
+    result = adapter.nodes(chains, xy, 0, 100, team)
+    assert result.flags["dropped"] == 1, "exactly one chain must be dropped, got {}".format(result.flags["dropped"])
+    first = result.xy[0, :11, 0].astype(np.float64).tolist()
+    assert any(abs(v - 15.0) < 1e-4 for v in first) and not any(abs(v - 27.0) < 1e-4 for v in first), \
+        "on a tie of the fewest frames the higher slot (9) is dropped and slot 5 kept"
+
+
+def _atd(n, slots, teams):
+    from types import SimpleNamespace
+    import numpy as np
+    return SimpleNamespace(players_xy=np.full((n, slots, 2), np.nan), slot_team=np.array(teams, dtype=np.int8),
+                           ball_present=np.zeros(n, dtype=bool))
+
+
+def test_wrong_team_slot_stays_in_its_metadata_team():
+    from pathcrf_lab import adapter
+    atd = _atd(60, 23, [0] * 12 + [1] * 11)   # slot 11 is a team-0 slot, here among team 1's players
+    for slot in range(23):
+        atd.players_xy[:, slot] = (0.1 + 0.03 * slot, 0.5)
+    atd.players_xy[:, 11] = (0.9, 0.5)
+    result = adapter.window_nodes(atd, 0, 60)
+    names = result.names.tolist()
+    assert sum(n.startswith("home_") for n in names) == 11 and sum(n.startswith("away_") for n in names) == 11, \
+        "the 12 team-0 slots keep 11 and the 11 team-1 slots all stay: {}".format(names)
+    assert result.flags["over11"] == 1 and result.flags["dropped"] == 1, "12 home pieces: over11 and one dropped"
+
+
+def test_padding_when_fewer_than_eleven():
+    import numpy as np
+    from pathcrf_lab import adapter
+    atd = _atd(40, 20, [0] * 11 + [1] * 9)
+    for slot in range(20):
+        atd.players_xy[:, slot] = (0.1 + 0.04 * slot, 0.5)
+    result = adapter.window_nodes(atd, 0, 40)
+    assert result.flags["padded_away"] == 2 and result.flags["padded_home"] == 0, "padding {}".format(result.flags)
+    assert (result.team[20:] == -1).all() and (result.names[20:] == "").all() and np.isnan(result.xy[:, 20:]).all(), \
+        "rows 20 and 21 must be unused"
+
+
+def test_metres_are_pathcrfs_pitch():
+    import numpy as np
+    from pathcrf_lab import adapter
+    atd = _atd(20, 1, [0])
+    atd.players_xy[:, 0] = (0.5, 1.0)
+    got = adapter.window_nodes(atd, 0, 20).xy[0, 0]
+    assert np.allclose(got, (52.5, 68.0)), "(0.5, 1.0) is {} m, expected (52.5, 68.0)".format(got)
+
+
+def test_adapter_reads_no_label():
+    import inspect
+    from pathcrf_lab import adapter
+    source = inspect.getsource(adapter).lower()
+    for word in ("truth", "ball_status", "ball_possession"):
+        assert word not in source, "adapter.py mentions {}: it must read no label".format(word)
+    for name, function in inspect.getmembers(adapter, inspect.isfunction):
+        if not name.startswith("_") and function.__module__ == adapter.__name__:
+            assert not any("truth" in p for p in inspect.signature(function).parameters), \
+                "{} takes a parameter named for the truth".format(name)
+
+
+def test_adapter_is_deterministic():
+    import numpy as np
+    from pathcrf_lab import adapter
+    rng = np.random.default_rng([3, 4])
+    atd = _atd(120, 24, [0] * 12 + [1] * 12)
+    atd.players_xy[:] = rng.uniform(0.2, 0.8, size=atd.players_xy.shape)
+    atd.players_xy[rng.random(atd.players_xy.shape[:2]) < 0.2] = np.nan
+    first = adapter.window_nodes(atd, 0, 120)
+    again = adapter.window_nodes(atd, 0, 120)
+    assert first.xy.tobytes() == again.xy.tobytes() and first.names.tolist() == again.names.tolist() \
+        and first.flags == again.flags, "the same inputs gave different nodes"
+
+
+# -- adapter, prepare ------------------------------------------------------------------------------
+
+def _inputs(n=600):
+    from types import SimpleNamespace
+    atd = _atd(n, 22, [0] * 11 + [1] * 11)
+    for slot in range(22):
+        atd.players_xy[:, slot] = (0.1 + 0.04 * slot, 0.5)
+    atd.ball_present[::2] = True
+    return SimpleNamespace(atd=atd, graded=[(1, 100, 400), (2, 450, 590)], n_frames=n)
+
+
+def test_prepare_arrays_shapes_and_window_of_row():
+    import numpy as np
+    from pathcrf_lab import adapter
+    codes = np.full(600, 3, dtype=np.int8)
+    codes[120:420] = 0          # inside block 1 (100-400): 120..399, 280 frames, so 2 windows
+    codes[130:140] = 2          # D: splits it into (120, 130) short and (140, 400) of 260 frames, so 2 windows
+    codes[460:470] = 1          # 10 frames in block 2: short
+    windows, frames, counts = adapter.prepare_arrays(_inputs(), codes, np.full(600, 0.5))
+    n = len(windows["win_start"])
+    assert n == 2, "expected 2 windows, got {}".format(n)
+    assert windows["node_xy"].shape == (int((windows["win_stop"] - windows["win_start"]).sum()), 22, 2), "node_xy shape"
+    assert windows["node_team"].shape == (n, 22) and windows["node_names"].shape == (n, 22) \
+        and windows["flags"].shape == (n, 6), "per-window array shapes"
+    row = frames["window_of_row"]
+    covered = np.zeros(600, dtype=bool)
+    for w, (a, b) in enumerate(zip(windows["win_start"], windows["win_stop"])):
+        assert (row[a:b] == w).all(), "rows of window {} do not map to it".format(w)
+        covered[a:b] = True
+    assert ((row == -1) == ~covered).all(), "window_of_row is -1 exactly outside the windows"
+    assert counts["short_runs"] == 2 and counts["short_frames"] == 20, "short runs: {}".format(counts)
+
+
+def test_check_pinned():
+    import tempfile
+    from pathcrf_lab import adapter
+    path = os.path.join(ROOT, adapter.MAIN_TOML)
+    adapter.check_pinned(path, adapter.MAIN_TOML_SHA256)
+    with open(path, "rb") as handle:
+        lf = handle.read().replace(b"\r\n", b"\n")
+    with tempfile.TemporaryDirectory() as folder:
+        crlf = os.path.join(folder, "crlf.toml")
+        with open(crlf, "wb") as handle:
+            handle.write(lf.replace(b"\n", b"\r\n"))
+        adapter.check_pinned(crlf, adapter.MAIN_TOML_SHA256)
+        bad = os.path.join(folder, "bad.toml")
+        with open(bad, "wb") as handle:
+            handle.write(lf + b" ")
+        try:
+            adapter.check_pinned(bad, adapter.MAIN_TOML_SHA256)
+        except ValueError as error:
+            assert adapter.MAIN_TOML_SHA256 in str(error) and "bad.toml" in str(error), "the error must name both"
+        else:
+            raise AssertionError("a changed file was accepted")
+
+
+def test_prepare_counts_are_aggregates():
+    import numpy as np
+    from pathcrf_lab import adapter
+    codes = np.full(600, 3, dtype=np.int8)
+    codes[120:300] = 0
+    _, _, counts = adapter.prepare_arrays(_inputs(), codes, np.full(600, 0.5))
+    assert all(isinstance(v, (int, float, str)) for v in counts.values()), "counts hold only ints, floats, strs"
