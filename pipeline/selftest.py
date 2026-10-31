@@ -3949,8 +3949,12 @@ def test_shape_possession_fold_choice():
         for game in ("BAR-ATH", "NOT-IN-FOLDS", "full"):
             other = shape_home(inputs, path, game=game, **values)
             assert np.array_equal(other, full, equal_nan=True), "{}: a game with no fold gets `full`".format(game)
-        # the file is read again when it changes
+        # the file is read again when it changes. The new model is as long as the old one, and a rewrite within one tick
+        # of the file system's clock keeps the modification time too (230 of 300 in a probe on Windows), which is all
+        # the cache compares with the size: so the test gives the file a later time itself, as a retrain would have
+        before = os.stat(path).st_mtime_ns
         write_shape_model(root, folds=folds, full=shape_model(0.0, 5.0, -5.0))
+        os.utime(path, ns=(before + 10 ** 9, before + 10 ** 9))
         changed = shape_home(inputs, path, **values)
         expected = 1.0 / (1.0 + np.exp(5.0 * np.where(np.isnan(side), 0.0, side)))
         assert np.allclose(changed[known], expected, rtol=0, atol=1e-12)
