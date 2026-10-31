@@ -1723,6 +1723,46 @@ cost, either. The rule was declared and the measure is the advisor's, so the ver
 kept, since P19's transfer check reports its ratio; a report-only line on graded frames with the ball seen would separate
 "at the ball" from "with the ball seen" and would have to be declared before that run.
 
+### A17 — The submission regenerated from a fresh clone (2026-10-31, Tian)
+Source: advisor-02 lane A (Advisor, for Tian: a check for the freeze, not a proposal; it never changes `main.toml` or a
+model). Run by the controller from 02:50 to 03:20 on 2026-10-31.
+
+**What was run.** A `git clone` of `origin` at `5f0145c` (main, pushed) into a new folder, so that what is pushed is what
+is tested, not a worktree. A new venv from `py -3.11` (Python 3.11.9) with `requirements-pipeline.txt` and then
+`requirements-benchmark.txt` only; `pip check` clean; its `pip freeze` equals the team venv's for every package except
+`pip` itself (24.0 against 26.2.2). A new data folder held hard links to the raw bundle files only (`tactical/`,
+`broadcast/`, `external/dfl/`: 30 files), with no `cache/` and no `runs/`, so every cache was rebuilt from scratch
+(the ATD cache in 7.4 s). `MTAH_DATA_DIR` pointed at it. Every check ran at one BLAS thread and below-normal priority,
+one at a time, except the third run of `main.toml`.
+
+**The checks, each exact or failed:**
+
+| check | result | time |
+|---|---|---|
+| `pipeline/run.py pipeline/configs/main.toml`, first run (caches built) | sha256 `7ba575c0982aacb9765b39c406e4ff5c9ddb82ca37cfa2b7f101417431fc3d7c` | 20 s |
+| the same, second run | the same sha256 | 13 s |
+| the same, BLAS thread variables unset (the default threads, as the organisers will run it) | the same sha256 | about 1 min |
+| `evaluation/validate_submission.py` on that file | valid | 13 s |
+| `pipeline/selftest.py` | 191 of 191 | 31 s |
+| `pipeline/selftest.py --data` (`main.toml` twice, the four baselines byte for byte) | 193 of 193 | 47 s |
+| `pipeline/benchmark/selftest.py` | 431 passed | 121 s |
+| `pipeline/benchmark/sources.py --verify` | 21 of 21 DFL files, size and md5 | 13 s |
+| `train_dead_ball.py --model hgb --verify` (P05's model retrained from the DFL matches) | identical to the committed file | 470 s |
+| `train_shape.py --verify` (P07's model retrained) | identical to the committed file | 286 s |
+| `pipeline/benchmark/run.py pipeline/configs/main.toml --drop-match-only --truth both` | 0.5430 raw / 0.5593 coarse pooled, to the last digit (R017's) | 126 s |
+
+The benchmark run dropped `smart_tagging` (match-only, P08) as declared and printed so. Its per-match spellF1 equal
+R017's report.
+
+**Hardware.** AMD Ryzen 5 5500U (6 cores, 12 threads), 15.3 GB RAM, Windows 11 Home 10.0.26200, CPU only.
+
+**What it shows, and what it does not.** On this machine the pushed repository and the raw bundle regenerate the
+submission file byte for byte, at one thread and at the default threads, and the two trained models and the benchmark's
+headline numbers come back exactly. It does not show the same on another processor or operating system: T20 and T21
+name library versions and line endings as the risks, and a run on a second machine (an Intel CPU, or Linux) is still the
+check that week 4 asks for. The `.gitattributes` rule `pipeline/models/*.json text eol=lf` keeps the models' bytes the
+same on any checkout; the configs may arrive with CRLF on Windows, which changes no parsed value and no output byte here.
+
 ## Experiments
 
 Copy this template for each run, and add a scoreboard row for anything worth comparing.
