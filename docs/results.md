@@ -42,6 +42,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R018b | 2026-10-30 | the whistle (P10), the one retry R018 allowed: the tonal threshold set to the match's own 98th percentile of tonal_db, the same gate and bar | — | — | — | — | dropped, code removed (fc9dbed): gate failed, ratio 1.51 (55 detections) |
 | R019 | 2026-10-30 | P09: the camera's aim in the shape model; part 1a: the camera's fit and fidelity gates (peak lag +-10 frames, peak correlation +-0.05, median error +-3.0 m, dead/alive speed ratio +-25%; the gap/visible ratio a WARN), declared before the first simulation; part 2a: the gates run | — | — | — | — | dropped 2026-10-31, code removed (8c4c959): `tracking` gates 2 and 4 failed (peak correlation 0.9115 vs ours 0.843, dead/alive speed ratio 0.575 vs 0.128), no retry |
 | R020 | 2026-10-31 | P22(a): an EM label-shift prior on the shape model (the home share from P07's own outputs, added to the logit at s in {0.25, 0.5, 1.0}); part 1: the feasibility gate (mean abs error of EM's share at most 0.75 x that of guessing 0.5), the grid, R014's bar, the BAR-ATH checks; part 2: the gate run | — | — | — | — | dropped 2026-10-31, code removed (recover from `e303365`): the gate failed, 0.0538 against 0.0623 (ratio 0.863, needs 0.75), and neither retry condition held; no grid ran |
+| R021 | 2026-10-31 | P19: a learned team model where the ball is seen (boosted trees on the ball, the nearest slots of both teams, the touch episodes and P07's shape, trained on the seven DFL matches); part 1: the feasibility gate (50 (P19 right - main right) >= frames in 6 of 7 matches and pooled), a 17-config grid, R014's bar plus the LOMO, the BAR-ATH transfer; part 2a: the gate run | — | — | — | — | dropped 2026-10-31, code removed (recover from `15e7e14`): the gate failed, +0.0160 pooled against +0.020 and 3 of 7 matches against 6 (all seven positive); no grid ran |
 
 ### The four yardsticks on every profile, in one table
 
@@ -6961,11 +6962,19 @@ python pipeline/benchmark/train_team.py --verify        # retrains and compares
 python pipeline/benchmark/train_team.py --feasibility   # out of fold, against main.toml's decoded labels
 ```
 
+**The pause before training** (the conditions of Advisor (for Tian), §3.1, quoted in part 1). The dry run, J03WMX with one
+seed, gave 10,439 rows (46.8% home) against the declared 10,476, inside [8,381, 12,571], and no all-NaN and no constant
+column. The helper printed "peak memory unknown; projected peak of the full run unknown", so the projected peak of 8 GB or
+less was not measured; the controller substituted a rows-only projection of about 0.2 GB, which the advisor accepted with a
+caveat (§7.3). Advisor (for Tian), §7: training approved.
+
 **The model.** `pipeline/models/team_model_hgb.json`: 3,587,508 bytes (under the 10 MB limit), sha256
 `07eb5450b6fb2424974ee9d7523eba55afe5b7a176fe8caccfffbfac49668ee1`. `--verify` retrained it and reported it identical
-("is what the code trains"). The rows, at stride 5 with the served ball visible, 23,611 to 31,898 per match (home share
-45.6% to 62.8%). The file was never committed (it is fitted on DFL, and the code is removed below); the commit and the
-hash above restore it exactly: check out `15e7e14` and run the first command.
+("is what the code trains"). The rows, at stride 5 with the served ball visible, are 23,611 to 31,898 per match, summed
+over the 3 seeds (home share 45.6% to 62.8%; 196,275 rows in all against the 196,283 declared). The file never reached a
+pushed commit: a local merge commit held it by mistake and was amended before any push, and with the code removed (Advisor
+(for Tian), §8.3) nothing reads it. The commit and the hash above restore it exactly: check out `15e7e14` and run the
+first command.
 
 **The feasibility** (P19 against `main.toml`'s decoded label on the frames that are graded, truth H or A, ball seen and
 decoded H or A; the rule is `controlled_touch` with its hold 0.60, silent frames wrong). Accuracy, then the coarse truth
@@ -7006,14 +7015,24 @@ below the gate by 0.0040 and the matches fall short by three; a miss by any marg
   frames, and a feature added for that would be a hope and not a cause, which §3.3 excludes.
 
 **Readings (hedged).**
-- The gain is consistent in sign (seven of seven) but small, and most of it sits on the hold frames (+0.0257 on 56% of the
-  frames) and on frames of a team over 11 slots (+0.0295); on episode frames it is +0.0035. The coarse truth agrees in
-  sign on six of seven matches and in the pool (+0.0123).
-- Per-frame accuracy against `main.toml`'s decoded labels is a strict proxy for a decoder vote: the HMM already holds the
-  last team through a pass, so an agreeing vote adds little where it already holds. The gate measured what was declared;
-  how much a spellF1 grid would have moved is not measured, and the result predicts a small effect.
+- *The belief held; the gate was something else.* Part 1's belief is that the model names the team more often than the
+  rule and its hold do. The rule column of the table says it did, in 7 of 7 matches: P19 − rule is +0.0186 (J03WMX, the
+  lowest), +0.0290, +0.0316, +0.0453, +0.0338, +0.0215 and +0.0201, +0.0281 pooled. What failed is the declared go, which
+  compares P19 with `main.toml`'s decoded labels, and those are already +0.0121 above the rule. Part 1 tied the falsifier
+  to that go, so the verdict stands; the two are different questions.
+- *The gain is consistent in sign but small, and nearly all of it is on hold frames.* Seven of seven matches are positive.
+  Frames times the per-frame difference: hold frames 551,688 × 0.0257 ≈ 14,180 of the ≈ 15,660 extra right frames
+  (about 90%); episode frames 425,729 × 0.0035 ≈ 1,490; frames with a team over 11 slots 93,077 × 0.0295 ≈ 2,750 (about
+  18%, overlapping the other classes). The rate is highest on the over-11 frames (+0.0295, 9.5% of the frames) but they
+  carry a small share of the gain. The coarse truth agrees in sign on six of seven matches and in the pool (+0.0123).
+- *What per-frame accuracy against the decoded labels says about a decoder vote is not measured, in either direction.* It
+  may be a strict screen: P19 was scored alone, without the decoder's smoothing, against the decoded output of every source
+  together. It may also overstate what P19 would add as a vote, because most of the gain is on hold frames, where the HMM
+  already keeps a team through a pass. The gate measured what was declared; how much a spellF1 grid would have moved is not
+  measured. The advisor reads the result as predicting a small effect (§8.4).
 - A grid run without the per-frame gate (for example the declared 17 configs under R014's bar plus the leave-one-match-out)
-  would be a new proposal for Tian, conceived after seeing this result, with its own declaration. It is not made here.
+  would be a new proposal for Tian, conceived after seeing this result and predicted to have a small effect, with its own
+  declaration. It is not made here.
 
 **Outcome.** P19 is dropped at the feasibility gate; the grid, the bar and the transfer check were not run, and no spellF1
 was produced (`main.toml` is unchanged; `pipeline/` equals main's after the removal). The code (`team_features.py`,
