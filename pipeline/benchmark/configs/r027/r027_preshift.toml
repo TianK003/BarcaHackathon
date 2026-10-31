@@ -1,0 +1,48 @@
+# R027, the shift (docs/results.md R027, R012's rule in R024's form): r027_post.toml without shift_edges.
+# `conventions.py latency` measures this pipeline's own lag on DFL; s_b is minus its rounded median per type (0 below 30
+# matched changes), and the guard runs the config with s_b against this one. Everything else is r027_post.toml's:
+# r024_both.toml's entries (main.toml's) with `shape_possession` replaced by `shape_selftrain`.
+
+description = "R027 shift: r027_post without shift_edges, for the shift's re-derivation (R012's rule in R024's form): r024_both.toml (main.toml's entries) with shape_selftrain in place of shape_possession (P07's logit plus the other half's touch-fitted intercept, E2 at epsilon 0.07, teacher 1.5 m / 6.0 m/s / 1 frame / duel 1.0, hgb pipeline/models/shape_possession_hgb.json at weight 0.2, scope all, min_prob 0.02) + controlled_touch 1.5 m / 6.0 m/s / 1 frame / hold 0.55 (confidence 0.93) + dead_ball_model (hgb, pipeline/models/dead_ball_hgb.json) at weight 1.0 + smart_tagging team votes (R017: c_team 0.76, spread frame, weight 0.2), hmm 4/32/35/25, decoded per half, no refiner."
+seed = 0
+scope = "halves"
+
+# Each [[evidence]] entry is one source: kind is its key in pipeline/evidence/__init__.py REGISTRY. Optional:
+# name = "..." (default: kind; must be unique) and weight = 1.0 (how much the decoder trusts it). Every other key is
+# passed to the source as a keyword argument.
+[[evidence]]
+kind = "controlled_touch"
+radius = 1.5                                  # metres: the nearest player must be this close
+max_rel_speed = 6.0                           # m/s: and move with the ball
+min_frames = 1                                # an episode shorter than this is dropped
+confidence = 0.93                             # touch_stats.py --grid r013: floor of the pooled agreement (93.1%)
+hold = 0.55                                   # the weak vote of the last team between episodes; 0.5 = off (R024)
+
+[[evidence]]
+kind = "dead_ball_model"
+weight = 1.0
+model = "pipeline/models/dead_ball_hgb.json"  # relative to the repo root
+
+[[evidence]]
+kind = "shape_selftrain"
+weight = 0.2
+model = "pipeline/models/shape_possession_hgb.json"
+scope = "all"
+min_prob = 0.02
+alive_model = "pipeline/models/dead_ball_hgb.json"     # the teacher's dead-ball mask
+teacher = { radius = 1.5, max_rel_speed = 6.0, min_frames = 1, duel_radius = 1.0 }
+epsilon = 0.07                                         # 1 - controlled_touch's confidence 0.93 (R013)
+
+[[evidence]]
+kind = "smart_tagging"
+weight = 0.2                                  # R017, Tian's pick of strength (2026-10-30); untested on a benchmark
+c_team = 0.76                                 # R017: the team votes' agreement with the kept touch episodes
+spread = "frame"                              # a per-frame vote (the alternative, "tag", is r017_tag.toml)
+
+# Exactly one decoder (pipeline/decode/). Every key but kind is a keyword argument.
+[decoder]
+kind = "hmm"
+switch_team = 4                               # nats a change of team (H <-> A) costs
+switch_dead = 32                              # nats a change into or out of D costs
+min_possession = 35                           # frames: no run of H or A shorter than this (1 is no minimum)
+min_dead = 25                                 # frames: no run of D shorter than this (1 is no minimum)

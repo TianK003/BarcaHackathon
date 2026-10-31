@@ -52,9 +52,10 @@ Against the raw truth only, the frame-level one (the coarse truth is a construct
 
 * Each source of the config, pooled over the matches and seeds, on the frames where it speaks. Its `home` against the
   truth's team on the truth's alive frames (y = the truth is H), and, for a source of a kind in SHAPE_KINDS (P07's
-  shape_possession), split by whether the degraded ball is present (inputs.atd.ball_present); its `alive` against the
-  truth's alive (y = the truth is not D). A channel the source never speaks on is left out. Every learned model is
-  out of fold: dead_ball_model and shape_possession score a benchmark match with the fold that never saw it.
+  shape_possession and P22(b)'s shape_selftrain, which is P07 plus an intercept), split by whether the degraded ball
+  is present (inputs.atd.ball_present); its `alive` against the truth's alive (y = the truth is not D). A channel the
+  source never speaks on is left out. Every learned model is out of fold: dead_ball_model and shape_possession (and
+  so shape_selftrain, which reads both) score a benchmark match with the fold that never saw it.
 * The decoder's posterior: hmm.marginals at the config's own [decoder] parameters (switch_team, switch_dead,
   min_possession, min_dead, and eps), on hmm.log_likelihoods of every source cut to the graded block, so before any
   refiner (shift_edges). P(H) + P(A) against alive, on all graded frames and split by whether a team source speaks on
@@ -129,7 +130,7 @@ CLIP = 1e-6                           # p is clipped to [CLIP, 1 - CLIP] for the
 NEWTON_STEPS = 100                    # the most Newton iterations of the Platt fit
 NEWTON_TOLERANCE = 1e-10              # a Newton step this small in both parameters ends the fit, converged
 SMALLEST_STEP = 1e-12                 # step halving gives up below this fraction of a Newton step
-SHAPE_KINDS = ("shape_possession",)   # home sources also measured apart where the ball is seen and where it is not
+SHAPE_KINDS = ("shape_possession", "shape_selftrain")   # home sources measured apart where the ball is seen or not
 POSTERIOR = "posterior"               # the decoder's key in the calibration block, beside the sources' names
 NO_TEAM_SOURCE = "none"               # alive_by_team_sources: the frames on which no source has a `home`
 OTHER_SPEAKERS = "other"              # ... and the combinations folded together beyond MAX_SPEAKER_KEYS

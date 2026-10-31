@@ -1,0 +1,61 @@
+# R027 (P22(b); the declaration and the runs are in docs/results.md, the design in
+# docs/superpowers/specs/2026-10-31-p22b-selftrain-design.md): the candidate. It is r024_both.toml (main.toml's entries)
+# with its `shape_possession` entry replaced by `shape_selftrain`: P07's logit plus an intercept for each graded half,
+# fitted at run time on the other half's controlled_touch episode frames (the teacher: the same rule, at confidence 0.99
+# and with no hold, on the frames where the dead-ball model says alive; E2, the noise-aware intercept, at epsilon 0.07 =
+# 1 - the rule's confidence 0.93, which is measured and not tuned). Nothing else is re-chosen: not the touch rule, the
+# dead-ball model, Smart Tagging, the decoder or the shift. The benchmark runs it with --drop-match-only, as it runs
+# main.toml, and r027_preshift.toml is this file without shift_edges, for the shift's re-derivation (R012's rule in
+# R024's form). After the description, everything is r024_both.toml's except the one entry that was swapped.
+
+description = "R027 (P22(b)): r024_both.toml (main.toml's entries) with shape_selftrain in place of shape_possession: P07's logit plus an intercept per graded half, fitted on the other half's controlled_touch episodes (teacher 1.5 m / 6.0 m/s / 1 frame / duel 1.0 at confidence 0.99 and no hold, rows where dead_ball_model says alive, E2 at epsilon 0.07; hgb pipeline/models/shape_possession_hgb.json at weight 0.2, scope all, min_prob 0.02), controlled_touch 1.5 m / 6.0 m/s / 1 frame / hold 0.55 (confidence 0.93) + dead_ball_model (hgb, pipeline/models/dead_ball_hgb.json) at weight 1.0 + smart_tagging team votes (R017: c_team 0.76, spread frame, weight 0.2), hmm 4/32/35/25, decoded per half, then shift_edges team +1 / into_dead -2 / out_of_dead 0 frames."
+seed = 0
+scope = "halves"
+
+# Each [[evidence]] entry is one source: kind is its key in pipeline/evidence/__init__.py REGISTRY. Optional:
+# name = "..." (default: kind; must be unique) and weight = 1.0 (how much the decoder trusts it). Every other key is
+# passed to the source as a keyword argument.
+[[evidence]]
+kind = "controlled_touch"
+radius = 1.5                                  # metres: the nearest player must be this close
+max_rel_speed = 6.0                           # m/s: and move with the ball
+min_frames = 1                                # an episode shorter than this is dropped
+confidence = 0.93                             # touch_stats.py --grid r013: floor of the pooled agreement (93.1%)
+hold = 0.55                                   # the weak vote of the last team between episodes; 0.5 = off (R024)
+
+[[evidence]]
+kind = "dead_ball_model"
+weight = 1.0
+model = "pipeline/models/dead_ball_hgb.json"  # relative to the repo root
+
+[[evidence]]
+kind = "shape_selftrain"
+weight = 0.2
+model = "pipeline/models/shape_possession_hgb.json"
+scope = "all"
+min_prob = 0.02
+alive_model = "pipeline/models/dead_ball_hgb.json"     # the teacher's dead-ball mask
+teacher = { radius = 1.5, max_rel_speed = 6.0, min_frames = 1, duel_radius = 1.0 }
+epsilon = 0.07                                         # 1 - controlled_touch's confidence 0.93 (R013)
+
+[[evidence]]
+kind = "smart_tagging"
+weight = 0.2                                  # R017, Tian's pick of strength (2026-10-30); untested on a benchmark
+c_team = 0.76                                 # R017: the team votes' agreement with the kept touch episodes
+spread = "frame"                              # a per-frame vote (the alternative, "tag", is r017_tag.toml)
+
+# Exactly one decoder (pipeline/decode/). Every key but kind is a keyword argument.
+[decoder]
+kind = "hmm"
+switch_team = 4                               # nats a change of team (H <-> A) costs
+switch_dead = 32                              # nats a change into or out of D costs
+min_possession = 35                           # frames: no run of H or A shorter than this (1 is no minimum)
+min_dead = 25                                 # frames: no run of D shorter than this (1 is no minimum)
+
+# Zero or more refiners (pipeline/refine/), applied in order after the decoder. R012's shift: a positive value moves the
+# new label later, in frames; a change of label next to an X or at a kick-off never moves.
+[[refine]]
+kind = "shift_edges"
+team = 1                                      # frames: s_b, the pipeline's own lag on DFL (g = 0)
+into_dead = -2
+out_of_dead = 0
