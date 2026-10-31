@@ -25,6 +25,7 @@ python pipeline/benchmark/metrica.py [--offline]   # P16: the grain of H/A/D der
 python pipeline/benchmark/touch_stats.py      # P04's control rule measured: coverage, agreement, flip lags, confidence
 python pipeline/benchmark/train_dead_ball.py --model hgb   # P05: train the dead-ball model (folds + full) as JSON
 python pipeline/benchmark/train_shape.py [--verify|--report]   # P07: train the shape model (folds + full) as JSON
+python pipeline/benchmark/selftrain.py gate|bar-ath ...   # P22(b), R027: the gate on the DFL matches; the label-free checks on BAR-ATH (heavy)
 python pipeline/benchmark/conventions.py public|dfl|compare|latency|shift ...   # P02: when a truth flips, the shift
 python pipeline/benchmark/selftest.py [--dfl] [--data]   # the checks
 ```
@@ -907,6 +908,25 @@ with numpy alone (`pipeline/evidence/trees.py` is the walk, shared with `dead_ba
 The checks are in `checks/shape.py` (synthetic): the rows, the augmentation, the exported trees against scikit-learn's
 raw score, the same bytes on one and four threads, the folds, that no truth reaches the features, the artefact, the
 report, and `touch_agreement` on a hand-built scene.
+
+## The self-training gate
+
+P22(b)'s tool, `pipeline/benchmark/selftrain.py` (R027; design in
+`docs/superpowers/specs/2026-10-31-p22b-selftrain-design.md`), asks of the benchmark, before any source exists, whether
+a per-half intercept on P07's logit, fitted on `controlled_touch`'s own episode frames of the other half (the estimators
+are `pipeline/evidence/recalibration.py`'s), makes P07 more right in the ball gaps; and of BAR-ATH, with no label,
+whether the same offsets are in the benchmark's range and agree with Smart Tagging. `gate` (options `--profile`,
+`--seeds`, `--matches`) serves each match with its own fold and reports, on the alive frames with the served ball
+missing, the log-loss and accuracy of P07 and of rung 1 (E2, cross-fitted), E1, a single intercept and rung 3's head,
+with the oracles fitted on the truth (`b*_gap`, `b*_touch`), B, E/B, the error's noise and transfer parts, the band (the
+largest `|b*_gap|`) and the teacher's own figures; its exit code is 0 if rung 1 gains at least 0.002 nats pooled and
+harms no match by more than 0.002, 4 if only rung 3 does, 1 if neither. `bar-ath --gate-report PATH` reads the band from
+that report, and exits 0 if the Smart Tagging check passes (the adapted home agrees with the votes in the gaps at least
+as often as P07's minus 0.005), 1 if a check fails (whatever the band), 3 if every check passes but an offset is outside
+the band. An error is 2 in both, never python's own 1, which would read as a verdict. Reports hold aggregates only, at
+`<data dir>/runs/selftrain/`. The checks are in `checks/selftrain.py` (synthetic): every figure of the gate worked out
+again frame by frame on matches whose touch rule feeds the fits, the head against scipy, the decision at its edges, that
+no truth reaches the teacher or the offsets, and the exit codes.
 
 ## Conventions: when our truth flips, and the edge shift
 
