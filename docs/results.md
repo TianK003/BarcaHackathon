@@ -1938,7 +1938,7 @@ spellF1 units, summed over θ and divided by 5.
   logit(0.55), the training prior it subtracts by design (a likelihood, not a posterior: the 50/50 bias the review named
   is not there). P07's α is 1.07 to 1.10 with the ball seen or missing alike, so its probabilities are about right on
   their own, and its weight of 0.2 is the decoder's correction for counting correlated frames as independent, not a
-  calibration. `controlled_touch`'s two fixed votes (0.93 in an episode, 0.60 on hold) are conservative: α 1.22.
+  calibration. `controlled_touch`'s two fixed votes (0.93 in an episode, 0.55 on hold since R024) are conservative: α 1.22.
 - **The posterior is far too sharp.** α is 0.27 for alive and 0.19 for the team: the decoder's log-odds are about four
   to five times what the outcomes support, and its team posterior has a log-loss of 1.00. That is what a product of
   per-frame terms over correlated frames gives. For R025 it means the posterior's crossings will mostly sit where
