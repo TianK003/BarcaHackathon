@@ -732,7 +732,7 @@ const DATA = {
   nextSteps: [
     { title: "The grain of our truth (P16)", text: "Every ball-rich change splits the two truths: R010's decoder, R013's touch rule, A14's ball. Metrica's sample games, in our provider's conventions, are how to learn which truth ours resembles." },
     { title: "Not now: a video ball detector (P14)", text: "A14: the ball is about 6 px wide, smaller than a ViT patch (T46), and a perfect ball in our gaps is worth +0.10 raw but only +0.02 coarse. A half-day zero-shot test only if someone is free." },
-    { title: "The deliverables", text: "Regenerate `main.toml`'s file from a clean clone on a second machine, make the repo public as the last step, condense the technical document, and decide before the freeze how much of the benchmark's gain to believe (a decision, not a run: T38, T39, R011). Our advice, not a rule: upload the file early as a safety copy. See [Work to do](#work)." }
+    { title: "The deliverables", text: "Regenerate `main.toml`'s file from a clean clone on a second machine, make the repo public as the last step, fill the placeholders of [the technical document](../docs/technical_document_submission.md), and decide before the freeze how much of the benchmark's gain to believe (a decision, not a run: T38, T39, R011). Our advice, not a rule: upload the file early as a safety copy. See [Work to do](#work)." }
   ],
 
   headroom: {
@@ -1572,8 +1572,8 @@ const DATA = {
       cmds: ["python pipeline/run.py pipeline/configs/main.toml --out ../<team_name>.csv", "python evaluation/validate_submission.py ../<team_name>.csv"] },
     { title: "Public repo URL", status: "todo", label: "private",
       text: "The repository is private and must be made public by 17 Nov, as a deliberate final step. It must hold the source, pinned dependencies, install and run instructions, and the command that regenerates the CSV." },
-    { title: "Technical document (`<team_name>.pdf` or `.md`)", status: "doing", label: "draft",
-      text: "[docs/technical_document.md](../docs/technical_document.md) is a long draft for “a few pages”, still with placeholders ([Team name], the five names, the repo URL, the commit and the sha256). Condense it." },
+    { title: "Technical document (`<team_name>.pdf` or `.md`)", status: "doing", label: "condensed",
+      text: "[docs/technical_document_submission.md](../docs/technical_document_submission.md) is the version to upload: the seven sections of the long one at deliverable length, every number from `docs/results.md` with its entry. It still has placeholders ([Team name], the five names, the repo URL, the commit) and waits for A17's fresh-clone reproduction in its section 7. [docs/technical_document.md](../docs/technical_document.md) stays the full record." },
     { title: "Clean-clone reproduction on a second machine", status: "todo", label: "not done",
       text: "Regenerate the file from a clean clone, ideally on a second machine, and compare the sha256 with `7ba575c0…` (T21)." },
     { title: "Pinned dependencies", status: "done", label: "done",
@@ -1692,8 +1692,9 @@ const DATA = {
     { href: "../docs/README.md", label: "docs/README.md", text: "What each team doc holds and when to update it." },
     { href: "../docs/proposals.md", label: "docs/proposals.md", text: "Ideas P01–P22 with effort, impact and status, and the “After …” recommendations." },
     { href: "../docs/results.md", label: "docs/results.md", text: "Every R and A entry with its numbers, the scoreboard and the submission log." },
-    { href: "../docs/traps.md", label: "docs/traps.md", text: "Pitfalls T01–T48: why they happen and what to do instead." },
-    { href: "../docs/technical_document.md", label: "docs/technical_document.md", text: "The draft of deliverable 3." },
+    { href: "../docs/traps.md", label: "docs/traps.md", text: "Pitfalls T01–T49: why they happen and what to do instead." },
+    { href: "../docs/technical_document_submission.md", label: "docs/technical_document_submission.md", text: "Deliverable 3 at its submitted length: the file to upload." },
+    { href: "../docs/technical_document.md", label: "docs/technical_document.md", text: "The full record behind deliverable 3." },
     { href: "../pipeline/README.md", label: "pipeline/README.md", text: "The pipeline's overview: diagram, contracts, configs, checks, validation." },
     { href: "../pipeline/inputs/README.md", label: "pipeline/inputs/README.md", text: "Stage 1: alignment and the ATD cache." },
     { href: "../pipeline/evidence/README.md", label: "pipeline/evidence/README.md", text: "Stage 2: every source, its parameters, and how to write one." },
