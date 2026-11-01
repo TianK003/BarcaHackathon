@@ -49,6 +49,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R025, R025b | 2026-10-31 | P23 C: posterior edges, then on a posterior tempered at T = 5 (the one retry) | — | — | — | mean Δ -0.0010 (2 wins) and -0.0282 (0 wins) against `main` | **dropped**: guard failed both times; code removed |
 | R026 | 2026-10-31 | P23 E: P07 weighted apart in the gaps (6 configs) | — | — | — | the identity scored as `main`; every heavier gap weight -0.010 to -0.020 on the mean | **dropped**: no config beat `main`; no retry (advisor); code removed |
 | R027 | 2026-10-31 | P22(b): P07's logit plus a per-half intercept fitted on the other half's touch-rule frames (E2, noise-aware at ε 0.07), served by a new source `shape_selftrain`; part 1: the gate on DFL (rung 1's pooled log-loss in the held-out half's gaps at least 0.002 nats below P07's, no match more than 0.002 above), the shift, the bar (the mean of the two truths: pooled Δ ≥ +0.005 on `tracking`, no match below −0.005), two vetoes, the BAR-ATH checks; rung 3 the one retry (R027b); part 2a: the gate run | — | — | — | — | dropped 2026-10-31, code removed (recover from `1e5a5d2` and the local tag `archive/r027-source`): the gate failed, rung 1's pooled log-loss +0.0061 (0.3820 against P07's 0.3759; needed −0.002) and worse on 5 of 7 matches (worst +0.0148, J03WMX), rung 3 +0.0838; the touch-to-gap transfer 0.296 against the teacher's noise 0.107 (E/B 1.18); no shift, bar or BAR-ATH run, no spellF1 |
+| R028 | 2026-11-01 | P15 use 1: the TV broadcast's usable ball fills our tactical ball's gaps (`[inputs] ball_fill = "broadcast"`: aligned by code, live-tested, runs of 13+ frames); on DFL a simulated broadcast transplanted from BAR-ATH's real fill; part 1: the fidelity gates, the shift, the bar (ii: the mean of the two truths, pooled Δ ≥ +0.005 on `tracking`, no match below −0.005), two vetoes, the BAR-ATH checks; R028b (`filled_confidence` 0.79) the one retry | — | — | — | — | declared 2026-11-01 (part 1 committed before any run) |
 
 ### The four yardsticks on every profile, in one table
 
@@ -8879,6 +8880,336 @@ exit 1. The verdict needed no ruling; the run's one ruling was the controller's 
   file: 2 runs of 60 failed before the fix, 0 of 520 after (T52). Only the test changed.
 - **Cost:** the gate took about 6 minutes a profile. The design, its review, the plan and the implementation took the
   evening of 31 Oct.
+
+### R028 — The broadcast's ball in our gaps: the fill, its stand-in on DFL, the gates, the bar and the checks (declared 2026-11-01, Tian)
+Proposal: P15 (use 1) · Branch `r028-broadcast-ball` · Design: `docs/superpowers/specs/2026-11-01-r028-broadcast-ball-design.md`
+· Plan: `docs/superpowers/plans/2026-11-01-r028-broadcast-ball.md` · Commits:
+- **Part 1** is committed on the lane after Tasks 1 and 2a are merged into it and Tasks 2b and 3 are committed on it;
+  part 2 names that commit.
+  - The pools and the fidelity runs are made from a detached checkout of that commit.
+  - The lag runs from the same commit.
+  - The bar and the BAR-ATH checks run from the next lane commit, which adds `r028_final.toml`.
+- **Before each step,** the controller logs the run worktree's `git rev-parse HEAD` and `git status --porcelain`, which
+  must be empty. A report that records its own git state names the same commit with no `+dirty`.
+
+The runs' commits are in part 2.
+
+**Part 1, declared before any run** (2026-11-01). Nothing below was chosen from a score, and no run of this entry has
+been made. It states the design's sections 2, 3, 7 and 8, with Tian's four answers (its section 10) in place.
+
+Every threshold is held as written. The numbers compared with it are read from the reports' JSON, not from their
+printouts, and a miss by any margin is a miss. The one exception is the reference's reproduction, held at R024's 4
+printed decimals.
+
+**Why.**
+- **The ball in our gaps is worth a lot, if it can be had.** On the benchmark a perfect ball in our gaps is worth
+  +0.1016 raw and +0.0197 coarse (A14).
+- **The broadcast has some of it** (A20):
+  - it is a second tracker behind a camera that a person steers;
+  - two offsets found by code align it to our feed;
+  - its usable ball would fill 29.6% of the gap frames our decoder calls alive and 4.2% of those it calls `D`;
+  - where both feeds have the ball, they are a median 0.77 m apart (1.00 m near our gaps);
+  - 15% of the balls it would give us in our gaps are beyond a line.
+- **The tactical camera adds nothing there** (A20 part 1).
+
+**Belief.**
+- **The mechanism.** More ball in our gaps gives `controlled_touch` episodes where it had none, and gives
+  `dead_ball_model` a ball past a line where ours was lost. So the decoder places fewer wrong changes inside the gaps.
+- **The size:** an objective gain (the mean of the two truths' pooled spellF1, R024) of +0.005 to +0.012; about 45%
+  that it clears +0.005.
+- **The cuts:** the fill clings to the gaps' edges, its fragments are short, a third of its positions are more than 2 m
+  off near our gaps, and the coarse truth barely rewards more ball (A14).
+- **Falsified if:**
+  - the stand-in's placement gates fail (the simulated broadcast is not ours);
+  - or the pipeline with the fill fails the bar;
+  - or, on BAR-ATH, the fill's touches disagree with Smart Tagging more than the touches without it.
+
+**The fill: the pipeline, behind `[inputs] ball_fill = "broadcast"`** (design 2.1 to 2.7). With the key absent or
+`"none"`, every config runs bit-identically. With it:
+1. **The alignment,** per graded half, by code on every run.
+   - **Coarse:** every 25th graded tactical frame of the half, against every offset in steps of 25 frames. A pair
+     counts where both balls exist and the broadcast homography is valid. The score is the share within 3.0 m, and an
+     offset counts only with at least 300 pairs.
+   - **Fine:** every graded frame, offsets within ±40 frames of the coarse best; the share within 1.5 m, again only with
+     at least 300 pairs.
+   - **Accepted** at a fine score of at least 0.5, and a coarse best at least 2.0 × the best coarse score more than 250
+     frames away.
+   - Ties go to the smaller |d|, then the smaller d. Otherwise `AlignmentError` stops the run.
+   - Tactical frame t pairs with broadcast frame t − d_h.
+2. **Live.** The broadcast homography is valid, at least 4 broadcast players are present, and the median over them of the
+   distance to the nearest present tactical player is below 2.0 m.
+3. **Usable.** A live frame with the broadcast ball present. Runs of usable frames shorter than 13 frames are removed
+   (A20 part 6: those runs are a median 15.9 to 26.9 m from ours). A run also breaks where the mapped broadcast frames
+   stop being consecutive.
+4. **The fill.** On graded frames where the tactical ball is missing and a usable broadcast ball exists, `ball_xy` becomes
+   the broadcast's position.
+   - `ball_speed` stays NaN there, and the players stay the tactical ones.
+   - No source, model, decoder or refiner parameter changes.
+   - No randomness: the same files give the same bytes.
+   - The run's manifest records the offsets, the scores, the live share, the filled frames and the broadcast files'
+     records.
+
+**The stand-in on DFL: a simulated broadcast** (design 3.2 to 3.4).
+- **The pools.** `broadcast_sim.py pools` loads BAR-ATH once.
+  - It decodes `pipeline/configs/r024_both.toml` in-process and stops unless the CSV it writes has sha256
+    `e6496a9b9805217ef085e52ed69cbb27a42b95368d65c1d188b4a2f339b61170`.
+  - It keeps every gap of our ball inside a graded half, with the gap's real fill mask (items 1 to 4) and its class:
+    alive if at least 0.5 of its frames are `H` or `A` under those labels.
+  - It keeps the error runs: maximal runs of graded frames where both balls exist, the broadcast's is usable, and the
+    frame is 1 to 50 frames before one of our gaps' first frame or after its last, in the same graded block. Each
+    frame's offset is broadcast minus tactical, in metres.
+  - It stores BAR-ATH's side of the fidelity measure.
+  - **The alignment it builds from** is held to the same band as `bar-ath`'s (below): d₁ and d₂ within ±2 frames of
+    4,014 and 26,919 and a live share of at least 0.85. It prints d₁, d₂, the fine scores and the live share. Outside
+    the band, or on a refused alignment (`AlignmentError`), it exits 3, decodes nothing and writes no pools, and that is a
+    **STOP** for the advisor: nothing else runs.
+  - It refuses (exit 2) when the labels' sha256 differs, a class has no donor gap or the error pool is empty, and then
+    leaves no pools, no measure and no labels' CSV behind. The decoded CSV is deleted as soon as its sha256 is read.
+  - **The cache's key** holds `POOLS_VERSION = 1`, the sha256 of `broadcast_sim.py`, `pipeline/inputs/broadcast.py`
+    and `pipeline/inputs/__init__.py` (CRLF read as LF), the two ATD caches' source records and versions, the broadcast
+    homography's size and sha256, `r024_both.toml`'s text, the pinned sha256, and the match's frames, pitch and graded
+    blocks. Only `pools` builds them: `fidelity`, `bar-ath`, `run.py` and `conventions.py latency` refuse when the
+    current key's cache is absent.
+  - These are frame-level arrays of our match. They stay under `data/cache/benchmark/broadcast_sim/<key digest>/` and
+    are never printed. Every report of a run that loaded them, `main`'s included, holds `broadcast_sim`: the sha256 of
+    the pools' content, not the folder's name. `choose.py` refuses reports whose values differ.
+- **The driver** is the candidate's own labels without the fill: the same config with `ball_fill = "none"`, decoded on
+  the served match. It is never DFL's truth, so no truth reaches the inputs; a placement by the truth would carry the
+  answer.
+  - It is made from the config as it runs on DFL: Smart Tagging, which DFL cannot serve, is dropped first, in the bar
+    runs and the lag (`--drop-match-only`) and in the fidelity run alike.
+  - A twin whose content equals another config of the run (`main.toml`, when s_b is R012's) reuses that config's codes.
+    They are the same codes either way.
+- **The transplant**, for each DFL gap (a maximal run of served-missing ball frames inside a graded half, length m), in
+  time order:
+  1. Its class comes from the driver's codes (the same 0.5 rule).
+  2. A donor is drawn uniformly from the 5 donors of that class whose lengths are closest to m in |log(k / m)| (ties to
+     the shorter, then the earlier).
+  3. The mask is fill[i] = donor[⌊i · k / m⌋], in integer arithmetic. It always keeps the donor's first frame at the
+     gap's first frame, and its last at the gap's last when the donor is stretched (k ≤ m). A compressed donor (k > m)
+     skips its last ⌈k/m⌉ − 1 frames, which is the formula's property, not a departure from it.
+  4. Each fill fragment of length f then draws an error run at least f long (or the longest, tiled), and its first f
+     offsets go onto DFL's clean ball.
+  5. A frame where DFL has no ball stays empty.
+  6. The simulated ball is served as made. The fill of item 4 applies to it unchanged, and the live test and the 13-frame
+     filter are not applied again: they act on the broadcast ball's own runs, which on BAR-ATH often reach outside the
+     gap, and the donor masks already carry them.
+- **Seeds.** The generator is `numpy.random.default_rng([seed, degrade.index_of(match_id), 28])`. The served tracking
+  is `tracking` v3 (or `context`), seeds 0 to 2.
+
+**The fidelity gates and checks,** run first: `broadcast_sim.py fidelity`. The same function measures BAR-ATH (stored
+with the pools) and the 21 simulated copies, pooled by frames. The placement gates decide whether the stand-in is ours:
+
+| | statistic | A20's value (expected, not a target) | passes if |
+|---|---|---|---|
+| F1 (gate) | fill share of the gap frames called alive | 0.296 | \|sim − ours\| ≤ 0.05 |
+| F2 (gate) | fill share of the gap frames called `D` | 0.042 | \|sim − ours\| ≤ 0.03 |
+| F3 (gate) | fill share in the first 25 / last 25 / inside frames of gaps ≥ 50 frames | 0.297 / 0.218 / 0.073 | each \|sim − ours\| ≤ 0.05 |
+| F4 (check) | median fill fragment, by class (≥ 0.5 of its codes `H`/`A` is alive) | 14 / 35.5 frames | each within 10 frames |
+| F5 (check) | median position error of fill frames (DFL: against the clean ball; ours: the median distance over the near-gap error pool's frames) | 1.00 m | within 0.2 m |
+
+The exit is 0 when everything passes, 1 when a gate fails (whatever the checks), 3 when a check fails and no gate
+does, and 2 on an error. A statistic that cannot be computed on either side fails its gate or check. The report is
+`<data>/runs/r028/fidelity-<config stem>-<profile>.json`: `fidelity-r028_preshift-tracking.json` and
+`fidelity-r028_preshift-context.json`.
+
+The warnings are reported and decide nothing: W1 fill frames per graded frame (ours 0.038), W2 the share of gap frames
+called alive (0.20) and W3 the fill frames more than 1 m beyond a line (0.151). They size how generous `tracking`'s
+gaps, blind to the play (T38), make the stand-in.
+
+A failed gate or check (a confirmed exit 1 or 3 on `tracking`) is a **STOP for the advisor**. The advisor compares the
+code with this entry's text of the stand-in: the pools, the driver, the transplant and the gates above, with the
+design's section 3 only where this entry is silent. The advisor never looks at the number that missed. A compressed
+donor skipping its last ⌈k/m⌉ − 1 frames is the declared formula, not a departure.
+- **If the code departs from the text,** the one fix allowed restores it, with no constant, threshold, donor rule or
+  tolerance changed.
+  - The fix is committed on the lane, logged in part 2a as a deviation, and reviewed.
+  - `r028-fidelity.ps1` is then repeated once, whole, from that commit. A fix to any of the three files in the pools'
+    key makes `pools` rebuild them and BAR-ATH's side.
+  - The lag runs from that commit.
+  - Before the rerun, the first run's reports and logs are copied to `<data>/runs/r028/first/`.
+- **If the repeated run fails a gate or check again,** that is the verdict: no second fix, no bar run, **DROP**.
+- **Otherwise** the failure is a verdict: no bar run, and **DROP**.
+
+`context`'s fidelity run is reported and decides nothing.
+
+**The shift** (R012's rule in R024's form, as R027):
+1. **The lag** of `r028_preshift.toml` (`main.toml` with the fill, without `[[refine]]`) is measured on the stand-in
+   by `r028-lag.ps1`: `conventions.py latency <cfg>/r028_preshift.toml dfl --profile tracking --seeds 3 --truth raw
+   --drop-match-only`. It writes `<data>/runs/conventions/latency_r028_preshift_dfl_tracking_raw.json`.
+2. **s_b, per type** (`team`, `into_dead`, `out_of_dead`): `conventions.pipeline_lag` of that file's lags for the type.
+   That is minus numpy's round of the median (half to even), and 0 below 30 matched changes.
+3. **`r028_final.toml`** is `r028_post.toml`'s text if s_b is +1 / −2 / 0. Otherwise it is `r028_preshift.toml` plus one
+   `[[refine]] kind = "shift_edges"` with those values. It is committed on the lane, and the bar and BAR-ATH run from
+   that commit.
+4. **The guard** keeps s_b only if `r028_final` passes against `r028_preshift`, read as in the bar's step 2 below.
+   Otherwise the candidate is `r028_preshift`.
+
+**The bar: (ii), Tian's answer.** The objective is R023's, the mean of the pooled raw and coarse spellF1s. Every Δ is
+the candidate's against `main.toml`.
+- **The runs** (`r028-bar.ps1`): `python pipeline/benchmark/run.py pipeline/configs/main.toml <cfg>/r028_final.toml
+  <cfg>/r028_preshift.toml --profile tracking --seeds 3 --truth both --drop-match-only`, then the same with `--profile
+  context`. Smart Tagging is dropped from all three, and the fill stays.
+- **Read from `choose.py`'s JSON** (`--out`, never its printout), after both runs end `EXIT=0`:
+  - `choose.py --reference r028_preshift --objective mean r028_final --profile <p> --data-dir <data> --out
+    <data>/runs/r028/guard-<p>.json`, for `<p>` = `tracking` and `context`;
+  - `choose.py --reference main --objective mean <candidate stem> --profile <p> --data-dir <data> --out
+    <data>/runs/r028/bar-<p>.json`, for both profiles;
+  - the fields:
+    - the objective's pooled Δ: `versus.mean.pooled_delta`;
+    - the per-match Δs: `versus.mean.match_deltas`;
+    - the sign-flip p: `versus.mean.p_sign_flip`;
+    - each truth's Δ: `versus.raw.pooled_delta` and `versus.coarse.pooled_delta`;
+    - the alive/dead F1: `rows.<stem>.alive_dead`;
+    - the possessions per graded minute: `rows.<stem>.per_minute`;
+    - the reference's spellF1s: `rows.main.raw.spell` and `rows.main.coarse.spell`.
+- **In this order, each step only if the one before passed:**
+  1. **The reference.** `bar-tracking.json`'s `rows.main.raw.spell` and `rows.main.coarse.spell`, rounded to 4
+     decimals, must be 0.5363 and 0.5764 (R024). Otherwise **STOP** for the advisor, and nothing below decides. The
+     guard's two files are read before this only to name the stem in the bar's two commands; `rows.main` is the same
+     whichever stem it names.
+  2. **The guard** names the candidate: `r028_final` if `guard-tracking.json`'s `versus.mean.pooled_delta` > 0 and
+     `guard-context.json`'s is ≥ −0.005; otherwise `r028_preshift`.
+  3. **The bar,** in `bar-tracking.json`: `versus.mean.pooled_delta` ≥ +0.005, and every value of
+     `versus.mean.match_deltas` ≥ −0.005.
+  4. **The vetoes:** `bar-context.json`'s `versus.mean.pooled_delta` ≥ −0.005, and in `bar-tracking.json`
+     `rows.<candidate>.alive_dead` − `rows.main.alive_dead` ≥ −0.005.
+- **What it leads to:**
+  - if steps 3 and 4 pass: BAR-ATH;
+  - if either fails: **R028b** when `bar-tracking.json`'s `versus.mean.pooled_delta` > 0 and R028b has not run,
+    otherwise **DROP**.
+
+  The advisor approves no other retry.
+- **Reported, deciding nothing:**
+  - each truth's Δ;
+  - the sign-flip p;
+  - the possessions per graded minute;
+  - W1 to W3.
+
+**BAR-ATH, before adopting** (`r028-barath.ps1`: `broadcast_sim.py bar-ath <cfg>/<candidate stem>.toml`, then
+`pipeline/run.py <cfg>/<candidate stem>.toml` twice, then `label_diff.py pipeline/configs/main.toml <cfg>/<candidate
+stem>.toml`):
+- **The alignment band.** The run's d₁ and d₂ within ±2 frames of 4,014 and 26,919, and live frames at least 0.85 of the
+  valid graded frames. Otherwise **STOP** for the advisor (exit 3); a refused alignment (`AlignmentError`) is a STOP too.
+  - The share counts every mapped graded frame whose broadcast homography is valid. That includes the second half's
+    ~2,750 frames before its kick-off, which A20 left out of its 91.6%, so the run's share can sit up to about 2.6 points
+    below A20's.
+  - The band is tested first; on a STOP nothing else runs.
+- **The tag check.**
+  - The teacher is `conventions.TOUCH` (radius 2.0 m, 6.0 m/s, 3 frames, confidence 0.99, hold 0.5), whose `home` is a
+    number exactly on the kept episodes.
+  - The frames are the graded frames where it speaks on the filled inputs and not on the plain ones.
+  - On them, `tag_stats.team_agreement` with Smart Tagging's team votes must be at least the agreement on the teacher's
+    frames on the plain inputs, minus 0.05.
+  - With fewer than 300 such frames that a tag votes on, it is reported and decides nothing. A failure is **DROP** (exit
+    1).
+- **Determinism and sanity** (R024's). Any failure is **DROP**.
+  - In the bar-ath report: `sanity.x_graded` = 0 and `sanity.d_share` in [0.30, 0.62], ends included. Otherwise
+    bar-ath exits 1.
+  - The chain log's `candidate-run1 sha256=` and `candidate-run2 sha256=` are equal. A non-zero exit of either
+    `pipeline/run.py <cfg>/<candidate stem>.toml` run is not this check failing but an error (Errors, below), except
+    the invalid submission named there.
+  - After a `bar-ath` exit 1, the script still runs those two runs and `label_diff.py`. They are reported and change
+    nothing.
+- **Reported, deciding nothing**, in `<data>/runs/r028/bar-ath-<candidate stem>.json` (the time excepted):
+  - `reported.filled_by_state`, the filled frames by the candidate's decoded state;
+  - W1 to W3 on BAR-ATH;
+  - the possessions per half, with a WARN beyond ±25% of `main.toml`'s (decoded in the same process);
+  - `reported.relabelled_share`;
+  - the fill's added time, in the bar-ath log only.
+
+**The one retry: R028b (Tian's answer).**
+- **When:** only if rung 1 fails the bar or a veto while its `tracking` objective Δ is above 0.
+- **The single change:** `controlled_touch` gains `filled_confidence`, the vote's confidence on frames whose ball was
+  filled. It defaults to `confidence`, and R028b sets it to 0.79.
+- **Where 0.79 comes from:** 0.674 × 0.93 + 0.326 × 0.5. Near our gaps 67.4% of the broadcast's balls are within 2 m of
+  ours (A20 part 6), and a mislocated ball gives a coin flip for the team.
+- **How it runs:** its own part 1b, then the same fidelity, shift, bar and BAR-ATH steps. Part 1b names its own
+  `choose.py` `--out` files, so rung 1's are kept.
+
+If it fails anywhere, R028 is **DROPPED**. No other retry is pre-approved.
+
+**The flow** (no pause for Tian, who answered in advance):
+- **Fidelity:** a pass continues automatically to the lag, the bar and BAR-ATH.
+- **ADOPT,** automatically if everything passes:
+  - `main.toml` becomes the candidate, kept as `pipeline/configs/r028_broadcast_ball.toml`;
+  - `main.csv` is regenerated twice, with the same sha256, equal to the candidate's from the BAR-ATH runs. It is logged
+    in the submission log and not uploaded. Regenerating it now needs `data/broadcast/` (Tian's answer 4), and the
+    READMEs, both technical documents and CLAUDE.md say so;
+  - both suites and `selftest.py --data` pass on the merged tree, the merge is `--no-ff`, and the docs and the site
+    follow. If a suite or that sha256 fails all the same, the merge waits and the advisor rules: nothing is
+    half-adopted.
+- **DROP:** one commit removes the lane's code and checks and names the commit to recover them from. `main.toml` is never
+  touched.
+
+**Errors.** Only `broadcast_sim.py`'s codes are verdicts:
+- `pools`: 3, only with its "This is a STOP for the advisor" line in the log;
+- `fidelity`: 0, 1 and 3;
+- `bar-ath`: 0, 1 and 3.
+
+A 0, 1 or 3 from `fidelity` or `bar-ath` counts only when the step's own report, written after the step began, holds the
+same `exit` (the scripts' `Verdict`). A `VERDICT UNCONFIRMED` or `MISMATCH` line makes it an error.
+
+Everything else is an error, never a verdict:
+- an exit 2 from `broadcast_sim.py`;
+- any non-zero exit of `run.py`, `conventions.py`, `choose.py`, `label_diff.py` or `pipeline/run.py`;
+- `EXIT=REFUSED`, or `EXIT=UNKNOWN` (exit 99);
+- a `CHAIN STOPPED` for a dirty worktree;
+- a crash, or a log without an `EXIT=<integer>` line.
+
+One exception: `pipeline/run.py <cfg>/<candidate stem>.toml` exiting 1 with the line `FAILED    <candidate
+stem>.csv: <reason>` is the "valid" check failing, a **DROP**. That line means `output.validate` rejected the file it
+wrote, or the file did not read back as the labels written. Any other `FAILED` line is an error, including a `…: could
+not read: …` or an `[Errno …]` naming the CSV.
+
+What happens to an error:
+- **a clear cause outside the declared code and constants** (memory, a locked file, a full disk): remove it and rerun
+  that step once from the same commit. A second failure goes to the advisor;
+- **a reaped run** waits for Tian;
+- **a traceback or a `FAILED` from inside the declared code** goes to the advisor, and any fix is a deviation in part 2;
+- **a `context` fidelity run that still fails** does not hold the lane; part 2a says its figures are missing.
+
+**The advisor** (an opus agent standing in for Tian, every ruling logged) decides only the STOPs and the unforeseen.
+
+**The public window:** after the decision only, as a correctness check (T01, T27).
+
+**What this cannot settle.**
+- **T38:** `tracking` places our gaps blind to the play, so more of its gap frames are alive than ours. The stand-in
+  therefore fills more of each graded minute than the real broadcast does on BAR-ATH (W1, W2), and the benchmark's gain
+  is generous.
+- The broadcast's own failure modes beyond A20's statistics, and a misaligned or replayed broadcast frame that slips
+  past the live test (design 3.6).
+- The driver's pessimism: where the decoder wrongly says `D` in live play, the stand-in fills at the `D` rate.
+- T33's grain: DFL's possession flag is finer than ours may be. The mean of the two truths (R023) hedges this but
+  cannot settle it.
+- Fidelity is measured on `r028_preshift`'s driver. `r028_final`'s driver carries the shift, so its stand-in differs
+  slightly.
+- The decoder was not re-chosen for more ball.
+
+**The commands** (run by the controller through `.superpowers/bin/heavy-r028.ps1`, one at a time, from the run
+worktree):
+
+| script | steps |
+|---|---|
+| `r028-fidelity.ps1` | `broadcast_sim.py pools` (exit 0 built or read, 3 STOP: the alignment band, 2 an error); `broadcast_sim.py fidelity --profile tracking --seeds 3 <cfg>/r028_preshift.toml` (exit 0 pass, 1 a gate fails, 3 a check fails, 2 an error); the same on `--profile context` (reported) |
+| `r028-lag.ps1` | `conventions.py latency <cfg>/r028_preshift.toml dfl --profile tracking --seeds 3 --truth raw --drop-match-only` |
+| `r028-bar.ps1` | the bar runs above, `tracking` then `context` |
+| `r028-choose` (light, run directly from the run worktree at the bar's commit, its HEAD and status logged as for every step, after `r028-bar.ps1` ends `EXIT=0` twice) | the four `choose.py` commands above, the guard first |
+| `r028-barath.ps1` | `broadcast_sim.py bar-ath <candidate>` (exit 0 pass, 1 DROP, 3 STOP, 2 an error); `pipeline/run.py <candidate>` twice; `label_diff.py pipeline/configs/main.toml <candidate>` |
+
+`<cfg>` is `pipeline/benchmark/configs/r028`, and `<data>` is the data bundle the scripts pass as `--data-dir` (`$data`
+in `r028-common.ps1`, the main checkout's `data/`).
+
+Each step's outcome is read from its own lines in the script's chain log, never from the script's exit code. Those
+lines are:
+- `<step> EXIT=<code>`;
+- the `VERDICT …` lines;
+- `CHAIN STOPPED …`;
+- `candidate-run<i> sha256=`.
+
+The script's exit code is ambiguous: `r028-fidelity.ps1` exits 3 for a pools STOP and for a failed check alike, and
+`r028-barath.ps1` exits 1 for a bar-ath DROP and for a failed candidate run alike. `label_diff.py`'s exit appears only
+in `CHAIN DONE`.
 
 ## Submission log
 
