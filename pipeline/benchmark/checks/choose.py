@@ -192,6 +192,26 @@ def test_choose_refuses_missing_stale_and_mixed_reports():
         expect_error(choose.ChooseError, lambda: chosen(root, ["nearest_w25", "nearest_w25"]), "each once")
 
 
+def test_choose_refuses_mixed_broadcast_sim():
+    """Reports whose runs loaded different pools of the simulated broadcast (R028) are of different runs: SAME holds
+    broadcast_sim, and a report with another digest is refused by name. A report written before the field existed
+    reads as null, as a run with no config that fills writes it."""
+    assert choose.SAME == ("matches", "seeds", "profile", "calibration", "broadcast_sim"), choose.SAME
+    with tempfile.TemporaryDirectory() as root:
+        written(root, [yardstick_path(50), yardstick_path(25)])
+        assert chosen(root, ["nearest_w25"])["chosen"] == "nearest_w25"
+        path = benchmark_run.report_path(root, "gaps", "nearest_w25", "raw", sorted(synthetic_matches()), SEEDS)
+        with open(path, encoding="utf-8") as stream:
+            report = json.load(stream)
+        assert report["broadcast_sim"] is None
+        del report["broadcast_sim"]                                 # as a report written before R028
+        benchmark_run.write_json(path, report)
+        assert chosen(root, ["nearest_w25"])["chosen"] == "nearest_w25", "no field reads as null"
+        report["broadcast_sim"] = "ab" * 32                         # as if the run had loaded pools of its own
+        benchmark_run.write_json(path, report)
+        expect_error(choose.ChooseError, lambda: chosen(root, ["nearest_w25"]), "nearest_w25", "raw", "broadcast_sim")
+
+
 # -- R024's objective: the mean of the two truths ---------------------------------------------------------------------
 
 def test_choose_mean_objective_applies_r024s_rule():

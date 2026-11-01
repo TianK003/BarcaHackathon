@@ -685,6 +685,48 @@ def synthetic_matches():
     return {"RND001": random_match("RND001"), "RND002": random_match("RND002", seed=1, rows=(300, 260))}
 
 
+# -- a config that fills the ball, and the pools its simulated broadcast is made from (R028) ---------------------------
+
+# A config whose ball is filled from the broadcast's ([inputs] ball_fill = "broadcast"): on a benchmark match it reads
+# the simulated broadcast ball (broadcast_sim.served_inputs_for). FILL_TWIN is the same config without the fill, the
+# driver whose labels class the gaps; its description differs, which nothing that a decode reads does.
+FILL_CONFIG = """
+description = "nearest_player's team and a majority vote, on our ball filled from the broadcast's"
+seed = 0
+scope = "halves"
+
+[inputs]
+ball_fill = "broadcast"
+
+[[evidence]]
+kind = "nearest_player"
+
+[decoder]
+kind = "majority_vote"
+half_width = 3
+"""
+FILL_TWIN = FILL_CONFIG.replace('[inputs]\nball_fill = "broadcast"\n\n', "").replace(
+    "on our ball filled from the broadcast's", "on our ball as it is")
+
+
+def made_up_pools():
+    """A broadcast_sim.Pools of made-up donors and errors, enough for any synthetic match.
+
+    Donor gaps of 1 to 144 frames in both classes: the alive ones filled at their two edges (as ours mostly are), the D
+    ones in stripes of 3 frames (so that a transplant gives fragments shorter than 13 frames, which DFL serves as they
+    are). Three error runs, of 5, 40 and 300 frames, whose offsets say which step they are.
+    """
+    from pipeline.benchmark import broadcast_sim
+    masks, alive = [], []
+    for length in (1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144):
+        masks.append([i < max(1, length // 4) or i >= length - max(1, length // 6) for i in range(length)])
+        alive.append(True)
+        masks.append([(i // 3) % 2 == 0 for i in range(length)])
+        alive.append(False)
+    runs = [[(0.5 + 0.01 * t, -0.25 - 0.02 * t) for t in range(length)] for length in (5, 40, 300)]
+    return broadcast_sim.Pools.from_lists(masks, alive, runs)
+
+
 @contextlib.contextmanager
 def loading(serve):
     """dfl.load_match answered by serve(match_id), for the runner's own path to a match; restored afterwards."""

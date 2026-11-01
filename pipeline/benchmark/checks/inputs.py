@@ -120,12 +120,29 @@ def test_match_inputs_hold_no_truth():
     """Evidence components see ctx.run.inputs, so the match's flags must not be reachable through it.
 
     Not the DflMatch, not the flags, not an alive/dead or home/away mask made of them, not the truth's codes: neither
-    as an attribute of the inputs nor as a field of its Atd, even after the lazy properties have been read.
+    as an attribute of the inputs nor as a field of its Atd, even after the lazy properties have been read; and the same
+    with a simulated broadcast ball given (R028), and in the view whose ball it fills.
+
+    The names it keeps are checked too: none says ball, broadcast or possession, or is the match or the truth, with one
+    exemption, made here by name. `_broadcast` is the given broadcast ball, the one array a MatchInputs may hold besides
+    its Atd: tracking made by broadcast_sim.simulate from the served positions and the driver's own labels, never from
+    the match's flags, and the leaks() walk above reads its content (the array, and its base when it is a view) like
+    anything else the inputs hold.
     """
     match = random_match()
     inputs = match_inputs.MatchInputs(match, match_inputs.clean_atd(match))
     inputs.half_of_frame, inputs.graded_mask, inputs.atd.players_present, inputs.atd.ball_present
     assert leaks(inputs, match) == [], leaks(inputs, match)
+    atd = match_inputs.clean_atd(match)
+    given = np.full((match.n_frames, 2), np.nan)
+    gaps = np.flatnonzero(inputs.graded_mask & ~atd.ball_present)
+    given[gaps[::3]] = 0.5
+    with_ball = match_inputs.MatchInputs(match, atd, broadcast_ball=given)
+    with_ball.broadcast_ball, with_ball.broadcast_summary
+    view = with_ball.with_ball_fill("broadcast")
+    view.atd, view.ball_filled, view.fill_summary
+    assert view.ball_filled.any() and leaks(with_ball, match) == [] and leaks(view, match) == [], (
+        leaks(with_ball, match), leaks(view, match))
 
     # The detector detects: a held match, a held flag array, a held mask and a held truth are each found.
     for name, value in (("match", match), ("status", np.array(match.ball_status)),
@@ -135,10 +152,13 @@ def test_match_inputs_hold_no_truth():
         setattr(probe, name, value)
         assert leaks(probe, match), "{}: a held {} was not found".format(name, name)
 
-    # Everything it does keep is a scalar of the match or the tracking.
-    kept = set(vars(match_inputs.MatchInputs(match, match_inputs.clean_atd(match))))
-    held_back = {name for name in kept if "ball" in name or "possession" in name or name in ("match", "truth")}
-    assert not held_back, sorted(kept)
+    # Everything it does keep is a scalar of the match or the tracking, and, by name, the given broadcast ball.
+    exempt = {"_broadcast"}
+    for kept in (set(vars(match_inputs.MatchInputs(match, match_inputs.clean_atd(match)))), set(vars(with_ball))):
+        named = {name for name in kept if any(word in name for word in ("ball", "broadcast", "possession"))
+                 or name in ("match", "truth")}
+        assert named == exempt, sorted(kept)
+    assert with_ball._broadcast is with_ball.broadcast_ball, "the exempt name holds the given ball, and only that"
 
 
 FILL_CONFIG = """
@@ -194,6 +214,22 @@ def test_match_inputs_broadcast_ball_absent_or_given():
     assert np.array_equal(view.atd.ball_xy[lost[::2]], given[lost[::2]])
     assert view.fill_summary["filled_frames"] == len(lost[::2]) and view.atd_status == "benchmark"
     assert leaks(view, match) == [], leaks(view, match)
+
+
+def test_match_inputs_serve_no_other_broadcast_asset():
+    """Of the broadcast a benchmark match has the given ball at most: its ATD, its homography's valid column and file
+    record, its ATD's manifest and an alignment are assets a DFL match does not have, and asking for one raises
+    AssetUnavailable with the module's broadcast sentence (not a KeyError from games.py over an unknown match id), with
+    a ball given or not, and through the view that fills it (ruling 12)."""
+    match = random_match()
+    atd = match_inputs.clean_atd(match)
+    given = np.full((match.n_frames, 2), np.nan)
+    for inputs in (match_inputs.MatchInputs(match, atd), match_inputs.MatchInputs(match, atd, broadcast_ball=given),
+                   match_inputs.MatchInputs(match, atd, broadcast_ball=given).with_ball_fill("broadcast")):
+        for name in ("broadcast_atd", "broadcast_valid", "broadcast_alignment", "broadcast_atd_manifest",
+                     "broadcast_homography_source"):
+            message = expect_error(match_inputs.AssetUnavailable, lambda name=name: getattr(inputs, name), "broadcast")
+            assert message == ASSET_MESSAGE.format("broadcast"), (name, message)
 
 
 class Holder:

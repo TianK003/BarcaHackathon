@@ -33,17 +33,19 @@ import possession_metrics as pm
 from pipeline.benchmark import calibration, degrade, dfl, score, sources, truth
 from pipeline.benchmark import inputs as match_inputs
 from pipeline.benchmark import run as benchmark_run
-from pipeline.benchmark.checks.common import (MIN_AGREEMENT, PROBE_CONFIG, context_calibration, loading, match_only_source,
-                                              random_match, read, real_match, registered, strict_json, synthetic_calibration, synthetic_matches,
-                                              tracking_calibration, whole_positions, write_synthetic_dfl,
-                                              yardstick_path)
+from pipeline.benchmark.checks.common import (FILL_CONFIG, FILL_TWIN, MIN_AGREEMENT, PROBE_CONFIG, context_calibration,
+                                              loading, made_up_pools, match_only_source, random_match, read,
+                                              real_match, registered, strict_json, synthetic_calibration,
+                                              synthetic_matches, tracking_calibration, whole_positions,
+                                              write_synthetic_dfl, yardstick_path)
 from pipeline.config import ConfigError, load_config
 from pipeline.selftest import P06_TRIAL_CONFIG, expect_error, quiet, write_text
 
 # Params
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-REPORT_KEYS = {"calibration", "config", "dropped_match_only", "environment", "git", "halves", "labels", "matches", "per_match", "pooled",
-               "possessions_per_graded_minute", "profile", "seeds", "t_interval", "truth", "versus"}
+REPORT_KEYS = {"broadcast_sim", "calibration", "config", "dropped_match_only", "environment", "git", "halves", "labels",
+               "matches", "per_match", "pooled", "possessions_per_graded_minute", "profile", "seeds", "t_interval",
+               "truth", "versus"}
 HALF_KEYS = {"match_id", "half", "seed", "n_gt", "n_pred", "tp", "confusion"}
 ROUNDING = 1e-9                         # reports round their floats to 9 decimals
 HASH_SEEDS = ("1", "2", "3")            # PYTHONHASHSEED of the three subprocesses of the determinism checks
@@ -150,6 +152,7 @@ def test_runner_end_to_end_synthetic():
             assert set(report) == REPORT_KEYS, (stem, sorted(set(report) ^ REPORT_KEYS))
             assert report["profile"] == {"name": "clean", "version": 1} and report["seeds"] == [0], stem
             assert report["truth"] == {"name": "raw", "min_s": None} and report["calibration"] is None, stem
+            assert report["broadcast_sim"] is None, "no config of the run fills, so no pools were loaded"
             assert set(report["git"]) == {"commit", "dirty"}
             assert set(report["environment"]) == {"python", "numpy", "lxml", "platform"}
             assert report["environment"]["numpy"] == np.__version__
@@ -524,6 +527,100 @@ def test_runner_names_unavailable_source():
     # The pipeline's own message, through the inputs, is the one that is quoted.
     expect_error(match_inputs.AssetUnavailable, lambda: match_inputs.MatchInputs(
         matches["RND001"], match_inputs.clean_atd(matches["RND001"])).homography, "homography", "P01")
+
+
+def test_runner_names_a_missing_simulated_broadcast_ball():
+    """A config that fills, run on a benchmark match served without a broadcast ball, is refused with a sentence that
+    says that first (the simulated broadcast ball is missing, and where it comes from), not one that blames the decoder
+    or a source (ruling 12)."""
+    match = random_match()
+    plain = match_inputs.MatchInputs(match, match_inputs.clean_atd(match))
+    with tempfile.TemporaryDirectory() as root:
+        fill = load_config(write_text(root, "fill.toml", FILL_CONFIG))
+    message = expect_error(benchmark_run.BenchmarkError, lambda: benchmark_run._codes(fill, plain), "fill",
+                           "ball_fill", "simulated broadcast ball is missing", "served_inputs_for")
+    assert message.startswith("fill: ") and "no evidence source" not in message and "decoder" not in message, message
+    assert message.index("simulated broadcast ball") < message.index("the benchmark matches have no broadcast"), (
+        "the missing ball is said first, then the inputs' own sentence")
+
+
+def test_every_report_of_a_run_carries_the_same_broadcast_sim():
+    """A run that loads the pools (a config of it fills) writes their digest into every one of its reports, the
+    reference's included, so that choose.py can compare them; a run in which no config fills writes null, pools given or
+    not. A config that fills is served through broadcast_sim.served_inputs_for, and its twin's codes are decoded once
+    per (match, seed) and shared with any config of the same content (ruling 9). The pools are loaded when none are
+    given, and anything else given as pools is refused."""
+    from pipeline.benchmark import broadcast_sim
+    matches = synthetic_matches()
+    calibration = synthetic_calibration()
+    pools = made_up_pools()
+    digest = broadcast_sim.digest(pools)
+    counted = []
+    real = benchmark_run.predict
+
+    def counting(config, inputs):
+        counted.append(config.stem)
+        return real(config, inputs)
+
+    with tempfile.TemporaryDirectory() as root:
+        twin = write_text(root, "twin.toml", FILL_TWIN)
+        fill = write_text(root, "fill.toml", FILL_CONFIG)
+        fill_too = write_text(root, "fill_too.toml", FILL_CONFIG)
+        options = dict(profile="gaps", seeds=2, matches=matches, calibration=calibration, data_dir=root, log=quiet)
+        lines = []
+        benchmark_run.predict = counting
+        try:
+            result = benchmark_run.evaluate_configs([yardstick_path(50), fill], pools=pools,
+                                                    **dict(options, log=lines.append))
+            first = len(counted)
+            shared = benchmark_run.evaluate_configs([twin, fill, fill_too], pools=pools, **options)
+            second = len(counted) - first
+            apart = benchmark_run.evaluate_configs([fill, fill_too], pools=pools, **options)
+            third = len(counted) - first - second
+        finally:
+            benchmark_run.predict = real
+        copies = len(matches) * 2
+        assert first == 3 * copies, ("the reference, the fill's twin and the fill", first)
+        assert second == 3 * copies, ("the twin's own decode is the driver of both fills", second)
+        assert third == 3 * copies, ("one decode of the twin for the two fills, then each fill", third)
+        for outcome in (result, shared, apart):
+            assert outcome["broadcast_sim"] == digest
+            assert [entry["report"]["broadcast_sim"] for entry in outcome["configs"]] == [digest] * len(
+                outcome["configs"]), "every report of the run, the reference's too"
+        assert any(digest[:12] in line for line in lines), "the printout names the pools"
+        none = benchmark_run.evaluate_configs([yardstick_path(50), yardstick_path(25)], pools=pools, **options)
+        assert none["broadcast_sim"] is None
+        assert [entry["report"]["broadcast_sim"] for entry in none["configs"]] == [None, None]
+
+        # The fill config's numbers are those of its served inputs, worked out here.
+        config = load_config(fill)
+        halves = []
+        for match in matches.values():
+            codes_true = truth.truth_codes(match)[0]
+            for seed in (0, 1):
+                atd = benchmark_run.make_atd(match, "gaps", seed, calibration)
+                served = broadcast_sim.served_inputs_for(config, match, atd, "gaps", seed, root, pools)
+                halves += score.score_halves(codes_true, benchmark_run.predict(config, served)[0], match.graded,
+                                             match.match_id, seed)
+        report = result["configs"][1]["report"]
+        assert [(half["match_id"], half["half"], half["seed"], half["n_pred"], tuple(half["tp"]),
+                 tuple(tuple(row) for row in half["confusion"])) for half in report["halves"]] == [
+            (half.match_id, half.half, half.seed, half.n_pred, half.tp, half.confusion) for half in halves]
+        assert all(strict_json(read(path))["broadcast_sim"] == digest for path in benchmark_run.write_reports(result))
+
+        loads = []
+        real_load = broadcast_sim.load_pools
+        broadcast_sim.load_pools = lambda data_dir=None, inputs=None, log=print, rebuild=False: (
+            loads.append(data_dir) or pools)
+        try:
+            loaded = benchmark_run.evaluate_configs([fill], **dict(options, seeds=1))
+            unloaded = benchmark_run.evaluate_configs([yardstick_path(50)], **dict(options, seeds=1))
+        finally:
+            broadcast_sim.load_pools = real_load
+        assert loads == [root], "loaded once, for the run with a config that fills, from its data dir: {}".format(loads)
+        assert loaded["configs"][0]["report"]["broadcast_sim"] == digest and unloaded["broadcast_sim"] is None
+        expect_error(benchmark_run.BenchmarkError, lambda: benchmark_run.evaluate_configs([fill], pools="pools",
+                                                                                          **options), "pools", "Pools")
 
 
 def test_drop_match_only_removes_exactly_the_flagged_sources():

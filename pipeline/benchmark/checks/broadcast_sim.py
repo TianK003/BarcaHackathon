@@ -18,22 +18,55 @@ Pools made from lists. What is checked, and how:
 Nothing here reads data, and nothing prints an array.
 """
 
+import contextlib
+import copy
+import dataclasses
 import functools
 import inspect
+import io
+import json
 import math
+import os
 import statistics
+import tempfile
+import types
 
 import numpy as np
 
 import possession_metrics as pm
-from pipeline.benchmark import broadcast_sim
-from pipeline.selftest import expect_error
+from pipeline.benchmark import broadcast_sim, conventions, degrade, label_diff, tag_stats
+from pipeline.benchmark import calibration as calibration_module
+from pipeline.benchmark import inputs as match_inputs
+from pipeline.benchmark import run as benchmark_run
+from pipeline.benchmark.checks.common import (FILL_CONFIG, FILL_TWIN, leaks, made_up_pools, match_only_source,
+                                              random_match, read, strict_json, synthetic_calibration,
+                                              synthetic_matches)
+from pipeline.config import ConfigError, load_config
+from pipeline.evidence import controlled_touch, smart_tagging
+from pipeline.inputs.broadcast import AlignmentError
+from pipeline.selftest import (SYNTHETIC_FRAMES, SYNTHETIC_GRADED, expect_error, make_synthetic_bundle, quiet,
+                               write_text)
 
 # Params
 H, A, D, X = pm.H, pm.A, pm.D, pm.X
 PITCH = (100.0, 50.0)           # (length, width) in metres: dyadic, so that a position over the pitch is exact
 SCALE = np.array(PITCH)
 SEEDS = range(300)              # the seeds that the donor draw is read over
+# The records of the broadcast's files that the BAR-ATH stand-in (bar_ath_like) gives: made up, they name no file.
+BROADCAST_ATD_MANIFEST = {"sources": {"meta": {"bytes": 11, "sha256": "1" * 64}, "raw": {"bytes": 22, "sha256": "2" * 64}},
+                          "cache_version": 1}
+HOMOGRAPHY_SOURCE = {"bytes": 33, "sha256": "3" * 64}
+# The alignment a run of the real match would report, at A20's offsets and above the live bar (made up).
+ALIGNED = {"offsets": {1: 4014, 2: 26919}, "pairs": {1: 3000, 2: 2900}, "fine_scores": {1: 0.81, 2: 0.79},
+           "coarse_scores": {1: 0.7, 2: 0.66}, "runner_up": {1: 0.1, 2: 0.12}, "valid_frames": 1000,
+           "live_frames": 900, "live_share": 0.9, "usable_frames": 500}
+# Smart Tagging of the stand-in: home votes on 140-190, away votes on 200-260 and 410-450 (a DEFENDING code names the
+# team that defends), nothing elsewhere.
+TAGS = ({"code": "BUILD UP", "tags": {"Team": "Barcelona"}, "start_frame": 140, "end_frame": 190},
+        {"code": "PROGRESSION", "tags": {"Team": "Atletic Club"}, "start_frame": 200, "end_frame": 260},
+        {"code": "DEFENDING IN DEFENSIVE THIRD", "tags": {"Team": "Barcelona"}, "start_frame": 410,
+         "end_frame": 450},
+        {"code": "SET PIECES", "tags": {"Team": "Barcelona"}, "start_frame": 0, "end_frame": 600})
 
 
 # -- worlds -----------------------------------------------------------------------------------------------------------
@@ -943,3 +976,779 @@ def test_the_stand_in_constants_are_the_designs():
             broadcast_sim.RNG_SALT) == (1, 5, 0.5, 50, 25, 50, 1.0, 28)
     assert (broadcast_sim.H, broadcast_sim.A, broadcast_sim.D, broadcast_sim.X) == (pm.H, pm.A, pm.D, pm.X) == (
         0, 1, 2, 3), "possession_metrics' own codes"
+
+
+# -- the wiring (Task 2b): the served inputs ---------------------------------------------------------------------------
+
+@contextlib.contextmanager
+def replaced(owner, name, value):
+    """owner.name is `value` while the block runs, and what it was after it, raised or not."""
+    real = getattr(owner, name)
+    setattr(owner, name, value)
+    try:
+        yield
+    finally:
+        setattr(owner, name, real)
+
+
+def wiring_configs(root):
+    """(fill, twin): FILL_CONFIG and FILL_TWIN of checks/common.py, loaded from files written under `root`."""
+    return (load_config(write_text(root, "fill.toml", FILL_CONFIG)),
+            load_config(write_text(root, "twin.toml", FILL_TWIN)))
+
+
+def fragment_lengths(ball):
+    """The lengths of the maximal runs of frames where `ball` (n, 2) has a position."""
+    padded = np.concatenate([[0], np.isfinite(ball).all(axis=1).astype(np.int8), [0]])
+    return np.flatnonzero(np.diff(padded) == -1) - np.flatnonzero(np.diff(padded) == 1)
+
+
+def test_served_inputs_for_none_is_plain():
+    """A config without the fill is served the plain MatchInputs: the very one given, or one made as the runner makes
+    it, with no broadcast ball and no driver decoded."""
+    match = random_match()
+    atd = match_inputs.clean_atd(match)
+    calls = []
+    with tempfile.TemporaryDirectory() as root:
+        _, twin = wiring_configs(root)
+        given = match_inputs.MatchInputs(match, atd, profile="gaps", seed=1, data_dir=root)
+        with replaced(benchmark_run, "predict", lambda config, inputs: calls.append(config)):
+            served = broadcast_sim.served_inputs_for(twin, match, atd, "gaps", 1, root, made_up_pools(), plain=given)
+            made = broadcast_sim.served_inputs_for(twin, match, atd, "gaps", 1, root, None)
+    assert served is given, "the very inputs given"
+    assert calls == [], "a config without the fill has no driver to decode"
+    assert isinstance(made, match_inputs.MatchInputs) and made.atd is atd
+    assert (made.game, made.profile, made.seed, made.data_dir) == ("RND001", "gaps", 1, root)
+    expect_error(match_inputs.AssetUnavailable, lambda: made.broadcast_ball, "broadcast")
+    assert leaks(made, match) == [], leaks(made, match)
+
+
+def test_served_inputs_for_uses_the_twin_driver():
+    """A config that fills is served the simulated ball that its twin's labels drive (design 3.2): run.predict of the
+    config with ball_fill "none" on the plain inputs, then simulate with the match's own generator,
+    default_rng([seed, degrade.index_of(match), RNG_SALT]), and the ball served exactly as simulate made it: no run
+    filter on DFL (ruling 11), so a fragment shorter than 13 frames stays. The driver's codes are kept in `drivers` per
+    twin, match, profile and seed (ruling 9), so a second config with the same twin decodes nothing; nothing served
+    holds the truth; and what cannot be served is refused before anything is decoded."""
+    match = random_match()
+    calibration = synthetic_calibration()
+    atd = benchmark_run.make_atd(match, "gaps", 2, calibration)
+    pools = made_up_pools()
+    codes = np.where((np.arange(match.n_frames) // 37) % 2 == 0, H, D).astype(np.int8)
+    seen = []
+
+    def stub(config, inputs):
+        seen.append((config, inputs))
+        return codes.copy(), {}
+
+    with tempfile.TemporaryDirectory() as root:
+        fill, _ = wiring_configs(root)
+        copied = load_config(write_text(root, "fill_copy.toml", FILL_CONFIG))
+    plain = match_inputs.MatchInputs(match, atd, profile="gaps", seed=2)
+    drivers = {}
+    with replaced(benchmark_run, "predict", stub):
+        served = [broadcast_sim.served_inputs_for(fill, match, atd, "gaps", 2, None, pools, plain=plain,
+                                                  drivers=drivers),
+                  broadcast_sim.served_inputs_for(fill, match, atd, "gaps", 2, None, pools, plain=plain,
+                                                  drivers=drivers),
+                  broadcast_sim.served_inputs_for(copied, match, atd, "gaps", 2, None, pools, plain=plain,
+                                                  drivers=drivers)]
+        assert len(seen) == 1, "one decode of the twin serves all three: {}".format(len(seen))
+        served.append(broadcast_sim.served_inputs_for(fill, match, atd, "gaps", 2, None, pools))
+        assert len(seen) == 2, "without `drivers` nothing is kept"
+        expect_error(ValueError, lambda: broadcast_sim.served_inputs_for(fill, match, atd, "gaps", 2, None, None,
+                                                                         plain=plain), "pools", "Pools")
+        elsewhere = match_inputs.MatchInputs(match, benchmark_run.make_atd(match, "gaps", 1, calibration),
+                                             profile="gaps", seed=1)
+        expect_error(ValueError, lambda: broadcast_sim.served_inputs_for(fill, match, atd, "gaps", 2, None, pools,
+                                                                         plain=elsewhere), "plain", "atd")
+        assert len(seen) == 2, "refused before anything is decoded"
+    driver, given = seen[0]
+    assert driver.ball_fill == "none" and given is plain
+    assert dataclasses.replace(driver, ball_fill="broadcast") == fill, "the config itself with the fill off, no more"
+    assert isinstance(seen[1][1], match_inputs.MatchInputs) and seen[1][1].atd is atd and seen[1][0] == driver
+    assert broadcast_sim.driver_key(driver) == broadcast_sim.driver_key(dataclasses.replace(copied, ball_fill="none"))
+    assert broadcast_sim.driver_key(driver) != broadcast_sim.driver_key(fill), "the key holds ball_fill"
+
+    expected = broadcast_sim.simulate(atd.ball_present, np.asarray(match.ball_xy) * np.array(match.pitch), codes,
+                                      match.graded, match.pitch, pools,
+                                      np.random.default_rng([2, degrade.index_of(match.match_id),
+                                                             broadcast_sim.RNG_SALT]))
+    lengths = fragment_lengths(expected)
+    assert len(lengths) and (lengths < 13).any(), "the scene must have a fragment shorter than 13 frames to keep"
+    for inputs in served:
+        assert isinstance(inputs, match_inputs.MatchInputs) and inputs.atd is atd
+        assert (inputs.game, inputs.profile, inputs.seed) == ("RND001", "gaps", 2)
+        assert np.array_equal(inputs.broadcast_ball, expected, equal_nan=True), "served as simulate made it"
+        assert leaks(inputs, match) == [], leaks(inputs, match)
+    view = served[0].with_ball_fill("broadcast")
+    assert np.array_equal(view.ball_filled, np.isfinite(expected).all(axis=1) & ~atd.ball_present)
+
+
+# -- the wiring: the pools of BAR-ATH (design 3.3) ---------------------------------------------------------------------
+
+def bar_ath_like(root, tags=(), summary=None):
+    """BAR-ATH's Inputs in miniature: the synthetic bundle of pipeline/selftest.py under `root` (600 frames, two touching
+    blocks, the ball missing on a third of the frames), with a given broadcast ball (broadcast_like), made-up records of
+    the broadcast's files, an alignment summary (`summary`: a dict, or an exception that reading it raises; default
+    ALIGNED) and Smart Tagging (`tags`). What the pools, fidelity's BAR-ATH side and bar-ath read of the real match,
+    and none of it. Its attributes given_ball, manifest and homography may be changed by a check."""
+    from pipeline.inputs import Inputs
+    make_synthetic_bundle(root)
+
+    def summarised(self):
+        if isinstance(self.summary, Exception):
+            raise self.summary
+        return copy.deepcopy(self.summary)
+
+    class BarAthLike(Inputs):
+        broadcast_ball = property(lambda self: self.given_ball)
+        broadcast_atd_manifest = property(lambda self: copy.deepcopy(self.manifest))
+        broadcast_homography_source = property(lambda self: dict(self.homography))
+        broadcast_summary = property(summarised)
+        smart_tagging = property(lambda self: [dict(tag) for tag in self.tags])
+
+    inputs = BarAthLike(data_dir=root, n_frames=SYNTHETIC_FRAMES, graded=list(SYNTHETIC_GRADED))
+    inputs.given_ball = broadcast_like(inputs)
+    inputs.manifest = copy.deepcopy(BROADCAST_ATD_MANIFEST)
+    inputs.homography = dict(HOMOGRAPHY_SOURCE)
+    inputs.summary = copy.deepcopy(ALIGNED) if summary is None else summary
+    inputs.tags = [dict(tag) for tag in tags]
+    return inputs
+
+
+def broadcast_like(inputs):
+    """A broadcast ball for bar_ath_like, normalised, NaN where it has none: ours plus (0.01, -0.02) where ours is seen,
+    except on every 7th frame; and where ours is missing, a made-up place on two frames of three."""
+    ours = np.asarray(inputs.atd.ball_xy)
+    t = np.arange(len(ours))
+    ball = ours + np.array([0.01, -0.02])
+    ball[t % 7 == 0] = np.nan
+    missing = np.isnan(ours).any(axis=1)
+    made = np.column_stack([0.2 + 0.001 * t, 0.7 - 0.0005 * t])
+    ball[missing & (t % 3 != 0)] = made[missing & (t % 3 != 0)]
+    ball[missing & (t % 3 == 0)] = np.nan
+    return ball
+
+
+def wiring_codes(n):
+    """Labels for the stand-in, as the decode of r024_both.toml would give them: H, then A, then D, in periods of 50."""
+    t = np.arange(n) % 50
+    return np.where(t < 25, H, np.where(t < 35, A, D)).astype(np.int8)
+
+
+def labels_decoded(sha=None, codes=None, calls=None):
+    """A stand-in for broadcast_sim.decode_labels: it writes a small file where the decode writes its CSV, records the
+    path in `calls`, and returns `codes` (default wiring_codes) with `sha` (default the pinned R024_SHA256)."""
+    def decode(inputs, path, log=print):
+        if calls is not None:
+            calls.append(path)
+        write_text(os.path.dirname(path), os.path.basename(path), "frame,label\n")
+        return (wiring_codes(inputs.n_frames) if codes is None else codes), (
+            broadcast_sim.R024_SHA256 if sha is None else sha)
+    return decode
+
+
+def files_under(folder):
+    """Every file under `folder`, as relative paths; [] for a folder that is not there."""
+    return sorted(os.path.relpath(os.path.join(here, name), folder)
+                  for here, _, names in os.walk(folder) for name in names)
+
+
+def plain_near_gap_runs(present, ours_m, theirs_m, graded):
+    """Ruling 2's error runs, one frame at a time: [[(dx, dy), ...], ...] in time order. A frame is in a run when it is
+    graded, both balls are there, and it is 1 to NEAR_GAP_FRAMES frames before a gap's first frame or after its last,
+    the gap in the frame's own block."""
+    near = broadcast_sim.NEAR_GAP_FRAMES
+    runs = []
+    for _, start, stop in sorted(graded, key=lambda block: block[1]):
+        gaps, t = [], start
+        while t < stop:
+            if present[t]:
+                t += 1
+                continue
+            first = t
+            while t < stop and not present[t]:
+                t += 1
+            gaps.append((first, t - 1))
+        current = []
+        for t in range(start, stop):
+            both = present[t] and np.isfinite(ours_m[t]).all() and np.isfinite(theirs_m[t]).all()
+            if both and any(1 <= first - t <= near or 1 <= t - last <= near for first, last in gaps):
+                current.append((float(theirs_m[t, 0] - ours_m[t, 0]), float(theirs_m[t, 1] - ours_m[t, 1])))
+            elif current:
+                runs.append(current)
+                current = []
+        if current:
+            runs.append(current)
+    return runs
+
+
+def test_near_gap_errors_follow_the_frame_conditions():
+    """Ruling 2 on a hand-built scene: a frame is in the error pool when it is graded, both balls are there, and it is
+    1 to 50 frames before a gap's first frame or after its last, in that gap's own block; the runs are maximal and cut
+    at the blocks, and each offset is the broadcast's position minus ours, in metres."""
+    assert broadcast_sim.NEAR_GAP_FRAMES == 50
+    n = 330
+    t = np.arange(n, dtype=np.float64)
+    for graded, expected in (
+            # Block 2 starts 10 frames after block 1: frames 150-159 are not graded, 46 to 55 frames after gap A.
+            ([(1, 0, 150), (2, 160, 310)], [(50, 60), (62, 100), (105, 120), (121, 150), (190, 240), (250, 305)]),
+            # The blocks touch: frames 150-154 are within 50 of gap A's last frame, in another block, so not near.
+            ([(1, 0, 150), (2, 150, 310)], [(50, 60), (62, 100), (105, 120), (121, 150), (190, 240), (250, 305)])):
+        present = np.ones(n, dtype=bool)
+        present[100:105] = False          # gap A, block 1: near 50-99 and 105-149 (the block ends at 150)
+        present[240:250] = False          # gap B, block 2: near 190-239 and 250-299; 189 is 51 frames before it
+        present[305:315] = False          # gap C, cut at block 2's end (305-310): near 255-304
+        ours = np.column_stack([t, 0.5 * t])
+        ours[~present] = np.nan
+        theirs = np.column_stack([t + 1.0 + t / 128.0, 0.5 * t - 0.25])
+        theirs[60:62] = np.nan            # the run before gap A is cut in two
+        theirs[120] = np.nan
+        error_xy, starts = broadcast_sim.near_gap_errors(present, ours, theirs, graded)
+        frames = np.concatenate([np.arange(first, stop) for first, stop in expected])
+        assert starts.tolist() == np.cumsum([0] + [stop - first for first, stop in expected]).tolist(), starts
+        assert np.array_equal(error_xy, (theirs - ours)[frames]), "the broadcast minus ours, frame by frame"
+        runs = plain_near_gap_runs(present, ours, theirs, graded)
+        assert [len(run) for run in runs] == np.diff(starts).tolist()
+        assert np.array_equal(error_xy, np.array([pair for run in runs for pair in run]))
+        assert error_xy.dtype == np.float64 and starts.dtype == np.int64
+    for bad, name in ((present[:-1], "ball_present"), (ours[:-1], "ball_xy_m"), (theirs[:, :1], "broadcast_xy_m")):
+        arguments = {"ball_present": present, "ball_xy_m": ours, "broadcast_xy_m": theirs, name: bad}
+        expect_error(ValueError, lambda arguments=arguments: broadcast_sim.near_gap_errors(graded=graded, **arguments),
+                     name)
+
+
+def test_pools_refuse_labels_that_are_not_e6496a9b():
+    """The pools are built from r024_both.toml's labels, decoded in-process, and only from the CSV that main.toml writes
+    today (sha256 e6496a9b...): other labels stop the step, naming both hashes, and nothing is left in the cache."""
+    assert broadcast_sim.R024_SHA256 == "e6496a9b9805217ef085e52ed69cbb27a42b95368d65c1d188b4a2f339b61170"
+    assert os.path.basename(broadcast_sim.R024_CONFIG) == "r024_both.toml" and os.path.isfile(broadcast_sim.R024_CONFIG)
+    with tempfile.TemporaryDirectory() as root:
+        inputs = bar_ath_like(root)
+        with replaced(broadcast_sim, "decode_labels", labels_decoded(sha="0" * 64)):
+            for build in (lambda: broadcast_sim.build_pools(inputs, log=quiet),
+                          lambda: broadcast_sim.load_pools(inputs=inputs, log=quiet),
+                          lambda: broadcast_sim.load_bar_ath_measure(inputs=inputs, log=quiet)):
+                expect_error(broadcast_sim.BroadcastSimError, build, "r024_both", "e6496a9b", "0" * 64)
+        assert files_under(os.path.join(root, *broadcast_sim.CACHE_FOLDER)) == [], "nothing is written"
+
+
+def test_pools_refuse_a_class_without_donors_and_an_empty_error_pool():
+    """Ruling 10: with no alive gap, no D gap, or no near-gap error run, the pools stop before anything is written."""
+    assert issubclass(broadcast_sim.BroadcastSimError, ValueError)
+    with tempfile.TemporaryDirectory() as root:
+        inputs = bar_ath_like(root)
+        n = inputs.n_frames
+        for code, fragment in ((D, "alive"), (H, "D")):
+            with replaced(broadcast_sim, "decode_labels", labels_decoded(codes=np.full(n, code, dtype=np.int8))):
+                expect_error(broadcast_sim.BroadcastSimError, lambda: broadcast_sim.load_pools(inputs=inputs,
+                                                                                               log=quiet),
+                             fragment, "donor")
+        blind = np.array(inputs.given_ball)
+        blind[np.asarray(inputs.atd.ball_present)] = np.nan       # the broadcast only where ours is missing
+        inputs.given_ball = blind
+        with replaced(broadcast_sim, "decode_labels", labels_decoded()):
+            expect_error(broadcast_sim.BroadcastSimError, lambda: broadcast_sim.build_pools(inputs, log=quiet),
+                         "error run")
+        assert files_under(os.path.join(root, *broadcast_sim.CACHE_FOLDER)) == [], "nothing is written"
+
+
+def test_pools_cache_key_changes_with_r024_text():
+    """The cache key holds the tactical and broadcast ATD caches' records, the broadcast homography's size and sha256,
+    r024_both.toml's text, its CSV's sha256 and POOLS_VERSION: a change to any of them is another folder, and a CRLF
+    checkout of the same text is not a change."""
+    with tempfile.TemporaryDirectory() as root:
+        inputs = bar_ath_like(root)
+        key = broadcast_sim.pools_key(inputs)
+        text = read(broadcast_sim.R024_CONFIG).replace("\r\n", "\n")
+        assert key["r024_config"] == text and key["r024_csv_sha256"] == broadcast_sim.R024_SHA256
+        assert key["pools_version"] == broadcast_sim.POOLS_VERSION == 1
+        assert key["tactical_atd"]["sources"] == inputs.atd_manifest["sources"]
+        assert key["broadcast_atd"]["sources"] == BROADCAST_ATD_MANIFEST["sources"]
+        assert key["broadcast_homography"] == HOMOGRAPHY_SOURCE
+        assert json.loads(json.dumps(key)) == key, "JSON-normal"
+        folder = broadcast_sim.cache_folder(root, key)
+        assert os.path.dirname(folder) == os.path.join(root, "cache", "benchmark", "broadcast_sim")
+        assert len(os.path.basename(folder)) == 16 and broadcast_sim.cache_folder(root, dict(reversed(key.items()))) \
+            == folder, "the folder of a key is the same whatever the order of its entries"
+
+        def folder_now():
+            return broadcast_sim.cache_folder(root, broadcast_sim.pools_key(inputs))
+
+        os.makedirs(os.path.join(root, "edited"))
+        with replaced(broadcast_sim, "R024_CONFIG", write_text(os.path.join(root, "edited"), "r024_both.toml",
+                                                               text + "# one more comment\n")):
+            assert folder_now() != folder, "another text of r024_both.toml"
+        os.makedirs(os.path.join(root, "crlf"))
+        crlf = os.path.join(root, "crlf", "r024_both.toml")
+        with open(crlf, "wb") as handle:
+            handle.write(text.replace("\n", "\r\n").encode("utf-8"))
+        with replaced(broadcast_sim, "R024_CONFIG", crlf):
+            assert folder_now() == folder, "the same text with CRLF line endings"
+        with replaced(broadcast_sim, "POOLS_VERSION", 2):
+            assert folder_now() != folder
+        with replaced(broadcast_sim, "R024_SHA256", "f" * 64):
+            assert folder_now() != folder
+        inputs.homography = {"bytes": 33, "sha256": "4" * 64}
+        assert folder_now() != folder, "another broadcast homography"
+        inputs.homography = dict(HOMOGRAPHY_SOURCE)
+        inputs.manifest["sources"]["raw"]["sha256"] = "5" * 64
+        assert folder_now() != folder, "another broadcast ATD"
+        inputs.manifest = copy.deepcopy(BROADCAST_ATD_MANIFEST)
+        assert folder_now() == folder
+
+
+def test_pools_are_built_cached_and_rebuilt_when_broken():
+    """load_pools builds design 3.3's pools from BAR-ATH's inputs (each gap's real fill mask and its class by the
+    decoded labels; the near-gap error runs), and BAR-ATH's side of fidelity beside them (ruling 1: the ball before the
+    fill, the fill's own mask, the decoded labels, the broadcast ball in metres, no reference, and F5 the near-gap
+    pool's median); it keeps both under the key's folder, reads them back without decoding again, and treats a broken
+    cache as absent, never as an error."""
+    with tempfile.TemporaryDirectory() as root:
+        inputs = bar_ath_like(root)
+        calls = []
+        with replaced(broadcast_sim, "decode_labels", labels_decoded(calls=calls)):
+            pools = broadcast_sim.load_pools(inputs=inputs, log=quiet)
+            measure = broadcast_sim.load_bar_ath_measure(inputs=inputs, log=quiet)
+            assert len(calls) == 1, "the measure is read from beside the pools, not built again"
+            folder = broadcast_sim.cache_folder(root, broadcast_sim.pools_key(inputs))
+            assert calls == [os.path.join(folder, broadcast_sim.LABELS_CSV)], "decoded into the pools' folder"
+            names = set(os.listdir(folder))
+            kept = {broadcast_sim.MANIFEST, broadcast_sim.MEASURE_FILE, broadcast_sim.LABELS_CSV}
+            assert kept <= names and names - kept and all(name.endswith(".npy") for name in names - kept), names
+
+            n = inputs.n_frames
+            codes = wiring_codes(n)
+            present = np.asarray(inputs.atd.ball_present)
+            gaps = broadcast_sim.gaps_of(present, inputs.graded)
+            filled = np.asarray(inputs.with_ball_fill("broadcast").ball_filled)
+            assert pools.gap_lengths.tolist() == [stop - start for start, stop in gaps]
+            assert pools.gap_alive.tolist() == broadcast_sim.gap_alive(gaps, codes).tolist()
+            assert pools.gap_alive.any() and not pools.gap_alive.all(), "both classes"
+            assert np.array_equal(pools.gap_fill, np.concatenate([filled[start:stop] for start, stop in gaps]))
+            assert pools.gap_fill.any() and not pools.gap_fill.all()
+            pitch = np.array(inputs.pitch)
+            ours_m, theirs_m = np.asarray(inputs.atd.ball_xy) * pitch, np.asarray(inputs.given_ball) * pitch
+            runs = plain_near_gap_runs(present, ours_m, theirs_m, inputs.graded)
+            assert len(runs) > 1 and pools.error_starts.tolist() == np.cumsum([0] + [len(run) for run in runs]).tolist()
+            assert np.array_equal(pools.error_xy, np.array([pair for run in runs for pair in run]))
+            expected = broadcast_sim.measure_fill(present, filled, codes, inputs.graded, theirs_m,
+                                                  np.full((n, 2), np.nan), inputs.pitch)
+            distances = np.hypot(pools.error_xy[:, 0], pools.error_xy[:, 1])
+            expected["F5"] = {"median_m": float(np.median(distances)), "n": int(len(distances))}
+            assert measure == expected, "BAR-ATH's side, as ruling 1 says"
+            assert measure["W1"]["num"] == int(filled.sum()) > 0
+
+            again = broadcast_sim.load_pools(inputs=inputs, log=quiet)
+            assert len(calls) == 1 and broadcast_sim.digest(again) == broadcast_sim.digest(pools), "read back"
+            assert broadcast_sim.load_bar_ath_measure(inputs=inputs, log=quiet) == measure and len(calls) == 1
+            array = sorted(name for name in names if name.endswith(".npy"))[0]
+
+            def cut_array():
+                with open(os.path.join(folder, array), "r+b") as handle:
+                    handle.truncate(20)
+
+            def write(name, text):
+                return lambda: write_text(folder, name, text)
+
+            for damage in (cut_array, lambda: os.remove(os.path.join(folder, array)),
+                           write(broadcast_sim.MEASURE_FILE, "not JSON"), write(broadcast_sim.MEASURE_FILE, "[1, 2]"),
+                           write(broadcast_sim.MANIFEST, "{"), write(broadcast_sim.MANIFEST, '{"key": 3}')):
+                damage()
+                rebuilt = broadcast_sim.load_pools(inputs=inputs, log=quiet)
+                assert broadcast_sim.digest(rebuilt) == broadcast_sim.digest(pools)
+                assert broadcast_sim.load_bar_ath_measure(inputs=inputs, log=quiet) == measure
+            assert len(calls) == 7, "each broken cache was built again, once: {}".format(len(calls))
+            fresh = broadcast_sim.load_pools(inputs=inputs, log=quiet, rebuild=True)
+            assert len(calls) == 8 and broadcast_sim.digest(fresh) == broadcast_sim.digest(pools)
+
+    fields = {name: getattr(pools, name) for name in ("gap_lengths", "gap_alive", "gap_fill", "gap_starts", "error_xy",
+                                                      "error_starts")}
+    same = broadcast_sim.Pools(**{name: np.array(value) for name, value in fields.items()})
+    assert broadcast_sim.digest(same) == broadcast_sim.digest(pools) and len(broadcast_sim.digest(pools)) == 64
+    moved = broadcast_sim.Pools(**dict(fields, error_xy=fields["error_xy"] + 0.5))
+    assert broadcast_sim.digest(moved) != broadcast_sim.digest(pools)
+    flipped = np.array(fields["gap_alive"])
+    flipped[0] = not flipped[0]
+    assert broadcast_sim.digest(broadcast_sim.Pools(**dict(fields, gap_alive=flipped))) != broadcast_sim.digest(pools)
+
+
+def main_of(argv):
+    """(exit code, what was printed, stdout and stderr together) of broadcast_sim.main(argv)."""
+    shown = io.StringIO()
+    with contextlib.redirect_stdout(shown), contextlib.redirect_stderr(shown):
+        code = broadcast_sim.main(argv)
+    return code, shown.getvalue()
+
+
+def test_pools_command_prints_aggregates_only():
+    """`pools` builds (or reads) the pools and BAR-ATH's measure and prints aggregates only (ruling 10): the gaps per
+    class, the donor frames filled per class, the error runs and frames, the measure and the digest; a refusal is
+    exit 2, with nothing written."""
+    with tempfile.TemporaryDirectory() as root:
+        inputs = bar_ath_like(root)
+        with replaced(broadcast_sim, "bar_ath_inputs", lambda data_dir: inputs), \
+                replaced(broadcast_sim, "decode_labels", labels_decoded()):
+            code, text = main_of(["pools", "--data-dir", root])
+            assert code == 0, text
+            pools = broadcast_sim.load_pools(inputs=inputs, log=quiet)
+        lines = text.rstrip("\n").split("\n")
+        assert broadcast_sim.digest(pools) in text
+        alive = int(pools.gap_alive.sum())
+        assert any("alive" in line and str(alive) in line for line in lines), text
+        assert any("error" in line and str(len(pools.error_starts) - 1) in line for line in lines), text
+        for name in ("F1", "F2", "F3", "F4", "F5", "W1", "W2", "W3"):
+            assert any(line.lstrip().startswith(name) for line in lines), (name, text)
+        assert len(lines) <= 40 and max(len(line) for line in lines) <= 160 and "[" not in text and "array" not in text
+
+    with tempfile.TemporaryDirectory() as root:
+        inputs = bar_ath_like(root)
+        with replaced(broadcast_sim, "bar_ath_inputs", lambda data_dir: inputs), \
+                replaced(broadcast_sim, "decode_labels", labels_decoded(sha="0" * 64)):
+            code, text = main_of(["pools", "--data-dir", root])
+        assert code == 2 and "FAILED" in text and "e6496a9b" in text, (code, text)
+        assert files_under(os.path.join(root, *broadcast_sim.CACHE_FOLDER)) == []
+
+
+# -- the wiring: fidelity (design 3.5) --------------------------------------------------------------------------------
+
+def measure_of(F1=(30, 100), F2=(4, 100), first=(30, 100), last=(22, 100), inside=(7, 100), alive=10.0, dead=6.0,
+               F5=1.0, W1=(4, 100), W2=(20, 100), W3=(15, 100)):
+    """A made-up measure_fill result: (num, den) for each share, a number or None for each median."""
+    def share(pair):
+        num, den = pair
+        return {"share": num / den if den else None, "num": num, "den": den}
+    return {"F1": share(F1), "F2": share(F2),
+            "F3": {"gaps": 9, "first": share(first), "last": share(last), "inside": share(inside)},
+            "F4": {"alive": {"median": alive, "n": 5}, "dead": {"median": dead, "n": 4}},
+            "F5": {"median_m": F5, "n": 50}, "W1": share(W1), "W2": share(W2), "W3": share(W3)}
+
+
+def test_fidelity_exit_codes():
+    """Ruling 6: a gate (F1 to F3) that fails gives 1, even if a check fails too; otherwise a check (F4, F5) that fails
+    gives 3; a statistic that is None on either side fails its gate or check; the warnings decide nothing; an error
+    gives 2. The tolerances are the design's, and the report goes to <data>/runs/r028/fidelity-<profile>.json with its
+    floats to 9 decimals and the pools' digest (ruling 8)."""
+    assert broadcast_sim.GATE_TOLERANCES == {"F1": 0.05, "F2": 0.03, "F3": 0.05}
+    assert broadcast_sim.CHECK_TOLERANCES == {"F4": 10.0, "F5": 0.2}
+    ours = measure_of()
+
+    def exit_of(**changes):
+        return broadcast_sim.judge_fidelity(ours, measure_of(**changes))["exit"]
+
+    assert exit_of() == 0
+    assert exit_of(F1=(34, 100)) == 0 and exit_of(F1=(36, 100)) == 1 and exit_of(F1=(24, 100)) == 1
+    assert exit_of(F2=(6, 100)) == 0 and exit_of(F2=(8, 100)) == 1
+    for part in ("first", "last", "inside"):
+        base = measure_of()["F3"][part]["num"]
+        assert exit_of(**{part: (base + 4, 100)}) == 0 and exit_of(**{part: (base + 6, 100)}) == 1, part
+    assert exit_of(F1=(0, 0)) == 1, "None on the copies' side fails its gate"
+    assert exit_of(alive=20.0) == 0 and exit_of(alive=20.5) == 3 and exit_of(dead=-4.5) == 3, "within 10 frames"
+    assert exit_of(dead=None) == 3 and exit_of(F5=1.25) == 3 and exit_of(F5=1.125) == 0
+    assert exit_of(F1=(36, 100), alive=30.0) == 1, "a gate and a check fail: the gate's 1"
+    assert exit_of(W1=(90, 100), W2=(0, 100), W3=(100, 100)) == 0, "the warnings decide nothing"
+    assert broadcast_sim.judge_fidelity(measure_of(F5=None), ours)["exit"] == 3, "None on our side fails too"
+    judged = broadcast_sim.judge_fidelity(ours, measure_of(F1=(36, 100)))
+    assert set(judged["gates"]) == {"F1", "F2", "F3 first", "F3 last", "F3 inside"}
+    assert set(judged["checks"]) == {"F4 alive", "F4 dead", "F5"} and set(judged["warnings"]) == {"W1", "W2", "W3"}
+    row = judged["gates"]["F1"]
+    assert (row["ours"], row["sim"], row["tolerance"], row["passed"]) == (0.3, 0.36, 0.05, False)
+    assert abs(row["difference"] - 0.06) < 1e-12 and judged["gates"]["F2"]["passed"]
+    assert judged["warnings"]["W1"] == {"ours": 0.04, "sim": 0.04}
+
+    with tempfile.TemporaryDirectory() as root:
+        path = write_text(root, "fill.toml", FILL_CONFIG)
+        for changes, code in (({}, 0), ({"F1": (36, 100)}, 1), ({"alive": 30.0}, 3), ({"F1": (1, 3)}, 0)):
+            def measured(config, changes=changes, **options):
+                return broadcast_sim.fidelity_result(
+                    config=config, dropped=(), profile=options["profile"], seeds=list(range(options["seeds"])),
+                    match_ids=["RND001"], calibration=None, digest="ab" * 32, copies=options["seeds"], ours=ours,
+                    sim=measure_of(**changes))
+            with replaced(broadcast_sim, "fidelity", measured):
+                got, text = main_of(["fidelity", "--profile", "gaps", "--seeds", "3", path, "--data-dir", root])
+            assert got == code, (changes, got, text)
+            report = strict_json(read(os.path.join(root, "runs", "r028", "fidelity-gaps.json")))
+            assert report["exit"] == code and report["broadcast_sim"] == "ab" * 32 and report["seeds"] == [0, 1, 2]
+            assert report["config"]["text"] == FILL_CONFIG and report["sim"] == strict_json(json.dumps(
+                benchmark_run.plain(measure_of(**changes))))
+            assert "ab" * 32 in text and "F1" in text
+        assert report["sim"]["F1"]["share"] == 0.333333333, "floats to 9 decimals"
+        with replaced(broadcast_sim, "fidelity", measured):
+            assert main_of(["fidelity", "--profile", "gaps", "--seeds", "1", path, "--data-dir", root])[0] == 0
+        assert os.path.isfile(os.path.join(root, "runs", "r028", "fidelity-gaps.s1.json")), "a one-seed look apart"
+
+        def refusing(config, **options):
+            raise broadcast_sim.BroadcastSimError("no pools here")
+
+        def crashing(config, **options):
+            raise RuntimeError("a bug in the declared code")
+
+        for stand_in, words in ((refusing, ("FAILED", "no pools here")), (crashing, ("Traceback", "a bug"))):
+            with replaced(broadcast_sim, "fidelity", stand_in):
+                got, text = main_of(["fidelity", path, "--data-dir", root])
+            assert got == 2 and all(word in text for word in words), (got, text)
+        got, text = main_of(["fidelity", os.path.join(root, "absent.toml"), "--data-dir", root])
+        assert got == 2 and "FAILED" in text, (got, text)
+
+
+def test_fidelity_pools_the_copies_end_to_end():
+    """fidelity() serves every (match, seed) its simulated ball as the runner would (rulings 3 and 4: the config as run
+    on DFL, without its match-only sources, which it prints, and its twin as the driver), lays the copies end to end with
+    their blocks offset and measures them once with measure_fill, and judges them against BAR-ATH's measure as
+    judge_fidelity does. A config that does not fill, and matches of different pitches, are refused."""
+    matches = synthetic_matches()
+    calibration = synthetic_calibration()
+    pools = made_up_pools()
+    ours = measure_of()
+    drivers = []
+    real = benchmark_run.predict
+
+    def spy(config, inputs):
+        drivers.append(config)
+        return real(config, inputs)
+
+    with tempfile.TemporaryDirectory() as root, match_only_source():
+        config = load_config(write_text(root, "probed.toml", FILL_CONFIG + (
+            '\n[[evidence]]\nkind = "probe_match_only"\nname = "probe"\n')))
+        lines = []
+        with replaced(benchmark_run, "predict", spy):
+            result = broadcast_sim.fidelity(config, profile="gaps", seeds=2, matches=matches, calibration=calibration,
+                                            pools=pools, ours=ours, data_dir=root, log=lines.append)
+        again = broadcast_sim.fidelity(config, profile="gaps", seeds=2, matches=matches, calibration=calibration,
+                                       pools=pools, ours=ours, data_dir=root, log=quiet)
+        assert again == result, "the same inputs, the same result"
+        dropped, removed = benchmark_run.drop_match_only(config)
+        _, twin_only = wiring_configs(root)
+    assert removed == ("probe",) and any("dropped" in line and "probe" in line for line in lines), lines
+    assert result["dropped_match_only"] == ["probe"]
+    assert len(drivers) == 4, "one decode per (match, seed): the twin's, and nothing else"
+    twin = dataclasses.replace(dropped, ball_fill="none")
+    assert all(driver == twin for driver in drivers), "the twin of the config as run on DFL"
+
+    present, filled, codes, fill_xy, reference, graded, offset = [], [], [], [], [], [], 0
+    for match in matches.values():
+        pitch = np.array(match.pitch)
+        for seed in (0, 1):
+            atd = benchmark_run.make_atd(match, "gaps", seed, calibration)
+            plain = match_inputs.MatchInputs(match, atd, profile="gaps", seed=seed)
+            driven = benchmark_run.predict(twin, plain)[0]
+            ball = broadcast_sim.simulate(atd.ball_present, np.asarray(match.ball_xy) * pitch, driven, match.graded,
+                                          match.pitch, pools, np.random.default_rng(
+                                              [seed, degrade.index_of(match.match_id), broadcast_sim.RNG_SALT]))
+            served = match_inputs.MatchInputs(match, atd, profile="gaps", seed=seed, broadcast_ball=ball)
+            present.append(atd.ball_present)
+            filled.append(served.with_ball_fill("broadcast").ball_filled)
+            codes.append(driven)
+            fill_xy.append(ball * pitch)
+            reference.append(np.asarray(match.ball_xy) * pitch)
+            graded += [(half, start + offset, stop + offset) for half, start, stop in match.graded]
+            offset += match.n_frames
+    sim = broadcast_sim.measure_fill(np.concatenate(present), np.concatenate(filled), np.concatenate(codes), graded,
+                                     np.concatenate(fill_xy), np.concatenate(reference), (105.0, 68.0))
+    assert sim["W1"]["num"] > 0 and sim["F5"]["n"] > 0, "the copies are filled somewhere, with a reference"
+    assert result["sim"] == sim and result["ours"] == ours
+    judged = broadcast_sim.judge_fidelity(ours, sim)
+    for key in ("gates", "checks", "warnings", "exit"):
+        assert result[key] == judged[key], key
+    assert result["copies"] == 4 and result["matches"] == ["RND001", "RND002"] and result["seeds"] == [0, 1]
+    assert result["broadcast_sim"] == broadcast_sim.digest(pools)
+    assert result["profile"] == degrade.profile_record("gaps")
+    assert result["calibration"] == {"sha256": calibration_module.digest(calibration),
+                                     "version": calibration_module.CALIBRATION_VERSION}
+    assert result["config"]["text"] == config.text.replace("\r\n", "\n")
+    json.dumps(benchmark_run.plain(result), allow_nan=False)
+
+    options = dict(profile="gaps", seeds=1, calibration=calibration, pools=pools, ours=ours, log=quiet)
+    expect_error(broadcast_sim.BroadcastSimError, lambda: broadcast_sim.fidelity(twin_only, matches=matches,
+                                                                                 **options), "twin", "fill")
+    mixed = {"RND001": random_match("RND001"), "RND003": random_match("RND003", seed=2, pitch=(100.0, 50.0))}
+    expect_error(broadcast_sim.BroadcastSimError, lambda: broadcast_sim.fidelity(dropped, matches=mixed, **options),
+                 "pitch")
+    expect_error(benchmark_run.BenchmarkError, lambda: broadcast_sim.fidelity(dropped, matches=matches, **dict(
+        options, profile="nope")), "nope")
+
+    # Without pools or BAR-ATH's measure given, both come from the cache, read through one BAR-ATH Inputs.
+    asked = []
+    marker = object()
+    with replaced(broadcast_sim, "bar_ath_inputs", lambda data_dir: asked.append(("inputs", data_dir)) or marker), \
+            replaced(broadcast_sim, "load_pools", lambda data_dir=None, inputs=None, log=print, rebuild=False: (
+                asked.append(("pools", data_dir, inputs)) or pools)), \
+            replaced(broadcast_sim, "load_bar_ath_measure", lambda data_dir=None, inputs=None, log=print: (
+                asked.append(("measure", data_dir, inputs)) or ours)):
+        loaded = broadcast_sim.fidelity(dropped, profile="gaps", seeds=1, matches=matches, calibration=calibration,
+                                        data_dir="D", log=quiet)
+    assert asked == [("inputs", "D"), ("pools", "D", marker), ("measure", "D", marker)], asked
+    assert loaded["ours"] == ours and loaded["broadcast_sim"] == broadcast_sim.digest(pools)
+
+
+# -- the wiring: BAR-ATH, label-free (design 7.4) ---------------------------------------------------------------------
+
+def test_tag_check_counts_fill_only_teacher_frames():
+    """The tag check (ruling 7): the teacher is controlled_touch with conventions.TOUCH, run on the plain inputs and on
+    the filled ones; the frames are the graded ones where its `home` is a number on the filled inputs and NaN on the
+    plain ones; the measure is tag_stats.team_agreement with Smart Tagging's team votes on them; and the bar is the plain
+    inputs' agreement over all graded frames minus 0.05, deciding only from 300 such frames that a tag votes on."""
+    with tempfile.TemporaryDirectory() as root:
+        inputs = bar_ath_like(root, tags=TAGS)
+        filled = inputs.with_ball_fill("broadcast")
+        n = inputs.n_frames
+        plain_home = np.full(n, np.nan)
+        plain_home[100:150] = 0.99            # home, voted home on 140-150
+        plain_home[400:420] = 0.01            # away, voted away on 410-420
+        plain_home[500:510] = 0.99            # a touch the fill loses: not a fill-only frame
+        filled_home = np.array(plain_home)
+        filled_home[500:510] = np.nan
+        filled_home[150:200] = 0.99           # fill-only, home: voted home on 150-190, no vote on 190-200
+        filled_home[200:230] = 0.01           # fill-only, away: voted away
+        filled_home[420:440] = 0.99           # fill-only, home: voted away
+        calls = []
+
+        def teacher(run, **params):
+            calls.append((run.inputs, params))
+            return types.SimpleNamespace(alive=np.full(n, np.nan),
+                                         home=filled_home if run.inputs is filled else plain_home)
+
+        with replaced(controlled_touch, "compute", teacher):
+            result = broadcast_sim.tag_check(inputs, filled)
+        assert [params for _, params in calls] == [conventions.TOUCH, conventions.TOUCH], calls
+        assert {id(given) for given, _ in calls} == {id(inputs), id(filled)}
+        graded = np.asarray(inputs.graded_mask)
+        fill_only = graded & np.isfinite(filled_home) & np.isnan(plain_home)
+        missing = ~np.asarray(inputs.atd.ball_present)
+        team, tags = smart_tagging.votes(inputs), smart_tagging.tags(inputs)
+        assert result["fill_only"] == tag_stats.team_agreement(team, filled_home, tags, graded=fill_only,
+                                                               ball_missing=missing)
+        assert result["plain"] == tag_stats.team_agreement(team, plain_home, tags, graded=graded, ball_missing=missing)
+    # worked out by hand: 40 + 30 agree and 20 disagree on the 90 fill-only frames with a vote; 20 of 20 on the plain
+    assert result["fill_only_frames"] == int(fill_only.sum()) == 100
+    assert result["fill_only"]["n"] == 90 and result["fill_only"]["share"] == 70 / 90
+    assert result["plain"]["n"] == 20 and result["plain"]["share"] == 1.0
+    assert result["bar"] == 1.0 - 0.05 and result["decisive"] is False and result["passed"] is True, (
+        "below the bar, but on fewer than 300 frames: reported, deciding nothing")
+    assert (broadcast_sim.MIN_TAG_FRAMES, broadcast_sim.TAG_MARGIN) == (300, 0.05)
+
+
+def test_bar_ath_exit_codes():
+    """Ruling 6: the alignment band (d_1 and d_2 within 2 frames of 4,014 and 26,919) and the live share (at least 0.85)
+    come first, 3 if either fails (an alignment refused too); then 1 if the tag check fails where it decides (300 frames
+    or more), if a graded frame is X, or if D is outside [30%, 62%] of the graded frames; else 0; an error gives 2. The
+    report goes to <data>/runs/r028/bar-ath-<config stem>.json."""
+    assert broadcast_sim.EXPECTED_OFFSETS == {1: 4014, 2: 26919} and broadcast_sim.OFFSET_BAND == 2
+    assert broadcast_sim.MIN_LIVE_SHARE == 0.85 and broadcast_sim.D_SHARE_BAND == (0.30, 0.62)
+
+    def aligned(refused=None, **changes):
+        summary = dict(copy.deepcopy(ALIGNED), **changes)
+        return broadcast_sim.judge_alignment(summary, refused)
+
+    assert aligned()["passed"] and aligned(offsets={1: 4016, 2: 26917})["passed"]
+    assert not aligned(offsets={1: 4017, 2: 26919})["passed"] and not aligned(offsets={1: 4014, 2: 26922})["passed"]
+    assert aligned(live_share=0.85)["passed"] and not aligned(live_share=0.849)["passed"]
+    assert not aligned(offsets={1: 4014})["passed"], "a half without its offset"
+    refused = broadcast_sim.judge_alignment(None, "half 1: no offset agrees")
+    assert not refused["passed"] and refused["refused"] == "half 1: no offset agrees"
+
+    def tags(n, share, plain=0.75):
+        return broadcast_sim.judge_tags({"n": 2000, "share": plain}, {"n": n, "share": share}, n + 10)
+
+    assert tags(300, 0.71)["passed"] and not tags(300, 0.69)["passed"] and tags(299, 0.1)["passed"]
+    assert tags(300, 0.69)["decisive"] and not tags(299, 0.1)["decisive"]
+    assert not broadcast_sim.judge_tags({"n": 0, "share": None}, {"n": 400, "share": 0.9}, 400)["passed"]
+
+    def sanity(d_frames, x_frames=0):
+        codes = np.full(120, X, dtype=np.int8)
+        codes[10:110] = H
+        codes[10:10 + d_frames] = D
+        codes[110 - x_frames:110] = X
+        return broadcast_sim.judge_sanity(codes, [(1, 10, 110)])
+
+    assert sanity(30)["passed"] and sanity(62)["passed"] and not sanity(29)["passed"] and not sanity(63)["passed"]
+    assert sanity(30)["d_share"] == 0.3 and sanity(40, x_frames=1)["x_graded"] == 1 and sanity(40)["x_graded"] == 0
+    assert not sanity(40, x_frames=1)["passed"], "an X on a graded frame"
+
+    good, bad_tag, bad_sanity = tags(300, 0.71), tags(300, 0.69), sanity(63)
+    assert broadcast_sim.bar_ath_exit(aligned(), good, sanity(40)) == 0
+    assert broadcast_sim.bar_ath_exit(aligned(), bad_tag, sanity(40)) == 1
+    assert broadcast_sim.bar_ath_exit(aligned(), good, bad_sanity) == 1
+    assert broadcast_sim.bar_ath_exit(aligned(live_share=0.8), None, None) == 3
+    assert broadcast_sim.bar_ath_exit(refused, bad_tag, bad_sanity) == 3, "the STOP first"
+
+    with tempfile.TemporaryDirectory() as root:
+        path = write_text(root, "fill.toml", FILL_CONFIG)
+        for alignment, tag, checked, code in ((aligned(), good, sanity(40), 0), (aligned(), bad_tag, sanity(40), 1),
+                                              (aligned(offsets={1: 4000, 2: 26919}), None, None, 3)):
+            def measured(config, alignment=alignment, tag=tag, checked=checked, **options):
+                return broadcast_sim.bar_ath_result(config=config, alignment=alignment, digest="cd" * 32,
+                                                    fill={"filled_frames": 7, "graded_frames": 100}, tag=tag,
+                                                    sanity=checked, reported=None)
+            with replaced(broadcast_sim, "bar_ath_inputs", lambda data_dir: None), \
+                    replaced(broadcast_sim, "bar_ath", measured):
+                got, text = main_of(["bar-ath", path, "--data-dir", root])
+            assert got == code, (code, got, text)
+            report = strict_json(read(os.path.join(root, "runs", "r028", "bar-ath-fill.json")))
+            assert report["exit"] == code and report["broadcast_sim"] == "cd" * 32
+            assert "4,014" in text or "4,000" in text, "what was measured is printed"
+
+        def crashing(config, **options):
+            raise RuntimeError("a bug in the declared code")
+
+        with replaced(broadcast_sim, "bar_ath_inputs", lambda data_dir: None), \
+                replaced(broadcast_sim, "bar_ath", crashing):
+            got, text = main_of(["bar-ath", path, "--data-dir", root])
+        assert got == 2 and "Traceback" in text, (got, text)
+
+
+def test_bar_ath_end_to_end_on_a_synthetic_match():
+    """bar_ath() on BAR-ATH in miniature: the alignment and the live share read from the inputs' summary; then the tag
+    check, the candidate's labels (the config through the benchmark's predict, the fill applied there) with their X and
+    D sanity, main.toml's labels beside them for the possessions per half and the frames relabelled, and the filled
+    frames by the candidate's state. At a STOP nothing after the alignment runs; a config that does not fill is
+    refused."""
+    with tempfile.TemporaryDirectory() as root:
+        inputs = bar_ath_like(root, tags=TAGS)
+        fill, twin = wiring_configs(root)
+        pools = made_up_pools()
+        lines = []
+        with replaced(broadcast_sim, "MAIN_CONFIG", twin.path):
+            result = broadcast_sim.bar_ath(fill, inputs=inputs, pools=pools, log=lines.append)
+        assert result["stage"] == "complete" and result["alignment"]["passed"], result["alignment"]
+        assert result["broadcast_sim"] == broadcast_sim.digest(pools)
+        codes = benchmark_run.predict(fill, inputs)[0]
+        main_codes = benchmark_run.predict(twin, inputs)[0]
+        graded = np.asarray(inputs.graded_mask)
+        assert result["sanity"] == broadcast_sim.judge_sanity(codes, inputs.graded)
+        assert result["sanity"]["d_share"] == float((codes[graded] == D).sum()) / graded.sum()
+        view = inputs.with_ball_fill("broadcast")
+        assert result["fill"]["filled_frames"] == int(view.ball_filled.sum()) > 0
+        assert result["fill"]["graded_frames"] == int(graded.sum())
+        assert result["tag"] == broadcast_sim.tag_check(inputs, view)
+        diff = label_diff.diff(main_codes, codes, inputs)
+        reported = result["reported"]
+        assert reported["relabelled_share"] == diff["changed_share"]
+        for half, (before, after) in diff["possessions"].items():
+            row = reported["possessions"][half]
+            assert (row["main"], row["candidate"]) == (before, after)
+            assert row["warn"] == (abs(after - before) > 0.25 * before)
+        pitch = np.array(inputs.pitch)
+        state = broadcast_sim.measure_fill(np.asarray(inputs.atd.ball_present), np.asarray(view.ball_filled), codes,
+                                           inputs.graded, np.asarray(inputs.given_ball) * pitch,
+                                           np.full((inputs.n_frames, 2), np.nan), inputs.pitch)
+        assert reported["filled_by_state"] == {"alive": state["F1"]["num"], "dead": state["F2"]["num"],
+                                               "other": int(view.ball_filled.sum()) - state["F1"]["num"]
+                                               - state["F2"]["num"]}
+        assert reported["W3"] == state["W3"] and reported["W1"] == state["W1"]
+        assert result["exit"] == broadcast_sim.bar_ath_exit(result["alignment"], result["tag"], result["sanity"])
+        json.dumps(benchmark_run.plain(result), allow_nan=False)
+        assert any("added" in line for line in lines), "the fill's added time is printed"
+
+        for summary in (dict(copy.deepcopy(ALIGNED), offsets={1: 4017, 2: 26919}),
+                        dict(copy.deepcopy(ALIGNED), live_share=0.84), AlignmentError("half 1: no offset agrees")):
+            stopped = bar_ath_like(root, tags=TAGS, summary=summary)
+            touched = []
+            with replaced(controlled_touch, "compute", lambda *arguments, **keywords: touched.append(1)):
+                halted = broadcast_sim.bar_ath(fill, inputs=stopped, pools=pools, log=quiet)
+            assert halted["exit"] == 3 and halted["stage"] == "alignment", halted
+            assert halted["tag"] is None and halted["sanity"] is None and touched == [], "nothing after the STOP"
+        assert halted["alignment"]["refused"] == "half 1: no offset agrees"
+        expect_error(broadcast_sim.BroadcastSimError, lambda: broadcast_sim.bar_ath(twin, inputs=inputs, pools=pools,
+                                                                                    log=quiet), "twin", "fill")
