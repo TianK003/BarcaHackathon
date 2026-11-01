@@ -121,9 +121,9 @@ what two of them share goes to common.py (test_a_check_module_imports_no_other_c
 """
 
 from pipeline.benchmark.checks import (
-    broadcast_sim, calibration, cap, choose, context, conventions, dead_ball, degrade, dfl, dfl_events, diagnose, fidelity,
-    harness, hazard, headroom, inputs, label_diff, metrica, restarts, run, score, shape, sources, tag_stats, tracking,
-    touch, truth, wrong_team)
+    broadcast_sim, calibration, cap, choose, context, conventions, dead_ball, degrade, dfl, dfl_events, diagnose,
+    fidelity, harness, hazard, headroom, inputs, label_diff, metrica, restarts, run, score, shape, sources, tag_stats,
+    tracking, touch, truth, wrong_team)
 
 MODULES = (sources, dfl, dfl_events, truth, inputs, score, run, choose, hazard, calibration, degrade, cap, tracking, context,
            fidelity, headroom, touch, dead_ball, conventions, restarts, shape, label_diff, wrong_team, tag_stats, metrica,

@@ -71,7 +71,7 @@ def pools_of(donors, runs=None):
                                           [zero_run()] if runs is None else runs)
 
 
-def run(present, clean, codes, graded, pools, rng=None, seed=0):
+def simulated(present, clean, codes, graded, pools, rng=None, seed=0):
     return broadcast_sim.simulate(present, clean, codes, graded, PITCH, pools,
                                   np.random.default_rng(seed) if rng is None else rng)
 
@@ -149,7 +149,7 @@ def test_gaps_are_cut_at_graded_blocks():
 
 
 def test_gap_alive_threshold():
-    """A gap is alive if at least half of its frames are H or A: exactly 0.5 is alive, 0.49 is not, and X is not alive."""
+    """A gap is alive if at least half of its frames are H or A: exactly 0.5 is alive, 0.49 is not, and an X is not."""
     def one_gap(alive_frames, length=100, other=D, alive_code=H):
         codes = np.full(length, other, dtype=np.int8)
         codes[:alive_frames] = alive_code
@@ -210,7 +210,7 @@ def test_simulate_copies_a_donor_of_equal_length():
     present, clean, codes = world(60, [(20, 20 + m)])
     pools = pools_of([(False, donor)])
     for seed in range(5):
-        out = run(present, clean, codes, [(1, 5, 55)], pools, seed=seed)
+        out = simulated(present, clean, codes, [(1, 5, 55)], pools, seed=seed)
         want = np.zeros(60, dtype=bool)
         want[20:20 + m] = donor
         assert out.shape == (60, 2)
@@ -223,7 +223,7 @@ def test_simulate_keeps_both_edges_when_stretching():
     donor = [True] * 10 + [False] * 35 + [True] * 5
     assert len(donor) == 50
     present, clean, codes = world(200, [(20, 120)])
-    out = run(present, clean, codes, [(1, 0, 200)], pools_of([(False, donor)]))
+    out = simulated(present, clean, codes, [(1, 0, 200)], pools_of([(False, donor)]))
     found = np.flatnonzero(filled_of(out)).tolist()
     assert found == list(range(20, 40)) + list(range(110, 120)), (
         "the donor's first 10 frames become the gap's first 20, its last 5 the last 10: {}".format(found))
@@ -235,7 +235,7 @@ def test_simulate_maps_a_donor_of_any_length_by_the_integer_rule():
     for k, m in [(1, 5), (5, 1), (7, 3), (3, 7), (10, 10), (13, 4), (4, 13), (50, 100), (100, 50), (31, 97), (97, 31)]:
         donor = [bool(flag) for flag in rng.random(k) < 0.5]
         present, clean, codes = world(m + 20, [(10, 10 + m)])
-        found = filled_of(run(present, clean, codes, [(1, 0, m + 20)], pools_of([(False, donor)])))
+        found = filled_of(simulated(present, clean, codes, [(1, 0, m + 20)], pools_of([(False, donor)])))
         assert found[10:10 + m].tolist() == mapped(donor, m), "donor of {} frames on a gap of {}".format(k, m)
         assert not found[:10].any() and not found[10 + m:].any(), "nothing outside the gap"
 
@@ -248,16 +248,16 @@ def test_simulate_picks_by_class():
     graded = [(1, 0, 200)]
     both = pools_of([(True, alive_donor), (False, d_donor)])
     for seed in range(30):
-        found = filled_of(run(present, clean, codes, graded, both, seed=seed))
+        found = filled_of(simulated(present, clean, codes, graded, both, seed=seed))
         assert np.flatnonzero(found[:100]).tolist() == list(range(20, 30)), (
             "the D gap took the D donor (the alive one, all of 50 frames and the nearer in length, would fill it all)")
         assert np.flatnonzero(found[100:]).tolist() == list(range(0, 50)), "the alive gap took the alive donor"
     # A class with no donor gets no fill, and the other class still does.
-    only_alive = filled_of(run(present, clean, codes, graded, pools_of([(True, alive_donor)])))
+    only_alive = filled_of(simulated(present, clean, codes, graded, pools_of([(True, alive_donor)])))
     assert not only_alive[:100].any() and only_alive[100:150].all(), "a D gap with no D donor is left empty"
-    only_d = filled_of(run(present, clean, codes, graded, pools_of([(False, d_donor)])))
+    only_d = filled_of(simulated(present, clean, codes, graded, pools_of([(False, d_donor)])))
     assert only_d[:100].sum() == 10 and not only_d[100:].any(), "an alive gap with no alive donor is left empty"
-    nothing = filled_of(run(present, clean, codes, graded, pools_of([])))
+    nothing = filled_of(simulated(present, clean, codes, graded, pools_of([])))
     assert not nothing.any(), "a pool with no donor at all fills nothing"
 
 
@@ -286,15 +286,16 @@ def test_simulate_draws_among_the_5_nearest_lengths():
     m, masks, ranked, args = nearest_five_case()
     seen = set()
     for seed in SEEDS:
-        donor = which(masks, m, run(*args, seed=seed), 100)
+        donor = which(masks, m, simulated(*args, seed=seed), 100)
         assert donor == ranked[int(np.random.default_rng(seed).integers(5))], "seed {}".format(seed)
         seen.add(donor)
     assert seen == set(ranked), "every one of the five and no other: {}".format(sorted(seen))
 
 
 def test_donors_are_ranked_by_the_exact_log_distance_ties_to_the_shorter_then_the_earlier():
-    """The ranking is |log(k / m)| worked out exactly: the longer length over the shorter, as a fraction, then the shorter
-    length, then the earlier donor. A generator that answers a chosen index reads the ranking off, rank by rank."""
+    """The ranking is |log(k / m)| worked out exactly: the longer length over the shorter, as a fraction, then the
+    shorter length, then the earlier donor. A generator that answers a chosen index reads the ranking off, rank by
+    rank."""
     m = 60
     # (the pool's lengths, the pool indices of the five nearest, nearest first)
     cases = [
@@ -316,7 +317,7 @@ def test_donors_are_ranked_by_the_exact_log_distance_ties_to_the_shorter_then_th
         pools = pools_of([(True, mask) for mask in masks] + others)
         for rank, pool_index in enumerate(expected):
             spy = Pick(rank)
-            out = run(present, clean, codes, [(1, 0, 100)], pools, rng=spy)
+            out = simulated(present, clean, codes, [(1, 0, 100)], pools, rng=spy)
             assert which(masks, m, out, 20) == pool_index, "lengths {}: rank {} is donor {}".format(
                 lengths, rank, pool_index)
             assert spy.asked[0] == len(expected), "the donor is drawn from {} candidates".format(len(expected))
@@ -325,15 +326,15 @@ def test_donors_are_ranked_by_the_exact_log_distance_ties_to_the_shorter_then_th
 def test_simulate_is_seeded():
     """The same generator seed gives the same bytes, different seeds give different donors, and the generator moves."""
     m, masks, ranked, args = nearest_five_case()
-    outs = [run(*args, seed=seed) for seed in range(20)]
-    again = [run(*args, seed=seed) for seed in range(20)]
+    outs = [simulated(*args, seed=seed) for seed in range(20)]
+    again = [simulated(*args, seed=seed) for seed in range(20)]
     assert all(first.tobytes() == second.tobytes() for first, second in zip(outs, again)), "same seed, same bytes"
     assert len({out.tobytes() for out in outs}) > 1, "different seeds do not all give the same ball"
     donors = {which(masks, m, out, 100) for out in outs}
     assert len(donors) >= 3, "different seeds give different donors: {}".format(sorted(donors))
     rng = np.random.default_rng(0)
     before = rng.bit_generator.state
-    run(*args, rng=rng)
+    simulated(*args, rng=rng)
     assert rng.bit_generator.state != before, "the caller's generator is the one that is drawn from"
 
 
@@ -359,10 +360,10 @@ def test_simulate_adds_the_error_runs():
     pools = pools_of([(False, donor)], runs)
     first_runs = set()
     for seed in range(60):
-        out = run(present, clean, codes, [(1, 0, 60)], pools, seed=seed)
+        out = simulated(present, clean, codes, [(1, 0, 60)], pools, seed=seed)
         replay = np.random.default_rng(seed)
         replay.integers(1)                                  # the donor: the pool has one
-        first = [1, 2, 3][int(replay.integers(3))]          # runs of at least 4 frames: 6, 10 and 5 long (indices 1, 2, 3)
+        first = [1, 2, 3][int(replay.integers(3))]          # runs of 4 frames or more: 6, 10 and 5 long (indices 1-3)
         replay.integers(1)                                  # the second fragment (7 frames): only run 2 is long enough
         want = np.full((60, 2), np.nan)
         want[12:16] = (clean[12:16] + np.array(runs[first][:4])) / SCALE
@@ -377,7 +378,7 @@ def test_simulate_tiles_the_longest_error_run_when_none_is_long_enough():
     present, clean, codes = world(60, [(10, 30)])
     pools = pools_of([(False, [True] * 12 + [False] * 8)], runs)           # one fragment of 12 frames
     spy = Pick(0)
-    out = run(present, clean, codes, [(1, 0, 60)], pools, rng=spy)
+    out = simulated(present, clean, codes, [(1, 0, 60)], pools, rng=spy)
     want = np.full((60, 2), np.nan)
     want[10:22] = (clean[10:22] + np.array([runs[1][t % 5] for t in range(12)])) / SCALE
     assert np.array_equal(out, want, equal_nan=True), "the first 5 offsets of run 1, over and over, to 12 frames"
@@ -385,7 +386,7 @@ def test_simulate_tiles_the_longest_error_run_when_none_is_long_enough():
     # A run exactly as long as the fragment is long enough: it is drawn among the runs of 5 and is not tiled.
     pools = pools_of([(False, [True] * 5 + [False] * 15)], runs)
     spy = Pick(1)
-    out = run(present, clean, codes, [(1, 0, 60)], pools, rng=spy)
+    out = simulated(present, clean, codes, [(1, 0, 60)], pools, rng=spy)
     want = np.full((60, 2), np.nan)
     want[10:15] = (clean[10:15] + np.array(runs[2][:5])) / SCALE
     assert np.array_equal(out, want, equal_nan=True), "answer 1 of the two runs of 5 is run 2, its first 5 offsets"
@@ -402,8 +403,8 @@ def test_simulate_leaves_nan_where_dfl_has_no_ball():
     holes[26, 0] = np.nan                   # one coordinate only: still no position
     holes[45, 1] = np.nan
     rng_a, rng_b = np.random.default_rng(4), np.random.default_rng(4)
-    whole = run(present, clean, codes, graded, pools, rng=rng_a)
-    out = run(present, holes, codes, graded, pools, rng=rng_b)
+    whole = simulated(present, clean, codes, graded, pools, rng=rng_a)
+    out = simulated(present, holes, codes, graded, pools, rng=rng_b)
     want = filled_of(whole)
     assert want.sum() == 20 and np.flatnonzero(want).tolist() == list(range(20, 30)) + list(range(40, 50))
     for frame in (22, 23, 26, 45):
@@ -418,7 +419,7 @@ def test_simulate_fills_only_the_gaps_of_the_graded_blocks():
     """The output is NaN on every frame with the ball, and outside the graded blocks even where the ball is missing."""
     present, clean, codes = world(200, [(0, 30), (50, 80), (95, 110), (150, 200)])
     graded = [(1, 20, 100), (2, 140, 180)]
-    out = run(present, clean, codes, graded, pools_of([(False, [True] * 40)]))     # a donor that fills every frame
+    out = simulated(present, clean, codes, graded, pools_of([(False, [True] * 40)]))    # a donor that fills every frame
     expected = list(range(20, 30)) + list(range(50, 80)) + list(range(95, 100)) + list(range(150, 180))
     assert np.flatnonzero(filled_of(out)).tolist() == expected, "the graded part of each missing run, and nothing else"
 
@@ -456,7 +457,7 @@ def plain_simulate(present, clean, codes, graded, pitch, donors, runs, seed):
 
         def compare(i, j):
             ki, kj = len(donors[i][1]), len(donors[j][1])
-            left, right = max(ki, m) * min(kj, m), max(kj, m) * min(ki, m)     # ratio_i against ratio_j, cross-multiplied
+            left, right = max(ki, m) * min(kj, m), max(kj, m) * min(ki, m)     # ratio_i against ratio_j, crossed
             for a, b in ((left, right), (ki, kj), (i, j)):
                 if a != b:
                     return -1 if a < b else 1
@@ -555,8 +556,7 @@ def test_simulate_refuses_what_it_cannot_serve():
         arguments.update(changes)
         return lambda: broadcast_sim.simulate(**arguments)
 
-    run_ok = call()
-    run_ok()
+    call()()
     expect_error(ValueError, call(ball_present=present.astype(np.int8)), "ball_present", "bool")
     expect_error(ValueError, call(ball_present=present[:99]), "ball_present", "clean_ball_m", "100")
     expect_error(ValueError, call(clean_ball_m=clean[:, 0]), "clean_ball_m", "(n, 2)")
@@ -584,13 +584,15 @@ def fill_scene():
     """A scene of 240 frames, its gaps and fills built by hand: (ball_present, filled, codes, graded, fill_xy, ref_xy).
 
     Blocks 10-110 and 130-230. The ball is missing on 0-40, 50-120, 140-150 and 160-235, so that the graded gaps are
-    G1 = 10-40 (30 frames), G2 = 50-110 (60), G3 = 140-150 (10) and G4 = 160-230 (70): the missing runs that reach out of
-    a block are cut by it. Codes: G1 is H on 10-25 and A on 25-40; G2 is A on 50-80 and D on 80-110; G3 is D; G4 is H on
-    160-200, X on 200-205 and D on 205-230; the graded frames with the ball are H; the rest is X.
+    G1 = 10-40 (30 frames), G2 = 50-110 (60), G3 = 140-150 (10) and G4 = 160-230 (70): a missing run that reaches out
+    of a block is cut by it. Codes: G1 is H on 10-25 and A on 25-40; G2 is A on 50-80 and D on 80-110; G3 is D; G4 is
+    H on 160-200, X on 200-205 and D on 205-230; the graded frames with the ball are H; the rest is X.
 
     The fill (nine fragments, 60 frames) is on 10-20, 25-28, 50-62, 76-84, 95-100, 160-170, 190-195, 200-203 and
     226-230, and, outside the blocks, on 2-6, 112-116 and 231-234, which nothing may count. Each fragment has one
-    offset (reference = fill - offset), as in OFFSETS below; the reference is NaN on 95-100 and on frame 160.
+    offset (reference = fill - offset), as in `fragments` below, and they are Pythagorean (3-4-5 and the like), so that
+    every distance is exact and a Euclidean distance cannot be taken for a Manhattan one; the reference is NaN on 95-100
+    and on frame 160.
     """
     n = 240
     graded = [(1, 10, 110), (2, 130, 230)]
@@ -604,22 +606,23 @@ def fill_scene():
                               (205, 230, D)]:
         codes[start:stop] = code
     # fragment: (start, stop, position of the fill (x, y), offset (dx, dy))
-    fragments = [(10, 20, (50.0, 25.0), (0, 0)), (25, 28, (-1.5, 25.0), (3, 4)), (50, 62, (60.0, 10.0), (0, 1)),
-                 (76, 84, (101.0, 25.0), (6, 8)), (95, 100, (30.0, -1.0), (1, 1)), (160, 170, (30.0, 51.0), (5, 12)),
-                 (190, 195, (30.0, 40.0), (8, 15)), (200, 203, (105.0, 20.0), (0, 2)), (226, 230, (70.0, 20.0), (3, 0)),
+    fragments = [(10, 20, (50.0, 25.0), (0, 0)), (25, 28, (-1.5, 25.0), (6, 8)), (50, 62, (60.0, 10.0), (0, 1)),
+                 (76, 84, (101.0, 25.0), (5, 12)), (95, 100, (30.0, -1.0), (1, 1)), (160, 170, (30.0, 51.0), (8, 15)),
+                 (190, 195, (30.0, 40.0), (20, 21)), (200, 203, (105.0, 20.0), (0, 2)),
+                 (226, 230, (70.0, 20.0), (3, 4)),
                  (2, 6, (500.0, 25.0), (0, 0)), (112, 116, (500.0, 25.0), (0, 0)), (231, 234, (500.0, 25.0), (0, 0))]
     filled = np.zeros(n, dtype=bool)
     fill_xy = np.full((n, 2), np.nan)
-    reference = np.full((n, 2), np.nan)
+    offset_xy = np.zeros((n, 2))
     for start, stop, position, offset in fragments:
         filled[start:stop] = True
         fill_xy[start:stop] = position
-        reference[start:stop] = np.array(position) - np.array(offset)
+        offset_xy[start:stop] = offset
     fill_xy[83] = (101.5, 25.0)           # one frame of 76-84 is beyond the line, the others are exactly 1 m beyond it
-    reference[83] = fill_xy[83] - (6, 8)
     fill_xy[99] = (30.0, -2.0)            # the same at y: 95-99 are on the 1 m line, frame 99 is beyond it
     fill_xy[165:170] = (30.0, 52.0)       # five frames of 160-170 are beyond, five are on the line
-    reference[165:170] = fill_xy[165:170] - (5, 12)
+    fill_xy[190:192] = (-1.0, 40.0)       # and two frames of 190-195 are on the line at x = -1 (all four are covered)
+    reference = fill_xy - offset_xy
     reference[95:100] = np.nan
     reference[160] = np.nan
     return present, filled, codes, graded, fill_xy, reference
@@ -638,7 +641,7 @@ def test_measure_fill_on_known_masks():
     share("F2", 13, 65)                  # 4 (80-84) + 5 + 4 (226-230)
     share("W1", 60, 200)                 # the fill over the 100 + 100 graded frames
     share("W2", 100, 170)
-    share("W3", 13, 60)                  # 3 (x < -1) + 1 (frame 83) + 1 (frame 99) + 5 + 3 (x > 101); not the ones on the line
+    share("W3", 13, 60)                  # 3 (x < -1) + 1 (frame 83) + 1 (frame 99) + 5 + 3 (x > 101); none on a line
     # F3: gaps of 50 frames or more are G2 (60) and G4 (70). First 25 frames: 12 (50-62) + 10 (160-170); last 25: 5
     # (95-100) + 4 (226-230); inside, 10 + 20 frames: 8 (76-84) + 5 + 3.
     assert out["F3"] == {"gaps": 2, "first": {"share": 22 / 50, "num": 22, "den": 50},
@@ -646,9 +649,10 @@ def test_measure_fill_on_known_masks():
                          "inside": {"share": 16 / 30, "num": 16, "den": 30}}, out["F3"]
     # F4: alive fragments (at least half H or A) 10, 3, 12, 8 (76-84: exactly half), 10, 5; dead 5, 3 (all X), 4.
     assert out["F4"] == {"alive": {"median": 9.0, "n": 6}, "dead": {"median": 4.0, "n": 3}}, out["F4"]
-    # F5: 54 frames with both positions (the 60, less 5 on 95-100 and frame 160): 0 x10, 1 x12, 2 x3, 3 x4, 5 x3, 10 x8,
-    # 13 x9, 17 x5: the median is the mean of the 27th and 28th, both 3.
-    assert out["F5"] == {"median_m": 3.0, "n": 54}, out["F5"]
+    # F5: 54 frames with both positions (the 60, less 5 on 95-100 and frame 160): 0 x10 (10-20), 1 x12 (50-62), 2 x3
+    # (200-203), 5 x4 (226-230), 10 x3 (25-28), 13 x8 (76-84), 17 x9 (160-170), 29 x5 (190-195): the median is the mean
+    # of the 27th and 28th, both 5. (Manhattan distances would make it 7.)
+    assert out["F5"] == {"median_m": 5.0, "n": 54}, out["F5"]
     assert set(out) == {"F1", "F2", "F3", "F4", "F5", "W1", "W2", "W3"}, sorted(out)
     for value in (out["F1"]["num"], out["F5"]["n"], out["F4"]["alive"]["n"]):
         assert type(value) is int
@@ -742,7 +746,8 @@ def plain_measure(present, filled, codes, graded, fill_xy, reference, pitch):
     fill = [t for t in range(n) if inside[t] and filled[t]]
     alive = [t for t in gap if codes[t] in (H, A)]
     dead = [t for t in gap if codes[t] == D]
-    out = {"F1": (len([t for t in alive if filled[t]]), len(alive)), "F2": (len([t for t in dead if filled[t]]), len(dead)),
+    out = {"F1": (len([t for t in alive if filled[t]]), len(alive)),
+           "F2": (len([t for t in dead if filled[t]]), len(dead)),
            "W1": (len(fill), len([t for t in range(n) if inside[t]])), "W2": (len(alive), len(gap)),
            "W3": (len([t for t in fill if fill_xy[t][0] < -1 or fill_xy[t][0] > length + 1 or fill_xy[t][1] < -1
                        or fill_xy[t][1] > width + 1]), len(fill))}
@@ -784,8 +789,8 @@ def plain_measure(present, filled, codes, graded, fill_xy, reference, pitch):
 
 
 def random_scene(seed):
-    """(present, filled, codes, graded, fill_xy, reference): gaps, fills inside them, codes in runs, positions around and
-    beyond the lines, and a reference with holes."""
+    """(present, filled, codes, graded, fill_xy, reference): gaps, fills inside them, codes in runs, positions around
+    and beyond the lines, and a reference with holes."""
     r = np.random.default_rng([29, seed])
     n = 500
     graded = [(1, int(r.integers(0, 30)), int(r.integers(150, 220))), (2, int(r.integers(240, 260)),
@@ -905,14 +910,14 @@ def test_pools_validate_their_fields():
         ("gap_fill", np.array([1, 0, 1, 0, 0]), "gap_fill", "bool"),
         ("gap_starts", np.array([0, 3]), "gap_starts", "3 offsets"),
         ("gap_starts", np.array([1, 3, 5]), "gap_starts", "start at 0"),
-        ("gap_starts", np.array([0, 2, 5]), "gap_starts", "running totals of gap_lengths"),
+        ("gap_starts", np.array([0, 2, 5]), "gap_starts", "running totals"),
         ("error_xy", np.array([1.0, 2.0, 3.0, 4.0]), "error_xy", "2-D"),
         ("error_xy", np.array([[1.0, 2.0, 3.0]] * 2), "error_xy", "(m, 2)"),
         ("error_xy", np.array([[1.0, 2.0], [np.nan, 4.0]]), "error_xy", "finite"),
         ("error_xy", np.array([[1.0, 2.0], [3.0, np.inf]]), "error_xy", "finite"),
         ("error_xy", np.array([[True, False], [True, False]]), "error_xy", "number"),
         ("error_xy", np.array([[1.0, 2.0]]), "Pools.error_starts", "rows"),
-        ("error_starts", np.array([]), "error_starts", "at least one"),
+        ("error_starts", np.array([], dtype=np.int64), "error_starts", "at least one"),
         ("error_starts", np.array([1, 2]), "error_starts", "start at 0"),
         ("error_starts", np.array([0, 0, 2]), "error_starts", "at least one frame"),
         ("error_starts", np.array([0, 3]), "Pools.error_xy", "rows"),
@@ -920,7 +925,8 @@ def test_pools_validate_their_fields():
     ]
     for field, value, *fragments in bad:
         message = expect_error(ValueError, build(**{field: value}), "Pools." + field, *fragments)
-        assert "1.0" not in message and "[" not in message, "a message holds shapes and counts, never values: " + message
+        assert np.array2string(value) not in message and repr(value.tolist()) not in message, (
+            "a message holds shapes and counts, never the array it was given: " + message)
     expect_error(ValueError, lambda: broadcast_sim.Pools.from_lists([[True]], [True, False], []), "alive", "2", "1")
     expect_error(ValueError, lambda: broadcast_sim.Pools.from_lists([[]], [True], []), "gap_lengths", "at least 1")
     expect_error(ValueError, lambda: broadcast_sim.Pools.from_lists([[1, 0]], [True], []), "gap_fill", "bool")
