@@ -15,6 +15,10 @@ which read only n_frames and graded, are the base class's own.
 What a benchmark match does not have, it says. The homography and the Smart Tagging come from the video, and the DFL
 open data has no video: asking for either raises AssetUnavailable, with a sentence that says to check that source on
 the public window instead. Nothing is faked, so a component that needs them fails loudly instead of learning from zeros.
+The broadcast is the same, with one exception (R028): a simulated broadcast ball, made from BAR-ATH's real one, can be
+given (`broadcast_ball=`) and is then served as `broadcast_ball`, which the fill of a config with [inputs] ball_fill =
+"broadcast" reads (pipeline.inputs.Inputs.with_ball_fill). Without one, such a config fails in predict() rather than
+run on the unfilled ball.
 
 No truth through the inputs. Evidence components see `ctx.run.inputs`, and the DFL match carries the answer in its own
 ball_status and ball_possession (truth.py builds the benchmark's truth from them). A MatchInputs that kept the match,
@@ -106,15 +110,26 @@ class MatchInputs(Inputs):
     on all three, the profile, its version and the Calibration's digest, which every report holds
     (report["profile"], report["calibration"]), or one run would read what another made from different tracking.
 
+    `broadcast_ball`, if given, is the simulated broadcast's ball on the match's rows: (n_frames, 2), normalised as the
+    Atd's ball is, NaN where the broadcast has none. It is held read-only (a view when the array given is writeable,
+    which is left as it was) under a name with no "ball" in it, and it is tracking, not truth: a ball made of the
+    served positions, never of the match's flags.
+
     ValueError if the Atd and the match differ in length: a row of the tracking would then be another frame than the
-    match's, and every score computed from it would be quietly wrong.
+    match's, and every score computed from it would be quietly wrong. The same for a broadcast_ball of another shape.
     """
 
-    def __init__(self, match, atd, profile="clean", seed=0, data_dir=None):
+    def __init__(self, match, atd, profile="clean", seed=0, data_dir=None, broadcast_ball=None):
         if atd.n_frames != match.n_frames:
             raise ValueError("{}: the Atd has {} rows and the match has {}; the tracking served must be the match's "
                              "own (clean_atd(match), or a degraded copy of it)".format(
                                  match.match_id, atd.n_frames, match.n_frames))
+        if broadcast_ball is not None:
+            broadcast_ball = _frozen(broadcast_ball, np.float64)
+            if broadcast_ball.shape != (match.n_frames, 2):
+                raise ValueError("{}: broadcast_ball has shape {} and the match has {} rows; give ({}, 2), the "
+                                 "broadcast's ball normalised as the Atd's is, NaN where it has none".format(
+                                     match.match_id, broadcast_ball.shape, match.n_frames, match.n_frames))
         self.game = match.match_id
         self.data_dir = data_dir or games.DATA_DIR
         self.profile = profile
@@ -128,6 +143,7 @@ class MatchInputs(Inputs):
         self.rebuild = False
         self.atd_status = "benchmark"
         self._atd = atd
+        self._broadcast = broadcast_ball
         cache, reason = _dfl_cache_manifest(match, self.data_dir)
         self._atd_manifest = {"match_id": match.match_id, "profile": profile, "seed": seed,
                               "cache_version": cache.get("cache_version"), "sources": cache.get("sources"),
@@ -159,6 +175,21 @@ class MatchInputs(Inputs):
     @property
     def smart_tagging(self):
         raise AssetUnavailable(ASSET_MESSAGE.format("smart_tagging"))
+
+    @property
+    def broadcast_ball(self):
+        """The simulated broadcast's ball given to these inputs, (n, 2) float64, read-only; AssetUnavailable if none
+        was, as for the other assets of the video."""
+        if self._broadcast is None:
+            raise AssetUnavailable(ASSET_MESSAGE.format("broadcast"))
+        return self._broadcast
+
+    @property
+    def broadcast_summary(self):
+        """{}: a given ball was simulated, not aligned, so it has no offsets or live frames to report (the fill's own
+        counts are FilledInputs.fill_summary's). AssetUnavailable without a ball, as broadcast_ball."""
+        self.broadcast_ball  # AssetUnavailable when no ball was given
+        return {}
 
 
 def _dfl_cache_manifest(match, data_dir):

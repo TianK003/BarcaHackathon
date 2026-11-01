@@ -16,9 +16,14 @@ run. Here it is parsed once into a cache and reloaded in about a second.
 | `BAR-ATH_tactical_homography.csv` | `inputs.homography` — `matrices (n, 3, 3)`, `error (n,)`, `valid (n,)` |
 | `BAR-ATH_tactical_smart_tagging.xml` | `inputs.smart_tagging` — list of `{code, tags, start_frame, end_frame, …}` |
 | `games.py` (constants, no file) | `n_frames` 199,319 · `fps` 25 · `pitch` (105.3, 68.0) m · `graded` · `half_of_frame` · `graded_mask` · `kickoffs` |
+| `data/broadcast/BAR-ATH_broadcast_atd.txt` + `_atd.xml` | `inputs.broadcast_atd` — an `Atd` on the **broadcast's** timeline (164,488 rows, 51 slots) |
+| `data/broadcast/BAR-ATH_broadcast_homography.csv` | `inputs.broadcast_valid` — `(164,488,)` bool, its `valid` column only |
+| both, aligned by code ([below](#the-broadcasts-ball-r028)) | `inputs.broadcast_alignment`, `inputs.broadcast_ball` `(n, 2)`, `inputs.broadcast_summary` |
+| `[inputs] ball_fill` of the config | `inputs.with_ball_fill(kind)` — the inputs themselves, or a `FilledInputs` whose `atd` has the broadcast's ball in our gaps · `ball_filled` `(n,)` · `fill_summary` |
 
 Everything is **lazy**: `Inputs()` reads nothing, and an asset is loaded the first time someone asks for it. A run
-that never touches the homography never pays for it.
+that never touches the homography never pays for it, and nothing of the broadcast is read unless a config fills the
+ball.
 
 ## Alignment — done here, nowhere else
 
@@ -27,7 +32,7 @@ that never touches the homography never pays for it.
 | ATD | `frame_id` 1…199,319 | `frame_id - 1` | `atd_cache.parse` (checks ids are exactly 1…n in order) |
 | Homography | `frame` 0…199,318 | as is | `Inputs.homography` (checks row count and frame column) |
 | Smart Tagging | seconds from the first frame | `round(s * 25)` | `starter/load_smart_tagging.load` |
-| Broadcast anything | its own 164,488-frame timeline | **no mapping exists** | not loaded — see [T09](../../docs/traps.md) |
+| Broadcast | its own 164,488-frame timeline | row *t* from broadcast frame *t − d*, one *d* per half, **found by code** on every run | `broadcast.align`, `broadcast.frame_map`; only `broadcast_ball` is on our rows — see [T09](../../docs/traps.md) |
 
 Graded frames (`inputs.graded`, half-open): 1st half `11,185–90,651`, 2nd half `110,808–190,197`. The 2nd half is
 graded from 2,934 frames before its kick-off at 113,742, and all of those are `D` ([T02](../../docs/traps.md)).
@@ -63,7 +68,7 @@ graded from 2,934 frames before its kick-off at 113,742, and all of those are `D
 
 | | |
 |---|---|
-| where | `<data dir>/cache/atd_tactical/` — inside `data/`, so git ignores it. Never put a cache anywhere else |
+| where | `<data dir>/cache/atd_tactical/` — inside `data/`, so git ignores it. Never put a cache anywhere else. The broadcast's ATD, parsed by the same code, has its own: `<data dir>/cache/atd_broadcast/` |
 | what | one `.npy` per array + `manifest.json` (source hashes, versions, aggregate statistics) |
 | first run | ~15 s: separators → commas, pandas' C parser with `float_precision="round_trip"` |
 | later runs | ~1–2 s: hash both source files, compare with the manifest, load the arrays |
@@ -78,6 +83,32 @@ Two properties are worth knowing because the regression depends on them:
   So the separators are counted first (`:` 2 per line, `;` 45, `,` 94), and the file is refused if any total is
   off.
 
+## The broadcast's ball (R028)
+
+Our ball is missing on 41% of the graded frames. The TV broadcast tracks the same match from a camera a person steers,
+and where ours is lost its ball is often there (A20). A config with
+
+```toml
+[inputs]
+ball_fill = "broadcast"   # default "none": the tactical ball only
+```
+
+runs on `inputs.with_ball_fill("broadcast")`, a `FilledInputs` whose `atd` has the broadcast's usable ball wherever
+ours is missing on a graded frame. Every source reads it unchanged; `ball_filled` marks the frames written. The steps
+are plain numpy functions in [`broadcast.py`](broadcast.py), with no randomness, and its module docstring has the why:
+
+| step | what | constants (`broadcast.py` Params) |
+|---|---|---|
+| `align` | per half the offset *d* (our frame *t* = broadcast frame *t − d*), ball against ball in metres: coarse every 25th frame and every 25 frames of offset, within 3 m; fine every frame within ±40 of the coarse best, within 1.5 m; an offset counts on 300 pairs or more | accepted only if the fine score ≥ 0.5 and the coarse best ≥ 2 × the best score more than 250 frames away, else `AlignmentError` stops the run; ties to the smaller \|*d*\| |
+| `live` | a mapped frame whose broadcast homography is valid, shows ≥ 4 players, and whose players' median distance to our nearest is < 2.0 m | teams do not enter (T32) |
+| `usable` | the broadcast's ball present on a live frame, in runs of ≥ 13 frames (shorter runs are a median 16–27 m off, A20 part 6) | a run breaks where the broadcast's frames stop following each other |
+| `fill` | `ball_xy` from the broadcast where ours is missing on a graded frame | `ball_speed` stays NaN (T31); a present ball and the players are never touched |
+
+`run.py` logs one `fill` line (the offsets, the fine scores, the live share, the frames filled), and the run manifest's
+`inputs` gains `broadcast`: those aggregates, the broadcast ATD cache's sources and the homography file's size and
+sha256. Without `[inputs]`, `with_ball_fill("none")` is the inputs object itself and nothing changes. The benchmark has
+no broadcast: its `MatchInputs` serves a simulated ball given as `broadcast_ball=`, and the same fill applies to it.
+
 ## Adding an asset
 
 1. Add a lazy `functools.cached_property` to `Inputs` that returns arrays with **n_frames rows**, aligned here.
@@ -86,9 +117,11 @@ Two properties are worth knowing because the regression depends on them:
 3. Check the alignment you rely on — row count, first frame, frame order — and raise with a sentence if it fails.
 4. Make the arrays read-only, add a row to the tables above, and log any measurement in
    [docs/results.md](../../docs/results.md).
+5. If `FilledInputs` should serve it unchanged, add it to its properties read from the base (`_from_base`).
 
-Proposals that will add assets here: P14 (detected ball), P15 (broadcast alignment). P10's audio track was added and
-removed again (dropped, R018, R018b; recoverable from `a08e381`). Decoding video must be frame-exact ([T23](../../docs/traps.md)).
+Proposals that will add assets here: P14 (detected ball). P15's broadcast is R028's ball fill, above. P10's audio track
+was added and removed again (dropped, R018, R018b; recoverable from `a08e381`). Decoding video must be frame-exact
+([T23](../../docs/traps.md)).
 
 ## Traps this stage absorbs
 

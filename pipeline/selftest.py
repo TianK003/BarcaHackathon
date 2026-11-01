@@ -562,7 +562,7 @@ def test_align_refuses_no_agreement():
 
 
 def test_align_refuses_two_peaks():
-    """A broadcast that holds our walk at 4,000 and at 5,000 frames, on alternate stretches, has two peaks of one height.
+    """A broadcast that holds our walk at 4,000 and 5,000 frames, on alternate stretches, has two peaks of one height.
 
     The coarse best is then not twice the best score more than 250 frames away, and the feed is refused rather than
     filled from at either offset."""
@@ -573,6 +573,20 @@ def test_align_refuses_two_peaks():
               for low in range(start - 4000, stop - 4000, 500)] + aligned_pieces()[1:]
     other, valid = walk_broadcast(path, pieces)
     expect_error(broadcast.AlignmentError, lambda: broadcast.align(ball, other, valid, WALK_GRADED), "half 1", "250")
+
+
+def test_align_ties_go_to_the_smaller_offset():
+    """Ties go to the smaller |d|, then to the smaller d: a ball that never moves agrees at every offset.
+
+    Both balls stand on one spot, so every offset scores 1.0. The coarse and the fine best are then 0, and the best
+    score more than 250 frames away is the one at -275 (|d| = 275 before 300, and -275 before +275). That is also a
+    second peak as high as the first, so the feed is refused, and the refusal names both offsets.
+    """
+    from pipeline.inputs import broadcast
+    still = np.full((20000, 2), 10.0)
+    expect_error(broadcast.AlignmentError, lambda: broadcast.align(still, still, np.ones(20000, dtype=bool),
+                                                                   [(1, 5000, 15000)]),
+                 "half 1", "at the best offset, +0 frames", "(1.000 at -275)")
 
 
 def test_align_refuses_too_few_pairs():
@@ -677,7 +691,7 @@ def fill_scene(n=12, seed=5, writeable=False):
 
 
 def test_fill_writes_only_missing_graded_frames():
-    """The fill writes the broadcast's ball on graded frames where ours is missing and theirs is whole, and nowhere else.
+    """The fill writes the broadcast's ball on graded frames where ours is missing and theirs is whole, nowhere else.
 
     A present ball is never replaced, an ungraded frame never filled, a ball with one coordinate never written; the
     filled ball's speed stays NaN, and the players and every other array are the tracking's own, not copies. The
@@ -760,7 +774,8 @@ def test_filled_inputs_is_an_inputs():
         assert missing.any() and np.array_equal(view.ball_filled, missing) and not view.ball_filled.flags.writeable
         assert np.array_equal(atd.ball_xy[missing], ball[missing])
         assert np.array_equal(atd.ball_xy[~missing], inputs.atd.ball_xy[~missing], equal_nan=True)
-        assert view.fill_summary == {"filled_frames": int(missing.sum()), "graded_frames": int(inputs.graded_mask.sum())}
+        assert view.fill_summary == {"filled_frames": int(missing.sum()),
+                                     "graded_frames": int(inputs.graded_mask.sum())}
         assert not inputs.ball_filled.any() and inputs.fill_summary is None, "the base is left as it was"
         shown = repr(view)
         assert "array" not in shown and "0.271" not in shown and len(shown) < 120, shown

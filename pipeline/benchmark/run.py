@@ -11,10 +11,11 @@ Prediction
 ----------
 predict() runs a config on one MatchInputs (inputs.py) through the pipeline's own evidence, decode and refine stages,
 without the CSV. The benchmark is only worth anything if it scores what the submission pipeline does, so prediction goes
-through pipeline.run.compute_evidence, make_blocks and decode_blocks, the same functions pipeline.run.run calls, and a
-change to them changes the benchmark with it. What predict leaves out of run() is the output stage: it writes no file.
-Benchmark code never writes a CSV of labels (a CSV of labels of BAR-ATH is match data, CLAUDE.md), and a benchmark match
-has no CSV to write; the scoring reads the codes directly (score.py) and pipeline.output.summarise describes them.
+through pipeline.run.prepare_inputs, compute_evidence, make_blocks and decode_blocks, the same functions
+pipeline.run.run calls, and a change to them changes the benchmark with it. What predict leaves out of run() is the
+output stage: it writes no file. Benchmark code never writes a CSV of labels (a CSV of labels of BAR-ATH is match data,
+CLAUDE.md), and a benchmark match has no CSV to write; the scoring reads the codes directly (score.py) and
+pipeline.output.summarise describes them.
 
 Seeded as run() seeds: `random` and `np.random` with config.seed before anything else, because library code reaches
 for the global generators, and the RunContext carries the same seed for components that make their own generator.
@@ -168,10 +169,15 @@ def predict(config, inputs):
     pipeline.evidence.describe takes it. BenchmarkError (a ValueError) for scope = "file", which decodes across half
     time and over frames that are not graded (docs/traps.md T11); the benchmark scores each half on its own, so only
     "halves" means anything here, and the one config that needs "file" is the reproduction of the published baselines.
+
+    The config's [inputs] ball_fill is applied as run() applies it, by pipeline.run.prepare_inputs, before any source
+    runs. A config that fills reads the MatchInputs' broadcast_ball, and on a match served without one it raises
+    AssetUnavailable rather than run on the unfilled ball.
     """
     check_scope(config)
     random.seed(config.seed)
     np.random.seed(config.seed)
+    inputs = pipeline_run.prepare_inputs(config, inputs)
     run_context = RunContext(inputs=inputs, seed=config.seed)
     sources_ = pipeline_run.compute_evidence(config, run_context)
     blocks = pipeline_run.make_blocks(config.scope, inputs)
