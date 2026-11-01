@@ -46,13 +46,13 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P06](#p06--global-decoding-per-half-hmm--hidden-semi-markov) | Global decoder (HMM / semi-Markov) per half | fact 5 | M | high | done → R006–R007, A10; decoder re-chosen → R010, R013 |
 | [P07](#p07--possession-without-the-ball-team-shape-and-movement) | Possession without the ball: team shape | fact 1 | M | high: +0.0942 raw at the chosen decoder, on a benchmark whose gain is not a forecast for our match (R011) | done → R011; weight re-chosen → R013 |
 | [P08](#p08--smart-tagging-as-soft-evidence) | Smart Tagging as soft evidence | facts 1, 4 | S | medium | done → R017 (team votes adopted per frame, weight 0.2; dead votes measured and dropped) |
-| [P09](#p09--camera-aim-as-a-coarse-ball-zone-prior) | Camera aim as a coarse ball-zone prior | fact 1 | S | low–medium | dropped → R019 (the simulated camera failed two fidelity gates; code removed) |
+| [P09](#p09--camera-aim-as-a-coarse-ball-zone-prior) | Camera aim as a coarse ball-zone prior | fact 1 | S | low–medium | dropped → R019 (the simulated camera failed two fidelity gates; code removed); A20: in the gaps the camera only moves with the players |
 | [P10](#p10--referee-whistle-from-the-audio-track) | Referee whistle from the audio track | fact 4 | S–M | medium (audio confirmed, A04) | dropped → R018, R018b (whistles near stoppages 1.5× chance, below the declared 2×; code removed) |
 | [P11](#p11--touch-and-pass-events-to-place-boundaries) | Touch and pass events to place boundaries | fact 5 | M–L | medium–high | idea |
 | [P12](#p12--metric-aware-post-processing) | Metric-aware post-processing | fact 5 | S | medium | done → R012 (shift adopted), R016 (free X measured and dropped) |
 | [P13](#p13--learn-from-external-labelled-tracking-data) | Pre-train on external labelled tracking data | facts 1, 2 | L (M on top of P01) | medium–high | idea |
-| [P14](#p14--recover-the-ball-from-the-video) | Recover the ball from the video | facts 1, 2 | L | A14: a perfect ball in our gaps is worth +0.10 raw but +0.02 coarse; a real detector perhaps +0.025 to +0.04 raw | not built → A14 (not a ViT: the ball is 6 px, T46; a half-day zero-shot test may run, [After A14](#after-a14)) |
-| [P15](#p15--broadcast-tracking-as-a-second-opinion) | Broadcast tracking as a second opinion | facts 1, 4 | L | medium | idea |
+| [P14](#p14--recover-the-ball-from-the-video) | Recover the ball from the video | facts 1, 2 | L | A14: a perfect ball in our gaps is worth +0.10 raw but +0.02 coarse; a real detector perhaps +0.025 to +0.04 raw | not built → A14 (not a ViT: the ball is 6 px, T46; a half-day zero-shot test may run, [After A14](#after-a14)); A20 lowers the prior (the broadcast's tracker has the ball on 28% of the live frames where ours is missing) |
+| [P15](#p15--broadcast-tracking-as-a-second-opinion) | Broadcast tracking as a second opinion | facts 1, 4 | S–M per use (the alignment is measured) | A20: its ball fills 30% of the gap frames we call alive, in fragments; its shots off the pitch cover 75% of our `D` | idea; measured → A20 (aligned by two constants; nothing built) |
 
 ## Suggested plan — 27 days to 17 November
 
@@ -1117,6 +1117,11 @@ stands when the entry runs. F comes after E, only if at least four days remain b
 correlation and dead/alive speed ratio; Tian chose the drop over a retry, T47; code removed).** The code was removed in
 `8c4c959`, where it is recoverable from `13c36c6`.
 
+*A20 (1 Nov): the premise fails too, not only the simulator.* In the ball gaps the tactical camera moves with the
+players (r 0.845 between its move and their centroid's). Adding its move to theirs explains no more of where the ball
+reappears (leave-one-out median error 5.43 m with the players, 5.50 m with both). The broadcast camera is the one that
+carries independent information (P15).
+
 **Why.** The tactical camera pans to follow play on every frame, including the long ball gaps. Measured in A03: the
 pitch point under the image centre tracks the ball's along-pitch position with corr 0.84, once the camera is allowed
 its ~1.4 s (35-frame) lag. The median error is 12 m, and across the pitch it says nothing (corr 0.07).
@@ -1240,6 +1245,11 @@ tracker lost. A14 adds that the ball is lost inside the image: the median onset 
 within 40 px of it, and the camera keeps play in view through the gaps. So the ball was in view when the track was lost.
 Either the tracker lost its lock or the ball was occluded, and only a detector run on the gaps can tell which.
 
+*A20 (1 Nov) lowers the prior.* The broadcast's own tracker sees the ball from a second angle, at about 10 px wide, yet
+has it on only 28% of the live frames where ours is missing (and on 94% where ours is present). The moments we lose
+seem hard to see from both cameras, so A14's assumption of a detector reaching 35 to 50% of the gap frames looks
+optimistic. Test B's figures would still settle it.
+
 **What, if it is ever built.** This is the design that both sides of the debate accepted.
 - **Model:** a stride-4 heatmap network at full resolution, with three stacked frames for motion. Two candidates, both
   MIT-licensed:
@@ -1300,11 +1310,52 @@ Either the tracker lost its lock or the ball was occluded, and only a detector r
 
 ### P15 — Broadcast tracking as a second opinion
 
+**Status: idea; measured → [A20](results.md). Nothing is built.**
+- The feeds align by two constants.
+- The broadcast's ball fills 30% of the gap frames we call alive, in fragments.
+- Its shots off the pitch cover 75% of our `D`.
+
 **Why.** The broadcast has its own ball track (50.5% of its frames) from a different, often zoomed, angle. And TV cuts
 to replays and close-ups during stoppages, so its 122 invalid-homography stretches are themselves a dead-ball cue.
+Unlike the tactical camera, a person steers it: in the gaps the tactical camera only moves with the players (A20, P09).
 
-**What.**
-- Align the broadcast to the tactical feed by matching player configurations. Both ATDs use the same normalised
-  pitch coordinates, so team point clouds compare directly (an assignment cost per frame pair).
-- Solve the alignment per broadcast shot with a monotone time warp; replays match earlier times or nothing.
-- Fuse the broadcast ball into P06 and P07, and use "broadcast off the pitch" as stoppage evidence.
+**Measured (A20, 1 Nov).**
+- **The alignment is two constants, found by code from the two ATDs' balls.** Tactical = broadcast + 4,014 frames in the
+  first half and + 26,920 in the second (the broadcast leaves out halftime), steady to ±1 frame. The players confirm it
+  on 91.6% of the valid frames; the rest are replays and partial views. No time warp per shot is needed.
+- **Its ball.** On live frames it has the ball on 28% of those where ours is missing. That fills:
+  - 29.6% of the gap frames our decoder calls alive;
+  - 4.2% of those it calls `D`;
+  - in fragments, median 0.6 s.
+
+  Where both feeds have the ball, the two are a median 0.77 m apart.
+- **Its camera** follows the ball at lag 0 (r 0.905, median error 8.0 m), more closely than the tactical camera (0.843 at
+  1.4 s, 11.65 m). It is live on 33% of our gap frames.
+- **Its shots off the pitch.**
+  - 74.9% of our `D` frames are not live on the broadcast, against 16.1% of our `H`/`A`.
+  - The director cuts away from stoppages in open play as often as from those at the lines.
+  - 22 cut-aways (198 s) sit inside our possessions, mostly in midfield, where play slows. They are either missed fouls
+    or replays over slow play, and A20 cannot tell which.
+
+**What, revised.** Every use is MATCH_ONLY (DFL has no broadcast), so each needs its own declared test:
+1. **The broadcast ball where ours is missing.**
+   - Fused in `inputs` and flagged, so that `controlled_touch` and `dead_ball_model` read it unchanged; live-consistent
+     frames only.
+   - Test: a simulation on DFL that gives back the ball in A20's shares of alive and dead gap frames, in A20's burst
+     lengths and with A20's position error.
+   - Fidelity gates on those three, then R024's bar.
+2. **Not live (invalid, or a replay) as `alive` evidence.**
+   - A soft prior over seconds, not an edge. The literature puts broadcast play/break at 83 to 99% per segment or shot
+     (Xie et al., ICASSP 2002 and PRL 2004; Fani et al., IEEE Access 2017), and video spotting of "ball out of play" at
+     5 to 60 s tolerance (Cioppa et al. 2021).
+   - Calibration: SoccerNet-v2's camera-shot and action labels of other games
+     ([arXiv 2011.13367](https://arxiv.org/abs/2011.13367); camera classes on 200 games). The label files download
+     without the video NDA, but their licence is not stated, so check it first.
+   - Otherwise R017's route: agreement with our own pseudo-labels, and a weight that is Tian's pick and untested. R027
+     showed that such an agreement can fail to transfer.
+3. **The aim as a ball zone in the gaps** (P07 v2).
+   - Needs a simulated aim on DFL and a retrained P07, with R019's fidelity risk. After the deadline at the earliest.
+   - SkillCorner's open broadcast tracking may carry the camera's footprint next to possession labels (unverified),
+     which would test it on other games.
+
+Not needed: clock OCR or audio to align the feeds, or a time warp per shot.

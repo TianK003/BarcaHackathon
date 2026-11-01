@@ -790,7 +790,7 @@ const DATA = {
     { name: "homography", status: "off", note: "unused by main.toml" },
     { name: "Smart Tagging", status: "main", note: "team votes (P08, R017)" },
     { name: "tactical video", status: "idea", note: "unused; P14 would read the ball" },
-    { name: "broadcast", status: "idea", note: "no mapping yet (P15)" }
+    { name: "broadcast", status: "idea", note: "unused; aligned by two constants in A20 (P15)" }
   ],
 
   stages: [
@@ -1400,7 +1400,7 @@ const DATA = {
     { id: "P07", anchor: "p07--possession-without-the-ball-team-shape-and-movement", title: "Possession without the ball: team shape", attacks: "fact 1", effort: "M", impact: "high: +0.0942 raw at the chosen decoder, not a forecast for our match (R011)", status: "done", note: "done → R011; weight re-chosen → R013" },
     { id: "P08", anchor: "p08--smart-tagging-as-soft-evidence", title: "Smart Tagging as soft evidence", attacks: "facts 1, 4", effort: "S", impact: "medium", status: "done", note: "done → R017 (team votes adopted per frame, weight 0.2; dead votes measured and dropped)" },
     { id: "P09", anchor: "p09--camera-aim-as-a-coarse-ball-zone-prior", title: "Camera aim as a coarse ball-zone prior", attacks: "fact 1", effort: "S", impact: "low–medium", status: "dropped", stage: "evidence",
-      note: "dropped → R019 (the simulated camera failed two fidelity gates, peak correlation and dead/alive speed ratio; code removed)" },
+      note: "dropped → R019 (the simulated camera failed two fidelity gates, peak correlation and dead/alive speed ratio; code removed); A20: in the gaps the camera only moves with the players" },
     { id: "P10", anchor: "p10--referee-whistle-from-the-audio-track", title: "Referee whistle from the audio track", attacks: "fact 4", effort: "S–M", impact: "medium (audio confirmed, A04)", status: "dropped", stage: "evidence",
       note: "dropped → R018, R018b (whistles near stoppages 1.5× chance, below the declared 2×; code removed)" },
     { id: "P11", anchor: "p11--touch-and-pass-events-to-place-boundaries", title: "Touch and pass events to place boundaries", attacks: "fact 5", effort: "M–L", impact: "medium–high", status: "idea", stage: "evidence",
@@ -1409,10 +1409,10 @@ const DATA = {
       next: "Nothing left: blips are covered by the hmm decoder's min_possession and min_dead (R007, R013), explicit `D` before kick-offs by the pre-kick-off rule (R009), and free `X` was measured in R016 and dropped (macroF1 fell at every threshold)." },
     { id: "P13", anchor: "p13--learn-from-external-labelled-tracking-data", title: "Pre-train on external labelled tracking data", attacks: "facts 1, 2", effort: "L (M on top of P01)", impact: "medium–high", status: "idea", stage: "evidence",
       next: "DFL, Metrica's sample games and SkillCorner, degraded as P01 does; pre-train P07 or a sequence model and hold the benchmark matches out. Nothing about this fixture (T26)." },
-    { id: "P14", anchor: "p14--recover-the-ball-from-the-video", title: "Recover the ball from the video", attacks: "facts 1, 2", effort: "L", impact: "A14: a perfect ball in our gaps is worth +0.10 raw but +0.02 coarse; a real detector perhaps +0.025 to +0.04 raw", status: "idea", note: "not built → A14 (gated)", stage: "inputs",
+    { id: "P14", anchor: "p14--recover-the-ball-from-the-video", title: "Recover the ball from the video", attacks: "facts 1, 2", effort: "L", impact: "A14: a perfect ball in our gaps is worth +0.10 raw but +0.02 coarse; a real detector perhaps +0.025 to +0.04 raw", status: "idea", note: "not built → A14 (gated); A20 lowers its prior", stage: "inputs",
       next: "Not a ViT: the ball is about 6 px wide (T46). If ever built, a stride-4 heatmap net at full resolution with stacked frames (FootAndBall or WASB-SBDT, MIT), trained on the ATD's own ball as algorithm-made pseudo-labels. Only test B may run now: zero-shot, half a day, CPU only (“After A14”, item 1)." },
-    { id: "P15", anchor: "p15--broadcast-tracking-as-a-second-opinion", title: "Broadcast tracking as a second opinion", attacks: "facts 1, 4", effort: "L", impact: "medium", status: "idea", stage: "inputs",
-      next: "Align the broadcast to the tactical feed by matching player configurations, a monotone time warp per shot; then fuse its ball and use “broadcast off the pitch” as stoppage evidence." },
+    { id: "P15", anchor: "p15--broadcast-tracking-as-a-second-opinion", title: "Broadcast tracking as a second opinion", attacks: "facts 1, 4", effort: "S–M per use (alignment measured)", impact: "A20: its ball fills 30% of the gap frames we call alive, in fragments; its shots off the pitch cover 75% of our D", status: "idea", note: "measured → A20", stage: "inputs",
+      next: "Aligned by two constants found by code (tactical = broadcast + 4,014 frames, then + 26,920 after halftime; A20). Three uses, each needing its own declared test because DFL has no broadcast: its ball where ours is missing (a simulation on DFL from A20's distributions), its shots off the pitch as dead-ball evidence (other games' shot labels, or R017's route), its aim as a ball zone (P07 v2, after the deadline)." },
     { id: "P16", anchor: "p16--metricas-sample-games-in-our-ground-truth-providers-conventions", title: "Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing", attacks: "boundary timing, grain", effort: "M", impact: "medium", status: "partly", note: "partly done → R023 (the grain: both)", stage: "benchmark",
       next: "R023 measured the grain (outcome both: rank on the mean of the two truths). Left: the switch timing on the sample games and its feeds to P04's back-dating, P05's `D` onset and P12's shift, each by a rule declared first." },
     { id: "P17", anchor: "p17--the-restart-team-channel", title: "Restart-team channel: who restarts after a stoppage, from the players' arrangement", attacks: "facts 3, 5", effort: "S–M", impact: "ceiling +0.0198 raw (A12); delivered +0.0040 raw at best, bar not met (R014)", status: "dropped", note: "dropped → R014, R014b (code stays, off)" },

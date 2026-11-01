@@ -1955,6 +1955,116 @@ spellF1 units, summed over θ and divided by 5.
 four to five times too sharp, which a temperature on the posterior (the emissions and the switch costs divided by one
 constant) would flatten, so that the median of the change's position moves off Viterbi's mode.
 
+### A20 — What the two homographies add: the tactical camera in the gaps, and the broadcast aligned (2026-11-01, Tian)
+
+Proposals: P09, P14, P15 · Commit: none (no code change) · Three throwaway local scripts (not committed), as A14's were.
+They read the ATD cache, the broadcast ATD, both homographies and `main.csv`, and printed aggregates only. They ran one at
+a time, on one BLAS thread at below-normal priority, in under a minute each. `main.csv` is our own output (`e6496a9b…`),
+never a truth, so every comparison with our decoded `D` below is an agreement, not an accuracy. Nothing is adopted and
+there is no scoreboard row. Tian asked what the unused homography could do. This entry holds the measurements; the
+uses and the beliefs are in P15 and the reply of that day.
+
+**Part 1: the tactical camera in the ball gaps.** The gaps are the 131 of at least 2 s inside a graded block with a ball
+on both sides (median 11.6 s). The aim is the pitch point under the image centre (A03).
+- Sanity: the aim 35 frames later against the ball seen correlates 0.843, as in A03.
+- The camera's median speed is 0.255 m/s with the ball seen and 0.042 m/s in the gaps. In the gaps it holds still with
+  bursts: the median (mean) is 0.09 (0.80) m/s in a gap's first second and 0.03 (0.30) after 10 s. It does not start
+  before the ball is back: 0.052 m/s in the last second inside a gap, 0.055 in the first second after.
+- Across a gap the camera moves more than 5 m in 56% of the gaps (median 6.6 m; the ball moves a median 6.2 m).
+  - Its move correlates 0.513 with the ball's, but 0.845 with the move of the players' centroid.
+  - R² of the ball's move: the centroid alone 0.214, the camera alone 0.263, both 0.266.
+  - Where the ball reappears, leave-one-out median error: 5.78 m from the last ball seen; 5.43 adding the centroid's move,
+    5.46 adding the camera's, 5.50 adding both.
+- Stillness against our `D`: the camera's stillness gives an AUC of 0.658 with the ball seen and 0.655 in the gaps. The
+  ball's own stillness gives 0.605 with the ball seen.
+
+**Part 2: the broadcast on its own** (164,488 frames, 51 slots).
+- The homography is valid on 65.8% of frames. The ball is present on 50.5% of all frames: 76.4% of the valid ones and
+  0.8% of the invalid ones. A valid frame has a median of 18 players.
+- 123 invalid stretches (median 11.2 s, p90 39 s, max 109 s; 64 of at least 10 s) alternate with 122 shots of the pitch
+  (median 22.9 s).
+- The broadcast is zoomed in about 1.6 times as far as the tactical camera: 46.7 px/m at the image centre (p10 34.8, p90
+  57.5), against tactical's 29.7. So the ball is about 10 px wide.
+- The reprojection error on valid frames has a median of 0.217 and a p99 of 6.53.
+
+**Part 3: the alignment.** Ball against ball (within 3 m), at 1 Hz, for every offset, per 5-minute broadcast window; then
+at 25 fps around each peak.
+- The orientation and the team convention are tactical's. Flipped coordinates score 0.09 against 0.61, and 97.2% of
+  matched player pairs (within 1.5 m) are on the same team.
+- **Two constant offsets:** tactical = broadcast + 4,014 frames up to the end of the first half, and + 26,920 from 7.4 s
+  before the second-half kick-off (the broadcast leaves out halftime). The 15 windows with a clear peak agree within ±1
+  frame. The other 7 (pre-match, and windows with few balls) have the same offset at 1 Hz.
+- Every graded frame then has a broadcast frame, except the 2,750 before the second-half kick-off.
+- **Live-consistent** frames (the median distance from each broadcast player to the nearest tactical player under 2 m,
+  with at least 4 players) are 61.2% of the graded frames and 91.6% of the valid ones. The rest of the valid frames are
+  replays and partial views.
+- Where both balls exist and the frame is live (71,398 frames), they are a median 0.77 m apart (p90 5.5 m), and within
+  2 m on 74.5% of those frames.
+
+**Part 4: what the broadcast adds in our gaps.**
+- On live frames the broadcast has the ball on 93.9% of the frames where ours is present, and on 28.3% of those where
+  ours is missing.
+- **Fill** is a live broadcast ball on one of our gap frames. It covers 9.3% of the gap frames:
+  - 29.6% of the 12,999 gap frames our decoder calls `H` or `A`;
+  - 4.2% of the 51,644 it calls `D`;
+  - in 117 stretches, median 0.6 s, p90 5.8 s.
+- The broadcast camera's aim follows our ball at lag 0: correlation 0.905, median error 8.0 m (tactical: 0.843 at 1.4 s,
+  11.65 m). It is live on 32.8% of the graded gap frames. Across the 49 gaps with a live broadcast at both ends:
+  - its move correlates 0.725 with the ball's;
+  - the leave-one-out error of where the ball reappears falls from 8.84 m to 7.42 m with the aim at the gap's end.
+
+**Part 5: the broadcast's shots off the pitch against our `D`.**
+- Our `D` share: 0.756 where the broadcast is invalid, 0.130 where it is valid and live, 0.431 where it is valid but not
+  live. Of our `D` frames 74.9% are not live on the broadcast; of our `H`/`A` frames, 16.1%.
+- The 117 invalid stretches inside the mapped graded frames:
+  - the median stretch is 0.82 our `D`;
+  - 54% of them are at least 0.8 our `D`;
+  - 25% are at most 0.2 our `D` (median 8.8 s).
+- Our `D` runs of at least 5 s (91):
+  - a median 71% of each run is covered by invalid frames;
+  - 14% have none (median 11.7 s): short stoppages the director keeps on the wide shot.
+- **Timing**, over the 78 `D` runs that have invalid frames:
+  - the cut away comes a median 0.82 s after our `D` begins (p90 3.65 s);
+  - the shot of the pitch returns a median 0.08 s before our `D` ends (p90 10.7 s).
+- **22 invalid stretches lie strictly inside our `H`/`A` runs**, at least 2 s from both ends (198 s in all). Inside them:
+  - the tactical ball is seen on 83% of frames and is near a line on 4%;
+  - the ball moves at 2.6 m/s, against 5.6 elsewhere in our `H`/`A` and 1.6 to 3.3 in our `D`;
+  - the players move at 1.46 m/s, against 2.06 in our `H`/`A` and 0.85 to 0.97 in our `D`;
+  - in the 5 s around them, the ball moves at 4.7 m/s and the players at 1.88.
+
+  That is a slowdown inside play. It fits a stoppage away from the lines (a foul) as well as a slow live phase (a keeper
+  holding the ball through a replay), and without a truth the two cannot be told apart. The ball's position leans
+  towards the first, without settling it:
+  - 6 of the 22 stretches have the ball mostly in a penalty area (28% of their ball-seen frames, against 12% in our
+    `H`/`A` elsewhere);
+  - the median stretch has none, and its ball is a median 27.1 m from the nearer goal line.
+- **Which of our stoppages the broadcast cuts away from**, by where the ball was last seen as our `D` run began (runs of at
+  least 5 s):
+
+  | where the ball was | runs | median share covered by invalid frames | runs with none |
+  |---|---|---|---|
+  | at a touchline (past it or within 2 m) | 18 | 0.62 | 22% |
+  | at a goal line | 14 | 0.76 | 0% |
+  | in play, more than 5 m from every line | 25 | 0.70 | 12% |
+  | elsewhere, or not seen | 34 | 0.70 | 18% |
+
+  The director cuts away from the stoppages in open play as often as from those at the lines. Those are the stoppages
+  that a tracking-only detector has least to go on for (no ball past a line, P10's target).
+
+**Reading.**
+- **The tactical camera is no independent sensor in the gaps.** What it knows there about the ball, the players' own
+  movement already says (r 0.845, and no gain in the leave-one-out error). P09's premise fails beyond R019's simulator,
+  and its stillness repeats what the players' slowing down tells `dead_ball_model`. That is how automated cameras are
+  described: the frame follows a smoothed ball location or the players' centre of mass, and holds near the last ball
+  when it loses it ([Pixellot, WO2015/151095](https://patents.google.com/patent/WO2015151095A1/en)). That ours is such
+  a camera is an inference, not a fact.
+- **The broadcast is an independent sensor.** It is steered by a person and aligned by two constants found by code. It
+  follows the ball more closely than the tactical camera, and its shots off the pitch fall on our `D`.
+- **But the broadcast's ball recovers little of what ours loses:** 28% of the live gap frames, in fragments. The moments
+  we lose are hard to see from both cameras, which lowers P14's prior. Test B's figures are still what would show it.
+- **Nothing here is a benchmark result:** DFL has neither camera. Any use of the broadcast needs a declared test, either
+  on a simulation built from these measured distributions or on other games.
+
 ## Experiments
 
 Copy this template for each run, and add a scoreboard row for anything worth comparing.
