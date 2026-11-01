@@ -88,6 +88,14 @@ module of its topic:
                  calibration's figures and a known miscalibration recovered, and diagnose() end to end: the declared
                  layout, the runner's spellF1, every measure's frames tallied, no long list, the file, what it refuses
                  (synthetic only)
+    broadcast_sim.py
+                 R028's simulated broadcast ball, the core on arrays: gaps_of and gap_alive worked out by hand, simulate
+                 (the donor's mask stretched and compressed by the integer rule, the donor drawn among the 5 nearest
+                 lengths by the exact log rule with ties to the shorter and then the earlier, by class, the error runs
+                 added or tiled, NaN where DFL has no ball, seeded, no match among its parameters, and the whole of it
+                 against a plain-Python reference on random worlds), measure_fill's F and W values on hand-built masks
+                 and against a plain loop, and Pools' arrays, validation, read-only fields and repr with no array
+                 (synthetic only)
     harness.py   the harness itself: what it collects, how it reports NOT RUN, the console set-up, and that no check
                  module imports another one
     common.py    what several modules share, and no checks of its own: the synthetic DFL match, the random one
@@ -113,10 +121,10 @@ what two of them share goes to common.py (test_a_check_module_imports_no_other_c
 """
 
 from pipeline.benchmark.checks import (
-    calibration, cap, choose, context, conventions, dead_ball, degrade, dfl, dfl_events, diagnose, fidelity, harness,
-    hazard, headroom, inputs, label_diff, metrica, restarts, run, score, shape, sources, tag_stats, tracking, touch,
-    truth, wrong_team)
+    broadcast_sim, calibration, cap, choose, context, conventions, dead_ball, degrade, dfl, dfl_events, diagnose,
+    fidelity, harness, hazard, headroom, inputs, label_diff, metrica, restarts, run, score, shape, sources, tag_stats,
+    tracking, touch, truth, wrong_team)
 
 MODULES = (sources, dfl, dfl_events, truth, inputs, score, run, choose, hazard, calibration, degrade, cap, tracking, context,
            fidelity, headroom, touch, dead_ball, conventions, restarts, shape, label_diff, wrong_team, tag_stats, metrica,
-           diagnose, harness)
+           diagnose, broadcast_sim, harness)
