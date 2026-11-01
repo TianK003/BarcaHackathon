@@ -2051,6 +2051,37 @@ at 25 fps around each peak.
   The director cuts away from the stoppages in open play as often as from those at the lines. Those are the stoppages
   that a tracking-only detector has least to go on for (no ball past a line, P10's target).
 
+**Part 6: for R028's design** (the same day, two more throwaway passes; aggregates only). A **usable** broadcast ball is
+present on a live-consistent frame, as in Part 4.
+- **Short broadcast runs are mostly wrong.** Here is the broadcast ball's distance from ours where both exist, by the
+  length of the usable broadcast ball's run:
+
+  | run length (frames) | frames | median (m) | p90 (m) | within 2 m |
+  |---|---|---|---|---|
+  | 1 to 4 | 8 | 26.86 | 52.83 | 0.125 |
+  | 5 to 12 | 21 | 15.89 | 39.69 | 0.333 |
+  | 13 to 49 | 414 | 1.57 | 14.68 | 0.684 |
+  | 50 to 249 | 9,385 | 1.26 | 10.26 | 0.611 |
+  | 250 or more | 61,582 | 0.73 | 4.81 | 0.767 |
+
+- **The hard moments are noisier.** Within 2 s of one of our gaps the distance is a median 1.00 m (p90 6.75 m, within
+  2 m 0.674), against 0.76 m (5.34 m, 0.754) elsewhere.
+- **The fill clings to the gaps' edges.** In our gaps of at least 2 s it covers:
+  - 29.7% of the first second and 21.8% of the last second;
+  - 7.3% of the frames inside (at least 1 s from both ends).
+
+  Of the 110 fill fragments, 60% start on a gap's first frame and 46% end on its last. Gaps our decoder calls mostly
+  alive have a fragment of at least 0.5 s inside in 52.5% of cases (40 gaps); mostly `D`, in 25.8% (93 gaps). The
+  fragments have a median of 14 frames in our alive and 35.5 in our `D`.
+- **Off the pitch.** With runs shorter than 13 frames removed, the usable broadcast ball is more than 1 m beyond a line
+  on 2.3% of its 77,347 frames, but on 15.1% of the 5,966 that fall in our gaps. Our own ball is beyond a line by that
+  much on 2.7% of the frames where it is present.
+- **Gaps by our decoded state** (any length):
+  - 55 mostly alive: median 5.9 s; 37.6% filled when pooled; 80% have some fill;
+  - 95 mostly `D`: median 17.3 s; 5.3% filled; 48% have some fill.
+- **The alignment as code would run it** (per half, every offset in steps of 25 frames, then ±40 frames) takes 3.6 s and
+  gives 4,014 and 26,919 frames.
+
 **Reading.**
 - **The tactical camera is no independent sensor in the gaps.** What it knows there about the ball, the players' own
   movement already says (r 0.845, and no gain in the leave-one-out error). P09's premise fails beyond R019's simulator,

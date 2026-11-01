@@ -1310,7 +1310,9 @@ optimistic. Test B's figures would still settle it.
 
 ### P15 — Broadcast tracking as a second opinion
 
-**Status: idea; measured → [A20](results.md). Nothing is built.**
+**Status: idea; measured → [A20](results.md). Use 1 is designed as R028**
+(`docs/superpowers/specs/2026-11-01-r028-broadcast-ball-design.md`; plan `docs/superpowers/plans/2026-11-01-r028-broadcast-ball.md`;
+Tian's answers of 1 Nov recorded). **Nothing is built or run.**
 - The feeds align by two constants.
 - The broadcast's ball fills 30% of the gap frames we call alive, in fragments.
 - Its shots off the pitch cover 75% of our `D`.
