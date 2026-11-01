@@ -1012,7 +1012,13 @@ transplanted from what the real one does in our gaps: `broadcast_sim.py` (the de
   `r024_both.toml`'s text, its CSV's sha256, the match's frames, pitch and graded blocks and `POOLS_VERSION`. The key is computed from files, without loading an
   array of BAR-ATH's tracking. Only `pools` builds the pools: `run.py`, `conventions.py latency`, `fidelity` and
   `bar-ath` read them, and an absent, broken or stale cache (after any change to that code, say) is an error that says
-  to run `broadcast_sim.py pools` first. Frame-level data of our match: never printed, never committed.
+  to run `broadcast_sim.py pools` first. Before it decodes anything, `pools` holds the alignment it would build from
+  to `bar-ath`'s band, through the same `judge_alignment` (d_1 and d_2 within 2 frames of 4,014 and 26,919, the live
+  share at least 0.85, an `AlignmentError` counted as refused), and prints d_1, d_2, their fine scores and the live
+  share whatever the outcome: a failure is exit 3, a STOP for the advisor, with nothing decoded and nothing cached.
+  The manifest keeps that alignment (aggregates only), and a read of the cache prints it as recorded at build time;
+  a cache without it is not whole and is built again. Frame-level data of our match: never printed, never
+  committed.
 - **The served inputs.** `run.py` (and `conventions.py latency CONFIG dfl`) serve a config that fills through
   `broadcast_sim.served_inputs_for`: its twin, the same config with `ball_fill = "none"`, is decoded on the plain
   inputs (the driver: the candidate's own labels, never the truth; design 3.2), `simulate` transplants a donor into each
@@ -1037,7 +1043,7 @@ transplanted from what the real one does in our gaps: `broadcast_sim.py` (the de
 
 | command | exit 0 | exit 1 | exit 3 | exit 2 |
 |---|---|---|---|---|
-| `pools` | built or read | - | - | an error: labels that are not `e6496a9b...`, a class with no donor, no error run, data missing |
+| `pools` | built or read | - | the alignment band or the live share fails, or the alignment is refused: STOP, nothing decoded or cached | an error: labels that are not `e6496a9b...`, a class with no donor, no error run, data missing |
 | `fidelity` | every gate and check passes | a gate (F1 to F3) fails, whatever the checks | a check (F4, F5) fails and no gate does | an error, no cache of the pools among them; never a verdict |
 | `bar-ath` | every check passes | a check fails: DROP | the alignment band or the live share fails: STOP | an error; never a verdict |
 
@@ -1045,7 +1051,8 @@ The reports hold aggregates only, floats to 9 decimals, and the pools' digest. T
 `checks/broadcast_sim.py` (synthetic, with a BAR-ATH stand-in made of the synthetic bundle), among them
 `test_served_inputs_for_uses_the_twin_driver`, `test_pools_refuse_labels_that_are_not_e6496a9b`,
 `test_pools_are_built_cached_and_rebuilt_when_broken`, `test_pools_key_fingerprints_the_code_and_the_files`,
-`test_pools_key_loads_no_tracking_array`, `test_fidelity_pools_the_copies_end_to_end`, `test_fidelity_exit_codes`,
+`test_pools_key_loads_no_tracking_array`, `test_pools_command_holds_the_alignment_to_the_band`,
+`test_fidelity_pools_the_copies_end_to_end`, `test_fidelity_exit_codes`,
 `test_tag_check_counts_fill_only_teacher_frames` and `test_bar_ath_exit_codes`, and in `checks/run.py`
 (`test_every_report_of_a_run_carries_the_same_broadcast_sim`, `test_a_fill_without_cached_pools_is_refused`,
 `test_main_imports_broadcast_sim_only_for_a_fill`).

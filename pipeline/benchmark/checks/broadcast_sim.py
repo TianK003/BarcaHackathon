@@ -1403,7 +1403,7 @@ def test_pools_key_loads_no_tracking_array():
     with tempfile.TemporaryDirectory() as root:
         inputs = bar_ath_like(root)
         with replaced(broadcast_sim, "decode_labels", labels_decoded()):
-            pools, measure = broadcast_sim.prepare_pools(root, inputs=inputs, log=quiet)
+            pools, measure, _ = broadcast_sim.prepare_pools(root, inputs=inputs, log=quiet)
         key = broadcast_sim.pools_key(root)
 
         def refused(*args, **kwargs):
@@ -1417,8 +1417,9 @@ def test_pools_key_loads_no_tracking_array():
             assert broadcast_sim.pools_key(root) == key
             assert broadcast_sim.digest(broadcast_sim.load_pools(root)) == broadcast_sim.digest(pools)
             assert broadcast_sim.load_bar_ath_measure(root) == measure
-            again, again_measure = broadcast_sim.prepare_pools(root, inputs=bare, log=quiet)
+            again, again_measure, recorded = broadcast_sim.prepare_pools(root, inputs=bare, log=quiet)
             assert broadcast_sim.digest(again) == broadcast_sim.digest(pools) and again_measure == measure
+            assert recorded["recorded"] and recorded["offsets"] == ALIGNED["offsets"], recorded
 
 
 def test_pools_are_built_cached_and_rebuilt_when_broken():
@@ -1426,8 +1427,9 @@ def test_pools_are_built_cached_and_rebuilt_when_broken():
     decoded labels; the near-gap error runs), and BAR-ATH's side of fidelity beside them (ruling 1: the ball before the
     fill, the fill's own mask, the decoded labels, the broadcast ball in metres, no reference, and F5 the near-gap
     pool's median); it keeps both under the key's folder and deletes the decode's CSV as soon as it is read. load_pools
-    and load_bar_ath_measure read them back without decoding; a broken cache, or one of other code, is absent: they
-    refuse it, saying to run `pools`, and prepare_pools builds it again."""
+    and load_bar_ath_measure read them back without decoding; a broken cache, one of other code, or one whose
+    manifest predates the recorded alignment, is absent: they refuse it, saying to run `pools`, and prepare_pools
+    builds it again."""
     with tempfile.TemporaryDirectory() as root:
         inputs = bar_ath_like(root)
         calls = []
@@ -1435,8 +1437,8 @@ def test_pools_are_built_cached_and_rebuilt_when_broken():
         expect_error(broadcast_sim.BroadcastSimError, lambda: broadcast_sim.load_pools(root), "no whole cache",
                      "broadcast_sim.py pools")
         with replaced(broadcast_sim, "decode_labels", labels_decoded(calls=calls)):
-            pools, measure = broadcast_sim.prepare_pools(root, inputs=inputs, log=quiet)
-            assert len(calls) == 1
+            pools, measure, alignment = broadcast_sim.prepare_pools(root, inputs=inputs, log=quiet)
+            assert len(calls) == 1 and alignment["passed"] and not alignment.get("recorded"), alignment
             folder = broadcast_sim.cache_folder(root, broadcast_sim.pools_key(root))
             assert calls == [os.path.join(root, *broadcast_sim.CACHE_FOLDER, "{}.{}.csv".format(
                 broadcast_sim.LABELS_STEM, os.getpid()))], "decoded under the pools' cache"
@@ -1471,8 +1473,10 @@ def test_pools_are_built_cached_and_rebuilt_when_broken():
 
             assert broadcast_sim.digest(broadcast_sim.load_pools(root)) == broadcast_sim.digest(pools), "read back"
             assert broadcast_sim.load_bar_ath_measure(root) == measure
-            again, again_measure = broadcast_sim.prepare_pools(root, inputs=inputs, log=quiet)
+            again, again_measure, recorded = broadcast_sim.prepare_pools(root, inputs=inputs, log=quiet)
             assert len(calls) == 1 and broadcast_sim.digest(again) == broadcast_sim.digest(pools)
+            assert recorded["recorded"] and recorded["offsets"] == alignment["offsets"]
+            assert recorded["live_share"] == alignment["live_share"]
             assert again_measure == measure
             with code_edited(broadcast_sim.CODE_FILES[1]):
                 expect_error(broadcast_sim.BroadcastSimError, lambda: broadcast_sim.load_pools(root),
@@ -1486,18 +1490,24 @@ def test_pools_are_built_cached_and_rebuilt_when_broken():
             def write(name, text):
                 return lambda: write_text(folder, name, text)
 
+            def no_alignment():       # a manifest written before the alignment was kept in it
+                manifest = json.loads(read(os.path.join(folder, broadcast_sim.MANIFEST)))
+                del manifest["alignment"]
+                write_text(folder, broadcast_sim.MANIFEST, json.dumps(manifest))
+
             for damage in (cut_array, lambda: os.remove(os.path.join(folder, array)),
                            write(broadcast_sim.MEASURE_FILE, "not JSON"), write(broadcast_sim.MEASURE_FILE, "[1, 2]"),
-                           write(broadcast_sim.MANIFEST, "{"), write(broadcast_sim.MANIFEST, '{"key": 3}')):
+                           write(broadcast_sim.MANIFEST, "{"), write(broadcast_sim.MANIFEST, '{"key": 3}'),
+                           no_alignment):
                 damage()
                 for load in (broadcast_sim.load_pools, broadcast_sim.load_bar_ath_measure):
                     expect_error(broadcast_sim.BroadcastSimError, lambda: load(root), "broadcast_sim.py pools")
-                rebuilt, rebuilt_measure = broadcast_sim.prepare_pools(root, inputs=inputs, log=quiet)
+                rebuilt, rebuilt_measure, _ = broadcast_sim.prepare_pools(root, inputs=inputs, log=quiet)
                 assert broadcast_sim.digest(rebuilt) == broadcast_sim.digest(pools) and rebuilt_measure == measure
                 assert broadcast_sim.digest(broadcast_sim.load_pools(root)) == broadcast_sim.digest(pools)
-            assert len(calls) == 7, "each broken cache was built again, once: {}".format(len(calls))
+            assert len(calls) == 8, "each broken cache was built again, once: {}".format(len(calls))
             fresh = broadcast_sim.prepare_pools(root, inputs=inputs, log=quiet, rebuild=True)[0]
-            assert len(calls) == 8 and broadcast_sim.digest(fresh) == broadcast_sim.digest(pools)
+            assert len(calls) == 9 and broadcast_sim.digest(fresh) == broadcast_sim.digest(pools)
             assert not [name for name in files_under(cache) if name.endswith(".csv")]
 
     fields = {name: getattr(pools, name) for name in ("gap_lengths", "gap_alive", "gap_fill", "gap_starts", "error_xy",
@@ -1546,6 +1556,66 @@ def test_pools_command_prints_aggregates_only():
             code, text = main_of(["pools", "--data-dir", root])
         assert code == 2 and "FAILED" in text and "e6496a9b" in text, (code, text)
         assert files_under(os.path.join(root, *broadcast_sim.CACHE_FOLDER)) == []
+
+
+def test_pools_command_holds_the_alignment_to_the_band():
+    """`pools` holds the alignment it builds from to bar-ath's band (judge_alignment) before it decodes anything: d_1 or
+    d_2 more than 2 frames off, a live share below 0.85, or an AlignmentError is exit 3, a STOP for the advisor, with
+    nothing decoded and nothing written; d_1, d_2, their fine scores and the live share are printed whatever the
+    outcome. In the band (its edges included) it builds (exit 0), the manifest keeps that alignment as aggregates, and a
+    read of the cache prints it as recorded, without aligning again."""
+    assert broadcast_sim.POOLS_EXIT == {"built": 0, "stop": 3, "error": 2}
+    assert issubclass(broadcast_sim.AlignmentStop, broadcast_sim.BroadcastSimError)
+    off = dict(ALIGNED, offsets={1: 4017, 2: 26919}, fine_scores={1: 0.61, 2: 0.79})
+    thin = dict(ALIGNED, live_share=0.84)
+    refused = AlignmentError("half 1: no offset has 40 coarse pairs")
+    for summary, words in ((off, ("d_1 4,017", "OUTSIDE", "0.6100", "d_2 26,919", "0.9000")),
+                           (thin, ("d_1 4,014", "d_2 26,919", "0.8100", "0.8400", "FAIL")),
+                           (refused, ("refused", "coarse pairs", "d_1 none", "d_2 none"))):
+        with tempfile.TemporaryDirectory() as root:
+            inputs = bar_ath_like(root, summary=copy.deepcopy(summary) if isinstance(summary, dict) else summary)
+            calls = []
+            with replaced(broadcast_sim, "bar_ath_inputs", lambda data_dir: inputs), \
+                    replaced(broadcast_sim, "decode_labels", labels_decoded(calls=calls)):
+                code, text = main_of(["pools", "--data-dir", root])
+                try:
+                    broadcast_sim.build_pools(inputs, log=quiet)
+                    raise AssertionError("build_pools built from an alignment that fails the band")
+                except broadcast_sim.AlignmentStop as stop:
+                    assert not stop.alignment["passed"] and "STOP" in str(stop) and "advisor" in str(stop)
+            assert code == 3 and "STOP" in text and "advisor" in text and "FAILED" not in text, (code, text)
+            assert all(word in text for word in words), (words, text)
+            assert "live      " in text and "Traceback" not in text, text
+            assert calls == [], "nothing decoded"
+            assert not os.path.exists(os.path.join(root, *broadcast_sim.CACHE_FOLDER)), "nothing written"
+            expect_error(broadcast_sim.BroadcastSimError, lambda: broadcast_sim.load_pools(root),
+                         "broadcast_sim.py pools")
+
+    with tempfile.TemporaryDirectory() as root:
+        edge = dict(ALIGNED, offsets={1: 4016, 2: 26917}, live_share=0.85)
+        inputs = bar_ath_like(root, summary=copy.deepcopy(edge))
+        calls = []
+        with replaced(broadcast_sim, "bar_ath_inputs", lambda data_dir: inputs), \
+                replaced(broadcast_sim, "decode_labels", labels_decoded(calls=calls)):
+            code, text = main_of(["pools", "--data-dir", root])
+            assert code == 0 and len(calls) == 1, (code, text)
+            for word in ("d_1 4,016", "d_2 26,917", "0.8100", "0.7900", "0.8500", "in the band", "pass"):
+                assert word in text, (word, text)
+            assert "OUTSIDE" not in text and "recorded" not in text and "STOP" not in text, text
+            folder = broadcast_sim.cache_folder(root, broadcast_sim.pools_key(root))
+            manifest = strict_json(read(os.path.join(folder, broadcast_sim.MANIFEST)))
+            assert manifest["alignment"] == {"offsets": {"1": 4016, "2": 26917}, "fine_scores": {"1": 0.81, "2": 0.79},
+                                             "live_share": 0.85}, manifest["alignment"]
+
+            # A read of the cache: no alignment now (it would raise), the one recorded at build time printed.
+            inputs.summary = AssertionError("aligned again on a read of the cache")
+            code, again = main_of(["pools", "--data-dir", root])
+            assert code == 0 and len(calls) == 1, (code, again)
+            for word in ("recorded", "d_1 4,016", "d_2 26,917", "0.8100", "0.8500", "in the band"):
+                assert word in again, (word, again)
+            pools, measure, alignment = broadcast_sim.prepare_pools(root, inputs=inputs, log=quiet)
+            assert alignment["recorded"] and alignment["passed"] and alignment["offsets"] == {1: 4016, 2: 26917}
+            assert broadcast_sim.digest(pools) in again
 
 
 # -- the wiring: fidelity (design 3.5) --------------------------------------------------------------------------------

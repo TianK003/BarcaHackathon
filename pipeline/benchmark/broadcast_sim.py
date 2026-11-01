@@ -90,7 +90,11 @@ The wiring (Task 2b): the pools, the served inputs, and the three commands.
   compressed transplant may give fragments shorter than 13 frames. The driver's codes can be kept in a dict per (twin,
   match, profile, seed), under driver_key, which holds everything predict reads of a config; the runner keeps one per
   run, and a config whose content is a twin's (main.toml's, say) shares its codes.
-* `pools` builds the pools (or reads a whole cache of the key) and prints aggregates only. `fidelity` measures the
+* `pools` builds the pools (or reads a whole cache of the key) and prints aggregates only. Before it decodes anything
+  it holds the alignment it builds from to bar-ath's band (judge_alignment: d_1 and d_2 within OFFSET_BAND of
+  EXPECTED_OFFSETS, the live share at least MIN_LIVE_SHARE, an AlignmentError refused) and prints d_1, d_2, their
+  fine scores and the live share; a failure is exit 3, a STOP for the advisor, with nothing decoded or cached. The
+  manifest keeps that alignment, and a read of the cache prints it as recorded. `fidelity` measures the
   copies (each match and seed of the profile, the config as it runs on DFL: its match-only sources dropped, as
   --drop-match-only does), laid end to end and measured once, against BAR-ATH's measure: the gates F1 to F3, the
   checks F4 and F5 and the warnings W1 to W3 of design 3.5; exit 0, 1 if a gate fails, 3 if only a check does.
@@ -178,6 +182,8 @@ MIN_TAG_FRAMES = 300                     # fill-only teacher frames with a tag's
 D_SHARE_BAND = (0.30, 0.62)              # R024's sanity: D on this share of the graded frames, ends included
 POSSESSIONS_WARN = 0.25                  # a half's possessions beyond this share of main.toml's are a WARN (T33)
 BAR_ATH_EXIT = {"pass": 0, "drop": 1, "error": EXIT_ERROR, "stop": 3}
+# `pools`: built or read; the alignment it would build from is outside the band (bar-ath's STOP); an error
+POOLS_EXIT = {"built": 0, "stop": BAR_ATH_EXIT["stop"], "error": EXIT_ERROR}
 REPORT_FOLDER = ("runs", "r028")   # <data dir>/runs/r028/: fidelity_path's and bar_ath_path's reports
 
 
@@ -606,6 +612,20 @@ class BroadcastSimError(ValueError):
     cannot pool. The message says which, and what to change."""
 
 
+class AlignmentStop(BroadcastSimError):
+    """The alignment the pools would be built from fails bar-ath's band (judge_alignment): d_1 or d_2 outside it, a
+    live share below MIN_LIVE_SHARE, or an AlignmentError. A STOP for the advisor, not an error: nothing was decoded or
+    cached. `alignment` is judge_alignment's result."""
+
+    def __init__(self, alignment):
+        self.alignment = alignment
+        super().__init__(
+            "broadcast_sim: the broadcast's alignment that the pools would be built from is {}; the pools are not "
+            "built (nothing decoded, nothing cached). This is a STOP for the advisor (design 7.4's band, held at "
+            "`pools`)".format("refused" if alignment["refused"] is not None else
+                              "outside the band or below the live share"))
+
+
 def driver_key(config):
     """The sha256 (hex) of everything run.predict reads of `config`: scope, seed, ball_fill, evidence, decoder, refine.
 
@@ -817,14 +837,18 @@ def digest(pools):
 def build_pools(inputs, log=print):
     """The Pools of BAR-ATH's `inputs` (design 3.3), built and not cached: prepare_pools builds and caches them.
 
-    The labels are decode_labels' (r024_both.toml), and BroadcastSimError, with nothing left behind, if their CSV is
-    not R024_SHA256, if a class has no donor gap or if there is no error run.
+    AlignmentStop, before anything is decoded, if the broadcast's alignment fails the band (pools_alignment). The
+    labels are decode_labels' (r024_both.toml), and BroadcastSimError, with nothing left behind, if their CSV is not
+    R024_SHA256, if a class has no donor gap or if there is no error run.
     """
     return _build(inputs, inputs.data_dir, log)[0]
 
 
 def prepare_pools(data_dir=None, inputs=None, log=print, rebuild=False):
-    """(pools, measure): the cache's when it is whole and of the key, otherwise built from BAR-ATH and written.
+    """(pools, measure, alignment): the cache's when it is whole and of the key, otherwise built from BAR-ATH and
+    written. `alignment` is judge_alignment's result: for a build, of the alignment found now (pools_alignment), which
+    must pass bar-ath's band before anything is decoded (AlignmentStop otherwise, with nothing written); for a cache,
+    of the one recorded in its manifest when it was built (with "recorded" True).
 
     The one way the pools are built: the `pools` command. `inputs` stands in for BAR-ATH's (bar_ath_inputs(data_dir)
     by default; nothing of it is loaded when the cache is read), `data_dir` defaults to the inputs', `log` takes the
@@ -842,10 +866,10 @@ def prepare_pools(data_dir=None, inputs=None, log=print, rebuild=False):
         found = None if key is None else _read_cache(cache_folder(data_dir, key), key)
         if found is not None:
             return found
-    pools, measure = _build(inputs, data_dir, log)
+    pools, measure, alignment = _build(inputs, data_dir, log)
     key = pools_key(data_dir, inputs.game)
-    _write_cache(cache_folder(data_dir, key), key, pools, measure)
-    return pools, measure
+    _write_cache(cache_folder(data_dir, key), key, pools, measure, alignment)
+    return pools, measure, alignment
 
 
 def load_pools(data_dir=None):
@@ -870,7 +894,7 @@ def load_bar_ath_measure(data_dir=None):
 
 
 def _load_cached(data_dir):
-    """(pools, measure) from the cache of the key, or BroadcastSimError (pools first)."""
+    """(pools, measure, recorded alignment) from the cache of the key, or BroadcastSimError (pools first)."""
     data_dir = data_dir or games.DATA_DIR
     key = pools_key(data_dir)
     folder = cache_folder(data_dir, key)
@@ -883,12 +907,16 @@ def _load_cached(data_dir):
 
 
 def _build(inputs, data_dir, log):
-    """(pools, measure) of BAR-ATH: the decode of r024_both.toml, then the pools and the measure.
+    """(pools, measure, alignment) of BAR-ATH: the alignment held to the band, then the decode of r024_both.toml,
+    then the pools and the measure. AlignmentStop, before anything is decoded or written, if the alignment fails.
 
     The decode writes its CSV (pipeline.run.run writes one) to a temporary name in the cache's folder, and the file is
     deleted as soon as its sha256 is known, whatever it is: the labels are kept in memory only, and no CSV of BAR-ATH's
     labels stays in data/cache/. A refusal or an error leaves nothing behind.
     """
+    alignment = pools_alignment(inputs)
+    if not alignment["passed"]:
+        raise AlignmentStop(alignment)
     root = os.path.join(data_dir, *CACHE_FOLDER)
     os.makedirs(root, exist_ok=True)
     path = os.path.join(root, "{}.{}.csv".format(LABELS_STEM, os.getpid()))
@@ -902,7 +930,25 @@ def _build(inputs, data_dir, log):
             "broadcast_sim: the labels of r024_both.toml decoded on this match have sha256 {}, not {}, the file "
             "main.toml writes today; the pools are built from those labels only. Find what changed (the config, the "
             "pipeline's code, the data) before building them".format(sha256, R024_SHA256))
-    return _pools_and_measure(inputs, np.asarray(codes))
+    return _pools_and_measure(inputs, np.asarray(codes)) + (alignment,)
+
+
+def pools_alignment(inputs):
+    """judge_alignment of the broadcast's alignment on BAR-ATH's `inputs` (Inputs.broadcast_summary: the broadcast is
+    loaded and aligned here), as bar-ath judges it: an AlignmentError is a refused alignment, never an error."""
+    try:
+        return judge_alignment(inputs.broadcast_summary)
+    except AlignmentError as error:
+        return judge_alignment(None, refused=str(error))
+
+
+def alignment_record(alignment):
+    """What the cache's manifest keeps of a judged alignment, aggregates only: {"offsets", "fine_scores",
+    "live_share"}, d_h and the fine score per half (text keys, as JSON has them) and the live share."""
+    fine = (alignment["summary"] or {}).get("fine_scores") or {}
+    return run.plain({"offsets": {str(half): value for half, value in alignment["offsets"].items()},
+                      "fine_scores": {str(half): value for half, value in fine.items()},
+                      "live_share": alignment["live_share"]})
 
 
 def _pools_and_measure(inputs, codes):
@@ -939,9 +985,10 @@ def _pools_and_measure(inputs, codes):
     return pools, measure
 
 
-def _write_cache(folder, key, pools, measure):
+def _write_cache(folder, key, pools, measure, alignment):
     """The arrays first, then the measure, the manifest last, with the old manifest removed up front (calibration.py's
-    order): a run killed half-way leaves no manifest, so the next load builds again."""
+    order): a run killed half-way leaves no manifest, so the next load builds again. The manifest keeps the alignment
+    the pools were built from (alignment_record), which `pools` prints when it reads them back."""
     os.makedirs(folder, exist_ok=True)
     manifest = os.path.join(folder, MANIFEST)
     with contextlib.suppress(OSError):
@@ -949,16 +996,25 @@ def _write_cache(folder, key, pools, measure):
     for name in POOL_ARRAYS:
         np.save(os.path.join(folder, name + ".npy"), getattr(pools, name), allow_pickle=False)
     run.write_json(os.path.join(folder, MEASURE_FILE), measure)
-    run.write_json(manifest, {"key": key, "digest": digest(pools), "pools_version": POOLS_VERSION})
+    run.write_json(manifest, {"key": key, "digest": digest(pools), "pools_version": POOLS_VERSION,
+                              "alignment": alignment_record(alignment)})
 
 
 def _read_cache(folder, key):
-    """(pools, measure) from `folder`, or None if its manifest is not of `key`, or anything in it cannot be read whole:
-    an unreadable cache is absent, never an error (calibration.load's rule)."""
+    """(pools, measure, alignment) from `folder`, or None if its manifest is not of `key`, or anything in it cannot be
+    read whole: an unreadable cache is absent, never an error (calibration.load's rule). The alignment is
+    judge_alignment of the record in the manifest, with "recorded" True; a manifest without one (written before it
+    was kept), or with one that fails the band, is not whole."""
     try:
         with open(os.path.join(folder, MANIFEST), encoding="utf-8") as handle:
             manifest = json.load(handle)
         if not isinstance(manifest, dict) or manifest.get("key") != key:
+            return None
+        record = manifest.get("alignment")
+        if not isinstance(record, dict) or sorted(record) != ["fine_scores", "live_share", "offsets"]:
+            return None
+        alignment = dict(judge_alignment(record), recorded=True)
+        if not alignment["passed"]:
             return None
         pools = Pools(**{name: _read_array(folder, name) for name in POOL_ARRAYS})
         if digest(pools) != manifest.get("digest"):
@@ -967,7 +1023,7 @@ def _read_cache(folder, key):
             measure = json.load(handle)
         if not isinstance(measure, dict) or sorted(measure) != sorted(MEASURE_KEYS):
             return None
-        return pools, measure
+        return pools, measure, alignment
     except (OSError, ValueError, EOFError, KeyError, TypeError, AttributeError, zipfile.BadZipFile):
         return None
 
@@ -983,6 +1039,26 @@ def _read_array(folder, name):
                 close()
             raise ValueError("{}.npy is not a plain numpy array".format(name))
         return array
+
+
+def render_alignment(alignment):
+    """The alignment's lines, as `pools` and `bar-ath` print them: whether it was refused, d_1 and d_2 against the
+    band with their fine scores, and the live share against its minimum. Aggregates only."""
+    lines = []
+    if alignment.get("recorded"):
+        lines.append("alignment as recorded when these pools were built (read from the cache, not aligned again)")
+    if alignment["refused"] is not None:
+        lines.append("alignment refused: {}".format(alignment["refused"]))
+    fine = (alignment["summary"] or {}).get("fine_scores") or {}
+    for half, expected in sorted(alignment["expected"].items()):
+        found = alignment["offsets"].get(half)
+        score = fine.get(str(half), fine.get(half))
+        lines.append("alignment d_{} {} (expected {:,} +- {}), fine score {}: {}".format(
+            half, "none" if found is None else "{:,}".format(found), expected, alignment["band"], _number(score),
+            "in the band" if alignment["within"][half] else "OUTSIDE"))
+    lines.append("live      {} of the valid graded frames (at least {}): {}".format(
+        _number(alignment["live_share"]), alignment["min_live_share"], "pass" if alignment["live_passed"] else "FAIL"))
+    return lines
 
 
 def render_pools(pools, measure):
@@ -1385,17 +1461,8 @@ BAR_ATH_VERDICTS = {"pass": "every check passes", "drop": "a check fails: DROP (
 def render_bar_ath(result):
     """The lines that `bar-ath` prints: the alignment and live share as measured, then (past them) the tag check, the
     sanity, the reported figures and the verdict. Aggregates only."""
-    alignment = result["alignment"]
     lines = ["bar-ath   {}: design 7.4 on BAR-ATH, label-free".format(result["stem"])]
-    if alignment["refused"] is not None:
-        lines.append("alignment refused: {}".format(alignment["refused"]))
-    for half, expected in sorted(alignment["expected"].items()):
-        found = alignment["offsets"].get(half)
-        lines.append("alignment d_{} {} (expected {:,} +- {}): {}".format(
-            half, "none" if found is None else "{:,}".format(found), expected, alignment["band"],
-            "in the band" if alignment["within"][half] else "OUTSIDE"))
-    lines.append("live      {} of the valid graded frames (at least {}): {}".format(
-        _number(alignment["live_share"]), alignment["min_live_share"], "pass" if alignment["live_passed"] else "FAIL"))
+    lines += render_alignment(result["alignment"])
     if result["fill"] is not None:
         lines.append("fill      {:,} frames filled of {:,} graded".format(result["fill"]["filled_frames"],
                                                                          result["fill"]["graded_frames"]))
@@ -1436,7 +1503,9 @@ def build_parser():
         description="R028's simulated broadcast: build the pools from BAR-ATH (pools), measure the stand-in against "
                     "our match (fidelity), and check a config that fills on BAR-ATH (bar-ath).")
     commands = parser.add_subparsers(dest="command", required=True)
-    pools = commands.add_parser("pools", help="build or read the pools of BAR-ATH and its measure; aggregates only")
+    pools = commands.add_parser(
+        "pools", help="build (or read) the pools of BAR-ATH and its measure, aggregates only: exit 0, 3 (the "
+                      "alignment band or the live share: STOP, nothing built), 2 (an error)")
     pools.add_argument("--data-dir", help="the data bundle (default: data/, or $MTAH_DATA_DIR)")
     measured = commands.add_parser(
         "fidelity", help="design 3.5: the copies against BAR-ATH; exit 0, 1 (a gate fails), 3 (a check fails), 2 "
@@ -1461,10 +1530,10 @@ def main(argv=None):
     data_dir = args.data_dir or games.DATA_DIR
     try:
         if args.command == "pools":
-            pools, measure = prepare_pools(args.data_dir, inputs=bar_ath_inputs(args.data_dir))
-            for line in render_pools(pools, measure):
+            pools, measure, alignment = prepare_pools(args.data_dir, inputs=bar_ath_inputs(args.data_dir))
+            for line in render_alignment(alignment) + render_pools(pools, measure):
                 print(line)
-            return 0
+            return POOLS_EXIT["built"]
         config = load_config(args.config)
         if args.command == "fidelity":
             result = fidelity(config, profile=args.profile, seeds=args.seeds, data_dir=args.data_dir, log=print)
@@ -1475,6 +1544,12 @@ def main(argv=None):
             path = bar_ath_path(data_dir, config.stem)
             lines = render_bar_ath(result)
         run.write_json(path, run.plain(result))
+    except AlignmentStop as stop:
+        # `pools` only (bar-ath judges its own alignment): the alignment it would build from fails the band.
+        for line in render_alignment(stop.alignment):
+            print(line)
+        print("STOP      {}".format(stop))
+        return POOLS_EXIT["stop"]
     except (ConfigError, BroadcastSimError, run.BenchmarkError, AlignmentError, match_inputs.AssetUnavailable,
             OSError) as error:
         # The expected failures get a sentence: a config to fix, labels that are not R024's, data not there, a
