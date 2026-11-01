@@ -176,6 +176,27 @@ def test_config_bad_scope():
     expect_error(ConfigError, lambda: load_test_config('scope = "match"\n' + MINIMAL_CONFIG), "match", "halves")
 
 
+def test_config_inputs_table():
+    """[inputs] is optional, and its one key, ball_fill, is "none" (the default) or "broadcast" (R028).
+
+    Checked as strictly as the rest: a value or a key that is not one of those stops the run before any data loads, with
+    the file, the key and what is allowed in the sentence.
+    """
+    from pipeline.config import ConfigError
+    assert load_test_config(MINIMAL_CONFIG).ball_fill == "none", "no [inputs]: the tactical ball only, as before"
+    assert load_test_config(MINIMAL_CONFIG + '\n[inputs]\nball_fill = "broadcast"\n').ball_fill == "broadcast"
+    assert load_test_config(MINIMAL_CONFIG + '\n[inputs]\nball_fill = "none"\n').ball_fill == "none"
+    assert load_test_config(MINIMAL_CONFIG + "\n[inputs]\n").ball_fill == "none", "an empty table is the default"
+    expect_error(ConfigError, lambda: load_test_config(MINIMAL_CONFIG + '\n[inputs]\nball_fill = "video"\n'),
+                 "trial.toml", "ball_fill", "video", "none", "broadcast")
+    expect_error(ConfigError, lambda: load_test_config(MINIMAL_CONFIG + '\n[inputs]\nball_fil = "broadcast"\n'),
+                 "trial.toml", "ball_fil", "ball_fill")
+    expect_error(ConfigError, lambda: load_test_config('inputs = "broadcast"\n' + MINIMAL_CONFIG),
+                 "trial.toml", "[inputs]")
+    expect_error(ConfigError, lambda: load_test_config(MINIMAL_CONFIG + '\n[[inputs]]\nball_fill = "none"\n'),
+                 "trial.toml", "[inputs]")
+
+
 # The sources of REGISTRY that need an asset only our match has. Add the next such source here.
 MATCH_ONLY_KINDS = {"smart_tagging"}
 
@@ -434,6 +455,332 @@ def test_cache_rebuilt_when_arrays_missing():
         second = synthetic_inputs(root)
         assert second.atd.players_xy.shape == (SYNTHETIC_FRAMES, SYNTHETIC_SLOTS, 2)
         assert second.atd_status == "built", second.atd_status
+
+
+# -- the broadcast's ball (R028) --------------------------------------------------------------------------------------
+#
+# Synthetic arrays only, in metres: a ball that walks the pitch at random, and a broadcast that holds the same walk read
+# at a known offset in each half, with noise, gaps of its own and invalid stretches, the shapes A20 measured on the real
+# one. Nothing of the match is read.
+
+# Params
+WALK_PITCH = (105.3, 68.0)                         # the pitch the walks bounce around in, metres
+WALK_STEP_M = 1.5                                  # s.d. of a step per frame and coordinate: neighbouring frames are
+                                                   # about 2 m apart, so one frame of offset shows within 1.5 m
+WALK_FRAMES, WALK_BROADCAST_FRAMES = 82000, 55000
+WALK_GRADED = [(1, 5000, 30000), (2, 55000, 80000)]   # 25,000 frames a half: 1,000 coarse samples each
+WALK_OFFSETS = {1: 4014, 2: 26919}                 # A20's: frame t of a half is broadcast frame t - d
+
+
+def walk(n, seed):
+    """(n, 2) metres: a random walk from the centre spot that bounces off the lines (folded into the pitch)."""
+    size = np.array(WALK_PITCH)
+    steps = np.random.default_rng([28, seed]).normal(0.0, WALK_STEP_M, size=(n, 2))
+    return size - np.abs(np.mod(size / 2 + np.cumsum(steps, axis=0), 2 * size) - size)
+
+
+def runs_of(n, share, mean, seed):
+    """(n,) bool: True on about `share` of the frames, in runs of about `mean` frames (exponential lengths)."""
+    rng = np.random.default_rng([29, seed])
+    mask, frame, on = np.zeros(n, dtype=bool), 0, False
+    while frame < n:
+        length = 1 + int(rng.exponential(mean if on else mean * (1 - share) / share))
+        mask[frame:frame + length] = on
+        frame, on = frame + length, not on
+    return mask
+
+
+def walk_tactical(seed=0):
+    """(path, ball): the walk, and our ball, which is the walk with 20% of its frames missing in runs."""
+    path = walk(WALK_FRAMES, seed)
+    ball = path.copy()
+    ball[runs_of(WALK_FRAMES, 0.2, 50, seed)] = np.nan
+    return path, ball
+
+
+def walk_broadcast(path, pieces, seed=0):
+    """(ball, valid) of a broadcast: its frame b holds path[b + d] for each piece (low, high, d) of b, and a walk of its
+    own elsewhere; then 0.5 m of noise, 10% of its ball missing and 35% of its frames invalid, in runs."""
+    ball = walk(WALK_BROADCAST_FRAMES, seed + 100)
+    for low, high, offset in pieces:
+        ball[low:high] = path[low + offset:high + offset]
+    ball = ball + np.random.default_rng([30, seed]).normal(0.0, 0.5, size=ball.shape)
+    ball[runs_of(WALK_BROADCAST_FRAMES, 0.1, 20, seed + 1)] = np.nan
+    return ball, ~runs_of(WALK_BROADCAST_FRAMES, 0.35, 350, seed + 2)
+
+
+def aligned_pieces(offsets=WALK_OFFSETS):
+    """The pieces of a broadcast that holds each graded half of the walk at that half's offset."""
+    return [(start - offsets[half], stop - offsets[half], offsets[half]) for half, start, stop in WALK_GRADED]
+
+
+def test_with_ball_fill_none_is_identity():
+    """ball_fill = "none" is the inputs object itself, so that every config without [inputs] runs exactly as before.
+
+    The base's ball_filled is all False and read-only and its fill_summary None; nothing is loaded by any of it; every
+    kind a config may name is one the inputs know; and pipeline.run.prepare_inputs, which run() and the benchmark's
+    predict() call, applies the config's ball_fill.
+    """
+    from pipeline import config as config_module
+    from pipeline.inputs import Inputs
+    from pipeline.run import prepare_inputs
+    with tempfile.TemporaryDirectory() as root:
+        inputs = synthetic_inputs(root)
+        assert inputs.with_ball_fill("none") is inputs
+        assert prepare_inputs(load_test_config(MINIMAL_CONFIG), inputs) is inputs
+        filled = inputs.ball_filled
+        assert filled.dtype == bool and filled.shape == (SYNTHETIC_FRAMES,) and not filled.any()
+        assert not filled.flags.writeable and inputs.fill_summary is None
+        for kind in config_module.BALL_FILLS:
+            assert isinstance(inputs.with_ball_fill(kind), Inputs), kind
+        expect_error(ValueError, lambda: inputs.with_ball_fill("video"), "video", "none", "broadcast")
+        assert os.listdir(root) == [], "nothing was loaded: the broadcast is read only when a filled view needs it"
+
+
+def test_align_recovers_known_offsets():
+    """The broadcast holds our walk at 4,014 frames in the first half and 26,919 in the second: align finds both."""
+    from pipeline.inputs import broadcast
+    path, ball = walk_tactical()
+    other, valid = walk_broadcast(path, aligned_pieces())
+    alignment = broadcast.align(ball, other, valid, WALK_GRADED)
+    assert alignment.offsets == WALK_OFFSETS, alignment.offsets
+    assert all(alignment.fine_scores[half] > 0.5 for half in (1, 2)), alignment.fine_scores
+    for half in (1, 2):
+        assert alignment.coarse_scores[half] >= 2.0 * alignment.runner_up[half], (half, alignment)
+        assert alignment.pairs[half] >= 300, (half, alignment.pairs)
+    assert broadcast.align(ball, other, valid, WALK_GRADED) == alignment, "the same arrays, the same alignment"
+
+
+def test_align_refuses_no_agreement():
+    """A broadcast of some other ball agrees with ours at no offset: AlignmentError (a ValueError), naming the half."""
+    from pipeline.inputs import broadcast
+    _, ball = walk_tactical()
+    other, valid = walk_broadcast(walk(WALK_FRAMES, 7), aligned_pieces())
+    assert issubclass(broadcast.AlignmentError, ValueError)
+    expect_error(broadcast.AlignmentError, lambda: broadcast.align(ball, other, valid, WALK_GRADED),
+                 "half 1", "0.5", "ball_fill")
+
+
+def test_align_refuses_two_peaks():
+    """A broadcast that holds our walk at 4,000 and at 5,000 frames, on alternate stretches, has two peaks of one height.
+
+    The coarse best is then not twice the best score more than 250 frames away, and the feed is refused rather than
+    filled from at either offset."""
+    from pipeline.inputs import broadcast
+    path, ball = walk_tactical()
+    _, start, stop = WALK_GRADED[0]
+    pieces = [(low, low + 500, 4000 if (low // 500) % 2 == 0 else 5000)
+              for low in range(start - 4000, stop - 4000, 500)] + aligned_pieces()[1:]
+    other, valid = walk_broadcast(path, pieces)
+    expect_error(broadcast.AlignmentError, lambda: broadcast.align(ball, other, valid, WALK_GRADED), "half 1", "250")
+
+
+def test_align_refuses_too_few_pairs():
+    """A half whose ball is seen on too few frames has no offset with 300 coarse pairs: refused, naming that half."""
+    from pipeline.inputs import broadcast
+    path, ball = walk_tactical()
+    other, valid = walk_broadcast(path, aligned_pieces())
+    _, start, stop = WALK_GRADED[1]
+    ball[start + 2000:stop] = np.nan                # the second half's ball on its first 2,000 frames only: 80 samples
+    expect_error(broadcast.AlignmentError, lambda: broadcast.align(ball, other, valid, WALK_GRADED), "half 2", "300")
+
+
+def test_live_needs_valid_players_and_distance():
+    """A mapped frame is live when the broadcast's homography is valid, it shows at least 4 players, and the median over
+    them of the distance to our nearest player is below 2.0 m (the design's 2.4). One frame for each case, in metres;
+    the broadcast's frames are in reverse order, so that a frame is read through the map and not by its own index."""
+    from pipeline.inputs import broadcast
+    ours = np.array([[5.0 + 10.0 * k, 20.0] for k in range(8)])           # 8 of our players, 10 m apart
+
+    def theirs(*players):
+        """10 broadcast slots: one present per (our player, metres above it), the rest absent."""
+        slots = np.full((10, 2), np.nan)
+        for slot, (player, offset) in enumerate(players):
+            slots[slot] = ours[player] + [0.0, offset]
+        return slots
+
+    near = theirs(*[(k, 0.3) for k in range(6)])
+    cases = [  # (what, the broadcast's players, its homography valid, live)
+        ("3 players", theirs(*[(k, 0.3) for k in range(3)]), True, False),
+        ("an invalid homography", near, False, False),
+        ("a median of 2.5 m", theirs(*[(k, 2.5) for k in range(6)]), True, False),
+        ("6 players at 0.3 m", near, True, True),
+        ("4 players are enough", theirs(*[(k, 0.3) for k in range(4)]), True, True),
+        ("a median of exactly 2.0 m", theirs(*[(k, 2.0) for k in range(6)]), True, False),
+        ("a median, not a maximum", theirs(*([(k, 0.3) for k in range(4)] + [(4, 25.0), (5, 25.0)])), True, True),
+        ("a frame that is not mapped", near, True, False),
+        ("none of ours tracked", near, True, False),
+    ]
+    n = len(cases)
+    tactical = np.repeat(ours[None], n, axis=0)
+    tactical[n - 1] = np.nan
+    fmap = n - 1 - np.arange(n)                                            # frame t is broadcast frame n - 1 - t
+    fmap[n - 2] = -1
+    other = np.stack([case[1] for case in cases][::-1])
+    valid = np.array([case[2] for case in cases][::-1])
+    got = broadcast.live(tactical, other, valid, fmap)
+    assert got.dtype == bool and got.shape == (n,), (got.dtype, got.shape)
+    for (what, _, _, expected), live in zip(cases, got.tolist()):
+        assert live == expected, (what, live)
+    assert (broadcast.LIVE_MIN_PLAYERS, broadcast.LIVE_MAX_MEDIAN_M) == (4, 2.0)
+
+
+def test_usable_drops_runs_shorter_than_13():
+    """A usable broadcast ball is present on a mapped, live frame; runs of fewer than 13 usable frames are dropped."""
+    from pipeline.inputs import broadcast
+    n = 120
+    ball = np.full((n, 2), np.nan)
+    ball[10:22] = ball[40:53] = 30.0                    # runs of 12 and 13 frames
+    ball[60:90] = 30.0                                  # 30 frames, cut by one that is not live into 15 and 14
+    ball[100:113] = 30.0                                # 13 frames, one of them not mapped: 5 and 7
+    fmap, live = np.arange(n), np.ones(n, dtype=bool)
+    live[75], fmap[105] = False, -1
+    keep = broadcast.usable(ball, fmap, live)
+    assert keep.dtype == bool and keep.shape == (n,)
+    assert not keep[10:22].any() and keep[40:53].all(), "12 frames are too few, 13 are enough"
+    assert keep[60:75].all() and not keep[75] and keep[76:90].all() and not keep[100:113].any()
+    assert int(keep.sum()) == 13 + 15 + 14 and broadcast.MIN_RUN == 13
+    assert broadcast.usable(ball, fmap, live, min_run=12)[10:22].all()
+    # A run is the broadcast's own: our frames that follow each other on broadcast frames that do not are two runs.
+    jumps = np.concatenate([np.arange(0, 20), np.arange(30, 40), np.arange(41, 51)])
+    keep = broadcast.usable(np.full((60, 2), 30.0), jumps, np.ones(40, dtype=bool))
+    assert keep[:20].all() and not keep[20:].any(), "20 frames, then two runs of 10"
+    for bad in (0, -1, 2.5, True):
+        expect_error(ValueError, lambda bad=bad: broadcast.usable(ball, fmap, live, min_run=bad), "min_run")
+
+
+def fill_scene(n=12, seed=5, writeable=False):
+    """(atd, ball, where) for broadcast.fill: our tracking with the ball missing on frames 1, 3, 4, 6, 9 and 10 (its
+    speed NaN there too), a broadcast ball that is missing on 4 and has one coordinate on 6, and frames 0 and 9 not
+    graded."""
+    from pipeline.inputs.atd_cache import Atd
+    rng = np.random.default_rng(seed)
+    players = rng.uniform(0.0, 1.0, size=(n, 3, 2))
+    players[2, 1] = np.nan
+    ball_xy, ball_speed = rng.uniform(0.0, 1.0, size=(n, 2)), rng.uniform(0.0, 9.0, size=n)
+    lost = [1, 3, 4, 6, 9, 10] if n == 12 else np.flatnonzero(rng.uniform(size=n) < 0.4)
+    ball_xy[lost], ball_speed[lost] = np.nan, np.nan
+    atd = Atd(players_xy=players, players_speed=rng.uniform(0.0, 9.0, size=(n, 3)), ball_xy=ball_xy,
+              ball_speed=ball_speed, slot_team=np.array([0, 1, 0], dtype=np.int8))
+    if not writeable:
+        for name in ("players_xy", "players_speed", "ball_xy", "ball_speed", "slot_team"):
+            getattr(atd, name).flags.writeable = False
+    ball = rng.uniform(0.0, 1.0, size=(n, 2))
+    where = np.ones(n, dtype=bool)
+    if n == 12:
+        ball[4], ball[6, 1] = np.nan, np.nan
+        where[[0, 9]] = False
+    else:
+        ball[rng.uniform(size=n) < 0.3] = np.nan
+        where[: n // 10] = False
+    return atd, ball, where
+
+
+def test_fill_writes_only_missing_graded_frames():
+    """The fill writes the broadcast's ball on graded frames where ours is missing and theirs is whole, and nowhere else.
+
+    A present ball is never replaced, an ungraded frame never filled, a ball with one coordinate never written; the
+    filled ball's speed stays NaN, and the players and every other array are the tracking's own, not copies. The
+    tracking given is not changed, and its arrays are as writeable as they were."""
+    from pipeline.inputs import broadcast
+    from pipeline.inputs.atd_cache import ARRAYS, Atd
+    atd, ball, where = fill_scene(writeable=True)
+    before = {name: np.array(getattr(atd, name)) for name in ARRAYS}
+    filled_atd, filled = broadcast.fill(atd, ball, where)
+    assert isinstance(filled_atd, Atd) and filled_atd is not atd
+    expected = np.zeros(12, dtype=bool)
+    expected[[1, 3, 10]] = True                         # 4: no broadcast ball, 6: half of one, 9: not graded
+    assert filled.tolist() == expected.tolist(), np.flatnonzero(filled)
+    assert np.array_equal(filled_atd.ball_xy[expected], ball[expected])
+    assert np.array_equal(filled_atd.ball_xy[~expected], before["ball_xy"][~expected], equal_nan=True)
+    assert np.array_equal(filled_atd.ball_speed, before["ball_speed"], equal_nan=True)
+    assert np.isnan(filled_atd.ball_speed[expected]).all(), "the filled ball has no speed"
+    assert np.array_equal(filled_atd.ball_present, ~np.isnan(before["ball_xy"][:, 0]) | expected)
+    for name in ("players_xy", "players_speed", "slot_team"):
+        assert np.array_equal(getattr(filled_atd, name), before[name], equal_nan=True), name
+        assert np.shares_memory(getattr(filled_atd, name), getattr(atd, name)), "{} is the tracking's own".format(name)
+    for name in ARRAYS:
+        assert not getattr(filled_atd, name).flags.writeable, name
+        assert np.array_equal(getattr(atd, name), before[name], equal_nan=True), "{} was changed".format(name)
+        assert getattr(atd, name).flags.writeable, "{} of the tracking given was frozen".format(name)
+    assert not filled.flags.writeable
+    expect_error(ValueError, lambda: broadcast.fill(atd, ball[:-1], where), "ball_norm", "12")
+    expect_error(ValueError, lambda: broadcast.fill(atd, ball, where[:-1]), "where", "12")
+
+
+def test_fill_is_deterministic():
+    """The fill has no randomness: two calls on the same arrays give the same bytes."""
+    from pipeline.inputs import broadcast
+    from pipeline.inputs.atd_cache import ARRAYS
+    atd, ball, where = fill_scene(n=5000, seed=8)
+    first, second = broadcast.fill(atd, ball, where), broadcast.fill(atd, ball, where)
+    assert first[1].any() and first[1].tobytes() == second[1].tobytes()
+    for name in ARRAYS:
+        assert getattr(first[0], name).tobytes() == getattr(second[0], name).tobytes(), name
+
+
+def given_broadcast_inputs(root, ball, **overrides):
+    """synthetic_inputs over root, whose broadcast ball is `ball`: given, as the benchmark's MatchInputs serves one,
+    rather than aligned from data/broadcast/, which the synthetic bundle does not have. A given ball has no alignment,
+    so its broadcast_summary is empty."""
+    from pipeline.inputs import Inputs
+
+    class GivenBroadcast(Inputs):
+        broadcast_ball = property(lambda self: ball)
+        broadcast_summary = property(lambda self: {})
+
+    options = dict(data_dir=root, n_frames=SYNTHETIC_FRAMES, graded=SYNTHETIC_GRADED)
+    options.update(overrides)
+    return GivenBroadcast(**options)
+
+
+def test_filled_inputs_is_an_inputs():
+    """with_ball_fill("broadcast") is an Inputs like any other: the base's fields, its tracking filled, no array shown.
+
+    The view loads nothing until its tracking is read; the base is left as it was; the assets the fill does not change
+    are the base's own; and its repr shows no value, even once it holds the filled tracking.
+    """
+    from pipeline.inputs import FilledInputs, Inputs
+    with tempfile.TemporaryDirectory() as root:
+        make_synthetic_bundle(root)
+        ball = np.full((SYNTHETIC_FRAMES, 2), 0.271828)
+        inputs = given_broadcast_inputs(root, ball)
+        view = inputs.with_ball_fill("broadcast")
+        assert isinstance(view, Inputs) and isinstance(view, FilledInputs) and view is not inputs
+        assert sorted(os.listdir(root)) == ["tactical"], "the view loads nothing until its tracking is read"
+        assert view.pitch == inputs.pitch and view.graded == inputs.graded and view.n_frames == inputs.n_frames
+        for name in ("game", "data_dir", "cache_dir", "fps", "kickoffs", "rebuild"):
+            assert getattr(view, name) == getattr(inputs, name), name
+        xy = np.array([[0.5, 0.5], [1.0, 0.25]])
+        assert np.array_equal(view.metres(xy), inputs.metres(xy))
+        assert np.array_equal(view.graded_mask, inputs.graded_mask)
+        missing = inputs.graded_mask & ~inputs.atd.ball_present
+        atd = view.atd
+        assert view.atd_status == inputs.atd_status == "built" and view.atd_manifest is inputs.atd_manifest
+        assert missing.any() and np.array_equal(view.ball_filled, missing) and not view.ball_filled.flags.writeable
+        assert np.array_equal(atd.ball_xy[missing], ball[missing])
+        assert np.array_equal(atd.ball_xy[~missing], inputs.atd.ball_xy[~missing], equal_nan=True)
+        assert view.fill_summary == {"filled_frames": int(missing.sum()), "graded_frames": int(inputs.graded_mask.sum())}
+        assert not inputs.ball_filled.any() and inputs.fill_summary is None, "the base is left as it was"
+        shown = repr(view)
+        assert "array" not in shown and "0.271" not in shown and len(shown) < 120, shown
+
+
+def test_broadcast_reads_numpy_and_the_standard_library_only():
+    """pipeline/inputs/broadcast.py imports numpy, the standard library and its own package, and never the benchmark."""
+    import ast
+    with open(os.path.join(HERE, "inputs", "broadcast.py"), encoding="utf-8") as handle:
+        tree = ast.parse(handle.read())
+    modules = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            modules.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            assert not node.level, "a relative import in broadcast.py: name the package"
+            modules.add(node.module)
+    outside = sorted(module for module in modules if module.split(".")[0] not in sys.stdlib_module_names
+                     and module != "numpy" and not module.startswith("pipeline.inputs"))
+    assert not outside, "broadcast.py imports {}".format(outside)
 
 
 # -- evidence ---------------------------------------------------------------------------------------------------------
@@ -5262,6 +5609,131 @@ def test_run_end_to_end_synthetic_shift():
         # A misspelt parameter is refused when the config loads, before any data does.
         typo = write_text(root, "typo.toml", P06_TRIAL_CONFIG + SHIFT_REFINER + "teams = 1\n")
         expect_error(ConfigError, lambda: load_config(typo), "teams", "shift_edges")
+
+
+FILL_TRIAL_CONFIG = TRIAL_CONFIG.format(scope="halves", width=5) + """
+[inputs]
+ball_fill = "broadcast"
+"""
+
+
+def stub_broadcast_inputs(root, broadcast_atd, valid, offsets, **overrides):
+    """synthetic_inputs over root, with a broadcast given in place of data/broadcast/ (the bundle has none): its
+    tracking, its homography's valid column, the alignment and the records the manifest quotes. Everything after them
+    -- the map, the live test, the runs, the fill -- is Inputs' own."""
+    from pipeline.inputs import Inputs, broadcast
+    halves = sorted(offsets)
+    alignment = broadcast.Alignment(offsets=dict(offsets), fine_scores={half: 0.9 for half in halves},
+                                    coarse_scores={half: 0.8 for half in halves},
+                                    runner_up={half: 0.1 for half in halves}, pairs={half: 300 for half in halves})
+
+    class StubBroadcast(Inputs):
+        broadcast_atd = property(lambda self: broadcast_atd)
+        broadcast_valid = property(lambda self: valid)
+        broadcast_alignment = property(lambda self: alignment)
+        broadcast_atd_manifest = property(lambda self: {"sources": {"atd_raw": {"bytes": 1, "sha256": "a" * 64}},
+                                                        "cache_version": 1})
+        broadcast_homography_source = property(lambda self: {"bytes": 2, "sha256": "b" * 64})
+
+    options = dict(data_dir=root, n_frames=SYNTHETIC_FRAMES, graded=SYNTHETIC_GRADED)
+    options.update(overrides)
+    return StubBroadcast(**options)
+
+
+def test_run_end_to_end_synthetic_broadcast_fill():
+    """Inputs' own way from a broadcast to the filled tracking, and a run of a config that asks for it.
+
+    The synthetic match's broadcast is made here: its frame b is our frame b + d in each half (d = 10, then -15), its
+    players are ours, and its ball is ours or, where ours is lost, one of its own; a replay makes 30 of its frames
+    invalid, and a few frames of its own ball are missing, which cuts its runs. Since its players are ours, a mapped
+    frame is live exactly where the homography is valid and 4 or more players are tracked, and the ball expected is
+    worked out by a loop from that. Then a config with [inputs] ball_fill = "broadcast" runs end to end: one fill line,
+    its aggregates in the result and the manifest, and nearest_player voting on more frames than without the fill.
+    """
+    import json
+    from pipeline import output
+    from pipeline.config import load_config
+    from pipeline.contracts import X
+    from pipeline.inputs.atd_cache import Atd
+    from pipeline.run import inputs_record, run
+    graded, offsets, nb = [(1, 50, 280), (2, 320, 560)], {1: 10, 2: -15}, 600
+    with tempfile.TemporaryDirectory() as root:
+        make_synthetic_bundle(root)
+        ours = synthetic_inputs(root, graded=graded).atd
+        rng = np.random.default_rng(11)
+        players, ball = np.full((nb, SYNTHETIC_SLOTS, 2), np.nan), np.full((nb, 2), np.nan)
+        for half, start, stop in graded:
+            frames = np.arange(start, stop)
+            players[frames - offsets[half]] = ours.players_xy[frames]
+            ball[frames - offsets[half]] = np.where(ours.ball_present[frames, None], ours.ball_xy[frames],
+                                                    rng.uniform(0.1, 0.9, size=(len(frames), 2)))
+        ball[[45, 46, 70, 150, 151, 152, 400, 413]] = np.nan
+        valid = np.ones(nb, dtype=bool)
+        valid[100:130] = False
+        theirs = Atd(players_xy=players, players_speed=np.full((nb, SYNTHETIC_SLOTS), np.nan), ball_xy=ball,
+                     ball_speed=np.full(nb, np.nan), slot_team=ours.slot_team.copy())
+        inputs = stub_broadcast_inputs(root, theirs, valid, offsets, graded=graded)
+
+        usable = np.zeros(SYNTHETIC_FRAMES, dtype=bool)
+        for half, start, stop in graded:
+            for frame in range(start, stop):
+                seen = frame - offsets[half]
+                usable[frame] = (0 <= seen < nb and valid[seen] and (~np.isnan(players[seen, :, 0])).sum() >= 4
+                                 and not np.isnan(ball[seen, 0]))
+            run_start = start
+            for frame in range(start, stop + 1):                    # runs shorter than 13 frames are dropped
+                if frame == stop or not usable[frame]:
+                    if frame - run_start < 13:
+                        usable[run_start:frame] = False
+                    run_start = frame + 1
+        expected = np.full((SYNTHETIC_FRAMES, 2), np.nan)
+        for half, start, stop in graded:
+            frames = np.arange(start, stop)[usable[start:stop]]
+            expected[frames] = ball[frames - offsets[half]]
+        got = inputs.broadcast_ball
+        assert got.shape == (SYNTHETIC_FRAMES, 2) and got.dtype == np.float64 and not got.flags.writeable
+        assert np.array_equal(got, expected, equal_nan=True), "{} rows differ".format(
+            int((~((got == expected) | (np.isnan(got) & np.isnan(expected)))).any(axis=1).sum()))
+        assert usable.any() and not usable.all()
+        summary = inputs.broadcast_summary
+        assert summary["offsets"] == offsets and summary["usable_frames"] == int(usable.sum()), summary
+        assert 0 < summary["live_frames"] <= summary["valid_frames"] and summary["live_share"] == round(
+            summary["live_frames"] / summary["valid_frames"], 6), summary
+
+        view = inputs.with_ball_fill("broadcast")
+        filled = usable & ~ours.ball_present
+        assert filled.any() and np.array_equal(view.ball_filled, filled)
+        assert np.array_equal(view.atd.ball_xy, np.where(filled[:, None], expected, ours.ball_xy), equal_nan=True)
+        assert view.fill_summary == dict(summary, filled_frames=int(filled.sum()),
+                                         graded_frames=int(inputs.graded_mask.sum())), view.fill_summary
+
+        lines = []
+        out_path = os.path.join(root, "fill.csv")
+        config = load_config(write_text(root, "fill.toml", FILL_TRIAL_CONFIG))
+        assert config.ball_fill == "broadcast"
+        result = run(config, inputs, out_path, log=lines.append)
+        output.validate(out_path, SYNTHETIC_FRAMES, result.codes)
+        outside = ~inputs.graded_mask
+        assert (result.codes[outside] == X).all() and (result.codes[~outside] != X).all()
+        shown = [line for line in lines if line.startswith("fill")]
+        assert len(shown) == 1 and "{:,} frames filled".format(int(filled.sum())) in shown[0], lines
+        assert "+10" in shown[0] and "-15" in shown[0], shown[0]
+        assert result.fill == view.fill_summary
+        plain = run(load_config(write_text(root, "plain.toml", TRIAL_CONFIG.format(scope="halves", width=5))),
+                    inputs, os.path.join(root, "plain.csv"), log=quiet)
+        assert plain.fill is None
+
+        def votes(outcome):
+            return int((~np.isnan(outcome.evidence["nearest_player"].home)).sum())
+
+        assert votes(result) > votes(plain), "the filled frames with a player near the ball get a vote"
+        record = inputs_record(inputs, result.fill)
+        assert record["broadcast"] == dict(result.fill, atd_sources={"atd_raw": {"bytes": 1, "sha256": "a" * 64}},
+                                           atd_cache_version=1, homography_source={"bytes": 2, "sha256": "b" * 64})
+        json.dumps(record, sort_keys=True)
+        assert inputs_record(inputs, None) == {"atd_sources": inputs.atd_manifest["sources"],
+                                               "atd_cache_version": inputs.atd_manifest["cache_version"]}, \
+            "without the fill the manifest's inputs are what they were"
 
 
 def test_run_file_scope_equals_baseline_script():
