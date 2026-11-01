@@ -62,13 +62,14 @@ The wiring (Task 2b): the pools, the served inputs, and the three commands.
     python pipeline/benchmark/broadcast_sim.py fidelity [--profile P] [--seeds N] CONFIG [--data-dir D]
     python pipeline/benchmark/broadcast_sim.py bar-ath CONFIG [--data-dir D]
 
-    pools = load_pools()                                     # BAR-ATH's donors and errors, built once and cached
+    pools = load_pools()                       # BAR-ATH's donors and errors, read from the cache `pools` built
     inputs = served_inputs_for(config, match, atd, profile, seed, data_dir, pools)   # what the runner serves a config
 
 * The pools (design 3.3) are built from BAR-ATH by the pipeline's own functions: the labels are r024_both.toml's,
-  decoded in-process by pipeline.run.run into a CSV in the pools' cache folder, and nothing is built unless that CSV is
-  R024_SHA256, the file main.toml writes today (a stale or dirty main.csv cannot creep in, and the stand-in stays fixed
-  after an adoption). Each gap of our ball inside a graded block gives its real fill mask (the filled view's
+  decoded in-process by pipeline.run.run into a temporary CSV in data/cache/, read and deleted as soon as its sha256
+  is known (the labels are kept in memory only), and nothing is built unless that CSV is R024_SHA256, the file
+  main.toml writes today (a stale or dirty main.csv cannot creep in, and the stand-in stays fixed after an
+  adoption). Each gap of our ball inside a graded block gives its real fill mask (the filled view's
   ball_filled) and its class by those labels; the error runs are the maximal runs of graded frames where both balls
   exist within NEAR_GAP_FRAMES of a gap of their own block (near_gap_errors), each offset the broadcast's position minus
   ours, in metres. BAR-ATH's side of fidelity is measured at the same time and kept beside them as aggregates
@@ -76,8 +77,11 @@ The wiring (Task 2b): the pools, the served inputs, and the three commands.
   own mask, those labels and the broadcast ball in metres, with no reference (our ball is missing on every filled
   frame), and F5 the near-gap pool's median |offset| (the design's appendix). The cache,
   <data dir>/cache/benchmark/broadcast_sim/<digest of the key>/, follows calibration.py's rules: the key holds what the
-  pools depend on (pools_key), a broken cache is absent and never an error, the arrays are written first and the
-  manifest last.
+  pools depend on (pools_key: the sha256 of the code that builds them, CODE_FILES, the two ATD caches' manifests, the
+  broadcast homography file's sha256, r024_both.toml and the match's scalars; it is read from files, and no array of
+  BAR-ATH's tracking is loaded to compute it), the arrays are written first and the manifest last. Only the `pools`
+  command builds them (prepare_pools); the runner, latency, fidelity and bar-ath read them (load_pools), and an
+  absent, broken or stale cache is an error there that says to run `pools` first.
 * The served inputs (design 3.2 and 3.4). A config without the fill is served the plain MatchInputs. A config that
   fills is served its simulated ball: its twin, the same config with ball_fill "none", is decoded on the plain inputs
   (the driver: the candidate's own labels, never the truth), simulate builds the ball with the match's own generator,
@@ -86,15 +90,16 @@ The wiring (Task 2b): the pools, the served inputs, and the three commands.
   compressed transplant may give fragments shorter than 13 frames. The driver's codes can be kept in a dict per (twin,
   match, profile, seed), under driver_key, which holds everything predict reads of a config; the runner keeps one per
   run, and a config whose content is a twin's (main.toml's, say) shares its codes.
-* `pools` builds or reads the pools and prints aggregates only. `fidelity` measures the copies (each match and seed of
-  the profile, the config as it runs on DFL: its match-only sources dropped, as --drop-match-only does), laid end to
-  end and measured once, against BAR-ATH's measure: the gates F1 to F3, the checks F4 and F5 and the warnings W1 to W3
-  of design 3.5; exit 0, 1 if a gate fails, 3 if only a check does. `bar-ath` is design 7.4 on BAR-ATH: the alignment
-  band and the live share first (exit 3, a STOP, if either fails, after printing them), then the tag check on the
-  fill-only frames of the teacher (conventions.TOUCH), no X on a graded frame and D within D_SHARE_BAND (exit 1, a DROP,
-  if one fails), and the figures that are only reported. Every command exits 2 on an error, which is never a verdict.
-  The reports go to <data dir>/runs/r028/ (fidelity-<profile>.json, bar-ath-<config stem>.json), aggregates only, with
-  floats to 9 decimals and the pools' digest.
+* `pools` builds the pools (or reads a whole cache of the key) and prints aggregates only. `fidelity` measures the
+  copies (each match and seed of the profile, the config as it runs on DFL: its match-only sources dropped, as
+  --drop-match-only does), laid end to end and measured once, against BAR-ATH's measure: the gates F1 to F3, the
+  checks F4 and F5 and the warnings W1 to W3 of design 3.5; exit 0, 1 if a gate fails, 3 if only a check does.
+  `bar-ath` is design 7.4 on BAR-ATH: the alignment band and the live share first (exit 3, a STOP, if either fails,
+  after printing them), then the tag check on the fill-only frames of the teacher (conventions.TOUCH), no X on a graded
+  frame and D within D_SHARE_BAND (exit 1, a DROP, if one fails), and the figures that are only reported. Every
+  command exits 2 on an error, which is never a verdict.
+  The reports go to <data dir>/runs/r028/ (fidelity-<config stem>-<profile>[.s<n>].json, bar-ath-<config stem>.json),
+  aggregates only, with floats to 9 decimals and the pools' digest.
 """
 
 import argparse
@@ -129,7 +134,7 @@ from pipeline.benchmark import inputs as match_inputs  # noqa: E402
 from pipeline.config import BALL_FILLS, ConfigError, load_config  # noqa: E402
 from pipeline.contracts import RunContext  # noqa: E402
 from pipeline.evidence import controlled_touch, smart_tagging  # noqa: E402
-from pipeline.inputs import Inputs  # noqa: E402
+from pipeline.inputs import BROADCAST_FOLDER, Inputs, atd_cache  # noqa: E402
 from pipeline.inputs.broadcast import AlignmentError  # noqa: E402
 
 import possession_metrics as pm  # noqa: E402  isort:skip
@@ -151,7 +156,11 @@ CACHE_FOLDER = ("cache", "benchmark", "broadcast_sim")   # <data dir>/cache/benc
 KEY_DIGITS = 16                                          # hex digits of the key's sha256 that name its folder
 MANIFEST = "manifest.json"                               # the key and the pools' digest, written last
 MEASURE_FILE = "bar_ath_measure.json"                    # BAR-ATH's side of fidelity (measure_fill's result)
-LABELS_CSV = "r024_both.csv"                             # the decoded labels, kept beside the pools they made
+LABELS_STEM = "r024_both"   # the decode's CSV, r024_both.<pid>.csv beside the key folders: deleted once read
+# The code that builds the pools and measures BAR-ATH's side, from the repository root: its sha256 is in the key
+CODE_FILES = ("pipeline/benchmark/broadcast_sim.py", "pipeline/inputs/broadcast.py", "pipeline/inputs/__init__.py")
+POOLS_FIRST = ("run `python pipeline/benchmark/broadcast_sim.py pools` first: it is the one command that builds "
+               "the pools (and the ATD caches they are keyed on)")
 POOL_ARRAYS = ("gap_lengths", "gap_alive", "gap_fill", "gap_starts", "error_xy", "error_starts")   # Pools, in order
 MEASURE_KEYS = ("F1", "F2", "F3", "F4", "F5", "W1", "W2", "W3")
 # Fidelity (design 3.5): |copies - ours| at most this
@@ -169,7 +178,7 @@ MIN_TAG_FRAMES = 300                     # fill-only teacher frames with a tag's
 D_SHARE_BAND = (0.30, 0.62)              # R024's sanity: D on this share of the graded frames, ends included
 POSSESSIONS_WARN = 0.25                  # a half's possessions beyond this share of main.toml's are a WARN (T33)
 BAR_ATH_EXIT = {"pass": 0, "drop": 1, "error": EXIT_ERROR, "stop": 3}
-REPORT_FOLDER = ("runs", "r028")         # <data dir>/runs/r028/fidelity-<profile>.json, bar-ath-<config stem>.json
+REPORT_FOLDER = ("runs", "r028")   # <data dir>/runs/r028/: fidelity_path's and bar_ath_path's reports
 
 
 # -- the pools --------------------------------------------------------------------------------------------------------
@@ -727,32 +736,63 @@ def near_gap_errors(ball_present, ball_xy_m, broadcast_xy_m, graded):
     return error_xy, np.concatenate([[0], np.cumsum(lengths, dtype=np.int64)]).astype(np.int64)
 
 
-def _text(path):
-    """A text file's content with CRLF read as LF: a checkout that changes only the line endings changes nothing."""
+def read_source(path):
+    """The bytes of a source file with CRLF read as LF, so that a Windows checkout and a Linux one agree."""
     with open(path, "rb") as handle:
-        return handle.read().decode("utf-8").replace("\r\n", "\n")
+        return handle.read().replace(b"\r\n", b"\n")
 
 
-def pools_key(inputs):
+def _text(path):
+    """A text file's content, read by read_source: a checkout that changes only the line endings changes nothing."""
+    return read_source(path).decode("utf-8")
+
+
+def code_sha256():
+    """{path: sha256} of CODE_FILES, read by read_source: the code that builds the pools and measures BAR-ATH's side
+    (this file, and pipeline/inputs' broadcast.py and __init__.py, which find the broadcast ball and fill ours)."""
+    return {name: hashlib.sha256(read_source(os.path.join(ROOT, *name.split("/")))).hexdigest() for name in CODE_FILES}
+
+
+def pools_key(data_dir=None, game=games.GAME):
     """Everything the pools and BAR-ATH's measure depend on, as JSON-normal data: a cache is read only if all of it
     matches.
 
-    The tactical and the broadcast ATD caches' records (the sources' sizes and sha256, and the cache version, which says
-    how they were parsed), the broadcast homography file's size and sha256, r024_both.toml's text (LF), the sha256 its
-    CSV must have (R024_SHA256: the pools are never built from another), POOLS_VERSION, and the match's frames, pitch
-    and graded blocks. What it does not hold is the code that builds them, the pipeline's broadcast.py included: a
-    change to it that changes the pools is a bump of POOLS_VERSION. Reading it loads the two ATD caches and the
-    homography.
+    POOLS_VERSION; the sha256 of the code that builds and measures them (code_sha256), so that a fix to measure_fill or
+    to the fill is never measured against BAR-ATH's side as the old code measured it; the tactical and the broadcast
+    ATD caches' records (their sources' sizes and sha256, and the cache version, which says how they were parsed);
+    the broadcast homography file's size and sha256; r024_both.toml's text (LF) and the sha256 its CSV must have
+    (R024_SHA256: the pools are never built from another); and the match's frames, pitch and graded blocks.
+
+    It is read from files without loading BAR-ATH's tracking: the two ATD caches' manifests as they are on disk
+    (<data dir>/cache/atd_tactical/ and atd_broadcast/), the homography file hashed, the scalars from games.py.
+    BroadcastSimError, saying to run `pools` first (which builds them), if a cache's manifest cannot be read; the
+    games.py error if the broadcast homography file is not there.
     """
-    tactical, broadcast_atd = inputs.atd_manifest, inputs.broadcast_atd_manifest
-    key = {"pools_version": POOLS_VERSION,
-           "tactical_atd": {"sources": tactical["sources"], "cache_version": tactical["cache_version"]},
-           "broadcast_atd": {"sources": broadcast_atd["sources"], "cache_version": broadcast_atd["cache_version"]},
-           "broadcast_homography": inputs.broadcast_homography_source,
+    data_dir = data_dir or games.DATA_DIR
+    cache = os.path.join(data_dir, "cache")
+    tactical = _atd_record(os.path.join(cache, atd_cache.FOLDER))
+    broadcast_atd = _atd_record(os.path.join(cache, BROADCAST_FOLDER))
+    homography = games.require(["homography"], game, data_dir, source="broadcast")[0]
+    key = {"pools_version": POOLS_VERSION, "code_sha256": code_sha256(),
+           "tactical_atd": tactical, "broadcast_atd": broadcast_atd,
+           "broadcast_homography": atd_cache.describe_source(homography),
            "r024_config": _text(R024_CONFIG), "r024_csv_sha256": R024_SHA256,
-           "n_frames": int(inputs.n_frames), "pitch": [float(side) for side in inputs.pitch],
-           "graded": [[int(value) for value in block] for block in inputs.graded]}
+           "n_frames": int(games.source_frames("tactical", game)),
+           "pitch": [float(side) for side in games.GAMES[game]["pitch"]],
+           "graded": [[half, first, last + 1] for half, first, last in games.half_video_blocks(game)]}
     return json.loads(json.dumps(key, sort_keys=True))
+
+
+def _atd_record(folder):
+    """{"sources", "cache_version"} of the ATD cache in `folder`, from its manifest alone (no array is read)."""
+    path = os.path.join(folder, atd_cache.MANIFEST)
+    try:
+        with open(path, encoding="utf-8") as handle:
+            manifest = json.load(handle)
+        return {"sources": manifest["sources"], "cache_version": manifest["cache_version"]}
+    except (OSError, ValueError, KeyError, TypeError):
+        raise BroadcastSimError("broadcast_sim: there is no readable ATD cache manifest at {}; {}".format(
+            path, POOLS_FIRST)) from None
 
 
 def cache_folder(data_dir, key):
@@ -775,68 +815,94 @@ def digest(pools):
 
 
 def build_pools(inputs, log=print):
-    """The Pools of BAR-ATH's `inputs` (design 3.3), built and not cached: load_pools is the way to them.
+    """The Pools of BAR-ATH's `inputs` (design 3.3), built and not cached: prepare_pools builds and caches them.
 
-    The labels are decode_labels' (r024_both.toml, written into the pools' cache folder), and BroadcastSimError, with
-    nothing left behind, if their CSV is not R024_SHA256, if a class has no donor gap or if there is no error run.
+    The labels are decode_labels' (r024_both.toml), and BroadcastSimError, with nothing left behind, if their CSV is
+    not R024_SHA256, if a class has no donor gap or if there is no error run.
     """
-    return _build(inputs, cache_folder(inputs.data_dir, pools_key(inputs)), log)[0]
+    return _build(inputs, inputs.data_dir, log)[0]
 
 
-def load_pools(data_dir=None, inputs=None, log=print, rebuild=False):
-    """The Pools of BAR-ATH, from <data dir>/cache/benchmark/broadcast_sim/<digest of the key>/ when that cache is
-    whole and of this key, otherwise built (build_pools' refusals) and cached with BAR-ATH's measure beside them.
+def prepare_pools(data_dir=None, inputs=None, log=print, rebuild=False):
+    """(pools, measure): the cache's when it is whole and of the key, otherwise built from BAR-ATH and written.
 
-    `data_dir` defaults to the inputs' (games.DATA_DIR); `inputs` stands in for BAR-ATH's (bar_ath_inputs(data_dir) by
-    default, which the key's records need); `log` takes the decode's lines when it runs; rebuild=True builds again.
+    The one way the pools are built: the `pools` command. `inputs` stands in for BAR-ATH's (bar_ath_inputs(data_dir)
+    by default; nothing of it is loaded when the cache is read), `data_dir` defaults to the inputs', `log` takes the
+    decode's lines, and rebuild=True builds again. The key is read before the build, to find a cache, and again after
+    it, since the build loads (and so refreshes) both ATD caches: the cache is written under the key that load_pools
+    then reads. An ATD cache with no manifest yet is no cache: the build makes it.
     """
-    return _cached(data_dir, inputs, log, rebuild)[0]
+    inputs = bar_ath_inputs(data_dir) if inputs is None else inputs
+    data_dir = data_dir or inputs.data_dir
+    if not rebuild:
+        try:
+            key = pools_key(data_dir, inputs.game)
+        except BroadcastSimError:
+            key = None
+        found = None if key is None else _read_cache(cache_folder(data_dir, key), key)
+        if found is not None:
+            return found
+    pools, measure = _build(inputs, data_dir, log)
+    key = pools_key(data_dir, inputs.game)
+    _write_cache(cache_folder(data_dir, key), key, pools, measure)
+    return pools, measure
 
 
-def load_bar_ath_measure(data_dir=None, inputs=None, log=print):
+def load_pools(data_dir=None):
+    """The Pools of BAR-ATH, from <data dir>/cache/benchmark/broadcast_sim/<digest of the key>/: the runner's,
+    latency's, fidelity's and bar-ath's way to them. It never builds them and never loads BAR-ATH's tracking (pools_key
+    reads files): a cache that is absent, broken or of another key is a BroadcastSimError that says to run `pools`
+    first.
+    """
+    return _load_cached(data_dir)[0]
+
+
+def load_bar_ath_measure(data_dir=None):
     """BAR-ATH's side of fidelity (ruling 1): measure_fill's result on our real fill, kept beside the pools of the same
-    key, as plain numbers, with load_pools' cache rules (built with the pools when it cannot be read).
+    key, as plain numbers, with load_pools' rules (read only; `pools` first).
 
     It is measured on the ball before the fill (ball_present), the fill's own mask (Inputs.with_ball_fill's
     ball_filled), r024_both.toml's labels and the broadcast ball in metres, with no reference (our ball is missing on
     every filled frame), and F5 is the near-gap error pool's median |offset| in metres over all its frames, with their
     count: the design's "F5's ours is the near-gap pool's median".
     """
-    return _cached(data_dir, inputs, log)[1]
+    return _load_cached(data_dir)[1]
 
 
-def _cached(data_dir, inputs, log, rebuild=False):
-    """(pools, measure), read from the cache of their key or built and written."""
-    inputs = bar_ath_inputs(data_dir) if inputs is None else inputs
-    key = pools_key(inputs)
-    folder = cache_folder(data_dir or inputs.data_dir, key)
-    found = None if rebuild else _read_cache(folder, key)
-    if found is not None:
-        return found
-    pools, measure = _build(inputs, folder, log)
-    _write_cache(folder, key, pools, measure)
-    return pools, measure
+def _load_cached(data_dir):
+    """(pools, measure) from the cache of the key, or BroadcastSimError (pools first)."""
+    data_dir = data_dir or games.DATA_DIR
+    key = pools_key(data_dir)
+    folder = cache_folder(data_dir, key)
+    found = _read_cache(folder, key)
+    if found is None:
+        raise BroadcastSimError("broadcast_sim: there is no whole cache of the pools for this data, this code and "
+                                "r024_both.toml at {} (absent, broken, or built for another key); {}".format(
+                                    folder, POOLS_FIRST))
+    return found
 
 
-def _build(inputs, folder, log):
-    """(pools, measure) of BAR-ATH: the decode into `folder`, then the pools and the measure; on any refusal or error
-    the decoded CSV is removed again (and the folder, if that leaves it empty), so that nothing is left behind."""
-    path = os.path.join(folder, LABELS_CSV)
-    os.makedirs(folder, exist_ok=True)
+def _build(inputs, data_dir, log):
+    """(pools, measure) of BAR-ATH: the decode of r024_both.toml, then the pools and the measure.
+
+    The decode writes its CSV (pipeline.run.run writes one) to a temporary name in the cache's folder, and the file is
+    deleted as soon as its sha256 is known, whatever it is: the labels are kept in memory only, and no CSV of BAR-ATH's
+    labels stays in data/cache/. A refusal or an error leaves nothing behind.
+    """
+    root = os.path.join(data_dir, *CACHE_FOLDER)
+    os.makedirs(root, exist_ok=True)
+    path = os.path.join(root, "{}.{}.csv".format(LABELS_STEM, os.getpid()))
     try:
         codes, sha256 = decode_labels(inputs, path, log)
-        if sha256 != R024_SHA256:
-            raise BroadcastSimError(
-                "broadcast_sim: the labels of r024_both.toml decoded on this match ({}) have sha256 {}, not {}, the "
-                "file main.toml writes today; the pools are built from those labels only. Find what changed (the "
-                "config, the pipeline's code, the data) before building them".format(path, sha256, R024_SHA256))
-        return _pools_and_measure(inputs, np.asarray(codes))
-    except BaseException:
+    finally:
         with contextlib.suppress(OSError):
             os.remove(path)
-        with contextlib.suppress(OSError):
-            os.rmdir(folder)                     # only if empty: an older cache of this key stays as it was
-        raise
+    if sha256 != R024_SHA256:
+        raise BroadcastSimError(
+            "broadcast_sim: the labels of r024_both.toml decoded on this match have sha256 {}, not {}, the file "
+            "main.toml writes today; the pools are built from those labels only. Find what changed (the config, the "
+            "pipeline's code, the data) before building them".format(sha256, R024_SHA256))
+    return _pools_and_measure(inputs, np.asarray(codes))
 
 
 def _pools_and_measure(inputs, codes):
@@ -986,8 +1052,8 @@ def fidelity(config, profile=run.DEFAULT_PROFILE, seeds=None, match_ids=None, ma
     ball and DFL's clean ball in metres (ruling 3). The copies are laid end to end, their blocks offset
     (laid_end_to_end), and measured once by measure_fill, since F4 and F5 are medians of the frames, which no sum of
     medians gives. `calibration` defaults to calibration.load(data_dir) for a degraded profile; `pools` and `ours`
-    (BAR-ATH's measure) default to the cache, read through one BAR-ATH Inputs (load_pools, load_bar_ath_measure).
-    Returns fidelity_result.
+    (BAR-ATH's measure) default to the cache (load_pools, load_bar_ath_measure), which `pools` must have built:
+    they are read, never built here, and nothing of BAR-ATH's tracking is loaded. Returns fidelity_result.
 
     BroadcastSimError for a config that does not fill and for matches of different pitches (one pitch measures W3);
     the runner's BenchmarkError for a scope, profile, number of seeds or match that it refuses.
@@ -1006,13 +1072,10 @@ def fidelity(config, profile=run.DEFAULT_PROFILE, seeds=None, match_ids=None, ma
     ids = run.resolve_match_ids(match_ids, matches)
     if profile == run.CLEAN and calibration is not None:
         raise run.BenchmarkError("profile {!r} takes no calibration, and one was given".format(profile))
+    pools = load_pools(data_dir) if pools is None else pools            # read only: `pools` builds them
+    ours = load_bar_ath_measure(data_dir) if ours is None else ours
     if profile != run.CLEAN and calibration is None:
         calibration = calibration_module.load(data_dir=data_dir)
-    if pools is None or ours is None:
-        our_match = bar_ath_inputs(data_dir)     # for the cache's key; measured only if the cache must be built
-        pools = load_pools(data_dir, inputs=our_match, log=log) if pools is None else pools
-        ours = load_bar_ath_measure(data_dir, inputs=our_match, log=log) if ours is None else ours
-        del our_match
     if not isinstance(pools, Pools):
         raise BroadcastSimError("pools must be a Pools (load_pools() reads them), and it is a {}".format(
             type(pools).__name__))
@@ -1095,8 +1158,8 @@ def judge_fidelity(ours, sim):
 
 
 def fidelity_result(config, dropped, profile, seeds, match_ids, calibration, digest, copies, ours, sim):
-    """The JSON-ready result of a fidelity run (the report fidelity-<profile>.json holds it, run.plain): the config as
-    run, what was dropped, the profile's record, the seeds, the matches, the Calibration's {sha256, version} (None for
+    """The JSON-ready result of a fidelity run (fidelity_path's report holds it, run.plain): the config as run, what
+    was dropped, the profile's record, the seeds, the matches, the Calibration's {sha256, version} (None for
     clean), the pools' digest, the number of copies, the two measures and judge_fidelity's tables and exit."""
     return dict({"config": {"path": run.shown(config.path), "text": config.text.replace("\r\n", "\n")},
                  "stem": config.stem, "dropped_match_only": list(dropped), "profile": degrade.profile_record(profile),
@@ -1104,10 +1167,11 @@ def fidelity_result(config, dropped, profile, seeds, match_ids, calibration, dig
                  "broadcast_sim": digest, "copies": copies, "ours": ours, "sim": sim}, **judge_fidelity(ours, sim))
 
 
-def fidelity_path(data_dir, profile, seeds=None):
-    """<data dir>/runs/r028/fidelity-<profile>[.s<n>].json: `.s<n>` for a number of seeds other than the default, as the
-    runner's reports, so that a one-seed look never replaces the three-seed report."""
-    name = ".".join(["fidelity-{}".format(profile)] + run.name_suffixes(profile, None, seeds)) + ".json"
+def fidelity_path(data_dir, stem, profile, seeds=None):
+    """<data dir>/runs/r028/fidelity-<config stem>-<profile>[.s<n>].json: the config's name, so that R028b's run
+    never replaces rung 1's, and `.s<n>` for a number of seeds other than the default, as the runner's reports, so
+    that a one-seed look never replaces the three-seed report."""
+    name = ".".join(["fidelity-{}-{}".format(stem, profile)] + run.name_suffixes(profile, None, seeds)) + ".json"
     return os.path.join(data_dir, *REPORT_FOLDER, name)
 
 
@@ -1252,8 +1316,8 @@ def bar_ath(config, inputs=None, data_dir=None, pools=None, log=print):
        sanity (judge_sanity); main.toml's labels beside them for what is reported: the filled frames by the
        candidate's state, W1 to W3 on BAR-ATH, the possessions per half with a WARN beyond POSSESSIONS_WARN of
        main.toml's, and label_diff's figures (the graded frames relabelled among them).
-    `inputs` defaults to bar_ath_inputs(data_dir), `pools` to load_pools (its digest goes into the result). The fill's
-    added time is logged, never kept. BroadcastSimError for a config that does not fill.
+    `inputs` defaults to bar_ath_inputs(data_dir), `pools` to load_pools (read only: `pools` first; its digest goes
+    into the result). The fill's added time is logged, never kept. BroadcastSimError for a config that does not fill.
     """
     if config.ball_fill == "none":
         raise BroadcastSimError(
@@ -1273,7 +1337,7 @@ def bar_ath(config, inputs=None, data_dir=None, pools=None, log=print):
     if not alignment["passed"]:
         return bar_ath_result(config=config, alignment=alignment, digest=None, fill=None, tag=None, sanity=None,
                               reported=None)
-    pools = load_pools(data_dir, inputs=inputs, log=log) if pools is None else pools
+    pools = load_pools(data_dir or inputs.data_dir) if pools is None else pools
     started = time.perf_counter()
     filled = inputs.with_ball_fill("broadcast")
     mask = np.asarray(filled.ball_filled, dtype=bool)
@@ -1397,16 +1461,14 @@ def main(argv=None):
     data_dir = args.data_dir or games.DATA_DIR
     try:
         if args.command == "pools":
-            inputs = bar_ath_inputs(args.data_dir)
-            pools = load_pools(args.data_dir, inputs=inputs)
-            measure = load_bar_ath_measure(args.data_dir, inputs=inputs)
+            pools, measure = prepare_pools(args.data_dir, inputs=bar_ath_inputs(args.data_dir))
             for line in render_pools(pools, measure):
                 print(line)
             return 0
         config = load_config(args.config)
         if args.command == "fidelity":
             result = fidelity(config, profile=args.profile, seeds=args.seeds, data_dir=args.data_dir, log=print)
-            path = fidelity_path(data_dir, args.profile, args.seeds)
+            path = fidelity_path(data_dir, config.stem, args.profile, args.seeds)
             lines = render_fidelity(result)
         else:
             result = bar_ath(config, inputs=bar_ath_inputs(args.data_dir), data_dir=args.data_dir, log=print)

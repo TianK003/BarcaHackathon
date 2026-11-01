@@ -37,6 +37,7 @@ import contextlib
 import copy
 import dataclasses
 import functools
+import hashlib
 import inspect
 import io
 import json
@@ -48,6 +49,7 @@ import types
 
 import numpy as np
 
+import games
 import possession_metrics as pm
 from pipeline.benchmark import broadcast_sim, conventions, degrade, label_diff, tag_stats
 from pipeline.benchmark import calibration as calibration_module
@@ -58,6 +60,7 @@ from pipeline.benchmark.checks.common import (FILL_CONFIG, FILL_TWIN, leaks, mad
                                               synthetic_matches)
 from pipeline.config import ConfigError, load_config
 from pipeline.evidence import controlled_touch, smart_tagging
+from pipeline.inputs import BROADCAST_FOLDER, Inputs, atd_cache
 from pipeline.inputs.broadcast import AlignmentError
 from pipeline.selftest import (SYNTHETIC_FRAMES, SYNTHETIC_GRADED, expect_error, make_synthetic_bundle, quiet,
                                write_text)
@@ -67,10 +70,11 @@ H, A, D, X = pm.H, pm.A, pm.D, pm.X
 PITCH = (100.0, 50.0)           # (length, width) in metres: dyadic, so that a position over the pitch is exact
 SCALE = np.array(PITCH)
 SEEDS = range(300)              # the seeds that the donor draw is read over
-# The records of the broadcast's files that the BAR-ATH stand-in (bar_ath_like) gives: made up, they name no file.
+# What the BAR-ATH stand-in (bar_ath_like) writes for the broadcast's files that pools_key reads: the broadcast ATD
+# cache's manifest and the homography file's text. Made up: they hold no array and no data.
 BROADCAST_ATD_MANIFEST = {"sources": {"meta": {"bytes": 11, "sha256": "1" * 64},
                                       "raw": {"bytes": 22, "sha256": "2" * 64}}, "cache_version": 1}
-HOMOGRAPHY_SOURCE = {"bytes": 33, "sha256": "3" * 64}
+HOMOGRAPHY_TEXT = "made up: the stand-in of the broadcast homography file\n"
 # The alignment a run of the real match would report, at A20's offsets and above the live bar (made up).
 ALIGNED = {"offsets": {1: 4014, 2: 26919}, "pairs": {1: 3000, 2: 2900}, "fine_scores": {1: 0.81, 2: 0.79},
            "coarse_scores": {1: 0.7, 2: 0.66}, "runner_up": {1: 0.1, 2: 0.12}, "valid_frames": 1000,
@@ -1104,12 +1108,13 @@ def test_served_inputs_for_uses_the_twin_driver():
 
 def bar_ath_like(root, tags=(), summary=None):
     """BAR-ATH's Inputs in miniature: the synthetic bundle of pipeline/selftest.py under `root` (600 frames, two
-    touching blocks, the ball missing on a third of the frames), with a given broadcast ball (broadcast_like), made-up
-    records of the broadcast's files, an alignment summary (`summary`: a dict, or an exception that reading it raises;
-    default ALIGNED) and Smart Tagging (`tags`). What the pools, fidelity's BAR-ATH side and bar-ath read of the real
-    match, and none of it. Its attributes given_ball, manifest and homography may be changed by a check."""
-    from pipeline.inputs import Inputs
+    touching blocks, the ball missing on a third of the frames), with a given broadcast ball (broadcast_like), the
+    made-up broadcast files that pools_key reads (broadcast_files), an alignment summary (`summary`: a dict, or an
+    exception that reading it raises; default ALIGNED) and Smart Tagging (`tags`). What the pools, fidelity's BAR-ATH
+    side and bar-ath read of the real match, and none of it. Its tactical ATD cache is built (so its manifest is
+    there), and its attribute given_ball may be changed by a check."""
     make_synthetic_bundle(root)
+    broadcast_files(root)
 
     def summarised(self):
         if isinstance(self.summary, Exception):
@@ -1118,18 +1123,26 @@ def bar_ath_like(root, tags=(), summary=None):
 
     class BarAthLike(Inputs):
         broadcast_ball = property(lambda self: self.given_ball)
-        broadcast_atd_manifest = property(lambda self: copy.deepcopy(self.manifest))
-        broadcast_homography_source = property(lambda self: dict(self.homography))
         broadcast_summary = property(summarised)
         smart_tagging = property(lambda self: [dict(tag) for tag in self.tags])
 
     inputs = BarAthLike(data_dir=root, n_frames=SYNTHETIC_FRAMES, graded=list(SYNTHETIC_GRADED))
     inputs.given_ball = broadcast_like(inputs)
-    inputs.manifest = copy.deepcopy(BROADCAST_ATD_MANIFEST)
-    inputs.homography = dict(HOMOGRAPHY_SOURCE)
     inputs.summary = copy.deepcopy(ALIGNED) if summary is None else summary
     inputs.tags = [dict(tag) for tag in tags]
     return inputs
+
+
+def broadcast_files(root, manifest=None, homography=HOMOGRAPHY_TEXT):
+    """Write, under `root`, what pools_key reads of the broadcast: the broadcast ATD cache's manifest (`manifest`,
+    default BROADCAST_ATD_MANIFEST) and the broadcast homography file (`homography`, its text). Returns the
+    homography file's path."""
+    folder = os.path.join(root, "cache", BROADCAST_FOLDER)
+    os.makedirs(folder, exist_ok=True)
+    write_text(folder, atd_cache.MANIFEST, json.dumps(BROADCAST_ATD_MANIFEST if manifest is None else manifest))
+    path = games.asset_paths(games.GAME, root, source="broadcast")["homography"]
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    return write_text(os.path.dirname(path), os.path.basename(path), homography)
 
 
 def broadcast_like(inputs):
@@ -1236,17 +1249,19 @@ def test_near_gap_errors_follow_the_frame_conditions():
 
 def test_pools_refuse_labels_that_are_not_e6496a9b():
     """The pools are built from r024_both.toml's labels, decoded in-process, and only from the CSV that main.toml writes
-    today (sha256 e6496a9b...): other labels stop the step, naming both hashes, and nothing is left in the cache."""
+    today (sha256 e6496a9b...): other labels stop the step, naming both hashes, and nothing is left in the cache (the
+    decode's CSV included). load_pools and load_bar_ath_measure never build: with no cache they say to run `pools`."""
     assert broadcast_sim.R024_SHA256 == "e6496a9b9805217ef085e52ed69cbb27a42b95368d65c1d188b4a2f339b61170"
     assert os.path.basename(broadcast_sim.R024_CONFIG) == "r024_both.toml" and os.path.isfile(broadcast_sim.R024_CONFIG)
     with tempfile.TemporaryDirectory() as root:
         inputs = bar_ath_like(root)
         with replaced(broadcast_sim, "decode_labels", labels_decoded(sha="0" * 64)):
             for build in (lambda: broadcast_sim.build_pools(inputs, log=quiet),
-                          lambda: broadcast_sim.load_pools(inputs=inputs, log=quiet),
-                          lambda: broadcast_sim.load_bar_ath_measure(inputs=inputs, log=quiet)):
+                          lambda: broadcast_sim.prepare_pools(root, inputs=inputs, log=quiet)):
                 expect_error(broadcast_sim.BroadcastSimError, build, "r024_both", "e6496a9b", "0" * 64)
         assert files_under(os.path.join(root, *broadcast_sim.CACHE_FOLDER)) == [], "nothing is written"
+        for load in (broadcast_sim.load_pools, broadcast_sim.load_bar_ath_measure):
+            expect_error(broadcast_sim.BroadcastSimError, lambda: load(root), "broadcast_sim.py pools")
 
 
 def test_pools_refuse_a_class_without_donors_and_an_empty_error_pool():
@@ -1257,9 +1272,8 @@ def test_pools_refuse_a_class_without_donors_and_an_empty_error_pool():
         n = inputs.n_frames
         for code, fragment in ((D, "alive"), (H, "D")):
             with replaced(broadcast_sim, "decode_labels", labels_decoded(codes=np.full(n, code, dtype=np.int8))):
-                expect_error(broadcast_sim.BroadcastSimError, lambda: broadcast_sim.load_pools(inputs=inputs,
-                                                                                               log=quiet),
-                             fragment, "donor")
+                expect_error(broadcast_sim.BroadcastSimError, lambda: broadcast_sim.prepare_pools(
+                    root, inputs=inputs, log=quiet), fragment, "donor")
         blind = np.array(inputs.given_ball)
         blind[np.asarray(inputs.atd.ball_present)] = np.nan       # the broadcast only where ours is missing
         inputs.given_ball = blind
@@ -1269,19 +1283,53 @@ def test_pools_refuse_a_class_without_donors_and_an_empty_error_pool():
         assert files_under(os.path.join(root, *broadcast_sim.CACHE_FOLDER)) == [], "nothing is written"
 
 
-def test_pools_cache_key_changes_with_r024_text():
-    """The cache key holds the tactical and broadcast ATD caches' records, the broadcast homography's size and sha256,
-    r024_both.toml's text, its CSV's sha256 and POOLS_VERSION: a change to any of them is another folder, and a CRLF
-    checkout of the same text is not a change."""
+def code_path(name):
+    """The file of a CODE_FILES entry, as code_sha256 opens it."""
+    return os.path.join(broadcast_sim.ROOT, *name.split("/"))
+
+
+@contextlib.contextmanager
+def code_edited(name):
+    """read_source gives the file of CODE_FILES entry `name` with one more line, and every other file as it is."""
+    real = broadcast_sim.read_source
+    target = os.path.normcase(os.path.abspath(code_path(name)))
+
+    def edited(path):
+        content = real(path)
+        return content + b"# one more line\n" if os.path.normcase(os.path.abspath(path)) == target else content
+
+    with replaced(broadcast_sim, "read_source", edited):
+        yield
+
+
+def test_pools_key_fingerprints_the_code_and_the_files():
+    """The cache key holds the sha256 of the code that builds the pools (CODE_FILES, each read with CRLF as LF), the
+    tactical and broadcast ATD caches' records as their manifests on disk hold them, the broadcast homography file's
+    size and sha256, r024_both.toml's text, its CSV's sha256, POOLS_VERSION and the match's frames, pitch and graded
+    blocks from games.py: a change to any of them is another folder, and a CRLF checkout of the same text is not a
+    change. A cache manifest that cannot be read says to run `pools` first."""
+    assert broadcast_sim.CODE_FILES == ("pipeline/benchmark/broadcast_sim.py", "pipeline/inputs/broadcast.py",
+                                        "pipeline/inputs/__init__.py")
     with tempfile.TemporaryDirectory() as root:
         inputs = bar_ath_like(root)
-        key = broadcast_sim.pools_key(inputs)
+        key = broadcast_sim.pools_key(root)
         text = read(broadcast_sim.R024_CONFIG).replace("\r\n", "\n")
         assert key["r024_config"] == text and key["r024_csv_sha256"] == broadcast_sim.R024_SHA256
         assert key["pools_version"] == broadcast_sim.POOLS_VERSION == 1
-        assert key["tactical_atd"]["sources"] == inputs.atd_manifest["sources"]
-        assert key["broadcast_atd"]["sources"] == BROADCAST_ATD_MANIFEST["sources"]
-        assert key["broadcast_homography"] == HOMOGRAPHY_SOURCE
+        manifest = inputs.atd_manifest
+        assert key["tactical_atd"] == {"sources": manifest["sources"], "cache_version": manifest["cache_version"]}
+        assert key["broadcast_atd"] == BROADCAST_ATD_MANIFEST
+        homography = HOMOGRAPHY_TEXT.encode("utf-8")
+        assert key["broadcast_homography"] == {"bytes": len(homography),
+                                               "sha256": hashlib.sha256(homography).hexdigest()}
+        for name in broadcast_sim.CODE_FILES:
+            with open(code_path(name), "rb") as handle:
+                lf = handle.read().replace(b"\r\n", b"\n")
+            assert key["code_sha256"][name] == hashlib.sha256(lf).hexdigest(), name
+        assert sorted(key["code_sha256"]) == sorted(broadcast_sim.CODE_FILES)
+        assert key["n_frames"] == games.source_frames("tactical") and key["pitch"] == list(games.GAMES[games.GAME][
+            "pitch"]) and key["graded"] == [[half, first, last + 1] for half, first, last in games.half_video_blocks(
+                games.GAME)]
         assert json.loads(json.dumps(key)) == key, "JSON-normal"
         folder = broadcast_sim.cache_folder(root, key)
         assert os.path.dirname(folder) == os.path.join(root, "cache", "benchmark", "broadcast_sim")
@@ -1289,7 +1337,7 @@ def test_pools_cache_key_changes_with_r024_text():
             == folder, "the folder of a key is the same whatever the order of its entries"
 
         def folder_now():
-            return broadcast_sim.cache_folder(root, broadcast_sim.pools_key(inputs))
+            return broadcast_sim.cache_folder(root, broadcast_sim.pools_key(root))
 
         os.makedirs(os.path.join(root, "edited"))
         with replaced(broadcast_sim, "R024_CONFIG", write_text(os.path.join(root, "edited"), "r024_both.toml",
@@ -1305,32 +1353,98 @@ def test_pools_cache_key_changes_with_r024_text():
             assert folder_now() != folder
         with replaced(broadcast_sim, "R024_SHA256", "f" * 64):
             assert folder_now() != folder
-        inputs.homography = {"bytes": 33, "sha256": "4" * 64}
+
+        # The code: one more line in any of the three files is another key; read_source reads CRLF as LF.
+        for name in broadcast_sim.CODE_FILES:
+            with code_edited(name):
+                assert folder_now() != folder, name
+        assert folder_now() == folder
+        lf_path = write_text(os.path.join(root, "crlf"), "lf.py", "a = 1\nb = 2\n")
+        crlf_path = os.path.join(root, "crlf", "crlf.py")
+        with open(crlf_path, "wb") as handle:
+            handle.write(b"a = 1\r\nb = 2\r\n")
+        assert broadcast_sim.read_source(crlf_path) == broadcast_sim.read_source(lf_path) == b"a = 1\nb = 2\n"
+
+        # The files, as they are on disk.
+        broadcast_files(root, homography=HOMOGRAPHY_TEXT + "one more row\n")
         assert folder_now() != folder, "another broadcast homography"
-        inputs.homography = dict(HOMOGRAPHY_SOURCE)
-        inputs.manifest["sources"]["raw"]["sha256"] = "5" * 64
+        broadcast_files(root)
+        assert folder_now() == folder
+        other = copy.deepcopy(BROADCAST_ATD_MANIFEST)
+        other["sources"]["raw"]["sha256"] = "5" * 64
+        broadcast_files(root, manifest=other)
         assert folder_now() != folder, "another broadcast ATD"
-        inputs.manifest = copy.deepcopy(BROADCAST_ATD_MANIFEST)
+        broadcast_files(root, manifest=dict(BROADCAST_ATD_MANIFEST, cache_version=2))
+        assert folder_now() != folder, "the broadcast ATD parsed another way"
+        broadcast_files(root)
+        tactical = os.path.join(root, "cache", atd_cache.FOLDER, atd_cache.MANIFEST)
+        with open(tactical, "rb") as handle:
+            kept = handle.read()
+        changed = json.loads(kept.decode("utf-8"))
+        changed["sources"]["atd_raw"]["sha256"] = "6" * 64
+        write_text(os.path.dirname(tactical), atd_cache.MANIFEST, json.dumps(changed))
+        assert folder_now() != folder, "another tactical ATD"
+        with open(tactical, "wb") as handle:
+            handle.write(kept)
+        assert folder_now() == folder
+
+        for name in (tactical, os.path.join(root, "cache", BROADCAST_FOLDER, atd_cache.MANIFEST)):
+            os.rename(name, name + ".away")
+            expect_error(broadcast_sim.BroadcastSimError, lambda: broadcast_sim.pools_key(root), "manifest",
+                         "broadcast_sim.py pools")
+            os.rename(name + ".away", name)
         assert folder_now() == folder
 
 
+def test_pools_key_loads_no_tracking_array():
+    """pools_key reads files (two manifests, the homography file's bytes, the config, the code) and loads no array of
+    BAR-ATH's tracking; so do load_pools and load_bar_ath_measure, and prepare_pools when the cache of the key is
+    whole: with every way to an ATD array refused, and an `inputs` that holds a game and a data dir only, they work."""
+    with tempfile.TemporaryDirectory() as root:
+        inputs = bar_ath_like(root)
+        with replaced(broadcast_sim, "decode_labels", labels_decoded()):
+            pools, measure = broadcast_sim.prepare_pools(root, inputs=inputs, log=quiet)
+        key = broadcast_sim.pools_key(root)
+
+        def refused(*args, **kwargs):
+            raise AssertionError("an array of BAR-ATH's tracking was asked for")
+
+        bare = types.SimpleNamespace(game=games.GAME, data_dir=root)
+        with replaced(atd_cache, "load_or_build", refused), replaced(atd_cache, "_load", refused), \
+                replaced(atd_cache, "parse", refused), replaced(broadcast_sim, "bar_ath_inputs", refused), \
+                replaced(Inputs, "atd", property(refused)), replaced(Inputs, "broadcast_atd", property(refused)), \
+                replaced(broadcast_sim, "decode_labels", refused):
+            assert broadcast_sim.pools_key(root) == key
+            assert broadcast_sim.digest(broadcast_sim.load_pools(root)) == broadcast_sim.digest(pools)
+            assert broadcast_sim.load_bar_ath_measure(root) == measure
+            again, again_measure = broadcast_sim.prepare_pools(root, inputs=bare, log=quiet)
+            assert broadcast_sim.digest(again) == broadcast_sim.digest(pools) and again_measure == measure
+
+
 def test_pools_are_built_cached_and_rebuilt_when_broken():
-    """load_pools builds design 3.3's pools from BAR-ATH's inputs (each gap's real fill mask and its class by the
+    """prepare_pools builds design 3.3's pools from BAR-ATH's inputs (each gap's real fill mask and its class by the
     decoded labels; the near-gap error runs), and BAR-ATH's side of fidelity beside them (ruling 1: the ball before the
     fill, the fill's own mask, the decoded labels, the broadcast ball in metres, no reference, and F5 the near-gap
-    pool's median); it keeps both under the key's folder, reads them back without decoding again, and treats a broken
-    cache as absent, never as an error."""
+    pool's median); it keeps both under the key's folder and deletes the decode's CSV as soon as it is read. load_pools
+    and load_bar_ath_measure read them back without decoding; a broken cache, or one of other code, is absent: they
+    refuse it, saying to run `pools`, and prepare_pools builds it again."""
     with tempfile.TemporaryDirectory() as root:
         inputs = bar_ath_like(root)
         calls = []
+        cache = os.path.join(root, "cache")
+        expect_error(broadcast_sim.BroadcastSimError, lambda: broadcast_sim.load_pools(root), "no whole cache",
+                     "broadcast_sim.py pools")
         with replaced(broadcast_sim, "decode_labels", labels_decoded(calls=calls)):
-            pools = broadcast_sim.load_pools(inputs=inputs, log=quiet)
-            measure = broadcast_sim.load_bar_ath_measure(inputs=inputs, log=quiet)
-            assert len(calls) == 1, "the measure is read from beside the pools, not built again"
-            folder = broadcast_sim.cache_folder(root, broadcast_sim.pools_key(inputs))
-            assert calls == [os.path.join(folder, broadcast_sim.LABELS_CSV)], "decoded into the pools' folder"
+            pools, measure = broadcast_sim.prepare_pools(root, inputs=inputs, log=quiet)
+            assert len(calls) == 1
+            folder = broadcast_sim.cache_folder(root, broadcast_sim.pools_key(root))
+            assert calls == [os.path.join(root, *broadcast_sim.CACHE_FOLDER, "{}.{}.csv".format(
+                broadcast_sim.LABELS_STEM, os.getpid()))], "decoded under the pools' cache"
+            csvs = [name for name in files_under(cache) if name.endswith(".csv")]
+            assert not os.path.exists(calls[0]) and not csvs, \
+                "the decode's CSV is deleted once read: no CSV of BAR-ATH's labels stays in the cache"
             names = set(os.listdir(folder))
-            kept = {broadcast_sim.MANIFEST, broadcast_sim.MEASURE_FILE, broadcast_sim.LABELS_CSV}
+            kept = {broadcast_sim.MANIFEST, broadcast_sim.MEASURE_FILE}
             assert kept <= names and names - kept and all(name.endswith(".npy") for name in names - kept), names
 
             n = inputs.n_frames
@@ -1355,9 +1469,14 @@ def test_pools_are_built_cached_and_rebuilt_when_broken():
             assert measure == expected, "BAR-ATH's side, as ruling 1 says"
             assert measure["W1"]["num"] == int(filled.sum()) > 0
 
-            again = broadcast_sim.load_pools(inputs=inputs, log=quiet)
-            assert len(calls) == 1 and broadcast_sim.digest(again) == broadcast_sim.digest(pools), "read back"
-            assert broadcast_sim.load_bar_ath_measure(inputs=inputs, log=quiet) == measure and len(calls) == 1
+            assert broadcast_sim.digest(broadcast_sim.load_pools(root)) == broadcast_sim.digest(pools), "read back"
+            assert broadcast_sim.load_bar_ath_measure(root) == measure
+            again, again_measure = broadcast_sim.prepare_pools(root, inputs=inputs, log=quiet)
+            assert len(calls) == 1 and broadcast_sim.digest(again) == broadcast_sim.digest(pools)
+            assert again_measure == measure
+            with code_edited(broadcast_sim.CODE_FILES[1]):
+                expect_error(broadcast_sim.BroadcastSimError, lambda: broadcast_sim.load_pools(root),
+                             "broadcast_sim.py pools")
             array = sorted(name for name in names if name.endswith(".npy"))[0]
 
             def cut_array():
@@ -1371,12 +1490,15 @@ def test_pools_are_built_cached_and_rebuilt_when_broken():
                            write(broadcast_sim.MEASURE_FILE, "not JSON"), write(broadcast_sim.MEASURE_FILE, "[1, 2]"),
                            write(broadcast_sim.MANIFEST, "{"), write(broadcast_sim.MANIFEST, '{"key": 3}')):
                 damage()
-                rebuilt = broadcast_sim.load_pools(inputs=inputs, log=quiet)
-                assert broadcast_sim.digest(rebuilt) == broadcast_sim.digest(pools)
-                assert broadcast_sim.load_bar_ath_measure(inputs=inputs, log=quiet) == measure
+                for load in (broadcast_sim.load_pools, broadcast_sim.load_bar_ath_measure):
+                    expect_error(broadcast_sim.BroadcastSimError, lambda: load(root), "broadcast_sim.py pools")
+                rebuilt, rebuilt_measure = broadcast_sim.prepare_pools(root, inputs=inputs, log=quiet)
+                assert broadcast_sim.digest(rebuilt) == broadcast_sim.digest(pools) and rebuilt_measure == measure
+                assert broadcast_sim.digest(broadcast_sim.load_pools(root)) == broadcast_sim.digest(pools)
             assert len(calls) == 7, "each broken cache was built again, once: {}".format(len(calls))
-            fresh = broadcast_sim.load_pools(inputs=inputs, log=quiet, rebuild=True)
+            fresh = broadcast_sim.prepare_pools(root, inputs=inputs, log=quiet, rebuild=True)[0]
             assert len(calls) == 8 and broadcast_sim.digest(fresh) == broadcast_sim.digest(pools)
+            assert not [name for name in files_under(cache) if name.endswith(".csv")]
 
     fields = {name: getattr(pools, name) for name in ("gap_lengths", "gap_alive", "gap_fill", "gap_starts", "error_xy",
                                                       "error_starts")}
@@ -1407,7 +1529,7 @@ def test_pools_command_prints_aggregates_only():
                 replaced(broadcast_sim, "decode_labels", labels_decoded()):
             code, text = main_of(["pools", "--data-dir", root])
             assert code == 0, text
-            pools = broadcast_sim.load_pools(inputs=inputs, log=quiet)
+            pools = broadcast_sim.load_pools(root)
         lines = text.rstrip("\n").split("\n")
         assert broadcast_sim.digest(pools) in text
         alive = int(pools.gap_alive.sum())
@@ -1443,8 +1565,9 @@ def measure_of(F1=(30, 100), F2=(4, 100), first=(30, 100), last=(22, 100), insid
 def test_fidelity_exit_codes():
     """Ruling 6: a gate (F1 to F3) that fails gives 1, even if a check fails too; otherwise a check (F4, F5) that fails
     gives 3; a statistic that is None on either side fails its gate or check; the warnings decide nothing; an error
-    gives 2. The tolerances are the design's, and the report goes to <data>/runs/r028/fidelity-<profile>.json with its
-    floats to 9 decimals and the pools' digest (ruling 8)."""
+    gives 2. The tolerances are the design's, and the report goes to <data>/runs/r028/fidelity-<config stem>-
+    <profile>[.s<n>].json with its floats to 9 decimals and the pools' digest (ruling 8, and fix round 1: the config's
+    name in it). With no cache of the pools, fidelity is an error (2) that says to run `pools` first."""
     assert broadcast_sim.GATE_TOLERANCES == {"F1": 0.05, "F2": 0.03, "F3": 0.05}
     assert broadcast_sim.CHECK_TOLERANCES == {"F4": 10.0, "F5": 0.2}
     ours = measure_of()
@@ -1483,7 +1606,7 @@ def test_fidelity_exit_codes():
             with replaced(broadcast_sim, "fidelity", measured):
                 got, text = main_of(["fidelity", "--profile", "gaps", "--seeds", "3", path, "--data-dir", root])
             assert got == code, (changes, got, text)
-            report = strict_json(read(os.path.join(root, "runs", "r028", "fidelity-gaps.json")))
+            report = strict_json(read(os.path.join(root, "runs", "r028", "fidelity-fill-gaps.json")))
             assert report["exit"] == code and report["broadcast_sim"] == "ab" * 32 and report["seeds"] == [0, 1, 2]
             assert report["config"]["text"] == FILL_CONFIG and report["sim"] == strict_json(json.dumps(
                 benchmark_run.plain(measure_of(**changes))))
@@ -1491,7 +1614,13 @@ def test_fidelity_exit_codes():
         assert report["sim"]["F1"]["share"] == 0.333333333, "floats to 9 decimals"
         with replaced(broadcast_sim, "fidelity", measured):
             assert main_of(["fidelity", "--profile", "gaps", "--seeds", "1", path, "--data-dir", root])[0] == 0
-        assert os.path.isfile(os.path.join(root, "runs", "r028", "fidelity-gaps.s1.json")), "a one-seed look apart"
+        assert os.path.isfile(os.path.join(root, "runs", "r028", "fidelity-fill-gaps.s1.json")), "a one-seed look apart"
+        other = write_text(root, "other.toml", FILL_CONFIG)
+        with replaced(broadcast_sim, "fidelity", measured):
+            assert main_of(["fidelity", "--profile", "gaps", "--seeds", "3", other, "--data-dir", root])[0] == 0
+        assert os.path.isfile(os.path.join(root, "runs", "r028", "fidelity-other-gaps.json")), "another config apart"
+        assert broadcast_sim.fidelity_path(root, "fill", "tracking", 3) == os.path.join(
+            root, "runs", "r028", "fidelity-fill-tracking.json")
 
         def refusing(config, **options):
             raise broadcast_sim.BroadcastSimError("no pools here")
@@ -1505,6 +1634,9 @@ def test_fidelity_exit_codes():
             assert got == 2 and all(word in text for word in words), (got, text)
         got, text = main_of(["fidelity", os.path.join(root, "absent.toml"), "--data-dir", root])
         assert got == 2 and "FAILED" in text, (got, text)
+        # No cache of the pools under this data dir: the real fidelity refuses, before any match or calibration.
+        got, text = main_of(["fidelity", "--profile", "gaps", path, "--data-dir", root])
+        assert got == 2 and "FAILED" in text and "broadcast_sim.py pools" in text, (got, text)
 
 
 def test_fidelity_pools_the_copies_end_to_end():
@@ -1583,18 +1715,25 @@ def test_fidelity_pools_the_copies_end_to_end():
     expect_error(benchmark_run.BenchmarkError, lambda: broadcast_sim.fidelity(dropped, matches=matches, **dict(
         options, profile="nope")), "nope")
 
-    # Without pools or BAR-ATH's measure given, both come from the cache, read through one BAR-ATH Inputs.
+    # Without pools or BAR-ATH's measure given, both are read from the cache (and nothing of BAR-ATH is loaded); with
+    # no cache, fidelity refuses, saying to run `pools` first.
     asked = []
-    marker = object()
-    with replaced(broadcast_sim, "bar_ath_inputs", lambda data_dir: asked.append(("inputs", data_dir)) or marker), \
-            replaced(broadcast_sim, "load_pools", lambda data_dir=None, inputs=None, log=print, rebuild=False: (
-                asked.append(("pools", data_dir, inputs)) or pools)), \
-            replaced(broadcast_sim, "load_bar_ath_measure", lambda data_dir=None, inputs=None, log=print: (
-                asked.append(("measure", data_dir, inputs)) or ours)):
+
+    def refused(*args, **kwargs):
+        raise AssertionError("fidelity loads nothing of BAR-ATH")
+
+    with replaced(broadcast_sim, "bar_ath_inputs", refused), replaced(broadcast_sim, "prepare_pools", refused), \
+            replaced(broadcast_sim, "load_pools", lambda data_dir=None: asked.append(("pools", data_dir)) or pools), \
+            replaced(broadcast_sim, "load_bar_ath_measure", lambda data_dir=None: (
+                asked.append(("measure", data_dir)) or ours)):
         loaded = broadcast_sim.fidelity(dropped, profile="gaps", seeds=1, matches=matches, calibration=calibration,
                                         data_dir="D", log=quiet)
-    assert asked == [("inputs", "D"), ("pools", "D", marker), ("measure", "D", marker)], asked
+    assert asked == [("pools", "D"), ("measure", "D")], asked
     assert loaded["ours"] == ours and loaded["broadcast_sim"] == broadcast_sim.digest(pools)
+    with tempfile.TemporaryDirectory() as empty, replaced(broadcast_sim, "prepare_pools", refused):
+        expect_error(broadcast_sim.BroadcastSimError, lambda: broadcast_sim.fidelity(
+            dropped, profile="gaps", seeds=1, matches=matches, calibration=calibration, data_dir=empty, log=quiet),
+            "broadcast_sim.py pools")
 
 
 # -- the wiring: BAR-ATH, label-free (design 7.4) ---------------------------------------------------------------------

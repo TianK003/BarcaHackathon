@@ -1860,14 +1860,17 @@ def test_latency_dfl_serves_a_fill_config_its_simulated_ball():
 
     loads = []
     real_load = broadcast_sim.load_pools
-    broadcast_sim.load_pools = lambda data_dir=None, inputs=None, log=print, rebuild=False: loads.append(
-        data_dir) or pools
+    broadcast_sim.load_pools = lambda data_dir=None: loads.append(data_dir) or pools
     try:
         conventions.measure_latency(fill, profile="gaps", seeds=1, matches=matches, calibration=calibration,
                                     data_dir="D", log=quiet)
     finally:
         broadcast_sim.load_pools = real_load
     assert loads == ["D"], loads
+    with tempfile.TemporaryDirectory() as empty:
+        expect_error(benchmark_run.BenchmarkError, lambda: conventions.measure_latency(
+            fill, profile="gaps", seeds=1, matches=matches, calibration=calibration, data_dir=empty, log=quiet),
+            "broadcast_sim.py pools")
 
 
 def test_the_public_latency_file_is_tied_to_the_csv_it_was_read_from():

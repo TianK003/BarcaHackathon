@@ -113,7 +113,6 @@ from pipeline.benchmark import inputs as match_inputs  # noqa: E402
 from pipeline.benchmark import truth as truths  # noqa: E402
 from pipeline.config import ConfigError, load_config  # noqa: E402
 from pipeline.contracts import RunContext  # noqa: E402
-from pipeline.inputs.broadcast import AlignmentError  # noqa: E402
 
 import possession_metrics as pm  # noqa: E402  isort:skip
 
@@ -232,7 +231,9 @@ def evaluate_configs(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_id
     A config that fills ([inputs] ball_fill = "broadcast", R028) is served a simulated broadcast ball on each match and
     seed (broadcast_sim.served_inputs_for: its twin without the fill is decoded on the plain inputs and drives the
     transplant), and `pools` is the broadcast_sim.Pools it is made from; none given, broadcast_sim.load_pools(data_dir)
-    reads them before the first match. The twin's codes are kept per (match, seed) and shared by every config of the
+    reads them from their cache before the calibration and the first match, and never builds them: an absent or
+    broken cache is a BenchmarkError that says to run `broadcast_sim.py pools` first. broadcast_sim is imported only
+    for a run in which a config fills. The twin's codes are kept per (match, seed) and shared by every config of the
     run with the same content, so a config whose content is a twin's is not decoded twice. Every report of a run that
     loaded the pools holds their digest ("broadcast_sim"), the reports of the configs that do not fill too, so that
     choose.py compares the reference with the candidate; a run in which no config fills holds null, pools given or not.
@@ -292,10 +293,13 @@ def evaluate_truths(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_ids
         if pools is not None and not isinstance(pools, simulator.Pools):
             raise BenchmarkError("pools must be the Pools of the simulated broadcast (broadcast_sim.load_pools()), and "
                                  "it is a {}".format(type(pools).__name__))
+    if filling and pools is None:
+        try:
+            pools = simulator.load_pools(data_dir=data_dir)      # read only: `broadcast_sim.py pools` builds them
+        except simulator.BroadcastSimError as error:
+            raise BenchmarkError(str(error)) from error
     if profile != CLEAN and calibration is None:
         calibration = calibration_module.load(data_dir=data_dir)
-    if filling and pools is None:
-        pools = simulator.load_pools(data_dir=data_dir, log=log)
     broadcast_sim = simulator.digest(pools) if filling else None
     data_dir_used = data_dir or games.DATA_DIR
     seed_list = [0] if profile == CLEAN else list(range(seeds))
@@ -330,8 +334,8 @@ def evaluate_truths(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_ids
                     if filling:     # the driver of a twin with this content, if the run has one
                         drivers.setdefault(simulator.driver_slot(config, match.match_id, profile, seed), codes)
                 else:
-                    codes = _codes(config, simulator.served_inputs_for(config, match, atd, profile, seed, data_dir,
-                                                                       pools, plain=inputs, drivers=drivers))
+                    codes = _codes(config, _served(simulator, config, match, atd, profile, seed, data_dir, pools,
+                                                   inputs, drivers))
                 for name in truth_names:
                     scores[name][config.stem] += score.score_halves(codes_true[name], codes, match.graded,
                                                                     match.match_id, seed)
@@ -451,6 +455,22 @@ def resolve_match_ids(match_ids, matches):
         raise BenchmarkError("unknown match id {}; {} {}".format(
             unknown[0], "the DFL benchmark has" if matches is None else "the matches given are", ", ".join(known)))
     return ids
+
+
+def _served(simulator, config, match, atd, profile, seed, data_dir, pools, plain, drivers):
+    """broadcast_sim.served_inputs_for, its refusals as this module's BenchmarkError.
+
+    Run by path, this file is __main__, and broadcast_sim imports a second copy of it as pipeline.benchmark.run: the
+    twin's missing asset, raised in there, is that copy's BenchmarkError, another class than this one's. It is raised
+    again as this one's, with its sentence, so that main catches it without importing broadcast_sim.
+    """
+    try:
+        return simulator.served_inputs_for(config, match, atd, profile, seed, data_dir, pools, plain=plain,
+                                           drivers=drivers)
+    except (simulator.run.BenchmarkError, simulator.BroadcastSimError) as error:
+        if isinstance(error, BenchmarkError):
+            raise
+        raise BenchmarkError(str(error)) from error
 
 
 def _codes(config, inputs):
@@ -847,21 +867,16 @@ def main(argv=None):
                         help="drop the evidence sources that need an asset a benchmark match does not have "
                              "(MATCH_ONLY), and record them in the report")
     args = parser.parse_args(argv)
-    # Here, not above: broadcast_sim imports this module. Run by path, this file is __main__ and broadcast_sim imports
-    # a second copy of it as pipeline.benchmark.run, whose BenchmarkError (a twin's missing asset, raised in there) is
-    # another class than this one's; both are caught.
-    from pipeline.benchmark import broadcast_sim
 
     try:
         results = evaluate_truths(args.configs, profile=args.profile, seeds=args.seeds, match_ids=args.matches,
                                   truth_names=TRUTHS if args.truth == BOTH else (args.truth,), data_dir=args.data_dir,
                                   drop_match_only=args.drop_match_only)
         paths = [] if args.no_write else [path for result in results.values() for path in write_reports(result)]
-    except (ConfigError, BenchmarkError, broadcast_sim.run.BenchmarkError, broadcast_sim.BroadcastSimError,
-            AlignmentError, OSError) as error:
+    except (ConfigError, BenchmarkError, OSError) as error:
         # The expected failures get a sentence: a config to fix, a profile or match that does not exist, a source that
-        # needs the video, data not downloaded yet, pools of the simulated broadcast that cannot be built. Anything
-        # else is a bug and keeps its traceback.
+        # needs the video, data not downloaded yet, no cache of the simulated broadcast's pools (evaluate_truths
+        # raises it as a BenchmarkError). Anything else is a bug and keeps its traceback.
         print("FAILED    {}".format(error))
         return 1
     print("")

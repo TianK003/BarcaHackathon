@@ -1185,22 +1185,28 @@ def measure_latency(config, *, profile=DEFAULT_PROFILE, seeds=None, truth="raw",
     (train_dead_ball.served_inputs: the degraded tracking and no flag) through run.predict, its codes matched to the
     truth. A config that fills ([inputs] ball_fill = "broadcast", R028) is served those inputs with its simulated
     broadcast ball, as the runner serves it (broadcast_sim.served_inputs_for), from `pools` (default
-    broadcast_sim.load_pools(data_dir)). Returns {"config", "config_sha256", "profile", "truth", "seeds", "matches",
-    "fps", "tol", "cells", "per_match"}, and "broadcast_sim", the pools' digest, for a config that fills only:
+    broadcast_sim.load_pools(data_dir), read before the calibration: never built here, and an absent or broken
+    cache is the runner's BenchmarkError, saying to run `broadcast_sim.py pools` first). Returns {"config",
+    "config_sha256", "profile", "truth", "seeds", "matches", "fps", "tol", "cells", "per_match"}, and
+    "broadcast_sim", the pools' digest, for a config that fills only:
     `config_sha256` is config_digest(config), `cells` the pooled {type: {"n", "found", "lags"}} and `per_match` {id:
     cells}. The runner's BenchmarkError for a config that decodes across half time, a profile, seeds, truth or match it
     refuses (before a match is loaded), an asset a benchmark match does not have, or pools that are not a Pools.
     """
     run.check_scope(config)
     tol = _whole(tol, "tol", 0)
-    ids, seed_list, calibration = _plan(profile, seeds, truth, match_ids, matches, calibration, data_dir)
     simulator = None
     if config.ball_fill != "none":
         from pipeline.benchmark import broadcast_sim as simulator   # here, not above: broadcast_sim imports this module
-        pools = simulator.load_pools(data_dir=data_dir, log=log) if pools is None else pools
+        if pools is None:
+            try:
+                pools = simulator.load_pools(data_dir=data_dir)     # read only: `broadcast_sim.py pools` builds them
+            except simulator.BroadcastSimError as error:
+                raise run.BenchmarkError(str(error)) from error
         if not isinstance(pools, simulator.Pools):
             raise run.BenchmarkError("pools must be the Pools of the simulated broadcast (broadcast_sim.load_pools()), "
                                      "and it is a {}".format(type(pools).__name__))
+    ids, seed_list, calibration = _plan(profile, seeds, truth, match_ids, matches, calibration, data_dir)
     per_match, rates = {}, []
     for match_id in ids:
         match = matches[match_id] if matches is not None else dfl.load_match(match_id, data_dir=data_dir)
@@ -1653,10 +1659,6 @@ def build_parser():
 def main(argv=None):
     args = build_parser().parse_args(argv)
     data_dir = args.data_dir or _default_data_dir()
-    # Here, not above: broadcast_sim imports this module. Its errors are the pools of the simulated broadcast that a
-    # config that fills needs (latency CONFIG dfl), and the broadcast's alignment that building them needs.
-    from pipeline.benchmark.broadcast_sim import BroadcastSimError
-    from pipeline.inputs.broadcast import AlignmentError
     try:
         if args.command == "public":
             public(bar_ath_inputs(args.data_dir), args.gt or default_gt(), data_dir=data_dir)
@@ -1695,7 +1697,7 @@ def main(argv=None):
         else:
             run_shift(load_config(args.config), args.gt or default_gt(), data_dir, rejected=args.s_b_rejected)
     except (ConfigError, ConventionsError, run.BenchmarkError, output.UnsafeOutPath, output.SubmissionInvalid,
-            BroadcastSimError, AlignmentError, OSError) as error:
+            OSError) as error:
         print("FAILED    {}".format(error))
         return 1
     return 0

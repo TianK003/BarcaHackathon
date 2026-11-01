@@ -610,8 +610,7 @@ def test_every_report_of_a_run_carries_the_same_broadcast_sim():
 
         loads = []
         real_load = broadcast_sim.load_pools
-        broadcast_sim.load_pools = lambda data_dir=None, inputs=None, log=print, rebuild=False: (
-            loads.append(data_dir) or pools)
+        broadcast_sim.load_pools = lambda data_dir=None: loads.append(data_dir) or pools
         try:
             loaded = benchmark_run.evaluate_configs([fill], **dict(options, seeds=1))
             unloaded = benchmark_run.evaluate_configs([yardstick_path(50)], **dict(options, seeds=1))
@@ -621,6 +620,92 @@ def test_every_report_of_a_run_carries_the_same_broadcast_sim():
         assert loaded["configs"][0]["report"]["broadcast_sim"] == digest and unloaded["broadcast_sim"] is None
         expect_error(benchmark_run.BenchmarkError, lambda: benchmark_run.evaluate_configs([fill], pools="pools",
                                                                                           **options), "pools", "Pools")
+
+
+def test_a_fill_without_cached_pools_is_refused():
+    """The runner reads the pools of the simulated broadcast from their cache and never builds them: with no cache under
+    the data dir, a run with a config that fills is a BenchmarkError that says to run `broadcast_sim.py pools` first,
+    before the calibration is read or a match is loaded, and run.main prints it as a failure (1)."""
+    def refused(*args, **kwargs):
+        raise AssertionError("the run asked for something before it refused the missing pools")
+
+    with tempfile.TemporaryDirectory() as root, loading(refused):
+        fill = write_text(root, "fill.toml", FILL_CONFIG)
+        real = calibration.load
+        calibration.load = refused
+        try:
+            expect_error(benchmark_run.BenchmarkError, lambda: benchmark_run.evaluate_configs(
+                [yardstick_path(50), fill], profile="gaps", seeds=1, data_dir=root, log=quiet),
+                "broadcast_sim.py pools")
+            shown = io.StringIO()
+            with contextlib.redirect_stdout(shown):
+                code = benchmark_run.main([yardstick_path(50), fill, "--profile", "gaps", "--seeds", "1",
+                                           "--data-dir", root])
+        finally:
+            calibration.load = real
+        printed = shown.getvalue()
+        assert code == 1 and "FAILED" in printed and "broadcast_sim.py pools" in printed, printed
+        assert not os.path.exists(os.path.join(root, "cache", "benchmark", "broadcast_sim")), "nothing is built"
+
+
+class RefusedImport:
+    """A meta path finder that refuses one module, counting how often it was asked for."""
+
+    def __init__(self, name):
+        self.name = name
+        self.asked = 0
+
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == self.name:
+            self.asked += 1
+            raise ImportError("{} is refused by the check".format(fullname))
+        return None
+
+
+@contextlib.contextmanager
+def unimportable(name):
+    """`name` cannot be imported while the block runs (sys.modules and its package's attribute set aside, and a finder
+    that refuses it), and is as it was after it; yields the finder."""
+    package_name, _, attribute = name.rpartition(".")
+    package = sys.modules[package_name]
+    module = sys.modules.pop(name, None)
+    had = attribute in vars(package)
+    kept = vars(package).get(attribute)
+    if had:
+        delattr(package, attribute)
+    finder = RefusedImport(name)
+    sys.meta_path.insert(0, finder)
+    try:
+        yield finder
+    finally:
+        sys.meta_path.remove(finder)
+        if module is not None:
+            sys.modules[name] = module
+        if had:
+            setattr(package, attribute, kept)
+
+
+def test_main_imports_broadcast_sim_only_for_a_fill():
+    """run.main imports nothing of the simulated broadcast unless a config of the run fills: with
+    pipeline.benchmark.broadcast_sim made unimportable, a run of a config that does not fill works and never asks for
+    it, and a run of one that fills is where it is asked for."""
+    from pipeline.benchmark import broadcast_sim  # noqa: F401  (loaded once, so that it is set aside and put back)
+
+    def serve(match_id):
+        return random_match(match_id, seed=sources.MATCH_IDS.index(match_id))
+
+    name = "pipeline.benchmark.broadcast_sim"
+    with tempfile.TemporaryDirectory() as root, loading(serve):
+        fill = write_text(root, "fill.toml", FILL_CONFIG)
+        shown = io.StringIO()
+        with unimportable(name) as finder, contextlib.redirect_stdout(shown):
+            code = benchmark_run.main(["--profile", "clean", yardstick_path(50), "--data-dir", root, "--matches",
+                                       "J03WMX", "--no-write"])
+            assert code == 0 and finder.asked == 0, (code, finder.asked)
+            expect_error(ImportError, lambda: benchmark_run.main(["--profile", "clean", fill, "--data-dir", root,
+                                                                  "--matches", "J03WMX", "--no-write"]), "refused")
+            assert finder.asked == 1, finder.asked
+    assert sys.modules[name] is broadcast_sim and sys.modules["pipeline.benchmark"].broadcast_sim is broadcast_sim
 
 
 def test_drop_match_only_removes_exactly_the_flagged_sources():
