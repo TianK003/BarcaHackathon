@@ -21,7 +21,8 @@ exact sign-flip p and the wins, and which config each fold picked.
 It reads only the reports that pipeline/benchmark/run.py wrote (<data dir>/runs/benchmark/<profile>/<stem>.json and
 <stem>.coarse.json, all seven matches, the default seeds) and computes everything from their halves with score.py, so
 its numbers are the runner's. A report is refused if its config file has changed since it was written (the report
-holds the config's text), or if two reports differ in their matches, seeds, profile or Calibration: a selection over
+holds the config's text), or if two reports differ in their matches, seeds, profile, Calibration or the pools of the
+simulated broadcast (`broadcast_sim`, R028; a report written before that field reads as null): a selection over
 reports of different runs would compare different things. The reports hold DFL's counts and no frame of BAR-ATH.
 
 `metric="macro"` (--metric macro, P12) applies the same rule to pooled macroF1 in place of spellF1: the raw macroF1
@@ -56,7 +57,9 @@ TIE_BAND = 0.005                 # spellF1: the configs within this of the best 
 SPELL = "spell_f1_mean"
 METRICS = {"spell": SPELL, "macro": "macro_f1"}      # the objective's name -> the scalar of score.pooled that it is
 OBJECTIVES = ("raw", "mean")     # what selects: the raw truth's score (R008 to R016), or the two truths' mean (R024)
-SAME = ("matches", "seeds", "profile", "calibration")    # what every report of one selection must share
+# What every report of one selection must share; broadcast_sim is the digest of the simulated broadcast's pools (R028),
+# null (or absent, in a report written before it) where the run had no config that fills.
+SAME = ("matches", "seeds", "profile", "calibration", "broadcast_sim")
 
 
 class ChooseError(ValueError):
@@ -124,7 +127,7 @@ def choose(stems, reference, profile=run.DEFAULT_PROFILE, band=TIE_BAND, data_di
     first = reports[(reference, "raw")]
     for (stem, truth), report in reports.items():
         for key in SAME:
-            if report[key] != first[key]:
+            if report.get(key) != first.get(key):
                 raise ChooseError("{} ({} truth) differs from {} in its {}; the reports are of different runs".format(
                     stem, truth, reference, key))
     scores = {key: halves(report) for key, report in reports.items()}

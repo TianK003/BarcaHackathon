@@ -94,8 +94,11 @@ module of its topic:
                  lengths by the exact log rule with ties to the shorter and then the earlier, by class, the error runs
                  added or tiled, NaN where DFL has no ball, seeded, no match among its parameters, and the whole of it
                  against a plain-Python reference on random worlds), measure_fill's F and W values on hand-built masks
-                 and against a plain loop, and Pools' arrays, validation, read-only fields and repr with no array
-                 (synthetic only)
+                 and against a plain loop, and Pools' arrays, validation, read-only fields and repr with no array; and
+                 its wiring: the served inputs (the twin's driver, the drivers kept, the ball served as simulated), the
+                 pools of a BAR-ATH stand-in (the pinned labels, the cache key and its rebuilds, the near-gap errors,
+                 BAR-ATH's measure, the refusals), fidelity's copies and exit codes, the tag check and bar-ath's exit
+                 codes (synthetic only)
     harness.py   the harness itself: what it collects, how it reports NOT RUN, the console set-up, and that no check
                  module imports another one
     common.py    what several modules share, and no checks of its own: the synthetic DFL match, the random one

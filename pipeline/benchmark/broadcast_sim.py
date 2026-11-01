@@ -11,9 +11,10 @@ ball with the TV broadcast's ball. The benchmark's matches (DFL's seven) have no
 simulated one that does, in that match's gaps, what the real one does in ours: it has the ball in more of the gaps where
 the play goes on than in the dead ones, mostly at their edges, and it is a metre or so off. R019's camera simulator
 failed because a parametric follower could not reproduce our camera's stillness, so this is a transplant (P01's way:
-"their pattern, not their clock"): the fill masks and the position errors are COPIED from BAR-ATH, not modelled. This
-file is the core on arrays and nothing else: it loads no data and knows no match. Task 2b builds the Pools from
-BAR-ATH, serves the simulated ball to the benchmark's runs and adds the command line.
+"their pattern, not their clock"): the fill masks and the position errors are COPIED from BAR-ATH, not modelled. The
+core below (Pools, gaps_of, gap_alive, simulate, measure_fill) works on arrays and nothing else: it loads no data and
+knows no match. The wiring after it (Task 2b, last section of this docstring) builds the Pools from BAR-ATH, serves the
+simulated ball to the benchmark's runs and holds the command line.
 
 The codes and the blocks. A code is possession_metrics' (H, A, D, X are 0 to 3), and a frame is alive when its code is
 H or A. `graded` is [(half, start, stop), ...], half-open, as DflMatch.graded and Inputs.graded give it. A gap is a
@@ -54,16 +55,84 @@ frames.
 
 The Pools are frame-level data of our match: they stay under data/cache/, are never printed and never committed. Every
 field has repr=False, and no message here holds a value of an array, only shapes and counts.
+
+The wiring (Task 2b): the pools, the served inputs, and the three commands.
+
+    python pipeline/benchmark/broadcast_sim.py pools [--data-dir D]
+    python pipeline/benchmark/broadcast_sim.py fidelity [--profile P] [--seeds N] CONFIG [--data-dir D]
+    python pipeline/benchmark/broadcast_sim.py bar-ath CONFIG [--data-dir D]
+
+    pools = load_pools()                                     # BAR-ATH's donors and errors, built once and cached
+    inputs = served_inputs_for(config, match, atd, profile, seed, data_dir, pools)   # what the runner serves a config
+
+* The pools (design 3.3) are built from BAR-ATH by the pipeline's own functions: the labels are r024_both.toml's,
+  decoded in-process by pipeline.run.run into a CSV in the pools' cache folder, and nothing is built unless that CSV is
+  R024_SHA256, the file main.toml writes today (a stale or dirty main.csv cannot creep in, and the stand-in stays fixed
+  after an adoption). Each gap of our ball inside a graded block gives its real fill mask (the filled view's
+  ball_filled) and its class by those labels; the error runs are the maximal runs of graded frames where both balls
+  exist within NEAR_GAP_FRAMES of a gap of their own block (near_gap_errors), each offset the broadcast's position minus
+  ours, in metres. BAR-ATH's side of fidelity is measured at the same time and kept beside them as aggregates
+  (load_bar_ath_measure), so that fidelity never decodes BAR-ATH: measure_fill on the ball before the fill, the fill's
+  own mask, those labels and the broadcast ball in metres, with no reference (our ball is missing on every filled
+  frame), and F5 the near-gap pool's median |offset| (the design's appendix). The cache,
+  <data dir>/cache/benchmark/broadcast_sim/<digest of the key>/, follows calibration.py's rules: the key holds what the
+  pools depend on (pools_key), a broken cache is absent and never an error, the arrays are written first and the
+  manifest last.
+* The served inputs (design 3.2 and 3.4). A config without the fill is served the plain MatchInputs. A config that
+  fills is served its simulated ball: its twin, the same config with ball_fill "none", is decoded on the plain inputs
+  (the driver: the candidate's own labels, never the truth), simulate builds the ball with the match's own generator,
+  default_rng([seed, degrade.index_of(match), RNG_SALT]), and the ball is served as it comes, to the fill of
+  Inputs.with_ball_fill unchanged: no usable test and no 13-frame filter on DFL (the donor masks carry BAR-ATH's), so a
+  compressed transplant may give fragments shorter than 13 frames. The driver's codes can be kept in a dict per (twin,
+  match, profile, seed), under driver_key, which holds everything predict reads of a config; the runner keeps one per
+  run, and a config whose content is a twin's (main.toml's, say) shares its codes.
+* `pools` builds or reads the pools and prints aggregates only. `fidelity` measures the copies (each match and seed of
+  the profile, the config as it runs on DFL: its match-only sources dropped, as --drop-match-only does), laid end to
+  end and measured once, against BAR-ATH's measure: the gates F1 to F3, the checks F4 and F5 and the warnings W1 to W3
+  of design 3.5; exit 0, 1 if a gate fails, 3 if only a check does. `bar-ath` is design 7.4 on BAR-ATH: the alignment
+  band and the live share first (exit 3, a STOP, if either fails, after printing them), then the tag check on the
+  fill-only frames of the teacher (conventions.TOUCH), no X on a graded frame and D within D_SHARE_BAND (exit 1, a DROP,
+  if one fails), and the figures that are only reported. Every command exits 2 on an error, which is never a verdict.
+  The reports go to <data dir>/runs/r028/ (fidelity-<profile>.json, bar-ath-<config stem>.json), aggregates only, with
+  floats to 9 decimals and the pools' digest.
 """
 
+import argparse
+import contextlib
+import dataclasses
+import hashlib
+import json
 import math
 import operator
+import os
+import sys
+import time
+import traceback
+import zipfile
 from dataclasses import dataclass, field
 from fractions import Fraction
 
-import numpy as np
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(HERE))
+if __name__ == "__main__":
+    # Run by path: swap pipeline/benchmark/ for the repository root, as run.py does, so that `import pipeline` resolves
+    # from any working directory and no file in here can shadow a module.
+    sys.path[0] = ROOT
 
-import possession_metrics as pm
+import numpy as np  # noqa: E402
+
+import games  # noqa: E402
+from pipeline import run as pipeline_run  # noqa: E402  (importing pipeline also puts evaluation/ on sys.path)
+from pipeline.benchmark import calibration as calibration_module  # noqa: E402
+from pipeline.benchmark import conventions, degrade, dfl, label_diff, run, tag_stats  # noqa: E402
+from pipeline.benchmark import inputs as match_inputs  # noqa: E402
+from pipeline.config import BALL_FILLS, ConfigError, load_config  # noqa: E402
+from pipeline.contracts import RunContext  # noqa: E402
+from pipeline.evidence import controlled_touch, smart_tagging  # noqa: E402
+from pipeline.inputs import Inputs  # noqa: E402
+from pipeline.inputs.broadcast import AlignmentError  # noqa: E402
+
+import possession_metrics as pm  # noqa: E402  isort:skip
 
 # Params
 POOLS_VERSION = 1       # part of the pools' cache key (Task 2b): change what a Pools holds or how it is built, bump it
@@ -75,6 +144,32 @@ LONG_GAP_FRAMES = 50    # F3: only gaps of at least this many frames (2 s) are r
 BEYOND_LINE_M = 1.0     # W3: a fill position more than this beyond a line (x < -1, x > L + 1, y < -1, y > W + 1)
 RNG_SALT = 28           # the third element of the generator's key (Task 2b): default_rng((seed, match index, 28))
 H, A, D, X = pm.H, pm.A, pm.D, pm.X
+# The pools (design 3.3) and their cache
+R024_CONFIG = os.path.join(ROOT, "pipeline", "configs", "r024_both.toml")    # the record config the labels come from
+R024_SHA256 = "e6496a9b9805217ef085e52ed69cbb27a42b95368d65c1d188b4a2f339b61170"   # its CSV, what main.toml writes
+CACHE_FOLDER = ("cache", "benchmark", "broadcast_sim")   # <data dir>/cache/benchmark/broadcast_sim/<digest of the key>/
+KEY_DIGITS = 16                                          # hex digits of the key's sha256 that name its folder
+MANIFEST = "manifest.json"                               # the key and the pools' digest, written last
+MEASURE_FILE = "bar_ath_measure.json"                    # BAR-ATH's side of fidelity (measure_fill's result)
+LABELS_CSV = "r024_both.csv"                             # the decoded labels, kept beside the pools they made
+POOL_ARRAYS = ("gap_lengths", "gap_alive", "gap_fill", "gap_starts", "error_xy", "error_starts")   # Pools, in order
+MEASURE_KEYS = ("F1", "F2", "F3", "F4", "F5", "W1", "W2", "W3")
+# Fidelity (design 3.5): |copies - ours| at most this
+GATE_TOLERANCES = {"F1": 0.05, "F2": 0.03, "F3": 0.05}  # shares; F3 for each of its first, last and inside windows
+CHECK_TOLERANCES = {"F4": 10.0, "F5": 0.2}              # frames (the median fragment, by class), metres (median error)
+EXIT_ERROR = 2                                          # every command, on an error: never a verdict
+FIDELITY_EXIT = {"pass": 0, "gate": 1, "error": EXIT_ERROR, "check": 3}
+# BAR-ATH, label-free (design 7.4)
+MAIN_CONFIG = os.path.join(ROOT, "pipeline", "configs", "main.toml")   # the reference of the reported figures
+EXPECTED_OFFSETS = {1: 4014, 2: 26919}   # d_h of A20: tactical frame t is broadcast frame t - d_h
+OFFSET_BAND = 2                          # frames: d_h must be this close to them
+MIN_LIVE_SHARE = 0.85                    # live frames over valid graded frames, at least
+TAG_MARGIN = 0.05                        # the fill-only agreement may be this far below the plain one
+MIN_TAG_FRAMES = 300                     # fill-only teacher frames with a tag's vote, for the tag check to decide
+D_SHARE_BAND = (0.30, 0.62)              # R024's sanity: D on this share of the graded frames, ends included
+POSSESSIONS_WARN = 0.25                  # a half's possessions beyond this share of main.toml's are a WARN (T33)
+BAR_ATH_EXIT = {"pass": 0, "drop": 1, "error": EXIT_ERROR, "stop": 3}
+REPORT_FOLDER = ("runs", "r028")         # <data dir>/runs/r028/fidelity-<profile>.json, bar-ath-<config stem>.json
 
 
 # -- the pools --------------------------------------------------------------------------------------------------------
@@ -493,3 +588,847 @@ def measure_fill(ball_present, filled, codes, graded, fill_xy_m, reference_xy_m,
     return {"F1": _share(fill & alive, gap & alive), "F2": _share(fill & dead, gap & dead), "F3": f3, "F4": f4,
             "F5": {"median_m": float(np.median(errors)) if errors.size else None, "n": int(errors.size)},
             "W1": _share(fill, inside), "W2": _share(gap & alive, gap), "W3": _share(fill & beyond, fill)}
+
+
+# -- the served inputs (design 3.2 and 3.4) ---------------------------------------------------------------------------
+
+class BroadcastSimError(ValueError):
+    """What the wiring refuses: pools that cannot be built as the design says, a config it cannot measure, matches it
+    cannot pool. The message says which, and what to change."""
+
+
+def driver_key(config):
+    """The sha256 (hex) of everything run.predict reads of `config`: scope, seed, ball_fill, evidence, decoder, refine.
+
+    Two configs with one key decode to the same codes on the same inputs, whatever their names, paths, descriptions and
+    comments, so the driver decoded for one is the driver of the other (ruling 9), and a config that is a twin's content
+    (main.toml beside a candidate that is main.toml with the fill) shares its codes with it.
+    """
+    content = {"scope": config.scope, "seed": config.seed, "ball_fill": config.ball_fill,
+               "evidence": [dataclasses.asdict(component) for component in config.evidence],
+               "decoder": dataclasses.asdict(config.decoder),
+               "refine": [dataclasses.asdict(component) for component in config.refine]}
+    text = json.dumps(content, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def driver_slot(config, match_id, profile, seed):
+    """Where a config's codes on one served tracking are kept in a `drivers` dict: (driver_key, match, profile,
+    seed)."""
+    return driver_key(config), match_id, profile, seed
+
+
+def simulated_ball(config, match, plain, profile, seed, pools, drivers=None):
+    """(ball, codes): the simulated broadcast ball of `config` on `plain` (design 3.4), and the driver's codes.
+
+    The driver is the config's twin, dataclasses.replace(config, ball_fill="none"), decoded on `plain` (the MatchInputs
+    of `match` without a ball) by run._codes, so an asset the twin cannot have on DFL is the runner's BenchmarkError.
+    `drivers`, a dict or None, keeps the codes by driver_slot: a twin met again on the same (match, profile, seed) is
+    not decoded again. The ball is simulate's, with the clean ball of the match in metres (DFL's own positions:
+    tracking, never its flags) and the match's own generator, default_rng([seed, degrade.index_of(match id), RNG_SALT]).
+    """
+    twin = dataclasses.replace(config, ball_fill="none")
+    slot = driver_slot(twin, match.match_id, profile, seed)
+    codes = None if drivers is None else drivers.get(slot)
+    if codes is None:
+        codes = run._codes(twin, plain)
+        if drivers is not None:
+            drivers[slot] = codes
+    pitch = np.array(match.pitch, dtype=np.float64)
+    rng = np.random.default_rng([seed, degrade.index_of(match.match_id), RNG_SALT])
+    ball = simulate(np.asarray(plain.atd.ball_present, dtype=bool), np.asarray(match.ball_xy, dtype=np.float64) * pitch,
+                    codes, plain.graded, match.pitch, pools, rng)
+    return ball, codes
+
+
+def served_inputs_for(config, match, atd, profile, seed, data_dir, pools, plain=None, drivers=None):
+    """The MatchInputs that `config` is served for `match`, its tracking `atd` (profile, seed), as the runner serves it.
+
+    For a config without the fill ([inputs] ball_fill = "none") it is the plain MatchInputs: `plain` itself if given,
+    else MatchInputs(match, atd, profile, seed, data_dir), and nothing is decoded. For a config that fills it is a
+    MatchInputs of the same tracking with `broadcast_ball` the simulated ball (simulated_ball: the twin's codes on the
+    plain inputs drive simulate), served as simulate made it; the config's own fill (Inputs.with_ball_fill, in predict)
+    then applies to it unchanged. `pools` is the Pools (load_pools) and is read only for a config that fills. `drivers`
+    (a dict, or None) keeps the twin's codes for the next config with the same twin on the same (match, profile, seed).
+
+    ValueError, before anything is decoded, for a `plain` of another match or tracking, and for pools that are not a
+    Pools when the config fills.
+    """
+    who = "broadcast_sim.served_inputs_for"
+    if config.ball_fill not in BALL_FILLS:
+        raise ValueError("{}: {} has [inputs] ball_fill {!r}, which is not one of {}".format(
+            who, config.stem, config.ball_fill, ", ".join(BALL_FILLS)))
+    if plain is None:
+        plain = match_inputs.MatchInputs(match, atd, profile=profile, seed=seed, data_dir=data_dir)
+    elif plain.atd is not atd or plain.game != match.match_id:
+        raise ValueError("{}: plain must be the MatchInputs of {} that serves this very atd (MatchInputs(match, atd, "
+                         "...)), and it serves {} with another atd or match; pass it, or leave plain out".format(
+                             who, match.match_id, plain.game))
+    if config.ball_fill == "none":
+        return plain
+    if not isinstance(pools, Pools):
+        raise ValueError("{}: pools must be a Pools to serve {}, which fills the ball ([inputs] ball_fill = {!r}); "
+                         "load_pools() reads them, and it is a {}".format(who, config.stem, config.ball_fill,
+                                                                          type(pools).__name__))
+    ball, _ = simulated_ball(config, match, plain, profile, seed, pools, drivers)
+    return match_inputs.MatchInputs(match, atd, profile=profile, seed=seed, data_dir=data_dir, broadcast_ball=ball)
+
+
+# -- the pools of BAR-ATH (design 3.3) --------------------------------------------------------------------------------
+
+def bar_ath_inputs(data_dir=None):
+    """BAR-ATH's Inputs over `data_dir` (default games.DATA_DIR): what `pools`, fidelity's loaders and `bar-ath`
+    read."""
+    return Inputs(data_dir=data_dir)
+
+
+def decode_labels(inputs, path, log=print):
+    """(codes, sha256): r024_both.toml decoded on `inputs` by pipeline.run.run, in-process, its CSV written at `path`.
+
+    The pipeline's own run, so the labels are exactly the file that `pipeline/run.py pipeline/configs/r024_both.toml`
+    writes, and the sha256 is that of the CSV's bytes (RunResult.sha256). `log` takes the run's aggregate lines.
+    """
+    result = pipeline_run.run(load_config(R024_CONFIG), inputs, path, log=log)
+    return result.codes, result.sha256
+
+
+def near_gap_errors(ball_present, ball_xy_m, broadcast_xy_m, graded):
+    """(error_xy, error_starts): the error runs of design 3.3, as Pools holds them (ruling 2).
+
+    ball_present    (n,) bool: our ball (False where it is missing); its gaps are gaps_of(ball_present, graded)
+    ball_xy_m       (n, 2): our ball in metres, NaN where it has none
+    broadcast_xy_m  (n, 2): the broadcast's usable ball on our rows, in metres, NaN where it has none
+    graded          [(half, start, stop), ...], half-open
+
+    A frame qualifies when it is graded, both balls are there (ours present and finite, the broadcast's finite), and it
+    is 1 to NEAR_GAP_FRAMES frames before the first frame of a gap of its own block, or after its last. The runs are the
+    maximal runs of qualifying frames, cut at the blocks, in time order; each frame's offset is the broadcast's position
+    minus ours. error_xy is (m, 2) float64, the runs laid end to end, and error_starts (r + 1,) int64, 0 then the
+    running totals of their lengths. ValueError, naming the parameter, for an argument that is not as said.
+    """
+    who = "broadcast_sim.near_gap_errors"
+    present = _flags(who, "ball_present", ball_present)
+    n = present.shape[0]
+    ours = _positions(who, "ball_xy_m", ball_xy_m, n)
+    theirs = _positions(who, "broadcast_xy_m", broadcast_xy_m, n)
+    blocks = _blocks(who, graded, n)
+    both = present & np.isfinite(ours).all(axis=1) & np.isfinite(theirs).all(axis=1)
+    pieces, lengths = [], []
+    for half, start, stop in blocks:
+        near = np.zeros(stop - start, dtype=bool)
+        for first, end in _gaps(present, [(half, start, stop)]):
+            near[max(start, first - NEAR_GAP_FRAMES) - start:first - start] = True       # 1 to 50 frames before
+            near[end - start:min(stop, end + NEAR_GAP_FRAMES) - start] = True            # 1 to 50 frames after
+        begins, ends = _runs(near & both[start:stop])
+        for a, b in zip((begins + start).tolist(), (ends + start).tolist()):
+            pieces.append(theirs[a:b] - ours[a:b])
+            lengths.append(b - a)
+    error_xy = np.concatenate(pieces) if pieces else np.zeros((0, 2))
+    return error_xy, np.concatenate([[0], np.cumsum(lengths, dtype=np.int64)]).astype(np.int64)
+
+
+def _text(path):
+    """A text file's content with CRLF read as LF: a checkout that changes only the line endings changes nothing."""
+    with open(path, "rb") as handle:
+        return handle.read().decode("utf-8").replace("\r\n", "\n")
+
+
+def pools_key(inputs):
+    """Everything the pools and BAR-ATH's measure depend on, as JSON-normal data: a cache is read only if all of it
+    matches.
+
+    The tactical and the broadcast ATD caches' records (the sources' sizes and sha256, and the cache version, which says
+    how they were parsed), the broadcast homography file's size and sha256, r024_both.toml's text (LF), the sha256 its
+    CSV must have (R024_SHA256: the pools are never built from another), POOLS_VERSION, and the match's frames, pitch
+    and graded blocks. What it does not hold is the code that builds them, the pipeline's broadcast.py included: a
+    change to it that changes the pools is a bump of POOLS_VERSION. Reading it loads the two ATD caches and the
+    homography.
+    """
+    tactical, broadcast_atd = inputs.atd_manifest, inputs.broadcast_atd_manifest
+    key = {"pools_version": POOLS_VERSION,
+           "tactical_atd": {"sources": tactical["sources"], "cache_version": tactical["cache_version"]},
+           "broadcast_atd": {"sources": broadcast_atd["sources"], "cache_version": broadcast_atd["cache_version"]},
+           "broadcast_homography": inputs.broadcast_homography_source,
+           "r024_config": _text(R024_CONFIG), "r024_csv_sha256": R024_SHA256,
+           "n_frames": int(inputs.n_frames), "pitch": [float(side) for side in inputs.pitch],
+           "graded": [[int(value) for value in block] for block in inputs.graded]}
+    return json.loads(json.dumps(key, sort_keys=True))
+
+
+def cache_folder(data_dir, key):
+    """<data dir>/cache/benchmark/broadcast_sim/<the first KEY_DIGITS hex digits of the sha256 of the key's canonical
+    JSON>/: one folder per key, whatever the order of its entries, as calibration.cache_folder."""
+    canonical = json.dumps(key, sort_keys=True, separators=(",", ":"))
+    return os.path.join(data_dir, *CACHE_FOLDER, hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:KEY_DIGITS])
+
+
+def digest(pools):
+    """The sha256 (hex) of everything a Pools holds, field by field in POOL_ARRAYS order (its name, dtype, shape and
+    bytes): two pools are the same stand-in if and only if their digests agree. Every report of a run that loaded the
+    pools holds it (`broadcast_sim`), and choose.py refuses reports of different ones together."""
+    sha = hashlib.sha256()
+    for name in POOL_ARRAYS:
+        array = np.ascontiguousarray(getattr(pools, name))
+        sha.update("{}={}{};".format(name, array.dtype, array.shape).encode("ascii"))
+        sha.update(array.tobytes())
+    return sha.hexdigest()
+
+
+def build_pools(inputs, log=print):
+    """The Pools of BAR-ATH's `inputs` (design 3.3), built and not cached: load_pools is the way to them.
+
+    The labels are decode_labels' (r024_both.toml, written into the pools' cache folder), and BroadcastSimError, with
+    nothing left behind, if their CSV is not R024_SHA256, if a class has no donor gap or if there is no error run.
+    """
+    return _build(inputs, cache_folder(inputs.data_dir, pools_key(inputs)), log)[0]
+
+
+def load_pools(data_dir=None, inputs=None, log=print, rebuild=False):
+    """The Pools of BAR-ATH, from <data dir>/cache/benchmark/broadcast_sim/<digest of the key>/ when that cache is
+    whole and of this key, otherwise built (build_pools' refusals) and cached with BAR-ATH's measure beside them.
+
+    `data_dir` defaults to the inputs' (games.DATA_DIR); `inputs` stands in for BAR-ATH's (bar_ath_inputs(data_dir) by
+    default, which the key's records need); `log` takes the decode's lines when it runs; rebuild=True builds again.
+    """
+    return _cached(data_dir, inputs, log, rebuild)[0]
+
+
+def load_bar_ath_measure(data_dir=None, inputs=None, log=print):
+    """BAR-ATH's side of fidelity (ruling 1): measure_fill's result on our real fill, kept beside the pools of the same
+    key, as plain numbers, with load_pools' cache rules (built with the pools when it cannot be read).
+
+    It is measured on the ball before the fill (ball_present), the fill's own mask (Inputs.with_ball_fill's
+    ball_filled), r024_both.toml's labels and the broadcast ball in metres, with no reference (our ball is missing on
+    every filled frame), and F5 is the near-gap error pool's median |offset| in metres over all its frames, with their
+    count: the design's "F5's ours is the near-gap pool's median".
+    """
+    return _cached(data_dir, inputs, log)[1]
+
+
+def _cached(data_dir, inputs, log, rebuild=False):
+    """(pools, measure), read from the cache of their key or built and written."""
+    inputs = bar_ath_inputs(data_dir) if inputs is None else inputs
+    key = pools_key(inputs)
+    folder = cache_folder(data_dir or inputs.data_dir, key)
+    found = None if rebuild else _read_cache(folder, key)
+    if found is not None:
+        return found
+    pools, measure = _build(inputs, folder, log)
+    _write_cache(folder, key, pools, measure)
+    return pools, measure
+
+
+def _build(inputs, folder, log):
+    """(pools, measure) of BAR-ATH: the decode into `folder`, then the pools and the measure; on any refusal or error
+    the decoded CSV is removed again (and the folder, if that leaves it empty), so that nothing is left behind."""
+    path = os.path.join(folder, LABELS_CSV)
+    os.makedirs(folder, exist_ok=True)
+    try:
+        codes, sha256 = decode_labels(inputs, path, log)
+        if sha256 != R024_SHA256:
+            raise BroadcastSimError(
+                "broadcast_sim: the labels of r024_both.toml decoded on this match ({}) have sha256 {}, not {}, the "
+                "file main.toml writes today; the pools are built from those labels only. Find what changed (the "
+                "config, the pipeline's code, the data) before building them".format(path, sha256, R024_SHA256))
+        return _pools_and_measure(inputs, np.asarray(codes))
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.remove(path)
+        with contextlib.suppress(OSError):
+            os.rmdir(folder)                     # only if empty: an older cache of this key stays as it was
+        raise
+
+
+def _pools_and_measure(inputs, codes):
+    """(pools, measure) of BAR-ATH's `inputs` and its decoded `codes`; BroadcastSimError for a class with no donor gap
+    or no error run (ruling 10)."""
+    present = np.asarray(inputs.atd.ball_present, dtype=bool)
+    graded = [tuple(block) for block in inputs.graded]
+    pitch = np.array(inputs.pitch, dtype=np.float64)
+    gaps = gaps_of(present, graded)
+    alive = gap_alive(gaps, codes)
+    for flag, name in ((True, "alive"), (False, "D")):
+        if not (alive == flag).any():
+            raise BroadcastSimError(
+                "broadcast_sim: r024_both.toml's labels make no gap of our ball {} (of {} gaps), so a DFL gap of that "
+                "class would have no donor; the pools need donors of both classes".format(name, len(gaps)))
+    filled = np.asarray(inputs.with_ball_fill("broadcast").ball_filled, dtype=bool)
+    broadcast_m = np.asarray(inputs.broadcast_ball, dtype=np.float64) * pitch
+    error_xy, error_starts = near_gap_errors(present, np.asarray(inputs.atd.ball_xy, dtype=np.float64) * pitch,
+                                             broadcast_m, graded)
+    if error_starts.size < 2:
+        raise BroadcastSimError(
+            "broadcast_sim: there is no error run (no graded frame within {} frames of a gap where both balls exist), "
+            "so a simulated ball could not be placed; check the broadcast's alignment and live share".format(
+                NEAR_GAP_FRAMES))
+    lengths = np.array([stop - start for start, stop in gaps], dtype=np.int64)
+    pools = Pools(gap_lengths=lengths, gap_alive=alive,
+                  gap_fill=np.concatenate([filled[start:stop] for start, stop in gaps]),
+                  gap_starts=np.concatenate([[0], np.cumsum(lengths)]).astype(np.int64),
+                  error_xy=error_xy, error_starts=error_starts)
+    measure = measure_fill(present, filled, codes, graded, broadcast_m, np.full((len(present), 2), np.nan),
+                           inputs.pitch)
+    distances = np.hypot(error_xy[:, 0], error_xy[:, 1])
+    measure["F5"] = {"median_m": float(np.median(distances)), "n": int(distances.size)}
+    return pools, measure
+
+
+def _write_cache(folder, key, pools, measure):
+    """The arrays first, then the measure, the manifest last, with the old manifest removed up front (calibration.py's
+    order): a run killed half-way leaves no manifest, so the next load builds again."""
+    os.makedirs(folder, exist_ok=True)
+    manifest = os.path.join(folder, MANIFEST)
+    with contextlib.suppress(OSError):
+        os.remove(manifest)
+    for name in POOL_ARRAYS:
+        np.save(os.path.join(folder, name + ".npy"), getattr(pools, name), allow_pickle=False)
+    run.write_json(os.path.join(folder, MEASURE_FILE), measure)
+    run.write_json(manifest, {"key": key, "digest": digest(pools), "pools_version": POOLS_VERSION})
+
+
+def _read_cache(folder, key):
+    """(pools, measure) from `folder`, or None if its manifest is not of `key`, or anything in it cannot be read whole:
+    an unreadable cache is absent, never an error (calibration.load's rule)."""
+    try:
+        with open(os.path.join(folder, MANIFEST), encoding="utf-8") as handle:
+            manifest = json.load(handle)
+        if not isinstance(manifest, dict) or manifest.get("key") != key:
+            return None
+        pools = Pools(**{name: _read_array(folder, name) for name in POOL_ARRAYS})
+        if digest(pools) != manifest.get("digest"):
+            return None
+        with open(os.path.join(folder, MEASURE_FILE), encoding="utf-8") as handle:
+            measure = json.load(handle)
+        if not isinstance(measure, dict) or sorted(measure) != sorted(MEASURE_KEYS):
+            return None
+        return pools, measure
+    except (OSError, ValueError, EOFError, KeyError, TypeError, AttributeError, zipfile.BadZipFile):
+        return None
+
+
+def _read_array(folder, name):
+    """One cached array, np.load given an open handle (docs/traps.md T34, as calibration._read_array): a file cut short
+    is a ValueError here, and no handle is left open for the rebuild that rewrites it."""
+    with open(os.path.join(folder, name + ".npy"), "rb") as handle:
+        array = np.load(handle, allow_pickle=False)
+        if not isinstance(array, np.ndarray):
+            close = getattr(array, "close", None)
+            if close is not None:
+                close()
+            raise ValueError("{}.npy is not a plain numpy array".format(name))
+        return array
+
+
+def render_pools(pools, measure):
+    """The lines that `pools` prints: counts, shares and medians of the pools and of BAR-ATH's measure, and the digest.
+    Aggregates only: no frame, no gap, no offset of its own."""
+    lines = ["pools     BAR-ATH's gaps and the broadcast's errors near them (design 3.3), from r024_both.toml's labels "
+             "({}...)".format(R024_SHA256[:8])]
+    lengths, alive = pools.gap_lengths, pools.gap_alive
+    lines.append("gaps      alive {}, D {} ({} in all)".format(int(alive.sum()), int((~alive).sum()), alive.size))
+    filled_frames = np.add.reduceat(pools.gap_fill.astype(np.int64), pools.gap_starts[:-1]) if alive.size else alive
+    parts = []
+    for flag, name in ((True, "alive"), (False, "D")):
+        total, filled = int(lengths[alive == flag].sum()), int(filled_frames[alive == flag].sum())
+        parts.append("{} {:,} of {:,} gap frames filled ({})".format(name, filled, total, _percent(filled, total)))
+    lines.append("donors    " + "; ".join(parts))
+    distances = np.hypot(pools.error_xy[:, 0], pools.error_xy[:, 1])
+    lines.append("errors    {} error runs, {:,} frames, median offset {} m".format(
+        pools.error_starts.size - 1, pools.error_xy.shape[0],
+        _number(float(np.median(distances)) if distances.size else None, 2)))
+    lines.append("measure   BAR-ATH's own, fidelity's ours:")
+    lines += ["  " + line for line in _measure_lines(measure)]
+    lines.append("digest    {}".format(digest(pools)))
+    return lines
+
+
+def _measure_lines(measure):
+    """One line per statistic of a measure_fill result: its value and what it is over."""
+    f3, f4, f5 = measure["F3"], measure["F4"], measure["F5"]
+    return ["F1  fill share of the gap frames the labels call alive       {}".format(_share_text(measure["F1"])),
+            "F2  fill share of the gap frames the labels call D           {}".format(_share_text(measure["F2"])),
+            "F3  fill share in the first 1 s {}, last 1 s {}, inside {}, of {} gaps of 2 s or more".format(
+                _number(f3["first"]["share"]), _number(f3["last"]["share"]), _number(f3["inside"]["share"]),
+                f3["gaps"]),
+            "F4  median fill fragment: alive {} frames (n {}), D {} frames (n {})".format(
+                _number(f4["alive"]["median"], 1), f4["alive"]["n"], _number(f4["dead"]["median"], 1),
+                f4["dead"]["n"]),
+            "F5  median position error {} m over {:,} frames".format(_number(f5["median_m"], 3), f5["n"]),
+            "W1  fill frames per graded frame                             {}".format(_share_text(measure["W1"])),
+            "W2  share of the gap frames the labels call alive            {}".format(_share_text(measure["W2"])),
+            "W3  share of fill frames more than 1 m beyond a line         {}".format(_share_text(measure["W3"]))]
+
+
+def _share_text(share):
+    """A share of measure_fill's as the printouts show it: the share, then its count over what it is of."""
+    return "{} ({:,} of {:,})".format(_number(share["share"]), share["num"], share["den"])
+
+
+def _number(value, decimals=4):
+    return "n/a" if value is None else "{:.{}f}".format(value, decimals)
+
+
+def _percent(num, den):
+    return "{:.1%}".format(num / den) if den else "n/a"
+
+
+# -- fidelity (design 3.5) --------------------------------------------------------------------------------------------
+
+def fidelity(config, profile=run.DEFAULT_PROFILE, seeds=None, match_ids=None, matches=None, calibration=None,
+             pools=None, ours=None, data_dir=None, log=print):
+    """Design 3.5 for `config` (a pipeline.config.Config that fills): the copies' measure beside BAR-ATH's, judged.
+
+    The config is taken as it runs on DFL: its match-only sources are dropped first (run.drop_match_only, as
+    --drop-match-only does, and the names are logged), so the driver, its twin, is the one the runner's bar runs use
+    (ruling 4). Each match (match_ids, default all seven, or `matches`, {id: DflMatch}) under each seed of `profile` is
+    served as the runner serves it (run.make_atd, then simulated_ball and the MatchInputs that carries it), and a copy
+    is its ball's presence before the fill, the filled view's mask, the driver's codes, its graded blocks, the simulated
+    ball and DFL's clean ball in metres (ruling 3). The copies are laid end to end, their blocks offset
+    (laid_end_to_end), and measured once by measure_fill, since F4 and F5 are medians of the frames, which no sum of
+    medians gives. `calibration` defaults to calibration.load(data_dir) for a degraded profile; `pools` and `ours`
+    (BAR-ATH's measure) default to the cache, read through one BAR-ATH Inputs (load_pools, load_bar_ath_measure).
+    Returns fidelity_result.
+
+    BroadcastSimError for a config that does not fill and for matches of different pitches (one pitch measures W3);
+    the runner's BenchmarkError for a scope, profile, number of seeds or match that it refuses.
+    """
+    config, dropped = run.drop_match_only(config)
+    log("dropped   match-only sources: {}".format(", ".join(dropped) or "none"))
+    run.check_scope(config)
+    if config.ball_fill == "none":
+        raise BroadcastSimError(
+            "{}: [inputs] ball_fill is \"none\", so there is no simulated fill to measure; fidelity measures a config "
+            "that fills ([inputs] ball_fill = \"broadcast\")".format(config.stem))
+    run._check_profile(profile)
+    seeds = run.DEFAULT_SEEDS if seeds is None else seeds
+    if isinstance(seeds, bool) or not isinstance(seeds, int) or seeds < 1:
+        raise run.BenchmarkError("seeds must be a whole number of at least 1, got {!r}".format(seeds))
+    ids = run.resolve_match_ids(match_ids, matches)
+    if profile == run.CLEAN and calibration is not None:
+        raise run.BenchmarkError("profile {!r} takes no calibration, and one was given".format(profile))
+    if profile != run.CLEAN and calibration is None:
+        calibration = calibration_module.load(data_dir=data_dir)
+    if pools is None or ours is None:
+        our_match = bar_ath_inputs(data_dir)     # for the cache's key; measured only if the cache must be built
+        pools = load_pools(data_dir, inputs=our_match, log=log) if pools is None else pools
+        ours = load_bar_ath_measure(data_dir, inputs=our_match, log=log) if ours is None else ours
+        del our_match
+    if not isinstance(pools, Pools):
+        raise BroadcastSimError("pools must be a Pools (load_pools() reads them), and it is a {}".format(
+            type(pools).__name__))
+    seed_list = [0] if profile == run.CLEAN else list(range(seeds))
+    copies, pitch = [], None
+    for match_id in ids:
+        match = matches[match_id] if matches is not None else dfl.load_match(match_id, data_dir=data_dir)
+        own = tuple(float(side) for side in match.pitch)
+        if pitch is not None and own != pitch:
+            raise BroadcastSimError("the matches have different pitches ({} and {}); W3 is measured against one pitch, "
+                                    "so they cannot be pooled".format(pitch, own))
+        pitch = own
+        scale = np.array(pitch)
+        reference = np.asarray(match.ball_xy, dtype=np.float64) * scale
+        for seed in seed_list:
+            atd = run.make_atd(match, profile, seed, calibration)
+            plain = match_inputs.MatchInputs(match, atd, profile=profile, seed=seed, data_dir=data_dir)
+            ball, codes = simulated_ball(config, match, plain, profile, seed, pools)
+            served = match_inputs.MatchInputs(match, atd, profile=profile, seed=seed, data_dir=data_dir,
+                                              broadcast_ball=ball)
+            copies.append({"ball_present": np.asarray(atd.ball_present, dtype=bool),
+                           "filled": np.asarray(served.with_ball_fill("broadcast").ball_filled, dtype=bool),
+                           "codes": np.asarray(codes), "graded": list(plain.graded), "fill_xy_m": ball * scale,
+                           "reference_xy_m": reference})
+            del atd, plain, served
+        log("match     {}   {:,} rows, {} seed(s) simulated".format(match.match_id, match.n_frames, len(seed_list)))
+        del match
+    sim = measure_fill(*laid_end_to_end(copies), pitch)
+    calibration_info = None if profile == run.CLEAN else {"sha256": calibration_module.digest(calibration),
+                                                          "version": calibration_module.CALIBRATION_VERSION}
+    return fidelity_result(config=config, dropped=dropped, profile=profile, seeds=seed_list, match_ids=ids,
+                           calibration=calibration_info, digest=digest(pools), copies=len(copies), ours=ours, sim=sim)
+
+
+def laid_end_to_end(copies):
+    """(ball_present, filled, codes, graded, fill_xy_m, reference_xy_m) of `copies` laid one after the other: each
+    copy's arrays in turn, and its graded blocks moved by the frames of the copies before it. measure_fill's arguments
+    but the pitch, so that the copies are pooled by frames."""
+    graded, offset = [], 0
+    for copy in copies:
+        graded += [(half, start + offset, stop + offset) for half, start, stop in copy["graded"]]
+        offset += len(copy["ball_present"])
+    return (np.concatenate([copy["ball_present"] for copy in copies]),
+            np.concatenate([copy["filled"] for copy in copies]), np.concatenate([copy["codes"] for copy in copies]),
+            graded, np.concatenate([copy["fill_xy_m"] for copy in copies]),
+            np.concatenate([copy["reference_xy_m"] for copy in copies]))
+
+
+def _compared(ours, sim, tolerance):
+    """{"ours", "sim", "difference", "tolerance", "passed"}: passed when both exist and |sim - ours| <= tolerance."""
+    known = ours is not None and sim is not None
+    return {"ours": ours, "sim": sim, "difference": sim - ours if known else None, "tolerance": tolerance,
+            "passed": bool(known and abs(sim - ours) <= tolerance)}
+
+
+def judge_fidelity(ours, sim):
+    """The design's 3.5 tables from two measure_fill results: {"gates", "checks", "warnings", "verdict", "exit"}.
+
+    Gates: F1, F2 and F3's first, last and inside shares, each |sim - ours| within GATE_TOLERANCES. Checks: F4's median
+    fragment by class within 10 frames, F5's median error within 0.2 m (CHECK_TOLERANCES). A statistic that is None on
+    either side fails its gate or check (ruling 6). Warnings, W1 to W3, are reported and decide nothing. The verdict is
+    "gate" (exit 1) if a gate fails, whatever the checks, else "check" (exit 3) if a check fails, else "pass" (0).
+    """
+    gates = {"F1": _compared(ours["F1"]["share"], sim["F1"]["share"], GATE_TOLERANCES["F1"]),
+             "F2": _compared(ours["F2"]["share"], sim["F2"]["share"], GATE_TOLERANCES["F2"])}
+    for part in ("first", "last", "inside"):
+        gates["F3 " + part] = _compared(ours["F3"][part]["share"], sim["F3"][part]["share"], GATE_TOLERANCES["F3"])
+    checks = {"F4 " + name: _compared(ours["F4"][name]["median"], sim["F4"][name]["median"], CHECK_TOLERANCES["F4"])
+              for name in ("alive", "dead")}
+    checks["F5"] = _compared(ours["F5"]["median_m"], sim["F5"]["median_m"], CHECK_TOLERANCES["F5"])
+    warnings = {name: {"ours": ours[name]["share"], "sim": sim[name]["share"]} for name in ("W1", "W2", "W3")}
+    if not all(row["passed"] for row in gates.values()):
+        verdict = "gate"
+    elif not all(row["passed"] for row in checks.values()):
+        verdict = "check"
+    else:
+        verdict = "pass"
+    return {"gates": gates, "checks": checks, "warnings": warnings, "verdict": verdict,
+            "exit": FIDELITY_EXIT[verdict]}
+
+
+def fidelity_result(config, dropped, profile, seeds, match_ids, calibration, digest, copies, ours, sim):
+    """The JSON-ready result of a fidelity run (the report fidelity-<profile>.json holds it, run.plain): the config as
+    run, what was dropped, the profile's record, the seeds, the matches, the Calibration's {sha256, version} (None for
+    clean), the pools' digest, the number of copies, the two measures and judge_fidelity's tables and exit."""
+    return dict({"config": {"path": run.shown(config.path), "text": config.text.replace("\r\n", "\n")},
+                 "stem": config.stem, "dropped_match_only": list(dropped), "profile": degrade.profile_record(profile),
+                 "seeds": list(seeds), "matches": sorted(match_ids), "calibration": calibration,
+                 "broadcast_sim": digest, "copies": copies, "ours": ours, "sim": sim}, **judge_fidelity(ours, sim))
+
+
+def fidelity_path(data_dir, profile, seeds=None):
+    """<data dir>/runs/r028/fidelity-<profile>[.s<n>].json: `.s<n>` for a number of seeds other than the default, as the
+    runner's reports, so that a one-seed look never replaces the three-seed report."""
+    name = ".".join(["fidelity-{}".format(profile)] + run.name_suffixes(profile, None, seeds)) + ".json"
+    return os.path.join(data_dir, *REPORT_FOLDER, name)
+
+
+FIDELITY_ROWS = {"F1": "fill share of the gap frames called alive", "F2": "fill share of the gap frames called D",
+                 "F3 first": "fill share in a long gap's first 1 s", "F3 last": "fill share in a long gap's last 1 s",
+                 "F3 inside": "fill share inside a long gap", "F4 alive": "median alive fill fragment, frames",
+                 "F4 dead": "median D fill fragment, frames", "F5": "median position error, m",
+                 "W1": "fill frames per graded frame", "W2": "share of the gap frames called alive",
+                 "W3": "share of fill frames beyond a line by > 1 m"}
+FIDELITY_VERDICTS = {"pass": "every gate and check passes: the stand-in is ours",
+                     "gate": "a gate fails: STOP for the advisor (design 3.5)",
+                     "check": "a check fails: STOP for the advisor (design 3.5)"}
+
+
+def render_fidelity(result):
+    """The lines that `fidelity` prints: the run, every gate, check and warning (ours, the copies', the difference, the
+    tolerance) and the verdict. Aggregates only."""
+    profile = result["profile"]
+    lines = ["fidelity  {}   profile {} (version {})   seeds {}   {} matches, {} copies".format(
+                 result["stem"], profile["name"], profile["version"], ",".join(str(s) for s in result["seeds"]),
+                 len(result["matches"]), result["copies"]),
+             "dropped   match-only sources: {}".format(", ".join(result["dropped_match_only"]) or "none"),
+             "pools     broadcast_sim {}".format(result["broadcast_sim"]), "",
+             "{:<6}{:<10}{:<44}{:>9}{:>9}{:>11}{:>11}".format("", "", "", "ours", "copies", "difference",
+                                                              "tolerance")]
+    for kind, rows in (("gate", result["gates"]), ("check", result["checks"])):
+        for name, row in rows.items():
+            lines.append("{:<6}{:<10}{:<44}{:>9}{:>9}{:>11}{:>11}  {}".format(
+                kind, name, FIDELITY_ROWS[name], _number(row["ours"]), _number(row["sim"]),
+                "n/a" if row["difference"] is None else "{:+.4f}".format(row["difference"]),
+                "{:g}".format(row["tolerance"]), "pass" if row["passed"] else "FAIL"))
+    for name, row in result["warnings"].items():
+        lines.append("{:<6}{:<10}{:<44}{:>9}{:>9}".format("warn", name, FIDELITY_ROWS[name], _number(row["ours"]),
+                                                          _number(row["sim"])))
+    lines += ["", "verdict   {} (exit {})".format(FIDELITY_VERDICTS[result["verdict"]], result["exit"])]
+    return lines
+
+
+# -- BAR-ATH, label-free (design 7.4) ---------------------------------------------------------------------------------
+
+def judge_alignment(summary, refused=None):
+    """The alignment band and the live share of design 7.4, from Inputs.broadcast_summary (or None, with `refused` the
+    AlignmentError's message): d_1 and d_2 within OFFSET_BAND of EXPECTED_OFFSETS, and the live share at least
+    MIN_LIVE_SHARE. {"offsets", "expected", "band", "within", "live_share", "min_live_share", "live_passed",
+    "refused", "summary", "passed"}: passed only if the alignment was found, every half is in its band and the share is
+    high enough."""
+    base = {"expected": dict(EXPECTED_OFFSETS), "band": OFFSET_BAND, "min_live_share": MIN_LIVE_SHARE,
+            "refused": refused}
+    if summary is None:
+        return dict(base, offsets={}, within={half: False for half in EXPECTED_OFFSETS}, live_share=None,
+                    live_passed=False, summary=None, passed=False)
+    offsets = {int(half): int(value) for half, value in summary.get("offsets", {}).items()}
+    within = {half: half in offsets and abs(offsets[half] - expected) <= OFFSET_BAND
+              for half, expected in EXPECTED_OFFSETS.items()}
+    live = summary.get("live_share")
+    live_passed = live is not None and live >= MIN_LIVE_SHARE
+    return dict(base, offsets=offsets, within=within, live_share=live, live_passed=live_passed,
+                summary=run.plain(summary), passed=bool(refused is None and all(within.values()) and live_passed))
+
+
+def tag_check(inputs, filled):
+    """The tag check of design 7.4 (ruling 7): Smart Tagging's agreement on the frames that only the fill lets the
+    teacher speak on, against its agreement on the plain inputs.
+
+    The teacher is controlled_touch with conventions.TOUCH (kept episodes only, so no hold vote is counted), run once on
+    `inputs` (BAR-ATH, plain) and once on `filled` (inputs.with_ball_fill("broadcast")). The fill-only frames are the
+    graded ones where its `home` is a number on the filled inputs and NaN on the plain ones. Both agreements are
+    tag_stats.team_agreement with the team votes and tags of smart_tagging: on all graded frames for the plain teacher,
+    on the fill-only frames for the filled one. judge_tags says what that decides.
+    """
+    plain_home = np.asarray(controlled_touch.compute(RunContext(inputs=inputs, seed=0), **conventions.TOUCH).home,
+                            dtype=np.float64)
+    filled_home = np.asarray(controlled_touch.compute(RunContext(inputs=filled, seed=0), **conventions.TOUCH).home,
+                             dtype=np.float64)
+    graded = np.asarray(inputs.graded_mask, dtype=bool)
+    fill_only = graded & np.isfinite(filled_home) & np.isnan(plain_home)
+    team, tags = smart_tagging.votes(inputs), smart_tagging.tags(inputs)
+    missing = ~np.asarray(inputs.atd.ball_present, dtype=bool)
+    plain = tag_stats.team_agreement(team, plain_home, tags, graded=graded, ball_missing=missing)
+    fill = tag_stats.team_agreement(team, filled_home, tags, graded=fill_only, ball_missing=missing)
+    return judge_tags(plain, fill, int(fill_only.sum()))
+
+
+def judge_tags(plain, fill_only, fill_only_frames):
+    """{"plain", "fill_only", "fill_only_frames", "bar", "margin", "min_frames", "decisive", "passed"}: the bar is the
+    plain agreement minus TAG_MARGIN; the check decides only when at least MIN_TAG_FRAMES fill-only frames have a tag's
+    vote (fill_only["n"]), and then passes when the fill-only agreement is at or above the bar (an agreement or a bar
+    that is None fails). Below that many frames it is reported and passes, deciding nothing."""
+    bar = None if plain.get("share") is None else plain["share"] - TAG_MARGIN
+    decisive = fill_only["n"] >= MIN_TAG_FRAMES
+    share = fill_only.get("share")
+    passed = (not decisive) or (bar is not None and share is not None and share >= bar)
+    return {"plain": plain, "fill_only": fill_only, "fill_only_frames": int(fill_only_frames), "bar": bar,
+            "margin": TAG_MARGIN, "min_frames": MIN_TAG_FRAMES, "decisive": bool(decisive), "passed": bool(passed)}
+
+
+def judge_sanity(codes, graded):
+    """R024's sanity of the candidate's labels: no X on a graded frame, and D within D_SHARE_BAND of the graded frames,
+    both ends included. {"graded_frames", "x_graded", "d_share", "d_band", "passed"}."""
+    codes = np.asarray(codes)
+    mask = np.zeros(codes.shape[0], dtype=bool)
+    for _, start, stop in graded:
+        mask[start:stop] = True
+    frames = int(mask.sum())
+    x_graded = int((codes[mask] == X).sum())
+    d_share = float((codes[mask] == D).sum()) / frames if frames else None
+    low, high = D_SHARE_BAND
+    passed = d_share is not None and x_graded == 0 and low <= d_share <= high
+    return {"graded_frames": frames, "x_graded": x_graded, "d_share": d_share, "d_band": list(D_SHARE_BAND),
+            "passed": bool(passed)}
+
+
+def bar_ath_exit(alignment, tag, sanity):
+    """3 (a STOP) if the alignment band or the live share fails, whatever else; else 1 (a DROP) if the tag check or the
+    sanity fails (or is missing); else 0 (ruling 6)."""
+    if not alignment["passed"]:
+        return BAR_ATH_EXIT["stop"]
+    if not (tag and tag["passed"]) or not (sanity and sanity["passed"]):
+        return BAR_ATH_EXIT["drop"]
+    return BAR_ATH_EXIT["pass"]
+
+
+def bar_ath_result(config, alignment, digest, fill, tag, sanity, reported):
+    """The JSON-ready result of bar-ath (bar-ath-<config stem>.json holds it): the parts as measured, the stage reached
+    ("alignment" at a STOP, else "complete"), the verdict and bar_ath_exit's code."""
+    code = bar_ath_exit(alignment, tag, sanity)
+    verdict = {value: name for name, value in BAR_ATH_EXIT.items()}[code]
+    return {"config": {"path": run.shown(config.path), "text": config.text.replace("\r\n", "\n")},
+            "stem": config.stem, "stage": "complete" if alignment["passed"] else "alignment", "alignment": alignment,
+            "broadcast_sim": digest, "fill": fill, "tag": tag, "sanity": sanity, "reported": reported,
+            "verdict": verdict, "exit": code}
+
+
+def bar_ath(config, inputs=None, data_dir=None, pools=None, log=print):
+    """Design 7.4 on BAR-ATH for `config`, a config that fills: bar_ath_result of what was measured.
+
+    1. The alignment that the run finds (Inputs.broadcast_summary: the broadcast is loaded, aligned and its live and
+       usable frames found here) against the band, and the live share (judge_alignment). An AlignmentError is a
+       refused alignment. If either fails, nothing else is run: a STOP (exit 3).
+    2. The tag check (tag_check) on the plain inputs and their filled view.
+    3. The candidate's labels, the config through the benchmark's predict (its own fill applied there), and their
+       sanity (judge_sanity); main.toml's labels beside them for what is reported: the filled frames by the
+       candidate's state, W1 to W3 on BAR-ATH, the possessions per half with a WARN beyond POSSESSIONS_WARN of
+       main.toml's, and label_diff's figures (the graded frames relabelled among them).
+    `inputs` defaults to bar_ath_inputs(data_dir), `pools` to load_pools (its digest goes into the result). The fill's
+    added time is logged, never kept. BroadcastSimError for a config that does not fill.
+    """
+    if config.ball_fill == "none":
+        raise BroadcastSimError(
+            "{}: [inputs] ball_fill is \"none\"; bar-ath checks a config that fills ([inputs] ball_fill = "
+            "\"broadcast\") on BAR-ATH".format(config.stem))
+    inputs = bar_ath_inputs(data_dir) if inputs is None else inputs
+    inputs.atd                                       # the tactical tracking: every run's cost, not the fill's
+    started = time.perf_counter()
+    try:
+        summary, refused = inputs.broadcast_summary, None
+    except AlignmentError as error:
+        summary, refused = None, str(error)
+    seconds = time.perf_counter() - started
+    alignment = judge_alignment(summary, refused)
+    log("alignment {}".format("in the band, live share high enough" if alignment["passed"] else
+                              "outside the band, refused or too few live frames: STOP"))
+    if not alignment["passed"]:
+        return bar_ath_result(config=config, alignment=alignment, digest=None, fill=None, tag=None, sanity=None,
+                              reported=None)
+    pools = load_pools(data_dir, inputs=inputs, log=log) if pools is None else pools
+    started = time.perf_counter()
+    filled = inputs.with_ball_fill("broadcast")
+    mask = np.asarray(filled.ball_filled, dtype=bool)
+    seconds += time.perf_counter() - started
+    fill = {"filled_frames": int(mask.sum()), "graded_frames": int(np.asarray(inputs.graded_mask).sum())}
+    log("fill      {:,} frames filled of {:,} graded; added {:.1f} s (the broadcast loaded, aligned, its live frames "
+        "found, the fill)".format(fill["filled_frames"], fill["graded_frames"], seconds))
+    tag = tag_check(inputs, filled)
+    codes = run.predict(config, inputs)[0]
+    sanity = judge_sanity(codes, inputs.graded)
+    main_codes = run.predict(load_config(MAIN_CONFIG), inputs)[0]
+    reported = _reported(inputs, mask, codes, main_codes)
+    return bar_ath_result(config=config, alignment=alignment, digest=digest(pools), fill=fill, tag=tag,
+                          sanity=sanity, reported=reported)
+
+
+def _reported(inputs, filled, codes, main_codes):
+    """What design 7.4 reports and decides nothing with: the filled frames by the candidate's state, W1 to W3 of the
+    real fill under its labels, the possessions per half beside main.toml's (a WARN beyond POSSESSIONS_WARN of them),
+    and label_diff's figures of the candidate against main.toml."""
+    present = np.asarray(inputs.atd.ball_present, dtype=bool)
+    pitch = np.array(inputs.pitch, dtype=np.float64)
+    state = measure_fill(present, filled, codes, inputs.graded, np.asarray(inputs.broadcast_ball) * pitch,
+                         np.full((inputs.n_frames, 2), np.nan), inputs.pitch)
+    diff = label_diff.diff(main_codes, codes, inputs)
+    possessions = {half: {"main": before, "candidate": after,
+                          "warn": bool(abs(after - before) > POSSESSIONS_WARN * before)}
+                   for half, (before, after) in sorted(diff["possessions"].items())}
+    total = int(filled.sum())
+    alive, dead = state["F1"]["num"], state["F2"]["num"]
+    return {"filled_by_state": {"alive": alive, "dead": dead, "other": total - alive - dead},
+            "W1": state["W1"], "W2": state["W2"], "W3": state["W3"], "possessions": possessions,
+            "relabelled_share": diff["changed_share"], "label_diff": diff}
+
+
+def bar_ath_path(data_dir, stem):
+    """<data dir>/runs/r028/bar-ath-<config stem>.json."""
+    return os.path.join(data_dir, *REPORT_FOLDER, "bar-ath-{}.json".format(stem))
+
+
+BAR_ATH_VERDICTS = {"pass": "every check passes", "drop": "a check fails: DROP (design 7.4)",
+                    "stop": "the alignment band or the live share fails: STOP for the advisor (design 7.4)"}
+
+
+def render_bar_ath(result):
+    """The lines that `bar-ath` prints: the alignment and live share as measured, then (past them) the tag check, the
+    sanity, the reported figures and the verdict. Aggregates only."""
+    alignment = result["alignment"]
+    lines = ["bar-ath   {}: design 7.4 on BAR-ATH, label-free".format(result["stem"])]
+    if alignment["refused"] is not None:
+        lines.append("alignment refused: {}".format(alignment["refused"]))
+    for half, expected in sorted(alignment["expected"].items()):
+        found = alignment["offsets"].get(half)
+        lines.append("alignment d_{} {} (expected {:,} +- {}): {}".format(
+            half, "none" if found is None else "{:,}".format(found), expected, alignment["band"],
+            "in the band" if alignment["within"][half] else "OUTSIDE"))
+    lines.append("live      {} of the valid graded frames (at least {}): {}".format(
+        _number(alignment["live_share"]), alignment["min_live_share"], "pass" if alignment["live_passed"] else "FAIL"))
+    if result["fill"] is not None:
+        lines.append("fill      {:,} frames filled of {:,} graded".format(result["fill"]["filled_frames"],
+                                                                         result["fill"]["graded_frames"]))
+    tag = result["tag"]
+    if tag is not None:
+        lines.append("tag       plain teacher: n {:,}, agreement {}; fill-only: {:,} frames, {:,} with a vote, "
+                     "agreement {}; bar {}: {}".format(
+                         tag["plain"]["n"], _number(tag["plain"]["share"]), tag["fill_only_frames"],
+                         tag["fill_only"]["n"], _number(tag["fill_only"]["share"]), _number(tag["bar"]),
+                         ("pass" if tag["passed"] else "FAIL") if tag["decisive"] else
+                         "reported only (fewer than {} frames with a vote)".format(tag["min_frames"])))
+    sanity = result["sanity"]
+    if sanity is not None:
+        lines.append("sanity    X on {:,} graded frames; D {} of the graded frames (band {:.0%} to {:.0%}): {}".format(
+            sanity["x_graded"], "n/a" if sanity["d_share"] is None else "{:.1%}".format(sanity["d_share"]),
+            sanity["d_band"][0], sanity["d_band"][1], "pass" if sanity["passed"] else "FAIL"))
+    reported = result["reported"]
+    if reported is not None:
+        state = reported["filled_by_state"]
+        lines.append("reported  filled frames by the candidate's labels: alive {:,}, D {:,}, X {:,}; W1 {}, W2 {}, "
+                     "W3 {}".format(state["alive"], state["dead"], state["other"], _number(reported["W1"]["share"]),
+                                    _number(reported["W2"]["share"]), _number(reported["W3"]["share"])))
+        for half, row in reported["possessions"].items():
+            lines.append("          possessions half {}: main.toml {:,}, candidate {:,}{}".format(
+                half, row["main"], row["candidate"],
+                "   WARN: beyond {:.0%} of main.toml's (T33)".format(POSSESSIONS_WARN) if row["warn"] else ""))
+        lines.append("          relabelled {:.2%} of the graded frames".format(reported["relabelled_share"]))
+    if result["broadcast_sim"] is not None:
+        lines.append("pools     broadcast_sim {}".format(result["broadcast_sim"]))
+    lines.append("verdict   {} (exit {})".format(BAR_ATH_VERDICTS[result["verdict"]], result["exit"]))
+    return lines
+
+
+# -- the command line -------------------------------------------------------------------------------------------------
+
+def build_parser():
+    parser = argparse.ArgumentParser(
+        description="R028's simulated broadcast: build the pools from BAR-ATH (pools), measure the stand-in against "
+                    "our match (fidelity), and check a config that fills on BAR-ATH (bar-ath).")
+    commands = parser.add_subparsers(dest="command", required=True)
+    pools = commands.add_parser("pools", help="build or read the pools of BAR-ATH and its measure; aggregates only")
+    pools.add_argument("--data-dir", help="the data bundle (default: data/, or $MTAH_DATA_DIR)")
+    measured = commands.add_parser(
+        "fidelity", help="design 3.5: the copies against BAR-ATH; exit 0, 1 (a gate fails), 3 (a check fails), 2 "
+                         "(an error)")
+    measured.add_argument("config", metavar="CONFIG",
+                          help="a config that fills, e.g. pipeline/benchmark/configs/r028/r028_preshift.toml (its "
+                               "match-only sources are dropped)")
+    measured.add_argument("--profile", default=run.DEFAULT_PROFILE, help=run.profile_help())
+    measured.add_argument("--seeds", type=int, default=run.DEFAULT_SEEDS,
+                          help="degradation seeds per match (default {})".format(run.DEFAULT_SEEDS))
+    measured.add_argument("--data-dir", help="the data bundle (default: data/, or $MTAH_DATA_DIR)")
+    checked = commands.add_parser(
+        "bar-ath", help="design 7.4 on BAR-ATH: exit 0, 1 (a check fails: DROP), 3 (the alignment band or the live "
+                        "share: STOP), 2 (error)")
+    checked.add_argument("config", metavar="CONFIG", help="the candidate, a config that fills")
+    checked.add_argument("--data-dir", help="the data bundle (default: data/, or $MTAH_DATA_DIR)")
+    return parser
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
+    data_dir = args.data_dir or games.DATA_DIR
+    try:
+        if args.command == "pools":
+            inputs = bar_ath_inputs(args.data_dir)
+            pools = load_pools(args.data_dir, inputs=inputs)
+            measure = load_bar_ath_measure(args.data_dir, inputs=inputs)
+            for line in render_pools(pools, measure):
+                print(line)
+            return 0
+        config = load_config(args.config)
+        if args.command == "fidelity":
+            result = fidelity(config, profile=args.profile, seeds=args.seeds, data_dir=args.data_dir, log=print)
+            path = fidelity_path(data_dir, args.profile, args.seeds)
+            lines = render_fidelity(result)
+        else:
+            result = bar_ath(config, inputs=bar_ath_inputs(args.data_dir), data_dir=args.data_dir, log=print)
+            path = bar_ath_path(data_dir, config.stem)
+            lines = render_bar_ath(result)
+        run.write_json(path, run.plain(result))
+    except (ConfigError, BroadcastSimError, run.BenchmarkError, AlignmentError, match_inputs.AssetUnavailable,
+            OSError) as error:
+        # The expected failures get a sentence: a config to fix, labels that are not R024's, data not there, a
+        # broadcast that does not align. An error is never a verdict: exit 2, whatever it was.
+        print("FAILED    {}".format(error))
+        return EXIT_ERROR
+    except Exception:          # a bug: its traceback, and still exit 2, so that it cannot be read as a gate's 1
+        traceback.print_exc()
+        print("FAILED    an unexpected error (its traceback is above); this is not a verdict")
+        return EXIT_ERROR
+    print("")
+    for line in lines:
+        print(line)
+    print("report    {}".format(run.shown(path)))
+    return result["exit"]
+
+
+if __name__ == "__main__":
+    sys.exit(main())

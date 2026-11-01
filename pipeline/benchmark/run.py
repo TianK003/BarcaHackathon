@@ -44,6 +44,9 @@ evaluate_configs() is what the team chooses between methods with, so it is built
   side; a ranking that differs between them is a warning, not something to fix. evaluate_truths (`--truth both`)
   scores each config's codes against both from one decode and gives exactly what two runs would: the decoder, not the
   scoring, is what a grid's time goes on.
+* A config that fills ([inputs] ball_fill = "broadcast", R028) has no broadcast on a DFL match, so it is served a
+  simulated one (broadcast_sim.served_inputs_for), driven by its own twin without the fill. Every report of a run that
+  loaded the pools of that simulation holds their digest (`broadcast_sim`), and null when no config of the run fills.
 * Nothing in a report depends on the machine's speed, the order of a set or the clock: no timings are written (they are
   printed), floats are rounded to 9 decimals (BLAS summation order differs between machines), keys are sorted and the
   file is LF with an atomic rename. The same inputs, seed and versions give the same bytes, in any process
@@ -110,6 +113,7 @@ from pipeline.benchmark import inputs as match_inputs  # noqa: E402
 from pipeline.benchmark import truth as truths  # noqa: E402
 from pipeline.config import ConfigError, load_config  # noqa: E402
 from pipeline.contracts import RunContext  # noqa: E402
+from pipeline.inputs.broadcast import AlignmentError  # noqa: E402
 
 import possession_metrics as pm  # noqa: E402  isort:skip
 
@@ -207,7 +211,7 @@ def _check_profile(profile):
 # -- every config on every match --------------------------------------------------------------------------------------
 
 def evaluate_configs(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_ids=None, matches=None,
-                     calibration=None, truth="raw", data_dir=None, log=print, drop_match_only=False):
+                     calibration=None, truth="raw", data_dir=None, log=print, drop_match_only=False, pools=None):
     """Run each config on each match and score it; the result holds a JSON-ready report per config.
 
     `config_paths` are TOML files for pipeline.config.load_config; the first is the reference of the comparisons.
@@ -225,28 +229,37 @@ def evaluate_configs(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_id
     need an asset a benchmark match does not have), runs what is left, and records the removed names in each report's
     "dropped_match_only" and in the printed block; see drop_match_only().
 
+    A config that fills ([inputs] ball_fill = "broadcast", R028) is served a simulated broadcast ball on each match and
+    seed (broadcast_sim.served_inputs_for: its twin without the fill is decoded on the plain inputs and drives the
+    transplant), and `pools` is the broadcast_sim.Pools it is made from; none given, broadcast_sim.load_pools(data_dir)
+    reads them before the first match. The twin's codes are kept per (match, seed) and shared by every config of the
+    run with the same content, so a config whose content is a twin's is not decoded twice. Every report of a run that
+    loaded the pools holds their digest ("broadcast_sim"), the reports of the configs that do not fill too, so that
+    choose.py compares the reference with the candidate; a run in which no config fills holds null, pools given or not.
+
     Everything that can be refused is, before the first match is loaded: no config, one that does not load (ConfigError,
     from the pipeline's own loader), one with scope = "file", one whose name has a dot, two with the same name, an
     unknown profile or truth or match, a repeated match, fewer than one seed, a calibration that is not one or that the
-    profile does not take. BenchmarkError says which. A source that needs an asset that a benchmark match does not have
-    (the video's homography, the Smart Tagging) stops the run with its config, its name and kind and the asset named,
-    instead of scoring zeros.
+    profile does not take, pools that are not a Pools for a run that fills. BenchmarkError says which. A source that
+    needs an asset that a benchmark match does not have (the video's homography, the Smart Tagging) stops the run with
+    its config, its name and kind and the asset named, instead of scoring zeros.
 
-    Returns {"profile", "seeds", "truth", "matches", "git", "data_dir", "reference", "configs", "rank"}; "configs" is a
-    list in the order given of {"stem", "report", "scores", "seconds"}: the report is what write_reports writes (a
-    function of the config, the profile, the matches and the calibration, with no timing), `scores` the HalfScores it
-    was made from and `seconds` the time spent on the config (printed, never written). "rank" is rank_agreement of the
-    configs, None unless at least two of them are among PUBLISHED_ORDER.
+    Returns {"profile", "seeds", "truth", "matches", "git", "data_dir", "reference", "configs", "rank",
+    "broadcast_sim"}; "configs" is a list in the order given of {"stem", "report", "scores", "seconds"}: the report is
+    what write_reports writes (a function of the config, the profile, the matches and the calibration, with no timing),
+    `scores` the HalfScores it was made from and `seconds` the time spent on the config (printed, never written). "rank"
+    is rank_agreement of the configs, None unless at least two of them are among PUBLISHED_ORDER.
     """
     if truth not in TRUTHS:
         raise BenchmarkError("truth {!r} is not one of: {}".format(truth, ", ".join(TRUTHS)))
     return evaluate_truths(config_paths, profile=profile, seeds=seeds, match_ids=match_ids, matches=matches,
                            calibration=calibration, truth_names=(truth,), data_dir=data_dir, log=log,
-                           drop_match_only=drop_match_only)[truth]
+                           drop_match_only=drop_match_only, pools=pools)[truth]
 
 
 def evaluate_truths(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_ids=None, matches=None,
-                    calibration=None, truth_names=TRUTHS, data_dir=None, log=print, drop_match_only=False):
+                    calibration=None, truth_names=TRUTHS, data_dir=None, log=print, drop_match_only=False,
+                    pools=None):
     """{truth: result}: evaluate_configs under each of `truth_names`, every config decoded once per match and seed.
 
     Each config's codes on a match and seed are scored against each truth in turn, so a result is exactly what
@@ -272,8 +285,18 @@ def evaluate_truths(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_ids
         raise BenchmarkError("calibration must be a Calibration of our own match, as calibration.load() returns, and "
                              "it is a {}".format(type(calibration).__name__))
     ids = resolve_match_ids(match_ids, matches)
+    filling = any(config.ball_fill != "none" for config in configs)
+    simulator = None
+    if filling:
+        from pipeline.benchmark import broadcast_sim as simulator   # here, not above: broadcast_sim imports this module
+        if pools is not None and not isinstance(pools, simulator.Pools):
+            raise BenchmarkError("pools must be the Pools of the simulated broadcast (broadcast_sim.load_pools()), and "
+                                 "it is a {}".format(type(pools).__name__))
     if profile != CLEAN and calibration is None:
         calibration = calibration_module.load(data_dir=data_dir)
+    if filling and pools is None:
+        pools = simulator.load_pools(data_dir=data_dir, log=log)
+    broadcast_sim = simulator.digest(pools) if filling else None
     data_dir_used = data_dir or games.DATA_DIR
     seed_list = [0] if profile == CLEAN else list(range(seeds))
     if profile == CLEAN and asked_for_seeds and seeds != 1:
@@ -282,6 +305,7 @@ def evaluate_truths(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_ids
     scores = {name: {config.stem: [] for config in configs} for name in truth_names}
     seconds = {config.stem: 0.0 for config in configs}
     records = []
+    drivers = {}                # the codes of a twin, and of every config of the run, per (match, profile, seed)
     for match_id in ids:
         match = matches[match_id] if matches is not None else dfl.load_match(match_id, data_dir=data_dir)
         if match.match_id != match_id:
@@ -301,12 +325,19 @@ def evaluate_truths(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_ids
                 record["sources_reason"] = inputs.atd_manifest["sources_reason"]
             for config in configs:
                 started = time.perf_counter()
-                codes = _codes(config, inputs)
+                if config.ball_fill == "none":
+                    codes = _codes(config, inputs)
+                    if filling:     # the driver of a twin with this content, if the run has one
+                        drivers.setdefault(simulator.driver_slot(config, match.match_id, profile, seed), codes)
+                else:
+                    codes = _codes(config, simulator.served_inputs_for(config, match, atd, profile, seed, data_dir,
+                                                                       pools, plain=inputs, drivers=drivers))
                 for name in truth_names:
                     scores[name][config.stem] += score.score_halves(codes_true[name], codes, match.graded,
                                                                     match.match_id, seed)
                 seconds[config.stem] += time.perf_counter() - started
             del atd, inputs, codes
+        drivers.clear()                          # one match in memory at a time, its codes too
         records.append(record)
         log("match     {}   {:,} rows, {:,} graded   truth {}".format(
             record["id"], record["frames"], record["graded_frames"], "+".join(truth_names)))
@@ -328,7 +359,7 @@ def evaluate_truths(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_ids
     for name in truth_names:
         truth_info = {"name": name, "min_s": truths.COARSE_MIN_S if name == "coarse" else None}
         results[name] = _result(configs, scores[name], seconds, records, seed_list, profile_info, truth_info, git,
-                                environment, calibration_info, data_dir_used, dropped)
+                                environment, calibration_info, data_dir_used, dropped, broadcast_sim)
     for name in truth_names:
         for line in render(results[name]):
             log(line)
@@ -336,19 +367,19 @@ def evaluate_truths(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_ids
 
 
 def _result(configs, scores, seconds, records, seed_list, profile_info, truth_info, git, environment,
-            calibration_info, data_dir_used, dropped):
+            calibration_info, data_dir_used, dropped, broadcast_sim=None):
     """One truth's result, as evaluate_configs returns it: a report per config, each against the first."""
     reference = configs[0]
     entries = []
     for config in configs:
         versus = None if config is reference else _versus(reference, config, scores)
         report = _report(config, scores[config.stem], records, seed_list, profile_info, truth_info, git, environment,
-                         versus, calibration_info, dropped[config.stem])
+                         versus, calibration_info, dropped[config.stem], broadcast_sim)
         entries.append({"stem": config.stem, "report": report, "scores": scores[config.stem],
                         "seconds": seconds[config.stem]})
     return {"profile": profile_info, "seeds": seed_list, "truth": truth_info, "matches": records, "git": git,
             "data_dir": data_dir_used, "reference": reference.stem, "configs": entries,
-            "calibration": calibration_info,
+            "calibration": calibration_info, "broadcast_sim": broadcast_sim,
             "rank": rank_agreement({config.stem: score.pooled(scores[config.stem])["spell_f1_mean"]
                                     for config in configs})}
 
@@ -431,7 +462,16 @@ def _codes(config, inputs):
 
 
 def _unavailable(config, inputs, error):
-    """The sentence for an AssetUnavailable: which evidence source it was, found by running each source on its own."""
+    """The sentence for an AssetUnavailable: which evidence source it was, found by running each source on its own.
+
+    A config that fills on inputs that serve no broadcast ball is said to be that first: the fill asked for the ball
+    before any source ran, and the cause is how the match was served, not a source or the decoder (ruling 12).
+    """
+    if config.ball_fill != "none" and not _serves_broadcast_ball(inputs):
+        return ("{}: [inputs] ball_fill = {!r} fills our ball from the broadcast's, and the simulated broadcast ball "
+                "is missing from these inputs: a benchmark match has one only when it is served through "
+                "broadcast_sim.served_inputs_for, as evaluate_truths serves a config that fills. {}".format(
+                    config.stem, config.ball_fill, error))
     run_context = RunContext(inputs=inputs, seed=config.seed)
     for component in config.evidence:
         try:
@@ -446,6 +486,16 @@ def _unavailable(config, inputs, error):
     refiners = "".join(", refiner {!r}".format(component.kind) for component in config.refine)
     return ("{}: no evidence source asked for it on its own, so it was the decoder {!r}{} that asked for an asset a "
             "benchmark match does not have. {}".format(config.stem, config.decoder.kind, refiners, error))
+
+
+def _serves_broadcast_ball(inputs):
+    """Whether `inputs` serve a broadcast ball (a MatchInputs given one, BAR-ATH's) or raise AssetUnavailable for
+    it."""
+    try:
+        inputs.broadcast_ball
+    except match_inputs.AssetUnavailable:
+        return False
+    return True
 
 
 # -- the report -------------------------------------------------------------------------------------------------------
@@ -469,7 +519,7 @@ def rank_agreement(pooled_spell_f1):
 
 
 def _report(config, halves, records, seed_list, profile, truth, git, environment, versus, calibration,
-            dropped=()):
+            dropped=(), broadcast_sim=None):
     """The JSON-ready report of one config over all its HalfScores: counts, scores, intervals, and nothing timed."""
     per = score.per_match(halves)
     confusion = np.sum([np.array(half.confusion, dtype=np.int64) for half in halves], axis=0)
@@ -499,6 +549,7 @@ def _report(config, halves, records, seed_list, profile, truth, git, environment
         "halves": [dataclasses.asdict(half) for half in halves],
         "versus": versus,
         "calibration": calibration,          # {sha256, version} of the Calibration degraded with; None for clean
+        "broadcast_sim": broadcast_sim,      # the digest of the pools the run loaded (a config of it fills), else None
     }
     if profile["name"] in SENSITIVITY_ONLY:
         report["sensitivity_only"] = SENSITIVITY_ONLY[profile["name"]]      # only for a profile that is one
@@ -663,6 +714,9 @@ def render(result):
     if result["calibration"] is not None:
         lines.append("calibration   {}... (version {}): {}".format(
             result["calibration"]["sha256"][:12], result["calibration"]["version"], PROVENANCE[profile["name"]]))
+    if result.get("broadcast_sim") is not None:
+        lines.append("broadcast_sim {}...: the pools of the simulated broadcast ball (BAR-ATH's gap fills and near-gap "
+                     "errors, broadcast_sim.py), served to the configs that fill".format(result["broadcast_sim"][:12]))
     for stem, report, seconds in reports:
         pooled, interval = report["pooled"], report["t_interval"]["spell_f1_mean"]
         rate, labels = report["possessions_per_graded_minute"], report["labels"]
@@ -793,15 +847,21 @@ def main(argv=None):
                         help="drop the evidence sources that need an asset a benchmark match does not have "
                              "(MATCH_ONLY), and record them in the report")
     args = parser.parse_args(argv)
+    # Here, not above: broadcast_sim imports this module. Run by path, this file is __main__ and broadcast_sim imports
+    # a second copy of it as pipeline.benchmark.run, whose BenchmarkError (a twin's missing asset, raised in there) is
+    # another class than this one's; both are caught.
+    from pipeline.benchmark import broadcast_sim
 
     try:
         results = evaluate_truths(args.configs, profile=args.profile, seeds=args.seeds, match_ids=args.matches,
                                   truth_names=TRUTHS if args.truth == BOTH else (args.truth,), data_dir=args.data_dir,
                                   drop_match_only=args.drop_match_only)
         paths = [] if args.no_write else [path for result in results.values() for path in write_reports(result)]
-    except (ConfigError, BenchmarkError, OSError) as error:
+    except (ConfigError, BenchmarkError, broadcast_sim.run.BenchmarkError, broadcast_sim.BroadcastSimError,
+            AlignmentError, OSError) as error:
         # The expected failures get a sentence: a config to fix, a profile or match that does not exist, a source that
-        # needs the video, data not downloaded yet. Anything else is a bug and keeps its traceback.
+        # needs the video, data not downloaded yet, pools of the simulated broadcast that cannot be built. Anything
+        # else is a bug and keeps its traceback.
         print("FAILED    {}".format(error))
         return 1
     print("")

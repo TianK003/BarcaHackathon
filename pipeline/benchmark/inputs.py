@@ -18,7 +18,7 @@ the public window instead. Nothing is faked, so a component that needs them fail
 The broadcast is the same, with one exception (R028): a simulated broadcast ball, made from BAR-ATH's real one, can be
 given (`broadcast_ball=`) and is then served as `broadcast_ball`, which the fill of a config with [inputs] ball_fill =
 "broadcast" reads (pipeline.inputs.Inputs.with_ball_fill). Without one, such a config fails in predict() rather than
-run on the unfilled ball.
+run on the unfilled ball. The broadcast's other assets (its ATD, homography and alignment) a benchmark match never has.
 
 No truth through the inputs. Evidence components see `ctx.run.inputs`, and the DFL match carries the answer in its own
 ball_status and ball_possession (truth.py builds the benchmark's truth from them). A MatchInputs that kept the match,
@@ -190,6 +190,29 @@ class MatchInputs(Inputs):
         counts are FilledInputs.fill_summary's). AssetUnavailable without a ball, as broadcast_ball."""
         self.broadcast_ball  # AssetUnavailable when no ball was given
         return {}
+
+    # The rest of the broadcast is the video's, which a DFL match does not have, with a ball given or not: each of these
+    # says so in the module's sentence, rather than let Inputs' own look the match id up in games.py (a KeyError).
+
+    @property
+    def broadcast_atd(self):
+        raise AssetUnavailable(ASSET_MESSAGE.format("broadcast"))
+
+    @property
+    def broadcast_atd_manifest(self):
+        raise AssetUnavailable(ASSET_MESSAGE.format("broadcast"))
+
+    @property
+    def broadcast_valid(self):
+        raise AssetUnavailable(ASSET_MESSAGE.format("broadcast"))
+
+    @property
+    def broadcast_homography_source(self):
+        raise AssetUnavailable(ASSET_MESSAGE.format("broadcast"))
+
+    @property
+    def broadcast_alignment(self):
+        raise AssetUnavailable(ASSET_MESSAGE.format("broadcast"))
 
 
 def _dfl_cache_manifest(match, data_dir):

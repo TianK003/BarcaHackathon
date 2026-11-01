@@ -15,6 +15,21 @@ Pools made from lists. What is checked, and how:
     refuses; and the lot against a plain loop on random worlds;
   * Pools: the arrays, the validation by field, read-only, and a repr with no array in it.
 
+The wiring (Task 2b) is checked on the synthetic DFL matches of checks/common.py and on bar_ath_like, a stand-in for
+BAR-ATH made of the synthetic bundle of pipeline/selftest.py with a given broadcast ball, made-up records of the
+broadcast's files and made-up Smart Tagging; the decode of r024_both.toml is replaced by a stand-in that says which
+sha256 its CSV has:
+
+  * served_inputs_for: the plain inputs for a config without the fill; for one that fills, the twin's codes as the
+    driver, the match's generator, the ball served exactly as simulate made it, the drivers kept per twin, no truth;
+  * the pools: the pinned labels (refused otherwise, nothing left), a class with no donor and no error run refused, the
+    cache key and what changes it, the pools and BAR-ATH's measure worked out by plain code, the cache read back and
+    rebuilt when broken, the near-gap error runs on a hand-built scene, and `pools`' printout;
+  * fidelity: the copies laid end to end and measured once, the config as run on DFL, the gates and checks with their
+    exit codes, the report;
+  * bar-ath: the tag check on the fill-only teacher frames, the alignment band and the live share first, the sanity,
+    the exit codes, and the whole of it on the stand-in.
+
 Nothing here reads data, and nothing prints an array.
 """
 
@@ -53,8 +68,8 @@ PITCH = (100.0, 50.0)           # (length, width) in metres: dyadic, so that a p
 SCALE = np.array(PITCH)
 SEEDS = range(300)              # the seeds that the donor draw is read over
 # The records of the broadcast's files that the BAR-ATH stand-in (bar_ath_like) gives: made up, they name no file.
-BROADCAST_ATD_MANIFEST = {"sources": {"meta": {"bytes": 11, "sha256": "1" * 64}, "raw": {"bytes": 22, "sha256": "2" * 64}},
-                          "cache_version": 1}
+BROADCAST_ATD_MANIFEST = {"sources": {"meta": {"bytes": 11, "sha256": "1" * 64},
+                                      "raw": {"bytes": 22, "sha256": "2" * 64}}, "cache_version": 1}
 HOMOGRAPHY_SOURCE = {"bytes": 33, "sha256": "3" * 64}
 # The alignment a run of the real match would report, at A20's offsets and above the live bar (made up).
 ALIGNED = {"offsets": {1: 4014, 2: 26919}, "pairs": {1: 3000, 2: 2900}, "fine_scores": {1: 0.81, 2: 0.79},
@@ -1088,11 +1103,11 @@ def test_served_inputs_for_uses_the_twin_driver():
 # -- the wiring: the pools of BAR-ATH (design 3.3) ---------------------------------------------------------------------
 
 def bar_ath_like(root, tags=(), summary=None):
-    """BAR-ATH's Inputs in miniature: the synthetic bundle of pipeline/selftest.py under `root` (600 frames, two touching
-    blocks, the ball missing on a third of the frames), with a given broadcast ball (broadcast_like), made-up records of
-    the broadcast's files, an alignment summary (`summary`: a dict, or an exception that reading it raises; default
-    ALIGNED) and Smart Tagging (`tags`). What the pools, fidelity's BAR-ATH side and bar-ath read of the real match,
-    and none of it. Its attributes given_ball, manifest and homography may be changed by a check."""
+    """BAR-ATH's Inputs in miniature: the synthetic bundle of pipeline/selftest.py under `root` (600 frames, two
+    touching blocks, the ball missing on a third of the frames), with a given broadcast ball (broadcast_like), made-up
+    records of the broadcast's files, an alignment summary (`summary`: a dict, or an exception that reading it raises;
+    default ALIGNED) and Smart Tagging (`tags`). What the pools, fidelity's BAR-ATH side and bar-ath read of the real
+    match, and none of it. Its attributes given_ball, manifest and homography may be changed by a check."""
     from pipeline.inputs import Inputs
     make_synthetic_bundle(root)
 
@@ -1494,8 +1509,8 @@ def test_fidelity_exit_codes():
 
 def test_fidelity_pools_the_copies_end_to_end():
     """fidelity() serves every (match, seed) its simulated ball as the runner would (rulings 3 and 4: the config as run
-    on DFL, without its match-only sources, which it prints, and its twin as the driver), lays the copies end to end with
-    their blocks offset and measures them once with measure_fill, and judges them against BAR-ATH's measure as
+    on DFL, without its match-only sources, which it prints, and its twin as the driver), lays the copies end to end
+    with their blocks offset and measures them once with measure_fill, and judges them against BAR-ATH's measure as
     judge_fidelity does. A config that does not fill, and matches of different pitches, are refused."""
     matches = synthetic_matches()
     calibration = synthetic_calibration()
@@ -1587,8 +1602,9 @@ def test_fidelity_pools_the_copies_end_to_end():
 def test_tag_check_counts_fill_only_teacher_frames():
     """The tag check (ruling 7): the teacher is controlled_touch with conventions.TOUCH, run on the plain inputs and on
     the filled ones; the frames are the graded ones where its `home` is a number on the filled inputs and NaN on the
-    plain ones; the measure is tag_stats.team_agreement with Smart Tagging's team votes on them; and the bar is the plain
-    inputs' agreement over all graded frames minus 0.05, deciding only from 300 such frames that a tag votes on."""
+    plain ones; the measure is tag_stats.team_agreement with Smart Tagging's team votes on them; and the bar is the
+    plain inputs' agreement over all graded frames minus 0.05, deciding only from 300 such frames that a tag votes
+    on."""
     with tempfile.TemporaryDirectory() as root:
         inputs = bar_ath_like(root, tags=TAGS)
         filled = inputs.with_ball_fill("broadcast")

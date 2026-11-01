@@ -514,6 +514,7 @@ renamed over the old report; the same inputs, seed and versions give the same by
 | `possessions_per_graded_minute`, `labels` | the rates and the label shares of the printout |
 | `halves` | the counts everything above was made from, per half: `n_gt`, `n_pred`, `tp` at each IoU, the 3x4 `confusion` of the unfilled codes |
 | `versus` | null for the reference; for the others, the comparison with it for `spell_f1_mean` and `macro_f1` (`score.compare`: deltas, interval, p, wins, losses, by competition, and whether the interval excludes 0) and the reference's name and config hash. It is the one field that depends on which other configs were run |
+| `broadcast_sim` | the sha256 of the pools of the simulated broadcast ball (`broadcast_sim.digest`, R028) when a config of the run fills (`[inputs] ball_fill = "broadcast"`), the same in **every** report of that run, the reference's included, so that `choose.py` can compare them; null when no config of the run fills. See "The simulated broadcast (R028)" below |
 
 ## Headroom
 
@@ -771,8 +772,10 @@ sign-flip p and wins against the reference under both truths, the choice and its
 estimate that R008 to R011 worked out by hand: for each match, the selection repeated on the other six (the raw
 objective alone, and the whole rule on six-match means) and the chosen config's score on the held-out match against
 the reference's. Every number is computed from the reports' halves with `score.py`, so it is the runner's. A report is
-refused if its config file has changed since it was written, and reports of different runs (matches, seeds, profile or
-Calibration) are refused together.
+refused if its config file has changed since it was written, and reports of different runs (matches, seeds, profile,
+Calibration or the simulated broadcast's pools, `broadcast_sim`; `choose.SAME`) are refused together. A report written
+before `broadcast_sim` existed reads as null, as a run with no config that fills writes it
+(`test_choose_refuses_mixed_broadcast_sim`).
 
 `--metric macro` (`metric="macro"`, P12) judges the grid on pooled macroF1 in place of spellF1, for a refiner that can
 only move macroF1 (`free_x`, since removed, R016): the raw macroF1 selects, the coarse macroF1 breaks a tie, the Δs, p and wins in the
@@ -953,9 +956,12 @@ to understand how our truth flips, and never tuned on: it is "not training data 
 - **`latency CONFIG`** turns the instrument on the pipeline's own output: a predicted change matches a true one of the
   same pair of labels within 50 frames, and the lag is predicted minus true, so positive means our label changed late.
   `public` reads the CSV that `pipeline/run.py CONFIG` wrote against the public GT; `dfl` runs the config on every
-  benchmark match and seed. The config must decode per half. Each file records a sha256 of the config's content (scope,
-  seed, evidence, decoder and refine, no comment), and the public one also of the CSV it was read from; `shift`
-  refuses a file of another content or of none, with the `latency` command to run again.
+  benchmark match and seed. The config must decode per half. A config that fills (`[inputs] ball_fill = "broadcast"`,
+  R028) is served its simulated broadcast ball there as the runner serves it, and its file names the pools' digest
+  (`broadcast_sim`). Each file records a sha256 of the config's content (scope, seed, evidence, decoder and refine, and
+  `ball_fill` only when it is not "none", so that every older digest is unchanged and a config that fills never shares
+  its twin's file; no comment), and the public one also of the CSV it was read from; `shift` refuses a file of another
+  content or of none, with the `latency` command to run again.
 - **`shift --config CONFIG`** is P02's declared rule, and nothing in it is tuned. For each type, s_b is minus the
   rounded median of DFL's latencies (profile `tracking`, raw truth, so the benchmark's own default; the coarse truth's
   is reported beside it, T33), and 0 below 30 matched changes. A guard on the benchmark confirms or rejects s_b as a
@@ -976,6 +982,65 @@ The checks are in `checks/conventions.py` (synthetic): the window rule against a
 tracking, that the DFL mode reads the truth beside its inputs, that no transition frame is printed, the bootstrap, the
 typed matching at the tolerance, each condition of the rule on a list that fails it, the out-of-fold prediction
 against `shift_edges.apply`, and that a latency file of another content of the config, or of none, is refused.
+
+## The simulated broadcast (R028)
+
+R028 fills our tactical ball's gaps with the TV broadcast's ball (`[inputs] ball_fill = "broadcast"`,
+`pipeline/inputs/broadcast.py`). The DFL matches have no broadcast, so a config that fills is served a simulated one,
+transplanted from what the real one does in our gaps: `broadcast_sim.py` (the design is
+`docs/superpowers/specs/2026-11-01-r028-broadcast-ball-design.md`, sections 3 and 7).
+
+```
+.venv/Scripts/python pipeline/benchmark/broadcast_sim.py pools [--data-dir D]
+.venv/Scripts/python pipeline/benchmark/broadcast_sim.py fidelity [--profile tracking] [--seeds 3] CONFIG [--data-dir D]
+.venv/Scripts/python pipeline/benchmark/broadcast_sim.py bar-ath CONFIG [--data-dir D]
+```
+
+- **The pools** (design 3.3; `pools` builds or reads them, and prints aggregates only: the gaps per class, the donor
+  frames filled per class, the error runs and frames, BAR-ATH's measure and the digest). From BAR-ATH: every gap of
+  our ball inside a graded block, with its real fill mask and its class (alive if at least half of it is `H` or `A`),
+  and the error runs, the maximal runs of graded frames where both balls exist within 50 frames of a gap of their own
+  block, each frame's offset the broadcast's position minus ours in metres. The labels are `r024_both.toml`'s, decoded
+  in-process, and nothing is built unless their CSV is `e6496a9b...` (`broadcast_sim.R024_SHA256`, the file
+  `main.toml` writes today), a class has a donor and there is an error run. BAR-ATH's side of `fidelity` is measured at
+  the same time and kept beside the pools as aggregates, so `fidelity` never decodes BAR-ATH. The cache is
+  `<data dir>/cache/benchmark/broadcast_sim/<digest of the key>/`, with calibration.py's rules: its key holds the two ATD
+  caches' records, the broadcast homography's size and sha256, `r024_both.toml`'s text, its CSV's sha256 and
+  `POOLS_VERSION` (the code is not in it: a change to what the pools hold is a bump), and a broken cache is rebuilt,
+  never an error. Frame-level data of our match: never printed, never committed.
+- **The served inputs.** `run.py` (and `conventions.py latency CONFIG dfl`) serve a config that fills through
+  `broadcast_sim.served_inputs_for`: its twin, the same config with `ball_fill = "none"`, is decoded on the plain
+  inputs (the driver: the candidate's own labels, never the truth; design 3.2), `simulate` transplants a donor into each
+  gap with the match's own generator, and the ball is served as it comes to the fill of `Inputs.with_ball_fill` (no
+  13-frame filter on DFL). The twin's codes are decoded once per match and seed and shared with any config of the run
+  with the same content. Every report of a run that loaded the pools carries their digest (`broadcast_sim`), and null
+  when no config fills; `headroom.py` refuses a config that fills, since its variants are written without `[inputs]`.
+- **`fidelity`** (design 3.5) measures the config as it runs on DFL (its match-only sources dropped, printed) on every
+  match and seed of the profile, the copies laid end to end and measured once by `measure_fill`, against BAR-ATH's
+  measure. Gates: F1 (fill share of the gap frames called alive, +-0.05), F2 (of those called `D`, +-0.03) and F3 (the
+  first 1 s, the last 1 s and the inside of gaps of 2 s or more, each +-0.05). Checks: F4 (the median fill fragment by
+  class, within 10 frames) and F5 (the median position error, within 0.2 m; ours is the near-gap error pool's median).
+  Warnings W1 to W3 decide nothing. A statistic that is undefined on either side fails. The report is
+  `<data dir>/runs/r028/fidelity-<profile>[.s<n>].json`.
+- **`bar-ath`** (design 7.4) checks the candidate on BAR-ATH, label-free: the alignment the run finds (d_1 and d_2
+  within 2 frames of 4,014 and 26,919) and the live share (at least 0.85) first; then Smart Tagging's agreement on the
+  frames where only the fill lets the teacher (`conventions.TOUCH`) speak, against the plain teacher's minus 0.05,
+  deciding from 300 such frames with a vote; no `X` on a graded frame; `D` within 30% to 62% of the graded frames. It
+  reports the filled frames by the candidate's state, W1 to W3, the possessions per half beside `main.toml`'s (a WARN
+  beyond 25%) and the frames relabelled. The report is `<data dir>/runs/r028/bar-ath-<config stem>.json`.
+
+| command | exit 0 | exit 1 | exit 3 | exit 2 |
+|---|---|---|---|---|
+| `pools` | built or read | - | - | an error: labels that are not `e6496a9b...`, a class with no donor, no error run, data missing |
+| `fidelity` | every gate and check passes | a gate (F1 to F3) fails, whatever the checks | a check (F4, F5) fails and no gate does | an error; never a verdict |
+| `bar-ath` | every check passes | a check fails: DROP | the alignment band or the live share fails: STOP | an error; never a verdict |
+
+The reports hold aggregates only, floats to 9 decimals, and the pools' digest. The checks are in
+`checks/broadcast_sim.py` (synthetic, with a BAR-ATH stand-in made of the synthetic bundle), among them
+`test_served_inputs_for_uses_the_twin_driver`, `test_pools_refuse_labels_that_are_not_e6496a9b`,
+`test_pools_are_built_cached_and_rebuilt_when_broken`, `test_fidelity_pools_the_copies_end_to_end`,
+`test_fidelity_exit_codes`, `test_tag_check_counts_fill_only_teacher_frames` and `test_bar_ath_exit_codes`, and in
+`checks/run.py` (`test_every_report_of_a_run_carries_the_same_broadcast_sim`).
 
 ## The checks
 
@@ -998,7 +1063,7 @@ The checks live in `pipeline/benchmark/checks/`, one module per topic, listed in
 `__init__.py` says what each holds): `sources`, `dfl`, `truth`, `inputs`, `score`, `run`, `choose` (choose.py's), `hazard`,
 `calibration`, `degrade`, `cap`, `tracking`, `context`, `fidelity`, `headroom` (the Headroom section's), `touch` (touch_stats's),
 `dead_ball` (the Dead-ball model section's), `conventions` (the Conventions section's), `shape` (the Shape model
-section's) and `harness` (the harness itself). The profiles' are `degrade` (the transplant worked out exactly,
+section's), `broadcast_sim` (the simulated broadcast's, R028) and `harness` (the harness itself). The profiles' are `degrade` (the transplant worked out exactly,
 determinism, what the `gaps` profile touches and what it does not, no truth, the order of the matches), `tracking`
 (the tracklets, the episodes, the NaN-speed runs and the smoothing worked out exactly, and how it nests in `gaps`),
 `cap` (the low-count tail's cap, its shortest-piece rule and the scale of the tracked spans), `context` (what the
