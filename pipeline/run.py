@@ -9,6 +9,7 @@ What happens, in order -- each stage is a folder of pipeline/ with a README.md t
 
     1. config     the TOML file, checked before anything is loaded              pipeline/config.py
     2. inputs     the match, aligned to submission rows; ATD cached once         pipeline/inputs/
+                  with [inputs] ball_fill = "broadcast", our ball's gaps filled from the broadcast's (R028)
     3. evidence   every [[evidence]] source over the whole match, checked        pipeline/evidence/
     4. decode     the [decoder], once per block -- each graded half              pipeline/decode/
     5. refine     every [[refine]] step in order, per block                      pipeline/refine/
@@ -44,6 +45,7 @@ from pipeline.config import ConfigError, load_config  # noqa: E402
 from pipeline.contracts import (X, Block, BlockContext, Evidence, RunContext, check_decoded,  # noqa: E402
                                 check_evidence)
 from pipeline.inputs import Inputs  # noqa: E402
+from pipeline.inputs.broadcast import AlignmentError  # noqa: E402
 
 
 @dataclass(frozen=True, eq=False)
@@ -53,6 +55,14 @@ class RunResult:
     summary: dict      # output.summarise(): label counts, possessions
     evidence: dict     # name -> Evidence over the whole match, for --score and for notebooks
     timings: dict      # stage -> seconds (printed, not kept in the manifest: it would differ on every run)
+    fill: dict = None  # the inputs' fill_summary when [inputs] ball_fill fills the ball, else None (aggregates only)
+
+
+def prepare_inputs(config, inputs):
+    """The inputs the config's components read: `inputs` itself, or a view of them with the ball filled as the config's
+    [inputs] ball_fill says (Inputs.with_ball_fill). run() and the benchmark's predict() call it before any source runs,
+    so the fill is applied in this one place; for ball_fill = "none" it is the very object, and nothing changes."""
+    return inputs.with_ball_fill(config.ball_fill)
 
 
 def make_blocks(scope, inputs):
@@ -106,7 +116,6 @@ def run(config, inputs, out_path, log=print):
     # own generator from run.seed (pipeline/contracts.py, RunContext).
     random.seed(config.seed)
     np.random.seed(config.seed)
-    run_context = RunContext(inputs=inputs, seed=config.seed)
 
     log("config    {}   scope {}, seed {}".format(_shown(config.path), config.scope, config.seed))
     if config.scope == "file":
@@ -118,6 +127,14 @@ def run(config, inputs, out_path, log=print):
     timings["inputs"] = time.perf_counter() - started
     log("inputs    ATD cache {:<8} {}   {:.1f} s".format(
         inputs.atd_status, _shown(os.path.join(inputs.cache_dir, "atd_tactical")), timings["inputs"]))
+
+    inputs = prepare_inputs(config, inputs)
+    run_context = RunContext(inputs=inputs, seed=config.seed)
+    started = time.perf_counter()
+    fill = inputs.fill_summary  # None without a fill; with one, the broadcast is loaded, aligned and filled in here
+    if fill is not None:
+        timings["fill"] = time.perf_counter() - started
+        log("fill      {} ball: {}   {:.1f} s".format(config.ball_fill, _fill_line(fill), timings["fill"]))
 
     started = time.perf_counter()
     sources = compute_evidence(config, run_context)
@@ -148,7 +165,23 @@ def run(config, inputs, out_path, log=print):
         letter, graded[letter] / float(summary["graded_frames"] or 1)) for letter in ("H", "A", "D", "X"))))
     log("          {} possessions in the graded halves, mean {:.1f} s".format(
         summary["possessions"], summary["mean_possession_s"]))
-    return RunResult(codes=codes, sha256=sha256, summary=summary, evidence=sources, timings=timings)
+    return RunResult(codes=codes, sha256=sha256, summary=summary, evidence=sources, timings=timings, fill=fill)
+
+
+def inputs_record(inputs, fill):
+    """The manifest's "inputs": the tactical ATD's sources and cache version, and with a fill a "broadcast" entry too.
+
+    `fill` is the run's RunResult.fill. The entry holds its aggregates (the alignment, the live share, the frames
+    filled), the broadcast ATD cache's sources and version, and the broadcast homography file's size and sha256: what
+    the filled run was made from, beside what any run is made from. Without a fill the record is what it always was, so
+    a config without [inputs] writes the manifest it did.
+    """
+    record = {"atd_sources": inputs.atd_manifest["sources"], "atd_cache_version": inputs.atd_manifest["cache_version"]}
+    if fill is not None:
+        record["broadcast"] = dict(fill, atd_sources=inputs.broadcast_atd_manifest["sources"],
+                                   atd_cache_version=inputs.broadcast_atd_manifest["cache_version"],
+                                   homography_source=inputs.broadcast_homography_source)
+    return record
 
 
 def report_scores(result, inputs, gt, log=print):
@@ -207,9 +240,11 @@ def main(argv=None):
         output.check_out_path(out_path, inputs.data_dir)
         result = run(config, inputs, out_path)
         scores = report_scores(result, inputs, args.score) if args.score else None
-    except (ConfigError, output.UnsafeOutPath, output.SubmissionInvalid, output.ScoreError, OSError) as error:
+    except (ConfigError, output.UnsafeOutPath, output.SubmissionInvalid, output.ScoreError, OSError,
+            AlignmentError) as error:
         # The expected failures -- a config to fix, an output path that git could pick up, data not unpacked yet, a
-        # file the scorer would reject -- get a sentence. Anything else is a bug and keeps its traceback.
+        # file the scorer would reject, a broadcast that does not align to fill from -- get a sentence. Anything else
+        # is a bug and keeps its traceback.
         print("FAILED    {}".format(error))
         return 1
 
@@ -220,8 +255,7 @@ def main(argv=None):
         "git": git,
         "environment": {"python": platform.python_version(), "numpy": np.__version__, "pandas": pd.__version__,
                         "platform": platform.platform()},
-        "inputs": {"atd_sources": inputs.atd_manifest["sources"],
-                   "atd_cache_version": inputs.atd_manifest["cache_version"]},
+        "inputs": inputs_record(inputs, result.fill),
         "output": {"path": _shown(out_path), "sha256": result.sha256},
         "summary": result.summary,
         "scores": scores,
@@ -243,6 +277,21 @@ def _agreement(row, channel):
     if row[channel + "_agreement"] is None:
         return "-- (no opinion on judged frames)"
     return "{:.1%} of {:,} frames".format(row[channel + "_agreement"], row[channel + "_judged_frames"])
+
+
+def _fill_line(fill):
+    """The fill's aggregates as the log shows them: per half the offset and the fine score, the live share, the frames
+    filled. A ball given rather than aligned (the benchmark's simulated one) has no offsets and no live share."""
+    parts = []
+    if "offsets" in fill:
+        halves = sorted(fill["offsets"])
+        parts.append("offsets {} frames".format(" / ".join("{:+,}".format(fill["offsets"][half]) for half in halves)))
+        parts.append("fine {}".format(" / ".join("{:.3f}".format(fill["fine_scores"][half]) for half in halves)))
+    if "live_share" in fill:
+        parts.append("live {:.1%} of the valid graded frames".format(fill["live_share"]))
+    parts.append("{:,} frames filled ({:.1%} of the graded)".format(
+        fill["filled_frames"], fill["filled_frames"] / float(fill["graded_frames"] or 1)))
+    return ", ".join(parts)
 
 
 if __name__ == "__main__":

@@ -141,6 +141,61 @@ def test_match_inputs_hold_no_truth():
     assert not held_back, sorted(kept)
 
 
+FILL_CONFIG = """
+[[evidence]]
+kind = "nearest_player"
+
+[decoder]
+kind = "majority_vote"
+half_width = 3
+
+[inputs]
+ball_fill = "broadcast"
+"""
+
+
+def test_match_inputs_broadcast_ball_absent_or_given():
+    """broadcast_ball is the simulated broadcast's ball when one is given, and otherwise an asset a DFL match lacks.
+
+    Without one, asking for it raises AssetUnavailable with the module's sentence, as the homography and the Smart
+    Tagging do, and a config that fills the ball ([inputs] ball_fill = "broadcast") fails in predict() rather than
+    running on the unfilled ball. With one, it is served as given, (n, 2) float64 and read-only, without freezing the
+    caller's array; the fill writes it into the served ball's graded gaps; and the inputs still hold no truth.
+    """
+    from pipeline.benchmark import run as benchmark_run
+    from pipeline.config import load_config
+    match = random_match()
+    atd = match_inputs.clean_atd(match)
+    plain = match_inputs.MatchInputs(match, atd)
+    message = expect_error(match_inputs.AssetUnavailable, lambda: plain.broadcast_ball, "broadcast", "P01")
+    assert message == ASSET_MESSAGE.format("broadcast"), message
+
+    given = np.full((match.n_frames, 2), np.nan)
+    lost = np.flatnonzero(plain.graded_mask & ~atd.ball_present)
+    seen = np.flatnonzero(plain.graded_mask & atd.ball_present)
+    given[lost[::2]] = 0.25
+    given[seen[:20]] = 0.75
+    inputs = match_inputs.MatchInputs(match, atd, broadcast_ball=given)
+    ball = inputs.broadcast_ball
+    assert ball.shape == (match.n_frames, 2) and ball.dtype == np.float64 and not ball.flags.writeable
+    assert np.array_equal(ball, given, equal_nan=True) and given.flags.writeable, "served as given, not frozen"
+    assert leaks(inputs, match) == [], leaks(inputs, match)
+    expect_error(ValueError, lambda: match_inputs.MatchInputs(match, atd, broadcast_ball=given[:-1]),
+                 "RND001", "broadcast_ball", str(match.n_frames))
+
+    with tempfile.TemporaryDirectory() as root:
+        config = load_config(write_text(root, "fill.toml", FILL_CONFIG))
+    assert config.ball_fill == "broadcast"
+    expect_error(match_inputs.AssetUnavailable, lambda: benchmark_run.predict(config, plain), "broadcast")
+    codes, sources = benchmark_run.predict(config, inputs)
+    assert codes.shape == (match.n_frames,) and list(sources) == ["nearest_player"]
+    view = inputs.with_ball_fill("broadcast")
+    assert np.array_equal(view.ball_filled, np.isin(np.arange(match.n_frames), lost[::2]))
+    assert np.array_equal(view.atd.ball_xy[lost[::2]], given[lost[::2]])
+    assert view.fill_summary["filled_frames"] == len(lost[::2]) and view.atd_status == "benchmark"
+    assert leaks(view, match) == [], leaks(view, match)
+
+
 class Holder:
     """An object that keeps what it is given, so that a probe can keep only its bound method."""
 
