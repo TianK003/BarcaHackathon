@@ -43,6 +43,8 @@
   --info-bg: #e2edfb; --info-fg: #17508f;
   --rule-bg: #ece9fb; --rule-fg: #45389e;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --built-line: #2e8540; --built-tint: rgba(46, 133, 64, 0.07); --built-glow: rgba(46, 133, 64, 0.16);
+  --todo-line: #d9730d; --todo-tint: rgba(217, 115, 13, 0.08); --todo-glow: rgba(217, 115, 13, 0.22);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -75,6 +77,8 @@
     --info-bg: #162a43; --info-fg: #95c1f3;
     --rule-bg: #2a2548; --rule-fg: #c0b7f6;
     --shadow: none;
+    --built-line: #5cbf6b; --built-tint: rgba(92, 191, 107, 0.09); --built-glow: rgba(92, 191, 107, 0.20);
+    --todo-line: #f0a03c; --todo-tint: rgba(240, 160, 60, 0.10); --todo-glow: rgba(240, 160, 60, 0.26);
   }
 }
 :root[data-theme="dark"] {
@@ -107,6 +111,8 @@
   --info-bg: #162a43; --info-fg: #95c1f3;
   --rule-bg: #2a2548; --rule-fg: #c0b7f6;
   --shadow: none;
+  --built-line: #5cbf6b; --built-tint: rgba(92, 191, 107, 0.09); --built-glow: rgba(92, 191, 107, 0.20);
+  --todo-line: #f0a03c; --todo-tint: rgba(240, 160, 60, 0.10); --todo-glow: rgba(240, 160, 60, 0.26);
 }
 
 * { box-sizing: border-box; }
@@ -347,6 +353,28 @@ select, input[type="search"] {
 .side .node { background: var(--surface-2); border-style: dashed; }
 .side-tag { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 2px; }
 .conn { display: none; }
+/* Built (green) and not built yet (orange): a stage's box, the chips inside it, the legend */
+.node.st-built { border-width: 2px; border-style: solid; border-color: var(--built-line); background-image: linear-gradient(var(--built-tint), var(--built-tint)); box-shadow: 0 0 0 3px var(--built-glow); }
+.node.st-todo { border-width: 2px; border-style: dashed; border-color: var(--todo-line); background-image: linear-gradient(var(--todo-tint), var(--todo-tint)); box-shadow: 0 0 0 3px var(--todo-glow); }
+.node.st-built:hover, .node.st-todo:hover { box-shadow: 0 0 0 3px var(--accent-soft); }
+.node.st-built[aria-pressed="true"], .node.st-todo[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--surface), 0 0 0 5px var(--accent); }
+.nchip {
+  display: inline-flex; align-items: baseline; gap: 3px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 10.5px; font-weight: 600; line-height: 1.4; padding: 1px 5px; border-radius: 6px; border: 1px solid transparent;
+  overflow-wrap: anywhere; min-width: 0; max-width: 100%; text-align: left; vertical-align: middle;
+}
+.nchip .g { font-size: 10.5px; flex: none; }
+.nchip.in-main { background: var(--ok-bg); color: var(--ok-fg); border-color: var(--built-line); }
+.nchip.is-built { background: var(--surface); color: var(--ok-fg); border-color: var(--built-line); }
+.nchip.not-built { background: var(--plan-bg); color: var(--plan-fg); border: 1px dashed var(--todo-line); box-shadow: 0 0 0 2px var(--todo-glow); }
+.n-todo { font-size: 11.5px; font-weight: 700; color: var(--plan-fg); text-transform: uppercase; letter-spacing: 0.04em; display: block; margin-top: 8px; }
+.n-todo + .n-chips { margin-top: 4px; }
+.lg-swatch { display: inline-block; width: 22px; height: 14px; border-radius: 4px; vertical-align: middle; flex: none; }
+.lg-swatch.st-built { border: 2px solid var(--built-line); background: var(--built-tint); box-shadow: 0 0 0 2px var(--built-glow); }
+.lg-swatch.st-todo { border: 2px dashed var(--todo-line); background: var(--todo-tint); box-shadow: 0 0 0 2px var(--todo-glow); }
+.lg-item { display: inline-flex; gap: 6px; align-items: center; }
+.comp.c-built { border-left: 4px solid var(--built-line); }
+.plist li.p-todo { border-left: 4px solid var(--todo-line); padding-left: 10px; }
 @media (min-width: 1080px) {
   .flow { grid-template-columns: 1fr 0.95fr 1.5fr 0.7fr 0.95fr 0.95fr 0.8fr 0.95fr 0.9fr; column-gap: 22px; row-gap: 0; align-items: stretch; }
   .fi.arrow::after { left: auto; right: -14px; top: calc(50% - 1px); bottom: auto; width: 11px; height: 2px; }
@@ -605,7 +633,8 @@ footer { border-top: 1px solid var(--line); margin-top: 24px; padding: 16px 0 28
   .node, .tab, .fchip { transition: border-color 0.12s, box-shadow 0.12s, background-color 0.12s, color 0.12s; }
 }
 @media (forced-colors: active) {
-  .badge, .fchip, .node { border: 1px solid CanvasText; }
+  .badge, .fchip, .node, .nchip { border: 1px solid CanvasText; }
+  .node.st-todo, .nchip.not-built { border-style: dashed; }
 }
 </style>
 </head>
@@ -760,7 +789,8 @@ const DATA = {
     { name: "tactical ATD", status: "main", note: "used" },
     { name: "homography", status: "off", note: "unused by main.toml" },
     { name: "Smart Tagging", status: "main", note: "team votes (P08, R017)" },
-    { name: "broadcast", status: "dropped", note: "no mapping" }
+    { name: "tactical video", status: "idea", note: "unused; P14 would read the ball" },
+    { name: "broadcast", status: "idea", note: "no mapping yet (P15)" }
   ],
 
   stages: [
@@ -770,6 +800,7 @@ const DATA = {
       summary: "Every later stage works on arrays where row i is frame i of the tactical video, the submission's own index. The data does not arrive that way (the ATD counts from 1, Smart Tagging in seconds, the broadcast on its own timeline), and one off-by-one shifts every transition, so the conversions happen once, here, and are checked. It also parses the 195 MB ATD once into `data/cache/atd_tactical/` (about 15 s, then 1–2 s a run). Everything is lazy: an asset loads the first time a source asks for it.",
       contract: "**In:** `data/tactical/*` and `games.py`. **Out:** `Inputs`, read-only arrays of 199,319 rows; `graded` halves 11,185–90,651 and 110,808–190,197; `kickoffs` 11,185 and 113,742; pitch 105.3 × 68.0 m.",
       planned: ["P21", "P14", "P15"],
+      notBuilt: [{ name: "ball from the video", p: "P14" }, { name: "broadcast tracking", p: "P15" }],
       traps: ["T08", "T09", "T15", "T28", "T46"],
       files: [
         { label: "inputs/README.md", href: "../pipeline/inputs/README.md" },
@@ -788,6 +819,7 @@ const DATA = {
       summary: "Each source reads the whole match and gives an opinion on every frame; it never decides a label. Deciding (weighing the sources, keeping possessions as intervals, paying for every change) is the decoder's job, so a new source plugs in without touching it and a better decoder improves every source at once. `main.toml` runs four: `controlled_touch`, `shape_possession` and `smart_tagging` for `home`, `dead_ball_model` for `alive`.",
       contract: "**Out:** one `Evidence(alive, home)` per source, float64 per frame in [0, 1], NaN = no opinion. `alive` = P(ball in play); `home` = P(home has it | in play). Read together: P(H) = alive·home, P(A) = alive·(1 − home), P(D) = 1 − alive.",
       planned: [{ title: "A13 says where", text: "The team side holds the remaining score: a perfect team where the ball is seen is worth +0.194 raw and in the gaps +0.176, a perfect dead ball only +0.029." }, "P22", "P11", "P13"],
+      notBuilt: [{ name: "touch and pass events", p: "P11" }, { name: "pre-training on other data", p: "P13" }],
       traps: ["T12", "T14", "T38", "T39"],
       files: [
         { label: "evidence/README.md", href: "../pipeline/evidence/README.md" },
@@ -813,6 +845,7 @@ const DATA = {
         { title: "Duration priors beyond the minimums (semi-Markov)", text: "Once a run is long enough it is as likely to last two minutes as five seconds; a prior over run lengths would replace the hard minimum." },
         { title: "Re-run the minimum-run part after any new source", text: "“After P06”, item 4: the minimums were chosen under the evidence of their day, so a new source reopens them, by a declared protocol." }
       ],
+      notBuilt: [{ name: "semi-Markov duration priors" }],
       traps: ["T04", "T05", "T11", "T44", "T50"],
       files: [
         { label: "decode/README.md", href: "../pipeline/decode/README.md" },
@@ -830,6 +863,7 @@ const DATA = {
       summary: "Last-mile corrections to a decoded half, aimed at how the scorer counts: each a small, separate, switchable step whose effect is measured on its own. Today there is one, `shift_edges`. Refiners run in config order after the decoder, block by block, so they cannot leak across halftime either. A refiner applies a rule to the whole match; it never edits particular frames by hand.",
       contract: "**In:** the decoder's `BlockContext` and the block's current `Decoded`. **Out:** a new `Decoded` for exactly the same frames.",
       planned: ["P12", "P11"],
+      notBuilt: [{ name: "edges snapped to touches", p: "P11" }],
       traps: ["T02", "T03", "T40"],
       files: [
         { label: "refine/README.md", href: "../pipeline/refine/README.md" },
@@ -864,6 +898,7 @@ const DATA = {
       summary: "We may not label our own match, and the public window holds 17 possessions and ranks the baselines the wrong way round, so every choice between versions is made on other matches: the seven DFL/IDSSE open matches (two Bundesliga, five 2. Bundesliga; CC BY 4.0), whose truth is built as ours is (`D` where `BallStatus` is dead, else the team in `BallPossession`). Their tracking is degraded to look like ours, run through the pipeline's own components and scored by the official scorer, half by half.",
       contract: "**In:** a reference config and the configs to compare. **Out:** pooled spellF1, macroF1 and alive/dead F1 under the raw and the coarse truth; per-match deltas with 90% t-intervals, the exact sign-flip p and wins of seven; reports in `data/runs/benchmark/`.",
       planned: ["P16", "P13"],
+      notBuilt: [{ name: "switch timing on Metrica's games", p: "P16" }, { name: "other providers' tracking, degraded", p: "P13" }],
       traps: ["T33", "T41", "T43", "T45"],
       files: [
         { label: "benchmark/README.md", href: "../pipeline/benchmark/README.md" },
@@ -926,6 +961,10 @@ const DATA = {
       what: "P07: boosted trees on 26 features of how the two teams stand and move, none reading the ball, trained on the 7 DFL matches with the ball hidden and read symmetrically in the two teams. The only `home` evidence where the ball is missing (40.7% of the graded frames).",
       params: "model `shape_possession_hgb.json` · weight 0.2 · scope all · min_prob 0.02",
       entries: "P07: R011 (12 configs); weight re-chosen R013, kept by R024", built: ["2026-10-25", "R011"], retuned: ["2026-10-31", "R024"] },
+    { name: "smart_tagging", stage: "evidence", status: "main", channel: "home", explain: "smart_tagging",
+      what: "P08: the organisers' automatic phase tags as a weak per-frame team vote (a possession-phase code votes for the tagged team, a defending code for the other, `N/A` for nobody). Its confidence, 0.76, is the tags' agreement with our own controlled-touch pseudo-labels (R017); the dead votes agreed on 0.409 against a bar of 0.60 and were removed. `MATCH_ONLY`: DFL has no tags, so the benchmark runs `main.toml` without it.",
+      params: "c_team 0.76 · per frame · weight 0.2",
+      entries: "P08: R017", built: ["2026-10-30", "R017"], retuned: null },
     { name: "restart_team", stage: "evidence", status: "dropped", label: "dropped · off", channel: "home",
       what: "P17: who restarts after a stoppage, read from the players' arrangement by five rules from the Laws of the Game. Ceiling +0.0198 raw (A12); delivered +0.0040 (R014), short of its bar. Stays in the code, off by default.",
       entries: "P17: A12, R014, R014b", built: ["2026-10-26", "A12"], retuned: ["2026-10-26", "R014b"] },
@@ -2134,8 +2173,16 @@ const DATA = {
 
   function renderPipeline() {
     const p = $("#panel-pipeline");
-    const legend = h("div", { class: "diagram-legend" }, h("span", { class: "muted", text: "Component status:" }),
-      badge("main"), badge("off"), badge("baseline"), badge("dropped"), h("span", { class: "muted", text: "· Click a stage, or Tab to it and press Enter." }));
+    // A chip may wrap inside a narrow stage: let it break after "_", "." and "/" before it breaks inside a word.
+    const breakable = s => s.split(/(?<=[_./])/).flatMap((part, i) => (i ? [h("wbr"), part] : [part]));
+    const nchip = (kind, label) => h("span", { class: "nchip " + kind },
+      h("span", { class: "g", "aria-hidden": "true", text: kind === "in-main" ? "✓" : kind === "not-built" ? "→" : "○" }), h("span", {}, breakable(label)));
+    const legend = h("div", { class: "diagram-legend" },
+      h("span", { class: "lg-item" }, h("span", { class: "lg-swatch st-built", "aria-hidden": "true" }), "built"),
+      h("span", { class: "lg-item" }, h("span", { class: "lg-swatch st-todo", "aria-hidden": "true" }), "not built yet"),
+      h("span", { class: "muted", text: "· Inside a stage:" }),
+      nchip("in-main", "in main.toml"), nchip("is-built", "built, not in main.toml"), nchip("not-built", "not built: an open idea"),
+      h("span", { class: "muted", text: "· Dropped components are in each stage's details. Click a stage, or Tab to it and press Enter." }));
 
     const flow = h("div", { class: "flow" });
     const F = DATA.flow;
@@ -2149,16 +2196,23 @@ const DATA = {
     flow.append(h("div", { class: "fi arrow row1" }, assets));
 
     const stageNode = st => {
-      const comps = DATA.components.filter(c => c.stage === st.id);
-      const inMain = comps.filter(c => c.status === "main").length;
-      const btn = h("button", { type: "button", class: "node", "data-stage": st.id, "aria-pressed": "false", "aria-controls": "stage-panel",
-        "aria-label": (st.side ? "" : "Stage " + st.num + ", ") + st.name + ": " + st.short + ". Open details." });
+      // The configs stage has no components: its chips are the config files themselves.
+      const comps = st.id === "configs" ? DATA.configs : DATA.components.filter(c => c.stage === st.id);
+      const live = comps.filter(c => c.status !== "dropped");
+      const dropped = comps.length - live.length;
+      const inMain = live.filter(c => c.status === "main").length;
+      const todo = st.notBuilt || [];
+      const todoText = t => (t.p ? t.p + " " : "") + t.name;
+      const built = !!st.built;
+      const btn = h("button", { type: "button", class: "node " + (built ? "st-built" : "st-todo"), "data-stage": st.id, "aria-pressed": "false", "aria-controls": "stage-panel",
+        "aria-label": (st.side ? "" : "Stage " + st.num + ", ") + st.name + ": " + st.short + ". " + (built ? "Built" : "Not built yet") +
+          (todo.length ? "; not built yet: " + todo.map(todoText).join(", ") : "") + ". Open details." });
       btn.append(h("span", { class: "n-num", text: st.side ? (st.id === "benchmark" ? "side loop · P01" : "side input") : "stage " + st.num }),
         h("span", { class: "n-name", text: st.name }), h("span", { class: "n-desc", text: st.short }));
-      if (st.id === "evidence") {
-        btn.append(h("span", { class: "n-chips", "aria-hidden": "true" }, comps.map(c => badge(c.status, c.name))));
-        btn.append(h("span", { class: "n-desc", text: inMain + " of " + comps.length + " sources in main.toml" }));
-      }
+      if (live.length) btn.append(h("span", { class: "n-chips", "aria-hidden": "true" }, live.map(c => nchip(c.status === "main" ? "in-main" : "is-built", c.name))));
+      if (st.id === "evidence") btn.append(h("span", { class: "n-desc", text: inMain + " of " + live.length + " built sources in main.toml" + (dropped ? "; " + dropped + " dropped" : "") }));
+      if (todo.length) btn.append(h("span", { class: "n-todo", "aria-hidden": "true", text: "not built yet" }),
+        h("span", { class: "n-chips", "aria-hidden": "true" }, todo.map(t => nchip("not-built", todoText(t)))));
       btn.append(h("span", { class: "n-open", "aria-hidden": "true", text: "Details →" }));
       btn.addEventListener("click", () => selectStage(st.id, true));
       return btn;
@@ -2208,7 +2262,7 @@ const DATA = {
     if (c.entries) meta.append(h("dt", { text: "Entries" }), h("dd", { text: c.entries }));
     meta.append(h("dt", { text: "Built" }), h("dd", { class: "num", text: c.built ? c.built[0] + " · " + c.built[1] : "—" }));
     meta.append(h("dt", { text: "Last re-tuned" }), h("dd", { class: "num", text: c.retuned ? c.retuned[0] + " · " + c.retuned[1] : "never" }));
-    return h("article", { class: "comp" },
+    return h("article", { class: c.status === "dropped" ? "comp" : "comp c-built" },
       h("div", { class: "comp-head" }, h("span", { class: "comp-name", text: c.name }), badge(c.status, c.label || s.label), c.channel ? h("span", { class: "chan", text: c.channel }) : null),
       h("p", { html: md(c.what) }), meta,
       c.explain ? h("p", { style: "margin:6px 0 0" }, h("a", { class: "more-link", href: "#models/" + c.explain, text: "How it works, with visuals →" })) : null);
@@ -2219,12 +2273,12 @@ const DATA = {
       if (typeof it === "string") {
         const pr = propById(it);
         if (!pr) return;
-        ul.append(h("li", {},
+        ul.append(h("li", { class: ["idea", "partly", "todo", "doing"].includes(pr.status) ? "p-todo" : null },
           h("div", { class: "p-top" }, h("a", { class: "p-id", href: "../docs/proposals.md#" + pr.anchor, text: pr.id }), h("span", { text: pr.title }), badge(pr.status)),
           h("div", { class: "p-sub", text: "effort " + pr.effort + " · impact " + pr.impact }),
           pr.next ? h("p", { html: md(pr.next) }) : null));
       } else {
-        ul.append(h("li", {}, h("div", { class: "p-top" }, h("strong", { text: it.title }), badge("idea", "planned")), it.text ? h("p", { html: md(it.text) }) : null));
+        ul.append(h("li", { class: "p-todo" }, h("div", { class: "p-top" }, h("strong", { text: it.title }), badge("idea", "planned")), it.text ? h("p", { html: md(it.text) }) : null));
       }
     });
     return ul;
@@ -2256,7 +2310,7 @@ const DATA = {
 
     const ms = DATA.models.items.filter(m => m.stage === st.id);
     const minis = ms.length ? h("section", {}, h("h3", { text: ms.length > 1 ? "The models in this stage" : "The model in this stage", style: "font-size:14px; margin:0 0 10px" }),
-      h("div", { class: "mini-models" }, ms.map(modelMini))) : null;
+      h("div", { class: "mini-models" }, ms.map(modelMini))) : "";   // never null: the native append below would print "null"
 
     panel.append(
       h("div", { class: "sp-head" },

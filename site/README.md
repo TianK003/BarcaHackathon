@@ -38,7 +38,7 @@ Every fact lives in the `const DATA = { ... }` object at the top of the script. 
 rendering code below it.
 
 1. Change the facts that moved: a new entry in `timeline`, a point in `progression`, a component's `status`,
-   `params` or `retuned`, a proposal's `status`, the `cards`, the `deliverables`.
+   `params` or `retuned`, a proposal's `status`, a stage's `notBuilt`, the `cards`, the `deliverables`.
 2. Check each number against its source: `docs/results.md` (scores, entries, the submission log) and
    `docs/proposals.md` (statuses, the "After …" recommendations). The docs are the source of truth; this page only
    repeats them.
@@ -46,6 +46,22 @@ rendering code below it.
 4. Open the page and click through the tabs; the browser console should stay empty.
 
 Text fields understand a little markdown: `` `code` ``, `**bold**` and `[label](relative/link)`.
+
+### Built and not built, on the Pipeline tab
+
+The diagram marks what is built in green and what is not built yet in orange.
+
+- **A stage's box** is green when its entry in `stages` has a `built` line (all seven do today) and orange, dashed,
+  when it has none.
+- **The chips inside a stage** are its `components` (for `configs`, the files in `configs`): filled green with ✓
+  when in `main.toml`, outlined green with ○ when built but not in `main.toml`. Dropped components are left out of the
+  box and keep their badge in the stage's details.
+- **The orange chips** come from the stage's `notBuilt` list (`{ name, p }`, a short name and the open proposal it
+  belongs to): the ideas that would add to the stage and are not built. When one is built, move it into `components`;
+  when its proposal is dropped, delete it from `notBuilt`. The same idea may sit under two stages (P11 adds a source
+  and a refiner).
+- **In a stage's details,** built components have a green edge and open proposals (`idea`, `partly`) and the stage's
+  own planned items an orange one.
 
 ## Never
 
