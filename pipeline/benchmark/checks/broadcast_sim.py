@@ -1907,3 +1907,27 @@ def test_bar_ath_end_to_end_on_a_synthetic_match():
         assert halted["alignment"]["refused"] == "half 1: no offset agrees"
         expect_error(broadcast_sim.BroadcastSimError, lambda: broadcast_sim.bar_ath(twin, inputs=inputs, pools=pools,
                                                                                     log=quiet), "twin", "fill")
+
+
+def test_r028_configs_are_main_with_the_fill():
+    """configs/r028/: r028_post is main.toml with `[inputs] ball_fill = "broadcast"` and nothing else changed, and
+    r028_preshift is the same without main.toml's [[refine]] (R028 Task 3; R012's rule in R024's form). Both load the
+    way a run loads them, so every parameter is checked against its signature."""
+    from pipeline.config import load_config
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    main = load_config(os.path.join(root, "pipeline", "configs", "main.toml"))
+    folder = os.path.join(root, "pipeline", "benchmark", "configs", "r028")
+    post = load_config(os.path.join(folder, "r028_post.toml"))
+    preshift = load_config(os.path.join(folder, "r028_preshift.toml"))
+    assert main.ball_fill == "none" and post.ball_fill == "broadcast" and preshift.ball_fill == "broadcast"
+    for config in (post, preshift):
+        assert (config.seed, config.scope) == (main.seed, main.scope), config.stem
+        assert config.evidence == main.evidence and config.decoder == main.decoder, config.stem
+        assert "R028" in config.text.splitlines()[0], "the header names R028: " + config.stem
+    assert post.refine == main.refine and len(main.refine) == 1, post.refine
+    assert [(c.kind, c.params) for c in main.refine] == [
+        ("shift_edges", {"team": 1, "into_dead": -2, "out_of_dead": 0})], main.refine
+    assert preshift.refine == (), preshift.refine
+    # The fill and the shift are the only differences from main.toml.
+    assert dataclasses.replace(post, path=main.path, stem=main.stem, text=main.text, description=main.description,
+                               ball_fill="none") == main

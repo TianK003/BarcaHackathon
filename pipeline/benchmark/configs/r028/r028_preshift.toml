@@ -1,0 +1,52 @@
+# R028 (P15, use 1): main.toml with the tactical ball's gaps filled from the TV broadcast's ball, and without
+# shift_edges (R012's rule in R024's form, docs/results.md R028 part 1). Design:
+# docs/superpowers/specs/2026-11-01-r028-broadcast-ball-design.md. On BAR-ATH the fill is the real broadcast ball,
+# aligned by code (2.3), live-tested (2.4) and run-filtered (2.5); on the DFL benchmark it is the simulated one
+# (broadcast_sim.py, section 3). `conventions.py latency` measures this pipeline's own lag on DFL; s_b is minus its
+# rounded median per type (0 below 30 matched changes), and r028_final runs the config with s_b against this one.
+
+description = "R028 shift: main.toml with ball_fill broadcast and without shift_edges: P04 + P05 + P07 + P08, re-chosen by R013 (P08 added by R017, the hold re-chosen by R024): controlled_touch 1.5 m / 6.0 m/s / 1 frame / hold 0.55 (confidence 0.93) + dead_ball_model (hgb, pipeline/models/dead_ball_hgb.json) at weight 1.0 + shape_possession (hgb, pipeline/models/shape_possession_hgb.json) at weight 0.2, scope all, min_prob 0.02 + smart_tagging team votes (R017: c_team 0.76, spread frame, weight 0.2), hmm 4/32/35/25, decoded per half, no refiner."
+seed = 0
+scope = "halves"
+
+# R028: the tactical ball's gaps filled from the broadcast's usable ball (pipeline/inputs/broadcast.py; design
+# docs/superpowers/specs/2026-11-01-r028-broadcast-ball-design.md, section 2).
+[inputs]
+ball_fill = "broadcast"
+
+# Each [[evidence]] entry is one source: kind is its key in pipeline/evidence/__init__.py REGISTRY. Optional:
+# name = "..." (default: kind; must be unique) and weight = 1.0 (how much the decoder trusts it). Every other key is
+# passed to the source as a keyword argument.
+[[evidence]]
+kind = "controlled_touch"
+radius = 1.5                                  # metres: the nearest player must be this close
+max_rel_speed = 6.0                           # m/s: and move with the ball
+min_frames = 1                                # an episode shorter than this is dropped
+confidence = 0.93                             # touch_stats.py --grid r013: floor of the pooled agreement (93.1%)
+hold = 0.55                                   # the weak vote of the last team between episodes; 0.5 = off (R024)
+
+[[evidence]]
+kind = "dead_ball_model"
+weight = 1.0
+model = "pipeline/models/dead_ball_hgb.json"  # relative to the repo root
+
+[[evidence]]
+kind = "shape_possession"
+weight = 0.2                                          # an exponent on the source's likelihood (R011, kept by R013)
+model = "pipeline/models/shape_possession_hgb.json"   # relative to the repo root; BAR-ATH has no fold, so `full`
+scope = "all"                                         # "gaps": ball missing only; "all": every graded frame
+min_prob = 0.02                                       # home is clipped to [0.02, 0.98]
+
+[[evidence]]
+kind = "smart_tagging"
+weight = 0.2                                  # R017, Tian's pick of strength (2026-10-30); untested on a benchmark
+c_team = 0.76                                 # R017: the team votes' agreement with the kept touch episodes
+spread = "frame"                              # a per-frame vote (the alternative, "tag", is r017_tag.toml)
+
+# Exactly one decoder (pipeline/decode/). Every key but kind is a keyword argument.
+[decoder]
+kind = "hmm"
+switch_team = 4                               # nats a change of team (H <-> A) costs
+switch_dead = 32                              # nats a change into or out of D costs
+min_possession = 35                           # frames: no run of H or A shorter than this (1 is no minimum)
+min_dead = 25                                 # frames: no run of D shorter than this (1 is no minimum)
