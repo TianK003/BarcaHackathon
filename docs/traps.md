@@ -346,6 +346,28 @@ already shown the posterior too sharp for the mechanism. Before building on a de
 - a flatter posterior spreads an edge without saying where the truth is; what is left of the edges' loss is where the
   evidence changes, which a better source, not a rule on the posterior, has to fix.
 
+**T53: a stand-in copied from our match fails on DFL wherever DFL's served world differs from ours, so measure that
+difference before building the stand-in.**
+- **R028's stand-in** was a simulated broadcast. It transplanted BAR-ATH's real fill masks gap by gap, by the gap's class
+  (alive or `D` under the decoder) and its length.
+- **The code was right.** A world made of the donors' own gaps gave back our statistics exactly (the advisor's identity
+  test).
+- **DFL's world was not ours.** On DFL, `tracking`'s gaps fall blind to the play (T38): under the driver, 54% of their
+  frames are alive, against 20% of ours, and their lengths by class differ. So the per-frame rates came out unlike ours:
+  fill on alive frames 0.218 against 0.295, on `D` frames 0.089 against 0.041.
+- **The cost.** The lane was dropped at its first gate, 12 minutes into its runs, after a day of building. R019's
+  simulated camera failed its fidelity gates the same way.
+
+What to do:
+- before a stand-in's wiring is built, compute what its gates depend on directly on DFL's served world, beside ours.
+  Here that was the share of gap frames the decoder calls alive (W2) and the gap lengths per class. It needs one decode
+  and no stand-in at all;
+- if those already differ by more than the gates allow, the transplant cannot pass without being tuned towards the gate,
+  which T26 and T37 forbid, so change the design first. For R028, gaps placed by the play (P01's `context` profile, a
+  sensitivity check only, R005) differed as well: W2 0.44.
+
+Cost: about a day.
+
 ## Reproducibility and environment
 
 **T20 — Use the team venv.** It runs Python 3.11.9 in `.venv`, with numpy 2.4.6, pandas 3.0.6 and kloppy 3.18.0.

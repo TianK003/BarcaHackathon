@@ -49,7 +49,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R025, R025b | 2026-10-31 | P23 C: posterior edges, then on a posterior tempered at T = 5 (the one retry) | — | — | — | mean Δ -0.0010 (2 wins) and -0.0282 (0 wins) against `main` | **dropped**: guard failed both times; code removed |
 | R026 | 2026-10-31 | P23 E: P07 weighted apart in the gaps (6 configs) | — | — | — | the identity scored as `main`; every heavier gap weight -0.010 to -0.020 on the mean | **dropped**: no config beat `main`; no retry (advisor); code removed |
 | R027 | 2026-10-31 | P22(b): P07's logit plus a per-half intercept fitted on the other half's touch-rule frames (E2, noise-aware at ε 0.07), served by a new source `shape_selftrain`; part 1: the gate on DFL (rung 1's pooled log-loss in the held-out half's gaps at least 0.002 nats below P07's, no match more than 0.002 above), the shift, the bar (the mean of the two truths: pooled Δ ≥ +0.005 on `tracking`, no match below −0.005), two vetoes, the BAR-ATH checks; rung 3 the one retry (R027b); part 2a: the gate run | — | — | — | — | dropped 2026-10-31, code removed (recover from `1e5a5d2` and the local tag `archive/r027-source`): the gate failed, rung 1's pooled log-loss +0.0061 (0.3820 against P07's 0.3759; needed −0.002) and worse on 5 of 7 matches (worst +0.0148, J03WMX), rung 3 +0.0838; the touch-to-gap transfer 0.296 against the teacher's noise 0.107 (E/B 1.18); no shift, bar or BAR-ATH run, no spellF1 |
-| R028 | 2026-11-01 | P15 use 1: the TV broadcast's usable ball fills our tactical ball's gaps (`[inputs] ball_fill = "broadcast"`: aligned by code, live-tested, runs of 13+ frames); on DFL a simulated broadcast transplanted from BAR-ATH's real fill; part 1: the fidelity gates, the shift, the bar (ii: the mean of the two truths, pooled Δ ≥ +0.005 on `tracking`, no match below −0.005), two vetoes, the BAR-ATH checks; R028b (`filled_confidence` 0.79) the one retry | — | — | — | — | declared 2026-11-01 (part 1 committed before any run) |
+| R028 | 2026-11-01 | P15 use 1: the TV broadcast's usable ball fills our tactical ball's gaps (`[inputs] ball_fill = "broadcast"`: aligned by code, live-tested, runs of 13+ frames); on DFL a simulated broadcast transplanted from BAR-ATH's real fill; part 1: the fidelity gates, the shift, the bar (ii: the mean of the two truths, pooled Δ ≥ +0.005 on `tracking`, no match below −0.005), two vetoes, the BAR-ATH checks; R028b (`filled_confidence` 0.79) the one retry; part 2a: the fidelity run | — | — | — | — | dropped 2026-11-02, code removed (recover from `659a6c2` and the local tag `archive/r028-source`): the stand-in's fidelity gates failed on `tracking` (F1 0.2176 against ours 0.2952, F2 0.0885 against 0.0412, F3 first 0.4012 against 0.2974, inside 0.1414 against 0.0727), and the advisor found no departure of the code from part 1; no lag, bar or BAR-ATH run, no spellF1; the broadcast's value in our gaps is untested, not refuted |
 
 ### The four yardsticks on every profile, in one table
 
@@ -9210,6 +9210,83 @@ lines are:
 The script's exit code is ambiguous: `r028-fidelity.ps1` exits 3 for a pools STOP and for a failed check alike, and
 `r028-barath.ps1` exits 1 for a bar-ath DROP and for a failed candidate run alike. `label_diff.py`'s exit appears only
 in `CHAIN DONE`.
+
+**Part 2a, the fidelity run and the verdict** (2026-11-02). Everything below applies part 1 as written; nothing was
+chosen after the run. Only the pools and the fidelity step ran: no lag, bar or BAR-ATH run was made, and no spellF1 of
+any R028 config was produced. Every figure is an aggregate, quoted from the steps' printed logs.
+
+**The runs.** `r028-fidelity.ps1`, from the run worktree detached at part 1's commit `659a6c2`, one throttled process at
+a time through `.superpowers/bin/heavy-r028.ps1`. Before each step the chain logged `git rev-parse HEAD`, `659a6c2…`,
+and an empty `git status --porcelain`.
+- `broadcast_sim.py pools`, 00:46 to 00:47: `EXIT=0`.
+- `fidelity --profile tracking --seeds 3 r028_preshift.toml`, 00:48 to 00:53: `EXIT=1`, confirmed by its report
+  (`VERDICT CONFIRMED exit=1`).
+- `fidelity --profile context`, 00:54 to 00:58, reported only: `EXIT=1`, confirmed.
+
+**The pools** (BAR-ATH, built once). `r024_both.toml` decoded in-process: valid, sha256 `e6496a9b…`, 399 possessions.
+- **The alignment it was built from**, in the band: d₁ = 4,014 (fine score 0.6802) and d₂ = 26,919 (0.6376). The live
+  share is 0.9160 of the valid graded frames.
+- **The gaps:** 55 alive and 95 `D`, as A20 counted. The donors' fill covers 2,966 of 7,878 gap frames in the alive
+  gaps (37.6%) and 3,000 of 56,765 in the `D` gaps (5.3%).
+- **The errors:** 190 near-gap runs, 7,757 frames, median offset 1.00 m.
+- **The digest** of the pools' content: `ba962677…`.
+
+**The fidelity gates and checks.** "Ours" is BAR-ATH's own measure (with r024_both's labels), and "copies" is the 21
+simulated copies (`tracking` v3, seeds 0 to 2, `r028_preshift`'s driver without Smart Tagging), pooled by frames.
+
+| | statistic | ours | copies, `tracking` | difference | tolerance | | copies, `context` |
+|---|---|---|---|---|---|---|---|
+| F1 (gate) | fill share of the gap frames called alive | 0.2952 | 0.2176 | −0.0776 | 0.05 | **fail** | 0.2159 |
+| F2 (gate) | fill share of the gap frames called `D` | 0.0412 | 0.0885 | +0.0473 | 0.03 | **fail** | 0.0921 |
+| F3 (gate) | first 1 s of a long gap | 0.2974 | 0.4012 | +0.1037 | 0.05 | **fail** | 0.3558 |
+| F3 (gate) | last 1 s | 0.2177 | 0.2204 | +0.0026 | 0.05 | pass | 0.1692 |
+| F3 (gate) | inside | 0.0727 | 0.1414 | +0.0687 | 0.05 | **fail** | 0.1332 |
+| F4 (check) | median alive fill fragment (frames) | 14.0 | 26.0 | +12.0 | 10 | **fail** | 25.0 |
+| F4 (check) | median `D` fill fragment (frames) | 53.5 | 15.0 | −38.5 | 10 | **fail** | 15.0 |
+| F5 (check) | median position error (m) | 1.003 | 1.790 | +0.787 | 0.2 | **fail** | 1.790 |
+| W1 | fill frames per graded frame | 0.0376 | 0.0665 | | | | 0.0633 |
+| W2 | share of the gap frames called alive | 0.2011 | 0.5444 | | | | 0.4422 |
+| W3 | fill frames more than 1 m beyond a line | 0.1509 | 0.0725 | | | | 0.1007 |
+
+BAR-ATH's side reproduces A20 (F1 0.296, F2 0.042, F3 0.297 / 0.218 / 0.073, W1 0.038, W2 0.20, W3 0.151). Its `D`
+fragment median is 53.5 frames where A20 printed 35.5 "in our `D`": both sides of F4 use one class rule (a fragment's
+own frames, at least 0.5 `H` or `A`), so the difference is one of definition and changes no verdict.
+
+**The STOP and the advisor's ruling** (part 1: the advisor compares the code with this entry's text, never with the
+number that missed). The advisor, an opus agent standing in for Tian, was given the code at `659a6c2` and part 1, not
+the gate numbers. Ruling: **no departure.** The codes have one encoding throughout. The pools, the driver (after the
+match-only drop), the transplant (class polarity, the 5 nearest donors, the integer mask, the error draws, the NaN,
+the generator) and the one `measure_fill` on both sides match the text line by line. Its synthetic tests:
+- **identity:** a DFL world made of the donors' own gaps, through the real `fidelity`, gives back F1, F2, F3, F4, W1
+  and W2 exactly (F5 0.878 m against 0.898 m);
+- **power:** inverting the pools' classes, or swapping alive and `D` in the driver's codes, fails the gates (exit 1),
+  so a polarity or encoding bug would have shown;
+- **realistic pools** (55 and 95 donors of distinct lengths): every run passes, with a largest gate difference of
+  0.011.
+
+So the failure is a verdict (part 1): **R028 is dropped**. R028b is not reached; it follows only a bar or veto failure.
+
+**What it says.** The stand-in is not ours on DFL. The code reproduces our statistics when DFL's gaps are ours, so the
+miss comes from the two worlds differing where the transplant depends on them. These readings are not measured
+separately:
+- **The gaps' states.** Under the driver, 54% of DFL's served gap frames are alive against 20% of ours (W2): `tracking`
+  places its gaps blind to the play (T38). Within mixed gaps, the per-gap classes then put alive frames under `D`
+  donors and `D` frames under alive donors, which moves F1 down and F2 up.
+- **The gaps' lengths by class.** These differ too, so the proportional map stretches the alive donors (longer
+  fragments, F4 alive 26 frames) and compresses the `D` ones (15 frames against 53.5).
+- **The position error.** A long fragment may draw only from the few error runs at least as long, so its error is
+  those runs' (F5 1.79 m against the pool's 1.00 m).
+
+Making the stand-in pass would mean tuning it towards the gates, which T26 and T37 forbid. So the benchmark cannot
+value the broadcast's ball with this stand-in. R028 leaves the broadcast's value in our gaps **untested, not refuted**:
+A20's measurements stand, and any other way to validate it is a new proposal for Tian (T53).
+
+**The code** was removed in one commit, `b80bd9c`: `pipeline/` returns to its state before the lane (`a9a3801`).
+Recover it from `659a6c2` (local tag `archive/r028-source`). Both suites pass on `b80bd9c`, and `main.toml` still
+writes `e6496a9b…`. `main.toml` was never touched.
+
+**Cost.** The design, plan and build took the evening of 1 Nov: four tasks, five task reviews, one fix round, and part
+1's two independent reviews. The runs took 12 minutes.
 
 ## Submission log
 
