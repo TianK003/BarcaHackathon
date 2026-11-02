@@ -52,7 +52,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P12](#p12--metric-aware-post-processing) | Metric-aware post-processing | fact 5 | S | medium | done → R012 (shift adopted), R016 (free X measured and dropped) |
 | [P13](#p13--learn-from-external-labelled-tracking-data) | Pre-train on external labelled tracking data | facts 1, 2 | L (M on top of P01) | medium–high | idea |
 | [P14](#p14--recover-the-ball-from-the-video) | Recover the ball from the video | facts 1, 2 | L | A14: a perfect ball in our gaps is worth +0.10 raw but +0.02 coarse; a real detector perhaps +0.025 to +0.04 raw | not built → A14 (not a ViT: the ball is 6 px, T46; a half-day zero-shot test may run, [After A14](#after-a14)); A20 lowers the prior (the broadcast's tracker has the ball on 28% of the live frames where ours is missing) |
-| [P15](#p15--broadcast-tracking-as-a-second-opinion) | Broadcast tracking as a second opinion | facts 1, 4 | S–M per use (the alignment is measured) | A20: its ball fills 30% of the gap frames we call alive, in fragments; its shots off the pitch cover 75% of our `D` | idea; measured → A20 (aligned by two constants; nothing built) |
+| [P15](#p15--broadcast-tracking-as-a-second-opinion) | Broadcast tracking as a second opinion | facts 1, 4 | S–M per use (the alignment is measured) | A20: its ball fills 30% of the gap frames we call alive, in fragments; its shots off the pitch cover 75% of our `D` | measured → A20; use 1 dropped as R028 (2 Nov): the stand-in on DFL failed its fidelity gates (`tracking`'s gaps are not ours, T38, T53), so the fill is untested, not refuted; uses 2 and 3 ideas |
 
 ## Suggested plan — 27 days to 17 November
 
@@ -1310,9 +1310,18 @@ optimistic. Test B's figures would still settle it.
 
 ### P15 — Broadcast tracking as a second opinion
 
-**Status: idea; measured → [A20](results.md). Use 1 is designed as R028**
-(`docs/superpowers/specs/2026-11-01-r028-broadcast-ball-design.md`; plan `docs/superpowers/plans/2026-11-01-r028-broadcast-ball.md`;
-Tian's answers of 1 Nov recorded). **Nothing is built or run.**
+**Status: measured → [A20](results.md); use 1 tried as [R028](results.md) and dropped on 2 Nov 2026, at its fidelity
+gate.** The design is `docs/superpowers/specs/2026-11-01-r028-broadcast-ball-design.md` and the plan
+`docs/superpowers/plans/2026-11-01-r028-broadcast-ball.md`.
+- **Fidelity failed.** The simulated broadcast on DFL, a transplant of BAR-ATH's real fill, did not reproduce our fill
+  rates: alive 0.218 against 0.295, `D` 0.089 against 0.041.
+- **The code was right.** The advisor found no departure from part 1, and an identity world gives back our statistics
+  exactly.
+- **The cause is the two worlds' gaps.** `tracking`'s gaps fall blind to the play (T38): 54% of their frames are alive
+  against our 20%.
+- **What R028 leaves.** The broadcast's value in our gaps is untested, not refuted; another validation would be a new
+  proposal (T53). Its code is in `659a6c2` (local tag `archive/r028-source`).
+- **Uses 2 and 3 remain ideas.**
 - The feeds align by two constants.
 - The broadcast's ball fills 30% of the gap frames we call alive, in fragments.
 - Its shots off the pitch cover 75% of our `D`.
