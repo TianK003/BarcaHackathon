@@ -9,10 +9,6 @@ list, each component's parameters against the signature of the function they wil
 happens here, before the ATD cache is loaded, so a mistake costs a second rather than a minute.
 
 What is not checked is the *type* of a parameter (half_width = "50" binds fine). Components validate their own.
-
-The optional [inputs] table says what the run reads besides the tactical tracking. Its one key, ball_fill, is "none"
-(the default: our ball only, as every config before R028) or "broadcast" (our ball's gaps filled from the broadcast's,
-Inputs.with_ball_fill); a value or a key that is not one of those stops the run here too.
 """
 
 import inspect
@@ -21,13 +17,10 @@ import tomllib
 from dataclasses import dataclass
 
 # Params
-TOP_LEVEL_KEYS = ("description", "seed", "scope", "inputs", "evidence", "decoder", "refine")
+TOP_LEVEL_KEYS = ("description", "seed", "scope", "evidence", "decoder", "refine")
 SCOPES = ("halves", "file")
 DEFAULT_SCOPE = "halves"
 DEFAULT_SEED = 0
-INPUTS_KEYS = ("ball_fill",)           # the keys an [inputs] table may hold
-BALL_FILLS = ("none", "broadcast")     # [inputs] ball_fill: what fills our ball's gaps (R028)
-DEFAULT_BALL_FILL = "none"
 # Keys of an [[evidence]] entry that belong to the runner rather than the component; everything else is a parameter.
 EVIDENCE_RESERVED = ("kind", "name", "weight")
 # How many leading positional arguments each kind of component takes before its keyword-only parameters:
@@ -56,7 +49,6 @@ class Config:
     description: str
     seed: int
     scope: str         # "halves": one block per graded half; "file": the whole file as one block
-    ball_fill: str     # [inputs] ball_fill: "none", our ball only; "broadcast", its gaps filled from the broadcast's
     evidence: tuple    # Component, in config order
     decoder: Component
     refine: tuple      # Component, applied in order
@@ -100,7 +92,6 @@ def load_config(path, registries=None):
     description = table.get("description", "")
     if not isinstance(description, str):
         raise ConfigError("{}: description must be a string".format(where))
-    ball_fill = _ball_fill(table.get("inputs", {}), where)
 
     evidence_entries = _table_list(table, "evidence", where)
     if not evidence_entries:
@@ -122,24 +113,8 @@ def load_config(path, registries=None):
                    for index, entry in enumerate(_table_list(table, "refine", where), start=1))
 
     return Config(path=path, stem=os.path.splitext(os.path.basename(path))[0], text=text,
-                  description=description, seed=seed, scope=scope, ball_fill=ball_fill,
+                  description=description, seed=seed, scope=scope,
                   evidence=evidence, decoder=decoder, refine=refine)
-
-
-def _ball_fill(inputs, where):
-    """[inputs] ball_fill, checked; DEFAULT_BALL_FILL when the table or the key is not there."""
-    if not isinstance(inputs, dict):
-        raise ConfigError("{}: inputs must be written as one [inputs] table, e.g. ball_fill = \"broadcast\"".format(
-            where))
-    unknown = sorted(set(inputs) - set(INPUTS_KEYS))
-    if unknown:
-        raise ConfigError("{}: [inputs] has unknown key(s) {}; allowed: {}".format(
-            where, ", ".join(unknown), ", ".join(INPUTS_KEYS)))
-    ball_fill = inputs.get("ball_fill", DEFAULT_BALL_FILL)
-    if ball_fill not in BALL_FILLS:
-        raise ConfigError("{}: [inputs] ball_fill {!r} is not one of: {}".format(
-            where, ball_fill, ", ".join(BALL_FILLS)))
-    return ball_fill
 
 
 def _table_list(table, key, where):

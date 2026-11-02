@@ -476,14 +476,8 @@ def toml_text(config, evidence, description, note):
     where they are not the defaults, the kind and 1.0), the [decoder] and one [[refine]] per refiner, with their
     parameters in the order the config had them. load_config of the result is the config, evidence and description
     aside (test_headroom_variants_round_trip_what_config_holds). BenchmarkError for a parameter that is not a str, an
-    int, a float or a bool, and for a config whose ball is filled ([inputs] ball_fill, R028): a variant is written
-    without [inputs], so it would lose the fill silently, and headroom does not serve the simulated broadcast.
+    int, a float or a bool.
     """
-    if config.ball_fill != "none":
-        raise run.BenchmarkError(
-            "{}: [inputs] ball_fill = {!r}, and headroom does not serve the fill: its variants are written without "
-            "[inputs], so they would run on the unfilled ball; run headroom on the config without the fill".format(
-                config.stem, config.ball_fill))
     lines = ["# " + line for line in note] + ["",
                                               "description = " + toml_string(description),
                                               "seed = " + toml_value(config.seed, "seed"),

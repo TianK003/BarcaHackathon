@@ -318,23 +318,6 @@ def test_headroom_refuses_what_it_cannot_make_variants_of():
             write_text(root, "nope.toml", HMM), root, profile="nope"), "nope", "profile")
 
 
-def test_headroom_refuses_a_config_that_fills():
-    """Headroom writes its variants without [inputs], so a config whose ball is filled ([inputs] ball_fill =
-    "broadcast", R028) would lose its fill in every variant, silently: it is refused instead, with a ValueError that
-    names the config and says that headroom does not serve the fill, before any variant is written (ruling 12)."""
-    with tempfile.TemporaryDirectory() as root:
-        path = write_text(root, "filling.toml", HMM + '\n[inputs]\nball_fill = "broadcast"\n')
-        config = load_config(path)
-        assert config.ball_fill == "broadcast"
-        expect_error(ValueError, lambda: headroom.toml_text(config, config.evidence, "d", ["n"]),
-                     "filling", "headroom does not serve the fill", "ball_fill")
-        expect_error(benchmark_run.BenchmarkError, lambda: on_gaps(path, root), "filling",
-                     "headroom does not serve the fill")
-        assert not os.path.exists(os.path.join(root, "runs")), "refused before any variant is written"
-        plain = load_config(write_text(root, "plain.toml", HMM + '\n[inputs]\nball_fill = "none"\n'))
-        assert "[inputs]" not in headroom.toml_text(plain, plain.evidence, "d", ["n"]), "no fill, nothing to keep"
-
-
 # -- the restart oracle (P17) -----------------------------------------------------------------------------------------
 
 def test_headroom_restart_oracle_marks_each_restart():

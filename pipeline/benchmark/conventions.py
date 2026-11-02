@@ -120,17 +120,15 @@ the pair of labels (a predicted H to D does not answer a true A to D), inside th
 prediction (the scorer's own view of it), and gives pred - true in frames, listed under the truth's type in the order
 of the true changes. A positive number is a label that changed late. `latency CONFIG public` reads it from the CSV that
 `pipeline/run.py CONFIG` wrote, against the public GT; `latency CONFIG dfl` runs `run.predict` on every benchmark match
-and seed (the config must decode per half) against the truth, pooled by lags as everything above is. A config that fills
-([inputs] ball_fill = "broadcast", R028) is served its simulated broadcast ball there, as the runner serves it
-(broadcast_sim.served_inputs_for, its twin's decode included), and its file names the pools' digest.
+and seed (the config must decode per half) against the truth, pooled by lags as everything above is.
 
 The latency files are tied to the config they were measured for. Each records the sha256 of what the config runs
-(`config_digest`: scope, seed, evidence, decoder and refine, and [inputs] ball_fill when it is not "none"; no comment,
-no description), and `shift` refuses a file of another content, or of none (a file written before they carried one is
-stale by rule), with the `latency` command to run again: a config that has gained a refiner since is never read
-against a latency measured without it (main.toml gained a shift_edges after R011's latency was measured). A public file
-also records the sha256 of the CSV it was read from, which `shift` checks when that file is there. The digest does not
-read the files that a parameter names, so a retrained model JSON needs the latency measured again by hand.
+(`config_digest`: scope, seed, evidence, decoder and refine; no comment, no description), and `shift` refuses a file of
+another content, or of none (a file written before they carried one is stale by rule), with the `latency` command to
+run again: a config that has gained a refiner since is never read against a latency measured without it (main.toml
+gained a shift_edges after R011's latency was measured). A public file also records the sha256 of the CSV it was read
+from, which `shift` checks when that file is there. The digest does not read the files that a parameter names, so a
+retrained model JSON needs the latency measured again by hand.
 
 The shift rule is P02's declared one and nothing in it is tuned. For each type, s_b = -round(median of DFL's latencies)
 (0 below MIN_DFL = 30 matched changes) is the pipeline's own lag, measured where the truth is DFL's and so owes nothing
@@ -1092,17 +1090,11 @@ def config_digest(config):
     because a latency measured for one content says nothing of another (main.toml gained a shift_edges after R011's
     was measured, and a shift read against it would have been applied twice). It does not read the files that a
     parameter names: a retrained model JSON leaves it as it was.
-
-    [inputs] ball_fill (R028) is in it only when it is not "none": every digest of a config without the fill is what
-    it was before R028, and a config that fills is another content than its twin, so that it never shares the twin's
-    latency file.
     """
     content = {"scope": config.scope, "seed": config.seed,
                "evidence": [dataclasses.asdict(component) for component in config.evidence],
                "decoder": dataclasses.asdict(config.decoder),
                "refine": [dataclasses.asdict(component) for component in config.refine]}
-    if config.ball_fill != "none":
-        content["ball_fill"] = config.ball_fill
     text = json.dumps(content, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
@@ -1177,35 +1169,19 @@ def latency_public(config, gt_path, data_dir, tol=TOL, log=print):
 
 
 def measure_latency(config, *, profile=DEFAULT_PROFILE, seeds=None, truth="raw", match_ids=None, matches=None,
-                    calibration=None, tol=TOL, data_dir=None, log=print, pools=None):
+                    calibration=None, tol=TOL, data_dir=None, log=print):
     """The pipeline's latency on the benchmark matches, pooled over matches and seeds, and per match.
 
     Each match is loaded (dfl.load_match, or taken from `matches`, {id: DflMatch}), its truth read beside the inputs
     (raw, or coarse), and for every seed the config is run on the match as the pipeline would see it
     (train_dead_ball.served_inputs: the degraded tracking and no flag) through run.predict, its codes matched to the
-    truth. A config that fills ([inputs] ball_fill = "broadcast", R028) is served those inputs with its simulated
-    broadcast ball, as the runner serves it (broadcast_sim.served_inputs_for), from `pools` (default
-    broadcast_sim.load_pools(data_dir), read before the calibration: never built here, and an absent or broken
-    cache is the runner's BenchmarkError, saying to run `broadcast_sim.py pools` first). Returns {"config",
-    "config_sha256", "profile", "truth", "seeds", "matches", "fps", "tol", "cells", "per_match"}, and
-    "broadcast_sim", the pools' digest, for a config that fills only:
-    `config_sha256` is config_digest(config), `cells` the pooled {type: {"n", "found", "lags"}} and `per_match` {id:
-    cells}. The runner's BenchmarkError for a config that decodes across half time, a profile, seeds, truth or match it
-    refuses (before a match is loaded), an asset a benchmark match does not have, or pools that are not a Pools.
+    truth. Returns {"config", "config_sha256", "profile", "truth", "seeds", "matches", "fps", "tol", "cells",
+    "per_match"}: `config_sha256` is config_digest(config), `cells` the pooled {type: {"n", "found", "lags"}} and
+    `per_match` {id: cells}. The runner's BenchmarkError for a config that decodes across half time, a profile, seeds,
+    truth or match it refuses (before a match is loaded), or an asset a benchmark match does not have.
     """
     run.check_scope(config)
     tol = _whole(tol, "tol", 0)
-    simulator = None
-    if config.ball_fill != "none":
-        from pipeline.benchmark import broadcast_sim as simulator   # here, not above: broadcast_sim imports this module
-        if pools is None:
-            try:
-                pools = simulator.load_pools(data_dir=data_dir)     # read only: `broadcast_sim.py pools` builds them
-            except simulator.BroadcastSimError as error:
-                raise run.BenchmarkError(str(error)) from error
-        if not isinstance(pools, simulator.Pools):
-            raise run.BenchmarkError("pools must be the Pools of the simulated broadcast (broadcast_sim.load_pools()), "
-                                     "and it is a {}".format(type(pools).__name__))
     ids, seed_list, calibration = _plan(profile, seeds, truth, match_ids, matches, calibration, data_dir)
     per_match, rates = {}, []
     for match_id in ids:
@@ -1215,9 +1191,6 @@ def measure_latency(config, *, profile=DEFAULT_PROFILE, seeds=None, truth="raw",
         tables = []
         for seed in seed_list:
             inputs = train_dead_ball.served_inputs(match, profile, seed, calibration, data_dir)
-            if simulator is not None:
-                inputs = simulator.served_inputs_for(config, match, inputs.atd, profile, seed, data_dir, pools,
-                                                     plain=inputs)
             tables.append(latency_cells(codes, run._codes(config, inputs), blocks, tol))
             del inputs
         per_match[match_id] = pool(tables)
@@ -1227,28 +1200,19 @@ def measure_latency(config, *, profile=DEFAULT_PROFILE, seeds=None, truth="raw",
     if any(rate != rates[0] for rate in rates):
         raise run.BenchmarkError("the matches have different frame rates ({}); lags in frames cannot be pooled".format(
             ", ".join(str(rate) for rate in rates)))
-    result = {"config": config.stem, "config_sha256": config_digest(config), "profile": profile, "truth": truth,
-              "seeds": seed_list, "matches": sorted(ids), "fps": rates[0], "tol": tol,
-              "cells": pool([per_match[match_id] for match_id in ids]), "per_match": per_match}
-    if simulator is not None:
-        result["broadcast_sim"] = simulator.digest(pools)
-    return result
+    return {"config": config.stem, "config_sha256": config_digest(config), "profile": profile, "truth": truth,
+            "seeds": seed_list, "matches": sorted(ids), "fps": rates[0], "tol": tol,
+            "cells": pool([per_match[match_id] for match_id in ids]), "per_match": per_match}
 
 
 def latency_dfl_document(result):
-    """The JSON-ready document of measure_latency's result: pooled cells with their lags, and summaries; and, for a
-    config that fills, the digest of the simulated broadcast's pools it was measured with ("broadcast_sim"), a field
-    that the document of a config without the fill does not have, so that it is what it was before R028."""
+    """The JSON-ready document of measure_latency's result: pooled cells with their lags, and summaries."""
     fps = result["fps"]
-    document = {"source": "dfl", "config": result["config"], "config_sha256": result["config_sha256"],
-                "profile": result["profile"], "truth": result["truth"], "seeds": result["seeds"],
-                "matches": result["matches"], "fps": fps, "tol": result["tol"],
-                "cells": result["cells"], "summary": summarise(result["cells"], fps),
-                "per_match": {match_id: summarise(cells, fps)
-                              for match_id, cells in sorted(result["per_match"].items())}}
-    if "broadcast_sim" in result:
-        document["broadcast_sim"] = result["broadcast_sim"]
-    return document
+    return {"source": "dfl", "config": result["config"], "config_sha256": result["config_sha256"],
+            "profile": result["profile"], "truth": result["truth"], "seeds": result["seeds"],
+            "matches": result["matches"], "fps": fps, "tol": result["tol"],
+            "cells": result["cells"], "summary": summarise(result["cells"], fps),
+            "per_match": {match_id: summarise(cells, fps) for match_id, cells in sorted(result["per_match"].items())}}
 
 
 def render_latency(document):

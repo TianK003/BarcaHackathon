@@ -20,7 +20,6 @@ the numbers printed is a figure of any match.
 
 import contextlib
 import csv
-import dataclasses
 import hashlib
 import io
 import json
@@ -36,8 +35,8 @@ from pipeline import output
 from pipeline.benchmark import conventions, train_dead_ball, truth
 from pipeline.benchmark import inputs as match_inputs
 from pipeline.benchmark import run as benchmark_run
-from pipeline.benchmark.checks.common import (FILL_CONFIG, leaks, made_up_pools, read, synthetic_calibration,
-                                              synthetic_matches, tracked_match, tracking_calibration)
+from pipeline.benchmark.checks.common import (leaks, read, synthetic_calibration, synthetic_matches, tracked_match,
+                                              tracking_calibration)
 from pipeline.config import load_config
 from pipeline.contracts import RunContext
 from pipeline.evidence import dead_ball_model, kinematics, play_features
@@ -1788,89 +1787,6 @@ def test_config_digest_is_the_content_a_run_depends_on():
         assert digest(text + '\n[[refine]]\nkind = "shift_edges"\nteam = 4\n') != base
         assert digest(text + '\n[[refine]]\nkind = "shift_edges"\nteam = 5\n') != digest(
             text + '\n[[refine]]\nkind = "shift_edges"\nteam = 4\n')
-
-
-def test_config_digest_names_the_fill_only_when_it_fills():
-    """Ruling 5: config_digest holds [inputs] ball_fill only when it is not "none". Every digest of a config without the
-    fill is what it was before R028 (the content hashed as it always was, worked out here), [inputs] ball_fill = "none"
-    written out included; and a config that fills no longer shares its twin's digest, and so its latency file."""
-    text = read(RAW_CONFIG)
-    with tempfile.TemporaryDirectory(prefix="conv") as root:
-        plain = load_config(write_text(root, "a.toml", text))
-        spelled = load_config(write_text(root, "b.toml", text + '\n[inputs]\nball_fill = "none"\n'))
-        filling = load_config(write_text(root, "c.toml", text + '\n[inputs]\nball_fill = "broadcast"\n'))
-    content = {"scope": plain.scope, "seed": plain.seed,
-               "evidence": [dataclasses.asdict(component) for component in plain.evidence],
-               "decoder": dataclasses.asdict(plain.decoder),
-               "refine": [dataclasses.asdict(component) for component in plain.refine]}
-    before = hashlib.sha256(json.dumps(content, sort_keys=True, separators=(",", ":"), default=str).encode(
-        "utf-8")).hexdigest()
-    assert conventions.config_digest(plain) == before == conventions.config_digest(spelled), "unchanged without a fill"
-    assert conventions.config_digest(filling) != before, "a config that fills is another content than its twin"
-    with_fill = hashlib.sha256(json.dumps(dict(content, ball_fill="broadcast"), sort_keys=True, separators=(",", ":"),
-                                          default=str).encode("utf-8")).hexdigest()
-    assert conventions.config_digest(filling) == with_fill
-
-
-def test_latency_dfl_serves_a_fill_config_its_simulated_ball():
-    """`latency CONFIG dfl` serves a config that fills as the runner does: each (match, seed)'s inputs, from
-    train_dead_ball.served_inputs, go through broadcast_sim.served_inputs_for, so the config reads its simulated ball;
-    the latency is then that of its codes on them, and the document names the pools' digest. A config without the fill
-    is measured as before, with no such field; the pools are loaded when none are given."""
-    from pipeline.benchmark import broadcast_sim
-    matches, calibration, pools = synthetic_matches(), synthetic_calibration(), made_up_pools()
-    with tempfile.TemporaryDirectory(prefix="conv") as root:
-        fill = load_config(write_text(root, "fill.toml", FILL_CONFIG))
-    served = []
-    real = broadcast_sim.served_inputs_for
-
-    def spy(config, match, atd, profile, seed, data_dir, pools_, plain=None, drivers=None):
-        out = real(config, match, atd, profile, seed, data_dir, pools_, plain=plain, drivers=drivers)
-        served.append((config.stem, match.match_id, seed, plain is not None and plain.atd is atd, out))
-        return out
-
-    broadcast_sim.served_inputs_for = spy
-    try:
-        result = conventions.measure_latency(fill, profile="gaps", seeds=2, matches=matches, calibration=calibration,
-                                             pools=pools, log=quiet)
-    finally:
-        broadcast_sim.served_inputs_for = real
-    assert [(stem, match_id, seed, given) for stem, match_id, seed, given, _ in served] == [
-        ("fill", match_id, seed, True) for match_id in matches for seed in (0, 1)], served
-    assert all(np.isfinite(out.broadcast_ball).any() for *_, out in served), "a simulated ball was served"
-    per_match = {}
-    for match_id, match in matches.items():
-        codes, _ = truth.truth_codes(match)
-        runs = [(start, stop) for _, start, stop in match.graded]
-        cells = []
-        for seed in (0, 1):
-            plain = train_dead_ball.served_inputs(match, "gaps", seed, calibration, None)
-            inputs = real(fill, match, plain.atd, "gaps", seed, None, pools, plain=plain)
-            cells.append(conventions.latency_cells(codes, benchmark_run.predict(fill, inputs)[0], runs))
-        per_match[match_id] = conventions.pool(cells)
-    assert result["per_match"] == per_match
-    assert result["config_sha256"] == conventions.config_digest(fill) and result["broadcast_sim"] == (
-        broadcast_sim.digest(pools))
-    assert conventions.latency_dfl_document(result)["broadcast_sim"] == broadcast_sim.digest(pools)
-
-    plain_result = conventions.measure_latency(load_config(RAW_CONFIG), profile="gaps", seeds=1, matches=matches,
-                                               calibration=calibration, pools=pools, log=quiet)
-    assert "broadcast_sim" not in plain_result and "broadcast_sim" not in conventions.latency_dfl_document(
-        plain_result), "the document of a config without the fill is what it was"
-
-    loads = []
-    real_load = broadcast_sim.load_pools
-    broadcast_sim.load_pools = lambda data_dir=None: loads.append(data_dir) or pools
-    try:
-        conventions.measure_latency(fill, profile="gaps", seeds=1, matches=matches, calibration=calibration,
-                                    data_dir="D", log=quiet)
-    finally:
-        broadcast_sim.load_pools = real_load
-    assert loads == ["D"], loads
-    with tempfile.TemporaryDirectory() as empty:
-        expect_error(benchmark_run.BenchmarkError, lambda: conventions.measure_latency(
-            fill, profile="gaps", seeds=1, matches=matches, calibration=calibration, data_dir=empty, log=quiet),
-            "broadcast_sim.py pools")
 
 
 def test_the_public_latency_file_is_tied_to_the_csv_it_was_read_from():

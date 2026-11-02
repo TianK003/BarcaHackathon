@@ -5,9 +5,6 @@ is read once, checked, and stored as .npy arrays plus a manifest.json; every lat
 second. The cache lives under the data directory, which git ignores -- frame-level arrays derived from the match
 must never be committed (CLAUDE.md, hard rules).
 
-The broadcast's ATD (R028) is the same format with its own slots and frames, so the same code parses and checks it,
-into a folder of its own (load_or_build's `folder`: atd_broadcast/, pipeline/inputs/__init__.py).
-
 Exactness
 ---------
 The parser maps the two separators to commas and hands the file to pandas' C reader with
@@ -89,13 +86,12 @@ class Atd:
         return _read_only(~np.isnan(self.ball_xy[:, 0]))
 
 
-def load_or_build(meta_path, raw_path, cache_dir, n_frames, rebuild=False, folder=FOLDER):
+def load_or_build(meta_path, raw_path, cache_dir, n_frames, rebuild=False):
     """(Atd, manifest, built) -- from the cache when it is fresh, otherwise parsed from the raw file and stored.
 
-    built is True when this call parsed the raw file. rebuild=True forces that. The cache is <cache_dir>/<folder>/:
-    atd_tactical/ for ours (FOLDER), and one folder per other ATD, so that two never share a manifest.
+    built is True when this call parsed the raw file. rebuild=True forces that.
     """
-    folder = os.path.join(cache_dir, folder)
+    folder = os.path.join(cache_dir, FOLDER)
     key = {
         "cache_version": CACHE_VERSION,
         "n_frames": n_frames,

@@ -23,12 +23,10 @@ flowchart TD
         ATD[("tactical ATD<br/>txt + xml")]
         HOM[("homography<br/>csv")]
         TAG[("Smart Tagging<br/>xml")]
-        BRD[("broadcast<br/>ATD + homography")]
     end
     CFG[/"pipeline/configs/NAME.toml<br/>which components, which parameters"/]
 
     ATD & HOM & TAG --> INPUTS
-    BRD -.->|"only with [inputs] ball_fill = broadcast"| INPUTS
     INPUTS["1 · inputs<br/>align every asset to submission rows<br/>parse the ATD once and cache it"]
     INPUTS -->|"Inputs: row i = tactical video frame i"| EVIDENCE
     EVIDENCE["2 · evidence<br/>each source reads the whole match<br/>and gives an opinion on every frame"]
@@ -62,7 +60,7 @@ Two design decisions run through the whole diagram:
 
 | # | stage | takes | gives | its job | today | lands here |
 |---|---|---|---|---|---|---|
-| 1 | [inputs](inputs/README.md) | `data/tactical/*`, `data/broadcast/*` (only to fill the ball) and `games.py` | `Inputs`: read-only arrays where row *i* = tactical video frame *i*; graded halves, kick-offs, pitch size | do every alignment once and check it; parse the 195 MB ATD once and cache it | ATD (cached), homography, Smart Tagging; the broadcast's ball in our ball's gaps, aligned by code, behind `[inputs] ball_fill` (R028) | P10 audio, P14 ball from video, P15's other uses of the broadcast |
+| 1 | [inputs](inputs/README.md) | `data/tactical/*` and `games.py` | `Inputs`: read-only arrays where row *i* = tactical video frame *i*; graded halves, kick-offs, pitch size | do every alignment once and check it; parse the 195 MB ATD once and cache it | ATD (cached), homography, Smart Tagging | P10 audio, P14 ball from video, P15 broadcast |
 | 2 | [evidence](evidence/README.md) | `Inputs` (the whole match) + config parameters | one `Evidence` per source: `alive` = P(ball in play), `home` = P(home has it \| in play), each float64 per frame, NaN = no opinion | per-frame opinions, never labels | `nearest_player` (baseline step 1; its optional `confidence` replaces the hard 0/1 vote), `ball_presence` (whether the tracker sees the ball, as `alive` evidence; P05 replaced it), `controlled_touch` (P04: `home` from control episodes and a weak hold for the last controlling team, NaN without the ball), `dead_ball_rules` and `dead_ball_model` (P05: `alive` from 30 play features, by fixed triggers or by a model loaded from JSON: gradient-boosted trees, or the logistic reference), `shape_possession` (P07: `home` from 26 features of how the two teams stand and move, none reading the ball, by boosted trees loaded from JSON; it speaks where the ball is missing and, in `main.toml`, at weight 0.2 on every graded frame), `restart_team` (P17: who restarts after a stoppage, from the players' arrangement; built and measured, not in `main.toml`, P17 dropped) | P08, P10, P11; A13 puts the remaining score in who has the ball (P04, P05 and P07 are in) |
 | 3 | [decode](decode/README.md) | one block (a graded half) and every source cut to it | `Decoded`: one int8 label per frame (`H`, `A`, `D`, `X` = 0–3) and an optional posterior | turn opinions into a sequence that looks like football: intervals, few spurious changes | `majority_vote` (baseline step 2, a stand-in), `hmm` (P06: a Viterbi per block with switch penalties and minimum runs, and an optional posterior; restart states behind `restart_source`, P17, off by default) | duration priors beyond the minimums (semi-Markov) |
 | 4 | [refine](refine/README.md) | the same block + the current `Decoded` | a new `Decoded`, same frames | metric-aware clean-ups, each switchable and measured | `shift_edges` (P02: each kind of edge moved by a fixed number of frames; every default is 0, and `main.toml` sets team +1, into_dead -2, out_of_dead 0, R012) | P11, P12 |
@@ -109,9 +107,6 @@ description = "what this run tries"
 seed = 0                   # all randomness derives from it
 scope = "halves"           # one block per graded half; "file" only for the baseline reproduction
 
-# [inputs]                 # optional
-# ball_fill = "none"       # "broadcast": our ball's gaps filled from the broadcast's (R028); default "none"
-
 [[evidence]]               # one entry per source, any number
 kind = "nearest_player"    # key in pipeline/evidence REGISTRY
 # name = "..."             # optional; default = kind; must be unique
@@ -142,13 +137,6 @@ half_width = 50
 Configs are checked strictly before any data loads. An unknown key, an unknown component, a duplicate source name or
 a parameter the function doesn't accept (`half_widht = 50`) stops the run with a sentence that says what to change.
 Parameter *types* are not checked, so components validate their own.
-
-`[inputs]` is the one table that is not a component. Its only key, `ball_fill`, is `"none"` (the default, which every
-config without the table gets: our ball only, the same bytes as before) or `"broadcast"`: every source then reads our
-tracking with the TV broadcast's usable ball wherever ours is missing on a graded frame, after the broadcast has been
-aligned to our frames by code and checked. A broadcast that does not align stops the run instead of being filled from.
-The run logs one `fill` line, and its manifest records the alignment and the broadcast files' hashes. How it works:
-[inputs](inputs/README.md#the-broadcasts-ball-r028). Regenerating a config that fills needs `data/broadcast/` too.
 
 **To run an experiment:** copy `main.toml` to `configs/<your_experiment>.toml`, change it, run it with `--score`,
 and log it in [docs/results.md](../docs/results.md) (the run prints a ready-made scoreboard row). When an experiment
@@ -327,8 +315,7 @@ pipeline/
 │                        p02_shift.toml (+ P02's shift, R012), r013_retune.toml (R013's file, main.toml's
 │                        before R017), r017_frame.toml (R017's file, main.toml's before R024), r017_tag.toml
 │                        (R017, not adopted), r024_both.toml (R024: main.toml's file)
-├── inputs/              stage 1: Inputs, the ATD cache, broadcast.py         README.md
-│                        (the broadcast's ball in our gaps, R028)
+├── inputs/              stage 1: Inputs, the ATD cache                       README.md
 ├── evidence/            stage 2: REGISTRY, nearest_player, ball_presence,    README.md
 │                        controlled_touch, dead_ball_rules, dead_ball_model,
 │                        shape_possession (and trees.py, shape_features.py), smart_tagging
