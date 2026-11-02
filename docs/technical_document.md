@@ -248,8 +248,10 @@ implements.
   - **The stand-in:** to value it on DFL, which has no broadcast, a simulated broadcast transplanted BAR-ATH's real fill
     gap by gap.
   - **Why it was dropped:** the stand-in failed its declared fidelity gates (fill on alive gap frames 0.218 against our
-    0.295, on `D` frames 0.089 against 0.041), because DFL's served gaps are not placed like ours (T38, T53). The code
-    did what was declared (an identity test gave our statistics back exactly), so the failure was the verdict.
+    0.295, on `D` frames 0.089 against 0.041). The one difference measured is the gaps' states: under the decoder, 54%
+    of DFL's served gap frames are alive against our 20% (T38). We read that as the cause (T53). The code did what was
+    declared (an identity test gave our placement statistics back exactly, F5 within 0.02 m), so the failure was the
+    verdict.
   - **What is left:** the fill never ran into a score. Its value is untested, not refuted, and the code was removed.
 - **Touches, deflections, aerial duels:** Since R013 a single control frame is an episode, so what keeps a deflection
   from being a possession is the decoder: an episode of the other team earns 2.59 nats a frame, a change of team costs

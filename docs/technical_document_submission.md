@@ -79,8 +79,9 @@ that: they train on a CPU, and each feature can be checked against how our track
   gaps rose 0.0061 where a 0.002 fall was needed; the touches' offset was not the gaps' (0.296 apart, label noise
   0.107).
 - **The broadcast's ball in our gaps** (R028, P15): the broadcast was aligned by code, but its stand-in on DFL (a
-  transplant of our real fill) failed its fidelity gates. DFL's served gaps are not placed like ours (54% alive against
-  20%), so the fill was never scored and the code was removed.
+  transplant of our real fill) failed its fidelity gates. The measured difference is in the gaps' states: under the
+  decoder, 54% of DFL's served gap frames are alive against our 20%. That is our reading of why it failed. The fill was
+  never scored, and the code was removed.
 
 ### Labelled data
 

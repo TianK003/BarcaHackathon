@@ -346,15 +346,15 @@ already shown the posterior too sharp for the mechanism. Before building on a de
 - a flatter posterior spreads an edge without saying where the truth is; what is left of the edges' loss is where the
   evidence changes, which a better source, not a rule on the posterior, has to fix.
 
-**T53: a stand-in copied from our match fails on DFL wherever DFL's served world differs from ours, so measure that
+**T53 — A stand-in copied from our match fails on DFL wherever DFL's served world differs from ours, so measure that
 difference before building the stand-in.**
 - **R028's stand-in** was a simulated broadcast. It transplanted BAR-ATH's real fill masks gap by gap, by the gap's class
   (alive or `D` under the decoder) and its length.
-- **The code was right.** A world made of the donors' own gaps gave back our statistics exactly (the advisor's identity
-  test).
+- **The code was right.** A world made of the donors' own gaps gave back our placement statistics exactly: F1 to F4,
+  W1 and W2, with F5 within 0.02 m (the advisor's identity test).
 - **DFL's world was not ours.** On DFL, `tracking`'s gaps fall blind to the play (T38): under the driver, 54% of their
-  frames are alive, against 20% of ours, and their lengths by class differ. So the per-frame rates came out unlike ours:
-  fill on alive frames 0.218 against 0.295, on `D` frames 0.089 against 0.041.
+  frames are alive, against 20% of ours (measured). Their lengths by class differ too. We read this as the reason the
+  per-frame rates came out unlike ours: fill on alive frames 0.218 against 0.295, on `D` frames 0.089 against 0.041.
 - **The cost.** The lane was dropped at its first gate, 12 minutes into its runs, after a day of building. R019's
   simulated camera failed its fidelity gates the same way.
 

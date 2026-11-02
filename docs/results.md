@@ -9216,7 +9216,8 @@ chosen after the run. Only the pools and the fidelity step ran: no lag, bar or B
 any R028 config was produced. Every figure is an aggregate, quoted from the steps' printed logs.
 
 **The runs.** `r028-fidelity.ps1`, from the run worktree detached at part 1's commit `659a6c2`, one throttled process at
-a time through `.superpowers/bin/heavy-r028.ps1`. Before each step the chain logged `git rev-parse HEAD`, `659a6c2…`,
+a time through `.superpowers/bin/heavy-r028.ps1`. Part 1 was committed at 00:46:09 on 2 Nov, 16 seconds before the
+first step. Before each step the chain logged `git rev-parse HEAD`, `659a6c2…`,
 and an empty `git status --porcelain`.
 - `broadcast_sim.py pools`, 00:46 to 00:47: `EXIT=0`.
 - `fidelity --profile tracking --seeds 3 r028_preshift.toml`, 00:48 to 00:53: `EXIT=1`, confirmed by its report
@@ -9249,8 +9250,10 @@ simulated copies (`tracking` v3, seeds 0 to 2, `r028_preshift`'s driver without 
 | W3 | fill frames more than 1 m beyond a line | 0.1509 | 0.0725 | | | | 0.1007 |
 
 BAR-ATH's side reproduces A20 (F1 0.296, F2 0.042, F3 0.297 / 0.218 / 0.073, W1 0.038, W2 0.20, W3 0.151). Its `D`
-fragment median is 53.5 frames where A20 printed 35.5 "in our `D`": both sides of F4 use one class rule (a fragment's
-own frames, at least 0.5 `H` or `A`), so the difference is one of definition and changes no verdict.
+fragment median is 53.5 frames where A20 printed 35.5 "in our `D`".
+- F4 classes a fragment by its own frames (at least 0.5 `H` or `A`), on both sides.
+- A20's figure sat under its gaps "mostly `D`", so we read the difference as one of definition.
+- F4 is a check, and the gates had already failed, so it changes no verdict.
 
 **The STOP and the advisor's ruling** (part 1: the advisor compares the code with this entry's text, never with the
 number that missed). The advisor, an opus agent standing in for Tian, was given the code at `659a6c2` and part 1, not
@@ -9285,8 +9288,8 @@ A20's measurements stand, and any other way to validate it is a new proposal for
 Recover it from `659a6c2` (local tag `archive/r028-source`). Both suites pass on `b80bd9c`, and `main.toml` still
 writes `e6496a9b…`. `main.toml` was never touched.
 
-**Cost.** The design, plan and build took the evening of 1 Nov: four tasks, five task reviews, one fix round, and part
-1's two independent reviews. The runs took 12 minutes.
+**Cost.** The design, plan and build took the evening of 1 Nov: four tasks, four task reviews, one fix round, and
+part 1's two independent reviews. The runs took 12 minutes.
 
 ## Submission log
 
