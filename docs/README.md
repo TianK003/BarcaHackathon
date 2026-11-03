@@ -1,10 +1,12 @@
 # Team docs
 
-Our working notes for the Phase 1 entry. Read [proposals.md](proposals.md) before starting something new and
-[traps.md](traps.md) before debugging something strange.
+Our working notes for the Phase 1 entry. Read [rules.md](rules.md) first: since 3 Nov 2026 the organisers'
+emailed clarification overrides RULES.md, and it forbids training or tuning on anything of our match. Read
+[proposals.md](proposals.md) before starting something new and [traps.md](traps.md) before debugging something strange.
 
 | file | holds | update it when |
 |---|---|---|
+| [rules.md](rules.md) | the organisers' clarification of 3 Nov 2026 verbatim, what it changed, our reading, the audit of `main.toml` against it, the questions for the organisers | the organisers answer or change a rule, or a component is added that learns, tunes or reads the video |
 | [proposals.md](proposals.md) | ideas to try, prioritised, with owner and status | you have an idea, start one, or finish one |
 | [results.md](results.md) | every experiment and analysis with its numbers, commit and command; the submission log | you ran something worth remembering — failures included |
 | [traps.md](traps.md) | pitfalls, why they happen, what to do instead | something cost you more than half an hour |

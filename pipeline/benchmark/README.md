@@ -1,7 +1,8 @@
 # The P01 benchmark
 
 We may not hand-label our own match, not even to validate (the organisers' clarification of 22 Oct 2026,
-[CLAUDE.md](../../CLAUDE.md)), and the public window holds 17 possessions and ranks the baselines the wrong way round
+[CLAUDE.md](../../CLAUDE.md)), and since their clarification of 3 Nov 2026 we may not train or tune on anything of it,
+labels or not: "you MUST use only external data" ([docs/rules.md](../../docs/rules.md)). The public window holds 17 possessions and ranks the baselines the wrong way round
 ([T01](../../docs/traps.md)). So the choices that matter (decoder, evidence weights, thresholds) are validated on
 **other matches**: the seven open DFL/IDSSE matches (two Bundesliga, five 2. Bundesliga; CC BY 4.0), which carry the
 ball's own alive/dead flag and the team in possession on every frame. A config runs on them through the pipeline's own
@@ -19,7 +20,7 @@ python pipeline/benchmark/diagnose.py CONFIG --drop-match-only   # A19: the IoU 
 python pipeline/benchmark/fidelity.py         # how far the degraded profile looks like our match (gates, warnings)
 python pipeline/benchmark/headroom.py CONFIG  # a config beside five variants whose evidence is the truth itself
 python pipeline/benchmark/label_diff.py REFERENCE CONFIG ...  # how configs change BAR-ATH's labels beside a reference, aggregates only (heavy)
-python pipeline/benchmark/tag_stats.py        # P08: Smart Tagging's votes against our own pseudo-labels (R017), aggregates only (heavy)
+python pipeline/benchmark/tag_stats.py        # P08: Smart Tagging's votes against our own pseudo-labels (R017), aggregates only (heavy); since 3 Nov a check only, never a constant (docs/rules.md)
 python pipeline/benchmark/wrong_team.py       # P21 step 0: wrong-team slots at the ball against all graded frames (A16), aggregates only (heavy)
 python pipeline/benchmark/metrica.py [--offline]   # P16: the grain of H/A/D derived from Metrica's sample games' events (R023)
 python pipeline/benchmark/touch_stats.py      # P04's control rule measured: coverage, agreement, flip lags, confidence
@@ -162,7 +163,10 @@ from our flag's is not measured (R023's stated limit).
 A profile says how the tracking of a DFL match is made before the config sees it (`degrade.py`). A profile has a
 version, which goes into every report: change what a profile does and bump it. Its constants are fitted once per
 version, from label-free measurements of our tracking, and then frozen with the measurement in the code; they are never
-tuned towards a gate, a WARN or a score (T26, T37).
+tuned towards a gate, a WARN or a score (T26, T37). No label, ground truth or video of our match enters them, and every
+choice made on a profile is made on DFL's own labels. Whether fitting a profile to our tracking is allowed under the
+organisers' clarification of 3 Nov 2026 (training and tuning on external data only) is question 1 for the organisers in
+[docs/rules.md](../../docs/rules.md).
 
 | profile | version | the ball | the players |
 |---|---|---|---|
@@ -605,8 +609,9 @@ classic variants still replace it; neither changes the other.
 .venv/Scripts/python pipeline/benchmark/headroom.py pipeline/configs/main.toml --variants plus_home_visible plus_home_gaps plus_home_all --truth raw --write
 ```
 
-Since R017 `main.toml` has a match-only source (`smart_tagging`: DFL has no tags), so headroom on it needs
-`--drop-match-only`, as `run.py` does: `headroom.py pipeline/configs/main.toml --drop-match-only --variants plus_home_visible
+From R017 to R029 `main.toml` had a match-only source (`smart_tagging`: DFL has no tags), so headroom on it needed
+`--drop-match-only`, as `run.py` does; since R029 (3 Nov) the flag is a no-op on `main.toml`, and a config with the tags
+(`r024_both.toml`) still needs it: `headroom.py pipeline/configs/main.toml --drop-match-only --variants plus_home_visible
 plus_home_gaps plus_home_all`. The flag goes to the runner for CONFIG and every variant, and the output names what it dropped;
 the headroom is then that of `main.toml` without the tags.
 
@@ -935,7 +940,9 @@ to understand how our truth flips, and never tuned on: it is "not training data 
 - **`public`** times the 20 changes of the public truth on our real tracking. It writes `public_lags.json` (read by
   `compare`) and `public_transitions.csv` under `data/runs/conventions/`: one row per change, with its frame and every
   detector's lag, for a person who may watch the video at exactly those moments, to understand them and not to fit a
-  constant. No LLM reads that file and the code prints no row of it. **`dfl`** runs the same code on each DFL match as
+  constant. Since 3 Nov 2026 ([docs/rules.md](../../docs/rules.md)) the person watches only to understand what counts
+  as possession, at the truth's changes, and does not compare the detectors' events, which are our own output, with
+  the video. No LLM reads that file and the code prints no row of it. **`dfl`** runs the same code on each DFL match as
   the pipeline sees it under a profile, with the truth read beside the inputs only to find the changes; DFL is pooled
   over matches and seeds by the lags themselves. **`compare`** prints the public median beside DFL's, with the gap's 90%
   bootstrap interval (2,000 draws of the public lags, seeded per cell, DFL's median taken as it is). A11 has the

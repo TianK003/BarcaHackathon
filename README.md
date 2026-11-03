@@ -1,13 +1,17 @@
 # More than a Hack 2027 — Phase 1: Ball Possession
 
 > **Team: start here.**
-> - **[site/rules.html](site/rules.html): the competition rules, and what each means for our work.** In short:
->   labels must come from an algorithm. No hand labels on the provided match, for any purpose. The 5 public minutes
->   are a correctness check, never training or tuning data. No private ground truth, and no human-produced data about
->   this match. The match data never goes to a cloud LLM and never into this repository. The repository must
->   regenerate the exact submitted file. Learning on the match without human labels is allowed. Anything we use must
->   be accessible to the organisers and explained in the technical document. If an idea sits near a line, ask the
->   organisers before building on it. Deadline: 17 November 2026.
+> - **[docs/rules.md](docs/rules.md) and [site/rules.html](site/rules.html): the competition rules, and what each
+>   means for our work.** Since 3 Nov 2026 the organisers' emailed clarification overrides RULES.md. In short:
+>   labels must come from an algorithm. Train and tune on external data only: nothing is trained, fitted, calibrated
+>   or tuned on the provided match, with labels or without. No hand labels or other manually made data on it, for any
+>   purpose. Nobody checks our output against the video; a person may watch it only to understand what counts as
+>   possession. Automatic checks on the provided data are fine, and the 5 public minutes are such a check, never
+>   training or tuning data. No private ground truth, and no human-produced data about this match. The match data
+>   never goes to an AI service and never into this repository. The repository must regenerate the exact submitted
+>   file. Anything we use must be accessible to the organisers, ours to use under its licence, and explained in the
+>   technical document. If an idea sits near a line, ask the organisers before building on it. Deadline: 17 November
+>   2026.
 > - **[site/index.html](site/index.html): the pipeline overview.** It covers each stage, what is built, what is planned,
 >   the history and the work left.
 >

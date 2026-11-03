@@ -123,8 +123,8 @@ half_width = 50
 
 | config | what it is |
 |---|---|
-| [`main.toml`](configs/main.toml) | the team's current pipeline, i.e. the file we would submit today (not uploaded): `controlled_touch` (1.5 m, 6 m/s, 1 frame, hold 0.55), `shape_possession` (weight 0.2, every graded frame) and `smart_tagging` (P08: Smart Tagging's team votes, c_team 0.76, per frame, weight 0.2) for `home`, the gradient-boosted `dead_ball_model` for `alive`, the `hmm` decoder (4 / 32 / 35 / 25) and `shift_edges` (team +1, into_dead -2, out_of_dead 0). P05 was chosen in R009 and R010 and P07's model in R011; R013 chose the touch rule, `switch_team`, `min_possession` and P07's weight again with no window-derived value in any candidate, and re-derived the shift by R012's rule, all on the benchmark; R017 then added `smart_tagging` at Tian's pick of its strength (untested on any benchmark, DFL has no tags, so the benchmark runs this file with `--drop-match-only`); R024 re-chose R013's two stages under R023's objective, the mean of the raw and coarse pooled spellF1s, and moved only the hold, from 0.60 to 0.55 (benchmark 0.5363 raw and 0.5764 coarse, mean +0.0052, p 0.0469, 6 wins in 7; sha256 `e6496a9b…`) (the benchmark overstates P05 for our match, T38, T39, and its gains are not a forecast for it) |
-| [`r024_both.toml`](configs/r024_both.toml) | R024's adopted config, written when it was chosen: R017's file with the hold at 0.55; it is the named copy of `main.toml` and writes the same CSV (sha256 `e6496a9b…`) |
+| [`main.toml`](configs/main.toml) | the team's current pipeline, i.e. the file we would submit today (not uploaded): `controlled_touch` (1.5 m, 6 m/s, 1 frame, hold 0.55) and `shape_possession` (weight 0.2, every graded frame) for `home`, the gradient-boosted `dead_ball_model` for `alive`, the `hmm` decoder (4 / 32 / 35 / 25) and `shift_edges` (team +1, into_dead -2, out_of_dead 0). P05 was chosen in R009 and R010 and P07's model in R011; R013 chose the touch rule, `switch_team`, `min_possession` and P07's weight again with no window-derived value in any candidate, and re-derived the shift by R012's rule, all on the benchmark; R017 then added `smart_tagging` at Tian's pick of its strength (untested on any benchmark, DFL has no tags, so the benchmark runs this file with `--drop-match-only`); R024 re-chose R013's two stages under R023's objective, the mean of the raw and coarse pooled spellF1s, and moved only the hold, from 0.60 to 0.55 (benchmark 0.5363 raw and 0.5764 coarse, mean +0.0052, p 0.0469, 6 wins in 7; sha256 `e6496a9b…`); R029 (3 Nov) took `smart_tagging` out again under the organisers' rules of 3 Nov, because its `c_team` was measured on our match ([docs/rules.md](../docs/rules.md)): the benchmark score is R024's, since the benchmark always dropped the source, and the file is sha256 `762f9073…` (the benchmark overstates P05 for our match, T38, T39, and its gains are not a forecast for it) |
+| [`r024_both.toml`](configs/r024_both.toml) | R024's adopted config, written when it was chosen: R017's file with the hold at 0.55, Smart Tagging included; it writes R024's CSV (sha256 `e6496a9b…`), which `main.toml` wrote until R029 |
 | [`r017_frame.toml`](configs/r017_frame.toml) | R017's adopted config, written when it was chosen: R013's file plus `smart_tagging` per frame at weight 0.2; it writes the file `main.toml` wrote before R024 (sha256 `7ba575c0…`) |
 | [`r017_tag.toml`](configs/r017_tag.toml) | R017's other strength, not adopted: `smart_tagging` at one observation per tag, weight 1.0 |
 | [`r013_retune.toml`](configs/r013_retune.toml) | R013's final config, written when it was chosen; it writes the file `main.toml` wrote before R017 (sha256 `0ebdfbec…`) |
@@ -167,7 +167,9 @@ The public window is for correctness only, by the organisers' rule since 23 Oct 
 data and not a tuning set". It holds 17 possessions and ranks the baselines the wrong way round
 ([T01](../docs/traps.md)). Never train, fit or choose on it. Choose between versions on P01's benchmark of other
 matches, as the next section says. Hand labels on this match are not allowed, not even for validation, and neither is
-correcting its tracking by hand ([T27](../docs/traps.md)).
+correcting its tracking by hand ([T27](../docs/traps.md)). Since the organisers' clarification of 3 Nov 2026
+([docs/rules.md](../docs/rules.md)), which takes precedence over RULES.md, nothing at all is trained or tuned on this
+match, with labels or without, and nobody checks our output against its video ([T54](../docs/traps.md)).
 
 ## Validation
 
@@ -223,7 +225,8 @@ needs the video's homography or the Smart Tagging stops the run and names the as
 - **Fidelity.** `python pipeline/benchmark/fidelity.py --profile tracking --seeds 3` measures how far the degraded copy
   looks like our match: eight gates, all of which must pass (it exits 1 otherwise), and ten WARN checks that are printed
   and discussed in `docs/results.md` and never tuned towards. Run it after any change to a profile. Degradations are
-  fitted once per version on label-free statistics of our tracking, then frozen ([T37](../docs/traps.md)).
+  fitted once per version on label-free statistics of our tracking, then frozen ([T37](../docs/traps.md)); whether that
+  fit is allowed under the 3 Nov rules is question 1 for the organisers ([docs/rules.md](../docs/rules.md)).
 - **Headroom.** `python pipeline/benchmark/headroom.py CONFIG` runs a config beside five variants whose evidence is the
   truth itself (a perfect dead-ball detector, a perfect possessor where the ball is seen or everywhere, and both), to
   say what P05, P04 or P07 could ever deliver to that config before anyone builds them
@@ -236,7 +239,9 @@ needs the video's homography or the Smart Tagging stops the run and names the as
   applies P02's declared rule for `shift_edges` ([R012](../docs/results.md), the
   [benchmark README](benchmark/README.md#conventions-when-our-truth-flips-and-the-edge-shift)); the rule's public half,
   g, is retired since 23 Oct 2026, so only the DFL lag is applied. `public` writes a file of the public truth's changes
-  under `data/runs/conventions/` for a person to watch the video by, to understand and never to fit; no LLM reads it.
+  under `data/runs/conventions/` for a person to watch the video by, to understand what counts as possession and never
+  to fit; the person watches the truth's changes and not the detector columns, which are our own output (3 Nov,
+  [docs/rules.md](../docs/rules.md)); no LLM reads it.
 - **The default profile cannot value evidence about the ball's gaps.** Its gaps are our masks transplanted blind to
   the play, so a source or a parameter that depends on where the gaps fall (`ball_presence`, `switch_dead`, P05's and
   P07's features) is also read on `context`, under both truths ([T38](../docs/traps.md)).
@@ -278,10 +283,15 @@ R011 is P07's, and A11 and R012 are P02's).
   ([T20–T22](../docs/traps.md)).
 - **One index everywhere.** Row *i* = tactical video frame *i*. Only stage 1 converts indices ([T08](../docs/traps.md)).
 - **Labels come from an algorithm.** No component may edit particular frames by hand (RULES.md).
-- **Nothing is fitted on the public window or on a hand label of this match.** The runner cannot tell a constant that
-  came from the public 5 minutes from one that came from DFL, so every constant of a submission config is traced to its
-  entry in `docs/results.md` (the audit in the technical document, section 5), and `--score` prints the window's
-  agreement as an output and never as an input (RULES.md rules 1 and 2, `f8f2629`, [T27](../docs/traps.md)).
+- **Nothing is fitted on this match.** Not on the public window, not on a hand label, and since 3 Nov 2026 not on
+  anything else of it either: its tracking, tagging, video or our own output on it, label-free or not
+  ([docs/rules.md](../docs/rules.md), [T54](../docs/traps.md)). A component may read the match at run time with fixed
+  rules; a number measured on the match may not go into a config or a model. The runner cannot tell a constant that
+  came from the public 5 minutes, or from BAR-ATH's tracking, from one that came from DFL, so every constant of a
+  submission config is traced to its entry in `docs/results.md` (the audit in the technical document, section 5, and
+  in `docs/rules.md`), and `--score` prints the window's agreement as an output and never as an input (RULES.md rules
+  1 and 2, `f8f2629`, [T27](../docs/traps.md)). `smart_tagging`'s `c_team` was measured on this match (R017), so R029
+  took the source out of `main.toml` on 3 Nov.
 - **Per-frame arrays in reprs (a note for the team).** `Evidence` and `Decoded` (in `contracts.py`) and `RunResult` (a
   dataclass in `run.py`, not in `contracts.py`) print their per-frame arrays in their default reprs, so a
   `print(decoded)` in a notebook shows values of this match. On a benchmark match a printed `Evidence` would show part

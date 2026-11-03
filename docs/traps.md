@@ -15,6 +15,9 @@ against 40.7% overall and up to 80% per 5-minute block
 ([A02](results.md#a02--ball-coverage-across-the-match-2026-10-21)). And it ranks `smooth125` above `smooth50`, the
 reverse of the full match. Use it to check correctness only, and decide on P01 validation: per-match t-intervals and
 the exact sign-flip test of [`pipeline/benchmark/README.md`](../pipeline/benchmark/README.md), never a bootstrap.
+The organisers' clarification of 3 Nov 2026 ([rules.md](rules.md)) keeps this: no "training, fitting or calibrating
+your algorithm on the ground-truth possession data", while "running automatic checks using only the provided data" is
+allowed. Scoring a file on the window is such a check; it may stop a candidate and never ranks two.
 
 **T02 — `X` means "repeat my last label" — and at the start of a half, "copy my first label".** Before computing
 spellF1, the scorer forward-fills `X` with the last non-`X` label in the half, and back-fills the head of the half.
@@ -80,7 +83,10 @@ lead and not a measurement. What to do:
 - a person can watch the 20 changes on the tactical video (`conventions.py public`, A11's "How a person can extend
   it") to understand whether `D` begins at the line, the whistle or the stoppage, and what the flip of a team change
   is, and what they learn may shape a feature. It never becomes a number in a config, a label or a rule tied to those
-  frames (T27): a constant that fixes our convention would be tuned on the public window.
+  frames (T27): a constant that fixes our convention would be tuned on the public window. Since 3 Nov 2026
+  ([rules.md](rules.md)) watching is only "to better understand what counts as possession", and "checking your output
+  against the video" is not allowed: the person watches the truth's changes and ignores the file's detector columns,
+  which are our own components' events.
 
 *Changed 23 Oct 2026 (`f8f2629`):* R012's rule had two parts, s_b (the pipeline's own lag on the seven DFL matches,
 allowed) and g (the gap to our convention, read from the public window's latencies, which is now a tuning use of the
@@ -472,7 +478,12 @@ had nothing to do with the change under test (P22(b)'s Task 1), and a replay to 
 ## Rules and data handling
 
 **T25 — Data must never leave our machines the wrong way.**
-- Never give match data to any LLM, Claude included.
+- Never give match data to any LLM, Claude included. The organisers' clarification of 3 Nov 2026 forbids "uploading
+  the provided data to AI services" ([rules.md](rules.md)). Since then we count the public ground truth and the
+  organisers' baseline CSVs as provided data too, since they are labels of this match's frames: an LLM gets their
+  scores and counts, not their rows.
+- Files of intermediate steps may be given to the organisers (3 Nov), but not committed: the repository will be public
+  and the data licence still forbids derived data that would rebuild the data.
 - Nothing from `data/` goes into git, and neither does derived frame-level data. Keep caches and labels under
   `data/`, which is ignored. A new folder outside `data/` is *not* ignored, so check `git status` before every commit.
 - Don't move the data to cloud GPUs or notebooks without checking the T&C, and never with AI assistant features
@@ -485,10 +496,13 @@ about other games are fine. Inferring the private GT's statistics from the publi
 spirit too: tune on our own validation.
 
 **T27 — No hand labels on this match, not even to validate, and the public window is not training data.** The
-organisers' rule comes in two clarifications, 22 Oct 2026 (upstream `c073f29`) and 23 Oct 2026 (upstream `f8f2629`),
-both in RULES.md (rule 1, "Training and validation data", and rule 2). Hand-labelled data from other games is fine for
-training or validation, in any amount, if the organisers can access it and the technical document says what was
-labelled, how, by whom and how much. Hand labels on BAR-ATH are not, in any amount and for any purpose.
+organisers' rule came in two clarifications, 22 Oct 2026 (upstream `c073f29`) and 23 Oct 2026 (upstream `f8f2629`),
+both in RULES.md (rule 1, "Training and validation data", and rule 2). The emailed clarification of 3 Nov 2026
+([rules.md](rules.md)) now takes precedence over both, and it narrows what is still fine (below, and
+[T54](#rules-and-data-handling)). Hand-labelled data from other games is fine for training or validation, in any amount,
+if we have the rights to use it, the organisers can access it and the technical document says what was labelled, how,
+by whom and how much. Hand labels on BAR-ATH are not, in any amount and for any purpose, and nor is "any other data
+created manually on the provided game".
 
 *Changed 23 Oct 2026 (`f8f2629`):* until then the published 5 minutes could be used, and a model trained on them had to
 predict the window out of fold, so that no ground-truth label was copied into the file. That reading is gone. The
@@ -505,15 +519,43 @@ Not allowed on this match:
 - any human-produced data about this game from any source: event data, corrected tracking, possession data,
   annotations (T26).
 
+*Changed 3 Nov 2026 ([rules.md](rules.md)):* two things this trap listed as fine are not any more. Learning on this
+match without human labels (unsupervised, self-supervised, pseudo-labels our code made) is out: "If you need to train
+(or retrain), you MUST use only external data" (T54). Watching the video to debug the pipeline is out too: "checking
+your output against the video" is not allowed, and watching is "to better understand what counts as possession".
+
+Also not allowed on this match, since 3 Nov:
+- training, retraining, fitting, calibrating or tuning anything on it, labels or not, and on its video by name (T54);
+- comparing our labels, transitions or detectors' events with its video.
+
 Still fine on this match:
-- watching the video and inspecting the data to understand them, debug the pipeline and design features. What is not
-  fine is turning what was seen into labels, corrections, or rules and constants tied to specific frames of the game, so
-  the person of P02 watches to understand and writes no number into a config;
-- learning without human labels: unsupervised or self-supervised methods, and pseudo-labels our own code produces (P07),
-  provided no person decided any of them;
-- using the public 5 minutes to check correctness: the file is valid, frames are aligned, a source's agreement reads as
-  it should, the run is deterministic (T01);
-- labelled data of other games (P01, P13, P16).
+- inspecting the data and watching the video "to better understand what counts as possession". What is not fine is
+  checking our output against it, or turning what was seen into labels, corrections, or rules and constants tied to
+  specific frames of the game, so the person of P02 watches the truth's changes to understand them, looks at none of
+  our output, and writes no number into a config;
+- running automatic checks using only the provided data: the file is valid, frames are aligned, the run is
+  deterministic, a gate passes or fails, a score on the public 5 minutes (T01). A check never ranks or sets a value;
+- using its video, tracking, Smart Tagging and other generated data as inputs, as long as nothing was trained on its
+  ground truth or video (and, by T54, nothing was fitted on the rest of it);
+- labelled data of other games we have the rights to use (P01, P13, P16).
 
 Disclose every labelled dataset in the technical document, with its source, who labelled it and how much (section 2),
 and none of it from BAR-ATH.
+
+**T54 — Label-free is not enough: since 3 Nov nothing is fitted on our match at all.** Until 3 Nov RULES.md allowed
+"learning without human labels" on the provided game, and our docs drew the line at labels and at the public window.
+R017 was built on that line: it measured Smart Tagging's agreement with our own touch-rule pseudo-labels on BAR-ATH
+(0.761) and wrote it into `main.toml` as `c_team` 0.76, with no label and no truth in sight. The organisers'
+clarification of 3 Nov ([rules.md](rules.md)) moves the line: "If you need to train (or retrain), you MUST use only
+external data. If your algorithm has parameters that need to be tuned, you MUST tune them on external data". So a
+number measured on this match, from its tracking, tagging, homography, video or our own output on it, may no longer
+set a constant, a weight, a prior or a model, however label-free it is.
+- *The test:* does a number go from BAR-ATH into a config, a model file, a prior or a threshold? Then it is fitting,
+  and it needs external data, a fixed rule (the laws of the game, the literature) or a fact the organisers document
+  (the kick-offs). A fixed rule that reads BAR-ATH at run time (an episode, a team's mean position, a Viterbi path) is
+  the algorithm running, which is fine.
+- *Checks are still fine:* a label-free statistic of our output, a transfer gate, a score on the public window may pass
+  or fail a candidate. They may not rank candidates or supply a value (T01).
+- *What it caught on 3 Nov:* `smart_tagging` c_team in `main.toml`, taken out the same day (R029); P14's plan
+  to train a detector on our video with the ATD's ball as pseudo-labels; P22(c). The benchmark's degradation, fitted on
+  label-free statistics of our tracking (A07 to A09), is our reading's open case and question 1 for the organisers.

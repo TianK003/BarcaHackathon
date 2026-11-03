@@ -4,8 +4,9 @@
 the pipeline as a clickable diagram, how it works, its history (a timeline, the benchmark score by entry, how old
 each component is) and the work left before the deadline. It summarises the team docs; it does not replace them.
 
-`rules.html` is its companion: the competition rules as the organisers wrote them (RULES.md is the authority), what
-each means for us, our stricter team practices kept apart from the rules, a self-check, and the rules' history. It
+`rules.html` is its companion: the competition rules as the organisers wrote them (their emailed clarification of
+November 2026 takes precedence over RULES.md; [docs/rules.md](../docs/rules.md) holds it), what each means for us,
+our stricter team practices kept apart from the rules, a self-check, and the rules' history. It
 says when it was last checked against the organisers' repo; re-check with
 `git fetch upstream && git log main..upstream/main` and update its DATA when they change a rule.
 
