@@ -1,6 +1,6 @@
 # More than a Hack 2027 — Phase 1: Ball Possession
 
-> **Team: start here.**
+> **Team Un Dia de Partit: start here.**
 > - **[docs/rules.md](docs/rules.md) and [site/rules.html](site/rules.html): the competition rules, and what each
 >   means for our work.** Since 3 Nov 2026 the organisers' emailed clarification overrides RULES.md. In short:
 >   labels must come from an algorithm. Train and tune on external data only: nothing is trained, fitted, calibrated

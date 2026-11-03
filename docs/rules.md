@@ -91,12 +91,13 @@ Where the text leaves room we take the stricter reading. We ask the organisers (
    match's frames, so we treat them as provided data too: an LLM sees their scores and counts, never their rows.
 6. **Intermediate files** may be provided to the organisers. The email does not change the data licence, which forbids
    redistributing the data or publishing derived data that would rebuild it, and our repository will be public. So
-   files of intermediate steps go to the organisers directly, never into the repository, unless they say otherwise
-   (question 3).
+   files of intermediate steps go to the organisers directly, never into the repository, unless they say otherwise.
+   Issue #14 (26 Oct) allows a small intermediate output in the repository with the script that regenerates it, as
+   long as it carries no tracking, video or audio ("Settled without asking", below).
 7. **Other datasets:** any we have the rights to use, with the licence checked and named in the technical document,
    and every labelled one disclosed (what, how, by whom, how much), as SUBMISSION.md asks. The DFL/IDSSE data is
    CC BY 4.0 and PathCRF's checkpoint MPL-2.0 (dropped). Metrica's sample data has no licence file; its README asks
-   users to acknowledge the source, which we do (question 4).
+   users to acknowledge the source, which we do (question 3).
 
 ## Where we stand on 3 Nov
 
@@ -136,25 +137,35 @@ not fitted on our match. That is a large job, so ask early.
   code at run time, not kept as two constants measured on this match (A20).
 - **P10:** a pretrained audio tagger run on our audio is allowed; its thresholds come from elsewhere. P10 is dropped.
 - **P02:** a person may watch the truth's changes to understand what counts as possession, never our output (point 4).
-- **P11, P13, P16:** unchanged; they use external data (P16: question 4).
+- **P11, P13, P16:** unchanged; they use external data (P16: question 3).
 
 ## Questions for the organisers
 
-Not yet sent; sending them is the team's call. RULES.md asks for questions as issues on their public repository, but
-an issue there shows our approach to every other team, so an email may be better.
+**How to ask: by email, to `hackathon.talentarena@mobileworldcapital.com`.** RULES.md says to open an issue, but on
+3 Nov the organisers closed the open issues on their repository and asked that every question be sent to that address
+(their replies on issues #25 and #26). Email is private, so other teams do not see our approach.
 
-1. Our validation degrades open tracking of other games (DFL/IDSSE, CC BY 4.0) to look like the provided tracking. A
-   few label-free statistics of the provided tracking (how often and where the ball goes missing, how long the gaps
-   last, how many player slots are present, the jitter) are measured once and frozen. Every parameter is then tuned,
-   and our models trained, on the degraded external matches and their own labels. No ground truth and no video is
-   involved. Is fitting that degradation to the provided tracking allowed?
-2. *(No longer blocking: R029 took the source out. Ask only if we want the tags back.)* Smart Tagging exists only for
-   the provided game. We measured how often its team votes agree with our own algorithm's labels on that game, with
-   no ground truth and no person, and used the share as the votes' confidence. Is that allowed, or must such a
-   parameter come from external data only?
-3. "Providing files of intermediate steps": should they go into our public repository, given the data licence, or be
-   sent to you?
-4. Metrica's public sample data (github.com/metrica-sports/sample-data) has no licence file. May we use its event files
-   for a measurement, with acknowledgement?
+**Not yet sent** (drafted 3 Nov, for Tian to send as team Un Dia de Partit):
+
+1. **The benchmark's degradation.** We train and choose everything on the seven DFL/IDSSE matches (CC BY 4.0) and
+   their own labels, after degrading their tracking to look like ours. The degradation uses the provided tracking
+   directly: its own missing-ball pattern (which frames of each half have no ball) is copied onto the external matches
+   (`gaps`, and `tracking` on top of it), and the players are cut into tracklets over 46 slots, with wrong-team slots,
+   missing speeds and smoothing, at rates measured on it (A07 to A09). Everything was measured once and frozen, and
+   none of it involves ground truth, video or a hand label. Is that use of the provided tracking allowed, or must the
+   degradation be designed without measuring the provided game? If the answer is no, every learned part and every
+   chosen constant has to be redone.
+2. **Our repository's visibility.** It is private while we work and will be made public before the deadline, in time
+   for the form. Is that fine?
+3. **Metrica's sample data** (github.com/metrica-sports/sample-data) has no licence file. We used the event files of
+   its three games once, for R023's measurement, with acknowledgement and without redistributing them. Is that fine?
+
+**Settled without asking:**
+- *Smart Tagging's confidence measured on our match* (the old question 2): no longer needed, since R029 took the source
+  out of `main.toml`. Ask only if the tags are ever wanted back.
+- *Files of intermediate steps* (the old question 3): answered on issue #14 (26 Oct), before the email. A small
+  intermediate output may be committed together with the script, model version and settings that regenerate it, so
+  that the step from it to the CSV is exactly reproducible. That issue's output held event times and scores only, no
+  tracking, video or audio. We have no such file today.
 
 When an answer comes, record it here with its date and update the audit above.

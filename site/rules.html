@@ -324,7 +324,7 @@ const DATA = {
       { text: "**The video, the tracking, the Smart Tagging and other generated data as input**, “as long as your algorithm was not trained on the ground truth or on the provided video”.", src: "Organisers' clarification (email, Nov 2026)" }
     ],
     allowedNote: "Where we stand ([docs/rules.md](../docs/rules.md), “Where we stand on 3 Nov”): `main.toml`'s two models are trained on the seven DFL matches, and its touch-rule and decoder constants were chosen on them. **The one conflict is resolved:** `smart_tagging`'s `c_team` 0.76 was measured on BAR-ATH, as the tags' agreement with our own touch-rule pseudo-labels (R017), and its weight 0.2 was picked after seeing our output there, so R029 (3 Nov) took the source out of `main.toml`. Question 2 to the organisers is no longer blocking. **One question is open:** the benchmark's `tracking` v3 degradation was fitted on label-free statistics of our tracking; we read that as allowed, and question 1 to the organisers asks.",
-    ask: "Near a line? “If a rule is unclear, or your approach sits near a line, **ask before you build on it**. Open an issue.” (RULES.md, Questions). Our four questions are drafted in [docs/rules.md](../docs/rules.md) and **not yet sent** (question 2, on Smart Tagging, is no longer blocking since R029): an issue on the organisers' public repository would show our approach to every other team, so an email may be better."
+    ask: "Near a line? “If a rule is unclear, or your approach sits near a line, **ask before you build on it**. Open an issue.” (RULES.md, Questions). Since 3 Nov the organisers want questions **by email** to `hackathon.talentarena@mobileworldcapital.com`, not as issues (their replies on issues #25 and #26). Our three questions (the degradation, our repository's visibility, Metrica's sample data) are drafted in [docs/rules.md](../docs/rules.md) and **not yet sent**."
   },
 
   notAllowed: [
@@ -409,7 +409,7 @@ const DATA = {
     { title: "Any dataset we have the rights to use, its licence checked",
       rule: "Allowed by name since November. RULES.md's conditions still hold: the organisers can access it, the technical document says what was labelled, how, by whom and how much, and none of it is about the provided game.",
       quote: { text: "Using any dataset you have the rights to use. Please check the license of any dataset before using it.", cite: "Organisers' clarification (email, Nov 2026), What is allowed" },
-      means: ["Our DFL/IDSSE benchmark (seven open matches of other games) is CC BY 4.0; PathCRF's checkpoint is MPL-2.0 (dropped).", "Metrica's sample data has no licence file; its README asks users to acknowledge the source, which we do, and question 4 to the organisers asks.", "The technical document names each licence and lists every labelled dataset: “None of it may come from the provided game” (SUBMISSION.md)."],
+      means: ["Our DFL/IDSSE benchmark (seven open matches of other games) is CC BY 4.0; PathCRF's checkpoint is MPL-2.0 (dropped).", "Metrica's sample data has no licence file; its README asks users to acknowledge the source, which we do, and question 3 to the organisers asks.", "The technical document names each licence and lists every labelled dataset: “None of it may come from the provided game” (SUBMISSION.md)."],
       sources: [["docs/rules.md, How we read it", "../docs/rules.md#how-we-read-it"], ["RULES.md §1", "../RULES.md#training-and-validation-data"], ["SUBMISSION.md", "../SUBMISSION.md#3-a-technical-document"]] },
     { title: "Running automatic checks using only the provided data",
       rule: "Allowed by name since November. A check passes or fails: it may stop a candidate, but it never ranks candidates or sets a value.",
@@ -434,7 +434,7 @@ const DATA = {
     { title: "Providing files of intermediate steps",
       rule: "Allowed by name since November. The data licence is unchanged and our repository will be public, so such files go to the organisers directly, never into the repository, unless they say otherwise (our reading).",
       quote: { text: "Providing files of intermediate steps.", cite: "Organisers' clarification (email, Nov 2026), What is allowed" },
-      means: ["No frame-level intermediate file in git (RULES.md, The data).", "Where they should go is question 3 to the organisers, not yet sent."],
+      means: ["No frame-level intermediate file in git (RULES.md, The data).", "A small intermediate output (event times and scores, no tracking, video or audio) may be committed with the script that regenerates it: the organisers' answer on issue #14 (26 Oct)."],
       sources: [["docs/rules.md, How we read it", "../docs/rules.md#how-we-read-it"], ["RULES.md The data", "../RULES.md#the-data"]] },
     { title: "Using the 5 public minutes to check correctness",
       rule: "Check that frames are aligned, the file is well formed and the labels mean what you think: an automatic check. Never use them to choose between two versions.",
@@ -451,7 +451,7 @@ const DATA = {
   form: [
     "One Google Form with three fields plus the team name; the URL comes by email to registered participants.",
     "**One response per team.** It can be edited; the last response before the deadline is the one scored.",
-    "Name the files after the team: `<team_name>.csv` and `<team_name>.pdf`.",
+    "Name the files after the team: `<team_name>.csv` and `<team_name>.pdf`. Ours: `Un Dia de Partit.csv` and `Un Dia de Partit.pdf`.",
     "A Google account is needed to upload.",
     "**No live leaderboard and no feedback**: the public window and `validate_submission.py` are the only signals before the deadline."
   ],

@@ -9349,7 +9349,7 @@ need to be tuned, you MUST tune them on external data". `smart_tagging`'s `c_tea
 our own touch-rule pseudo-labels on BAR-ATH (R017). Its weight 0.2 and spread `frame` were Tian's pick after seeing
 label-free aggregates of our output on BAR-ATH. A21 found the first a conflict and the second doubtful, and no external
 data can set either, because DFL has no tags. Tian decided on 3 Nov to take the source out ("it violates the new
-rules"). The organisers were not asked, so question 2 in [rules.md](rules.md) is no longer blocking: ask it only if
+rules"). The organisers were not asked, so the old question 2 in [rules.md](rules.md) is no longer blocking: ask it only if
 the tags are ever wanted back.
 
 **What changed.** `pipeline/configs/main.toml` lost its `[[evidence]] kind = "smart_tagging"` block, and its header
@@ -9437,4 +9437,4 @@ clone.
 Before each upload:
 1. Regenerate the file from a clean clone, ideally on a second machine, and compare the sha256 ([T21](traps.md)).
 2. Run `validate_submission.py` on the exact file.
-3. Name it `<team_name>.csv`.
+3. Name it `Un Dia de Partit.csv`, the team's name (SUBMISSION.md).

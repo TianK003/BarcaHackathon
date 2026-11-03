@@ -1,13 +1,13 @@
-# [Team name] — More than a Hack 2027, Phase 1: technical document
+# Un Dia de Partit — More than a Hack 2027, Phase 1: technical document
 
 > **The full record, not the file to upload.** Deliverable 3 (SUBMISSION.md: a few pages, uploaded as
-> `<team_name>.pdf` or `<team_name>.md`) is [`technical_document_submission.md`](technical_document_submission.md): the
+> `Un Dia de Partit.pdf` or `Un Dia de Partit.md`) is [`technical_document_submission.md`](technical_document_submission.md): the
 > same seven sections at deliverable length, every number copied from `docs/results.md` with its entry. This file keeps
 > every choice, number and caveat in full. When a decision changes, update both.
 
 - **Team:** [five names]
 - **Code:** [public repository URL], commit `<hash>`
-- **Submission:** `<team_name>.csv`, sha256 `<…>`
+- **Submission:** `Un Dia de Partit.csv`, sha256 `<…>`
 - **Scores we can state:** public window macroF1 … / spellF1 …; our validation …. The full-match score is the
   organisers'.
 
