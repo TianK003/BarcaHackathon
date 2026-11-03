@@ -100,7 +100,9 @@ Where the text leaves room we take the stricter reading. We ask the organisers (
 
 ## Where we stand on 3 Nov
 
-The audit of `main.toml` in [technical_document.md](technical_document.md) section 5, read against the email:
+The audit of `main.toml` in [technical_document.md](technical_document.md) section 5, read against the email (A21 in
+[results.md](results.md)). The two Smart Tagging rows describe `main.toml` as it was before R029, which took the source
+out the same day:
 
 | part of `main.toml` or of how it was chosen | how it was set | under the email |
 |---|---|---|
@@ -109,18 +111,17 @@ The audit of `main.toml` in [technical_document.md](technical_document.md) secti
 | the `dead_ball_model` and `shape_possession` models | trained on DFL's flags, on degraded tracking (R009, R011) | external data (but see the degradation row) |
 | `shift_edges` +1 / −2 / 0 | the pipeline's own lag on DFL (R012); the public window's g is retired | external data |
 | `D` before each half's kick-off | the organisers' documented kick-off frames | a documented fact |
-| **`smart_tagging` c_team 0.76** | the tags' agreement with our own touch-rule pseudo-labels on BAR-ATH (R017) | **conflicts:** a parameter calibrated on the provided game, not on external data. No external data has Smart Tagging |
-| **`smart_tagging` weight 0.2, spread `frame`** | Tian's pick of two declared options, made after seeing label-free aggregates of our own output on BAR-ATH (R017) | **doubtful:** not fitted to a number, but chosen while looking at this match's output, and never tested on external data |
+| **`smart_tagging` c_team 0.76** | the tags' agreement with our own touch-rule pseudo-labels on BAR-ATH (R017) | **conflicted:** a parameter calibrated on the provided game, not on external data, and no external data has Smart Tagging. **Taken out of `main.toml` by R029** |
+| **`smart_tagging` weight 0.2, spread `frame`** | Tian's pick of two declared options, made after seeing label-free aggregates of our own output on BAR-ATH (R017) | **doubtful:** not fitted to a number, but chosen while looking at this match's output, and never tested on external data. **Gone with the source (R029)** |
 | **the benchmark's `tracking` v3 degradation**, the hazard model included | fitted once on label-free statistics of BAR-ATH's tracking (A07 to A09), then frozen | **open:** it is not the algorithm, and no ground truth or video enters it, but every external choice and both models were made on data it shaped. Our reading is that this is allowed, because the training and the tuning use external data and their labels. Ask (question 1) |
 | R011's transfer gate and R013's label-free checks on BAR-ATH | pass or fail | automatic checks |
 | `nearest_player` 0.78, `ball_presence` 0.2 / 0.585, from the public window (A01) | not in `main.toml`; they sat in R009's candidate configs, as the technical document discloses | not changed by the email (already ruled out on 23 Oct) |
 
-**Before the upload.** `smart_tagging` cannot stay in `main.toml` as it is, unless the organisers say that a constant
-measured on the provided game against our own algorithm's labels is allowed. Recommended: take it out of `main.toml` now
-and ask question 2; it goes back in only on a yes. R017 measured no score for it, and it changes 2.28% of the graded
-frames. That changes the submission config, so it is the team's decision and a new R entry in
-[results.md](results.md); this file changes no config. If the answer to question 1 is no, every learned part and every
-chosen constant has to be redone on a degradation that is not fitted on our match. That is a large job, so ask early.
+**Before the upload.** *Done:* `smart_tagging` is out of `main.toml` (R029, 3 Nov, Tian: "it violates the new rules").
+The file now has sha256 `762f9073…`. R024's `e6496a9b…` is not to be uploaded. Every remaining constant of `main.toml`
+is set on external data, by a fixed rule or from a documented fact. The one question that could still move it is
+question 1: if the answer is no, every learned part and every chosen constant has to be redone on a degradation that is
+not fitted on our match. That is a large job, so ask early.
 
 ## What it rules out among the proposals
 
@@ -147,9 +148,10 @@ an issue there shows our approach to every other team, so an email may be better
    last, how many player slots are present, the jitter) are measured once and frozen. Every parameter is then tuned,
    and our models trained, on the degraded external matches and their own labels. No ground truth and no video is
    involved. Is fitting that degradation to the provided tracking allowed?
-2. Smart Tagging exists only for the provided game. We measured how often its team votes agree with our own
-   algorithm's labels on that game, with no ground truth and no person, and used the share as the votes' confidence.
-   Is that allowed, or must such a parameter come from external data only?
+2. *(No longer blocking: R029 took the source out. Ask only if we want the tags back.)* Smart Tagging exists only for
+   the provided game. We measured how often its team votes agree with our own algorithm's labels on that game, with
+   no ground truth and no person, and used the share as the votes' confidence. Is that allowed, or must such a
+   parameter come from external data only?
 3. "Providing files of intermediate steps": should they go into our public repository, given the data licence, or be
    sent to you?
 4. Metrica's public sample data (github.com/metrica-sports/sample-data) has no licence file. May we use its event files

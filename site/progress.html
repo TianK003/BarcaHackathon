@@ -281,8 +281,8 @@ pre { background: var(--code-bg); padding: 10px 12px; border-radius: 8px; overfl
 const DATA = {
   title: "Progress",
   subtitle: "The benchmark spellF1 of main.toml by entry, and the feature that moved it",
-  asOf: "2026-10-31",
-  footer: "As of 2026-10-31 (P23 done: R024 re-chose R013's grids on the mean of the two truths and moved the hold to 0.55; A19 measured where the decoder loses; R025, R025b and R026 were dropped; then P22(b) was dropped at R027's gate, with no benchmark score). [docs/results.md](../docs/results.md) is the source of truth; this page only repeats it. Benchmark scores rank versions of our pipeline on other matches; they are not our leaderboard score.",
+  asOf: "2026-11-03",
+  footer: "As of 2026-11-03 (R029 took P08's Smart Tagging votes out of `main.toml` under the organisers' rules of 3 Nov, its c_team having been measured on our match; the benchmark score is R024's by construction, so there is no new point. Before it, P23 done: R024 re-chose R013's grids on the mean of the two truths and moved the hold to 0.55; A19 measured where the decoder loses; R025, R025b and R026 were dropped; then P22(b) was dropped at R027's gate, with no benchmark score). [docs/results.md](../docs/results.md) is the source of truth; this page only repeats it. Benchmark scores rank versions of our pipeline on other matches; they are not our leaderboard score.",
   links: [
     { href: "index.html", label: "← Team overview", cls: "home" },
     { href: "rules.html", label: "Rules" }
@@ -317,7 +317,7 @@ const DATA = {
     { id: "R014b", date: "2026-10-26", raw: 0.5433, coarse: 0.5589, adopted: false, dr: 0.0003, dc: -0.0004, prop: "P17",
       what: "P17's restart states in the decoder (`r014b_s04_b1`)", note: "Bar not met (+0.0003 raw, p 0.8125); P17 dropped." },
     { id: "R024", date: "2026-10-31", raw: 0.5363, coarse: 0.5764, adopted: true, dr: -0.0067, dc: 0.0171, prop: "P23 A",
-      what: "R013's grids re-chosen on the mean of the two truths: today's `main.toml`", note: "Only the hold moved, 0.60 to 0.55; the decoder, P07's weight and the shift came back unchanged. Ranked on the mean since R023: +0.0052 (p 0.0469, 6 wins in 7), from a raw loss and a coarse gain." },
+      what: "R013's grids re-chosen on the mean of the two truths: today's `main.toml`", note: "Only the hold moved, 0.60 to 0.55; the decoder, P07's weight and the shift came back unchanged. Ranked on the mean since R023: +0.0052 (p 0.0469, 6 wins in 7), from a raw loss and a coarse gain. R029 later took out only the tags, which the benchmark never ran, so this is still `main.toml`'s score." },
     { id: "R025", date: "2026-10-31", raw: 0.5361, coarse: 0.5745, adopted: false, dr: -0.0002, dc: -0.0018, prop: "P23 C",
       what: "Posterior edges (`r025_final`)", note: "Guard failed: mean −0.0010, 2 wins in 7. The posterior is too sharp for its median to leave Viterbi's edge (A19)." },
     { id: "R025b", date: "2026-10-31", raw: 0.5121, coarse: 0.5441, adopted: false, dr: -0.0242, dc: -0.0323, prop: "P23 C",
@@ -334,7 +334,7 @@ const DATA = {
     { p: "P05", name: "Dead-ball model", status: "adopted" },
     { p: "P06", name: "hmm decoder", status: "adopted" },
     { p: "P07", name: "Shape possession", status: "adopted" },
-    { p: "P08", name: "Smart Tagging team votes", status: "adopted" },
+    { p: "P08", name: "Smart Tagging team votes (out since R029, rules of 3 Nov)", status: "dropped" },
     { p: "P09", name: "Camera aim", status: "dropped" },
     { p: "P10", name: "Referee whistle", status: "dropped" },
     { p: "P12", name: "Free X", status: "dropped" },
@@ -375,8 +375,8 @@ const DATA = {
       why: "No delta: it is a profile, not a feature (`main.toml` on it: 0.5509 raw, 0.5296 coarse, against 0.5430 and 0.5593 on `tracking`). v1 fails a gate; v2 cannot reach our share past a line (0.258 to 0.262 against 0.0407); code removed." },
     { prop: "P12", feature: "`free_x`: abstain where the posterior is low", entry: "R016", date: "2026-10-30", dr: "+0.0000", dc: "+0.0000", status: "dropped",
       why: "spellF1 is unchanged on all seven matches under both truths (it reproduces R013); the bar is on macroF1, and every threshold lowered macroF1." },
-    { prop: "P08", feature: "Smart Tagging team votes, weight 0.2", entry: "R017", date: "2026-10-30", dr: "—", dc: "—", status: "unbenchmarked",
-      why: "Adopted per frame (agreement with our touch-rule pseudo-labels 0.761, bar 0.75); the dead votes (0.409, bar 0.60) dropped. DFL has no tags, so there is no benchmark number; `--drop-match-only` reproduces R013. Its c_team was measured on BAR-ATH and conflicts with the organisers' clarification of November 2026 ([docs/rules.md](../docs/rules.md)), pending a team decision." },
+    { prop: "P08", feature: "Smart Tagging team votes, weight 0.2", entry: "R017, R029", date: "2026-10-30", dr: "—", dc: "—", status: "dropped",
+      why: "Adopted per frame by R017 (agreement with our touch-rule pseudo-labels 0.761, bar 0.75); the dead votes (0.409, bar 0.60) dropped. DFL has no tags, so there is no benchmark number; `--drop-match-only` reproduces R013. Taken out of `main.toml` by R029 (2026-11-03): its c_team was measured on our match, which the organisers' clarification of 3 Nov forbids ([docs/rules.md](../docs/rules.md)). The benchmark is unchanged by construction; the code stays, off." },
     { prop: "P10", feature: "Referee's whistle from the audio", entry: "R018, R018b", date: "2026-10-30", dr: "—", dc: "—", status: "dropped",
       why: "Gate failed twice (whistles near stoppages 1.52 and 1.51 times chance, against a declared 2); code removed. No benchmark number." },
     { prop: "P09", feature: "Camera aim in the shape model", entry: "R019", date: "2026-10-30", dr: "—", dc: "—", status: "dropped",
@@ -392,7 +392,7 @@ const DATA = {
     { prop: "P16", feature: "Metrica's sample games: the grain of our provider's possession", entry: "R023", date: "2026-10-31", dr: "—", dc: "—", status: "measured",
       why: "A measurement that sets the objective, not a feature. Possession derived from the events of 3 anonymised games by a rule declared before the fetch: 6.20 per alive minute (class both, 5.31 to 7.03) and a median of 4.72 s (class raw, under 4.83 s). Outcome **both**: choices declared from now on rank on the mean of the raw and coarse pooled spellF1s. `main.toml` untouched; the switch timing is not measured." },
     { prop: "P23 A", feature: "R013's touch rule, decoder and P07 weight re-chosen on the mean of the two truths", entry: "R024", date: "2026-10-31", dr: "−0.0067", dc: "+0.0171", status: "adopted",
-      why: "Today's `main.toml`: only the hold moved, 0.60 to 0.55. Mean of the two truths +0.0052 (p 0.0469, 6 wins in 7), the objective since R023; `context` +0.0010. BAR-ATH: 399 possessions (413), `D` 36.00%, 1.66% of graded frames relabelled; `main.csv` `e6496a9b…`, not yet regenerated from a fresh clone." },
+      why: "Today's `main.toml` on the benchmark (R029 took out only the tags): only the hold moved, 0.60 to 0.55. Mean of the two truths +0.0052 (p 0.0469, 6 wins in 7), the objective since R023; `context` +0.0010. BAR-ATH: 399 possessions (413), `D` 36.00%, 1.66% of graded frames relabelled; `main.csv` `e6496a9b…`, not yet regenerated from a fresh clone." },
     { prop: "P23 B, D", feature: "The IoU ladder decomposed; the calibration of the sources and the decoder's posterior", entry: "A19", date: "2026-10-31", dr: "—", dc: "—", status: "measured",
       why: "A measurement, not a feature. The fall from IoU 0.3 to 0.7 is mostly edges on otherwise right possessions (0.0704 on the mean; merges 0.0254, splits 0.0273), which passed R025's gate (0.015). The sources are near calibrated (dead ball α 1.00, P07 1.07 to 1.10); the posterior is 4 to 5 times too sharp (α 0.19 team, 0.27 alive). New tool `diagnose.py`." },
     { prop: "P23 C", feature: "Posterior edges, then on a posterior tempered at T = 5", entry: "R025, R025b", date: "2026-10-31", dr: "−0.0002, −0.0242", dc: "−0.0018, −0.0323", status: "dropped",
@@ -419,7 +419,8 @@ const DATA = {
       { id: "R012", what: "+ P02 shift", spell: "0.4000", macro: "0.7159", poss: "20" },
       { id: "R013", what: "Touch rule and decoder re-chosen", spell: "0.4649", macro: "0.7152", poss: "20" },
       { id: "R017", what: "+ P08 team votes (seen after Tian's pick)", spell: "0.4000", macro: "0.6986", poss: "—" },
-      { id: "R024", what: "Hold 0.55, on the mean of the two truths", spell: "0.4000", macro: "0.7007", poss: "19" }
+      { id: "R024", what: "Hold 0.55, on the mean of the two truths", spell: "0.4000", macro: "0.7007", poss: "19" },
+      { id: "R029", what: "P08's team votes out (rules of 3 Nov)", spell: "0.4444", macro: "0.7149", poss: "19" }
     ]
   },
 

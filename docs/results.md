@@ -50,6 +50,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R026 | 2026-10-31 | P23 E: P07 weighted apart in the gaps (6 configs) | — | — | — | the identity scored as `main`; every heavier gap weight -0.010 to -0.020 on the mean | **dropped**: no config beat `main`; no retry (advisor); code removed |
 | R027 | 2026-10-31 | P22(b): P07's logit plus a per-half intercept fitted on the other half's touch-rule frames (E2, noise-aware at ε 0.07), served by a new source `shape_selftrain`; part 1: the gate on DFL (rung 1's pooled log-loss in the held-out half's gaps at least 0.002 nats below P07's, no match more than 0.002 above), the shift, the bar (the mean of the two truths: pooled Δ ≥ +0.005 on `tracking`, no match below −0.005), two vetoes, the BAR-ATH checks; rung 3 the one retry (R027b); part 2a: the gate run | — | — | — | — | dropped 2026-10-31, code removed (recover from `1e5a5d2` and the local tag `archive/r027-source`): the gate failed, rung 1's pooled log-loss +0.0061 (0.3820 against P07's 0.3759; needed −0.002) and worse on 5 of 7 matches (worst +0.0148, J03WMX), rung 3 +0.0838; the touch-to-gap transfer 0.296 against the teacher's noise 0.107 (E/B 1.18); no shift, bar or BAR-ATH run, no spellF1 |
 | R028 | 2026-11-01 | P15 use 1: the TV broadcast's usable ball fills our tactical ball's gaps (`[inputs] ball_fill = "broadcast"`: aligned by code, live-tested, runs of 13+ frames); on DFL a simulated broadcast transplanted from BAR-ATH's real fill; part 1: the fidelity gates, the shift, the bar (ii: the mean of the two truths, pooled Δ ≥ +0.005 on `tracking`, no match below −0.005), two vetoes, the BAR-ATH checks; R028b (`filled_confidence` 0.79) the one retry; part 2a: the fidelity run | — | — | — | — | dropped 2026-11-02, code removed (recover from `659a6c2` and the local tag `archive/r028-source`): the stand-in's fidelity gates failed on `tracking` (F1 0.2176 against ours 0.2952, F2 0.0885 against 0.0412, F3 first 0.4012 against 0.2974, inside 0.1414 against 0.0727), and the advisor found no departure of the code from part 1; no lag, bar or BAR-ATH run, no spellF1; the broadcast's value in our gaps is untested, not refuted |
+| R029 | 2026-11-03 | `smart_tagging` (P08) taken out of `main.toml`: its `c_team` was measured on BAR-ATH, which the organisers' clarification of 3 Nov forbids (A21, [rules.md](rules.md)); nothing else changed | 0.7149 | 0.4444 | 19 / 14.8 s | 0.5363 raw and 0.5764 coarse: R024's, by construction (the benchmark always ran `main.toml` with `--drop-match-only`, which removed exactly this source) | **adopted, for the rules and not for a score**; sha256 `762f9073…`; the public figures chose nothing (T01) |
 
 ### The four yardsticks on every profile, in one table
 
@@ -2131,9 +2132,9 @@ against the new text.
 - **Automatic checks, which the email allows:** R011's transfer gate and R013's label-free checks on BAR-ATH.
 - **Unchanged:** the window-derived constants (A01) stay out of `main.toml`, as since 23 Oct.
 
-**Verdict.** No config was changed: what to do with `smart_tagging` is the team's decision, and [rules.md](rules.md)
-recommends taking it out of `main.toml` until the organisers answer question 2. Until then the file `main.toml` writes
-today (sha256 `e6496a9b…`, R024) should not be uploaded (submission log). The proposals the email rules out (P14
+**Verdict.** No config was changed here: what to do with `smart_tagging` was the team's decision, and
+[rules.md](rules.md) recommended taking it out of `main.toml`. *Done the same day by R029:* the source is out, and
+R024's file (`e6496a9b…`) is not to be uploaded (submission log). The proposals the email rules out (P14
 trained on our video, P21's colour clusters, P22) are marked in [proposals.md](proposals.md); [T54](traps.md) records
 the trap.
 
@@ -9334,6 +9335,56 @@ writes `e6496a9b…`. `main.toml` was never touched.
 **Cost.** The design, plan and build took the evening of 1 Nov: four tasks, four task reviews, one fix round, and
 part 1's two independent reviews. The runs took 12 minutes.
 
+### R029 — Smart Tagging taken out of main.toml under the rules of 3 Nov (2026-11-03, Tian)
+Proposal: P08 · Commit: branch `rules-nov3` (the config change and this entry; the docs of the rules are `48301c2`) ·
+Command: `python pipeline/run.py pipeline/configs/main.toml --score`, then
+`python pipeline/benchmark/label_diff.py pipeline/configs/r024_both.toml pipeline/configs/main.toml`
+Public: macroF1 0.7149 · spellF1 0.4444 · poss 19 / 14.8 s (a correctness check; it chose nothing, T01)
+Validation (P01 benchmark): 0.5363 raw and 0.5764 coarse pooled spellF1, R024's, by construction and not re-run
+Changed vs the previous `main.toml` (R024): the `smart_tagging` source is gone; nothing else
+Verdict: adopted, because the rules require it, not because of a score
+
+**Why.** The organisers' clarification of 3 Nov ([rules.md](rules.md)) says "If your algorithm has parameters that
+need to be tuned, you MUST tune them on external data". `smart_tagging`'s `c_team` 0.76 was the tags' agreement with
+our own touch-rule pseudo-labels on BAR-ATH (R017). Its weight 0.2 and spread `frame` were Tian's pick after seeing
+label-free aggregates of our output on BAR-ATH. A21 found the first a conflict and the second doubtful, and no external
+data can set either, because DFL has no tags. Tian decided on 3 Nov to take the source out ("it violates the new
+rules"). The organisers were not asked, so question 2 in [rules.md](rules.md) is no longer blocking: ask it only if
+the tags are ever wanted back.
+
+**What changed.** `pipeline/configs/main.toml` lost its `[[evidence]] kind = "smart_tagging"` block, and its header
+and description say why. Apart from that block its settings are `r024_both.toml`'s line for line. `r024_both.toml`
+still writes R024's file (`e6496a9b…`, checked today) and `r017_frame.toml` R017's. The `smart_tagging` source and
+`tag_stats.py` stay in the code, not in `main.toml`.
+
+**The new file.** sha256 `762f9073e0d0c56bf8fd4e0b801b80d79defe87246b4f0a8c201d9b5337cdf6e`, the same on two runs
+(OPENBLAS, OMP and MKL at one thread). It is valid (199,319 rows), with no `X` in a graded block. Graded frames: `H`
+37.5%, `A` 26.6%, `D` 35.9%; 413 possessions in the graded halves, mean 9.9 s. It has NOT been uploaded.
+
+**Against R024's file, on BAR-ATH, label-free** (`label_diff.py`, aggregates only):
+- 2.94% of the graded frames changed, 42.3% of them where the ball is not seen. R017 measured 2.28% when the tags went
+  in at hold 0.60, against R013's file; R024's hold 0.55 has been under them since.
+- `D` 36.00% to 35.92% of the graded frames; `D` onsets 108 to 107 (20 moved, a median of -1.0 frames, 1 lost).
+- Possessions 182 to 190 in half 1 and 217 to 223 in half 2: 399 to 413.
+
+**The benchmark.** Not re-run, because nothing it measures changed. Smart Tagging is `MATCH_ONLY`, so every benchmark
+run of `main.toml` since R017 used `--drop-match-only`, which removes exactly this source and reports it. R024's
+0.5363 raw / 0.5764 coarse (mean 0.5563) is therefore already the score of this file's config. The flag is now a
+no-op on `main.toml`: `drop_match_only` returns a config with nothing flagged unchanged, so the documented commands
+still run.
+
+**The public window**, a correctness check only: macroF1 0.7149 and spellF1 0.4444 against R024's 0.7007 and 0.4000,
+19 possessions against the truth's 17. The sources' agreements are unchanged (`controlled_touch` 86.8% of 5,484
+frames, `dead_ball_model` 86.6% of 7,500, `shape_possession` 90.9% of 6,031). The rise is about one possession on a
+window that ranks versions wrongly (T01). It played no part in the decision and says nothing about the full match.
+
+**Checks.** `pipeline/selftest.py` 191 of 191; `pipeline/benchmark/selftest.py` 460 passed. No code changed, so
+`selftest.py --data` was not re-run.
+
+**What it costs.** Unknown, and it was never measured: R017 adopted the tags without a score, because no benchmark has
+tags. What is lost is a weak team vote over 49.9% of the graded frames without a ball (R017). There, the shape model and
+the hold now decide alone, as they did up to R013.
+
 ## Submission log
 
 The form keeps only the last response before the deadline, so log every upload.
@@ -9375,9 +9426,13 @@ objective, 0.60 to 0.55. It now produces sha256
 `r024_both.toml`'s file. R025, R025b, R026 and R027 left it unchanged (C, E and P22(b) dropped). It has NOT been
 uploaded.
 
-**3 Nov 2026: do not upload R024's file as it stands.** Under the organisers' clarification of 3 Nov
-([rules.md](rules.md)), `main.toml`'s `smart_tagging` `c_team` was calibrated on our own match (A21). The file needs
-the team's decision first (take the source out, or the organisers' yes to question 2), and a new R entry.
+**3 Nov 2026: do not upload R024's file.** Under the organisers' clarification of 3 Nov ([rules.md](rules.md)),
+its `smart_tagging` `c_team` was calibrated on our own match (A21).
+
+`main.toml` was rewritten a seventh time by R029 (2026-11-03): `smart_tagging` taken out under the rules of 3 Nov. It
+now produces sha256 `762f9073e0d0c56bf8fd4e0b801b80d79defe87246b4f0a8c201d9b5337cdf6e` (branch `rules-nov3`); R024's
+file is still what `r024_both.toml` writes. It has NOT been uploaded, and it has not yet been regenerated from a fresh
+clone.
 
 Before each upload:
 1. Regenerate the file from a clean clone, ideally on a second machine, and compare the sha256 ([T21](traps.md)).

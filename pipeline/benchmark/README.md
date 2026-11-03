@@ -609,8 +609,9 @@ classic variants still replace it; neither changes the other.
 .venv/Scripts/python pipeline/benchmark/headroom.py pipeline/configs/main.toml --variants plus_home_visible plus_home_gaps plus_home_all --truth raw --write
 ```
 
-Since R017 `main.toml` has a match-only source (`smart_tagging`: DFL has no tags), so headroom on it needs
-`--drop-match-only`, as `run.py` does: `headroom.py pipeline/configs/main.toml --drop-match-only --variants plus_home_visible
+From R017 to R029 `main.toml` had a match-only source (`smart_tagging`: DFL has no tags), so headroom on it needed
+`--drop-match-only`, as `run.py` does; since R029 (3 Nov) the flag is a no-op on `main.toml`, and a config with the tags
+(`r024_both.toml`) still needs it: `headroom.py pipeline/configs/main.toml --drop-match-only --variants plus_home_visible
 plus_home_gaps plus_home_all`. The flag goes to the runner for CONFIG and every variant, and the output names what it dropped;
 the headroom is then that of `main.toml` without the tags.
 

@@ -6,7 +6,8 @@
 # name), change it, run it, and log the run in docs/results.md. When an experiment wins on validation, its changes
 # come back here.
 #
-# Today this is P04 + P05 + P07 + P08 + P02 together, with the touch rule and the decoder re-chosen by R013:
+# Today this is P04 + P05 + P07 + P02 together, with the touch rule and the decoder re-chosen by R013 (P08, Smart
+# Tagging, was added by R017 and taken out again by R029, see below):
 # controlled_touch for `home` (P04: radius 1.5 m, 6.0 m/s, 1 frame, hold 0.55 since R024), the hgb dead_ball_model for `alive`
 # (P05), shape_possession for `home` on every graded frame (P07, weight 0.2), the hmm decoder (switch_team 4,
 # switch_dead 32, min_possession 35, min_dead 25) and, after the decoder, shift_edges at the pipeline's own lag (P02: a
@@ -23,13 +24,18 @@
 # benchmark runs this file with --drop-match-only). The R013 sentences that follow describe the file before R017.
 # R024 (P23 A) then re-chose R013's two stages under R023's objective, the mean of the raw and the coarse truth: the
 # touch hold moved from 0.60 to 0.55, and the decoder, P07's weight and the shift stayed (docs/results.md R024).
+# R029 (2026-11-03) took the `smart_tagging` source out again: its c_team was measured on our own match, and the
+# organisers' clarification of 3 Nov 2026 has every parameter tuned on external data only (docs/rules.md); its weight
+# was picked after seeing our match's output, and DFL has no tags to set either on. So this file now has no match-only
+# source, and its benchmark score is R024's (the benchmark always ran it with --drop-match-only). R024's file with the
+# tags is r024_both.toml, R017's r017_frame.toml.
 # R013's guard against R012's main.toml passed (`tracking` raw +0.0267, p 0.0156, 7 wins in 7; `tracking` coarse
 # +0.0001; `context`, a sensitivity check, +0.0327 raw and +0.0097 coarse) and so did its label-free checks on BAR-ATH. Its file is r013_retune.toml; R012's main.toml is p02_shift.toml, R011's p07_shape.toml
 # and R010's p45_hmm.toml. The benchmark overstates P05 for BAR-ATH by an amount it cannot measure (docs/traps.md T38,
 # T39), the shape model was trained on other teams' matches, and the raw and the coarse truth still disagree on how
 # finely to cut possessions (T33): read R010 to R013 before trusting the size of any gain.
 
-description = "P04 + P05 + P07 + P08 + P02, re-chosen by R013 (P08 added by R017, the hold re-chosen by R024): controlled_touch 1.5 m / 6.0 m/s / 1 frame / hold 0.55 (confidence 0.93) + dead_ball_model (hgb, pipeline/models/dead_ball_hgb.json) at weight 1.0 + shape_possession (hgb, pipeline/models/shape_possession_hgb.json) at weight 0.2, scope all, min_prob 0.02 + smart_tagging team votes (R017: c_team 0.76, spread frame, weight 0.2), hmm 4/32/35/25, decoded per half, then shift_edges team +1 / into_dead -2 / out_of_dead 0 frames."
+description = "P04 + P05 + P07 + P02, re-chosen by R013 (the hold re-chosen by R024; P08, added by R017, taken out by R029 under the 3 Nov rules): controlled_touch 1.5 m / 6.0 m/s / 1 frame / hold 0.55 (confidence 0.93) + dead_ball_model (hgb, pipeline/models/dead_ball_hgb.json) at weight 1.0 + shape_possession (hgb, pipeline/models/shape_possession_hgb.json) at weight 0.2, scope all, min_prob 0.02, hmm 4/32/35/25, decoded per half, then shift_edges team +1 / into_dead -2 / out_of_dead 0 frames."
 seed = 0
 scope = "halves"
 
@@ -55,12 +61,6 @@ weight = 0.2                                          # an exponent on the sourc
 model = "pipeline/models/shape_possession_hgb.json"   # relative to the repo root; BAR-ATH has no fold, so `full`
 scope = "all"                                         # "gaps": ball missing only; "all": every graded frame
 min_prob = 0.02                                       # home is clipped to [0.02, 0.98]
-
-[[evidence]]
-kind = "smart_tagging"
-weight = 0.2                                  # R017, Tian's pick of strength (2026-10-30); untested on a benchmark
-c_team = 0.76                                 # R017: the team votes' agreement with the kept touch episodes
-spread = "frame"                              # a per-frame vote (the alternative, "tag", is r017_tag.toml)
 
 # Exactly one decoder (pipeline/decode/). Every key but kind is a keyword argument.
 [decoder]

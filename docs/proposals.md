@@ -45,7 +45,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P05](#p05--a-real-dead-ball-detector) | Dead-ball detector | fact 4 | M | high: +0.1661 raw at the chosen decoder, on a benchmark that overstates it (R010, T38, T39) | done → R009, R010 |
 | [P06](#p06--global-decoding-per-half-hmm--hidden-semi-markov) | Global decoder (HMM / semi-Markov) per half | fact 5 | M | high | done → R006–R007, A10; decoder re-chosen → R010, R013 |
 | [P07](#p07--possession-without-the-ball-team-shape-and-movement) | Possession without the ball: team shape | fact 1 | M | high: +0.0942 raw at the chosen decoder, on a benchmark whose gain is not a forecast for our match (R011) | done → R011; weight re-chosen → R013 |
-| [P08](#p08--smart-tagging-as-soft-evidence) | Smart Tagging as soft evidence | facts 1, 4 | S | medium | done → R017 (team votes adopted per frame, weight 0.2; dead votes measured and dropped); **conflicts with the 3 Nov rules** (`c_team` measured on our match): decision pending, [rules.md](rules.md) |
+| [P08](#p08--smart-tagging-as-soft-evidence) | Smart Tagging as soft evidence | facts 1, 4 | S | medium | done → R017 (team votes adopted per frame, weight 0.2; dead votes measured and dropped); **taken out of `main.toml` → R029** (3 Nov rules: `c_team` was measured on our match, [rules.md](rules.md)) |
 | [P09](#p09--camera-aim-as-a-coarse-ball-zone-prior) | Camera aim as a coarse ball-zone prior | fact 1 | S | low–medium | dropped → R019 (the simulated camera failed two fidelity gates; code removed); A20: in the gaps the camera only moves with the players |
 | [P10](#p10--referee-whistle-from-the-audio-track) | Referee whistle from the audio track | fact 4 | S–M | medium (audio confirmed, A04) | dropped → R018, R018b (whistles near stoppages 1.5× chance, below the declared 2×; code removed) |
 | [P11](#p11--touch-and-pass-events-to-place-boundaries) | Touch and pass events to place boundaries | fact 5 | M–L | medium–high | idea |
@@ -706,8 +706,8 @@ ball). What comes next is in [After P07 and P02](#after-p07-and-p02).
 
 ### P08 — Smart Tagging as soft evidence
 
-**Status: done → [R017](results.md) (team votes adopted per frame, weight 0.2; dead votes measured and dropped); in
-conflict with the 3 Nov rules, decision pending ([rules.md](rules.md)).** The team
+**Status: done → [R017](results.md) (team votes adopted per frame, weight 0.2; dead votes measured and dropped); taken
+out of `main.toml` → [R029](results.md) (3 Nov 2026: `c_team` was measured on our match, [rules.md](rules.md)).** The team
 votes passed their declared bar (0.761 agreement with our own controlled-touch pseudo-labels) and entered `main.toml` at
 Tian's pick of strength (2026-10-30); the dead votes failed theirs (0.409) and were removed from the code.
 
@@ -716,8 +716,8 @@ data". `c_team` 0.76 is a measurement on our own match, so it conflicts ([T54](t
 seeing our match's output and is doubtful. DFL has no tags, so no external data can set either. Recommended: take
 `smart_tagging` out of `main.toml` (R017 measured no score for it), ask the organisers (question 2), and put it back
 only on a yes. The plan below had a compliant route, "a declared constant argued from what the tags mean". That route is
-not clean any more, because any number declared now is chosen knowing 0.761. Taking the source out changes the
-submission config, so it is the team's decision, logged as a new R entry.
+not clean any more, because any number declared now is chosen knowing 0.761. *Decided 3 Nov (Tian):* the source is
+out of `main.toml` (R029, sha256 `762f9073…`). The organisers were not asked; the code stays, off.
 
 **Why.** There are 638 automatic tags, each naming a team: free evidence exactly where the ball is missing.
 
@@ -1036,7 +1036,7 @@ Athletic: the count of possessions moved the other way on BAR-ATH.
 
 **Status: done (Claude, for Tian, 31 Oct).** Tian took A to E and deferred F; G, H and I were not taken.
 - **A → [R024](results.md): adopted.** The touch hold moves from 0.60 to 0.55. The mean of the two truths is +0.0052
-  (p 0.0469, 6 wins in 7); `main.csv` is `e6496a9b…`.
+  (p 0.0469, 6 wins in 7); `main.csv` is `e6496a9b…` (until R029 took Smart Tagging out on 3 Nov: `762f9073…`).
 - **B and D → [A19](results.md): measured.** The IoU ladder is mostly edges on otherwise right pairs (0.070 of
   spellF1 on the mean). The sources are near calibrated; the decoder's posterior is about five times too sharp.
 - **C → [R025](results.md), [R025b](results.md): dropped.** The gate passed. R025 moved edges by 1 frame (mean

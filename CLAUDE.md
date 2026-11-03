@@ -45,10 +45,10 @@ before building anything that learns, tunes or uses the video.
   self-supervised or unsupervised learning on it, pseudo-labels our own code made from it, priors re-estimated on it,
   and any constant measured on it. A fixed rule that reads the match at run time is the algorithm running, not fitting;
   a number measured on the match and written into a config or model is fitting (`docs/rules.md`, "How we read it",
-  `docs/traps.md` T54). *Changed 3 Nov 2026:* until then label-free learning on this match was allowed. **Open:**
-  `main.toml`'s `smart_tagging` c_team 0.76 was measured on this match (R017) and conflicts. The benchmark's
-  degradation is fitted on our tracking's label-free statistics, which is a question for the organisers. Both are in
-  `docs/rules.md`.
+  `docs/traps.md` T54). *Changed 3 Nov 2026:* until then label-free learning on this match was allowed. R029 took
+  `smart_tagging` out of `main.toml` for this, because its c_team 0.76 had been measured on this match (R017). **Open:**
+  the benchmark's degradation is fitted on our tracking's label-free statistics, which is question 1 for the organisers
+  (`docs/rules.md`).
 - **No hand labels on this match at all**, in any amount and for any purpose, and no "human-produced data or any other
   data created manually on the provided game": not to train, validate or calibrate, and no correcting its tracking by
   hand (corrections must come out of code). Hand-labelled data from *other* games is fine, in any amount, if we have
@@ -110,8 +110,8 @@ python pipeline/benchmark/sources.py [--verify] [--data-dir D]   # P01: fetch (o
 python pipeline/benchmark/run.py CONFIG [CONFIG ...]    # configs on the benchmark; the first is the reference
 python pipeline/benchmark/run.py CONFIG ... --truth coarse   # the same under the coarse truth; read both together
 python pipeline/benchmark/run.py CONFIG ... --truth both     # both truths from one decode: the two runs' reports
-python pipeline/benchmark/run.py CONFIG ... --drop-match-only   # needed for main.toml: drops (and reports) its
-                                                        # match-only sources (Smart Tagging), which DFL cannot serve
+python pipeline/benchmark/run.py CONFIG ... --drop-match-only   # drops (and reports) match-only sources (Smart Tagging:
+                                                        # r017_*, r024_both), which DFL cannot serve; main.toml has none since R029
 python pipeline/benchmark/choose.py --reference main STEM ...   # a grid's declared rule on its reports, + LOMO
 python pipeline/benchmark/choose.py --reference main --objective mean STEM ...   # R024 on: the mean of the two truths
 python pipeline/benchmark/diagnose.py CONFIG --drop-match-only   # A19: the IoU ladder decomposed, sources' and posterior's calibration
@@ -174,9 +174,9 @@ keeps that convention: its scripts swap their own folder on `sys.path` for the r
   block per graded half) → `refine` → `output` (LF CSV, official validation, manifest in `data/runs/`). Components are
   plain functions in each stage's `REGISTRY` (`evidence` holds `nearest_player`, `ball_presence`, `controlled_touch`,
   `dead_ball_rules`, `smart_tagging`, `dead_ball_model`, `shape_possession` and `restart_team`, the last three reading
-  the trained JSON models in `pipeline/models/`; `smart_tagging` is Smart Tagging's team votes, in `main.toml` since
-  R017 (P08), and declares `MATCH_ONLY`, so the benchmark runs `main.toml` with `--drop-match-only` (its `c_team` was
-  measured on this match, which the 3 Nov rules forbid: `docs/rules.md`, a team decision pending); `restart_team` is
+  the trained JSON models in `pipeline/models/`; `smart_tagging` is Smart Tagging's team votes, in `main.toml` from
+  R017 (P08) until R029 took it out under the 3 Nov rules (its `c_team` was measured on this match, `docs/rules.md`),
+  and declares `MATCH_ONLY`, so the benchmark runs a config that has it with `--drop-match-only`; `restart_team` is
   a restart-team vote, measured but not in `main.toml`, P17; `decode`
   holds `majority_vote` and `hmm` (which can decode restart states, `restart_source`, off by default);
   `refine` holds `shift_edges`), chosen by TOML configs in `pipeline/configs/` and checked against their signatures

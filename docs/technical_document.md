@@ -41,7 +41,7 @@ choice, 8, 32, 75 and 1 for `nearest_player` and `ball_presence`, did not clear 
 them). R024 chose `switch_team` and `min_possession` again under R023's objective, the mean of the raw and the coarse
 truth's scores, and kept them.
 
-**The evidence** (P04, P05, P07 and P08, `pipeline/evidence/`). Four sources. `controlled_touch` (P04) gives `home`: it
+**The evidence** (P04, P05 and P07, `pipeline/evidence/`). Three sources. `controlled_touch` (P04) gives `home`: it
 votes for a team at 0.93 inside the episodes where that team controls the ball, and weakly (0.55) for the last
 controlling team on the other frames where the ball is visible (the rule's constants are R013's, re-chosen on the
 benchmark with none of the window-derived values in any candidate, and its hold R024's). It says nothing where the ball is missing, and so a
@@ -53,14 +53,15 @@ players alone: boosted trees on 26 features of how the two teams stand and move 
 wide, its velocity along its attack, its shares in the two end thirds), none of which reads the ball, trained on the
 seven benchmark matches with the ball hidden and read symmetrically in the two teams. It is the only source of `home`
 that reads no ball (R011), and at weight 0.2 it speaks on every graded frame; where the ball is missing (40.7% of the
-graded frames) it shares the vote with `smart_tagging`. `smart_tagging` (P08, R017) gives `home` from Smart Tagging's
-automatic phase tags (see section 2) and votes on 49.9% of the ball-gap frames.
+graded frames) it is the only source of `home`. From R017 to R029 it shared that vote with `smart_tagging` (P08), Smart
+Tagging's automatic phase tags as team votes, until the organisers' clarification of November 2026 ruled out the
+source's confidence, which had been measured on this match (section 2).
 `nearest_player` (the baselines' team source) and `ball_presence` (P06's first `alive` source) stay in the pipeline and
-are not in the submission. **`main.toml` is these four sources, the decoder and the shift below** (R010 to R013, R017,
-then R024): P04 and P05 together, P07 on top of them, and R013's re-chosen touch rule and decoder each meet the
-benchmark's bar; P08 was adopted at Tian's pick of its strength after its team votes passed a label-free bar (R017);
-and R024, re-choosing R013's two stages on the mean of the two truths, moved only the hold, from 0.60 to 0.55, and met
-its bar on that mean. Section 6 says what that does and does not show. The file has not been uploaded.
+are not in the submission. **`main.toml` is these three sources, the decoder and the shift below** (R010 to R013,
+R024, R029): P04 and P05 together, P07 on top of them, and R013's re-chosen touch rule and decoder each meet the
+benchmark's bar; R024, re-choosing R013's two stages on the mean of the two truths, moved only the hold, from 0.60 to
+0.55, and met its bar on that mean; and R029 took out P08, which R017 had adopted at Tian's pick of its strength after
+its team votes passed a label-free bar on this match. Section 6 says what that does and does not show. The file has not been uploaded.
 
 **The shift** (P02, `pipeline/refine/shift_edges.py`). After the decoder, each kind of edge of a half is moved by a
 whole number of frames: a change of team 1 frame later, a change into `D` 2 frames earlier, a change out of `D` not at
@@ -77,7 +78,7 @@ coarse truth), inside the noise (section 5).
 | asset | used? | how — or why it was dropped |
 |---|---|---|
 | Tactical ATD (players, ball, speeds) | yes | The input of every source: the players' positions, the team of each slot and the ball, with every speed computed from successive positions (T31). For P02 it also gives the label-free events that A11 times our truth's changes against: a team's first controlled touch, the ball first seen beyond a line, where the ball is lost and where it moves after standing still, where the dead-ball model's `alive` crosses 0.5. The same events are found on DFL's degraded copy |
-| Smart Tagging | yes, as team votes (P08, R017); also in A11 | The `smart_tagging` source turns the automatic phase tags into a team vote on `home` (a possession-phase tag votes for its team, a defending one for the other, no vote where tags disagree or say nothing), cut at the graded blocks. Its dead votes (`SET PIECES`, `GOALS`) were measured in R017 against `dead_ball_model` (0.409 agreement, bar 0.60) and dropped, and the set-piece tags are not used as a restart type either. Earlier, A11 timed `SET PIECES` intervals against our truth's stoppages (an interval within 5 s of the start of none of the 4 and of the end of 1 of the 4), and they said nothing. The source is `MATCH_ONLY` (DFL has no tags), so the benchmark runs `main.toml` with `--drop-match-only` |
+| Smart Tagging | not in the submission: team votes from R017 to R029 (P08); also in A11 | The `smart_tagging` source turns the automatic phase tags into a team vote on `home` (a possession-phase tag votes for its team, a defending one for the other, no vote where tags disagree or say nothing), cut at the graded blocks. Its dead votes (`SET PIECES`, `GOALS`) were measured in R017 against `dead_ball_model` (0.409 agreement, bar 0.60) and dropped, and the set-piece tags are not used as a restart type either. Earlier, A11 timed `SET PIECES` intervals against our truth's stoppages (an interval within 5 s of the start of none of the 4 and of the end of 1 of the 4), and they said nothing. The source is `MATCH_ONLY` (DFL has no tags), so the benchmark ran `main.toml` with `--drop-match-only` while the source was in it. R029 took it out on 3 Nov 2026: its `c_team` had been measured on this match (below), and the organisers' clarification of November 2026 has parameters tuned on external data only, which has no tags |
 | Tactical homography | only in A03 | The pitch point under the image centre (the inverse homography of the centre pixel) was compared with the ATD ball over the graded frames: the camera's aim is a coarse zone prior for long ball gaps, not a position (A03). No source of the pipeline reads it: P09 planned the aim as features of the shape model, to be validated with a simulated camera on DFL, and was dropped before any model was trained when the simulated camera failed two of its four fidelity gates (R019) |
 | Tactical video (frames, audio) | only its structure (A04) | `ffprobe` read the stream information (H.264, 1920×1080, 25 fps, 199,319 frames; AAC audio from t = 0), and no value of the file was read (A04). The audio was decoded locally by our code (never seen by an LLM; aggregates only) for P10's band-pass whistle detector, which R018 and R018b dropped and whose code was removed. No source of the pipeline reads it (P14, the ball in the frames, is an idea, and since the organisers' clarification of November 2026 only a detector trained on other matches may run on it), and no LLM may see it, so what needs it is left to a person (A11), who may watch it only "to better understand what counts as possession". Nobody checks our output against it, which that clarification forbids |
 | Broadcast video, ATD, homography | not used | The broadcast runs on its own 164,488-frame timeline (cuts, replays) and no mapping to the tactical frames is provided (T09), so the pipeline loads none of it. A04 read its structure only: the mp4 is one frame shorter than its ATD, and 34.2% of its homography rows are NaN. A20 aligned it to the tactical feed by code (two constants, one per half), and R028 tried filling our ball's gaps with its ball (P15, use 1). R028 was dropped at its stand-in's fidelity gate, so the broadcast stays unused |
@@ -109,12 +110,11 @@ the second, and Metrica's sample events in the third.
 
 Not in the list, and why: the public 5 minutes are published by the organisers, derived from Metrica's corrected
 tracking, and are used to check only (never to train, fit or choose); the Smart Tagging is generated automatically by
-Metrica "without manual review" (FAQ.md), so nobody labelled it. It is read: the `smart_tagging` source turns its tags
-into team votes (P08, R017), and its one constant measured on this match, `c_team` 0.76, is the tags' agreement with
-our own touch-rule pseudo-labels (an algorithm made them and no person decided any, so allowed under RULES.md as it
-stood when R017 ran; declared in R017). [Team, before submitting: the organisers' clarification of November 2026
-requires parameters to be tuned "on external data", and this one was measured on this match, so it conflicts. Drop the
-source or record the organisers' answer here, as docs/rules.md says.]
+Metrica "without manual review" (FAQ.md), so nobody labelled it. It was read from R017 to R029: the `smart_tagging`
+source turned its tags into team votes (P08), and its one constant measured on this match, `c_team` 0.76, was the
+tags' agreement with our own touch-rule pseudo-labels (an algorithm made them and no person decided any, so allowed
+under RULES.md as it stood when R017 ran). The organisers' clarification of November 2026 requires parameters to be
+tuned "on external data", so R029 took the source out, and the submission does not read the tags.
 We produce no pseudo-labels that a model is trained on (the shape model learns from DFL's flag, not from the touch rule). We
 labelled nothing by hand on any game.
 
@@ -203,7 +203,8 @@ matter.
 
 ## 4. Possession rules implemented
 
-What the submission does today is `main.toml` (R013, plus R017's Smart Tagging team votes and R024's hold): `controlled_touch`, `shape_possession` and `smart_tagging` for the team,
+What the submission does today is `main.toml` (R013, plus R024's hold; R017's Smart Tagging team votes were taken out
+by R029): `controlled_touch` and `shape_possession` for the team,
 `dead_ball_model` for the ball in play, decoded by the `hmm` per half, then `shift_edges`. The rules below are those it
 implements.
 
@@ -384,7 +385,8 @@ truth's timing conventions (P02), never to set a constant, and we choose between
 was traced to its entry in `docs/results.md`. None was set from the public window; the rows and the paragraph below the
 table say where window-derived values sat in the context of a choice. The organisers' clarification of November 2026
 adds a stricter test: parameters are tuned "on external data" only, so no constant may be measured on this match at
-all, labels or not. One row fails it (`smart_tagging` c_team), and one basis is a question for the organisers (the
+all, labels or not. One row failed it (`smart_tagging` c_team), so R029 took the source out (the two Smart Tagging
+rows below are kept for the record), and one basis is a question for the organisers (the
 degradation that the DFL rows were chosen on is fitted on our tracking's label-free statistics); docs/rules.md has the
 audit against that clarification and the questions.
 
@@ -402,8 +404,8 @@ audit against that clarification and the questions.
 | `shape_possession` model | `shape_possession_hgb.json` | R011, part 1 | trees trained on DFL's `BallPossession` with the ball hidden (settings fixed beforehand), each benchmark match read by the fold that never saw it; BAR-ATH by `full` |
 | `shape_possession` weight, scope | 0.2, `all` | R011's 12-config grid; the weight chosen again in R013 Stage C and R024 Stage C′ | the DFL benchmark, by the pre-declared rule (R011: the only config within 0.005 of the best; R013 and R024: the weight axis {0.1, 0.2, 0.3, 0.5} crossed with the decoder) |
 | `shape_possession` min_prob | 0.02 | R011, part 1 | fixed beforehand, a clip that caps a frame at 3.9 nats; not varied in the grid |
-| `smart_tagging` c_team | 0.76 | R017 | `towards_half` of the measured agreement (0.761, 90% interval [0.723, 0.795]) of the tags' team votes with our own controlled-touch pseudo-labels on BAR-ATH: a label-free measurement, never the public window or a truth. **Conflicts with the organisers' clarification of November 2026** (tuning on external data only; docs/rules.md): a team decision is pending |
-| `smart_tagging` weight, spread | 0.2, `frame` | R017, Tian's pick (2026-10-30) | the pick of one of two declared strengths (`frame` at 0.2, `tag` at 1.0); untested on any benchmark, because DFL has no tags, and not chosen from a score. The source is `MATCH_ONLY`, so the benchmark runs `main.toml` with `--drop-match-only` |
+| `smart_tagging` c_team (until R029) | 0.76 | R017 | `towards_half` of the measured agreement (0.761, 90% interval [0.723, 0.795]) of the tags' team votes with our own controlled-touch pseudo-labels on BAR-ATH: a label-free measurement, never the public window or a truth. **Conflicted with the organisers' clarification of November 2026** (tuning on external data only; docs/rules.md), so R029 took the source out of `main.toml` |
+| `smart_tagging` weight, spread (until R029) | 0.2, `frame` | R017, Tian's pick (2026-10-30) | the pick of one of two declared strengths (`frame` at 0.2, `tag` at 1.0); untested on any benchmark, because DFL has no tags, and not chosen from a score. The source is `MATCH_ONLY`, so the benchmark runs `main.toml` with `--drop-match-only` |
 | `hmm` switch_team, switch_dead, min_possession, min_dead | 4, 32, 35, 25 | R013 Stage C (switch_team, min_possession), kept by R024 Stage C′; R010 (switch_dead, min_dead) | the DFL benchmark, by the pre-declared rules, with neither window-derived source present. R013's 144-config grid spans `switch_team` 1 to 8 and `min_possession` 1 to 50 around R010's lower edge, and the choice is inside it on both axes; R024 ran the same grid at hold 0.55 and its rule chose the same values; `switch_dead` and `min_dead` are R010's, along which its score was flat |
 | `hmm` eps | not set (default 1e-6) | the decoder's default | a fixed default, a numerical guard on the clip and not a knob |
 | `shift_edges` team, into_dead, out_of_dead | +1, -2, 0 frames | R012, re-derived in R013 and R024 | s_b alone: minus the median lag of the pipeline on DFL (`tracking` v3, raw truth, 3 seeds), kept by the benchmark guard; R013 and R024 measured the re-chosen pipeline's lag and got the same three values; g, from the public window, is 0 and retired |
@@ -780,7 +782,7 @@ classes balance exactly and the model has no prior to subtract and no notion of 
 - **Seven matches, five of them Fortuna Düsseldorf's home games.** The sample is small, so the intervals are wide, and
   not independent, so even they may be too narrow; the smallest sign-flip p is 0.0156. Two matches have a team down to
   10 players, so statistics on how many players are tracked are measured at full strength only (T36).
-- **No video, audio or homography, and Smart Tagging only as a vote.** Whatever uses them (P08, P14, P15) is checked on the
+- **No video, audio, homography or Smart Tagging.** Whatever uses them (P08, P14, P15) is checked on the
   public window for correctness only, with its strength fixed by a declared constant. P09 tried to simulate the camera
   on DFL from noise measured on our match and was dropped when the simulation failed two of its four fidelity gates
   (R019). P22(a) shifted the shape model's logit by the home share that EM estimates from its own outputs, and was
@@ -790,10 +792,12 @@ classes balance exactly and the model has no prior to subtract and no notion of 
   adoption, and its strength (weight 0.2, spread `frame`) was Tian's pick between two declared options: no constant came
   from the window. After the adoption `selftest.py --data` scored the window as a correctness check (macroF1 0.6986,
   spellF1 0.4000, against R013's 0.7152 and 0.4649; one possession moves spellF1 by about 0.06 there), and those figures
-  chose nothing (T01).
-- **P08's weight and spread are untested.** The weight (0.2) and the spread (`frame`) of `smart_tagging` rest on no
-  benchmark, because DFL has no tags; they are Tian's pick (R017), and the benchmark runs `main.toml` with
-  `--drop-match-only`, so its scores do not include the source.
+  chose nothing (T01). R029 took P08 out again under the organisers' clarification of November 2026.
+- **The tags are left out (R029).** Their team votes covered 49.9% of the ball-gap frames (R017), but nothing external
+  could set their confidence, so they were dropped under the rules. Against R024's file, taking them out changed 2.94%
+  of the graded frames (42.3% of them where the ball is not seen) and moved the possessions from 399 to 413; what the
+  tags were worth was never measured, because DFL has none. The benchmark always ran `main.toml` without them, so its
+  scores are those of the submitted config.
 - **DFL tracks the ball out of play, and ours does not.** We tried two profiles that hide it (R015, R015b) and dropped
   both. One matched our share of visible frames past a line (0.0414 against 0.0407) but made the gaps too long (median
   15.04 s against 10.74); the other could not reach the share at all (0.258 to 0.262). With the ball hidden by the first,
@@ -976,10 +980,11 @@ python3.11 -m venv .venv                     # Windows: py -3.11 -m venv .venv
 .venv/bin/python evaluation/validate_submission.py evaluation/results/main.csv
 ```
 
-Expected sha256 of `main.csv` (R024): `e6496a9b9805217ef085e52ed69cbb27a42b95368d65c1d188b4a2f339b61170` (the run prints
-it). R024 wrote it twice (`r024_both.toml`, its label-free check) and `main.toml` wrote it again at `3943962`, and
-`main.toml` with `--drop-match-only` scores 0.5363 / 0.5764 on the benchmark. **It has not yet been regenerated from a
-fresh clone or on a second machine.** A17 and A18 below checked R017's file,
+Expected sha256 of `main.csv` (R029): `762f9073e0d0c56bf8fd4e0b801b80d79defe87246b4f0a8c201d9b5337cdf6e` (the run prints
+it). R029 wrote it twice, and its config scores 0.5363 / 0.5764 on the benchmark, R024's scores, because the benchmark
+always ran `main.toml` without the tags. R024's file, `e6496a9b9805217ef085e52ed69cbb27a42b95368d65c1d188b4a2f339b61170`,
+is what `r024_both.toml` writes: R024 wrote it twice (`r024_both.toml`, its label-free check) and `main.toml` wrote it
+at `3943962`. **Neither has yet been regenerated from a fresh clone or on a second machine.** A17 and A18 below checked R017's file,
 `7ba575c0982aacb9765b39c406e4ff5c9ddb82ca37cfa2b7f101417431fc3d7c`, which `pipeline/configs/r017_frame.toml` still
 writes. At the merge of P23 the pipeline's code outside `benchmark/` and `configs/` is A17's (`5f0145c`) again. R024's
 file was first written at `3943962`, while R026's later-reverted `"visible"` scope was present (it does not touch scope

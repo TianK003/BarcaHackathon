@@ -556,6 +556,6 @@ set a constant, a weight, a prior or a model, however label-free it is.
   the algorithm running, which is fine.
 - *Checks are still fine:* a label-free statistic of our output, a transfer gate, a score on the public window may pass
   or fail a candidate. They may not rank candidates or supply a value (T01).
-- *What it caught on 3 Nov:* `smart_tagging` c_team in `main.toml` (a team decision, [rules.md](rules.md)); P14's plan
+- *What it caught on 3 Nov:* `smart_tagging` c_team in `main.toml`, taken out the same day (R029); P14's plan
   to train a detector on our video with the ATD's ball as pseudo-labels; P22(c). The benchmark's degradation, fitted on
   label-free statistics of our tracking (A07 to A09), is our reading's open case and question 1 for the organisers.
