@@ -38,7 +38,7 @@ frame,label
 |---|---|---|
 | `evaluation/results/<name>.csv` | yes (default) | the scorer looks there, and `.gitignore` covers `evaluation/results/*.csv` |
 | anywhere under `data/` | yes | ignored as a whole |
-| outside the repository | yes | e.g. `--out ../<team_name>.csv` for the upload |
+| outside the repository | yes | e.g. `--out "../Un Dia de Partit.csv"` for the upload |
 | `baseline_*.csv` anywhere | **no** | those names are the organisers' committed files, and the `.gitignore` exception would commit ours too ([T24](../../docs/traps.md)) |
 | anywhere else inside the repository, including sub-folders of `evaluation/results/` | **no** | not covered by `.gitignore`, so a file of match-derived labels could be committed ([T25](../../docs/traps.md)) |
 
@@ -76,7 +76,7 @@ the full match, and since 23 Oct 2026 it is no tuning set ([T01](../../docs/trap
 ## The run manifest
 
 `<data dir>/runs/<name>.json` — under `data/`, so never committed — named after the CSV it describes, so
-`--out ../team_name.csv` writes `runs/team_name.json` and the last run to write a file is the one on record. It holds
+`--out "../Un Dia de Partit.csv"` writes `runs/Un Dia de Partit.json` and the last run to write a file is the one on record. It holds
 the config file's text, the git commit
 and whether the tree was dirty (untracked files count: a new component that is not committed makes a run
 irreproducible from its commit), Python/numpy/pandas versions, the sha256 of both ATD source files, the output's
@@ -85,6 +85,6 @@ same run compare equal.
 
 ## Before you upload
 
-1. `python pipeline/run.py pipeline/configs/main.toml --out ../<team_name>.csv` on a clean checkout.
-2. `python evaluation/validate_submission.py ../<team_name>.csv` — the organisers' own check, on the exact file.
+1. `python pipeline/run.py pipeline/configs/main.toml --out "../Un Dia de Partit.csv"` on a clean checkout.
+2. `python evaluation/validate_submission.py "../Un Dia de Partit.csv"` — the organisers' own check, on the exact file.
 3. Note the sha256 in the submission log in [docs/results.md](../../docs/results.md) and in the technical document.

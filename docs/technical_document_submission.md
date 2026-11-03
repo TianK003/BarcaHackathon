@@ -1,8 +1,8 @@
-# [Team name] — More than a Hack 2027, Phase 1: technical document
+# Un Dia de Partit — More than a Hack 2027, Phase 1: technical document
 
 - **Team:** [five names]
 - **Code:** [public repository URL], commit `<hash>`
-- **Submission:** `[team name].csv`, the file `pipeline/configs/main.toml` writes, sha256
+- **Submission:** `Un Dia de Partit.csv`, the file `pipeline/configs/main.toml` writes, sha256
   `762f9073e0d0c56bf8fd4e0b801b80d79defe87246b4f0a8c201d9b5337cdf6e` (R029)
 - **IDs** refer to files in the repository: A.. (analyses) and R.. (experiments) in docs/results.md, T.. (pitfalls) in
   docs/traps.md, P.. (proposals) in docs/proposals.md. The full record of every choice is docs/technical_document.md.
@@ -247,8 +247,8 @@ and +0.1764 in the gaps, a perfect dead ball only +0.0290 (the benchmark oversta
 py -3.11 -m venv .venv                         # macOS/Linux: python3.11 -m venv .venv, then .venv/bin/python
 .venv/Scripts/python -m pip install -r requirements-pipeline.txt
 # unpack the data bundle into data/ as data/README.md describes
-.venv/Scripts/python pipeline/run.py pipeline/configs/main.toml --out "../[team name].csv"
-.venv/Scripts/python evaluation/validate_submission.py "../[team name].csv"
+.venv/Scripts/python pipeline/run.py pipeline/configs/main.toml --out "../Un Dia de Partit.csv"
+.venv/Scripts/python evaluation/validate_submission.py "../Un Dia de Partit.csv"
 ```
 
 - **One command** goes from `data/` to the CSV, written with LF line endings and validated by the official checks

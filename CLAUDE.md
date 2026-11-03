@@ -8,7 +8,9 @@ Our team's fork of the organisers' starter repo for **More than a Hack 2027 — 
 (Metrica Sports × FC Barcelona × Mobile World Capital Barcelona). The `upstream` remote is
 `metrica-sports/more-than-a-hack-2027`; organiser fixes to docs, scorer or alignment land there.
 
-- **Team:** 5 members (rules allow 3–5).
+- **Team:** **Un Dia de Partit**, 5 members (rules allow 3–5). Questions to the organisers go by email to
+  `hackathon.talentarena@mobileworldcapital.com`, not as GitHub issues (since 3 Nov; `docs/rules.md`). The upload files are named after it:
+  `Un Dia de Partit.csv` and `Un Dia de Partit.pdf` (or `.md`); the scorer names the board's row after the file.
 - **Deadline: November 17, 2026.** Results before November 26, 2026.
 - **This stage is tested automatically.** Organisers run this repo's own `evaluation/run_evaluation.py` against a
   private full-match ground truth. No jury, no presentation, no live leaderboard, no feedback before results.
@@ -36,8 +38,9 @@ before building anything that learns, tunes or uses the video.
   data, and their own licences govern them. Keep everything else in `data/` closed.
 - **Never commit match data** or derived data that could reconstruct it (frame-level tracking exports, clipped
   video); the submission repo must be public. `.gitignore` covers `data/*`, `*.mp4` and `evaluation/results/*.csv`
-  (except `baseline_*.csv`) — keep it that way. "Providing files of intermediate steps" is allowed, but they go to the
-  organisers directly, never into the repo (the data licence still holds; `docs/rules.md`, question 3).
+  (except `baseline_*.csv`) — keep it that way. "Providing files of intermediate steps" is allowed. A small intermediate output
+  (event times and scores, no tracking, video or audio) may be committed with the script that regenerates it (issue
+  #14); anything frame-level goes to the organisers directly, never into the repo (`docs/rules.md`).
 - **Submitted labels must come from an algorithm.** Hand-labelling or hand-correcting the output disqualifies.
 - **Train and tune on external data only.** Nothing is trained, retrained, fitted, calibrated, adapted or tuned on
   this match: not on its ground truth or video (named in the clarification), and, by our reading of "you MUST use only
@@ -102,7 +105,7 @@ py -3.11 -m venv .venv                                            # macOS/Linux:
 
 python pipeline/run.py pipeline/configs/main.toml       # data/ -> evaluation/results/main.csv, validated + manifest
 python pipeline/run.py CONFIG --score [GT]              # + scores vs public GT (or a labels CSV), per-source agreement
-python pipeline/run.py CONFIG --out ../team_name.csv    # CSVs only to evaluation/results/, data/, or outside the repo
+python pipeline/run.py CONFIG --out "../Un Dia de Partit.csv"   # CSVs only to evaluation/results/, data/, or outside the repo
 python pipeline/selftest.py                             # contract + equivalence checks on synthetic data (seconds)
 python pipeline/selftest.py --data                      # + the 4 committed baselines rebuilt byte for byte
 
@@ -294,10 +297,10 @@ none of this; it reads only CSVs.
 One Google Form (URL emailed to registrants, Google account needed); one response per team, editable, the last one
 before the deadline counts.
 
-1. **`<team_name>.csv`** — validate the exact file being uploaded, and log it in the submission log in
+1. **`Un Dia de Partit.csv`** — validate the exact file being uploaded, and log it in the submission log in
    `docs/results.md`.
 2. **Public repo URL** — source, pinned dependencies, install/run instructions, and the command that regenerates the
    CSV. The `requirements*.txt` here are mostly unpinned; pin ours.
-3. **`<team_name>.pdf` or `.md` technical doc**, a few pages: approach and why; assets used and dropped; handling of
+3. **`Un Dia de Partit.pdf` or `.md` technical doc**, a few pages: approach and why; assets used and dropped; handling of
    missing/noisy tracking; possession rules implemented (loose balls, challenges, restarts); limitations;
    reproduction. Draft it in `docs/technical_document.md`. `*.pdf` is gitignored.

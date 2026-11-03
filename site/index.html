@@ -691,7 +691,7 @@ footer { border-top: 1px solid var(--line); margin-top: 24px; padding: 16px 0 28
 const DATA = {
   asOf: "2026-11-03",
   commit: "104c9dc",
-  title: "Possession pipeline · team overview",
+  title: "Possession pipeline · Un Dia de Partit",
   subtitle: "More than a Hack 2027, Phase 1 · FC Barcelona (H) vs Athletic Club (A), LaLiga 2024-25 MD2",
   footer: "As of 2026-11-03, the organisers' clarification of the rules (email, Nov 2026) takes precedence over RULES.md, and the rule statements on this page follow docs/rules.md; R029 took smart_tagging out of main.toml, because its c_team was measured on our match: main.csv is now 762f9073…, not uploaded, and the benchmark score is R024's by construction. As of 2026-11-02 (8c9e922, the merge of R028). P23 reviewed the HMM decoder: R024 re-chose R013's grids on the mean of the two truths and moved the touch hold to 0.55 (`main.csv` `e6496a9b…`, not yet regenerated from a fresh clone; A17 and A18 checked R017's `7ba575c0…`), A19 found the remaining loss mostly in the edges, and posterior edges (R025, R025b) and a gap weight for P07 (R026) were dropped. P22(b), P07 recalibrated per half from the touch rule's own labels, was then dropped at R027's gate on DFL (pooled log-loss in the gaps +0.0061; no spellF1, code removed). R028, the broadcast's ball in our gaps (P15), was aligned by code and built, then dropped at its stand-in's fidelity gate on DFL (fill on alive gap frames 0.218 against our 0.295; no spellF1, code removed; `main.csv` still `e6496a9b…`). Update DATA when an entry lands; the docs are the source of truth.",
 
@@ -887,8 +887,8 @@ const DATA = {
         { label: "validate_submission.py", href: "../evaluation/validate_submission.py" }
       ],
       run: [
-        { cmd: "python pipeline/run.py pipeline/configs/main.toml --out ../<team_name>.csv", note: "the upload file, outside the repository" },
-        { cmd: "python evaluation/validate_submission.py ../<team_name>.csv", note: "the organisers' own check, on the exact file" }
+        { cmd: "python pipeline/run.py pipeline/configs/main.toml --out \"../Un Dia de Partit.csv\"", note: "the upload file, outside the repository" },
+        { cmd: "python evaluation/validate_submission.py \"../Un Dia de Partit.csv\"", note: "the organisers' own check, on the exact file" }
       ]
     },
     {
@@ -1651,12 +1651,12 @@ const DATA = {
 
   /* ---------- Work to do ---------- */
   deliverables: [
-    { title: "CSV uploaded (`<team_name>.csv`)", status: "todo", label: "not yet",
+    { title: "CSV uploaded (`Un Dia de Partit.csv`)", status: "todo", label: "not yet",
       text: "The submission log is empty. Validate the exact file and log every upload in [docs/results.md](../docs/results.md). Our advice, not a rule: upload `main.toml`'s file early as a safety copy; the form keeps the last response before the deadline, so an early upload is insurance.",
-      cmds: ["python pipeline/run.py pipeline/configs/main.toml --out ../<team_name>.csv", "python evaluation/validate_submission.py ../<team_name>.csv"] },
+      cmds: ["python pipeline/run.py pipeline/configs/main.toml --out \"../Un Dia de Partit.csv\"", "python evaluation/validate_submission.py \"../Un Dia de Partit.csv\""] },
     { title: "Public repo URL", status: "todo", label: "private",
       text: "The repository is private and must be made public by 17 Nov, as a deliberate final step. It must hold the source, pinned dependencies, install and run instructions, and the command that regenerates the CSV." },
-    { title: "Technical document (`<team_name>.pdf` or `.md`)", status: "doing", label: "condensed",
+    { title: "Technical document (`Un Dia de Partit.pdf` or `.md`)", status: "doing", label: "condensed",
       text: "[docs/technical_document_submission.md](../docs/technical_document_submission.md) is the version to upload: the seven sections of the long one at deliverable length, every number from `docs/results.md` with its entry. It still has placeholders ([Team name], the five names, the repo URL, the commit); its section 7 carries A17's fresh-clone reproduction of R017's file and says that R024's has not had one yet. [docs/technical_document.md](../docs/technical_document.md) stays the full record." },
     { title: "Clean-clone reproduction on a second machine", status: "doing", label: "Windows and Linux done",
       text: "A17 (31 Oct): a fresh clone on the team laptop regenerated R017's `7ba575c0…` byte for byte, also at the default threads. A18: the same on Linux (WSL 2, same laptop, LF configs). R024 then changed the file to `e6496a9b…` (the hold only) and R029 to `762f9073…` (the tags out; the same on two runs on one machine); neither has been regenerated from a fresh clone yet. Still to do: that, and another processor, ideally an Intel machine (T20, T21)." },
@@ -1728,7 +1728,7 @@ const DATA = {
     { group: "Run", items: [
       { cmd: "python pipeline/run.py pipeline/configs/main.toml", note: "data/ → evaluation/results/main.csv, validated, with a manifest" },
       { cmd: "python pipeline/run.py pipeline/configs/main.toml --score", note: "+ public-window scores and per-source agreement (check only)" },
-      { cmd: "python pipeline/run.py pipeline/configs/main.toml --out ../<team_name>.csv", note: "CSVs only to evaluation/results/, data/ or outside the repo" }
+      { cmd: "python pipeline/run.py pipeline/configs/main.toml --out \"../Un Dia de Partit.csv\"", note: "CSVs only to evaluation/results/, data/ or outside the repo" }
     ] },
     { group: "Checks", items: [
       { cmd: "python pipeline/selftest.py", note: "contract and equivalence checks on synthetic data (seconds)" },
