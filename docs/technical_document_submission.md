@@ -36,8 +36,11 @@ trees on 26 features of how the two teams stand and move, none reading the ball,
 `shift_edges` (P02) moves a change of team 1 frame later and a change into `D` 2 frames earlier: the pipeline's own
 median lag on the benchmark, negated (R012).
 
-**Why.** No labels of this match may be used, so every learned part is trained on other matches. Every choice is made
-on the benchmark (section 5), except Smart Tagging's strength (section 6). Boosted trees on hand-built features suit
+**Why.** The organisers' rules (their clarification of November 2026) allow training and tuning on external data only,
+so every learned part is trained on other matches and every choice is made on the benchmark (section 5), except Smart
+Tagging's strength (section 6). [Team, before submitting: Smart Tagging's `c_team` was measured on this match, which
+that clarification does not allow; resolve it as docs/rules.md says and rewrite this sentence, section 2's "About
+this match" and section 6.] Boosted trees on hand-built features suit
 that: they train on a CPU, and each feature can be checked against how our tracking differs from the training data.
 
 ## 2. Assets used and dropped
@@ -97,8 +100,9 @@ We labelled nothing by hand, on any game. The labelled data used are all about o
 **About this match.** No tracking was corrected by hand, and no human-produced data about the match were used. No
 model was trained on the public 5-minute ground truth and no constant of `main.toml` was set on it. Its three uses:
 - **A correctness check** (alignment, a valid and deterministic file, each source's direction); section 5.
-- **An inspection to describe the truth,** which RULES.md allows. The window figures quoted here (77.8% and 66%, A01;
-  80.4%, A06; the timing of its changes, A11) set nothing.
+- **An inspection to describe the truth,** which the rules allow ("inspecting the provided data ... to better
+  understand what counts as possession"). The window figures quoted here (77.8% and 66%, A01; 80.4%, A06; the timing
+  of its changes, A11) set nothing. No output of ours was checked against the video [team: confirm].
 - **Two inputs, both disclosed.** R009 chose the dead-ball source and its weight 1.0 in configs that all carried
   `nearest_player` at A01's window-derived 0.78 (not in `main.toml`). R013 re-chose the touch rule and the decoder
   without it, and declared why R009's choice stands: it rests on the out-of-fold log-loss (lower on 7 of 7 matches),
@@ -107,7 +111,9 @@ model was trained on the public 5-minute ground truth and no constant of `main.t
   under the organisers' rule of 23 Oct 2026.
 
 Smart Tagging is automatic, without manual review (FAQ.md), and the pseudo-labels behind its constant 0.76 came from an
-algorithm, decided by no person. Its strength (per frame, weight 0.2) was Tian's pick of two declared options, made
+algorithm, decided by no person. [Team: that measurement was made on this match, and since the organisers'
+clarification of November 2026 parameters are tuned on external data only (docs/rules.md): drop the source or record
+the organisers' answer here.] Its strength (per frame, weight 0.2) was Tian's pick of two declared options, made
 after seeing label-free aggregates of our own predictions (the `D` share, possessions per half, frames changed); no
 score or label entered it (R017). We degrade the DFL tracking and say so, as CC BY 4.0 asks.
 
@@ -171,7 +177,9 @@ full match (T01). Today's file scores macroF1 0.7007 and spellF1 0.4000 on it (R
 **The benchmark** (P01) builds the truth as ours is (`D` where `BallStatus` is dead, else `BallPossession`'s team);
 our components see no truth, and the organisers' scorer grades each half. The truth served as a prediction scores
 1.0000 on all seven (R002). The degradation was fitted on label-free statistics of our tracking and frozen, never tuned
-towards a score. All eight fidelity gates pass, e.g. ball missing 0.4189 against our 0.4110 (R004c), and the whole
+towards a score: no label, ground truth or video of this match enters it, and every parameter is tuned, and both models
+trained, on the degraded external matches and their own labels. [Team: question 1 to the organisers in docs/rules.md;
+record the answer here.] All eight fidelity gates pass, e.g. ball missing 0.4189 against our 0.4110 (R004c), and the whole
 player degradation costs `main.toml` 0.0129 raw (A16, from A14's table).
 
 **Two truths.** DFL's flag gives 4.58 possessions per graded minute. Our grain is unknown, so every choice is also
@@ -231,7 +239,7 @@ and +0.1764 in the gaps, a perfect dead ball only +0.0290 (the benchmark oversta
 - learn our provider's switch timing from its other games (P16; its grain is R023's);
 - place the edges from pass events (P11);
 - retrain PathCRF on degraded copies (P20 step 1);
-- recover the ball from the video (P14).
+- recover the ball from the video (P14), with a detector trained on other matches only.
 
 ## 7. Reproduction
 

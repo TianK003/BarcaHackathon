@@ -287,38 +287,44 @@ footer { border-top: 1px solid var(--line); margin-top: 24px; padding: 16px 0 28
 "use strict";
 
 /* ===========================================================================================================
-   DATA: every statement on this page. The competition docs are the authority: RULES.md first, then FAQ.md,
-   OVERVIEW.md, SUBMISSION.md and EVALUATION.md. Quote them; never add a rule that is not in them. Our own, stricter
-   habits go under `team` and stay labelled "team practice, not a competition rule".
+   DATA: every statement on this page. The authority is the organisers' clarification of the rules (email, Nov 2026),
+   which takes precedence over everything before it; docs/rules.md holds it verbatim and is the team's statement of
+   the rules. Where the email says nothing, the competition docs still hold: RULES.md first, then FAQ.md, OVERVIEW.md,
+   SUBMISSION.md and EVALUATION.md. Quote them; never add a rule that is not in them. Our readings stay marked as ours,
+   and our stricter habits go under `teamPractice`, labelled "team practice, not a competition rule".
    Text fields understand `code`, **bold** and [label](relative link).
    =========================================================================================================== */
 const DATA = {
   title: "Competition rules",
   subtitle: "More than a Hack 2027, Phase 1 · what the organisers' rules say, what each means for us, and our stricter team practices",
   home: { href: "index.html", label: "← Team overview" },
-  footer: "As of 2026-10-29. RULES.md is the authority; if this page and the organisers' docs disagree, the docs win. Update DATA when the organisers change a rule.",
+  footer: "As of 2026-11-03. The organisers' clarification of the rules (email, Nov 2026) takes precedence over RULES.md and every earlier document or answer; where it says nothing, RULES.md and the other competition docs still hold. docs/rules.md is the team's statement of the rules: if this page and it disagree, docs/rules.md wins. Update DATA when the organisers change a rule.",
 
   checked: {
-    text: "Last checked against the organisers' repo: **2026-10-29**, latest change `f8f2629` (23 Oct 2026), merged into our main on 25 Oct. To re-check:",
+    text: "Last checked: **2026-11-03**. The organisers' clarification of the rules came by email in November 2026 and takes precedence over RULES.md and the clarifications of 22 and 23 Oct; the team's statement of it is [docs/rules.md](../docs/rules.md). Upstream has no commit carrying it yet: its latest change is still `f8f2629` (23 Oct 2026), merged into our main on 25 Oct. To re-check upstream:",
     cmd: "git fetch upstream && git log main..upstream/main"
   },
 
-  summary: "**The labels must come from an algorithm.** **No hand labels on the provided match**, for any purpose: not for the submission, not to train a model and not to validate one. **The 5 public minutes are a correctness check**, never training or tuning data. **No private ground truth, and no human-produced data about this match** from any source. **The repository must regenerate the exact file**, not approximately. **Never give the match data to a third-party or cloud LLM**, and **never publish the data** or anything that would reconstruct it. **Anything we use must be accessible to the organisers**, who can inspect it, **and explained in the technical document**. If an approach sits near a line, **ask the organisers before building on it**.",
+  summary: "**The organisers' clarification (email, Nov 2026) takes precedence** over RULES.md, the FAQ and the clarifications of 22 and 23 Oct; where it says nothing, they still hold ([docs/rules.md](../docs/rules.md)). **The labels must come from an algorithm.** **The provided game is test data and nothing else:** nothing is trained, retrained, fitted, calibrated or tuned on it, with labels or without; training and tuning use external data only. **The 5 public minutes are a correctness check**, never training or tuning data. **No hand labels, human-produced data or any other data created manually on the provided game**, and no private ground truth. **Nobody checks our output against the video;** watching it is only to understand what counts as possession. **Automatic checks on the provided data are allowed**: a check passes or fails, it never chooses. **The repository must regenerate the exact file**, not approximately. **Never upload the provided data to AI services**, and **never publish the data** or anything that would reconstruct it. **Any dataset we have the rights to use**, its licence checked, **accessible to the organisers and explained in the technical document**. If an approach sits near a line, **ask the organisers before building on it**.",
 
   line: {
     title: "Learning from the provided match: the exact line",
-    misreading: "A common misreading is “no training on the provided match at all”. The rule is narrower: learning on the match without human labels is allowed. What it forbids, it forbids absolutely:",
+    misreading: "Until 3 Nov the line was drawn at human labels: RULES.md allowed learning on the match without them. **The organisers' clarification (email, Nov 2026) moved it.** Nothing is trained, fitted, calibrated or tuned on the provided game, with labels or without. Running a fixed rule on it is fine, and so is a check, as long as it passes or fails and never chooses ([docs/rules.md](../docs/rules.md), “How we read it”).",
     forbidden: [
-      { text: "**Human labels on the provided match**, in any amount and for any purpose: not for the submission, not to train a model, not to validate one.", src: "RULES.md §1, “Training and validation data”" },
-      { text: "**Training, fitting, tuning or choosing anything on the 5 public minutes.** They are “not training data and not a tuning set”.", src: "RULES.md §2; FAQ.md; EVALUATION.md" },
-      { text: "**The private ground truth, or anything derived from it.**", src: "RULES.md §2" },
-      { text: "**Human-produced data about the match from any source**: event data, corrected tracking, possession data, annotations.", src: "RULES.md §2" }
+      { text: "**Training or tuning on the provided game, labels or not**: “If you need to train (or retrain), you MUST use only external data. If your algorithm has parameters that need to be tuned, you MUST tune them on external data”. No pseudo-labels, no self-training, no priors re-estimated on it, no clusters fitted to its frames.", src: "Organisers' clarification (email, Nov 2026), “Training and tuning”" },
+      { text: "**A number measured on this match and written into a config, a model or a prior**: a confidence, a weight, a threshold, a class prior, a scaler, a cluster centre, however label-free the measurement.", src: "docs/rules.md, “How we read it” 2 (our reading)" },
+      { text: "**Training, fitting or calibrating on the ground truth or the video**, the 5 public minutes included: they are “not training data and not a tuning set”.", src: "Organisers' clarification (email, Nov 2026); RULES.md §2" },
+      { text: "**Checking our output against the video.**", src: "Organisers' clarification (email, Nov 2026)" },
+      { text: "**Hand labels, human-produced data or any other data created manually on the provided game**, in any amount and for any purpose.", src: "Organisers' clarification (email, Nov 2026); RULES.md §1, §2" },
+      { text: "**The private ground truth, or anything derived from it.**", src: "RULES.md §2" }
     ],
     allowed: [
-      { text: "**Learning on the provided match without human labels**: “unsupervised or self-supervised methods, or pseudo-labels produced by an algorithm, provided no person decided any of them”.", src: "RULES.md §1, “What remains fine”" }
+      { text: "**Running a fixed rule on the match**: a control episode, a team's mean position, which way a team attacks, the Viterbi path of a decoder whose parameters were set elsewhere. Running is not fitting.", src: "docs/rules.md, “How we read it” 2 (our reading)" },
+      { text: "**Running automatic checks using only the provided data**: the validator, determinism, alignment, a transfer gate, a score against the public window. A check may stop a candidate; it never ranks candidates or sets a value.", src: "Organisers' clarification (email, Nov 2026); docs/rules.md 3" },
+      { text: "**The video, the tracking, the Smart Tagging and other generated data as input**, “as long as your algorithm was not trained on the ground truth or on the provided video”.", src: "Organisers' clarification (email, Nov 2026)" }
     ],
-    allowedNote: "Where we stand: nothing in `main.toml` is trained on BAR-ATH today. P05's and P07's models are trained on the seven DFL matches (pipeline/evidence/README.md).",
-    ask: "Near a line? “If a rule is unclear, or your approach sits near a line, **ask before you build on it**. Open an issue.” (RULES.md, Questions)"
+    allowedNote: "Where we stand ([docs/rules.md](../docs/rules.md), “Where we stand on 3 Nov”): `main.toml`'s two models are trained on the seven DFL matches, and its touch-rule and decoder constants were chosen on them. **One constant conflicts:** `smart_tagging`'s `c_team` 0.76 was measured on BAR-ATH, as the tags' agreement with our own touch-rule pseudo-labels (R017), and its weight 0.2 is doubtful. Taking it out of `main.toml` is a team decision, not yet made. **One question is open:** the benchmark's `tracking` v3 degradation was fitted on label-free statistics of our tracking; we read that as allowed, and question 1 to the organisers asks.",
+    ask: "Near a line? “If a rule is unclear, or your approach sits near a line, **ask before you build on it**. Open an issue.” (RULES.md, Questions). Our four questions are drafted in [docs/rules.md](../docs/rules.md) and **not yet sent**: an issue on the organisers' public repository would show our approach to every other team, so an email may be better."
   },
 
   notAllowed: [
@@ -327,31 +333,46 @@ const DATA = {
       quote: { text: "The labels must be produced by an algorithm. […] hand-correcting an algorithm's output — frame by frame, segment by segment or at transitions only — […] all the same thing as far as this rule is concerned", cite: "RULES.md §1" },
       means: ["No person decides any label in the CSV.", "No fixing transitions by eye after a run, not even a few.", "A refiner applies one rule to the whole match; it never edits particular frames."],
       sources: [["RULES.md §1", "../RULES.md#1-annotate-the-data-by-hand"], ["OVERVIEW.md Rules", "../OVERVIEW.md#rules"]] },
-    { title: "Hand labels on the provided match for training or validation",
-      rule: "The line is drawn by which game the labels are on, not by how many there are. Clarified by the organisers on 22 Oct (`c073f29`).",
-      quote: { text: "No hand labels on the provided game, in any amount and for any purpose — not for the submission, not to train a model and not to validate one.", cite: "RULES.md §1, Training and validation data" },
-      means: ["No labelling 15 minutes of our match to validate (P01's first plan, dropped).", "No ball boxes drawn on its frames to fine-tune a detector (P14 fine-tunes on other matches only).", "No “blind” calibration labels on the public window."],
-      sources: [["RULES.md §1", "../RULES.md#training-and-validation-data"], ["FAQ hand-label", "../FAQ.md#can-i-hand-label-some-frames"]] },
+    { title: "Training, fitting, calibrating or tuning on the provided game, labels or not",
+      rule: "Since the organisers' clarification of November 2026 the provided game is test data only: training and tuning use external data. Learning on the match without human labels, which RULES.md allowed until then, is not allowed any more. A fixed rule that reads the match at run time is the algorithm running, not fitting.",
+      quote: { text: "If you need to train (or retrain), you MUST use only external data. If your algorithm has parameters that need to be tuned, you MUST tune them on external data, never on the ground-truth possession data or on the provided video.", cite: "Organisers' clarification (email, Nov 2026), Training and tuning" },
+      means: [
+        "No pseudo-labels, self-training, priors re-estimated on BAR-ATH or clusters fitted to its frames: a ball detector trained or fine-tuned on our video (P14, even with the ATD's ball as pseudo-labels) and P22(c) are out.",
+        "Every number in a config, a model or a prior comes from external data, a fixed rule (the laws of the game, the literature) or a fact the organisers document (the kick-off frames).",
+        "`smart_tagging`'s `c_team` 0.76, measured on BAR-ATH (R017), conflicts: taking it out of `main.toml` is the team's decision, still pending ([docs/rules.md](../docs/rules.md)).",
+        "Open: the benchmark's degradation, fitted once on label-free statistics of our tracking, is not the algorithm and sees no truth or video. We read it as allowed; question 1 to the organisers, not yet sent, asks."
+      ],
+      sources: [["The clarification", "../docs/rules.md#the-clarification-verbatim"], ["docs/rules.md, How we read it", "../docs/rules.md#how-we-read-it"], ["docs/traps.md T54", "../docs/traps.md#rules-and-data-handling"]] },
+    { title: "Checking your output against the video",
+      rule: "A person may watch the video, but only to understand what counts as possession. Holding our labels, transitions or detected events up against it is not allowed, and nor is debugging the pipeline that way, which RULES.md allowed until November.",
+      quote: { text: "Checking your output against the video.", cite: "Organisers' clarification (email, Nov 2026), What is not allowed" },
+      means: ["No comparing a run's output, the scorer's `_transitions.csv` or our components' events (a controlled touch, `alive` crossing 0.5) with the video.", "In P02's `public_transitions.csv`, a person watches the truth's changes and ignores the detectors' lag columns.", "The pipeline is debugged with automatic checks and aggregates, not by eye against the video."],
+      sources: [["The clarification", "../docs/rules.md#the-clarification-verbatim"], ["docs/rules.md, How we read it", "../docs/rules.md#how-we-read-it"]] },
+    { title: "Hand labels, or any data created manually, on the provided game",
+      rule: "The line is drawn by which game the labels are on, not by how many there are (`c073f29`, 22 Oct). The November clarification widens it to any other data created manually on the provided game.",
+      quote: { text: "Hand labels, human-produced data or any other data created manually on the provided game.", cite: "Organisers' clarification (email, Nov 2026), What is not allowed · RULES.md §1, Training and validation data" },
+      means: ["No labelling 15 minutes of our match to validate (P01's first plan, dropped).", "No ball boxes drawn on its frames to fine-tune a detector.", "No “blind” calibration labels on the public window."],
+      sources: [["The clarification", "../docs/rules.md#the-clarification-verbatim"], ["RULES.md §1", "../RULES.md#training-and-validation-data"], ["FAQ hand-label", "../FAQ.md#can-i-hand-label-some-frames"]] },
     { title: "Correcting the provided tracking by hand",
-      rule: "Improving the tracking is welcome, but only by code. Fixing it by hand is hand annotation, and rule 1 applies.",
+      rule: "Improving the tracking is welcome, but only by code. Fixing it by hand is hand annotation, and rule 1 applies; the November clarification's “any other data created manually” covers it too.",
       quote: { text: "Corrections must come out of code. Manually correcting the tracking of the provided game — fixing ball positions, identity switches or anything else by hand — is hand annotation", cite: "RULES.md, The provided data is a starting point" },
       means: ["No hand-fixing a ball position or an identity switch in the ATD.", "A fix is a function in `pipeline/inputs/` or `pipeline/evidence/` that runs on the whole match."],
       sources: [["RULES.md", "../RULES.md#the-provided-data-is-a-starting-point-not-a-constraint"], ["FAQ own tracking", "../FAQ.md#can-i-use-my-own-tracking-instead-of-the-provided-atd"]] },
     { title: "Turning what you saw into labels, corrections or frame-tied constants",
-      rule: "Watching the video is fine. Writing down what you saw as a label, a correction, or a rule or constant tied to specific frames is not.",
+      rule: "Watching the video to understand what counts as possession is fine. Writing down what you saw as a label, a correction, or a rule or constant tied to specific frames is not. The November clarification narrows what watching is for; this part of RULES.md still holds.",
       quote: { text: "Watching is not the problem; turning what you saw into labels, corrections, or rules and constants tied to specific frames of the game is.", cite: "RULES.md §1, What remains fine" },
-      means: ["Watching P02's transitions to understand our truth's timing is fine.", "Writing “the ball goes dead at frame N” into a config is not.", "What a viewer learns goes into the docs as understanding, in aggregates, never as a number for a config."],
-      sources: [["RULES.md §1", "../RULES.md#1-annotate-the-data-by-hand"]] },
+      means: ["Watching P02's transitions of the truth to understand its timing is fine; watching our output against them is not.", "Writing “the ball goes dead at frame N” into a config is not.", "What a viewer learns goes into the docs as understanding, in aggregates, never as a number for a config."],
+      sources: [["RULES.md §1", "../RULES.md#1-annotate-the-data-by-hand"], ["docs/rules.md, How we read it", "../docs/rules.md#how-we-read-it"]] },
     { title: "Using the private ground truth",
       rule: "The full-match ground truth stays private, and nothing derived from it may be used.",
       quote: { text: "You may not use the full-match ground truth, or anything derived from it.", cite: "RULES.md §2" },
       means: ["Our only full-match numbers are the organisers' published baseline scores; we choose on our own benchmark.", "No statistic of the private truth (possession count, mean duration, possession share) is published, “since those are precisely the quantities a submission could be tuned against” (OVERVIEW.md)."],
       sources: [["RULES.md §2", "../RULES.md#2-use-the-private-ground-truth-or-any-human-produced-data-about-the-game"], ["OVERVIEW.md", "../OVERVIEW.md#how-the-task-is-scored"]] },
     { title: "Training, tuning or choosing anything on the 5 public minutes",
-      rule: "The published window checks that the pipeline is correct. It is not training data and not a tuning set, and since 23 Oct (`f8f2629`) that is a rule, not advice. Why: it holds 17 possessions, and it picks the wrong baseline. `smooth125` scores 0.4242 there against `smooth50`'s 0.3256, while the full match says 0.2242 against 0.2433.",
+      rule: "The published window checks that the pipeline is correct. It is not training data and not a tuning set: a rule since 23 Oct (`f8f2629`), and the November clarification keeps it (no training, fitting or calibrating on “the ground-truth possession data”). Scoring a file against it is an automatic check. Why: it holds 17 possessions, and it picks the wrong baseline. `smooth125` scores 0.4242 there against `smooth50`'s 0.3256, while the full match says 0.2242 against 0.2433.",
       quote: { text: "They are not training data and not a tuning set.", cite: "RULES.md §2 · FAQ: “Can I train or tune a model on the 5 public minutes? No.”" },
-      means: ["Every hyperparameter is chosen on the benchmark of other matches (P01), never on the window.", "Constants once derived from the window (`nearest_player` 0.78, `ball_presence` 0.2 / 0.585) stay out of submission configs (team practice).", "`--score` reports the window as a check; “one missed possession moves spellF1 by roughly six points here” (EVALUATION.md)."],
-      sources: [["RULES.md §2", "../RULES.md#2-use-the-private-ground-truth-or-any-human-produced-data-about-the-game"], ["FAQ tune", "../FAQ.md#can-i-train-or-tune-a-model-on-the-5-public-minutes"], ["EVALUATION.md", "../EVALUATION.md#the-public-window-is-not-a-leaderboard"]] },
+      means: ["Every hyperparameter is chosen on the benchmark of other matches (P01), never on the window.", "Constants once derived from the window (`nearest_player` 0.78, `ball_presence` 0.2 / 0.585) stay out of submission configs; R009's candidate configs held them, as the technical document discloses.", "`--score` reports the window as a check; “one missed possession moves spellF1 by roughly six points here” (EVALUATION.md)."],
+      sources: [["RULES.md §2", "../RULES.md#2-use-the-private-ground-truth-or-any-human-produced-data-about-the-game"], ["FAQ tune", "../FAQ.md#can-i-train-or-tune-a-model-on-the-5-public-minutes"], ["EVALUATION.md", "../EVALUATION.md#the-public-window-is-not-a-leaderboard"], ["docs/rules.md", "../docs/rules.md#what-it-changes"]] },
     { title: "Human-produced data about this match, from any source",
       rule: "External data must be about other games. Anything a person produced about this match is out, whoever published it.",
       quote: { text: "any human-produced data about the provided game, from any source: event data (Opta, StatsBomb, Wyscout, LaLiga or anyone else), corrected tracking, possession data or annotations of any kind. Data of this kind about other games is fine.", cite: "RULES.md §2" },
@@ -362,15 +383,15 @@ const DATA = {
       quote: { text: "Running your repository against the provided data must reproduce your submission. Not approximately — the same file.", cite: "RULES.md §3" },
       means: ["Seeded randomness, pinned dependencies, LF line endings, one command.", "Before uploading, regenerate the file from a clean clone and compare the sha256."],
       sources: [["RULES.md §3", "../RULES.md#3-submit-a-file-your-repository-cannot-regenerate"], ["SUBMISSION.md", "../SUBMISSION.md#2-a-public-code-repository"]] },
-    { title: "Giving the match data to a third-party or cloud LLM",
-      rule: "LLMs are allowed anywhere in the pipeline, but the Terms and Conditions forbid making the competition's videos, datasets or any extract of them available to a third-party hosted or cloud LLM.",
-      quote: { text: "participants shall not upload, disclose or otherwise make available to any third-party hosted or cloud-based LLM any videos, datasets, confidential information or other restricted materials provided in connection with the Competition, or any extracts thereof", cite: "Terms and Conditions, as quoted in OVERVIEW.md and FAQ.md" },
-      means: ["Claude and any other cloud LLM see aggregates only (scores, counts), never frames, rows or video.", "No pasting tracking, tagging or homography rows into a chat.", "A hosted LLM may help with code and docs, never with the data."],
-      sources: [["OVERVIEW.md LLMs", "../OVERVIEW.md#use-of-large-language-models"], ["FAQ LLMs", "../FAQ.md#can-i-use-llms-pre-trained-models-external-data"]] },
+    { title: "Uploading the provided data to AI services",
+      rule: "LLMs are allowed in the pipeline (RULES.md), but the provided data may not go to an AI service. The November clarification says so plainly; the Terms and Conditions already forbade making the videos, datasets or any extract of them available to a third-party hosted or cloud LLM.",
+      quote: { text: "Uploading the provided data to AI services.", cite: "Organisers' clarification (email, Nov 2026), What is not allowed · Terms and Conditions, as quoted in OVERVIEW.md and FAQ.md" },
+      means: ["Claude and any other LLM see aggregates only (scores, counts), never frames, rows or video; team practice extends the rule to every LLM, local ones too.", "No pasting tracking, tagging or homography rows into a chat, nor rows of the public ground truth or the baseline CSVs (team practice).", "A hosted LLM may help with code and docs, never with the data."],
+      sources: [["The clarification", "../docs/rules.md#the-clarification-verbatim"], ["OVERVIEW.md LLMs", "../OVERVIEW.md#use-of-large-language-models"], ["FAQ LLMs", "../FAQ.md#can-i-use-llms-pre-trained-models-external-data"]] },
     { title: "Redistributing the data, or publishing what would rebuild it",
-      rule: "The match assets are licensed for this competition only. The submission repository must be public, so the data must not be in it.",
+      rule: "The match assets are licensed for this competition only, and the November clarification does not change that. The submission repository must be public, so the data must not be in it.",
       quote: { text: "Do not redistribute the data. […] Do not publish derived data that would reconstruct it. Frame-level tracking exports, clipped video, and similar.", cite: "RULES.md, The data" },
-      means: ["`data/` stays out of git; caches and run manifests live under it.", "No frame-level export or clipped video anywhere in the repo.", "Check `git status` before every commit."],
+      means: ["`data/` stays out of git; caches and run manifests live under it.", "No frame-level export or clipped video anywhere in the repo; files of intermediate steps go to the organisers directly, not into the repo (docs/rules.md, point 6).", "Check `git status` before every commit."],
       sources: [["RULES.md The data", "../RULES.md#the-data"], ["SUBMISSION.md", "../SUBMISSION.md#2-a-public-code-repository"]] },
     { title: "A private in-house model or an unavailable dataset",
       rule: "Everything in the pipeline must be something the organisers can access and run. This is “the one thing” the open-method rule rules out.",
@@ -381,37 +402,42 @@ const DATA = {
 
   allowed: [
     { title: "Any method the organisers can access, explained in the technical document",
-      rule: "Two conditions only: the organisers can access and inspect it, and the technical document explains it.",
+      rule: "Two conditions only: the organisers can access and inspect it, and the technical document explains it. The November clarification adds that nothing is trained or tuned on the provided game.",
       quote: { text: "Any language, any framework. Pre-trained models, commercial or open. LLMs, hosted or local. External data about other games. Your own detection, tracking or event-recognition models. Classical methods with no learning at all.", cite: "RULES.md, What you may use" },
-      means: ["LLMs are allowed in the pipeline; the data rule above still applies.", "Our models are committed as plain JSON, and the technical document explains them."],
+      means: ["LLMs are allowed in the pipeline; the provided data still goes to no AI service.", "Our models are committed as plain JSON, and the technical document explains them."],
       sources: [["RULES.md", "../RULES.md#what-you-may-use"]] },
-    { title: "External data about other games, hand-labelled included",
-      rule: "Hand labels on other games are fine in any amount, if the organisers can access them and the technical document says what was labelled, how, by whom and how much.",
-      quote: { text: "Hand-labelled data from other games is fine, in any amount.", cite: "RULES.md §1, Training and validation data" },
-      means: ["Our DFL/IDSSE benchmark (seven open matches, CC BY 4.0) is other games.", "The technical document lists every labelled dataset: “None of it may come from the provided game” (SUBMISSION.md)."],
-      sources: [["RULES.md §1", "../RULES.md#training-and-validation-data"], ["SUBMISSION.md", "../SUBMISSION.md#3-a-technical-document"]] },
-    { title: "Learning on the provided match without human labels",
-      rule: "Label-free learning on the match itself is allowed: unsupervised or self-supervised methods, or pseudo-labels an algorithm produced, as long as no person decided any of them. What stays forbidden: human labels, the public 5 minutes as training or tuning data, and anything derived from the private ground truth.",
-      quote: { text: "Learning without human labels — unsupervised or self-supervised methods, or pseudo-labels produced by an algorithm, provided no person decided any of them.", cite: "RULES.md §1, What remains fine" },
-      means: ["Self-supervised features learned from our own match's tracking: allowed.", "P07's original plan, training on frames where P04's algorithm is confident (pseudo-labels): allowed, since no person decides them.", "Our reading: a person who hand-fixes even a few of those pseudo-labels has decided them, which makes them hand labels, and that is not allowed."],
-      sources: [["RULES.md §1", "../RULES.md#1-annotate-the-data-by-hand"]] },
-    { title: "Watching the video and inspecting the data",
-      rule: "To understand the data, debug the pipeline and design features.",
-      quote: { text: "Watching the video and inspecting the data to understand them, debug your pipeline and design features.", cite: "RULES.md §1, What remains fine" },
-      means: ["A person may watch the public transitions (P02) to understand where `D` begins and ends.", "Team practice adds: an LLM, Claude included, still sees aggregates only."],
-      sources: [["RULES.md §1", "../RULES.md#1-annotate-the-data-by-hand"]] },
+    { title: "Any dataset we have the rights to use, its licence checked",
+      rule: "Allowed by name since November. RULES.md's conditions still hold: the organisers can access it, the technical document says what was labelled, how, by whom and how much, and none of it is about the provided game.",
+      quote: { text: "Using any dataset you have the rights to use. Please check the license of any dataset before using it.", cite: "Organisers' clarification (email, Nov 2026), What is allowed" },
+      means: ["Our DFL/IDSSE benchmark (seven open matches of other games) is CC BY 4.0; PathCRF's checkpoint is MPL-2.0 (dropped).", "Metrica's sample data has no licence file; its README asks users to acknowledge the source, which we do, and question 4 to the organisers asks.", "The technical document names each licence and lists every labelled dataset: “None of it may come from the provided game” (SUBMISSION.md)."],
+      sources: [["docs/rules.md, How we read it", "../docs/rules.md#how-we-read-it"], ["RULES.md §1", "../RULES.md#training-and-validation-data"], ["SUBMISSION.md", "../SUBMISSION.md#3-a-technical-document"]] },
+    { title: "Running automatic checks using only the provided data",
+      rule: "Allowed by name since November. A check passes or fails: it may stop a candidate, but it never ranks candidates or sets a value.",
+      quote: { text: "Running automatic checks using only the provided data.", cite: "Organisers' clarification (email, Nov 2026), What is allowed" },
+      means: ["The validator, determinism and the sha256, alignment, the `D` share and possession count of our own output, R011's transfer gate, a score against the public window.", "Running a fixed rule on the match is the algorithm running, not fitting: a control episode, a team's mean position, a Viterbi path whose parameters were set elsewhere (our reading).", "A label-free statistic of our output may stop a candidate; it never supplies a number for a config (T01, T54)."],
+      sources: [["The clarification", "../docs/rules.md#the-clarification-verbatim"], ["docs/rules.md, How we read it", "../docs/rules.md#how-we-read-it"]] },
+    { title: "Inspecting the data and the video to understand what counts as possession",
+      rule: "Narrowed in November: watching and inspecting are for understanding what counts as possession, where our ground truth starts and ends a possession or a stoppage. Debugging the pipeline and designing features, the other two purposes RULES.md allowed until then, are no longer among them.",
+      quote: { text: "Inspecting the provided data and the video to better understand what counts as possession.", cite: "Organisers' clarification (email, Nov 2026), What is allowed" },
+      means: ["A person may watch the truth's changes in the public window (P02) to understand where `D` begins and ends, and looks at none of our output.", "What they learn goes into the docs as understanding, in aggregates, never as a label, a correction or a constant.", "Team practice adds: an LLM, Claude included, still sees aggregates only."],
+      sources: [["The clarification", "../docs/rules.md#the-clarification-verbatim"], ["docs/rules.md, How we read it", "../docs/rules.md#how-we-read-it"], ["RULES.md §1 (superseded here)", "../RULES.md#1-annotate-the-data-by-hand"]] },
+    { title: "The video, the tracking, the Smart Tagging and other generated data, as input",
+      rule: "Any of them may be read at run time, as long as nothing was trained on the ground truth or the video, and, by the training rule, nothing was fitted on the rest of the provided data. Smart Tagging is automatic, not ground truth, and its intervals are phases, not possessions. The broadcast is on its own timeline, with no mapping to the tactical video provided.",
+      quote: { text: "Using as input the video, the automatic tracking data, the smart tagging or any other generated data, as long as your algorithm was not trained on the ground truth or on the provided video.", cite: "Organisers' clarification (email, Nov 2026), What is allowed" },
+      means: ["P08 may turn tags into soft evidence, but its constants must come from external data, a fixed rule or a documented fact: `c_team` 0.76, measured on BAR-ATH, conflicts (team decision pending).", "If P15 returns, the broadcast's alignment is computed by code at run time, not kept as two constants measured on this match; a file of ~164k rows means the broadcast was indexed."],
+      sources: [["The clarification", "../docs/rules.md#the-clarification-verbatim"], ["FAQ Smart Tagging", "../FAQ.md#can-i-use-the-smart-tagging-isnt-that-cheating"], ["FAQ broadcast", "../FAQ.md#can-i-use-the-broadcast-video-and-its-tracking"]] },
     { title: "Improving or replacing the provided tracking with your own algorithms",
-      rule: "The provided tracking is a starting point, not a constraint, as long as every improvement comes out of an algorithm.",
+      rule: "The provided tracking is a starting point, not a constraint, as long as every improvement comes out of an algorithm that was not trained or tuned on the provided game.",
       quote: { text: "Improving that data, or replacing it with your own, is entirely legitimate", cite: "RULES.md, The provided data is a starting point" },
-      means: ["Our own ball detector on the video (P14), or our own tracking, is allowed.", "Hand corrections are not (see Not allowed)."],
-      sources: [["RULES.md", "../RULES.md#the-provided-data-is-a-starting-point-not-a-constraint"], ["FAQ own tracking", "../FAQ.md#can-i-use-my-own-tracking-instead-of-the-provided-atd"]] },
-    { title: "Smart Tagging, and the broadcast video and tracking",
-      rule: "Smart Tagging is automatic, not ground truth, and its intervals are phases, not possessions. The broadcast is on its own timeline, with no mapping to the tactical video provided.",
-      quote: { text: "Use it — that is why it is there. It is not ground truth and not derived from it", cite: "FAQ.md, Smart Tagging" },
-      means: ["P08 may turn tags into soft evidence.", "P15 must align the broadcast itself; a file of ~164k rows means the broadcast was indexed."],
-      sources: [["FAQ Smart Tagging", "../FAQ.md#can-i-use-the-smart-tagging-isnt-that-cheating"], ["FAQ broadcast", "../FAQ.md#can-i-use-the-broadcast-video-and-its-tracking"]] },
+      means: ["A ball detector trained on other data and run on our video (P14's test B, zero-shot) is allowed; one trained or fine-tuned on our video, even on the ATD's ball as pseudo-labels, is not.", "Hand corrections are not allowed (see Not allowed)."],
+      sources: [["RULES.md", "../RULES.md#the-provided-data-is-a-starting-point-not-a-constraint"], ["FAQ own tracking", "../FAQ.md#can-i-use-my-own-tracking-instead-of-the-provided-atd"], ["docs/rules.md, rules out", "../docs/rules.md#what-it-rules-out-among-the-proposals"]] },
+    { title: "Providing files of intermediate steps",
+      rule: "Allowed by name since November. The data licence is unchanged and our repository will be public, so such files go to the organisers directly, never into the repository, unless they say otherwise (our reading).",
+      quote: { text: "Providing files of intermediate steps.", cite: "Organisers' clarification (email, Nov 2026), What is allowed" },
+      means: ["No frame-level intermediate file in git (RULES.md, The data).", "Where they should go is question 3 to the organisers, not yet sent."],
+      sources: [["docs/rules.md, How we read it", "../docs/rules.md#how-we-read-it"], ["RULES.md The data", "../RULES.md#the-data"]] },
     { title: "Using the 5 public minutes to check correctness",
-      rule: "Check that frames are aligned, the file is well formed and the labels mean what you think. Never use them to choose between two versions.",
+      rule: "Check that frames are aligned, the file is well formed and the labels mean what you think: an automatic check. Never use them to choose between two versions.",
       quote: { text: "for checking that your pipeline is correct — frames aligned, file well-formed, labels meaning what you think", cite: "RULES.md §2" },
       means: ["`run.py --score` and each source's agreement with the window: correctness checks.", "Run `--bootstrap 1000` before believing a gap there (EVALUATION.md)."],
       sources: [["RULES.md §2", "../RULES.md#2-use-the-private-ground-truth-or-any-human-produced-data-about-the-game"], ["EVALUATION.md", "../EVALUATION.md#the-public-window-is-not-a-leaderboard"]] }
@@ -440,26 +466,31 @@ const DATA = {
   deliverableSources: [["SUBMISSION.md", "../SUBMISSION.md#the-three-deliverables"], ["How to submit", "../SUBMISSION.md#how-to-submit"], ["OVERVIEW.md calendar", "../OVERVIEW.md#registration-and-calendar"], ["RULES.md teams", "../RULES.md#eligibility-and-teams"]],
 
   teamPractice: {
-    intro: "These are our own habits, from CLAUDE.md “Hard rules”. They are stricter than the competition rules, or are how we make sure we keep them.",
+    intro: "These are our own habits, from CLAUDE.md “Hard rules” and [docs/rules.md](../docs/rules.md). They are stricter than the competition rules, or are how we make sure we keep them.",
     items: [
-      { title: "No match data reaches any LLM, Claude included", text: "Aggregates only: no reading files under `data/`, no printing rows, no video frames. The T&C forbid third-party and cloud LLMs; we extend it to every LLM." },
-      { title: "Every constant is chosen on the benchmark of other matches", text: "By a rule declared in docs/results.md before the run. The rules forbid tuning on the public window; declaring the rule first is our addition." },
+      { title: "No match data reaches any LLM, Claude included", text: "Aggregates only: no reading files under `data/`, no printing rows, no video frames. The clarification forbids uploading the provided data to AI services, and the T&C forbid third-party and cloud LLMs; we extend it to every LLM, local ones too." },
+      { title: "The public ground truth and the baseline CSVs count as provided data", text: "`evaluation/gt/` and the organisers' baseline CSVs label this match's frames, so an LLM sees their scores and counts only, never their rows (docs/rules.md, point 5)." },
+      { title: "Every constant from external data, a fixed rule or a documented fact", text: "External data is the benchmark of other matches, chosen by a rule declared in docs/results.md before the run; a fixed rule is the laws of the game or the literature; a documented fact is, for example, the organisers' kick-off frames. The rules require external data for tuning; declaring the rule first is our addition." },
+      { title: "The stricter reading, until the organisers say otherwise", text: "Where the clarification leaves room we take the stricter reading, and we ask the organisers before relying on a looser one (docs/rules.md, “How we read it”)." },
       { title: "Never modify `evaluation/`", text: "It is the official scorer: local edits would only make our numbers drift from the organisers'." },
       { title: "Seed, pin, LF, one command", text: "Seeded randomness, pinned dependencies, LF line endings, one command from `data/` to the CSV: how we keep RULES.md §3." },
       { title: "Keep `data/` and frame-level exports out of git", text: "`.gitignore` covers `data/*`, `*.mp4` and `evaluation/results/*.csv`; caches live under `data/`. How we keep “The data” rules." },
       { title: "Log every experiment, failures too", text: "In docs/results.md, with its commit, command, scores and verdict." }
     ],
-    source: [["CLAUDE.md", "../CLAUDE.md"], ["docs/traps.md T25–T27", "../docs/traps.md"]]
+    source: [["CLAUDE.md", "../CLAUDE.md"], ["docs/rules.md", "../docs/rules.md"], ["docs/traps.md T25–T27, T54", "../docs/traps.md#rules-and-data-handling"]]
   },
 
   selfCheck: [
     { q: "Did a person decide or correct any label on this match?", safe: "no", kind: "rule", stop: "Stop: labels must come from an algorithm (RULES.md §1)." },
-    { q: "Did any human label on this match go into training or validating anything?", safe: "no", kind: "rule", stop: "Stop: no hand labels on the provided game, for any purpose (RULES.md §1)." },
-    { q: "Did any number in my config come from the public window, or was anything chosen by its score?", safe: "no", kind: "rule", stop: "Stop: the 5 minutes are not training data and not a tuning set (RULES.md §2). Re-derive it on the benchmark." },
+    { q: "Did any human label, or any data created manually on this match, go into training or validating anything?", safe: "no", kind: "rule", stop: "Stop: no hand labels or manually created data on the provided game, for any purpose (Organisers' clarification, Nov 2026; RULES.md §1)." },
+    { q: "Was anything trained, retrained or adapted on this match's data or video, with labels or without?", safe: "no", kind: "rule", stop: "Stop: train only on external data (Organisers' clarification, Nov 2026). Retrain it on other games." },
+    { q: "Is any number in my config, model or prior measured on this match, even label-free (an agreement with our own output, a prior, a threshold)?", safe: "no", kind: "rule", stop: "Stop: parameters are tuned on external data only (Organisers' clarification, Nov 2026). Take it from external data, a fixed rule or a documented fact." },
+    { q: "Did anyone compare our output (labels, transitions, detected events) with the video?", safe: "no", kind: "rule", stop: "Stop: checking your output against the video is not allowed (Organisers' clarification, Nov 2026). Debug with automatic checks and aggregates." },
+    { q: "Did any number in my config come from the public window, or was anything chosen by its score?", safe: "no", kind: "rule", stop: "Stop: the 5 minutes are not training data and not a tuning set (RULES.md §2; the clarification keeps it). Re-derive it on the benchmark." },
     { q: "Did any human-produced data about this match (events, stats, corrected tracking) enter the pipeline?", safe: "no", kind: "rule", stop: "Stop: no human-produced data about the game, from any source (RULES.md §2)." },
     { q: "Is there a rule or constant tied to specific frames of this match that I wrote after watching?", safe: "no", kind: "rule", stop: "Stop: turning what you saw into frame-tied rules or constants is not allowed (RULES.md §1)." },
-    { q: "Does anything I'm about to paste into an LLM contain rows, frames or video of the match?", safe: "no", kind: "both", stop: "Stop: never to a cloud LLM (T&C); never to any LLM (team practice). Paste aggregates only." },
-    { q: "Is anything under `data/`, or a frame-level export, staged for commit (`git status`)?", safe: "no", kind: "rule", stop: "Stop: unstage it; the repo will be public (RULES.md, The data)." },
+    { q: "Does anything I'm about to paste into an LLM contain rows, frames or video of the match, or rows of the public ground truth or the baseline CSVs?", safe: "no", kind: "both", stop: "Stop: no provided data to AI services (Organisers' clarification, Nov 2026; T&C); never to any LLM, and no ground-truth or baseline rows (team practice). Paste aggregates only." },
+    { q: "Is anything under `data/`, a frame-level export or a file of intermediate steps staged for commit (`git status`)?", safe: "no", kind: "rule", stop: "Stop: unstage it; the repo will be public (RULES.md, The data). Intermediate files go to the organisers directly." },
     { q: "Can a clean clone regenerate the file byte for byte (the same sha256)?", safe: "yes", kind: "rule", stop: "Stop: the repo must reproduce the same file (RULES.md §3). Find what differs first." }
   ],
 
@@ -469,7 +500,8 @@ const DATA = {
     { date: "2026-10-15", title: "Documentation fixes and a BibTeX update", commit: "f00bc32, 3de6b60", text: "“Fixing documentation”; “Bibtex updated”." },
     { date: "2026-10-22", title: "Clarification on data annotation", commit: "c073f29", key: true, text: "RULES.md and OVERVIEW.md: hand-labelled data from **other matches** is fine in any amount; hand labels on the competition match itself are not. It replaced “small amounts of hand-labelled data used to train or validate a model are fine and normal”." },
     { date: "2026-10-23", title: "Clarifying the guidelines for annotating the provided video", commit: "f8f2629", key: true, text: "RULES.md, FAQ.md, EVALUATION.md, SUBMISSION.md, OVERVIEW.md and more: the public 5 minutes are not training or tuning data; no human-produced data about the game from any source; corrections must come out of code; watching is fine, but turning it into labels or frame-tied constants is not. Merged into our main on 2026-10-25." },
-    { date: "2026-10-29", title: "Checked: no newer change", commit: "", text: "`git fetch upstream` found no commit after `f8f2629`." }
+    { date: "2026-10-29", title: "Checked: no newer change", commit: "", text: "`git fetch upstream` found no commit after `f8f2629`." },
+    { date: "2026-11-03", title: "Clarification of the rules, by email", commit: "", key: true, text: "Sent to every participant; “the rules below take precedence over any other information you may have received previously”. **Not allowed:** checking your output against the video; hand labels, human-produced or manually created data on the provided game; uploading the provided data to AI services; training, fitting or calibrating on the ground truth or the video. **Allowed:** automatic checks on the provided data; inspecting the data and video to understand what counts as possession; generated data as input; files of intermediate steps; any dataset you have the rights to use. **Training and tuning use external data only**, which ends label-free learning on the match. No upstream commit carries it yet (`git fetch upstream` still ends at `f8f2629`). Our statement and audit: [docs/rules.md](../docs/rules.md)." }
   ]
 };
 
@@ -576,7 +608,7 @@ const DATA = {
       h("div", { class: "banner", role: "note" }, h("span", { html: md(DATA.checked.text) }), cmdBlock(DATA.checked.cmd)),
 
       h("section", { class: "block", id: "summary", "aria-labelledby": "h-summary" },
-        h("div", { class: "block-head" }, h("h2", { id: "h-summary", text: "The rules in one paragraph" }), h("p", { html: md("From [RULES.md](../RULES.md), the authority.") })),
+        h("div", { class: "block-head" }, h("h2", { id: "h-summary", text: "The rules in one paragraph" }), h("p", { html: md("From the organisers' clarification of November 2026 ([docs/rules.md](../docs/rules.md)), which takes precedence over [RULES.md](../RULES.md).") })),
         h("div", { class: "card" }, h("p", { class: "summary", html: md(DATA.summary) }))),
 
       h("section", { class: "block", id: "line", "aria-labelledby": "h-line" },

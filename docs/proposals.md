@@ -31,27 +31,27 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | ID | proposal | attacks | effort | impact | status |
 |---|---|---|---|---|---|
 | [P01](#p01--a-validation-set-we-can-trust) | Validation set we can trust: other matches, degraded to look like ours | deciding anything at all | M | enabling | done → R002–R005 |
-| [P02](#p02--inspect-the-ground-truths-conventions-on-the-public-window-to-understand-and-never-to-tune) | Inspect the GT's conventions on the public window, to understand and never to tune | boundary timing | S | bounded since the 23 Oct rule: understanding only; so far the pipeline's own lag on DFL, 1 to 2 frames, within noise (R012) | done → A11, R012, A15 (inspection only; a person may watch to understand) |
+| [P02](#p02--inspect-the-ground-truths-conventions-on-the-public-window-to-understand-and-never-to-tune) | Inspect the GT's conventions on the public window, to understand and never to tune | boundary timing | S | bounded since the 23 Oct rule: understanding only; so far the pipeline's own lag on DFL, 1 to 2 frames, within noise (R012) | done → A11, R012, A15 (inspection only; a person may watch to understand what counts as possession, never to check our output, 3 Nov) |
 | [P16](#p16--metricas-sample-games-in-our-ground-truth-providers-conventions) | Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing | boundary timing, grain | M | medium | partly done → R023 (the grain: outcome both, so choices rank on the mean of the two truths); the switch timing and the feeds are not done |
 | [P17](#p17--the-restart-team-channel) | Restart-team channel: who restarts after a stoppage, from the players' arrangement | facts 3, 5 (the hold points at the old team after most stoppages) | S–M | ceiling +0.0198 raw (A12); delivered +0.0040 raw at best, bar not met (R014) | dropped → R014, R014b (the source and the decoder's restart states stay, off by default) |
 | [P18](#p18--the-offpitch-profile-dfls-ball-hidden-off-the-pitch-as-ours-is-and-p05-retrained-on-it) | offpitch profile: DFL's ball hidden off the pitch as ours is, and P05 retrained on it | T39 (P05 overstated by the visible out-of-play ball) | M | A13: a perfect dead-ball source adds +0.029 raw on tracking; main.toml on offpitch 0.5509 raw / 0.5296 coarse; hiding the out-of-play ball cost today's P05 0.013 alive/dead F1 (R015) | dropped → R015, R015b (our tracker's off-pitch ball cannot be reproduced by a simple rule; code removed) |
 | [P19](#p19--a-learned-team-model-where-the-ball-is-seen) | A learned team model where the ball is seen: P05's recipe applied to the team | fact 3; A13's largest lever (+0.194 raw where the ball is seen) | M (feasibility S) | measured: +0.0160 pooled per-frame accuracy against `main.toml`'s decoded labels, gate +0.020 (R021) | dropped → R021 (feasibility: +0.0160 pooled against +0.020, 3 of 7 matches against 6; no spellF1) |
 | [P20](#p20--ball-free-possession-paths-pathcrf-on-our-slots) | Ball-free possession paths: PathCRF (KDD 2026), trained on the same DFL matches | fact 1; A13's gaps (+0.176 raw) | S test, L to adopt | measured: +0.0049 pooled on the gap frames (needed +0.04); PathCRF's own protocol on the clean match reached 0.9172, against P07's 0.8522 on degraded tracking (not like for like) | dropped → R022 (step 0 no-go: +0.0049 under our degradation and the adapter, needed +0.04; code removed, recoverable at `2163406`) |
 | [P21](#p21--wrong-team-slots-measure-the-ceiling-then-repair-them) | Wrong-team slots: measure the ceiling, then repair from tracking or jersey colours | T32 | S test, M | low on the benchmark: all of `tracking`'s player degradation costs `main.toml` 0.013 (A14) | dropped → A16 (step 0's ratio 0.85 < 1.5; the tool is kept for P19's transfer report) |
-| [P22](#p22--the-shape-model-adapted-to-our-two-teams-without-labels) | The shape model adapted to our two teams without labels | fact 1 | S–M | low: guess +0.00 to +0.02 | (a) dropped → R020 (feasibility gate failed: 0.0538 against 0.0623, ratio 0.863 > 0.75); (b) dropped → R027 (the gate on DFL: a per-half intercept on P07 from the touch rule's labels made its pooled log-loss in the held-out half's gaps +0.0061 worse, needing −0.002; the transfer from touch frames to gaps 0.296 against the teacher's noise 0.107; rung 3 worse too, +0.0838; code removed, recoverable from `1e5a5d2` and the local tag `archive/r027-source`); (c) not tried |
+| [P22](#p22--the-shape-model-adapted-to-our-two-teams-without-labels) | The shape model adapted to our two teams without labels | fact 1 | S–M | low: guess +0.00 to +0.02 | (a) dropped → R020 (feasibility gate failed: 0.0538 against 0.0623, ratio 0.863 > 0.75); (b) dropped → R027 (the gate on DFL: a per-half intercept on P07 from the touch rule's labels made its pooled log-loss in the held-out half's gaps +0.0061 worse, needing −0.002; the transfer from touch frames to gaps 0.296 against the teacher's noise 0.107; rung 3 worse too, +0.0838; code removed, recoverable from `1e5a5d2` and the local tag `archive/r027-source`); (c) not tried; none of (a) to (c) allowed since 3 Nov ([rules.md](rules.md)) |
 | [P23](#p23--the-hmm-backbone-reviewed-nine-ideas-five-taken) | The HMM backbone reviewed: re-choose under R023's objective (A), decompose the IoU ladder (B), posterior edges (C), calibration (D), a gap weight for P07 (E) | fact 5; the decoder's placement of changes; fact 1 (E) | S each | low: +0.01 to +0.03 for the lot (the advisor's estimate); measured: A +0.0052 on the mean (R024) | done: A adopted → R024; B, D measured → A19; C dropped → R025, R025b; E dropped → R026; F deferred, then run as P22(b) and dropped → R027; G to I not taken |
 | [P03](#p03--one-command-deterministic-cached) | One-command, deterministic, cached pipeline | reproducibility | S–M | enabling | done → R001 |
 | [P04](#p04--sticky-ownership-from-controlled-touches) | Sticky ownership from controlled touches | facts 3, 5 | S | high: +0.1421 raw at the chosen decoder (R010) | done → R008, R010; rule re-chosen → R013; hold re-chosen → R024 (0.55) |
 | [P05](#p05--a-real-dead-ball-detector) | Dead-ball detector | fact 4 | M | high: +0.1661 raw at the chosen decoder, on a benchmark that overstates it (R010, T38, T39) | done → R009, R010 |
 | [P06](#p06--global-decoding-per-half-hmm--hidden-semi-markov) | Global decoder (HMM / semi-Markov) per half | fact 5 | M | high | done → R006–R007, A10; decoder re-chosen → R010, R013 |
 | [P07](#p07--possession-without-the-ball-team-shape-and-movement) | Possession without the ball: team shape | fact 1 | M | high: +0.0942 raw at the chosen decoder, on a benchmark whose gain is not a forecast for our match (R011) | done → R011; weight re-chosen → R013 |
-| [P08](#p08--smart-tagging-as-soft-evidence) | Smart Tagging as soft evidence | facts 1, 4 | S | medium | done → R017 (team votes adopted per frame, weight 0.2; dead votes measured and dropped) |
+| [P08](#p08--smart-tagging-as-soft-evidence) | Smart Tagging as soft evidence | facts 1, 4 | S | medium | done → R017 (team votes adopted per frame, weight 0.2; dead votes measured and dropped); **conflicts with the 3 Nov rules** (`c_team` measured on our match): decision pending, [rules.md](rules.md) |
 | [P09](#p09--camera-aim-as-a-coarse-ball-zone-prior) | Camera aim as a coarse ball-zone prior | fact 1 | S | low–medium | dropped → R019 (the simulated camera failed two fidelity gates; code removed); A20: in the gaps the camera only moves with the players |
 | [P10](#p10--referee-whistle-from-the-audio-track) | Referee whistle from the audio track | fact 4 | S–M | medium (audio confirmed, A04) | dropped → R018, R018b (whistles near stoppages 1.5× chance, below the declared 2×; code removed) |
 | [P11](#p11--touch-and-pass-events-to-place-boundaries) | Touch and pass events to place boundaries | fact 5 | M–L | medium–high | idea |
 | [P12](#p12--metric-aware-post-processing) | Metric-aware post-processing | fact 5 | S | medium | done → R012 (shift adopted), R016 (free X measured and dropped) |
 | [P13](#p13--learn-from-external-labelled-tracking-data) | Pre-train on external labelled tracking data | facts 1, 2 | L (M on top of P01) | medium–high | idea |
-| [P14](#p14--recover-the-ball-from-the-video) | Recover the ball from the video | facts 1, 2 | L | A14: a perfect ball in our gaps is worth +0.10 raw but +0.02 coarse; a real detector perhaps +0.025 to +0.04 raw | not built → A14 (not a ViT: the ball is 6 px, T46; a half-day zero-shot test may run, [After A14](#after-a14)); A20 lowers the prior (the broadcast's tracker has the ball on 28% of the live frames where ours is missing) |
+| [P14](#p14--recover-the-ball-from-the-video) | Recover the ball from the video | facts 1, 2 | L | A14: a perfect ball in our gaps is worth +0.10 raw but +0.02 coarse; a real detector perhaps +0.025 to +0.04 raw | not built → A14 (not a ViT: the ball is 6 px, T46; a half-day zero-shot test may run, [After A14](#after-a14)); A20 lowers the prior (the broadcast's tracker has the ball on 28% of the live frames where ours is missing); since 3 Nov no training on our video, only weights trained elsewhere ([rules.md](rules.md)) |
 | [P15](#p15--broadcast-tracking-as-a-second-opinion) | Broadcast tracking as a second opinion | facts 1, 4 | S–M per use (the alignment is measured) | A20: its ball fills 30% of the gap frames we call alive, in fragments; its shots off the pitch cover 75% of our `D` | measured → A20; use 1 dropped as R028 (2 Nov): the stand-in on DFL failed its fidelity gates (`tracking`'s gaps are not ours, T38, T53), so the fill is untested, not refuted; uses 2 and 3 ideas |
 
 ## Suggested plan — 27 days to 17 November
@@ -199,7 +199,9 @@ of possessions moved the other way on BAR-ATH (R011). *Items 2 and 4 are rewritt
    and what kind of restart follows can understand which of them it is (A11, "How a person can extend it"). That
    understanding can shape a feature. It cannot set a number: g is retired (T40), and a constant read off these 20
    changes, or a label for a stoppage, is tuning on the public window or a hand label (T27). It costs hours and not
-   compute, so it can run beside item 1; what comes out of it is a note in the docs, in aggregates.
+   compute, so it can run beside item 1; what comes out of it is a note in the docs, in aggregates. *3 Nov 2026
+   ([rules.md](rules.md)): still allowed, as understanding "what counts as possession"; the person looks at the
+   truth's changes only, never at our output.*
 3. **Before any upload, decide how much of the gain to believe ("After P04 and P05", item 5).** It is a decision and
    not a run. R011's transfer gate (0.8251 against 0.7486) is a proxy and not an accuracy, and the possession count
    moved the other way on BAR-ATH. The public window's spellF1 fell from 0.4686 to 0.4000, about one possession, but it
@@ -210,7 +212,8 @@ of possessions moved the other way on BAR-ATH (R011). *Items 2 and 4 are rewritt
    needs the restart type of each stoppage. A type that a person read off this match's video for each stoppage and fed
    to the pipeline would be a hand label (T27), so the types have to come from code (Smart Tagging's set-piece tags,
    P08, which are automatic) or from other games' flags (P16). A person watching to judge whether the channel is worth
-   building is design, which is allowed. If the stoppages are mostly of a few types with a clear next team (a corner, a
+   building is design, which is allowed (since 3 Nov 2026 only as understanding what counts as possession at a
+   restart, [rules.md](rules.md)). If the stoppages are mostly of a few types with a clear next team (a corner, a
    goal kick), it is a small source for `home` after a stoppage; if not, drop it. *Started 26 Oct as P17 (A12: a
    perfect 2 s restart vote is worth +0.0198 raw and +0.0197 coarse, 7 wins in 7).*
 
@@ -296,7 +299,9 @@ unchanged (sha256 `0ebdfbec...`).
 
 1. **P14 is not built now, and would not be a ViT.**
    - The ball is about 6 px wide, smaller than one ViT patch (T46). If anything, the candidate is a stride-4 heatmap net
-     at full resolution with stacked frames, trained on the ATD's own ball as algorithm-made pseudo-labels.
+     at full resolution with stacked frames, trained on the ATD's own ball as algorithm-made pseudo-labels. *Since
+     3 Nov 2026 that training set is not allowed (training on our video, [rules.md](rules.md)); only weights trained on
+     other data may run on our video.*
    - A perfect ball in our gaps is worth +0.10 raw but only +0.02 coarse on the benchmark (A14). A real detector covering
      35 to 50% of the gap frames would deliver perhaps +0.025 to +0.04 raw and +0.005 coarse, below the full match's
      noise.
@@ -347,6 +352,14 @@ human-produced data about the game from any source (event data, corrected tracki
 be used, and external data must be about other games. And correcting the game's tracking by hand is hand annotation:
 corrections must come out of code. Learning without human labels (unsupervised, self-supervised, pseudo-labels an
 algorithm made) and watching the video or inspecting the data to understand them stay fine.
+
+**Rules changed again on 3 Nov 2026** ([rules.md](rules.md), which now takes precedence). The organisers' emailed
+clarification says "If you need to train (or retrain), you MUST use only external data" and that parameters are tuned
+"on external data". So learning on our match without labels is out as well ([T54](traps.md)). Watching the video is
+now only "to better understand what counts as possession", and "checking your output against the video" is not
+allowed. That makes P01 the only place anything is trained or chosen, as it already was. The open question is the
+degradation: `tracking` v3 is fitted on label-free statistics of our tracking (A07 to A09), and whether that is
+allowed is question 1 for the organisers in [rules.md](rules.md).
 
 **Why.** The public window holds 17 possessions — each worth about 0.06 spellF1 — and it is the easiest 5 minutes of
 the match (fact 2). It already picked the wrong baseline. Until we have a better yardstick, every other proposal is
@@ -460,8 +473,11 @@ coverage (it loses the ball near the lines), and A11 does not separate them. The
 frames) and no gap to our convention (g = 0, from 1 to 4 matched public changes per type); its gain is inside noise.
 The rule's second half, g, read from the public window's latencies, is **retired**: it is a tuning use of the window, it
 stays 0 by rule, and any future shift comes from other games only (P16). What is left needs a person who may watch the
-video, to understand what the restart types are and whether `D` begins at the line, the whistle or the stoppage. The
-person's command, which regenerates the file to watch, is
+video, to understand what the restart types are and whether `D` begins at the line, the whistle or the stoppage.
+*Changed 3 Nov 2026 ([rules.md](rules.md)):* watching is now only "to better understand what counts as possession",
+and "checking your output against the video" is not allowed. So the person watches the truth's changes and ignores the
+file's detector and descriptor columns, which are our own components' events: comparing those with the video would be
+checking our output. The person's command, which regenerates the file to watch, is
 
 ```bash
 python pipeline/benchmark/conventions.py public     # writes data/runs/conventions/public_transitions.csv, gitignored
@@ -483,8 +499,9 @@ possession change at the first touch, or once control is established? With 0.3�
 - where the ball is relative to the lines, and the time from the ball leaving the pitch to `D`;
 - the restart type, for the person's understanding and not as a record for those frames.
 
-Watch each transition on video to understand it. What goes into [traps.md](traps.md) and the technical document is what
-was understood, in aggregates, and never a constant or a rule tied to those frames.
+Watch each transition on video to understand what counts as possession there, never to judge our own output against
+it (3 Nov, [rules.md](rules.md)). What goes into [traps.md](traps.md) and the technical document is what was
+understood, in aggregates, and never a constant or a rule tied to those frames.
 
 P01's benchmark follows DFL's conventions, not Metrica's, and the public window is not a place to fit ours: it can be
 inspected to understand them, and read as a check. A convention of our provider has to come from other games (P16), and
@@ -676,7 +693,9 @@ ball). What comes next is in [After P07 and P02](#after-p07-and-p02).
 - Derive each team's attacking direction per half from the data.
 - Train H-vs-A on ball-visible frames where P04 is confident (pseudo-labels, tens of thousands of frames) and on P01's
   matches with the ball masked (P13). Not on the public GT, out of fold or not: the organisers' 23 Oct rule (`f8f2629`)
-  makes it a check and no training data ([T27](traps.md)). What was built used P01's matches alone (R011).
+  makes it a check and no training data ([T27](traps.md)). What was built used P01's matches alone (R011). The
+  pseudo-label half of this plan has not been allowed since 3 Nov 2026: training uses external data only
+  ([rules.md](rules.md), [T54](traps.md)).
 - Measure on P01's **simulated ball gaps**, where the truth is known, and check against the public window's
   ball-missing frames (few: 6.5% of its in-play frames). Real gaps are harder than the `gaps` profile's, which are
   transplanted with their pattern and not their clock, and not placed by the play: ours start near the lines and on
@@ -687,9 +706,18 @@ ball). What comes next is in [After P07 and P02](#after-p07-and-p02).
 
 ### P08 — Smart Tagging as soft evidence
 
-**Status: done → [R017](results.md) (team votes adopted per frame, weight 0.2; dead votes measured and dropped).** The team
+**Status: done → [R017](results.md) (team votes adopted per frame, weight 0.2; dead votes measured and dropped); in
+conflict with the 3 Nov rules, decision pending ([rules.md](rules.md)).** The team
 votes passed their declared bar (0.761 agreement with our own controlled-touch pseudo-labels) and entered `main.toml` at
 Tian's pick of strength (2026-10-30); the dead votes failed theirs (0.409) and were removed from the code.
+
+*Changed 3 Nov 2026:* the organisers' clarification ([rules.md](rules.md)) requires parameters to be tuned "on external
+data". `c_team` 0.76 is a measurement on our own match, so it conflicts ([T54](traps.md)). The weight was picked after
+seeing our match's output and is doubtful. DFL has no tags, so no external data can set either. Recommended: take
+`smart_tagging` out of `main.toml` (R017 measured no score for it), ask the organisers (question 2), and put it back
+only on a yes. The plan below had a compliant route, "a declared constant argued from what the tags mean". That route is
+not clean any more, because any number declared now is chosen knowing 0.761. Taking the source out changes the
+submission config, so it is the team's decision, logged as a new R entry.
 
 **Why.** There are 638 automatic tags, each naming a team: free evidence exactly where the ball is missing.
 
@@ -929,7 +957,9 @@ coarse (`gaps` 0.5559 and 0.5719 against `tracking` 0.5430 and 0.5593).
 3. **(b) From the video (M).** Cut each slot's track at its close encounters, project each piece's foot point through the
    homography, crop the torso, and cluster colour histograms per half without labels (KMeans, two teams plus goalkeepers
    and the referee). A piece's majority overrides the metadata's team when it is confident.
-   - Unsupervised, so allowed. The video is read by code on our machines only.
+   - Unsupervised, so allowed until 3 Nov 2026. Since then it is not: clusters fitted on our frames are "fitting ... on
+     the provided video" ([rules.md](rules.md), [T54](traps.md)). A colour or team classifier trained on other games
+     and run on our frames would be allowed. The video is read by code on our machines only.
    - The benchmark cannot score it (DFL has no video). The label-free checks on our match: the share of frames with a
      team over 11 slots should fall, and away from encounters the colour team should agree with the metadata's on at
      least 98% of the pieces.
@@ -940,7 +970,7 @@ coarse (`gaps` 0.5559 and 0.5719 against `tracking` 0.5430 and 0.5593).
 
 ### P22 — The shape model adapted to our two teams without labels
 
-**Status: (a) dropped → [R020](results.md) (the feasibility gate failed: EM's share was 0.0538 from the true one on average against 0.0623 for guessing 0.5, a ratio of 0.863 against the declared 0.75; neither retry condition held, so no grid ran and no F1 was produced). The code was removed in one commit, recoverable from `e303365`. (b) dropped → [R027](results.md) (the gate on DFL failed: rung 1, an intercept on P07's logit fitted on the other half's touch-rule frames, made P07's pooled log-loss in the held-out half's gaps 0.0061 worse, 0.3759 to 0.3820, where 0.002 better was needed, and worse on 5 of 7 matches. The offsets exist, 0.276 on average in the gaps, but the one the touches see is not the gaps': the transfer is 0.296 against the teacher's noise of 0.107. Rung 3, the retry's column, was worse too, +0.0838, so R027b did not run, and no spellF1 was produced). The code was removed in one commit (`9ee4d1f`), recoverable from `1e5a5d2` and the local tag `archive/r027-source`. (c) not tried.**
+**Status: (a) dropped → [R020](results.md) (the feasibility gate failed: EM's share was 0.0538 from the true one on average against 0.0623 for guessing 0.5, a ratio of 0.863 against the declared 0.75; neither retry condition held, so no grid ran and no F1 was produced). The code was removed in one commit, recoverable from `e303365`. (b) dropped → [R027](results.md) (the gate on DFL failed: rung 1, an intercept on P07's logit fitted on the other half's touch-rule frames, made P07's pooled log-loss in the held-out half's gaps 0.0061 worse, 0.3759 to 0.3820, where 0.002 better was needed, and worse on 5 of 7 matches. The offsets exist, 0.276 on average in the gaps, but the one the touches see is not the gaps': the transfer is 0.296 against the teacher's noise of 0.107. Rung 3, the retry's column, was worse too, +0.0838, so R027b did not run, and no spellF1 was produced). The code was removed in one commit (`9ee4d1f`), recoverable from `1e5a5d2` and the local tag `archive/r027-source`. (c) not tried.** **Since 3 Nov 2026 none of (a), (b) or (c) is allowed:** each estimates something on our own match (a share by EM, a recalibration from our pseudo-labels, a prior), and training and tuning now use external data only ([rules.md](rules.md), [T54](traps.md)). Do not revive P22.
 
 **Why.** P07 was trained on German teams only, and R011 warns that the benchmark's gain is not a forecast for Barça and
 Athletic: the count of possessions moved the other way on BAR-ATH.
@@ -955,7 +985,8 @@ Athletic: the count of possessions moved the other way on BAR-ATH.
   confident touch inside a long decoded possession).
   - Cross-fit by half: half 1's pseudo-labels adapt the model for half 2, and the reverse. This limits confirmation bias
     ([Arazo et al. 2019](https://arxiv.org/abs/1908.02983); CBST, [Zou et al. 2018](https://arxiv.org/abs/1810.07911)).
-  - The pseudo-labels are made by an algorithm and decided by no person, so they are allowed.
+  - The pseudo-labels are made by an algorithm and decided by no person, so they were allowed until 3 Nov 2026 (not
+    since: [rules.md](rules.md)).
   - Train on one half and check on the other. Without that split, R011's transfer gate (agreement with the touch rule)
     would check the model on its own training labels.
   - **Expanded 2026-10-31** (Tian: "start working on P22(b)"; design in
@@ -1078,7 +1109,7 @@ at 0.93). That is wrong exactly where a player handles a dead ball. A19 measures
 | **C** | Posterior edges: move each change to the median of the posterior over where it happened | S–M | +0.003 to +0.015 | The posterior is computed by `marginals` and not used yet; matters most in gaps, where P07 alone speaks | **do**, after B's gate → R025 |
 | **D** | The dead-ball prior and every source's calibration | S | 0 | The prior is already corrected (above); the calibration of the sources and of the posterior tells C what its posterior is worth | **do**, as a check → A19 |
 | **E** | P07 weighted apart in the gaps and where the ball is seen | S | 0 to +0.02 | In the gaps P07 is the only team signal, at the same weight as where touches speak | **do** → R026 |
-| **F** | P22(b): self-train P07 on our match's own touch pseudo-labels, cross-fit by half, the procedure tested on DFL first | M–L | 0 to +0.03 | The one idea aimed at the gaps, where a perfect team signal is worth +0.176 raw (A13) | **deferred** (Tian, 31 Oct), then run as P22(b) → R027, dropped at its gate; the original condition: only if 4 days remain before the freeze |
+| **F** | P22(b): self-train P07 on our match's own touch pseudo-labels, cross-fit by half, the procedure tested on DFL first | M–L | 0 to +0.03 | The one idea aimed at the gaps, where a perfect team signal is worth +0.176 raw (A13) | **deferred** (Tian, 31 Oct), then run as P22(b) → R027, dropped at its gate; the original condition: only if 4 days remain before the freeze; not allowed since 3 Nov 2026 (training on our match, [rules.md](rules.md)) |
 | **G** | Bag P07's seven fold models | M | ≤ +0.005 | Less variance, better-calibrated gap probabilities; a fair benchmark needs 42 small models | not taken |
 | **H** | A soft duration prior in place of the hard 1.4 s minimum (semi-Markov) | M | −0.005 to +0.01 | The raw-against-coarse knob in another form, which A settles | not taken |
 | **I** | A learned switch hazard (an IOHMM: cheaper changes at loose balls, duels and passes in flight) | L | 0 to +0.015 | The best-supported idea in the literature, and the largest transfer risk from DFL to our match | not taken |
@@ -1226,7 +1257,9 @@ Hold out P01's benchmark matches from training, or train and score across folds 
 still measures something.
 
 **Rules.** Conventions differ between providers, so use external data to rank methods and pre-train, and calibrate on
-other games. External data must be about other games. Check every licence, keep the sources public (the organisers
+other games. Since 3 Nov 2026 that is the only place training and tuning may happen ([rules.md](rules.md)): no
+fine-tuning or recalibration on our match, with labels or without. External data must be about other games, and we
+must have the rights to use it. Check every licence, keep the sources public (the organisers
 must be able to access them), and explain them in the technical document: what was labelled, how, by whom and how
 much. **Never use anything about this fixture**: no event feeds, stats or match reports, nothing human-produced about
 it from any source ([T26](traps.md)).
@@ -1258,13 +1291,16 @@ optimistic. Test B's figures would still settle it.
   - WASB-SBDT (Tarashima et al., BMVC 2023, [code](https://github.com/nttcom/WASB-SBDT)), without its downscaling.
 - **Rejected models:** DINOv2, RF-DETR, OWLv2 and Grounding DINO, because of the ball's size (T46); Ultralytics YOLO,
   because of its AGPL licence and its stride of 8; SAM 2 and CoTracker, for drift and licence.
-- **Training data:** the ATD's own ball, projected through the homography to pixels. RULES.md allows these as
-  pseudo-labels made by an algorithm, provided no person decides any of them.
-  - The filter is code, fixed before any run.
-  - The public window is left out of training and of every test.
-  - Oversample the visible frames within 2 s of a gap's edge, and run at most one round of self-training.
-  - Hand labels of other matches are allowed too. Boxes drawn on this match are not ([T27](traps.md)).
-  - A person may watch gap moments to understand them. A tally of what they saw is not a gate.
+- **Training data:** ~~the ATD's own ball, projected through the homography to pixels, as pseudo-labels made by an
+  algorithm~~. *Not allowed since 3 Nov 2026* ([rules.md](rules.md), [T54](traps.md)): no "training, fitting or
+  calibrating your algorithm ... on the provided video", and training uses "only external data". That removes this
+  plan's training set, its oversampling of our gap edges and its round of self-training. What stays allowed: the stock
+  weights, or weights trained or fine-tuned on other matches' video (hand labels of other matches included, licence
+  checked), run on our video as an input.
+  - The public window is left out of every test.
+  - Boxes drawn on this match are not allowed ([T27](traps.md)).
+  - A person may watch gap moments to understand what counts as possession there, but never to judge the detector's
+    output against the video. A tally of what they saw is not a gate.
 - **Training compute:** about 12k crops of 256 px, which is 10 to 25 h on the laptop's CPU: one or two throttled
   nights.
 - **Inference:** on the CPU, at 5 fps inside the graded gaps (about 16k frames), in the zone given by the camera's aim
@@ -1298,6 +1334,9 @@ optimistic. Test B's figures would still settle it.
 
   Kill if R_g < 0.25 R_t or the proxy exceeds 30% of R_g. Build only if R_g ≥ 0.5 R_t and the proxy is under 15% of
   R_g. In between, drop. A model fine-tuned on easy frames will not make an occluded ball visible.
+  Test B is an automatic check of a model trained elsewhere, run on our video and scored against the ATD's ball, so the
+  3 Nov rules allow it. Its numbers may stop or start a build. They may not tune the detector (a threshold, a zone) on
+  our match.
 - **A build would add a simulation on DFL first.** Give back a share c of the gaps with position noise, and inject
   false balls near players at f ∈ {0.02, 0.05, 0.1} of the gap frames, then apply the kill rule at the worst f. Ship
   only if the gain is at least +0.015 raw with its 90% interval above 0, with the coarse truth not below -0.005. One retry
@@ -1321,7 +1360,10 @@ gate.** The design is `docs/superpowers/specs/2026-11-01-r028-broadcast-ball-des
   against our 20%.
 - **What R028 leaves.** The broadcast's value in our gaps is untested, not refuted; another validation would be a new
   proposal (T53). Its code is in `659a6c2` (local tag `archive/r028-source`).
-- **Uses 2 and 3 remain ideas.**
+- **Uses 2 and 3 remain ideas.** *3 Nov 2026 ([rules.md](rules.md)):* the broadcast is allowed as an input. If a use
+  returns, find the alignment by code at run time, the way A20 found it, rather than keeping the two offsets as
+  constants measured on our match. Calibrate a use on external data only. And watch the broadcast only to understand
+  what counts as possession, never to check our output.
 - The feeds align by two constants.
 - The broadcast's ball fills 30% of the gap frames we call alive, in fragments.
 - Its shots off the pitch cover 75% of our `D`.

@@ -167,7 +167,9 @@ The public window is for correctness only, by the organisers' rule since 23 Oct 
 data and not a tuning set". It holds 17 possessions and ranks the baselines the wrong way round
 ([T01](../docs/traps.md)). Never train, fit or choose on it. Choose between versions on P01's benchmark of other
 matches, as the next section says. Hand labels on this match are not allowed, not even for validation, and neither is
-correcting its tracking by hand ([T27](../docs/traps.md)).
+correcting its tracking by hand ([T27](../docs/traps.md)). Since the organisers' clarification of 3 Nov 2026
+([docs/rules.md](../docs/rules.md)), which takes precedence over RULES.md, nothing at all is trained or tuned on this
+match, with labels or without, and nobody checks our output against its video ([T54](../docs/traps.md)).
 
 ## Validation
 
@@ -223,7 +225,8 @@ needs the video's homography or the Smart Tagging stops the run and names the as
 - **Fidelity.** `python pipeline/benchmark/fidelity.py --profile tracking --seeds 3` measures how far the degraded copy
   looks like our match: eight gates, all of which must pass (it exits 1 otherwise), and ten WARN checks that are printed
   and discussed in `docs/results.md` and never tuned towards. Run it after any change to a profile. Degradations are
-  fitted once per version on label-free statistics of our tracking, then frozen ([T37](../docs/traps.md)).
+  fitted once per version on label-free statistics of our tracking, then frozen ([T37](../docs/traps.md)); whether that
+  fit is allowed under the 3 Nov rules is question 1 for the organisers ([docs/rules.md](../docs/rules.md)).
 - **Headroom.** `python pipeline/benchmark/headroom.py CONFIG` runs a config beside five variants whose evidence is the
   truth itself (a perfect dead-ball detector, a perfect possessor where the ball is seen or everywhere, and both), to
   say what P05, P04 or P07 could ever deliver to that config before anyone builds them
@@ -236,7 +239,9 @@ needs the video's homography or the Smart Tagging stops the run and names the as
   applies P02's declared rule for `shift_edges` ([R012](../docs/results.md), the
   [benchmark README](benchmark/README.md#conventions-when-our-truth-flips-and-the-edge-shift)); the rule's public half,
   g, is retired since 23 Oct 2026, so only the DFL lag is applied. `public` writes a file of the public truth's changes
-  under `data/runs/conventions/` for a person to watch the video by, to understand and never to fit; no LLM reads it.
+  under `data/runs/conventions/` for a person to watch the video by, to understand what counts as possession and never
+  to fit; the person watches the truth's changes and not the detector columns, which are our own output (3 Nov,
+  [docs/rules.md](../docs/rules.md)); no LLM reads it.
 - **The default profile cannot value evidence about the ball's gaps.** Its gaps are our masks transplanted blind to
   the play, so a source or a parameter that depends on where the gaps fall (`ball_presence`, `switch_dead`, P05's and
   P07's features) is also read on `context`, under both truths ([T38](../docs/traps.md)).
@@ -278,10 +283,15 @@ R011 is P07's, and A11 and R012 are P02's).
   ([T20–T22](../docs/traps.md)).
 - **One index everywhere.** Row *i* = tactical video frame *i*. Only stage 1 converts indices ([T08](../docs/traps.md)).
 - **Labels come from an algorithm.** No component may edit particular frames by hand (RULES.md).
-- **Nothing is fitted on the public window or on a hand label of this match.** The runner cannot tell a constant that
-  came from the public 5 minutes from one that came from DFL, so every constant of a submission config is traced to its
-  entry in `docs/results.md` (the audit in the technical document, section 5), and `--score` prints the window's
-  agreement as an output and never as an input (RULES.md rules 1 and 2, `f8f2629`, [T27](../docs/traps.md)).
+- **Nothing is fitted on this match.** Not on the public window, not on a hand label, and since 3 Nov 2026 not on
+  anything else of it either: its tracking, tagging, video or our own output on it, label-free or not
+  ([docs/rules.md](../docs/rules.md), [T54](../docs/traps.md)). A component may read the match at run time with fixed
+  rules; a number measured on the match may not go into a config or a model. The runner cannot tell a constant that
+  came from the public 5 minutes, or from BAR-ATH's tracking, from one that came from DFL, so every constant of a
+  submission config is traced to its entry in `docs/results.md` (the audit in the technical document, section 5, and
+  in `docs/rules.md`), and `--score` prints the window's agreement as an output and never as an input (RULES.md rules
+  1 and 2, `f8f2629`, [T27](../docs/traps.md)). Open on 3 Nov: `smart_tagging`'s `c_team` in `main.toml` was measured
+  on this match (R017).
 - **Per-frame arrays in reprs (a note for the team).** `Evidence` and `Decoded` (in `contracts.py`) and `RunResult` (a
   dataclass in `run.py`, not in `contracts.py`) print their per-frame arrays in their default reprs, so a
   `print(decoded)` in a notebook shows values of this match. On a benchmark match a printed `Evidence` would show part

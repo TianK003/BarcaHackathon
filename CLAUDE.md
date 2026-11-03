@@ -20,27 +20,48 @@ Floor to beat: `baseline_smooth50`, full-match **spellF1 0.2433**.
 
 ## Hard rules
 
+**The rules are the organisers' emailed "Clarification of the rules" (recorded 3 Nov 2026), in `docs/rules.md`
+verbatim with our reading.** It takes precedence over RULES.md, FAQ.md, the clarifications of 22 and 23 Oct (upstream
+`c073f29`, `f8f2629`) and anything written before it; where it says nothing, those still hold. Read `docs/rules.md`
+before building anything that learns, tunes or uses the video.
+
 - **Match data must never reach an LLM — including you.** The T&C forbid making any video, dataset or extract of
-  them available to a third-party/cloud LLM. Do not Read, `cat`, `head` or `grep` files under `data/`; do not print
-  raw tracking/tagging/homography rows (`df.head()`, record dumps); do not view video frames or executed notebook
-  outputs that may contain them. Write code that runs locally and inspect only aggregates — scores, counts, shapes,
-  pass/fail. `evaluation/gt/` and `evaluation/results/baseline_*.csv` are public (MIT) and fine to read. So are the
-  public datasets of *other* matches under `data/external/` (the DFL/IDSSE open data, CC BY 4.0; P01, P13). They are
-  not competition data, and their own licences govern them. Keep everything else in `data/` closed.
+  them available to a third-party/cloud LLM, and the clarification forbids "uploading the provided data to AI
+  services". Do not Read, `cat`, `head` or `grep` files under `data/`; do not print raw tracking/tagging/homography
+  rows (`df.head()`, record dumps); do not view video frames or executed notebook outputs that may contain them. Write
+  code that runs locally and inspect only aggregates — scores, counts, shapes, pass/fail. The public ground truth
+  (`evaluation/gt/`) and `evaluation/results/baseline_*.csv` are labels of this match's frames, so since 3 Nov we treat
+  them as provided data too: read their scores and counts, not their rows. The public datasets of *other* matches
+  under `data/external/` (the DFL/IDSSE open data, CC BY 4.0; P01, P13) are fine to read. They are not competition
+  data, and their own licences govern them. Keep everything else in `data/` closed.
 - **Never commit match data** or derived data that could reconstruct it (frame-level tracking exports, clipped
   video); the submission repo must be public. `.gitignore` covers `data/*`, `*.mp4` and `evaluation/results/*.csv`
-  (except `baseline_*.csv`) — keep it that way.
+  (except `baseline_*.csv`) — keep it that way. "Providing files of intermediate steps" is allowed, but they go to the
+  organisers directly, never into the repo (the data licence still holds; `docs/rules.md`, question 3).
 - **Submitted labels must come from an algorithm.** Hand-labelling or hand-correcting the output disqualifies.
-- **No hand labels on this match at all**, in any amount and for any purpose: not to train, validate or calibrate, and
-  no correcting its tracking by hand (corrections must come out of code). This comes from the organisers'
-  clarifications of 22 and 23 Oct 2026 (upstream `c073f29`, `f8f2629`; RULES.md rule 1, "Training and validation
-  data"). Hand-labelled data from *other* games is fine, in any amount, if the organisers can access it and the
-  technical document says what was labelled, how, by whom and how much (so validation comes from other games,
-  `docs/proposals.md` P01). Still fine on this match: learning without human labels (unsupervised or self-supervised,
-  or pseudo-labels an algorithm made, provided no person decided any of them), and a person watching the video and
-  inspecting the data to understand them, debug the pipeline and design features (Claude still sees aggregates only,
-  the first rule above). Not fine: turning what was seen into labels, corrections, or rules and constants tied to
-  specific frames (`docs/traps.md` T27).
+- **Train and tune on external data only.** Nothing is trained, retrained, fitted, calibrated, adapted or tuned on
+  this match: not on its ground truth or video (named in the clarification), and, by our reading of "you MUST use only
+  external data", not on its tracking, tagging or homography either, with labels or without. That rules out
+  self-supervised or unsupervised learning on it, pseudo-labels our own code made from it, priors re-estimated on it,
+  and any constant measured on it. A fixed rule that reads the match at run time is the algorithm running, not fitting;
+  a number measured on the match and written into a config or model is fitting (`docs/rules.md`, "How we read it",
+  `docs/traps.md` T54). *Changed 3 Nov 2026:* until then label-free learning on this match was allowed. **Open:**
+  `main.toml`'s `smart_tagging` c_team 0.76 was measured on this match (R017) and conflicts. The benchmark's
+  degradation is fitted on our tracking's label-free statistics, which is a question for the organisers. Both are in
+  `docs/rules.md`.
+- **No hand labels on this match at all**, in any amount and for any purpose, and no "human-produced data or any other
+  data created manually on the provided game": not to train, validate or calibrate, and no correcting its tracking by
+  hand (corrections must come out of code). Hand-labelled data from *other* games is fine, in any amount, if we have
+  the rights to use it (licence checked), the organisers can access it and the technical document says what was
+  labelled, how, by whom and how much (so validation comes from other games, `docs/proposals.md` P01).
+- **Nobody checks our output against the video.** A person may watch the video and inspect the data only "to better
+  understand what counts as possession" (Claude still sees aggregates only, the first rule above). Not fine: comparing
+  our labels, transitions, the scorer's `_transitions.csv` or our detectors' events with the video, and turning what
+  was seen into labels, corrections, or rules and constants tied to specific frames (`docs/traps.md` T27). *Changed
+  3 Nov 2026:* until then watching to debug the pipeline was allowed.
+- **Automatic checks on the provided data are allowed, and never choose.** Validation, determinism, alignment, the
+  label-free statistics of our own output and a score against the public window may pass or fail a candidate; they
+  never rank candidates or set a value (`docs/traps.md` T01).
 - **No private ground truth**, or anything derived from it, **and no human-produced data about this match from any
   source** (event data, corrected tracking, possession data, annotations; RULES.md rule 2, `f8f2629`). External data
   must be about *other* games. The public 5 minutes are for **checking that the pipeline is correct**, "not training
@@ -56,12 +77,15 @@ Floor to beat: `baseline_smooth50`, full-match **spellF1 0.2433**.
 Read them before starting work and update them when you finish. They are public and Claude reads them, so they hold
 aggregates only, never raw data rows.
 
+- `docs/rules.md` — the organisers' clarification of 3 Nov 2026 verbatim (it overrides RULES.md), what it changed, our
+  reading, the audit of `main.toml` against it, and the questions for the organisers. Record their answers there.
 - `docs/proposals.md` — prioritised ideas `P01…` with effort, impact, owner and status, plus a suggested plan to the
   deadline. Update the status when you start or finish one.
 - `docs/results.md` — every experiment (`R…`) and analysis (`A…`): commit, command, public-window and validation
   scores, verdict. Log failures too, and every upload in its submission log. A01–A03 hold measurements that should
   shape any design; A05–A09 and R002–R005 are the benchmark's (P01, done; the default is R004c's); A13 says where
-  `main.toml`'s remaining spellF1 is (who has the ball, not the dead ball).
+  `main.toml`'s remaining spellF1 is (who has the ball, not the dead ball); A21 audits `main.toml` against the 3 Nov
+  rules.
 - `docs/traps.md` — pitfalls `T01…`. Add one whenever something costs real time.
 - `docs/technical_document.md` — the draft of deliverable 3. Update it when a pipeline decision lands.
 
@@ -151,7 +175,8 @@ keeps that convention: its scripts swap their own folder on `sys.path` for the r
   plain functions in each stage's `REGISTRY` (`evidence` holds `nearest_player`, `ball_presence`, `controlled_touch`,
   `dead_ball_rules`, `smart_tagging`, `dead_ball_model`, `shape_possession` and `restart_team`, the last three reading
   the trained JSON models in `pipeline/models/`; `smart_tagging` is Smart Tagging's team votes, in `main.toml` since
-  R017 (P08), and declares `MATCH_ONLY`, so the benchmark runs `main.toml` with `--drop-match-only`; `restart_team` is
+  R017 (P08), and declares `MATCH_ONLY`, so the benchmark runs `main.toml` with `--drop-match-only` (its `c_team` was
+  measured on this match, which the 3 Nov rules forbid: `docs/rules.md`, a team decision pending); `restart_team` is
   a restart-team vote, measured but not in `main.toml`, P17; `decode`
   holds `majority_vote` and `hmm` (which can decode restart states, `restart_source`, off by default);
   `refine` holds `shift_edges`), chosen by TOML configs in `pipeline/configs/` and checked against their signatures
@@ -171,9 +196,10 @@ keeps that convention: its scripts swap their own folder on `sys.path` for the r
   `restarts` (the stoppages' anatomy, the restart vote's stats, its configs), `dfl_events` (the DFL restart events,
   diagnostics), `headroom` (a config beside variants whose evidence is the truth: what a perfect source would add;
   its `plus_` variants measure `main.toml` itself, A13), `tag_stats` (Smart Tagging's votes against our own
-  pseudo-labels on BAR-ATH, R017), `label_diff` (how a config changes BAR-ATH's labels, aggregates only), `wrong_team` (P21 step 0, dropped in A16: the ratio of over-11 slot frames at the ball to all graded frames, kept for P19's transfer check), `metrica` (P16, R023: H/A/D derived from Metrica's three public sample games' events, fetched at run time and never committed, and their grain against A06's two truths), `diagnose` (A19, P23: the IoU ladder decomposed into clean, merge and split pairs, and the calibration of the sources and of the hmm's posterior) and `checks/`
+  pseudo-labels on BAR-ATH, R017; since 3 Nov a check at most, never a source of a constant, `docs/rules.md`), `label_diff` (how a config changes BAR-ATH's labels, aggregates only), `wrong_team` (P21 step 0, dropped in A16: the ratio of over-11 slot frames at the ball to all graded frames, kept for P19's transfer check), `metrica` (P16, R023: H/A/D derived from Metrica's three public sample games' events, fetched at run time and never committed, and their grain against A06's two truths), `diagnose` (A19, P23: the IoU ladder decomposed into clean, merge and split pairs, and the calibration of the sources and of the hmm's posterior) and `checks/`
   (what `selftest.py` runs). Degradations are fitted once per version on
-  label-free statistics of our tracking, then frozen, never tuned towards a score (T26, T37). The Calibration and every
+  label-free statistics of our tracking, then frozen, never tuned towards a score (T26, T37); whether that fit is
+  allowed under the 3 Nov rules is question 1 for the organisers (`docs/rules.md`). The Calibration and every
   degraded `Atd` hold BAR-ATH's masks and counts: print none of it, and write no CSV of BAR-ATH labels.
 
 ### Frame alignment — an off-by-one shifts every transition
@@ -208,7 +234,8 @@ frames are all `D`. The public GT labels only 11,185–18,684 (5 minutes, 17 pos
   possession moves `spellF1` ~0.06, and it ranks `smooth125` above `smooth50` — the reverse of the full match. Use it
   to check correctness, never to pick or tune anything (a rule since `f8f2629`, not just advice); pick hyperparameters
   on P01's benchmark of other matches. This GT's *timing* conventions (P02) may be inspected on the public window to
-  understand them, but no constant is set from it. Other providers flip their flags at different moments, so DFL cannot
+  understand what counts as possession, but no constant is set from it, and our own output is never checked against
+  the video. Other providers flip their flags at different moments, so DFL cannot
   fix our convention either: a constant for it must come from other games of our provider (P16), never from the window
   (the pipeline's own lag on DFL, R012's s_b, is a different thing).
 

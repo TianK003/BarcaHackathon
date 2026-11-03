@@ -689,11 +689,11 @@ footer { border-top: 1px solid var(--line); margin-top: 24px; padding: 16px 0 28
    Text fields understand a little markdown: `code`, **bold** and [label](relative/link).
    =========================================================================================================== */
 const DATA = {
-  asOf: "2026-10-31",
+  asOf: "2026-11-03",
   commit: "104c9dc",
   title: "Possession pipeline · team overview",
   subtitle: "More than a Hack 2027, Phase 1 · FC Barcelona (H) vs Athletic Club (A), LaLiga 2024-25 MD2",
-  footer: "As of 2026-11-02 (8c9e922, the merge of R028). P23 reviewed the HMM decoder: R024 re-chose R013's grids on the mean of the two truths and moved the touch hold to 0.55 (`main.csv` `e6496a9b…`, not yet regenerated from a fresh clone; A17 and A18 checked R017's `7ba575c0…`), A19 found the remaining loss mostly in the edges, and posterior edges (R025, R025b) and a gap weight for P07 (R026) were dropped. P22(b), P07 recalibrated per half from the touch rule's own labels, was then dropped at R027's gate on DFL (pooled log-loss in the gaps +0.0061; no spellF1, code removed). R028, the broadcast's ball in our gaps (P15), was aligned by code and built, then dropped at its stand-in's fidelity gate on DFL (fill on alive gap frames 0.218 against our 0.295; no spellF1, code removed; `main.csv` still `e6496a9b…`). Update DATA when an entry lands; the docs are the source of truth.",
+  footer: "As of 2026-11-03, the organisers' clarification of the rules (email, Nov 2026) takes precedence over RULES.md, and the rule statements on this page follow docs/rules.md; smart_tagging's c_team, measured on our match, conflicts with it, pending a team decision. As of 2026-11-02 (8c9e922, the merge of R028). P23 reviewed the HMM decoder: R024 re-chose R013's grids on the mean of the two truths and moved the touch hold to 0.55 (`main.csv` `e6496a9b…`, not yet regenerated from a fresh clone; A17 and A18 checked R017's `7ba575c0…`), A19 found the remaining loss mostly in the edges, and posterior edges (R025, R025b) and a gap weight for P07 (R026) were dropped. P22(b), P07 recalibrated per half from the touch rule's own labels, was then dropped at R027's gate on DFL (pooled log-loss in the gaps +0.0061; no spellF1, code removed). R028, the broadcast's ball in our gaps (P15), was aligned by code and built, then dropped at its stand-in's fidelity gate on DFL (fill on alive gap frames 0.218 against our 0.295; no spellF1, code removed; `main.csv` still `e6496a9b…`). Update DATA when an entry lands; the docs are the source of truth.",
 
   /* ---------- Overview ---------- */
   onboarding: {
@@ -728,7 +728,7 @@ const DATA = {
     },
     {
       label: "Submission", value: "Not uploaded", badge: "todo",
-      text: "The submission log in [docs/results.md](../docs/results.md) is empty. `main.toml` writes sha256 `e6496a9b…` (R024: R017's file with the touch hold at 0.55; `r024_both.toml` writes it too, `r017_frame.toml` R017's `7ba575c0…` and `r013_retune.toml` R013's). Not yet regenerated from a fresh clone or on a second machine."
+      text: "The submission log in [docs/results.md](../docs/results.md) is empty. `main.toml` writes sha256 `e6496a9b…` (R024: R017's file with the touch hold at 0.55; `r024_both.toml` writes it too, `r017_frame.toml` R017's `7ba575c0…` and `r013_retune.toml` R013's). Not yet regenerated from a fresh clone or on a second machine. Before the upload, `smart_tagging`'s c_team conflicts with the November rules ([docs/rules.md](../docs/rules.md)): a team decision, pending."
     }
   ],
 
@@ -754,7 +754,7 @@ const DATA = {
     joinNote: "evidence cut into the two graded halves, each decoded on its own",
     text: [
       "`main.toml` is P04 + P05 + P07 + P02, as R013 left them, plus P08's Smart Tagging team votes (R017: `smart_tagging`, c_team 0.76, per frame, weight 0.2, Tian's pick, untested on a benchmark), with the touch hold re-chosen by R024 on the mean of the two truths. `controlled_touch` (radius 1.5 m, `max_rel_speed` 6 m/s, `min_frames` 1, hold 0.55, confidence 0.93) and `shape_possession` (weight 0.2 on every graded frame, `min_prob` 0.02) give `home`; the gradient-boosted `dead_ball_model` (weight 1.0) gives `alive`.",
-      "The `hmm` decodes each graded half on its own (`switch_team` 4, `switch_dead` 32, `min_possession` 35, `min_dead` 25), and `shift_edges` moves the edges (team +1, into_dead −2, out_of_dead 0 frames). Every constant was chosen on the benchmark by a rule declared before its run, or is a measurement or a fixed rule, and every choice but one had no window-derived value in any candidate. The exception (“After R013”): R009 chose the dead-ball source and its weight with window-derived values present, and R013 declared them out of scope, so they were not re-chosen without them. On our match it predicts `D` on 36.0% of the graded frames and 399 possessions (R024's label-free checks). The exception to the benchmark's choosing is P08: `smart_tagging`'s weight (0.2) and spread (per frame) are Tian's pick between two declared strengths, untested on any benchmark because DFL has no tags."
+      "The `hmm` decodes each graded half on its own (`switch_team` 4, `switch_dead` 32, `min_possession` 35, `min_dead` 25), and `shift_edges` moves the edges (team +1, into_dead −2, out_of_dead 0 frames). Every constant was chosen on the benchmark by a rule declared before its run, or is a measurement or a fixed rule, and every choice but one had no window-derived value in any candidate. The exception (“After R013”): R009 chose the dead-ball source and its weight with window-derived values present, and R013 declared them out of scope, so they were not re-chosen without them. On our match it predicts `D` on 36.0% of the graded frames and 399 possessions (R024's label-free checks). The exception to the benchmark's choosing is P08: `smart_tagging`'s weight (0.2) and spread (per frame) are Tian's pick between two declared strengths, untested on any benchmark because DFL has no tags. Its c_team 0.76 was measured on our match (R017), which conflicts with the organisers' clarification of November 2026 ([docs/rules.md](../docs/rules.md)): whether it stays in `main.toml` is a team decision, pending."
     ]
   },
 
@@ -962,7 +962,7 @@ const DATA = {
       params: "model `shape_possession_hgb.json` · weight 0.2 · scope all · min_prob 0.02",
       entries: "P07: R011 (12 configs); weight re-chosen R013, kept by R024", built: ["2026-10-25", "R011"], retuned: ["2026-10-31", "R024"] },
     { name: "smart_tagging", stage: "evidence", status: "main", channel: "home", explain: "smart_tagging",
-      what: "P08: the organisers' automatic phase tags as a weak per-frame team vote (a possession-phase code votes for the tagged team, a defending code for the other, `N/A` for nobody). Its confidence, 0.76, is the tags' agreement with our own controlled-touch pseudo-labels (R017); the dead votes agreed on 0.409 against a bar of 0.60 and were removed. `MATCH_ONLY`: DFL has no tags, so the benchmark runs `main.toml` without it.",
+      what: "P08: the organisers' automatic phase tags as a weak per-frame team vote (a possession-phase code votes for the tagged team, a defending code for the other, `N/A` for nobody). Its confidence, 0.76, is the tags' agreement with our own controlled-touch pseudo-labels (R017); the dead votes agreed on 0.409 against a bar of 0.60 and were removed. `MATCH_ONLY`: DFL has no tags, so the benchmark runs `main.toml` without it. Its c_team was measured on BAR-ATH and conflicts with the November rules ([docs/rules.md](../docs/rules.md)), pending a team decision.",
       params: "c_team 0.76 · per frame · weight 0.2",
       entries: "P08: R017", built: ["2026-10-30", "R017"], retuned: null },
     { name: "restart_team", stage: "evidence", status: "dropped", label: "dropped · off", channel: "home",
@@ -1035,7 +1035,7 @@ const DATA = {
   /* ---------- Models: every model a pipeline stage runs. Numbers from docs/results.md (R008–R013, A13) and from
      reading the committed JSON models (split shares and first trees: aggregates of models fitted on public DFL data). ---------- */
   models: {
-    intro: "Every model a stage of `main.toml` runs, in the order the data meets them. Two are learned (boosted trees, trained on the seven DFL matches only), one is probabilistic (the HMM decoder), three are fixed rules. Nothing is fitted on our match; the one constant measured on it, `smart_tagging`'s c_team, is the tags' agreement with our own algorithmic pseudo-labels (no person labelled anything), and its weight is Tian's pick.",
+    intro: "Every model a stage of `main.toml` runs, in the order the data meets them. Two are learned (boosted trees, trained on the seven DFL matches only), one is probabilistic (the HMM decoder), three are fixed rules. No model is fitted on our match. One constant was measured on it, `smart_tagging`'s c_team (the tags' agreement with our own algorithmic pseudo-labels; no person labelled anything), and its weight is Tian's pick. A constant measured on the provided game conflicts with the organisers' clarification of November 2026 ([docs/rules.md](../docs/rules.md)), so whether it stays is a team decision, pending.",
     kinds: {
       learned: { label: "learned · boosted trees", cls: "info", glyph: "◆" },
       probabilistic: { label: "probabilistic · HMM", cls: "rule", glyph: "◇" },
@@ -1198,7 +1198,7 @@ const DATA = {
         oneLine: "A fixed rule: each automatic phase tag names a team, and its code says whether that team attacks or defends, so the tag is a weak per-frame vote for who has the ball. Nothing is learned.",
         intuition: [
           "The Smart Tagging has 638 automatic phase intervals, each naming `Barcelona`, `Atletic Club` or `N/A`. A possession-phase code (`BUILD UP`, `PROGRESSION`, `BALL IN FINAL THIRD` and so on) votes for the tagged team, a defending code (`DEFENDING IN … THIRD`, `DEFENSIVE TRANSITION`) for the other one; `N/A` gives no vote, and so does a frame where the tags disagree.",
-          "Phases are not possessions (T17), so the vote is weak. Its confidence is not tuned: 0.76 is the agreement of the votes with our own controlled-touch pseudo-labels on this match (R017). The dead votes (`SET PIECES`, `GOALS`) agreed with `dead_ball_model` on only 0.409 of their frames and were dropped."
+          "Phases are not possessions (T17), so the vote is weak. Its confidence is not tuned to a score but measured on this match: 0.76 is the agreement of the votes with our own controlled-touch pseudo-labels (R017), which conflicts with the November rules (see the limits). The dead votes (`SET PIECES`, `GOALS`) agreed with `dead_ball_model` on only 0.409 of their frames and were dropped."
         ],
         reads: "The match's Smart Tagging intervals, converted to frames (`round(seconds × 25)`), and nothing of the tracking.",
         params: "`c_team` 0.76 · `spread` frame · `weight` 0.2",
@@ -1215,6 +1215,7 @@ const DATA = {
           { v: "unmeasured", l: "spellF1 effect", n: "there is no benchmark for tags" }
         ],
         limits: [
+          "**It conflicts with the November rules:** `c_team` was measured on BAR-ATH, and the organisers' clarification (email, Nov 2026) has parameters tuned on external data only, none of which has tags ([docs/rules.md](../docs/rules.md)). Taking it out of `main.toml` is a team decision, pending; question 2 to the organisers, not yet sent, asks.",
           "Its weight and spread are a pick, not a measurement, and no score of ours says what it adds or costs.",
           "Tags mark a window of a few seconds around an event, not the instant, so the vote lags and leads a turnover (T17).",
           "Only our match has it, so nothing about it is validated on the benchmark."
@@ -1392,13 +1393,13 @@ const DATA = {
   proposals: [
     { id: "P01", anchor: "p01--a-validation-set-we-can-trust", title: "Validation set we can trust: other matches, degraded to look like ours", attacks: "deciding anything at all", effort: "M", impact: "enabling", status: "done", note: "done → R002–R005" },
     { id: "P02", anchor: "p02--inspect-the-ground-truths-conventions-on-the-public-window-to-understand-and-never-to-tune", title: "Inspect the GT's conventions on the public window, to understand and never to tune", attacks: "boundary timing", effort: "S", impact: "bounded: understanding only; so far the pipeline's own lag on DFL, 1 to 2 frames, within noise (R012)", status: "partly", note: "partly done → A11, R012",
-      next: "Left: a person watches the video around the public transitions to understand where `D` begins and ends and what restart follows. What comes out is a note in aggregates, never a constant (T27, T40)." },
+      next: "Left: a person watches the video around the public truth's changes to understand where `D` begins and ends and what restart follows, and looks at none of our output: since November “checking your output against the video” is not allowed ([docs/rules.md](../docs/rules.md)). What comes out is a note in aggregates, never a constant (T27, T40)." },
     { id: "P03", anchor: "p03--one-command-deterministic-cached", title: "One-command, deterministic, cached pipeline", attacks: "reproducibility", effort: "S–M", impact: "enabling", status: "done", note: "done → R001" },
     { id: "P04", anchor: "p04--sticky-ownership-from-controlled-touches", title: "Sticky ownership from controlled touches", attacks: "facts 3, 5", effort: "S", impact: "high: +0.1421 raw at the chosen decoder (R010)", status: "done", note: "done → R008, R010; rule re-chosen → R013" },
     { id: "P05", anchor: "p05--a-real-dead-ball-detector", title: "Dead-ball detector", attacks: "fact 4", effort: "M", impact: "high: +0.1661 raw at the chosen decoder, on a benchmark that overstates it (R010, T38, T39)", status: "done", note: "done → R009, R010" },
     { id: "P06", anchor: "p06--global-decoding-per-half-hmm--hidden-semi-markov", title: "Global decoder (HMM / semi-Markov) per half", attacks: "fact 5", effort: "M", impact: "high", status: "done", note: "done → R006–R007, A10; decoder re-chosen → R010, R013" },
     { id: "P07", anchor: "p07--possession-without-the-ball-team-shape-and-movement", title: "Possession without the ball: team shape", attacks: "fact 1", effort: "M", impact: "high: +0.0942 raw at the chosen decoder, not a forecast for our match (R011)", status: "done", note: "done → R011; weight re-chosen → R013" },
-    { id: "P08", anchor: "p08--smart-tagging-as-soft-evidence", title: "Smart Tagging as soft evidence", attacks: "facts 1, 4", effort: "S", impact: "medium", status: "done", note: "done → R017 (team votes adopted per frame, weight 0.2; dead votes measured and dropped)" },
+    { id: "P08", anchor: "p08--smart-tagging-as-soft-evidence", title: "Smart Tagging as soft evidence", attacks: "facts 1, 4", effort: "S", impact: "medium", status: "done", note: "done → R017 (team votes adopted per frame, weight 0.2; dead votes measured and dropped); c_team conflicts with the Nov 2026 rules, team decision pending (docs/rules.md)" },
     { id: "P09", anchor: "p09--camera-aim-as-a-coarse-ball-zone-prior", title: "Camera aim as a coarse ball-zone prior", attacks: "fact 1", effort: "S", impact: "low–medium", status: "dropped", stage: "evidence",
       note: "dropped → R019 (the simulated camera failed two fidelity gates, peak correlation and dead/alive speed ratio; code removed); A20: in the gaps the camera only moves with the players" },
     { id: "P10", anchor: "p10--referee-whistle-from-the-audio-track", title: "Referee whistle from the audio track", attacks: "fact 4", effort: "S–M", impact: "medium (audio confirmed, A04)", status: "dropped", stage: "evidence",
@@ -1410,7 +1411,7 @@ const DATA = {
     { id: "P13", anchor: "p13--learn-from-external-labelled-tracking-data", title: "Pre-train on external labelled tracking data", attacks: "facts 1, 2", effort: "L (M on top of P01)", impact: "medium–high", status: "idea", stage: "evidence",
       next: "DFL, Metrica's sample games and SkillCorner, degraded as P01 does; pre-train P07 or a sequence model and hold the benchmark matches out. Nothing about this fixture (T26)." },
     { id: "P14", anchor: "p14--recover-the-ball-from-the-video", title: "Recover the ball from the video", attacks: "facts 1, 2", effort: "L", impact: "A14: a perfect ball in our gaps is worth +0.10 raw but +0.02 coarse; a real detector perhaps +0.025 to +0.04 raw", status: "idea", note: "not built → A14 (gated); A20 lowers its prior", stage: "inputs",
-      next: "Not a ViT: the ball is about 6 px wide (T46). If ever built, a stride-4 heatmap net at full resolution with stacked frames (FootAndBall or WASB-SBDT, MIT), trained on the ATD's own ball as algorithm-made pseudo-labels. Only test B may run now: zero-shot, half a day, CPU only (“After A14”, item 1)." },
+      next: "Not a ViT: the ball is about 6 px wide (T46). If ever built, a stride-4 heatmap net at full resolution with stacked frames (FootAndBall or WASB-SBDT, MIT), trained on other games only: since November, training or fine-tuning on our video, even on the ATD's own ball as pseudo-labels, is not allowed ([docs/rules.md](../docs/rules.md)). Only test B may run now: zero-shot, half a day, CPU only (“After A14”, item 1)." },
     { id: "P15", anchor: "p15--broadcast-tracking-as-a-second-opinion", title: "Broadcast tracking as a second opinion", attacks: "facts 1, 4", effort: "S–M per use (alignment measured)", impact: "A20: its ball fills 30% of the gap frames we call alive, in fragments; its shots off the pitch cover 75% of our D", status: "idea", note: "measured → A20; use 1 dropped → R028 (the stand-in on DFL failed its fidelity gates; the fill is untested, not refuted)", stage: "inputs",
       next: "Aligned by two constants found by code (tactical = broadcast + 4,014 frames, then + 26,919 after halftime; A20, confirmed by R028's run). Use 1, its ball in our gaps, was tried as R028 and dropped: the simulated broadcast on DFL could not match ours, because DFL's served gaps are not placed like ours (T38, T53). Three uses, each needing its own declared test because DFL has no broadcast: its ball where ours is missing (a simulation on DFL from A20's distributions), its shots off the pitch as dead-ball evidence (other games' shot labels, or R017's route), its aim as a ball zone (P07 v2, after the deadline)." },
     { id: "P16", anchor: "p16--metricas-sample-games-in-our-ground-truth-providers-conventions", title: "Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing", attacks: "boundary timing, grain", effort: "M", impact: "medium", status: "partly", note: "partly done → R023 (the grain: both)", stage: "benchmark",
@@ -1423,7 +1424,7 @@ const DATA = {
     { id: "P21", anchor: "p21--wrong-team-slots-measure-the-ceiling-then-repair-them", title: "Wrong-team slots: measure the ceiling, then repair from tracking or jersey colours", attacks: "T32", effort: "S test, M", impact: "low on the benchmark: all of `tracking`'s player degradation costs `main.toml` 0.013 (A14)", status: "dropped", stage: "inputs",
       note: "dropped → A16 (step 0: over-11 frames are 0.11 of the candidate frames against 0.13 of graded frames, ratio 0.85 against the declared 1.5; the measuring tool is kept)" },
     { id: "P22", anchor: "p22--the-shape-model-adapted-to-our-two-teams-without-labels", title: "The shape model adapted to our two teams without labels", attacks: "fact 1", effort: "S–M", impact: "low: guess +0.00 to +0.02", status: "dropped", stage: "evidence",
-      note: "(a) dropped → R020 (the feasibility gate failed, ratio 0.863 against 0.75; code removed); (b) dropped → R027 (the gate failed: P07's pooled log-loss in the held-out half's gaps +0.0061, needing −0.002; the transfer from touch frames to gaps 0.296 against the teacher's noise 0.107; rung 3 worse too; code removed); (c) not tried" },
+      note: "(a) dropped → R020 (the feasibility gate failed, ratio 0.863 against 0.75; code removed); (b) dropped → R027 (the gate failed: P07's pooled log-loss in the held-out half's gaps +0.0061, needing −0.002; the transfer from touch frames to gaps 0.296 against the teacher's noise 0.107; rung 3 worse too; code removed); (c) not tried, and ruled out by the Nov 2026 rules (docs/rules.md)" },
     { id: "P23", anchor: "p23--the-hmm-backbone-reviewed-nine-ideas-five-taken", title: "The HMM backbone reviewed: re-choose under R023's objective (A), decompose the IoU ladder (B), posterior edges (C), calibration (D), a gap weight for P07 (E)", attacks: "fact 5; the decoder's placement of changes; fact 1 (E)", effort: "S each", impact: "low: +0.01 to +0.03 for the lot (the advisor's estimate); measured: A +0.0052 on the mean (R024)", status: "done", stage: "decode",
       note: "done: A adopted → R024; B, D measured → A19; C dropped → R025, R025b; E dropped → R026; F deferred, then run as P22(b) and dropped → R027; G to I not taken" }
   ],
@@ -1447,7 +1448,7 @@ const DATA = {
     { id: "T24", title: "The scorer reads every CSV in `evaluation/results/`.", line: "Use `--results <dir>`; never name our files `baseline_*.csv`; `starter/baseline.py` without `--out` overwrites the committed baselines." },
     { id: "T25", title: "Data must never leave our machines the wrong way.", line: "No match data to any LLM; nothing from `data/` or derived frame-level data in git; check `git status` before every commit." },
     { id: "T26", title: "Nothing about this fixture from outside the bundle.", line: "Event feeds, possession stats, match reports, goal times: human-produced data about this game, from any source, is off-limits." },
-    { id: "T27", title: "No hand labels on this match, not even to validate, and the public window is not training data.", line: "Watching to understand is fine; turning what was seen into labels, corrections, or rules and constants tied to frames is not." },
+    { id: "T27", title: "No hand labels on this match, not even to validate, and the public window is not training data.", line: "Watching is only to understand what counts as possession, never to check our output against the video (since Nov 2026, [docs/rules.md](../docs/rules.md)); turning what was seen into labels, corrections, or rules and constants tied to frames is not allowed." },
     { id: "T28", title: "Speed is not presence.", line: "The ATD speed channel is NaN on 370,297 slot-frames and 103,579 ball frames where the position exists: test presence on x." },
     { id: "T31", title: "The ATD ball-speed channel is unusable.", line: "NaN on 92.2% of graded ball-present frames, and where given it behaves like a player's speed (median 1.3 m/s against 4.8): derive speed from positions." },
     { id: "T33", title: "DFL's possessions are fine-grained, and the public window cannot say by how much ours differ.", line: "437 possessions a match, median 3.7 s. Rank length-dependent choices under the raw and the coarse truth and treat a disagreement as a warning." },
@@ -1489,9 +1490,9 @@ const DATA = {
     principles: [
       "**Opinions are separate from decisions.** Evidence sources say what the data suggests about each frame and never pick a label; the decoder weighs every source and pays for every change. A new source plugs in without touching the decoder.",
       "**Decoders never see across halftime.** The runner cuts the evidence into one block per graded half before any decoder or refiner runs, and writes `X` outside the blocks (T11).",
-      "**Every constant is chosen on other matches, by a rule declared before the run** (or is a measurement, a fixed rule or the documented kick-offs). Each constant of `main.toml` traces to its entry in docs/results.md (the audit in the technical document, section 5).",
+      "**Every constant is chosen on other matches, by a rule declared before the run** (or is a measurement on other matches, a fixed rule or the documented kick-offs). Each constant of `main.toml` traces to its entry in docs/results.md (the audit in the technical document, section 5). The exception is `smart_tagging`'s c_team, measured on our match: it conflicts with the organisers' clarification of November 2026 ([docs/rules.md](../docs/rules.md)), pending a team decision.",
       "**The public window only checks correctness.** It holds 17 possessions, ranks the baselines the wrong way round and, since 23 Oct (`f8f2629`), is “not training data and not a tuning set” (T01).",
-      "**No hand labels on this match**, not to train, validate or calibrate, and no hand-corrected tracking (`c073f29`, `f8f2629`, T27). The labels come from an algorithm.",
+      "**Nothing trained, fitted or tuned on this match**, with labels or without, since the organisers' clarification of November 2026 ([docs/rules.md](../docs/rules.md)); **no hand labels on it** and no hand-corrected tracking (`c073f29`, `f8f2629`, T27). The labels come from an algorithm.",
       "**Byte for byte.** Same config, data and versions give the same bytes: seeded, pinned dependencies, LF endings, one command from `data/` to the CSV."
     ],
     solution: [
@@ -1674,7 +1675,7 @@ const DATA = {
   ],
 
   person: [
-    { title: "P02: watch the public transitions, to understand", text: "Around each change of the public truth: where `D` begins and ends (the line, the whistle, the stoppage) and what restart follows. The file is written locally and no LLM reads it; what comes out is a note in aggregates, never a constant, a label or a frame-tied rule (T27, T40).", cmd: "python pipeline/benchmark/conventions.py public" },
+    { title: "P02: watch the public transitions, to understand", text: "Around each change of the public truth: where `D` begins and ends (the line, the whistle, the stoppage) and what restart follows. Only the truth's changes, ignoring the detectors' lag columns: checking our output against the video is not allowed (since November, [docs/rules.md](../docs/rules.md)). The file is written locally and no LLM reads it; what comes out is a note in aggregates, never a constant, a label or a frame-tied rule (T27, T40).", cmd: "python pipeline/benchmark/conventions.py public" },
     { title: "Decide how much of the gain to believe", text: "A decision, not a run, on the benchmark and the label-free checks, with T38, T39 and R011's caveats; R013's is a raw-truth gain and R024's a coarse one. Settle it before the freeze." },
     { title: "Reproduce from a clean clone, then publish", text: "On a second machine, then make the repository public as the final step, and send the one form response (the last one before the deadline counts)." }
   ],
@@ -1712,13 +1713,13 @@ const DATA = {
     "**Match data never reaches an LLM, Claude included.** Nothing under `data/` is read, printed or pasted; only aggregates (scores, counts, shapes, pass/fail) leave a local process.",
     "**Never commit match data** or derived data that could rebuild it (frame-level exports, clipped video). The repo will be public; `.gitignore` covers `data/*`, `*.mp4` and `evaluation/results/*.csv`.",
     "**Labels come from an algorithm.** Hand-labelling or hand-correcting the output disqualifies.",
-    "**No hand labels on this match at all**, to train, validate or calibrate, and no hand-corrected tracking (`c073f29`, `f8f2629`). Hand labels of other games are fine if documented.",
+    "**Nothing trained, fitted, calibrated or tuned on this match**, with labels or without: external data only (the organisers' clarification of November 2026, [docs/rules.md](../docs/rules.md)). **No hand labels on it at all**, no hand-corrected tracking (`c073f29`, `f8f2629`), and nobody checks our output against the video. Hand labels of other games are fine if documented.",
     "**The public 5 minutes check correctness only:** never train, fit, calibrate or choose a constant on them, out of fold or not (T01, T27).",
     "**No private ground truth and no human-produced data about this match** from any source; external data must be about other games (T26).",
     "**The repo regenerates the submitted CSV exactly:** seeded randomness, pinned dependencies, one command from `data/` to the CSV.",
     "**Don't modify `evaluation/`.** It is the official scorer; where the docs and `possession_metrics.py` disagree, the code is right."
   ],
-  rulesNote: "Condensed from [CLAUDE.md](../CLAUDE.md) and RULES.md. **Full list:** [rules.html](rules.html), the competition rules as written, what each means for us, and which of the above are team practice.",
+  rulesNote: "Condensed from [CLAUDE.md](../CLAUDE.md), RULES.md and [docs/rules.md](../docs/rules.md), the organisers' clarification of November 2026, which takes precedence. **Full list:** [rules.html](rules.html), the competition rules as written, what each means for us, and which of the above are team practice.",
   commandsNote: "Run everything with the venv's interpreter: `.venv/Scripts/python` on Windows, `.venv/bin/python` on macOS/Linux (Python 3.11.9).",
   commands: [
     { group: "Run", items: [

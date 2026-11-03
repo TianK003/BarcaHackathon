@@ -2097,6 +2097,46 @@ present on a live-consistent frame, as in Part 4.
 - **Nothing here is a benchmark result:** DFL has neither camera. Any use of the broadcast needs a declared test, either
   on a simulation built from these measured distributions or on other games.
 
+### A21 — The pipeline audited against the organisers' clarification of 3 Nov (2026-11-03, Tian)
+Proposal: all · Commit: none (a reading of `main.toml`, the code and the docs; nothing was run) · Command: none
+
+**Why.** The organisers emailed a "Clarification of the rules" that takes precedence over RULES.md and the
+clarifications of 22 and 23 Oct (verbatim in [rules.md](rules.md)). It says "If you need to train (or retrain), you
+MUST use only external data" and that parameters are tuned "on external data, never on the ground-truth possession
+data or on the provided video". It forbids "checking your output against the video". Until then label-free learning
+and measurement on BAR-ATH were allowed, so every basis in the technical document's audit (section 5) was read again
+against the new text.
+
+**What was checked.**
+- Every constant of `main.toml`, traced to its entry here and classed as external data (DFL), a fixed rule, a documented
+  fact, or a measurement on BAR-ATH.
+- Every component in `main.toml`, for anything fitted on BAR-ATH at run time. None is: `controlled_touch` applies a fixed
+  rule, `dead_ball_model` and `shape_possession` read models trained on DFL, `smart_tagging` reads its constant from the
+  config, and `hmm` decodes with fixed parameters (no EM).
+- How the choices were made: the benchmark's degradation, and the checks run on BAR-ATH.
+
+**Result.**
+- **One conflict:** `smart_tagging` `c_team` 0.76 is the tags' agreement with our own touch-rule pseudo-labels on
+  BAR-ATH (R017). That is a parameter calibrated on the provided game.
+- **One doubtful choice:** `smart_tagging`'s weight 0.2 and spread `frame`. Tian picked them from two declared options
+  after seeing label-free aggregates of our output on BAR-ATH (R017). They were not fitted to a number, but they were
+  not set on external data either.
+- **One open question:** the `tracking` v3 degradation (and A08's hazard) is fitted on label-free statistics of
+  BAR-ATH's tracking (A07 to A09). Every DFL choice and both models (R009, R011) were made on data it shaped. No ground
+  truth or video enters it, and the training and tuning use DFL's labels, so our reading is that it is allowed. It is
+  question 1 for the organisers.
+- **External data:** everything else that was chosen: the touch rule and its confidence, both models, P07's weight, the
+  decoder and the shift.
+- **A documented fact:** the pre-kick-off rule.
+- **Automatic checks, which the email allows:** R011's transfer gate and R013's label-free checks on BAR-ATH.
+- **Unchanged:** the window-derived constants (A01) stay out of `main.toml`, as since 23 Oct.
+
+**Verdict.** No config was changed: what to do with `smart_tagging` is the team's decision, and [rules.md](rules.md)
+recommends taking it out of `main.toml` until the organisers answer question 2. Until then the file `main.toml` writes
+today (sha256 `e6496a9b…`, R024) should not be uploaded (submission log). The proposals the email rules out (P14
+trained on our video, P21's colour clusters, P22) are marked in [proposals.md](proposals.md); [T54](traps.md) records
+the trap.
+
 ## Experiments
 
 Copy this template for each run, and add a scoreboard row for anything worth comparing.
@@ -6557,6 +6597,9 @@ more often than F1/2 of the time, so no threshold of this signal can reach the b
    `c909e2f`. `choose.py --metric` stays, as a general benchmark option.
 
 ### R017 — Smart Tagging's votes against our own pseudo-labels: the bar, and the strength in the decoder (2026-10-30, Tian)
+*3 Nov 2026: under the organisers' clarification of that date, `c_team` (measured here on BAR-ATH) conflicts with
+"tune them on external data", and the strength was chosen on BAR-ATH's output: see [A21](#a21--the-pipeline-audited-against-the-organisers-clarification-of-3-nov-2026-11-03-tian)
+and [rules.md](rules.md). The entry stands as the record of what was done under the rules of 30 Oct.*
 Proposal: P08 · Commit: part 1 (this declaration) is committed before any measurement it governs; the measurement's
 commits are in part 2.
 
@@ -9331,6 +9374,10 @@ objective, 0.60 to 0.55. It now produces sha256
 `e6496a9b9805217ef085e52ed69cbb27a42b95368d65c1d188b4a2f339b61170` (commit `3943962`), identical to
 `r024_both.toml`'s file. R025, R025b, R026 and R027 left it unchanged (C, E and P22(b) dropped). It has NOT been
 uploaded.
+
+**3 Nov 2026: do not upload R024's file as it stands.** Under the organisers' clarification of 3 Nov
+([rules.md](rules.md)), `main.toml`'s `smart_tagging` `c_team` was calibrated on our own match (A21). The file needs
+the team's decision first (take the source out, or the organisers' yes to question 2), and a new R entry.
 
 Before each upload:
 1. Regenerate the file from a clean clone, ideally on a second machine, and compare the sha256 ([T21](traps.md)).
