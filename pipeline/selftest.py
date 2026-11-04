@@ -436,6 +436,23 @@ def test_cache_rebuilt_when_arrays_missing():
         assert second.atd_status == "built", second.atd_status
 
 
+def test_cache_rebuilt_when_manifest_truncated():
+    with tempfile.TemporaryDirectory() as root:
+        make_synthetic_bundle(root)
+        first = synthetic_inputs(root)
+        first.atd
+        path = os.path.join(first.cache_dir, "atd_tactical", "manifest.json")
+        with open(path, "rb") as handle:
+            head = handle.read()[:40]
+        with open(path, "wb") as handle:
+            handle.write(head)  # a manifest cut short: not JSON, so no cache
+        second = synthetic_inputs(root)
+        assert second.atd.players_xy.shape == (SYNTHETIC_FRAMES, SYNTHETIC_SLOTS, 2)
+        assert second.atd_status == "built", second.atd_status
+        with open(path, encoding="utf-8") as handle:
+            assert handle.read().endswith("}\n"), "the rebuilt manifest is written whole"
+
+
 # -- evidence ---------------------------------------------------------------------------------------------------------
 
 def test_nearest_player_matches_baseline():
@@ -5018,6 +5035,8 @@ def test_out_path_rules():
     expect_error(ValueError, lambda: output.check_out_path(
         os.path.join(ROOT, "evaluation", "results", "nested", "trial.csv"), data_dir), "gitignore")
     expect_error(ValueError, lambda: output.check_out_path(outside[:-4] + ".txt", data_dir), ".csv")
+    # .gitignore's *.csv pattern is case-sensitive where git is (Linux), so ".CSV" is not covered and is refused.
+    expect_error(ValueError, lambda: output.check_out_path(outside[:-4] + ".CSV", data_dir), ".csv")
 
 
 def test_summarise_counts_possessions_like_the_scorer():

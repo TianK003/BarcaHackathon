@@ -58,8 +58,10 @@ def check_out_path(path, data_dir):
     """
     path = os.path.abspath(path)
     name = os.path.basename(path)
-    if not name.lower().endswith(".csv"):
-        raise UnsafeOutPath("{}: a submission is a .csv file".format(path))
+    if not name.endswith(".csv"):
+        # Exactly ".csv": .gitignore's evaluation/results/*.csv does not match ".CSV" where git is case-sensitive
+        # (Linux), so an upper-case suffix could put a file of labels into a commit.
+        raise UnsafeOutPath("{}: a submission is a .csv file (lower-case suffix)".format(path))
     # Lower-cased, because git on Windows and macOS matches .gitignore patterns case-insensitively
     # (core.ignorecase), so the exception would catch Baseline_x.csv as well.
     if name.lower().startswith(RESERVED_PREFIX):

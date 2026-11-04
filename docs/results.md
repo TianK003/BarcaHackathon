@@ -2275,6 +2275,17 @@ reviewer agent over the same files, and one over the whole of `pipeline/` for du
 - `pipeline/inputs/atd_cache.py` handed `np.load` a path, so a damaged `.npy` could be left open and block the rebuild
   on Windows, and a zip cut short under an `.npy` name raised instead of rebuilding (T34's open note). It now opens each
   file itself and catches `zipfile.BadZipFile` with the other unreadable-cache errors.
+- *The independent review (an Opus agent over the same files, every finding reproduced on synthetic data) found three
+  low-severity holes and no label-changing bug.* Two are ours and fixed in the third commit of the day:
+  `atd_cache._read_manifest` raised `JSONDecodeError` on a manifest cut short instead of rebuilding, and `_save` wrote
+  the manifest in place, so a run killed while writing it left exactly such a file (now read tolerantly, and written to
+  a temporary file and renamed, whole or absent); `output.check_out_path` accepted an upper-case `.CSV`, which
+  `.gitignore`'s `*.csv` does not cover where git is case-sensitive (Linux), so a file of labels could have been
+  committed from a Linux checkout (now the exact lower-case suffix). Both pinned in `selftest.py`
+  (`test_cache_rebuilt_when_manifest_truncated`, the `.CSV` case of `test_out_path_rules`). The third is in the
+  organisers' own `starter/load_smart_tagging.check_time_base` (a diagnostic the pipeline does not use): it treats
+  `end_frame` as inside the tag, though `load` defines it as the first frame after, and compares `Half` case-sensitively;
+  left as upstream code, worth a word to the organisers.
 
 **What was found and left** (quality, no effect on the output; for whoever next touches the module):
 - `hmm.py` writes the switch-cost matrix three times (`viterbi`, `restart_viterbi`, `marginals`), and `decode()` runs
@@ -2300,7 +2311,19 @@ exact; the refiner's two passes keep every run a frame and never move a boundary
 writer emits LF bytes, validates with the scorer's own functions and reads the file back; the file regenerates to the
 same sha256 with the cache rebuilt and with the quick checks passing. Not covered: `pipeline/benchmark/` for
 correctness (only for duplication), `starter/` beyond the two functions the pipeline imports, and the notebooks. A
-wider automated review was started and stopped by a usage limit after its first angle; the rest is this reading.
+wider automated review was started and stopped by a usage limit after its first angle; the rest is this reading and
+the independent review above, which also checked: the pre-kick-off frames cannot decode to anything but `D` (`D` leads
+by at least 6.15 nats a frame there, and a non-`D` run would cost 64 nats of switches plus 35 frames of it, exempt first
+run included); the hmm against an exhaustive search over 250 small cases with integer emissions that force ties; the
+tree walk's 255-node bound, NaN routing and tree order against both model files (300 trees, at most 29 nodes, finite
+thresholds, no fold named BAR-ATH); every `main.toml` value reaching its component with an accepted type; the memo
+caches dying with their `Inputs`; and the `play_features` matrix products bit-identical on 1, 4 and 12 BLAS threads
+(synthetic). Its one assumption it could not check under the data rules, that `team_of_each_track`'s slot order (the
+`<Player>` elements) is the raw file's column order (the data-format specification's channel references), was checked
+on 4 Nov with a local pass/fail script: the two orders agree, 46 of 46, one specification. One reproduction note it
+raised stands: the development machine has AVX2 and no AVX-512, and numpy's float64 `exp` and `log` can differ by a
+few ulps between the two, enough to flip only a decision whose margin is under about 1e-11 nats; the run manifest does
+not record the CPU's features, so A17 and A18 (the same laptop) do not cover another processor (T20).
 
 ## Experiments
 

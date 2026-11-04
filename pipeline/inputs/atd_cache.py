@@ -206,8 +206,11 @@ def _read_manifest(folder):
     path = os.path.join(folder, MANIFEST)
     if not os.path.isfile(path):
         return None
-    with open(path, encoding="utf-8") as handle:
-        return json.load(handle)
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return json.load(handle)
+    except ValueError:  # a manifest cut short (a copy interrupted, a disk full): no cache, so the raw file is parsed
+        return None
 
 
 def _save(atd, folder, manifest):
@@ -222,9 +225,11 @@ def _save(atd, folder, manifest):
         os.remove(manifest_path)
     for name in ARRAYS:
         np.save(os.path.join(folder, name + ".npy"), getattr(atd, name), allow_pickle=False)
-    with open(manifest_path, "w", encoding="utf-8", newline="\n") as handle:
+    temporary = manifest_path + ".tmp"
+    with open(temporary, "w", encoding="utf-8", newline="\n") as handle:
         json.dump(manifest, handle, indent=2, sort_keys=True)
         handle.write("\n")
+    os.replace(temporary, manifest_path)  # whole or absent: a run killed while writing it leaves no manifest
 
 
 def _load(folder):
