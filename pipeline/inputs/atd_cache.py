@@ -27,6 +27,7 @@ import io
 import json
 import os
 import platform
+import zipfile
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -102,7 +103,7 @@ def load_or_build(meta_path, raw_path, cache_dir, n_frames, rebuild=False):
     if manifest is not None and all(manifest.get(name) == value for name, value in key.items()):
         try:
             return _load(folder), manifest, False
-        except (OSError, ValueError, EOFError):
+        except (OSError, ValueError, EOFError, zipfile.BadZipFile):
             pass  # a manifest whose arrays were deleted or truncated: rebuild below rather than fail
 
     atd = parse(raw_path, baseline.team_of_each_track(meta_path), n_frames)
@@ -229,8 +230,13 @@ def _save(atd, folder, manifest):
 def _load(folder):
     # Loaded into memory rather than memory-mapped: Windows locks a mapped file, which would make the next rebuild,
     # or a temporary folder's cleanup, fail for as long as anything still held an array.
-    return _freeze(Atd(**{name: np.load(os.path.join(folder, name + ".npy"), allow_pickle=False)
-                          for name in ARRAYS}))
+    # The file is opened here and handed to np.load, so that it is closed whatever np.load raises: given a path,
+    # np.load can leave a damaged file open, and Windows then refuses the rewrite that the rebuild needs (T34).
+    arrays = {}
+    for name in ARRAYS:
+        with open(os.path.join(folder, name + ".npy"), "rb") as handle:
+            arrays[name] = np.load(handle, allow_pickle=False)
+    return _freeze(Atd(**arrays))
 
 
 def _freeze(atd):

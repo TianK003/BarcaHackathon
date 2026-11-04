@@ -2138,6 +2138,138 @@ R024's file (`e6496a9b…`) is not to be uploaded (submission log). The proposal
 trained on our video, P21's colour clusters, P22) are marked in [proposals.md](proposals.md); [T54](traps.md) records
 the trap.
 
+### A22 — The organisers' issues, the other teams' public work, and when the truth's `D` starts (2026-11-04, Tian)
+Proposal: P02, P16 · Commit: the commit that adds this entry · Command: the GitHub API read through `gh api` (the
+issues, their comments, the pull requests' file lists, the forks and a compare of each fork against upstream), the
+upstream fetch, and `python -I` over the downloaded JSON; nothing of the match was read, and the other teams' files were
+read as untrusted text, never run
+
+**Why.** Nobody had read the organisers' issue tracker since the rules of 3 Nov, two of the questions on it are the ones
+the dead-ball model depends on (when `D` begins and ends; whether a touch without control is a possession), and other
+teams opened pull requests against the organisers' repository by mistake, which show their approaches.
+
+**Upstream.** `git fetch upstream` on 4 Nov still ends at `f8f2629` (23 Oct): no commit carries the email of 3 Nov, and
+RULES.md and FAQ.md are unchanged.
+
+**The issues.** 31 issues and pull requests, all read; the organisers' answers and what each settles are tabulated in
+[rules.md](rules.md) ("What the organisers' GitHub issues settled"). Three facts for the record:
+- the organisers answered on GitHub until 26 Oct (#2, #8, #10, #11, #14, #15, #16); from 3 Nov every question gets the
+  same reply, to write to the email address, and the issues are closed;
+- #16 (26 Oct) blesses the exact dataset our benchmark and both models rest on (IDSSE, CC BY 4.0: "fully permissible",
+  with the reminder that every hyperparameter is chosen on IDSSE or other games and never on the 5 public minutes);
+- the two questions that matter most to us are unanswered: #17 (28 Oct, three teams: a won header without control is
+  a 1.32 s possession in the public truth, and how the corrected tracking's owner behaves on deflections and loose
+  balls) and #31 (3 Nov, open: does `D` start at the infringement, the whistle or the ball crossing the line, and does
+  it end at the restart's first touch). Both are now questions 5 and 6 in [rules.md](rules.md), to be emailed.
+
+**When the truth's `D` starts and ends, from everything public.** The ground truth is the "ball dead" flag of Metrica's
+corrected tracking, copied frame by frame (CHALLENGE.md: "a frame is `D` where the corrected tracking marks the ball
+dead", nothing smoothed or hand-adjusted; "the referee determines when the ball is in play"). No organiser text says
+whether the flag is set at the crossing, at the whistle or at the restart kick. What can be said:
+- *The Laws of the Game* (Law 9), which a tracking operator is told to follow: the ball is out of play when it has wholly
+  crossed a goal line or touchline, or when the referee stops play; for a foul or an offside the whistle comes after the
+  infringement and the ball is in play until it. It is in play again at the restart: a kick-off, goal kick, corner or
+  free kick when the ball is kicked and clearly moves, a throw-in when it enters the field.
+- *Metrica's own event definitions* (R023, our provider): a stop is "Out of play: the ball went out of bounds or the
+  referee has stopped play", and SET PIECE and RECOVERY "bring the ball back into play". Over the three sample games
+  the stops are 164 ball-out, 29 shot-out and 12 goal stops against about 200 referee stops (148 challenge faults, 54
+  fouls received, 18 forced, 6 offsides), so "at the whistle" and "at the crossing" differ on about half the stoppages.
+  The sample games carry no tracking flag: game 3's EPTS metadata (the format of our own ATD) declares x and y ball
+  channels and no ball-status or possession channel (checked 4 Nov), so the provider's flag exists on no public game.
+- *Our public window* (A01, A11): 4 stoppages of 5.5, 20.4, 18.3 and 14.5 s, the ball visible on 66% of dead frames.
+  Our `D` begins a median 1.5 s before our tracker first sees the ball beyond a line (2 of 4) and 1.6 s before the
+  dead-ball model's alive drops under 0.5 (3 of 4), where DFL's flag turns dead 0.12 to 0.16 s after the ball is first
+  seen beyond a line; our `D` ends 0.36 s before the restart's first controlled touch (4 of 4) and 1.5 s after the
+  model's alive rises over 0.5 (2 of 4), where DFL's flag turns alive 0.12 s after the ball starts moving and 1.4 s
+  before the first controlled touch. A lead, not a measurement (T40): a convention of our truth, chance, and our
+  tracker losing the ball near the lines (T39) all fit.
+- *The documented facts*: the 2,934 graded frames before the second half's kick-off are `D` (DATA.md), which the
+  pipeline writes by rule; a won header without further control is a possession of 1.32 s in the public truth (#17,
+  A01's second-shortest possession), so the owner field flips at a touch and not at controlled possession, at least
+  there.
+
+So the best reading is "dead when the ball leaves play or the referee stops it, alive when the restart is taken", nearer
+the Laws than to "dead only once the whistle goes", with four stoppages behind it. For the pipeline: the dead-ball model
+reproduces DFL's timing out of fold to a frame (A11), so if our stoppages really are 2.5 to 3 s longer than DFL's flag
+draws them, our `D` runs are short by about a second at each end and the possessions beside them long by the same; the
+six shortest public possessions tolerate 0.3 to 1.5 s of total boundary error at IoU 0.7 (A01). Our decoder's minimum
+possession of 35 frames (1.4 s) cannot produce a 1.32 s possession at all; 2 of the window's 17 are under 1.4 s. Neither
+may be fixed on the window (T01). What is allowed: email questions 5 and 6; let P02's person watch the four public
+stoppages to see whether `D` begins at the crossing, the foul or the whistle ("to better understand what counts as
+possession"), which separates convention from tracker coverage in A11 without any number entering a config; and P16's
+timing part on Metrica's sample games (the ball's own track against the BALL OUT and SET PIECE events), the one lawful
+route to a timing constant of our provider.
+
+**The other teams' public work.** 215 forks of the organisers' repository on 4 Nov, 79 with commits of their own, about
+a dozen with a pipeline; twelve pull requests were opened against the organisers' repository by mistake (closed unmerged,
+one open), and their file lists and documents were read. What they show, as aggregates:
+- *Inputs:* every team seen uses the tactical ATD; most add Smart Tagging as a prior (dead-ball windows from `SET
+  PIECES`, team votes from the phase tags), one (#13) cross-checks the broadcast ATD and found its fills do not improve
+  spellF1 on its own test, one (#19) built a hand-labelling web app and trained CNN and gradient-boosting models on
+  features of this match, which the rules forbid.
+- *Methods:* nearest-player evidence with hysteresis or a sticky state machine (#12, #21, several forks); an HMM with
+  minimum durations and switch costs (#24, the same family as ours); a "collective" team-shape evidence for ball-missing
+  frames (one fork, off by default); a dead-ball detector trained on degraded DFL matches with frozen coefficients (one
+  fork, the same idea as P05, chosen as logistic coefficients); out-of-bounds plus set-piece rules for `D` (#21, several
+  forks). None seen handles identity switches, the camera, the audio or a video ball detector in committed code.
+- *Validation and tuning:* #24 calibrates its dozen parameters by random search on spellF1 over Metrica's two CSV sample
+  games with the ball removed in blocks (external data, allowed, and a finer idea than ours for the grain question);
+  #6/#7 committed the public window's label codes as `.npy` files and swept the baselines on it (a tuning use of the
+  window since 23 Oct); #13 and #21 tune nothing and say so; most forks' commit messages report public-window scores
+  as their only number.
+- *Data facts others measured that we had not written down* (#13, "measured", unverified by us): 2.07% of visible
+  graded ball positions are more than 2 m outside the pitch and 379 are more than 10 m out, only 24% of them near
+  restarts, so an out-of-bounds ball alone is not a dead-ball cue (our model splits on it together with the players'
+  speeds, R009); the ball is missing at the end of every GOALS phase; position jumps above 40 m/s on 2,043 of 113,303
+  consecutive visible pairs; the XML labels the speed channel "kph" while the player values are m/s (ratio 0.99); and
+  halftime holds a mean of 12.5 visible tracks.
+
+**What it changes.** Nothing in `main.toml`. Questions 5 and 6 are drafted in [rules.md](rules.md); P16's timing part
+is marked as the lawful route to a `D`-edge constant in [proposals.md](proposals.md); the technical document's restart
+and limitation sections name the open convention.
+
+### A23 — The codebase reviewed for bugs (2026-11-04, Tian)
+Proposal: all · Commit: the commit that adds this entry (two fixes, output-neutral: the file regenerates to the same
+sha256 `762f9073…`) · Command: a reading of the submission path (`games.py`, `pipeline/run.py`, `config.py`,
+`contracts.py`, `inputs/`, the three sources of `main.toml` with `kinematics.py`, `play_features.py`,
+`shape_features.py` and `trees.py`, `decode/hmm.py`, `refine/shift_edges.py`, `output/`) against the scorer, one
+reviewer agent over the same files, and one over the whole of `pipeline/` for duplicated and dead code; then
+`python pipeline/selftest.py` (191 of 191) and `python pipeline/run.py pipeline/configs/main.toml --rebuild-cache`
+
+**What was found and fixed** (nothing changes a label):
+- The per-frame arrays of `Evidence`, `Decoded` (`pipeline/contracts.py`) and `RunResult` (`pipeline/run.py`) were in
+  their default reprs, so a `print(decoded)` in a notebook or an assertion message would put the match's labels or
+  evidence in a log; the pipeline README had asked for `repr=False`. Done.
+- `pipeline/inputs/atd_cache.py` handed `np.load` a path, so a damaged `.npy` could be left open and block the rebuild
+  on Windows, and a zip cut short under an `.npy` name raised instead of rebuilding (T34's open note). It now opens each
+  file itself and catches `zipfile.BadZipFile` with the other unreadable-cache errors.
+
+**What was found and left** (quality, no effect on the output; for whoever next touches the module):
+- `hmm.py` writes the switch-cost matrix three times (`viterbi`, `restart_viterbi`, `marginals`), and `decode()` runs
+  the parameter checks whose results it then discards; a change to one matrix would leave the labels and the posterior
+  under different models.
+- `benchmark/inputs.py`'s `MatchInputs` re-declares every field of `Inputs` by hand and `atd_status` is set inside a
+  cached property; a field added to `Inputs` is silently absent on a benchmark match.
+- two `restart_team` checks in `selftest.py` compute their expected values with the code under test, and the hmm
+  regression pin is a copy of the old `viterbi` pasted into the test; they prove wiring, not values.
+- `restart_team.py` validates the same parameters three or four times along one call chain, threading a sentinel tail.
+- nine benchmark command lines re-declare the common options, and `fidelity.py` keeps its own `DEFAULT_SEEDS`, so a
+  change to one would file a default fidelity report under another name.
+- `_runs`, `_text_sha256`, `_frozen` and `_shown` exist as private copies in two to four modules; `smart_tagging`'s
+  `kind` channel is constant since R017; `play_features._own_half_is_left` is an alias kept alive only by the test that
+  asserts it exists.
+
+**What was checked and holds.** Row *i* is tactical frame *i* at every stage (the ATD's `frame_id` is checked to be
+1..n in order and shifted once; the homography's frame column checked); the graded blocks are half-open from
+`games.half_video_blocks` and match the scorer's own runs; the 2,934 pre-kick-off frames are `D` by the documented
+kick-off and nothing else; no source, window or derivative reads across halftime (every one runs per block); a NaN
+channel adds nothing to any state; the hmm's tie rule and the emissions subtraction make the ties inside a ball gap
+exact; the refiner's two passes keep every run a frame and never move a boundary at a kick-off or beside an `X`; the
+writer emits LF bytes, validates with the scorer's own functions and reads the file back; the file regenerates to the
+same sha256 with the cache rebuilt and with the quick checks passing. Not covered: `pipeline/benchmark/` for
+correctness (only for duplication), `starter/` beyond the two functions the pipeline imports, and the notebooks. A
+wider automated review was started and stopped by a usage limit after its first angle; the rest is this reading.
+
 ## Experiments
 
 Copy this template for each run, and add a scoreboard row for anything worth comparing.

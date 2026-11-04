@@ -334,6 +334,15 @@ implements.
   or other games' flags, P16): a type that a person read off this match's video for each stoppage and fed to the
   pipeline would be a hand label, while a person watching to understand what counts as possession at a restart is
   allowed (A11, section 6; the organisers' clarification of November 2026).
+- **Dead ball, the truth's convention (A22):** The ground truth is `D` where Metrica's corrected tracking marks the
+  ball dead, and no organiser text says whether that flag is set when the ball crosses the line, at the whistle or at
+  the restart kick; the public question that asks (issue #31, 3 Nov) is unanswered, as is the one on whether a touch
+  without control is a possession (#17). The Laws of the Game, Metrica's own event definitions ("out of play: the ball
+  went out of bounds or the referee has stopped play"; a set piece "brings the ball back into play") and our timing of
+  the four public stoppages (A11) point the same way: dead when the ball leaves play or the referee stops it, alive when
+  the restart is taken. The dead-ball model carries DFL's timing, which turns dead 0.16 s after the ball is seen beyond
+  a line and alive 0.12 s after it moves; if our provider's flag sits earlier and later than that, our stoppages are
+  short at both ends (section 6).
 - **Abstentions (`X`):** The decoder never abstains inside a graded half, and the runner writes `X` on the ungraded
   frames, where it is free: the chosen file has none inside a graded block (R010 to R024). It can return the posterior
   of each state per frame. A free-`X` refiner built on it was measured in R016 and dropped (macroF1 fell at every threshold).
@@ -358,6 +367,8 @@ implements.
   alive rises early on ours, and the copy's ball gaps ignore the play, R003). So it is a lead, to understand and not to
   fit: a person may watch the video to see which it is, to understand what counts as possession, and what is seen sets
   no constant (T27); nobody checks our own output against the video (the organisers' clarification of November 2026).
+  The organisers were asked (questions 5 and 6, A22) and had not answered by 4 Nov; the one lawful source of a timing
+  constant is Metrica's sample games (P16).
   The `shift_edges` rule is declared, was applied in R012 and was applied again in R013 to the re-chosen pipeline,
   whose lag on DFL came out the same. The shift of a type of edge is s_b, the pipeline's own
   lag on the seven DFL matches (the median of predicted minus true over the changes it matches within 50 frames,

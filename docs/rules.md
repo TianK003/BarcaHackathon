@@ -9,8 +9,8 @@ the email says nothing, those documents still hold. That covers rule 3 (the repo
 data licence accepted at enrolment, the deliverables and the conditions on what we may use (the organisers can access
 it, the technical document explains it).
 
-Upstream has no commit carrying the email yet: on 3 Nov `git fetch upstream` still ends at `f8f2629`. When one lands,
-compare it with this file and update both.
+Upstream has no commit carrying the email yet: on 3 Nov `git fetch upstream` still ended at `f8f2629`, and on 4 Nov it
+still does. When one lands, compare it with this file and update both.
 
 ## The clarification, verbatim
 
@@ -139,13 +139,33 @@ not fitted on our match. That is a large job, so ask early.
 - **P02:** a person may watch the truth's changes to understand what counts as possession, never our output (point 4).
 - **P11, P13, P16:** unchanged; they use external data (P16: question 3).
 
+## What the organisers' GitHub issues settled (read 4 Nov 2026)
+
+All 31 issues and pull requests on the organisers' repository were read on 4 Nov ([A22](results.md)). The organisers
+answered on GitHub until 26 Oct; from 3 Nov every question gets the same reply, to write to the email address, and the
+issues are closed. What the answers settle, beyond what RULES.md and the email say:
+
+| issue | asked | the organisers' answer | for us |
+|---|---|---|---|
+| #2 (22 Oct) | a ball detector trained on the match's video with the ATD as labels; a GPU to reproduce | not allowed: no labelling of the provided dataset, even automatic, to train a model; weights are fine if trained on other data with the source stated; runtime is not a requirement and a GPU is fine | P14 may run only weights trained elsewhere (already here); our run is CPU, 17 s |
+| #8 (22 Oct) | how much hand labelling is "small" | none on BAR-ATH for any purpose; unlimited on other matches if accessible and documented | compliant: our labels are DFL's and Metrica's own |
+| #10 (23 Oct) | own hand labels used only to choose parameter values | not allowed: it fits the match; annotate another match, apply the values unchanged, share the video and the annotations | compliant (A21) |
+| #11 (26 Oct) | must reproduction be byte-identical | training need not reproduce; the CSV must, byte for byte: commit the weights, infer on the CPU, pin the dependencies, fix the seeds | compliant: JSON models, CPU, pins; R029's file still has to be regenerated from a fresh clone |
+| #14 (26 Oct) | committing a stage's small intermediate output; watching clips to understand why the ball goes missing, then rules with thresholds from other matches | yes to both; not allowed: labels, corrections, or rules and constants tied to specific frames | recorded below ("Settled without asking"); question 4 asks whether the email's narrower wording changes the second part |
+| #15 (26 Oct) | is look-ahead allowed | yes: the task is post-match; a causal approach is scored the same | the Viterbi decode over a whole half is fine |
+| #16 (26 Oct) | training a team-shape prior on the IDSSE dataset | fully permissible: other games, open, inspectable; cite CC BY 4.0; choose every hyperparameter on IDSSE or other games, never on the 5 public minutes | the organisers bless the dataset P01, P05 and P07 rest on |
+| #17 (28 Oct, 3 teams) | a won header without control is a 1.32 s possession in the public truth; how does the owner behave on deflections and loose balls, is there a minimum duration | **no answer** (closed 3 Nov with the boilerplate) | question 6 below |
+| #31 (3 Nov, open) | does `D` start at the infringement, the whistle or the ball crossing the line; does it end at the restart's first touch | **no answer** | question 5 below; what can be said is in A22 |
+| #20, #22, #25, #26, #27, #28, #29 (29 Oct to 1 Nov) | validation-only hand labels; a rented cloud GPU for inference; GPU reproducibility; checking output against the video and automatic checks; a second match with tags and labels; a second match from the same pipeline; a time limit | the boilerplate only; the email of 3 Nov answers #20 (no hand labels for any purpose) and #26 (no checking against the video; automatic checks are fine) | nothing to do; a second match, if ever released, would be the lawful data for Smart Tagging's confidence and for the degradation |
+
 ## Questions for the organisers
 
 **How to ask: by email, to `hackathon.talentarena@mobileworldcapital.com`.** RULES.md says to open an issue, but on
 3 Nov the organisers closed the open issues on their repository and asked that every question be sent to that address
 (their replies on issues #25 and #26). Email is private, so other teams do not see our approach.
 
-**Not yet sent** (drafted 3 Nov, for Tian to send as team Un Dia de Partit):
+**Sent 3 Nov 2026** by Tian as team Un Dia de Partit (questions 1 to 3 in one email, question 4 in a follow-up the same
+day). No answer by 4 Nov.
 
 1. **The benchmark's degradation.** We train and choose everything on the seven DFL/IDSSE matches (CC BY 4.0) and
    their own labels, after degrading their tracking to look like ours. The degradation uses the provided tracking
@@ -159,6 +179,23 @@ not fitted on our match. That is a large job, so ask early.
    for the form. Is that fine?
 3. **Metrica's sample data** (github.com/metrica-sports/sample-data) has no licence file. We used the event files of
    its three games once, for R023's measurement, with acknowledgement and without redistributing them. Is that fine?
+4. **Watching the video to understand the tracking.** Issue #14 (26 Oct) allowed watching clips to understand why the
+   ball goes missing, and turning general observations into rules whose constants come from other matches. The
+   clarification allows inspecting the video "to better understand what counts as possession". May team members still
+   watch the video to understand how the tracking fails (general observations only, no frame-level record, nothing
+   compared with our output)?
+
+**Drafted 4 Nov 2026, to send** (the two public issues the organisers left unanswered, A22):
+
+5. **When `D` starts and ends** (issue #31, 3 Nov, open and unanswered). The ground truth is `D` where the corrected
+   tracking marks the ball dead. Is that flag set when the ball wholly crosses the line, at the moment of an
+   infringement, or at the referee's whistle or signal? Does it end at the restart kick, when a throw-in enters the
+   field, or at the first touch after the restart? Our measurement on the public window's four stoppages (A11) cannot
+   tell the three apart.
+6. **Short possessions without control** (issue #17, 28 Oct, asked by three teams, closed unanswered). The public truth
+   labels a won header without further control as a possession of about 1.3 s. Does the corrected tracking's owner
+   switch at every touch, so that the full-match reference also counts such touches as possessions, and is there a
+   minimum duration or number of touches before it switches?
 
 **Settled without asking:**
 - *Smart Tagging's confidence measured on our match* (the old question 2): no longer needed, since R029 took the source

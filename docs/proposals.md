@@ -32,7 +32,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 |---|---|---|---|---|---|
 | [P01](#p01--a-validation-set-we-can-trust) | Validation set we can trust: other matches, degraded to look like ours | deciding anything at all | M | enabling | done → R002–R005 |
 | [P02](#p02--inspect-the-ground-truths-conventions-on-the-public-window-to-understand-and-never-to-tune) | Inspect the GT's conventions on the public window, to understand and never to tune | boundary timing | S | bounded since the 23 Oct rule: understanding only; so far the pipeline's own lag on DFL, 1 to 2 frames, within noise (R012) | done → A11, R012, A15 (inspection only; a person may watch to understand what counts as possession, never to check our output, 3 Nov) |
-| [P16](#p16--metricas-sample-games-in-our-ground-truth-providers-conventions) | Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing | boundary timing, grain | M | medium | partly done → R023 (the grain: outcome both, so choices rank on the mean of the two truths); the switch timing and the feeds are not done |
+| [P16](#p16--metricas-sample-games-in-our-ground-truth-providers-conventions) | Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing | boundary timing, grain | M | medium | partly done → R023 (the grain: outcome both, so choices rank on the mean of the two truths); the switch timing and the feeds are not done; **A22 (4 Nov): the timing part is the one lawful route to a `D`-edge constant** (the organisers left #31 unanswered; sample game 3's EPTS metadata has no ball-status channel, so the events are what there is) |
 | [P17](#p17--the-restart-team-channel) | Restart-team channel: who restarts after a stoppage, from the players' arrangement | facts 3, 5 (the hold points at the old team after most stoppages) | S–M | ceiling +0.0198 raw (A12); delivered +0.0040 raw at best, bar not met (R014) | dropped → R014, R014b (the source and the decoder's restart states stay, off by default) |
 | [P18](#p18--the-offpitch-profile-dfls-ball-hidden-off-the-pitch-as-ours-is-and-p05-retrained-on-it) | offpitch profile: DFL's ball hidden off the pitch as ours is, and P05 retrained on it | T39 (P05 overstated by the visible out-of-play ball) | M | A13: a perfect dead-ball source adds +0.029 raw on tracking; main.toml on offpitch 0.5509 raw / 0.5296 coarse; hiding the out-of-play ball cost today's P05 0.013 alive/dead F1 (R015) | dropped → R015, R015b (our tracker's off-pitch ball cannot be reproduced by a simple rule; code removed) |
 | [P19](#p19--a-learned-team-model-where-the-ball-is-seen) | A learned team model where the ball is seen: P05's recipe applied to the team | fact 3; A13's largest lever (+0.194 raw where the ball is seen) | M (feasibility S) | measured: +0.0160 pooled per-frame accuracy against `main.toml`'s decoded labels, gate +0.020 (R021) | dropped → R021 (feasibility: +0.0160 pooled against +0.020, 3 of 7 matches against 6; no spellF1) |
@@ -515,7 +515,13 @@ into a number for a config, is not ([T27](traps.md)).
 labels give 6.20 possessions per alive minute (class both) and a median possession of 4.72 s (class raw, 0.11 s under the
 band). The outcome is **both**: choices declared from now on rank on the unweighted mean of the raw and coarse pooled
 spellF1s, each reported. Nothing past is reopened and `main.toml` is untouched. Not done: the switch timing and the feeds
-below (P04's back-dating, P05's `D` onset, P12's shift).**
+below (P04's back-dating, P05's `D` onset, P12's shift).** *4 Nov ([A22](results.md)):* the timing part is now the one
+lawful route to a constant for where our provider's `D` begins and ends. The organisers left issue #31 (when `D` starts)
+unanswered, no public game carries Metrica's tracking flag (game 3's EPTS metadata declares x and y ball channels and
+nothing else, checked 4 Nov), and the window may not set a constant (T01). What is measurable on the sample games is the
+ball's own track against the events: the lag from the ball crossing a line to the end of the BALL OUT, and from the SET
+PIECE's start to the ball moving; it would say how Metrica's operators time a stop and a restart, which is the
+convention the corrected tracking's flag most likely follows. Effort S to M; a declared rule before the run, as R023.
 
 **Why.** P01's truth follows DFL's conventions, and P02 inspects Metrica's in 20 transitions in one 5-minute window,
 which is livelier than 96% of DFL's windows (A06) and, since `f8f2629`, no place to fit them. When the flags flip and

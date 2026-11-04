@@ -27,7 +27,7 @@ A three-class vector would force a team-only source to invent a P(D) it does not
 0.5: it means "leave this frame to the other sources", and a decoder must treat it as missing, not as a coin flip.
 """
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 
@@ -58,8 +58,8 @@ class Evidence:
     on the source's likelihood -- weight 0.5 halves its log-likelihood; the stand-in majority vote only
     approximates that with a weighted mean.
     """
-    alive: np.ndarray
-    home: np.ndarray
+    alive: np.ndarray = field(repr=False)   # repr=False: a printed Evidence must not put frames of the match in a log
+    home: np.ndarray = field(repr=False)
     name: str = ""
     weight: float = 1.0
 
@@ -142,8 +142,8 @@ class Decoded:
     what tells a refiner where an X would be free (inside a possession) and where it would be expensive (at a
     hand-over); a decoder without one leaves it None.
     """
-    labels: np.ndarray
-    posterior: object = None
+    labels: np.ndarray = field(repr=False)   # repr=False: a printed Decoded must not put labels of the match in a log
+    posterior: object = field(default=None, repr=False)
 
 
 def check_decoded(decoded, block, who):

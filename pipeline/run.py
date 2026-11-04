@@ -27,7 +27,7 @@ import random
 import subprocess
 import sys
 import time
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -48,10 +48,10 @@ from pipeline.inputs import Inputs  # noqa: E402
 
 @dataclass(frozen=True, eq=False)
 class RunResult:
-    codes: np.ndarray  # (n,) int8, the labels as written
+    codes: np.ndarray = field(repr=False)  # (n,) int8, the labels as written; repr=False keeps them out of logs
     sha256: str        # of the CSV's bytes -- the number to quote in the submission log
     summary: dict      # output.summarise(): label counts, possessions
-    evidence: dict     # name -> Evidence over the whole match, for --score and for notebooks
+    evidence: dict = field(repr=False)     # name -> Evidence over the whole match, for --score and for notebooks
     timings: dict      # stage -> seconds (printed, not kept in the manifest: it would differ on every run)
 
 

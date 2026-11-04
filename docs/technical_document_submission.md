@@ -233,7 +233,8 @@ and +0.1764 in the gaps, a perfect dead ball only +0.0290 (the benchmark oversta
   2.94% of the graded frames; what they were worth was never measured.
 - **Timing.** On 10 of the public window's 12 team changes, our truth flips a median 0.96 s before the new team's first
   controlled touch, where DFL's flag flips 1 frame after it; the gap's 90% interval holds 0, so no difference is shown
-  (A11), and nothing may be fitted to it.
+  (A11), and nothing may be fitted to it. Where the truth's `D` begins and ends (at the crossing, the whistle or the
+  restart) is undocumented and was asked of the organisers (A22); the dead-ball model carries DFL's timing.
 
 **With more time:**
 - learn our provider's switch timing from its other games (P16; its grain is R023's);

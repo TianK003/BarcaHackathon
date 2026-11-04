@@ -324,7 +324,7 @@ const DATA = {
       { text: "**The video, the tracking, the Smart Tagging and other generated data as input**, “as long as your algorithm was not trained on the ground truth or on the provided video”.", src: "Organisers' clarification (email, Nov 2026)" }
     ],
     allowedNote: "Where we stand ([docs/rules.md](../docs/rules.md), “Where we stand on 3 Nov”): `main.toml`'s two models are trained on the seven DFL matches, and its touch-rule and decoder constants were chosen on them. **The one conflict is resolved:** `smart_tagging`'s `c_team` 0.76 was measured on BAR-ATH, as the tags' agreement with our own touch-rule pseudo-labels (R017), and its weight 0.2 was picked after seeing our output there, so R029 (3 Nov) took the source out of `main.toml`. Question 2 to the organisers is no longer blocking. **One question is open:** the benchmark's `tracking` v3 degradation was fitted on label-free statistics of our tracking; we read that as allowed, and question 1 to the organisers asks.",
-    ask: "Near a line? “If a rule is unclear, or your approach sits near a line, **ask before you build on it**. Open an issue.” (RULES.md, Questions). Since 3 Nov the organisers want questions **by email** to `hackathon.talentarena@mobileworldcapital.com`, not as issues (their replies on issues #25 and #26). Our three questions (the degradation, our repository's visibility, Metrica's sample data) are drafted in [docs/rules.md](../docs/rules.md) and **not yet sent**."
+    ask: "Near a line? “If a rule is unclear, or your approach sits near a line, **ask before you build on it**. Open an issue.” (RULES.md, Questions). Since 3 Nov the organisers want questions **by email** to `hackathon.talentarena@mobileworldcapital.com`, not as issues (their replies on issues #25 and #26). Our questions are in [docs/rules.md](../docs/rules.md): 1 to 4 (the degradation, our repository's visibility, Metrica's sample data, watching the video to understand the tracking) were **sent on 3 Nov**; 5 and 6 (when `D` starts and ends, won headers as possessions, the two issues the organisers left unanswered) were drafted on 4 Nov. None is answered yet."
   },
 
   notAllowed: [
@@ -340,7 +340,7 @@ const DATA = {
         "No pseudo-labels, self-training, priors re-estimated on BAR-ATH or clusters fitted to its frames: a ball detector trained or fine-tuned on our video (P14, even with the ATD's ball as pseudo-labels) and P22(c) are out.",
         "Every number in a config, a model or a prior comes from external data, a fixed rule (the laws of the game, the literature) or a fact the organisers document (the kick-off frames).",
         "`smart_tagging`'s `c_team` 0.76 was measured on BAR-ATH (R017), so R029 (3 Nov) took the source out of `main.toml`; the code stays, off ([docs/rules.md](../docs/rules.md)).",
-        "Open: the benchmark's degradation, fitted once on label-free statistics of our tracking, is not the algorithm and sees no truth or video. We read it as allowed; question 1 to the organisers, not yet sent, asks."
+        "Open: the benchmark's degradation, fitted once on label-free statistics of our tracking, is not the algorithm and sees no truth or video. We read it as allowed; question 1 to the organisers, sent 3 Nov, asks."
       ],
       sources: [["The clarification", "../docs/rules.md#the-clarification-verbatim"], ["docs/rules.md, How we read it", "../docs/rules.md#how-we-read-it"], ["docs/traps.md T54", "../docs/traps.md#rules-and-data-handling"]] },
     { title: "Checking your output against the video",
