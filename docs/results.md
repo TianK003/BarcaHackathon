@@ -2224,6 +2224,38 @@ one open), and their file lists and documents were read. What they show, as aggr
   consecutive visible pairs; the XML labels the speed channel "kph" while the player values are m/s (ratio 0.99); and
   halftime holds a mean of 12.5 visible tracks.
 
+**The survey's two strongest teams, and a like-for-like check** (the fork survey, read as untrusted text; their numbers
+are self-reported). CoreOrigin trains TCN and BiGRU sequence models on 780 to 960 collective features of DFL matches
+and reports 0.857 spellF1 on its DFL development match J03WPY (clean tracking, tuned on it), 0.732 on two held-out
+matches against 0.643 for its baseline, and 0.66 to 0.69 under artificial gaps; its boosted-tree reference on J03WPY
+is 0.621. False9 trains boosted trees on 113 features (the ball's velocity against each team's attacking direction,
+the time since and until each team's touches, stoppage measurements) on Metrica's three sample games with roughened
+tracking and reports 0.743 leave-one-match-out under event-derived labels with a 1 s control rule. Neither number is
+in our regime: our benchmark degrades the tracking to ours (41% of the ball missing in long gaps). The one like-for-like
+cell is `main.toml` on the clean profile of J03WPY, scored by the model folds that never saw it: **0.6393 raw and
+0.6447 coarse spellF1** (macroF1 0.93, alive/dead F1 0.998; `nearest_w50` 0.3281 raw there), which is CoreOrigin's
+boosted-tree reference and 0.22 under its in-sample sequence model. Command, 4 Nov, commit `76ff35a`:
+`python pipeline/benchmark/run.py pipeline/benchmark/configs/nearest_w50.toml pipeline/configs/main.toml --profile
+clean --matches J03WPY --seeds 1 --truth both --no-write`. A measurement for the record; it chooses nothing.
+
+**What the other teams carry that we do not**, with its standing under the rules (the ideas are the survey's; the
+judgement is ours; P24 to P26 in [proposals.md](proposals.md)): the ball's velocity projected on each team's attacking
+direction and the time since and until each team's touches, as features of a learned team source (False9's largest
+gain; lawful, trained on DFL: P24, P19's one retry); a tempo-normalised speed cue, because two teams found a fixed
+speed cut flags half the match dead as the players slow down through the match, and a guard that says nothing where
+fewer than a handful of slots are present (P25); Metrica's sample games' public tracking as a second benchmark and
+training set in our provider's grain (P26; False9 trains on it, InkSight calibrates on it); a practice copy of the
+submission bundle built from an external match, to rehearse `run.py` end to end before the upload. Not worth it: a
+video ball detector (only external training data since 3 Nov, days of GPU work, and CoreOrigin finds the remaining
+error in sub-2 s team switches, not the dead ball), broadcast fills (-0.003 on the one test), the audio (near silent).
+
+**One claim of theirs checked on our own tagging, as an aggregate** (`starter/load_smart_tagging.load`, 4 Nov): every
+`SET PIECES` tag of a throw-in, corner, goal kick or free kick is exactly 875 frames (35 s) long, 57 of 59, and the 6
+kick-off tags exactly 125 frames (5 s). So a set-piece tag's start is a fixed offset before the restart and its end
+means nothing, which is why A11's `tag_start` and `tag_end` found no stoppage within 5 s: they were read as a short
+window around the event ([T55](traps.md); T17 and CLAUDE.md said "a few seconds"). CoreOrigin measured the ball staying
+out of bounds until a median 6.3 s after a throw-in tag's start, on this match; a fact, not a constant.
+
 **What it changes.** Nothing in `main.toml`. Questions 5 and 6 are drafted in [rules.md](rules.md); P16's timing part
 is marked as the lawful route to a `D`-edge constant in [proposals.md](proposals.md); the technical document's restart
 and limitation sections name the open convention.

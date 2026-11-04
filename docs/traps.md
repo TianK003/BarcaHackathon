@@ -142,7 +142,8 @@ than 11 slots while the other shows fewer on 10.8% of graded frames (T32, A07).
 - Codes are upper case, values are title case, and kloppy's tag columns are title case, so match case-insensitively.
 - The away team is spelled `Atletic Club`.
 - 36 tags have Team `N/A`, including every throw-in.
-- Windows open seconds early (kick-off tags by ~3.5 s), and phases are not possessions.
+- Windows open seconds early (kick-off tags by ~3.5 s), and phases are not possessions. A `SET PIECES` tag is a fixed
+  875-frame (35 s) clip, a kick-off tag 125 frames (T55).
 - `DEFENDING …` and `DEFENSIVE TRANSITION` name the team *without* the ball.
 
 **T18 — The camera lags the ball.** The tactical camera's aim follows the ball's along-pitch position about 35 frames
@@ -559,3 +560,14 @@ set a constant, a weight, a prior or a model, however label-free it is.
 - *What it caught on 3 Nov:* `smart_tagging` c_team in `main.toml`, taken out the same day (R029); P14's plan
   to train a detector on our video with the ATD's ball as pseudo-labels; P22(c). The benchmark's degradation, fitted on
   label-free statistics of our tracking (A07 to A09), is our reading's open case and question 1 for the organisers.
+
+**T55 — A `SET PIECES` tag is a fixed 35 s clip, not a window of a few seconds around the restart.** Measured on our
+tagging on 4 Nov 2026 (`starter/load_smart_tagging.load`, lengths only): 57 of the 59 `SET PIECES` intervals (every
+throw-in, corner, goal kick and free kick) are exactly 875 frames long, and the 6 kick-off tags exactly 125 frames
+(5 s). T17 and CLAUDE.md said "a window of a few seconds around an event", which is true of the kick-offs only. So a
+set-piece tag's start is a fixed offset before the restart (another team measured the ball out of bounds until a
+median 6.3 s after a throw-in tag's start on this match, A22) and its end says nothing about play. That is why A11's
+`tag_start` and `tag_end` detectors, which looked for a tag edge within 5 s of a stoppage's edges, found almost none,
+and why R017's dead votes from the tags agreed with the dead-ball model on only 0.409 of their frames. Anything that
+reads a set-piece tag as a short window is mis-specified; read it as "a restart happens a few seconds after this
+instant", and set no constant for the offset on this match (T54).

@@ -262,7 +262,8 @@ frames are all `D`. The public GT labels only 11,185–18,684 (5 minutes, 17 pos
 - Smart Tagging: 638 *automatic* phase intervals, not ground truth, and phases are not possessions. Codes are upper
   case (`SET PIECES`), tag values title case (`Kick Off (Start)`), kloppy tag columns title case (`Team`) — match
   case-insensitively. `Team` is `Barcelona`, `Atletic Club` (sic) or `N/A` (36 instances, including every
-  throw-in). Tags mark a window of a few seconds around an event (kickoff tags open ~3.5 s early), not the instant.
+  throw-in). Every `SET PIECES` tag is a fixed 875-frame (35 s) clip and every kick-off tag 125 frames (5 s), opening before the
+  restart (kick-offs ~3.5 s early): a tag's start is an offset from the event and its end means nothing (T55).
 - Homography maps normalised pitch (0–1) → pixels, so ATD coordinates go in unconverted. Check `valid` first
   (tactical 100%, broadcast 65.8%); `reprojection_error` is lower-is-better.
 - The ground truth is derived mechanically from corrected tracking: `D` where it marks the ball dead, otherwise the

@@ -40,6 +40,9 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P21](#p21--wrong-team-slots-measure-the-ceiling-then-repair-them) | Wrong-team slots: measure the ceiling, then repair from tracking or jersey colours | T32 | S test, M | low on the benchmark: all of `tracking`'s player degradation costs `main.toml` 0.013 (A14) | dropped → A16 (step 0's ratio 0.85 < 1.5; the tool is kept for P19's transfer report) |
 | [P22](#p22--the-shape-model-adapted-to-our-two-teams-without-labels) | The shape model adapted to our two teams without labels | fact 1 | S–M | low: guess +0.00 to +0.02 | (a) dropped → R020 (feasibility gate failed: 0.0538 against 0.0623, ratio 0.863 > 0.75); (b) dropped → R027 (the gate on DFL: a per-half intercept on P07 from the touch rule's labels made its pooled log-loss in the held-out half's gaps +0.0061 worse, needing −0.002; the transfer from touch frames to gaps 0.296 against the teacher's noise 0.107; rung 3 worse too, +0.0838; code removed, recoverable from `1e5a5d2` and the local tag `archive/r027-source`); (c) not tried; none of (a) to (c) allowed since 3 Nov ([rules.md](rules.md)) |
 | [P23](#p23--the-hmm-backbone-reviewed-nine-ideas-five-taken) | The HMM backbone reviewed: re-choose under R023's objective (A), decompose the IoU ladder (B), posterior edges (C), calibration (D), a gap weight for P07 (E) | fact 5; the decoder's placement of changes; fact 1 (E) | S each | low: +0.01 to +0.03 for the lot (the advisor's estimate); measured: A +0.0052 on the mean (R024) | done: A adopted → R024; B, D measured → A19; C dropped → R025, R025b; E dropped → R026; F deferred, then run as P22(b) and dropped → R027; G to I not taken |
+| [P24](#p24--the-balls-direction-and-the-touch-timing-as-features-of-a-learned-team-source-p19s-one-retry) | The ball's direction against each team's attacking direction, and the time since and until each team's touches, as features of a learned team source where the ball is seen: P19's one retry | fact 3; A13's largest lever (+0.194 raw where the ball is seen) | S–M | medium: P19's first try reached +0.0160 of the +0.020 gate; False9 calls these its largest gain | idea (added 4 Nov, A22) |
+| [P25](#p25--a-tempo-check-a-normalised-speed-cue-and-a-sparse-tracking-guard-for-the-dead-ball-model) | A tempo check (is our match slower than the degraded DFL?), normalised copies of the speed features, and a guard where fewer than a handful of slots are present | fact 4; T32; coverage that worsens through each half | S check, M retrain | low–medium: two teams found a fixed speed cut flags half the match dead | idea (added 4 Nov, A22) |
+| [P26](#p26--metricas-sample-games-tracking-as-a-second-benchmark-and-training-set) | Metrica's sample games' public tracking (3 games) as a second benchmark and training set, in our provider's grain, degraded as ours | T33, T40, the grain and the timing of our truth | M | medium: the one external data in our provider's conventions; P16's timing part runs on it | idea (added 4 Nov, A22) |
 | [P03](#p03--one-command-deterministic-cached) | One-command, deterministic, cached pipeline | reproducibility | S–M | enabling | done → R001 |
 | [P04](#p04--sticky-ownership-from-controlled-touches) | Sticky ownership from controlled touches | facts 3, 5 | S | high: +0.1421 raw at the chosen decoder (R010) | done → R008, R010; rule re-chosen → R013; hold re-chosen → R024 (0.55) |
 | [P05](#p05--a-real-dead-ball-detector) | Dead-ball detector | fact 4 | M | high: +0.1661 raw at the chosen decoder, on a benchmark that overstates it (R010, T38, T39) | done → R009, R010 |
@@ -1145,6 +1148,56 @@ stands when the entry runs. F comes after E, only if at least four days remain b
   (Edinburgh ASR notes).
 - Link and Hoernig, [individual ball possession in soccer](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5503225/);
   Borghesi et al., [TCNs for ball possession](https://iris.polito.it/handle/11583/2976470) (2023).
+
+## From the field (added 4 Nov, A22)
+
+Three ideas other teams use and we do not, read from their public repositories on 4 Nov ([A22](results.md)); each is
+lawful because it trains and tunes on external data only, and each gets a declared rule before any run, as every
+proposal does.
+
+### P24 — The ball's direction and the touch timing as features of a learned team source: P19's one retry
+
+**Status: idea.** P19 (a learned team model where the ball is seen) was dropped at its feasibility gate: +0.0160
+pooled per-frame accuracy against `main.toml`'s decoded labels, +0.020 needed, 3 of 7 matches against 6 (R021), with
+no retry run; its code is recoverable at `15e7e14`. False9 reports the ball's velocity projected on each team's
+attacking direction (the direction from where each team's slots stand, per block, as `play_features.own_half_is_left`
+already decides it) as its single largest gain, with the time since and until each team's last and next on-ball
+frame and the on-ball share over ±0.5, 1, 2 and 5 s. Neither group was in P19's features. **What:** P19's one retry
+under the research bar (one retry, then drop): the same model and gate with these two feature groups added, trained
+on the seven DFL matches, out of fold; then the grid and R014's bar only if the gate passes. **Why it could work:** a
+ball flying towards a team's own goal was played by the other team, which reads possession during flight and right
+after kicks, where the nearest player is worst (T14) and where A13 puts the largest remaining headroom (+0.194 raw
+where the ball is seen). **Effort** S–M.
+
+### P25 — A tempo check, a normalised speed cue and a sparse-tracking guard for the dead-ball model
+
+**Status: idea.** Two teams report that the players' median speed falls from about 2 m/s in the opening minutes to 1
+to 1.7 m/s later in this match, so that a fixed speed cut flags half the match dead, and one of them normalises every
+speed by a rolling median over ±7.5 minutes. Our `dead_ball_model` reads absolute speeds (`speed_mean`,
+`slow_share` at 2.0 m/s) learned on DFL; its label-free checks on BAR-ATH passed (predicted `D` 36%, R010 to R029),
+so the effect, if any, is small, and the public window is the fastest stretch of the match (A02), so it cannot show
+it. **What, in order:** (1) a label-free check, allowed as a check and never a value (T01, T54): the distribution of
+`speed_mean` per 5-minute block on BAR-ATH beside the degraded DFL matches, and the predicted `D` share per block; a
+WARN band declared before the run; (2) only if the check warns, normalised copies of the speed features (each divided
+by its block's rolling median; a run-time transform, its window a constant set on DFL) added to `play_features`, the
+model retrained on DFL and read on the benchmark under both truths by the usual rule; (3) a guard that returns NaN from
+every source on a frame with fewer than n present slots, n set on DFL, for the 750-frame blackout another team reports
+near the end of the first graded block (no home tracks). **Effort** S for the check, M for the retrain.
+
+### P26 — Metrica's sample games' tracking as a second benchmark and training set
+
+**Status: idea.** R023 (P16) read the three sample games' events only. Their tracking is public too (games 1 and 2 as
+CSV, game 3 in the EPTS format of our own ATD), and two teams use it: False9 trains its models on the three games with
+the tracking roughened (ball gaps to 59% visibility, 46 slots), and InkSight calibrates on games 1 and 2 with the ball
+dropped in long blocks. The games carry no ball-status flag (checked 4 Nov), so the labels are R023's event-derived
+ones (`D` from the stops, the team from the events). **What:** serve the three games to the benchmark as the DFL
+matches are served (`MatchInputs`), degrade them with the `tracking` profile, score `main.toml` under R023's labels
+beside the DFL numbers, and run P16's timing part on them (the ball's own track against the BALL OUT and SET PIECE
+events: the lag from the ball crossing a line to the stop, and from the set piece's start to the ball moving). **Why:**
+it is the one external data in our provider's conventions, so it answers T33 and T40 (the grain and the timing of
+our truth) directly, and False9's experience that another provider's data (SkillCorner) hurt says the provider's
+convention matters. Nothing of BAR-ATH enters it. **Effort** M (a reader for the two CSV formats and the EPTS game,
+R023's labels, the degradation as it stands). A decision rule before the run, as R023 had.
 
 ## Cheap signals worth checking
 
