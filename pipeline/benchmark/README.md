@@ -761,22 +761,31 @@ For the control rule given and each tau, per match and pooled over matches and s
 - **(i)**: among the truth's team flips (`touch_stats`' definition) where the served ball is visible at the flip, the
   share with a touch of the new team dated within 12 frames and no kept episode of the new team starting within 12
   frames, both in the flip's half; beside it the flips, the ball-visible ones, those with the touch and those with the
-  episode. Needed: 10%.
+  episode. Needed: 10%. *Not gating*, in its own table and on its own line: (i) excluding flips inside a new-team
+  episode. A kept episode of the new team that began more than 12 frames before the flip and is still running there
+  is "no episode" to (i), though the rule has nothing to back-date at such a flip; `inside_episode` counts those
+  flips, `touch_no_episode_outside` is (i)'s count without them and `share_outside` its share of the same
+  ball-visible flips.
 - **(ii)**: over every frame the rule would back-date, the share where the truth names the touching team (a `D` frame
   counts against), with the frames, the stretches and the quartiles of their lengths; the same with each stretch cut
   to its last 12, 25 and 50 frames (`backdate_cap`), for the spec's one retry. Needed: 70%.
 - per match and seed, the back-dated stretches per graded minute with the ball visible, and their lowest and highest:
-  the band of the spec's one label-free check on our match.
+  the band of the spec's one label-free check on a match. The two numbers of a rate come from
+  `controlled_touch.backdated_stretches(inputs, ...)`, which reads the tracking alone and takes any match's `Inputs`.
 
 The last lines are, for each tau, `gate tau=<x>: (i) <share> >= 0.10 <pass|FAIL>; (ii) <share> >= 0.70 <pass|FAIL> ->
-<PASS|FAIL>` and the suggested `backdate_confidence`, the floor of (ii) to a hundredth (`floored`:
+<PASS|FAIL>` (the shares to 6 decimals, so that one just under its bar is not printed as the bar), `not gating
+tau=<x>: (i) excluding flips inside a new-team episode <share>` and the suggested `backdate_confidence`, the floor of
+(ii) to a hundredth (`floored`:
 `confidence_from_agreement`'s flooring without its clip; the config clips it to [`hold`, `confidence`]). It is a
 measurement, so the exit code is 0 whether the gate passes or not, and 1 only for an error. The back-dated frames are
 read off the evidence of `controlled_touch.compute` itself, called with `backdate_tau` (and `backdate_cap`), so what
 is measured is what a config would get; the source is called on a `MatchInputs` with no flag, and the result and the
 `--out` JSON hold counts and shares and no frame. The checks are in `checks/touch_backdate.py` (synthetic, a ball
-relayed between standing players): `test_touch_backdate_stats_matches_a_loop`, `..._floor_and_labels`,
-`..._gate_lines`, `..._command_line`, `..._never_passes_truth` and `..._refuses_what_it_cannot_measure`.
+relayed between standing players): `test_touch_backdate_stats_matches_a_loop`, `..._flip_windows_are_pinned` ((i)'s
+windows on hand-built touches and episodes, every count written out), `..._floor_and_labels`, `..._gate_lines`,
+`..._command_line`, `..._never_passes_truth` and `..._refuses_what_it_cannot_measure`; and main's
+`test_generic_no_instrument_loads_a_calibration` holds that it loads no Calibration and refuses one that is given.
 
 Stage B's configs (R009) are `p45b_{src}_w{WWW}_bp{B}.toml`: `src` is `hgb`, `logit` or `rules`, `WWW` the weight in
 thousandths (`010` to `100`) and `B` is 1 with `ball_presence` at its defaults, 0 without; each holds `nearest_player`

@@ -13,11 +13,15 @@ benchmark match and seed, against the raw truth:
 * (i)  among the truth's team flips (touch_stats' definition: a change of team with no dead frame between, at frame c)
   where the served ball is visible at c, the share that have a touch of the new team dated within WINDOW frames of c
   and no kept episode of the new team starting within WINDOW frames of c, both in c's graded half. Needed: 10%.
+  Beside it, and not gating: the same count without the flips at which a kept episode of the new team is already
+  running (it started more than WINDOW frames before c, so (i) calls it "no episode", and the rule has nothing to
+  back-date there), as a share of the same ball-visible flips.
 * (ii) over every frame that the rule would back-date, the share where the truth names the touching team; a frame the
   truth calls D counts against. Needed: 70%. The same with the stretch capped at each of CAPS frames, for the one retry
   the spec allows.
-* per match and seed, the back-dated stretches per graded minute with the ball visible: the band of the one label-free
-  check that the spec makes on our match comes from their lowest and highest.
+* per match and seed, the back-dated stretches per graded minute with the ball visible
+  (controlled_touch.backdated_stretches, which any match's Inputs can be given): the band of the one label-free check
+  that the spec makes on our match comes from their lowest and highest.
 
 The gate passes for a tau when (i) and (ii) both do. It is a measurement: the exit code is 0 whether it passes or not.
 The suggested backdate_confidence is the floor of (ii) to a hundredth (touch_stats.confidence_from_agreement's
@@ -106,10 +110,13 @@ def measure(setting, *, taus=DEFAULT_TAUS, duel_radius=DEFAULT_DUEL_RADIUS, prof
     Returns {"profile", "seeds", "matches", "truth", "setting", "window", "caps", "taus"}; "taus" maps tau_label(tau)
     to {"tau", "flips", "backdated", "stretches_per_minute", "gate", "backdate_confidence"}:
 
-    * flips: {"pooled", "per_match"} of rows {flips, visible, touch, episode, touch_no_episode, share}. `flips` counts
-      every team flip of the truth and the other four those where the served ball is visible at the flip: all of them,
-      those with a touch of the new team within WINDOW frames, those with an episode start of the new team within
-      WINDOW frames, and those with the touch and without the episode; share = touch_no_episode / visible, (i).
+    * flips: {"pooled", "per_match"} of rows {flips, visible, touch, episode, touch_no_episode, share, inside_episode,
+      touch_no_episode_outside, share_outside}. `flips` counts every team flip of the truth and the other counts those
+      where the served ball is visible at the flip: all of them, those with a touch of the new team within WINDOW
+      frames, those with an episode start of the new team within WINDOW frames, and those with the touch and without
+      the episode; share = touch_no_episode / visible, (i). Not gating: inside_episode, the ball-visible flips at which
+      a kept episode of the new team is running; touch_no_episode_outside, (i)'s count without them; and share_outside
+      = touch_no_episode_outside / visible, the same denominator as (i)'s.
     * backdated: {cap_label(cap): {"pooled", "per_match"}} for no cap and each of CAPS, of rows {frames, agree, share,
       stretches, length_p25, length_median, length_p75}: the back-dated frames, those where the truth names the
       touching team, their share (ii), the stretches and the quartiles of their lengths in frames.
@@ -119,7 +126,8 @@ def measure(setting, *, taus=DEFAULT_TAUS, duel_radius=DEFAULT_DUEL_RADIUS, prof
     * backdate_confidence: floored(the uncapped pooled (ii)), None if nothing was back-dated.
 
     A share or a quartile of nothing is None, and the gate then fails. ValueError (touch_backdate_stats) for a setting
-    that misses or adds a key and for taus that are none, not positive finite numbers, or repeated; the runner's
+    that misses or adds a key and for taus that are none, not positive finite numbers, repeated, or two of one label
+    (tau_label, 6 significant digits: they would be one entry of the result); the runner's
     BenchmarkError for a profile, seeds or match it refuses. All of that is refused before a match is loaded; a value
     that controlled_touch refuses (a radius of 0) is its ValueError, on the first match.
     """
@@ -135,7 +143,7 @@ def measure(setting, *, taus=DEFAULT_TAUS, duel_radius=DEFAULT_DUEL_RADIUS, prof
     seed_list = [0] if profile == run.CLEAN else list(range(seeds))
     rule = dict(setting, duel_radius=duel_radius, confidence=MEASURED_CONFIDENCE)
 
-    flip_counts = {tau: {} for tau in taus}                    # tau -> match id -> the five counts of (i)
+    flip_counts = {tau: {} for tau in taus}                    # tau -> match id -> the seven counts of (i)
     stretch_counts = {tau: {cap: {} for cap in (None,) + CAPS} for tau in taus}   # cap -> match id -> [frames, agree]
     lengths = {tau: {cap: {} for cap in (None,) + CAPS} for tau in taus}          # -> cap -> match id -> [length, ...]
     rates = {tau: {} for tau in taus}                          # tau -> match id -> seed -> stretches per minute
@@ -148,12 +156,16 @@ def measure(setting, *, taus=DEFAULT_TAUS, duel_radius=DEFAULT_DUEL_RADIUS, prof
             inputs = match_inputs.MatchInputs(match, atd, profile=profile, seed=seed, data_dir=data_dir)
             context = RunContext(inputs=inputs, seed=0)
             visible = kinematics.ball_track(inputs).visible
-            minutes = int(visible.sum()) / (60.0 * match.fps)
-            starts = _episode_starts(controlled_touch.compute(context, **rule).home, match.graded)
+            episodes = controlled_touch.compute(context, **rule).home
+            starts, running = _episode_starts(episodes, match.graded), _episode_frames(episodes)
             for tau in taus:
                 touched = controlled_touch.touches(inputs, radius=setting["radius"], duel_radius=duel_radius, tau=tau)
-                row = flip_counts[tau].setdefault(match_id, np.zeros(5, dtype=np.int64))
-                row += _flip_counts(flips, match.graded, visible, touched, starts)
+                row = flip_counts[tau].setdefault(match_id, np.zeros(7, dtype=np.int64))
+                row += _flip_counts(flips, match.graded, visible, touched, starts, running)
+                stretches, with_ball = controlled_touch.backdated_stretches(inputs, backdate_tau=tau,
+                                                                            duel_radius=duel_radius, **setting)
+                rates[tau].setdefault(match_id, {})[seed] = (stretches / (with_ball / (60.0 * match.fps))
+                                                             if with_ball else None)
                 for cap in (None,) + CAPS:
                     home = controlled_touch.compute(context, backdate_tau=tau, backdate_confidence=MARK,
                                                     backdate_cap=cap, **rule).home
@@ -161,9 +173,15 @@ def measure(setting, *, taus=DEFAULT_TAUS, duel_radius=DEFAULT_DUEL_RADIUS, prof
                     row = stretch_counts[tau][cap].setdefault(match_id, np.zeros(2, dtype=np.int64))
                     row += (frames, agree)
                     lengths[tau][cap].setdefault(match_id, []).extend(found)
-                    if cap is None:
-                        rates[tau].setdefault(match_id, {})[seed] = len(found) / minutes if minutes else None
-            del atd, inputs, context, visible, starts
+                    if len(found) != stretches:
+                        # A stretch is read off the evidence as a maximal run of marked frames. Two stretches cannot
+                        # touch (a kept episode lies between them) and a cap leaves a frame of each: if this ever
+                        # fails, the evidence is not what this module takes it for, and no figure of it stands.
+                        raise RuntimeError("touch_backdate_stats: {} seed {} tau {} cap {}: {} runs of back-dated "
+                                           "frames in the evidence and {} stretches by controlled_touch."
+                                           "backdated_stretches".format(match_id, seed, tau_label(tau), cap,
+                                                                        len(found), stretches))
+            del atd, inputs, context, visible, episodes, starts, running
         log("match     {}   {} taus x {} seeds".format(match_id, len(taus), len(seed_list)))
         del match, codes, flips
 
@@ -224,6 +242,13 @@ def _checked_taus(taus):
     if repeated:
         raise ValueError("touch_backdate_stats: tau {} is given twice; it would be measured twice".format(
             tau_label(repeated[0])))
+    labels = [tau_label(tau) for tau in taus]
+    for label in labels:
+        same = [tau for tau, name in zip(taus, labels) if name == label]
+        if len(same) > 1:
+            raise ValueError("touch_backdate_stats: the taus {} would both be named {} in the result (a tau is named "
+                             "by 6 significant digits), and one would replace the other; give taus that differ "
+                             "there".format(" and ".join(repr(tau) for tau in same), label))
     return taus
 
 
@@ -242,13 +267,24 @@ def _episode_starts(home, graded):
     return start & team_home, start & ~team_home
 
 
-def _flip_counts(flips, graded, visible, touched, starts):
-    """[flips, visible, touch, episode, touch and no episode] of one match and seed: the counts of (i).
+def _episode_frames(home):
+    """(home's, away's): bool masks of the frames inside a kept episode of each team, from the evidence without a
+    hold."""
+    kept = ~np.isnan(home)
+    team_home = home > 0.5
+    return kept & team_home, kept & ~team_home
 
-    `touched` and `starts` are (home's, away's) masks. A flip at c with the ball visible has a touch (an episode) when
-    a touch (an episode start) of the new team lies in [c - WINDOW, c + WINDOW], cut at the edges of c's graded half.
+
+def _flip_counts(flips, graded, visible, touched, starts, running):
+    """[flips, visible, touch, episode, touch and no episode, inside an episode, touch and no episode and not inside
+    one] of one match and seed: the counts of (i), and of (i) without the flips inside an episode of the new team.
+
+    `touched`, `starts` and `running` are (home's, away's) masks: the dated touches, the first frames of the kept
+    episodes and all their frames. A flip at c with the ball visible has a touch (an episode) when a touch (an episode
+    start) of the new team lies in [c - WINDOW, c + WINDOW], cut at the edges of c's graded half, and is inside an
+    episode when c is a frame of a kept episode of the new team.
     """
-    counts = np.zeros(5, dtype=np.int64)
+    counts = np.zeros(7, dtype=np.int64)
     # Running sums, so that "any in a window" is one subtraction: [0] home's, [1] away's.
     touch_sums = [np.concatenate(([0], np.cumsum(mask))) for mask in touched]
     start_sums = [np.concatenate(([0], np.cumsum(mask))) for mask in starts]
@@ -262,9 +298,12 @@ def _flip_counts(flips, graded, visible, touched, starts):
         team = 0 if new_is_home else 1
         touch = touch_sums[team][high] > touch_sums[team][low]
         episode = start_sums[team][high] > start_sums[team][low]
+        inside = running[team][frame]
         counts[2] += touch
         counts[3] += episode
         counts[4] += touch and not episode
+        counts[5] += inside
+        counts[6] += touch and not episode and not inside
     return counts
 
 
@@ -281,9 +320,10 @@ def _stretches(home, codes):
 
 
 def _flip_row(counts):
-    flips, visible, touch, episode, both = (int(count) for count in counts)
+    flips, visible, touch, episode, both, inside, outside = (int(count) for count in counts)
     return {"flips": flips, "visible": visible, "touch": touch, "episode": episode, "touch_no_episode": both,
-            "share": both / visible if visible else None}
+            "share": both / visible if visible else None, "inside_episode": inside,
+            "touch_no_episode_outside": outside, "share_outside": outside / visible if visible else None}
 
 
 def _stretch_row(counts, found):
@@ -312,6 +352,13 @@ def render(result):
             lines.append("  {:<12}{:>8}{:>14}{:>8}{:>10}{:>20}{:>9}".format(
                 label, row["flips"], row["visible"], row["touch"], row["episode"], row["touch_no_episode"],
                 _pct(row["share"])))
+        lines += ["  (i) excluding flips inside a new-team episode (not gating): a kept episode of the new team is "
+                  "running at the flip",
+                  "  {:<12}{:>22}{:>34}{:>24}".format(
+                      "", "inside an episode", "touch, no episode, not inside", "share of ball visible")]
+        for label, row in [("pooled", entry["flips"]["pooled"])] + sorted(entry["flips"]["per_match"].items()):
+            lines.append("  {:<12}{:>22}{:>34}{:>24}".format(
+                label, row["inside_episode"], row["touch_no_episode_outside"], _pct(row["share_outside"])))
         lines += ["  (ii) back-dated frames where the truth names the touching team; stretch lengths in frames",
                   "  {:<22}{:>9}{:>9}{:>9}{:>11}{:>8}{:>8}{:>8}".format(
                       "", "frames", "agree", "share", "stretches", "p25", "median", "p75")]
@@ -334,7 +381,9 @@ def render(result):
 
 
 def gate_lines(result):
-    """The last lines of the printout: for each tau the gate, as the spec declares it, and the confidence it gives."""
+    """The last lines of the printout: for each tau the gate, as the spec declares it, the share that does not gate
+    ((i) without the flips inside an episode of the new team) and the confidence that (ii) gives. The shares have 6
+    decimals, so that one just under its bar does not print as the bar beside a FAIL."""
     lines = []
     for name, entry in result["taus"].items():
         gate = entry["gate"]
@@ -342,6 +391,8 @@ def gate_lines(result):
             name, _share(gate["flips_share"]), gate["flips_needed"], "pass" if gate["flips_pass"] else "FAIL",
             _share(gate["agreement"]), gate["agreement_needed"], "pass" if gate["agreement_pass"] else "FAIL",
             "PASS" if gate["passed"] else "FAIL"))
+        lines.append("not gating tau={}: (i) excluding flips inside a new-team episode {}".format(
+            name, _share(entry["flips"]["pooled"]["share_outside"])))
         lines.append("suggested backdate_confidence tau={}: {} (the floor of (ii) to a hundredth; the config clips it "
                      "to [hold, confidence])".format(
                          name, "n/a" if entry["backdate_confidence"] is None
@@ -354,7 +405,7 @@ def _pct(value):
 
 
 def _share(value):
-    return "n/a" if value is None else "{:.4f}".format(value)
+    return "n/a" if value is None else "{:.6f}".format(value)
 
 
 def _number(value):

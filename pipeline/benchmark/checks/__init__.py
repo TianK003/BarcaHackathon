@@ -57,9 +57,10 @@ module of its topic:
                  labels, and that the source is never handed the truth (synthetic only)
     touch_backdate.py
                  touch_backdate_stats, step 0 of P28: (i), (ii) under every cap, the rates and the gate against a plain
-                 loop on a ball relayed between standing players, the floor, the command line's last lines and its
-                 file (counts and shares, no per-frame array), that the source is never handed the truth, and what is
-                 refused before a match is loaded (synthetic only)
+                 loop on a ball relayed between standing players, (i)'s windows on hand-built touches and episodes
+                 with every count written out, the floor, the command line's last lines and its file (counts and
+                 shares, no per-frame array), that the source is never handed the truth, and what is refused before a
+                 match is loaded (synthetic only)
     dead_ball.py P05's dead-ball trainer: the exported trees against scikit-learn, the same bytes on 1 and 4
                  threads, the folds that exclude the held-out match, no truth in the features, the JSON artifact
                  (exact, LF, bounded), the logistic reference's bookkeeping, the rule values' rounding, and --verify
@@ -129,5 +130,4 @@ from pipeline.benchmark.checks import (
 
 MODULES = (sources, dfl, dfl_events, truth, inputs, score, run, choose, hazard, calibration, degrade, cap, tracking, context,
            generic, fidelity, headroom, touch, touch_backdate, dead_ball, conventions, restarts, shape, label_diff,
-           wrong_team,
-           tag_stats, metrica, diagnose, harness)
+           wrong_team, tag_stats, metrica, diagnose, harness)

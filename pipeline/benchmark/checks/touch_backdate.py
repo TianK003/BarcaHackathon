@@ -5,7 +5,8 @@ team flips that have a touch of the new team and no episode, and (ii), the share
 where the truth names the touching team, which is also the confidence the rule is given. A mistake in either would
 pass or fail the gate wrongly. So what is held against it here is a plain loop, one frame at a time: the flips, the
 windows, the episode starts and the stretches worked out again from the rule as the spec states it, on the source's
-touches and episodes, the caps by cutting each stretch, the rates per match and seed, the gate and the floor. Also:
+touches and episodes, the caps by cutting each stretch, the rates per match and seed, the gate and the floor; and (i)'s
+windows on hand-built touches and episodes with every count written out. Also:
 that the source is never handed the truth (the inputs of every call go through the deep walk of common.leaks), that the
 file holds counts and shares and no per-frame array, what the command line prints last, and what is refused.
 
@@ -39,6 +40,8 @@ TEAMS = (0, 0, 0, 0, 1, 1, 1, 1)
 WINDOW = 12
 CAPS = (12, 25, 50)
 H, A = 0, 1                              # the truth's codes for the two teams (possession_metrics)
+# The counts of a row of (i), in the order the loop and _flip_counts hold them.
+FLIP_KEYS = ("flips", "visible", "touch", "episode", "touch_no_episode", "inside_episode", "touch_no_episode_outside")
 
 
 def relay_match(match_id="RND001", seed=0, rows=(3000, 2500)):
@@ -89,7 +92,7 @@ def measured(setting=None, **more):
 
 
 def plain_loop(match, seed, tau):
-    """One match and seed, one frame at a time: (i)'s five counts, the stretches [(first, stop, team is home, [code,
+    """One match and seed, one frame at a time: (i)'s seven counts, the stretches [(first, stop, team is home, [code,
     ...])] by the rule as the spec states it, and the frames with the ball visible. From the source's evidence without
     a hold, its touches and the truth."""
     atd = benchmark_run.make_atd(match, PROFILE, seed)
@@ -107,7 +110,7 @@ def plain_loop(match, seed, tau):
             return False
         return frame == start or np.isnan(home[frame - 1]) or (home[frame - 1] > 0.5) != team_is_home
 
-    flips = seen = with_touch = with_episode = both = 0
+    flips = seen = with_touch = with_episode = both = inside_episode = outside = 0
     for start, stop in blocks:
         for c in range(start + 1, stop):
             if codes[c] not in (H, A) or codes[c - 1] not in (H, A) or codes[c] == codes[c - 1]:
@@ -120,9 +123,12 @@ def plain_loop(match, seed, tau):
             window = range(max(c - WINDOW, start), min(c + WINDOW, stop - 1) + 1)
             touch = any((touch_home if new_is_home else touch_away)[f] for f in window)
             episode = any(starts_here(f, start, new_is_home) for f in window)
+            inside = bool(not np.isnan(home[c]) and (home[c] > 0.5) == new_is_home)   # the new team's episode runs
             with_touch += touch
             with_episode += episode
             both += touch and not episode
+            inside_episode += inside
+            outside += touch and not episode and not inside
 
     stretches = []
     for start, stop in blocks:
@@ -143,7 +149,7 @@ def plain_loop(match, seed, tau):
                 if own[frame] and all(visible[frame:first]) and not any(other[frame + 1:first]):
                     stretches.append((frame, first, new, [int(code) for code in codes[frame:first]]))
                     break
-    return (flips, seen, with_touch, with_episode, both), stretches, int(visible.sum())
+    return (flips, seen, with_touch, with_episode, both, inside_episode, outside), stretches, int(visible.sum())
 
 
 def capped_counts(stretches, cap):
@@ -175,11 +181,11 @@ def test_touch_backdate_stats_matches_a_loop():
     for tau in TAUS:
         entry = result["taus"][touch_backdate_stats.tau_label(tau)]
         assert entry["tau"] == tau
-        pooled_flips = np.zeros(5, dtype=int)
+        pooled_flips = np.zeros(7, dtype=int)
         pooled = {cap: [0, 0, []] for cap in (None,) + CAPS}
         rates = []
         for match_id, match in matches.items():
-            match_flips = np.zeros(5, dtype=int)
+            match_flips = np.zeros(7, dtype=int)
             of_match = {cap: [0, 0, []] for cap in (None,) + CAPS}
             for seed in range(SEEDS):
                 flips, stretches, visible = plain_loop(match, seed, tau)
@@ -194,18 +200,20 @@ def test_touch_backdate_stats_matches_a_loop():
                 assert entry["stretches_per_minute"]["per_run"][match_id][str(seed)] == rate, (match_id, seed)
                 rates.append(rate)
             row = entry["flips"]["per_match"][match_id]
-            assert [row[key] for key in ("flips", "visible", "touch", "episode", "touch_no_episode")] == list(
-                match_flips), (tau, match_id, row, match_flips)
+            assert [row[key] for key in FLIP_KEYS] == list(match_flips), (tau, match_id, row, match_flips)
             assert row["share"] == match_flips[4] / match_flips[1]
+            assert row["share_outside"] == match_flips[6] / match_flips[1]
             for cap in (None,) + CAPS:
                 got = entry["backdated"][touch_backdate_stats.cap_label(cap)]["per_match"][match_id]
                 assert got == stretch_row(*of_match[cap]), (tau, match_id, cap, got)
             pooled_flips += match_flips
 
         row = entry["flips"]["pooled"]
-        assert [row[key] for key in ("flips", "visible", "touch", "episode", "touch_no_episode")] == list(
-            pooled_flips), (tau, row, pooled_flips)
+        assert [row[key] for key in FLIP_KEYS] == list(pooled_flips), (tau, row, pooled_flips)
         assert row["share"] == pooled_flips[4] / pooled_flips[1]
+        assert row["share_outside"] == pooled_flips[6] / pooled_flips[1] and len(row) == len(FLIP_KEYS) + 2
+        assert 0 < pooled_flips[6] < pooled_flips[4] and pooled_flips[5] > 0, (
+            "some flips with a touch and no episode start must lie inside a running episode, and not all", pooled_flips)
         # A loop that meets nothing, or one case only, proves little: every count is there and none is all.
         assert 0 < pooled_flips[4] < pooled_flips[2] < pooled_flips[1] < pooled_flips[0], pooled_flips
         assert 0 < pooled_flips[3] < pooled_flips[1] and pooled_flips[2] - pooled_flips[4] > 0, pooled_flips
@@ -249,10 +257,16 @@ def test_touch_backdate_stats_floor_and_labels():
 
 
 def test_touch_backdate_stats_never_passes_truth():
-    """The inputs of every call of the source, compute and touches alike, hold neither the match nor its truth."""
+    """The inputs of every call of the source, compute, touches and backdated_stretches alike, hold neither the match
+    nor its truth."""
     matches = relay_matches()
     seen = []
     real_compute, real_touches = controlled_touch.compute, controlled_touch.touches
+    real_stretches = controlled_touch.backdated_stretches
+
+    def spy_stretches(inputs, **parameters):
+        seen.append(("stretches", inputs))
+        return real_stretches(inputs, **parameters)
 
     def spy_compute(run, **parameters):
         seen.append(("compute", run.inputs))
@@ -263,12 +277,15 @@ def test_touch_backdate_stats_never_passes_truth():
         return real_touches(inputs, **parameters)
 
     controlled_touch.compute, controlled_touch.touches = spy_compute, spy_touches
+    controlled_touch.backdated_stretches = spy_stretches
     try:
         measured()
     finally:
         controlled_touch.compute, controlled_touch.touches = real_compute, real_touches
+        controlled_touch.backdated_stretches = real_stretches
     runs = len(matches) * SEEDS
     assert [name for name, _ in seen].count("touches") == runs * len(TAUS), "one call of touches per run and tau"
+    assert [name for name, _ in seen].count("stretches") == runs * len(TAUS), "and one of backdated_stretches"
     assert [name for name, _ in seen].count("compute") == runs * (1 + len(TAUS) * (1 + len(CAPS))), (
         "the episodes once, then the rule under no cap and under each cap, per tau")
     per_match = len(seen) // len(matches)
@@ -311,19 +328,23 @@ def test_touch_backdate_stats_command_line():
         document = strict_json(read(out_path))
         assert document == benchmark_run.plain(result), "the file is the result measure() returns"
         lists, keys = longest_list(document)
-        assert lists <= 3 and keys <= 8, "counts and shares only: no list or object as long as a half ({}, {})".format(
+        assert lists <= 3 and keys <= 9, "counts and shares only: no list or object as long as a half ({}, {})".format(
             lists, keys)
 
         lines = out.rstrip("\n").split("\n")
-        assert lines[-4].startswith("gate tau=3: (i) ") and lines[-2].startswith("gate tau=6: (i) "), lines[-4:]
-        for line, name in ((lines[-4], "3"), (lines[-2], "6")):
+        assert lines[-6].startswith("gate tau=3: (i) ") and lines[-3].startswith("gate tau=6: (i) "), lines[-6:]
+        for line, name in ((lines[-6], "3"), (lines[-3], "6")):
             gate = result["taus"][name]["gate"]
-            assert line == "gate tau={}: (i) {:.4f} >= 0.10 {}; (ii) {:.4f} >= 0.70 {} -> {}".format(
+            assert line == "gate tau={}: (i) {:.6f} >= 0.10 {}; (ii) {:.6f} >= 0.70 {} -> {}".format(
                 name, gate["flips_share"], "pass" if gate["flips_pass"] else "FAIL", gate["agreement"],
                 "pass" if gate["agreement_pass"] else "FAIL", "PASS" if gate["passed"] else "FAIL"), line
-        for line, name in ((lines[-3], "3"), (lines[-1], "6")):
+        for line, name in ((lines[-5], "3"), (lines[-2], "6")):
+            assert line == "not gating tau={}: (i) excluding flips inside a new-team episode {:.6f}".format(
+                name, result["taus"][name]["flips"]["pooled"]["share_outside"]), line
+        for line, name in ((lines[-4], "3"), (lines[-1], "6")):
             assert line.startswith("suggested backdate_confidence tau={}: {:.2f} ".format(
                 name, result["taus"][name]["backdate_confidence"])), line
+        assert "(i) excluding flips inside a new-team episode (not gating)" in out, "the table of it, per match"
         assert not result["taus"]["3"]["gate"]["passed"], "random flags agree with nothing: the gate fails, and exit 0"
         assert "written   " in out and "J03WMX" in out and "cap 50 pooled" in out, out
 
@@ -335,7 +356,7 @@ def test_touch_backdate_stats_command_line():
         with contextlib.redirect_stdout(shown):
             code = touch_backdate_stats.main(arguments[:-1] + [os.path.join(blocker, "p28.json")])
         unwritten = shown.getvalue().rstrip("\n").split("\n")
-        assert code == 1 and unwritten[-4:] == lines[-4:] and unwritten[-5].startswith("FAILED    "), unwritten[-6:]
+        assert code == 1 and unwritten[-6:] == lines[-6:] and unwritten[-7].startswith("FAILED    "), unwritten[-8:]
         assert "written   " not in shown.getvalue() and "cap 50 pooled" in shown.getvalue()
 
         shown = io.StringIO()
@@ -349,28 +370,106 @@ def test_touch_backdate_stats_command_line():
 
 
 def test_touch_backdate_stats_gate_lines():
-    """The gate's line as the spec declares it, on made-up results: pass and FAIL of each part, and nothing measured."""
-    def entry(flips, agreement):
+    """The gate's line as the spec declares it, on made-up results: pass and FAIL of each part, nothing measured, the
+    share that does not gate on its own line, and 6 decimals, so that 0.69999 is not printed as 0.7000 beside a FAIL."""
+    def entry(flips, agreement, outside):
         flips_pass = flips is not None and flips >= 0.10
         agreement_pass = agreement is not None and agreement >= 0.70
-        return {"gate": {"flips_share": flips, "flips_needed": 0.10, "flips_pass": flips_pass, "agreement": agreement,
+        return {"flips": {"pooled": {"share_outside": outside}},
+                "gate": {"flips_share": flips, "flips_needed": 0.10, "flips_pass": flips_pass, "agreement": agreement,
                          "agreement_needed": 0.70, "agreement_pass": agreement_pass,
                          "passed": flips_pass and agreement_pass},
                 "backdate_confidence": None if agreement is None else touch_backdate_stats.floored(agreement)}
 
-    lines = touch_backdate_stats.gate_lines({"taus": {"3": entry(0.1234, 0.7412), "6": entry(0.0999, 0.7),
-                                                      "9": entry(0.5, 0.69999), "12": entry(None, None)}})
-    assert lines[0] == "gate tau=3: (i) 0.1234 >= 0.10 pass; (ii) 0.7412 >= 0.70 pass -> PASS", lines[0]
-    assert lines[2] == "gate tau=6: (i) 0.0999 >= 0.10 FAIL; (ii) 0.7000 >= 0.70 pass -> FAIL", lines[2]
-    assert lines[4] == "gate tau=9: (i) 0.5000 >= 0.10 pass; (ii) 0.7000 >= 0.70 FAIL -> FAIL", lines[4]
-    assert lines[6] == "gate tau=12: (i) n/a >= 0.10 FAIL; (ii) n/a >= 0.70 FAIL -> FAIL", lines[6]
-    assert lines[1].startswith("suggested backdate_confidence tau=3: 0.74 ") and "0.70 " in lines[3], lines[:4]
-    assert lines[5].startswith("suggested backdate_confidence tau=9: 0.69 ") and "n/a" in lines[7], lines[4:]
+    lines = touch_backdate_stats.gate_lines({"taus": {
+        "3": entry(0.1234, 0.7412, 0.0876), "6": entry(0.0999, 0.7, 0.05), "9": entry(0.5, 0.69999, 0.5),
+        "12": entry(None, None, None)}})
+    assert len(lines) == 12, lines
+    assert lines[0] == "gate tau=3: (i) 0.123400 >= 0.10 pass; (ii) 0.741200 >= 0.70 pass -> PASS", lines[0]
+    assert lines[1] == "not gating tau=3: (i) excluding flips inside a new-team episode 0.087600", lines[1]
+    assert lines[2].startswith("suggested backdate_confidence tau=3: 0.74 "), lines[2]
+    assert lines[3] == "gate tau=6: (i) 0.099900 >= 0.10 FAIL; (ii) 0.700000 >= 0.70 pass -> FAIL", lines[3]
+    assert lines[4] == "not gating tau=6: (i) excluding flips inside a new-team episode 0.050000", lines[4]
+    assert lines[5].startswith("suggested backdate_confidence tau=6: 0.70 "), lines[5]
+    assert lines[6] == "gate tau=9: (i) 0.500000 >= 0.10 pass; (ii) 0.699990 >= 0.70 FAIL -> FAIL", lines[6]
+    assert lines[8].startswith("suggested backdate_confidence tau=9: 0.69 "), lines[8]
+    assert lines[9] == "gate tau=12: (i) n/a >= 0.10 FAIL; (ii) n/a >= 0.70 FAIL -> FAIL", lines[9]
+    assert lines[10] == "not gating tau=12: (i) excluding flips inside a new-team episode n/a", lines[10]
+    assert lines[11].startswith("suggested backdate_confidence tau=12: n/a "), lines[11]
+
+
+def test_touch_backdate_stats_flip_windows_are_pinned():
+    """(i) on hand-built touches and episodes, every count written out: a touch at exactly 12 frames from the flip
+    counts and at 13 does not, an episode start at exactly 12 frames takes the flip out and at 13 does not, the window
+    stops at the half's edges, only the ball at the flip itself matters, and a flip inside a running episode of the new
+    team is in (i) and not in the count beside it.
+
+    Two halves, frames 0..59 and 60..119. A count is [flips, ball visible, touch, episode, touch and no episode, inside
+    an episode, touch and no episode and not inside one]."""
+    n = 120
+    graded = [(1, 0, 60), (2, 60, 120)]
+
+    def mask(frames):
+        out = np.zeros(n, dtype=bool)
+        out[list(frames)] = True
+        return out
+
+    def counted(flips, touch_home=(), touch_away=(), home_episodes=(), away_episodes=(), missing=()):
+        """The seven counts for `flips`, [(frame, the new team is home)], with touches dated on the frames given, kept
+        episodes on the half-open spans given (as the source's evidence has them) and no ball on `missing`."""
+        evidence = np.full(n, np.nan)
+        for spans, value in ((home_episodes, 0.99), (away_episodes, 1.0 - 0.99)):
+            for first, stop in spans:
+                evidence[first:stop] = value
+        return touch_backdate_stats._flip_counts(
+            [(frame, 0, n - 1, new_is_home) for frame, new_is_home in flips], graded, ~mask(missing),
+            (mask(touch_home), mask(touch_away)), touch_backdate_stats._episode_starts(evidence, graded),
+            touch_backdate_stats._episode_frames(evidence)).tolist()
+
+    home_at_30 = [(30, True)]
+    assert counted(home_at_30) == [1, 1, 0, 0, 0, 0, 0]
+    # A touch of the new team 12 frames from the flip counts, 13 frames from it does not; the other team's never does.
+    assert counted(home_at_30, touch_home=[42]) == [1, 1, 1, 0, 1, 0, 1]
+    assert counted(home_at_30, touch_home=[43]) == [1, 1, 0, 0, 0, 0, 0]
+    assert counted(home_at_30, touch_home=[18]) == [1, 1, 1, 0, 1, 0, 1]
+    assert counted(home_at_30, touch_home=[17]) == [1, 1, 0, 0, 0, 0, 0]
+    assert counted(home_at_30, touch_away=[30]) == [1, 1, 0, 0, 0, 0, 0]
+    assert counted([(30, False)], touch_away=[42]) == [1, 1, 1, 0, 1, 0, 1]
+    assert counted([(30, False)], touch_home=[42]) == [1, 1, 0, 0, 0, 0, 0]
+    # An episode of the new team that starts 12 frames from the flip takes it out, 13 frames from it does not.
+    assert counted(home_at_30, touch_home=[30], home_episodes=[(42, 50)]) == [1, 1, 1, 1, 0, 0, 0]
+    assert counted(home_at_30, touch_home=[30], home_episodes=[(43, 50)]) == [1, 1, 1, 0, 1, 0, 1]
+    assert counted(home_at_30, touch_home=[30], home_episodes=[(18, 20)]) == [1, 1, 1, 1, 0, 0, 0]
+    assert counted(home_at_30, touch_home=[30], home_episodes=[(17, 20)]) == [1, 1, 1, 0, 1, 0, 1]
+    assert counted(home_at_30, touch_home=[30], away_episodes=[(28, 35)]) == [1, 1, 1, 0, 1, 0, 1]
+    # An episode that follows the other team's without a gap starts on its own first frame.
+    assert counted(home_at_30, touch_home=[30], away_episodes=[(20, 40)], home_episodes=[(40, 45)]) == [
+        1, 1, 1, 1, 0, 0, 0]
+    # The new team's episode already running at the flip, begun more than 12 frames before: (i) has the flip, the
+    # count that does not gate leaves it out. The other team's episode running there changes nothing.
+    assert counted(home_at_30, touch_home=[30], home_episodes=[(10, 40)]) == [1, 1, 1, 0, 1, 1, 0]
+    assert counted(home_at_30, touch_home=[30], away_episodes=[(10, 40)]) == [1, 1, 1, 0, 1, 0, 1]
+    assert counted(home_at_30, home_episodes=[(10, 40)]) == [1, 1, 0, 0, 0, 1, 0]
+    assert counted(home_at_30, home_episodes=[(30, 33)]) == [1, 1, 0, 1, 0, 1, 0]
+    # The ball at the flip: without it the flip is counted and nothing else of it; the frames beside it do not matter.
+    assert counted(home_at_30, touch_home=[30], missing=[30]) == [1, 0, 0, 0, 0, 0, 0]
+    assert counted(home_at_30, touch_home=[30], missing=[29, 31]) == [1, 1, 1, 0, 1, 0, 1]
+    # The window stops at the half's edges: 59 is the first half's last frame and 60 the second's first.
+    assert counted([(65, True)], touch_home=[59]) == [1, 1, 0, 0, 0, 0, 0]
+    assert counted([(65, True)], touch_home=[60]) == [1, 1, 1, 0, 1, 0, 1]
+    assert counted([(55, True)], touch_home=[60]) == [1, 1, 0, 0, 0, 0, 0]
+    assert counted([(55, True)], touch_home=[59]) == [1, 1, 1, 0, 1, 0, 1]
+    assert counted([(65, True)], touch_home=[65], home_episodes=[(58, 60)]) == [1, 1, 1, 0, 1, 0, 1]
+    # An episode that runs over the half's edge starts again on the half's first frame.
+    assert counted([(65, True)], touch_home=[65], home_episodes=[(40, 62)]) == [1, 1, 1, 1, 0, 0, 0]
+    # Several flips are summed: one with a touch, one without the ball, one inside an episode that began 5 frames ago.
+    assert counted([(30, True), (90, False), (100, True)], touch_home=[30], touch_away=[103],
+                   home_episodes=[(95, 110)], missing=[90]) == [3, 2, 1, 1, 1, 1, 1]
 
 
 def test_touch_backdate_stats_refuses_what_it_cannot_measure():
-    """A setting without a key or with one too many, no tau, a tau that is no speed, a repeated tau, an unknown
-    profile and no seed are each refused, before any match is loaded."""
+    """A setting without a key or with one too many, no tau, a tau that is no speed, a repeated tau, two taus of one
+    label, an unknown profile and no seed are each refused, before any match is loaded."""
     def fails(match_id):
         raise AssertionError("a match was loaded before the arguments were checked")
 
@@ -382,6 +481,10 @@ def test_touch_backdate_stats_refuses_what_it_cannot_measure():
                               (("3",), "tau"), ((3.0, 3), "twice")):
             expect_error(ValueError, lambda taus=taus: touch_backdate_stats.measure(RULE, taus=taus, log=quiet),
                          "touch_backdate_stats", message)
+        # Two taus that the result would file under one name: 3.0000001 is "3" at 6 significant digits.
+        assert touch_backdate_stats.tau_label(3.0000001) == touch_backdate_stats.tau_label(3.0) == "3"
+        expect_error(ValueError, lambda: touch_backdate_stats.measure(RULE, taus=(6.0, 3.0, 3.0000001), log=quiet),
+                     "touch_backdate_stats", "3.0 and 3.0000001", "named 3")
         expect_error(benchmark_run.BenchmarkError,
                      lambda: touch_backdate_stats.measure(RULE, profile="no_such", log=quiet), "no_such")
         expect_error(benchmark_run.BenchmarkError, lambda: touch_backdate_stats.measure(RULE, seeds=0, log=quiet),
