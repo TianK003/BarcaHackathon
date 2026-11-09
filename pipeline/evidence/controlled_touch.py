@@ -51,7 +51,8 @@ previous kept episode in the block is the other team O's gets T's vote from the 
 from which the ball is visible on every frame up to T's episode and after which no touch of O is dated. The frames from
 that touch to the frame before T's episode say T with `backdate_confidence`, over the hold; with `backdate_cap` only the
 last `backdate_cap` of them do. A touch never makes or lengthens an episode and never counts towards `min_frames`.
-`backdate_confidence` is measured (pipeline/benchmark/touch_backdate_stats.py), not tuned.
+`backdate_confidence` is measured (pipeline/benchmark/touch_backdate_stats.py), not tuned. backdated_stretches counts
+the stretches the rule would back-date on any Inputs, and its graded frames with the ball, from the tracking alone.
 
 Everything is per graded block (kinematics.blocks): an episode is cut at the block's edge, a hold never crosses it, a
 touch's window never leaves it, and frames outside the blocks are NaN. `alive` is NaN everywhere: whether the ball is
@@ -81,14 +82,7 @@ def compute(run, *, radius, max_rel_speed, min_frames, confidence, duel_radius=1
     """Evidence(home = confidence / 1 - confidence in kept control episodes, hold / 1 - hold between them, else NaN;
     alive = NaN). With backdate_tau, the frames from a team's first touch to its episode say that team with
     backdate_confidence (the module docstring); without it nothing of P28 runs."""
-    radius = _positive("radius", radius, "metres from the ball", allow_inf=False)
-    duel_radius = _positive("duel_radius", duel_radius, "metres from the ball", allow_inf=False)
-    max_rel_speed = _positive("max_rel_speed", max_rel_speed, "metres per second; inf turns the test off",
-                              allow_inf=True)
-    if isinstance(min_frames, bool) or not isinstance(min_frames, numbers.Integral) or min_frames < 1:
-        raise ValueError("controlled_touch: min_frames must be a whole number of frames >= 1, got {!r}".format(
-            min_frames))
-    min_frames = int(min_frames)
+    radius, max_rel_speed, min_frames, duel_radius = _control_rule(radius, max_rel_speed, min_frames, duel_radius)
     if isinstance(confidence, bool) or not isinstance(confidence, numbers.Real) or not 0.5 < confidence <= 1.0:
         raise ValueError("controlled_touch: confidence must be a number in (0.5, 1.0] (0.5 would say nothing), "
                          "got {!r}".format(confidence))
@@ -100,28 +94,62 @@ def compute(run, *, radius, max_rel_speed, min_frames, confidence, duel_radius=1
     backdate_tau, backdate_confidence, backdate_cap = _backdate(backdate_tau, backdate_confidence, backdate_cap, hold,
                                                                 confidence)
 
-    inputs = run.inputs
-    n_frames = inputs.atd.n_frames
+    n_frames = run.inputs.atd.n_frames
+    home = no_opinion(n_frames)
+    for start, stop, episodes, is_home, visible, stretches in _blocks(run.inputs, radius, max_rel_speed, min_frames,
+                                                                      duel_radius, backdate_tau):
+        home[start:stop] = _block_home(episodes, is_home, visible, confidence, hold)
+        for first, last, team_is_home in stretches:
+            if backdate_cap is not None:
+                first = max(first, last - backdate_cap)            # the last backdate_cap frames before the episode
+            home[start + first:start + last] = backdate_confidence if team_is_home else 1.0 - backdate_confidence
+    return Evidence(alive=no_opinion(n_frames), home=home)
+
+
+def backdated_stretches(inputs, *, radius, max_rel_speed, min_frames, backdate_tau, duel_radius=1.0):
+    """(stretches, frames): how many stretches P28's rule back-dates on `inputs`, and its graded frames with the ball.
+
+    Two whole numbers from the tracking alone, no label: the stretches that compute() would back-date with these
+    parameters (a cap shortens a stretch and never removes one, so there is none to give) and the frames of the graded
+    blocks on which the ball is visible. stretches / (frames / (60 x inputs.fps)) is the "back-dated stretches per
+    graded minute with the ball visible" of the spec's one check on a match, by the code path of compute() itself.
+    """
+    radius, max_rel_speed, min_frames, duel_radius = _control_rule(radius, max_rel_speed, min_frames, duel_radius)
+    backdate_tau = _positive("backdate_tau", backdate_tau,
+                             "metres per second: the least change of the ball's velocity at a touch", allow_inf=False)
+    stretches = sum(len(block[-1]) for block in _blocks(inputs, radius, max_rel_speed, min_frames, duel_radius,
+                                                        backdate_tau))
+    return stretches, int(kinematics.ball_track(inputs).visible.sum())
+
+
+def _blocks(inputs, radius, max_rel_speed, min_frames, duel_radius, tau):
+    """Each graded block as (start, stop, its kept episodes, is the nearest slot home's, is the ball visible, the
+    stretches that P28's rule back-dates in it): what compute() writes and backdated_stretches() counts. The last is
+    empty when `tau` is None, and nothing of P28 is then computed."""
     ball, players, nearest, nearest_is_home, in_zone = _zone(inputs, radius, duel_radius)
-    delta = ball.vel - players.vel[np.arange(n_frames), nearest]
+    delta = ball.vel - players.vel[np.arange(inputs.atd.n_frames), nearest]
     with np.errstate(invalid="ignore"):                    # NaN velocities compare False: not a candidate
         candidate = in_zone & (np.hypot(delta[:, 0], delta[:, 1]) <= max_rel_speed)
-    touched = None if backdate_tau is None else _touches(inputs, ball, in_zone, nearest_is_home, backdate_tau)
-
-    home = no_opinion(n_frames)
+    touched = None if tau is None else _touches(inputs, ball, in_zone, nearest_is_home, tau)
     for start, stop in kinematics.blocks(inputs):
         if stop > start:
             block = slice(start, stop)
             episodes = _episodes(candidate[block], nearest_is_home[block], min_frames)
-            home[block] = _block_home(episodes, nearest_is_home[block], ball.visible[block], confidence, hold)
-            if touched is not None:
-                for first, last, team_is_home in _block_stretches(episodes, ball.visible[block], touched[0][block],
-                                                                  touched[1][block]):
-                    if backdate_cap is not None:
-                        first = max(first, last - backdate_cap)    # the last backdate_cap frames before the episode
-                    home[start + first:start + last] = (backdate_confidence if team_is_home
-                                                        else 1.0 - backdate_confidence)
-    return Evidence(alive=no_opinion(n_frames), home=home)
+            stretches = [] if touched is None else _block_stretches(episodes, ball.visible[block], touched[0][block],
+                                                                    touched[1][block])
+            yield start, stop, episodes, nearest_is_home[block], ball.visible[block], stretches
+
+
+def _control_rule(radius, max_rel_speed, min_frames, duel_radius):
+    """(radius, max_rel_speed, min_frames, duel_radius) checked: three floats and an int, or ValueError."""
+    radius = _positive("radius", radius, "metres from the ball", allow_inf=False)
+    duel_radius = _positive("duel_radius", duel_radius, "metres from the ball", allow_inf=False)
+    max_rel_speed = _positive("max_rel_speed", max_rel_speed, "metres per second; inf turns the test off",
+                              allow_inf=True)
+    if isinstance(min_frames, bool) or not isinstance(min_frames, numbers.Integral) or min_frames < 1:
+        raise ValueError("controlled_touch: min_frames must be a whole number of frames >= 1, got {!r}".format(
+            min_frames))
+    return radius, max_rel_speed, int(min_frames), duel_radius
 
 
 def touches(inputs, *, radius, duel_radius, tau):

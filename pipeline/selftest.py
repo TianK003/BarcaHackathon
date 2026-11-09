@@ -1148,8 +1148,9 @@ def polyline(n, knots):
     return track
 
 
-def backdate_scene(first="home", deflector="away", second=None, controller="away", missing=()):
-    """The scene above as a RunContext, with the ball missing on the frames of `missing`."""
+def backdate_scene(first="home", deflector="away", second=None, controller="away", missing=(), graded=None):
+    """The scene above as a RunContext, with the ball missing on the frames of `missing`, in the blocks `graded` (a
+    list of (start, stop); default one block over every frame)."""
     ball = polyline(BACKDATE_FRAMES, BACKDATE_KNOTS)
     ball[list(missing)] = np.nan
     slots = {}
@@ -1157,12 +1158,12 @@ def backdate_scene(first="home", deflector="away", second=None, controller="away
         if team is not None:
             slot, place, frames = BACKDATE_ROLES[role]
             slots[slot + (team == "away")] = beside_ball(BACKDATE_FRAMES, frames, offset=(0.0, 0.0), ball=place)
-    return touch_scene(BACKDATE_FRAMES, ball=ball, slots=slots, pitch=(1.0, 1.0))
+    return touch_scene(BACKDATE_FRAMES, ball=ball, slots=slots, graded=graded, pitch=(1.0, 1.0))
 
 
 def backdate_check(home, spans):
     """Insist that `home` is `value` on [first, stop) for each (first, stop, value) of `spans` and NaN elsewhere."""
-    expected = np.full(BACKDATE_FRAMES, np.nan)
+    expected = np.full(len(home), np.nan)
     for first, stop, value in spans:
         expected[first:stop] = value
     differ = ~((home == expected) | (np.isnan(home) & np.isnan(expected)))
@@ -1264,6 +1265,67 @@ def test_touch_backdate_cap_keeps_the_last_frames():
                        [(5, 25, 0.9), (first, 108, 1.0 - 0.8), (108, 150, 1.0 - 0.9)])
     backdate_check(touch(scene, backdate_cap=10, hold=0.6, **BACKDATE).home,
                    [(5, 25, 0.9), (25, 98, 0.6), (98, 108, 1.0 - 0.8), (108, 150, 1.0 - 0.9)])
+
+
+def test_touch_backdate_starts_on_the_first_frame_after_the_episode():
+    """A touch of the new team dated on the very frame after the old team's episode is where its vote starts.
+
+    80 frames: the ball lies at (30, 30) up to frame 26, flies to (40, 30) by 46 and lies there. Home's slot is beside
+    it on 5..24, its episode, which ends at 24. An away slot stands 1 m from it on 25..35: the kick at 26 is dated at
+    25 and is away's, home's slot being gone, and the ball leaves too fast for an episode. Another away slot waits
+    half a metre from where the ball stops (a second away touch, at 45); its episode starts at 48."""
+    n = 80
+    ball = polyline(n, ((0, (30.0, 30.0)), (26, (30.0, 30.0)), (46, (40.0, 30.0)), (79, (40.0, 30.0))))
+    slots = {0: beside_ball(n, range(5, 25)), 1: beside_ball(n, range(25, 36), offset=(0.0, 1.0)),
+             3: beside_ball(n, range(40, 80), ball=(40.0, 30.0))}
+    scene = touch_scene(n, ball=ball, slots=slots, pitch=(1.0, 1.0))
+    backdate_check(touch(scene).home, [(5, 25, 0.9), (48, 80, 1.0 - 0.9)])
+    assert dated_touches(scene) == ([], [25, 45])
+    backdate_check(touch(scene, **BACKDATE).home, [(5, 25, 0.9), (25, 48, 1.0 - 0.8), (48, 80, 1.0 - 0.9)])
+    backdate_check(touch(scene, hold=0.6, **BACKDATE).home, [(5, 25, 0.9), (25, 48, 1.0 - 0.8), (48, 80, 1.0 - 0.9)])
+
+
+def test_touch_backdate_never_crosses_a_block():
+    """The old team's episode in one graded block and the new team's touch and episode in the next, or the touch in
+    one block and the episode in the next: nothing is back-dated, though the touch is there."""
+    for graded in ([(0, 30), (30, 150)], [(0, 80), (80, 150)]):
+        scene = backdate_scene(graded=graded)
+        assert dated_touches(scene) == ([], [49])
+        backdate_check(touch(scene, **BACKDATE).home, [(5, 25, 0.9), (108, 150, 1.0 - 0.9)])
+    held = touch(backdate_scene(graded=[(0, 30), (30, 150)]), hold=0.6, **BACKDATE).home
+    backdate_check(held, [(5, 25, 0.9), (25, 30, 0.6), (108, 150, 1.0 - 0.9)])
+    # The same frames in one block are back-dated: it is the block's edge that stops the rule.
+    backdate_check(touch(backdate_scene(graded=[(0, 150)]), **BACKDATE).home,
+                   [(5, 25, 0.9), (49, 108, 1.0 - 0.8), (108, 150, 1.0 - 0.9)])
+
+
+def test_backdated_stretches_counts_what_the_rule_backdates():
+    """backdated_stretches: the stretches compute() would back-date and the graded frames with the ball, two whole
+    numbers from the tracking alone, on the scenes whose back-dated frames the checks above pin."""
+    from pipeline.evidence import controlled_touch
+    rule = dict(radius=2.0, max_rel_speed=3.0, min_frames=5, backdate_tau=6.0)
+
+    def counted(scene, **more):
+        result = controlled_touch.backdated_stretches(scene.inputs, **dict(rule, **more))
+        assert isinstance(result, tuple) and [type(value) for value in result] == [int, int], result
+        return result
+
+    assert counted(backdate_scene()) == (1, 150)
+    assert counted(backdate_scene(second="home")) == (0, 150), "the other team's touch between"
+    assert counted(backdate_scene(deflector="home", second="away")) == (1, 150)
+    assert counted(backdate_scene(missing=(80,))) == (0, 149), "a frame without the ball is not counted either"
+    assert counted(backdate_scene(second="away", missing=(60,))) == (1, 149)
+    assert counted(backdate_scene(first="away")) == (0, 150) and counted(backdate_scene(first=None)) == (0, 150)
+    assert counted(backdate_scene(graded=[(0, 30), (30, 150)])) == (0, 150), "never across a block"
+    assert counted(backdate_scene(graded=[(10, 140)])) == (1, 130), "only the graded frames are counted"
+    assert counted(backdate_scene(), backdate_tau=18.0) == (0, 150), "no kink of the scene is that large"
+    assert counted(backdate_scene(), min_frames=21) == (0, 150), "home's 20 frames are no episode then"
+    assert counted(backdate_scene(), radius=0.9) == (0, 150), "the deflector stands 1 m from the ball"
+    assert counted(backdate_scene(), duel_radius=1.0) == (1, 150), "duel_radius defaults to compute's 1.0"
+    for name, bads in (("radius", (0, np.inf)), ("max_rel_speed", (0, np.nan)), ("min_frames", (0, 1.5, True)),
+                       ("duel_radius", (0, np.inf)), ("backdate_tau", (None, 0, -1.0, True, np.inf, np.nan))):
+        for bad in bads:
+            expect_error(ValueError, lambda: counted(backdate_scene(), **{name: bad}), "controlled_touch", name)
 
 
 def test_touches_are_dated_at_the_earliest_frame_of_a_tie():
@@ -1509,7 +1571,9 @@ def backdate_loop(run, radius, max_rel_speed, min_frames, confidence, duel_radiu
 
 def test_touch_backdate_matches_a_loop():
     """The rule against a plain loop on random relays of the ball: every branch of it, with and without a hold and a
-    cap, and nothing but the back-dated frames differs from the evidence without it."""
+    cap, and nothing but the back-dated frames differs from the evidence without it. backdated_stretches counts the
+    loop's stretches, capped or not."""
+    from pipeline.evidence import controlled_touch, kinematics
     rng = np.random.default_rng(2028)
     seen = {"over a hold": 0}
     for scene in range(400):
@@ -1524,9 +1588,14 @@ def test_touch_backdate_matches_a_loop():
         if scene % 2 == 0:
             parameters["backdate_cap"] = int(rng.integers(1, 8))
         evidence = touch(run, **parameters)
+        before = seen.get("stretches", 0)
         expected = backdate_loop(run, seen=seen, **parameters)
         assert np.array_equal(evidence.home, expected, equal_nan=True), (scene, parameters)
         assert np.isnan(evidence.alive).all()
+        counted = controlled_touch.backdated_stretches(run.inputs, **{name: parameters[name] for name in (
+            "radius", "max_rel_speed", "min_frames", "duel_radius", "backdate_tau")})
+        assert counted == (seen.get("stretches", 0) - before,
+                           int(kinematics.ball_track(run.inputs).visible.sum())), (scene, counted)
         moved = ~((evidence.home == plain) | (np.isnan(evidence.home) & np.isnan(plain)))
         vote = parameters["backdate_confidence"]
         assert np.isin(evidence.home[moved], (vote, 1.0 - vote)).all(), "only back-dated frames may differ"

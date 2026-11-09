@@ -101,6 +101,10 @@ those frames say T with `backdate_confidence`, over the hold, and with `backdate
 A touch makes no episode and does not count towards `min_frames`. `backdate_confidence` is measured by
 `pipeline/benchmark/touch_backdate_stats.py` (step 0, the gate), not tuned. Without `backdate_tau` the output is what
 it was before P28, byte for byte (`test_touch_backdate_off_is_the_rule_before_p28`).
+`controlled_touch.backdated_stretches(inputs, radius=, max_rel_speed=, min_frames=, backdate_tau=, duel_radius=1.0)`
+returns two whole numbers from the tracking alone, by `compute`'s own code path: the stretches the rule would back-date
+and the graded frames with the ball visible. Stretches / (frames / (60 × fps)) is the "back-dated stretches per graded
+minute with the ball visible" that step 0 reports per match and seed, and that the spec's one label-free check reads.
 
 ## Shared kinematics
 
