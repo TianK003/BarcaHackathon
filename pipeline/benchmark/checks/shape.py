@@ -463,8 +463,10 @@ def test_shape_verify_ignores_only_source_hashes():
 def test_shape_command_line_is_the_designs():
     parser = trainer.build_parser()
     args = parser.parse_args([])
+    # The default profile is the runner's: generic, which reads nothing of our match (P27), not tracking, which does.
     assert (args.profile, args.seeds, args.stride, args.out, args.verify, args.report, args.data_dir) == (
-        "tracking", 3, 5, None, False, False, None)
+        "generic", 3, 5, None, False, False, None)
+    assert args.profile == trainer.run.DEFAULT_PROFILE and not trainer.run.needs_calibration(args.profile)
     args = parser.parse_args(["--profile", "gaps", "--seeds", "2", "--stride", "7", "--out", "x.json", "--report",
                               "--data-dir", "D"])
     assert (args.profile, args.seeds, args.stride, args.out, args.report, args.data_dir) == (

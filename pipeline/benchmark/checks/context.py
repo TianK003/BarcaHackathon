@@ -562,12 +562,18 @@ def test_data_hazard_scale_follows_from_the_measurement():
 RECORDED_NEAR_LINE = (0.5586, 0.2797)
 
 
-def test_default_profile_is_tracking_because_context_fails_a_gate():
-    """The runner's and the fidelity report's default profile is `tracking`, not `context`, because `context` fails two
-    of its gates (R005): the near-line share badly and the share missing narrowly.
+def test_default_profile_is_generic_because_it_reads_nothing_of_our_match():
+    """The runner's default profile is `generic`: the only degraded profile that reads nothing of our match (P27, 9 Nov
+    2026). It is not `tracking`, which was the default until then and reads our Calibration, and it never was `context`,
+    which reads it too and fails two of its gates (R005): the near-line share badly and the share missing narrowly.
 
-    The rule (task 17, section B8): the default becomes `context` only if every one of its gates passes on all three
-    seeds. It does not: the share of the gaps that start within 2 m of a line is 0.5586 against our 0.2797 +-0.05, and
+    Since the organisers' reply of 5 Nov 2026 nothing is trained or chosen on a profile that is fitted on the provided
+    game (degrade.NEEDS_CALIBRATION: gaps, tracking, context), so the default is the one degraded profile that is not
+    among them, and `context` stays what it was, a sensitivity check and not the yardstick (SENSITIVITY_ONLY).
+
+    The rule that kept `context` from being the default before that (task 17, section B8): it becomes the default only
+    if every one of its gates passes on all three seeds. It does not: the share of the gaps that start within 2 m of a
+    line is 0.5586 against our 0.2797 +-0.05, and
     each seed misses (0.5647, 0.5644, 0.5465); the share missing is 0.4313 against 0.4110 +-0.02, pooled by 0.0003 and
     on seed 2. The cause is the data and not the model: DFL tracks the ball out of play, so 25.2% of the at-risk rows
     are within 2 m of a line against 9.0% of ours, and the remedies (thinning the chance beyond a line, a mask for the
@@ -581,9 +587,19 @@ def test_default_profile_is_tracking_because_context_fails_a_gate():
     measured, centre = RECORDED_NEAR_LINE
     assert (spec["tolerance"], spec["kind"]) == (0.05, "absolute") and "near_line_share" not in fidelity.PENDING_GATES
     assert abs(measured - centre) > spec["tolerance"], "the recorded share misses the gate: context is not the default"
-    assert benchmark_run.DEFAULT_PROFILE == "tracking" != degrade.CONTEXT, (
-        "context fails two of its gates (R005), so the default stays tracking")
+    assert benchmark_run.SENSITIVITY_ONLY.keys() == {degrade.CONTEXT}, (
+        "context fails two of its gates (R005): a sensitivity check, not the yardstick")
+    assert benchmark_run.DEFAULT_PROFILE == degrade.GENERIC == "generic", (
+        "the default is the profile that reads nothing of our match (P27), not tracking or context, which do")
     assert benchmark_run.DEFAULT_PROFILE in degrade.PROFILES and degrade.PROFILES["context"] == 1
+    # generic is the only degraded profile that takes no Calibration: every other one but clean is fitted on our match.
+    unfitted = set(degrade.PROFILES) - set(degrade.NEEDS_CALIBRATION)
+    assert unfitted == {degrade.CLEAN, degrade.GENERIC}, unfitted
+    assert unfitted - {degrade.CLEAN} == {benchmark_run.DEFAULT_PROFILE}, "the one degraded profile among them"
+    assert not degrade.needs_calibration(benchmark_run.DEFAULT_PROFILE)
+    assert all(degrade.needs_calibration(profile) for profile in ("gaps", "tracking", "context"))
+    assert benchmark_run.DEFAULT_PROFILE not in fidelity.GATES, (
+        "generic is not built to pass a gate against our match and is never held to one (the design of P27)")
 
 
 def test_context_ball_keeps_dfls_holes_and_the_rows_before_the_kickoff():
@@ -674,7 +690,7 @@ def test_context_reuses_trackings_players_and_says_which_version_of_them():
     assert "tracking_version" not in degrade.degrade(view, "tracking", cal, 0)[1], "tracking is not built from another"
     assert degrade.profile_record("context") == {"name": "context", "version": degrade.PROFILES["context"],
                                                  "tracking_version": degrade.CONTEXT_TRACKING_VERSION}
-    for profile in ("clean", "gaps", "tracking"):
+    for profile in ("clean", "gaps", "tracking", "generic"):
         assert degrade.profile_record(profile) == {"name": profile, "version": degrade.PROFILES[profile]}, profile
 
 
@@ -682,9 +698,9 @@ def test_context_profile_is_registered_with_its_own_stream():
     """The profile is version 1, the hazard has the stream after the speed_nan one, and what the profile read of the
     Calibration is named: the profiles nest (context's players are tracking's, and the draws of the earlier parts
     stay)."""
-    assert degrade.PROFILES == {"clean": 1, "gaps": 1, "tracking": 3, "context": 1}
+    assert degrade.PROFILES == {"clean": 1, "gaps": 1, "tracking": 3, "context": 1, "generic": 1}
     assert degrade.CONTEXT == "context" and degrade.COMPONENTS["hazard"] == 4
-    assert degrade.COMPONENTS == {"transplant": 0, "tracklets": 1, "wrong_team": 2, "speed_nan": 3, "hazard": 4}
+    assert degrade.COMPONENTS == {"transplant": 0, "tracklets": 1, "wrong_team": 2, "speed_nan": 3, "hazard": 4, "generic_gaps": 5}
     assert degrade.CONTEXT_FIELDS == ("hazard_model", "hazard_c", "hazard_durations_s")
     assert degrade.HAZARD_SCALE > 0 and calibration.NEAR_LINE_M == NEAR_M
     assert set(HAZARD_SECONDS) == {0, 1} and made_up_hazard()["hazard_c"] == 1.0

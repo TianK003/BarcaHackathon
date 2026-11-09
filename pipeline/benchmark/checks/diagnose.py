@@ -530,8 +530,13 @@ def test_diagnose_command_line_writes_the_report():
         report = strict_json(read(written))
         again = diagnose.diagnose(path, profile="clean", match_ids=["J03WMX", "J03WOH"], data_dir=root, log=quiet)
         assert report == again, "the file is the report diagnose() returns"
+        # The declared run is the default profile's, generic (P27): its report has the bare name, and a run on the
+        # tracking profile, which was the default until then, carries its profile and never replaces it.
+        assert diagnose.DEFAULT_PROFILE == benchmark_run.DEFAULT_PROFILE == "generic"
+        assert diagnose.report_path(root, "main", "generic", None, 3) == os.path.join(root, "runs", "diagnose",
+                                                                                     "main.json")
         assert diagnose.report_path(root, "main", "tracking", None, 3) == os.path.join(root, "runs", "diagnose",
-                                                                                      "main.json")
+                                                                                      "main.tracking.json")
 
         os.remove(written)
         shown = io.StringIO()
