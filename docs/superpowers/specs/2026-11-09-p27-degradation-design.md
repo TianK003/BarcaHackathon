@@ -5,6 +5,14 @@ Written on 9 Nov 2026, late evening, before any run on the new profile. Tian dec
 would make here went to an advisor agent and are listed in the morning summary. Everything in "The protocol" is
 declared before its run and is not changed after a result is seen.
 
+**What the title claims, exactly** (the advisor's wording, 9 Nov): no measurement of ours enters the profile. Two
+figures are quoted from the task statement (DATA.md: 41% of the graded frames without a ball, a mean of 20.5 tracked
+objects), as 25 fps and 46 slots are. They are statistics of the match, published by the organisers. No text allows
+quoting them by name, so a residual risk remains, and the technical document states it.
+
+**`generic` version 1 is final for this submission.** A version 2 is made only on a rules ground, never after a
+score.
+
 ## Why
 
 The organisers' reply of 5 Nov: "anything that is not explicitly allowed is not permitted". The benchmark's `gaps`,
@@ -36,13 +44,13 @@ and the trainers refuse a Calibration for it, and a selftest proves that `calibr
 |---|---|---|
 | ball missing, share of the frames | 0.41 | DATA.md: "The ball is missing 43% of all frames, and 41% of the graded ones" |
 | length of a gap | log-uniform between 1 s and 60 s | declared. DATA.md names the causes ("occlusions, crowded boxes and balls in the air") and no length. A ball in the air is gone for about a second; a crowded box or a stoppage for up to a minute. Log-uniform makes every scale between them equally likely |
-| where the gaps fall | a Poisson process, blind to the play | declared: the simplest process with that share. DATA.md says the ball "goes missing disproportionately on the frames that matter", which this does not model (a limitation, below) |
+| where the gaps fall | a Poisson process, blind to the play | declared (a model of ours, not DATA.md's): the simplest process with that share. DATA.md says the ball "goes missing disproportionately on the frames that matter", which this does not model (a limitation, below) |
 | ball speed | NaN on every frame | declared: the profile promises no ball speed, so no component can lean on one (the pipeline derives it from positions) |
 | slots | 46: 24 home, 22 away | the file format: DATA.md gives 46, and the split is the layout of the metadata the pipeline parses |
-| players lost | each on-pitch player is lost on 1 − 20.5 / 22 = 6.8% of the frames | DATA.md: "Expect around 22 tracked objects during play — the mean over graded frames is 20.5" |
+| players lost | each on-pitch player is lost on 1 − 20.5 / 22 = 6.8% of the frames, each on its own | the rate is DATA.md's ("Expect around 22 tracked objects during play — the mean over graded frames is 20.5"); that the players are lost independently is declared |
 | length of a tracked span | log-uniform between 2 s and 300 s | declared. DATA.md: slots "appear, vanish and swap identity as the tracker loses and re-acquires people", with no length. No component reads a slot's identity, so this sets only how often a player drops out |
 | length of a lost span | geometric, mean = mean tracked span × d / (1 − d) (4.4 s) | follows from the two rows above |
-| smoothing | a centred 7-frame moving average over each tracked piece | declared, from the literature: the 7-frame window of the velocity filter that is the usual first step on 25 Hz tracking (L. Shaw, Friends of Tracking, `Metrica_Velocities`) |
+| smoothing | a centred 7-frame moving average over each tracked piece | declared, from the literature. DFL's positions sit on a 1 cm grid, so a raw finite difference is noisy. Shaw's velocity filter for 25 Hz tracking (Friends of Tracking, `Metrica_Velocities`) averages over 7 frames; a 7-frame mean of the positions followed by a finite difference gives that same moving-average speed |
 | wrong-team slots, NaN-speed runs, frames with few players, a shortest tracklet | none | DATA.md documents none of them |
 
 **What the declared gap law gives:** a median gap of 7.7 s, a mean of 14.4 s and a 90th percentile of 40 s, by
@@ -75,6 +83,10 @@ trees' settings unchanged), then `--verify` each. Each benchmark match is read b
 before.
 - *The shape model's stop rule (R011's):* pooled held-out log-loss on ball-missing frames below 0.6831. If it fails,
   the shape source leaves the config and Stage C's weight dimension is dropped.
+- *The dead-ball source (R009's choice, the advisor's ruling):* the logistic reference is retrained on `generic` too.
+  The boosted trees stay only if their pooled out-of-fold log-loss is lower than the logistic's; otherwise the run
+  stops for Tian. Only one heavy process runs at a time and the chain had started, so this comparison runs after the
+  grids. If it fails, the grids' results are void.
 
 **Stage 1. The touch rule's confidence,** measured and not tuned: `touch_stats.py --grid r013 --profile generic
 --seeds 3`, the floor of each setting's pooled agreement to a hundredth (48 settings).
@@ -91,9 +103,12 @@ not extended tonight.
 
 **Stage D. The dimensions that R009, R010 and R011 chose and R013 left alone,** at Stage C's choice, one group at a
 time (12 configs): `switch_dead` {16, 32, 64} × `min_dead` {1, 25}; the dead-ball weight {0.1, 0.25, 0.5, 1.0}; the
-shape scope {gaps, all}; and the config without the shape source. *Rule:* the incumbent value stays unless another
-beats it by more than the tie band (0.005 on the mean). The shape source stays if the config with it is not worse
-than the config without it. If more than one group changes, the combined config is run as well: it is kept only if
+shape scope {gaps, all}; and the config without the shape source. *Rule (changed by the advisor on 9 Nov, before
+Stage D ran):* each group is chosen by the same rule as Stages A and C, the incumbent being one candidate among the
+others, with the tie orders of the entries that first chose them: larger `switch_dead`, then larger `min_dead`
+(R010); the smaller dead-ball weight (R009); `gaps` over `all` (R011). The first draft kept the incumbent unless it
+was beaten by more than the band; a value kept that way would be the old benchmark's choice, merely not refuted. The
+shape source stays if the config with it is not worse than the config without it. If more than one group changes, the combined config is run as well: it is kept only if
 its mean is not below the best single change's; otherwise only the best single change is kept. The rules of Stages A,
 C and D are applied by `pipeline/benchmark/p27_choose.py`, and the configs are written by `p27_grid.py`, so the whole
 re-choice can be re-run from the repository.
@@ -112,9 +127,17 @@ choose nothing, T01):
 - the shape model's transfer gate (R011's rule): on our match, `touch_agreement` of the model fitted on all seven
   matches is at least the lowest held-out value among the seven DFL matches in the new `--report`. If it fails, the
   shape source leaves the config, and nothing else changes;
-- the public window is scored once as a correctness check, and its number chooses nothing.
+- the public window is scored once as a correctness check that catches only gross errors: it passes if every
+  source's agreement with it is above 0.5 and the file's macroF1 is above each constant file's (all `H`, all `A`, all
+  `D`). Its number chooses nothing.
 
-A failed check stops the upload and goes to Tian. It does not send us back to change the profile.
+A failed check stops the upload and goes to Tian. It permits a bug fix. It never permits a changed constant, grid or
+profile. `main.toml` is switched to the new constants only after the bar and these checks have passed. Nobody looks at
+our output on the match in any other way tonight.
+
+**A check of the profile itself, on the DFL runs:** the pooled share of the masks is 0.41 ± 0.02 and the pooled share
+of player-frames lost is 0.068 ± 0.01 over the 21 match-seeds. A miss is a bug in the code, to be fixed before any
+choice is read.
 
 **What is not re-chosen:** which components exist (the touch rule, the two tree models, the hmm, the shift), the
 trees' settings ("fixed beforehand, not tuned", R009, R011), `min_prob` 0.02 and the hmm's structure. Each was

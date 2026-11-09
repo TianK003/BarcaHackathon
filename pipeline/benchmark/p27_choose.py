@@ -2,15 +2,15 @@
 
     python pipeline/benchmark/p27_choose.py a                 # Stage A's 192 reports -> the touch rule
     python pipeline/benchmark/p27_choose.py c                 # Stage C's 144 reports -> the decoder and the shape weight
-    python pipeline/benchmark/p27_choose.py d                 # Stage D's groups -> what changes, by the incumbent rule
+    python pipeline/benchmark/p27_choose.py d                 # Stage D's groups -> what changes, group by group
     python pipeline/benchmark/p27_choose.py bar STEM          # the final bar: STEM against the two yardsticks
     python pipeline/benchmark/p27_choose.py guard STEM BASE   # the shift's guard: STEM (shifted) against BASE (not)
 
 The rules are the spec's (docs/superpowers/specs/2026-11-09-p27-degradation-design.md), declared before the runs:
 Stages A and C by choose.py's mean rule (the best mean of the two truths' pooled spellF1, a tie band of 0.005, the
-larger min(raw, coarse), the stage's tie order) against the reference p27_ref; Stage D by the incumbent rule (a value
-replaces Stage C's only if it beats it by more than the band; the shape source stays if the config with it is not
-worse than the config without it). Each command prints aggregates of the DFL benchmark and one last line that starts
+larger min(raw, coarse), the stage's tie order) against the reference p27_ref; Stage D by the same rule within each
+group, Stage C's choice being one candidate, in the tie order of the entry that first chose the dimension (the
+advisor's ruling of 9 Nov; the shape source stays if the config with it is not worse than the config without it). Each command prints aggregates of the DFL benchmark and one last line that starts
 with `NEXT`, holding the arguments of the next p27_grid.py call, and writes its selection as JSON under
 <data dir>/runs/p27/. Nothing here reads a match.
 """
@@ -69,39 +69,51 @@ def stage(name, table, data_dir, reference=REFERENCE, top=12):
 
 
 def stage_d(data_dir):
-    """The incumbent rule over Stage D's groups; returns the arguments that differ from Stage C's choice."""
-    groups = {
-        "decoder_dead": {"p27d_sd{:02d}_md{:02d}".format(sd, md): ("--switch-dead {} --min-dead {}".format(sd, md))
-                         for sd in p27_grid.SWITCH_DEADS for md in p27_grid.MIN_DEADS
-                         if (sd, md) != (p27_grid.SWITCH_DEAD, p27_grid.MIN_DEAD)},
-        "dead_weight": {"p27d_dw{:03d}".format(int(round(dw * 100))): "--dead-weight {}".format(dw)
-                        for dw in p27_grid.DEAD_WEIGHTS if dw != p27_grid.DEAD_WEIGHT},
-        "scope": {"p27d_scope_gaps": "--scope gaps"},
+    """Stage D: each group by the rule of Stages A and C, the incumbent (p27d_base) one candidate among the others,
+    in the tie order of the entry that first chose it; returns the arguments that differ from Stage C's choice."""
+    incumbent = "p27d_base"
+    groups = {     # name -> [(stem, the argument that makes it; None for the incumbent)], in the declared tie order
+        # R010: larger switch_dead, then larger min_dead.
+        "decoder_dead": [(incumbent if (sd, md) == (p27_grid.SWITCH_DEAD, p27_grid.MIN_DEAD)
+                          else "p27d_sd{:02d}_md{:02d}".format(sd, md),
+                          None if (sd, md) == (p27_grid.SWITCH_DEAD, p27_grid.MIN_DEAD)
+                          else "--switch-dead {} --min-dead {}".format(sd, md))
+                         for sd in sorted(p27_grid.SWITCH_DEADS, reverse=True)
+                         for md in sorted(p27_grid.MIN_DEADS, reverse=True)],
+        # R009: the smaller weight.
+        "dead_weight": [(incumbent if dw == p27_grid.DEAD_WEIGHT else "p27d_dw{:03d}".format(int(round(dw * 100))),
+                         None if dw == p27_grid.DEAD_WEIGHT else "--dead-weight {}".format(dw))
+                        for dw in sorted(p27_grid.DEAD_WEIGHTS)],
+        # R011: gaps over all.
+        "scope": [("p27d_scope_gaps", "--scope gaps"), (incumbent, None)],
     }
-    stems = [stem for group in groups.values() for stem in group] + ["p27d_noshape"]
-    choice = choose.choose(["p27d_base"] + stems, "p27d_base", profile=PROFILE, band=BAND, objective="mean",
+    stems = [stem for group in groups.values() for stem, _ in group if stem != incumbent] + ["p27d_noshape"]
+    choice = choose.choose([incumbent] + stems, incumbent, profile=PROFILE, band=BAND, objective="mean",
                            data_dir=data_dir)
     _show(choice, None)
     _write("stage_d_choice.json", choice, data_dir)
-    base = _mean(choice, "p27d_base")
-    changes = []
+    rows = choice["rows"]
+    arguments, changed = [], 0
     for name, group in groups.items():
-        best = max(group, key=lambda stem: _mean(choice, stem))
-        gain = _mean(choice, best) - base
-        adopted = gain > BAND
-        print("group     {:13s} best {} {:+.4f} against the incumbent: {}".format(
-            name, best, gain, "ADOPTED (beyond the band)" if adopted else "the incumbent stays"))
-        if adopted:
-            changes.append((gain, group[best]))
-    without = _mean(choice, "p27d_noshape")
+        order = [stem for stem, _ in group]
+        raw = {stem: rows[stem]["raw"]["spell"] for stem in order}
+        coarse = {stem: rows[stem]["coarse"]["spell"] for stem in order}
+        best, tied, chosen = choose._select_mean(order, raw, coarse, BAND)
+        print("group     {:13s} best {} (mean {:.4f}), tied {}, chosen {} ({:+.4f} against the incumbent){}".format(
+            name, best, _mean(choice, best), len(tied), chosen, _mean(choice, chosen) - _mean(choice, incumbent),
+            "" if chosen == incumbent else ": CHANGED"))
+        if chosen != incumbent:
+            arguments.append(dict(group)[chosen])
+            changed += 1
+    base, without = _mean(choice, incumbent), _mean(choice, "p27d_noshape")
     keeps = base >= without
     print("group     shape         with {:.4f}, without {:.4f}: {}".format(
         base, without, "the shape source stays" if keeps else "the shape source is DROPPED"))
-    arguments = [argument for _, argument in sorted(changes, reverse=True)]
     if not keeps:
         arguments.append("--no-shape")
+        changed += 1
     # More than one change: the spec has the combined config run as well, so the chain stops for it.
-    print("CHANGED_GROUPS {}".format(len(changes) + (0 if keeps else 1)))
+    print("CHANGED_GROUPS {}".format(changed))
     return arguments
 
 

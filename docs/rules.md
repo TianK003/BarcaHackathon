@@ -104,8 +104,11 @@ If the team follows the reading, everything below has to be redone on a degradat
 - regenerate the file.
 
 The fidelity gates compare a profile with our match. They may still run as a check that passes or fails, but no
-profile may be changed to pass them (T01). Nor may what we already know of BAR-ATH (41% of the ball missing, a median
-gap of 10.7 s) become the new profile's settings: that would be the same fit, made by hand.
+profile may be changed to pass them (T01). Nor may what we measured on BAR-ATH ourselves (a median gap of 10.7 s, the
+tracklet lengths, the wrong-team share) become the new profile's settings: that would be the same fit, made by hand.
+The figures that the organisers publish in DATA.md are another matter (41% of the graded frames without a ball, a mean
+of 20.5 tracked objects, 46 slots): they are part of the task statement, like the kick-off frames, and P27 quotes
+them ([the spec](superpowers/specs/2026-11-09-p27-degradation-design.md); the advisor's ruling of 9 Nov).
 
 **Question 3 in detail.** R023 fetched the four event files once (31 Oct) and measured the grain of possession
 derived from them. Its declared outcome, "both", made the unweighted mean of the raw and coarse truths the objective of

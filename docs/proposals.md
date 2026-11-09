@@ -1236,9 +1236,10 @@ BAR-ATH, followed by the work that already exists, re-run on it:
 
    The players: A14 puts all of `tracking`'s player degradation at 0.013 of `main.toml`'s spellF1. So `clean` players,
    or a generic fragmentation with declared rates, would do.
-2. *What we know of BAR-ATH is not a setting.* 41% of the ball missing and a median gap of 10.7 s may not become the
-   new profile's numbers, or "rules" that land on them. That would be the same fit, made by hand. `fidelity.py` may
-   still run as a check that passes or fails, but no profile is changed to pass it (T01).
+2. *What we measured on BAR-ATH is not a setting.* A median gap of 10.7 s, the tracklet lengths and the wrong-team
+   share may not become the new profile's numbers, or "rules" that land on them. That would be the same fit, made by
+   hand. The figures the organisers publish in DATA.md (41% of the graded frames without a ball, a mean of 20.5
+   tracked objects) are part of the task statement and may be quoted. `fidelity.py` is not run on the new profile.
 3. *Retrain:* `train_dead_ball.py` and `train_shape.py` on the new profile, the folds as before.
 4. *Re-choose:* R010's, R011's, R013's and R024's grids by their declared rules (`run.py`, `choose.py`), under the
    objective declared for P27. Without R023 (question 3) that is A06's: both truths, a disagreement a warning, or
