@@ -565,7 +565,7 @@ def test_tracking_with_no_low_count_frame_is_the_players_without_the_cap():
     2's, which let a tracklet take a slot on the row it was freed: the check is the cap nested in the same code, and is
     not a comparison with an older version's output. The profile's version is 3 and the gaps, clean and context ones'
     are 1."""
-    assert degrade.PROFILES == {"clean": 1, "gaps": 1, "tracking": 3, "context": 1}
+    assert degrade.PROFILES == {"clean": 1, "gaps": 1, "tracking": 3, "context": 1, "generic": 1}
     for match in (steady_match(rows=(240, 200), teams=FULL_SQUAD, substitutions=True), steady_match()):
         view = degrade.tracking_view(match)
         for level in (22, 19):

@@ -445,8 +445,10 @@ def test_verify_ignores_only_source_hashes():
 def test_command_line_is_the_designs():
     parser = trainer.build_parser()
     args = parser.parse_args(["--model", "hgb"])
+    # The default profile is the runner's: generic, which reads nothing of our match (P27), not tracking, which does.
     assert (args.model, args.profile, args.seeds, args.stride, args.out, args.verify, args.rules, args.data_dir) == (
-        "hgb", "tracking", 3, 5, None, False, False, None)
+        "hgb", "generic", 3, 5, None, False, False, None)
+    assert args.profile == trainer.run.DEFAULT_PROFILE and not trainer.run.needs_calibration(args.profile)
     args = parser.parse_args(["--rules", "--profile", "gaps", "--seeds", "2", "--data-dir", "D"])
     assert args.rules and args.model is None and args.profile == "gaps" and args.seeds == 2 and args.data_dir == "D"
     assert trainer.default_path("hgb").replace("\\", "/").endswith("pipeline/models/dead_ball_hgb.json")

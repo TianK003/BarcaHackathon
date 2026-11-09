@@ -25,6 +25,11 @@ module of its topic:
                  degenerate case equal to gaps, the lost share on long runs), the wrong-team episodes, the NaN-speed
                  runs, the smoothing, and that the profiles nest (synthetic; with --dfl that no pool of slots runs out
                  on the 7 matches; with --data our real Calibration on a downloaded DFL match)
+    generic.py   the generic profile of the degrader (P27), the benchmark's default, which reads nothing of our match:
+                 its constants are the declared ones, no Calibration is taken or loaded (by the degrader, the runner,
+                 the trainers or the instruments), no truth reaches it, the ball's mask is the documented draws (41%
+                 missing in log-uniform gaps of 1 s to 60 s) laid from each kick-off, the players are lost at the
+                 declared rate in 46 slots, and the runner reports it with no Calibration (synthetic only)
     fidelity.py  the fidelity report: every gate and check worked out by other code on a synthetic Calibration, the
                  pooling by sums, the file and the exit code (synthetic only)
     dfl_events.py
@@ -118,10 +123,11 @@ what two of them share goes to common.py (test_a_check_module_imports_no_other_c
 """
 
 from pipeline.benchmark.checks import (
-    calibration, cap, choose, context, conventions, dead_ball, degrade, dfl, dfl_events, diagnose, fidelity, harness,
-    hazard, headroom, inputs, label_diff, metrica, restarts, run, score, shape, sources, tag_stats, tracking, touch,
-    touch_backdate, truth, wrong_team)
+    calibration, cap, choose, context, conventions, dead_ball, degrade, dfl, dfl_events, diagnose, fidelity, generic,
+    harness, hazard, headroom, inputs, label_diff, metrica, restarts, run, score, shape, sources, tag_stats, tracking,
+    touch, touch_backdate, truth, wrong_team)
 
 MODULES = (sources, dfl, dfl_events, truth, inputs, score, run, choose, hazard, calibration, degrade, cap, tracking, context,
-           fidelity, headroom, touch, touch_backdate, dead_ball, conventions, restarts, shape, label_diff, wrong_team,
+           generic, fidelity, headroom, touch, touch_backdate, dead_ball, conventions, restarts, shape, label_diff,
+           wrong_team,
            tag_stats, metrica, diagnose, harness)

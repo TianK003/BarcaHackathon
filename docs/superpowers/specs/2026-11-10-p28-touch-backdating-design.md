@@ -58,6 +58,19 @@ from the earliest touch of T after O's episode ended, if the ball is visible on 
 episode and no touch of O lies between. The frames from the touch to the frame before T's episode say T with
 `backdate_confidence`.
 
+*Made exact on 10 Nov, 00:25, before any run* (the implementer asked which reading is meant): the touch is the
+earliest touch of T, after O's episode, from which the two conditions hold. So if O touches the ball again after T's
+first touch, or the ball is lost in between, the vote starts at T's first touch after that, and not at all if there
+is none. That is T's first touch after O last had a part in the play.
+
+*What the touch test cannot see, known before the run* (the implementer's notes):
+- a touch with a rival inside `duel_radius` is no touch, so a contested header is not one, and O's touches in a
+  challenge cannot block a back-dating;
+- touches a few frames apart are one run, and only the larger change is dated, one frame before an ideal kink;
+- gate (i) counts flips where a touch exists and an episode does not, whether or not the rule would then act (it
+  needs a later episode of T). Its count is read beside the number of back-dated stretches, and (ii) beside the
+  stretches' length quartiles, since (ii) is weighted by frames.
+
 - A touch never counts towards `min_frames` and never makes an episode. "The hold follows any touch" is not built:
   CHALLENGE.md lists a touch without control as no change of possession.
 - `backdate_confidence` is measured, not tuned: the floor to a hundredth of step 0's (ii), clipped to

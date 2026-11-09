@@ -523,7 +523,8 @@ def test_conventions_never_pass_truth():
 
 
 def test_conventions_runs_under_the_tracking_profile():
-    """The default profile of the DFL mode: players broken into slots, NaN speeds, a cap; the events still come out."""
+    """The tracking profile, named (the DFL mode's default until P27 made it generic): players broken into slots, NaN
+    speeds, a cap; the events still come out."""
     matches = {"RND001": tracked_match("RND001"), "RND002": tracked_match("RND002", 1)}
     seen = []
     real = conventions.events
@@ -864,14 +865,16 @@ def test_conventions_main_dispatches_and_defaults():
     parser = conventions.build_parser()
     args = parser.parse_args(["public"])
     assert (args.command, args.gt, args.data_dir) == ("public", None, None)
+    # The default profile is the runner's: generic, which reads nothing of our match (P27), not tracking, which does.
+    assert conventions.DEFAULT_PROFILE == benchmark_run.DEFAULT_PROFILE == "generic"
     args = parser.parse_args(["dfl"])
     assert (args.command, args.profile, args.seeds, args.truth, args.matches, args.data_dir) == (
-        "dfl", "tracking", 3, "raw", None, None)
+        "dfl", "generic", 3, "raw", None, None)
     args = parser.parse_args(["dfl", "--profile", "gaps", "--seeds", "1", "--truth", "coarse", "--matches", "A", "B",
                               "--data-dir", "D"])
     assert (args.profile, args.seeds, args.truth, args.matches, args.data_dir) == ("gaps", 1, "coarse", ["A", "B"], "D")
     args = parser.parse_args(["compare"])
-    assert (args.command, args.profile, args.truth, args.data_dir) == ("compare", "tracking", "raw", None)
+    assert (args.command, args.profile, args.truth, args.data_dir) == ("compare", "generic", "raw", None)
     for bad in ([], ["nope"], ["dfl", "--truth", "fine"], ["compare", "--seeds", "2"], ["public", "--profile", "x"]):
         with contextlib.redirect_stderr(io.StringIO()):
             try:
@@ -1026,7 +1029,8 @@ def test_conventions_compare_reads_the_two_files():
     public_document = {"source": "public", "fps": 25, "cells": {
         key: {"n": 6, "found": 6, "lags": [-12, -11, -10, -10, -9, -8]},
         tag: {"n": 6, "found": 3, "lags": [-30, -25, -20]}}}
-    dfl_document = {"source": "dfl", "profile": "tracking", "truth": "raw", "fps": 25, "cells": {
+    default = conventions.DEFAULT_PROFILE            # generic: the file that `compare` reads when no profile is named
+    dfl_document = {"source": "dfl", "profile": default, "truth": "raw", "fps": 25, "cells": {
         key: {"n": 400, "found": 300, "lags": [-6, -5, -4, -4, -4, -3, -2]}}}
     rows = conventions.compare(public_document, dfl_document)
     assert [(row["type"], row["detector"]) for row in rows] == [("into_dead", "line_out"), ("into_dead", "tag_start")]
@@ -1046,7 +1050,16 @@ def test_conventions_compare_reads_the_two_files():
         assert "FAILED" in buffer.getvalue() and "conventions.py public" in buffer.getvalue()
         with open(os.path.join(folder, "public_lags.json"), "w", encoding="utf-8") as handle:
             json.dump(public_document, handle)
+        # A file of the tracking profile, the default until P27, is not the one a plain `compare` reads: with it alone
+        # the command still fails, and names the default profile's file.
         with open(os.path.join(folder, "dfl_tracking_raw.json"), "w", encoding="utf-8") as handle:
+            json.dump(dict(dfl_document, profile="tracking"), handle)
+        with contextlib.redirect_stdout(io.StringIO()) as printed:
+            assert conventions.main(["compare", "--data-dir", root]) == 1
+        assert "FAILED" in printed.getvalue() and "dfl_{}_raw.json".format(default) in printed.getvalue()
+        assert default == "generic" and os.path.basename(conventions.dfl_path(root, default, "raw")) == (
+            "dfl_generic_raw.json")
+        with open(conventions.dfl_path(root, default, "raw"), "w", encoding="utf-8") as handle:
             json.dump(dfl_document, handle)
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
@@ -1054,6 +1067,14 @@ def test_conventions_compare_reads_the_two_files():
         assert "line_out" in buffer.getvalue() and "-6.0" in buffer.getvalue()
         with contextlib.redirect_stdout(io.StringIO()) as printed:
             assert conventions.main(["compare", "--data-dir", root, "--truth", "coarse"]) == 1
+        assert "dfl_generic_coarse.json" in printed.getvalue()
+        # Named, the tracking profile's file is read as before.
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            assert conventions.main(["compare", "--data-dir", root, "--profile", "tracking"]) == 0
+        assert "line_out" in buffer.getvalue() and "-6.0" in buffer.getvalue()
+        with contextlib.redirect_stdout(io.StringIO()) as printed:
+            assert conventions.main(["compare", "--data-dir", root, "--profile", "tracking", "--truth", "coarse"]) == 1
         assert "dfl_tracking_coarse.json" in printed.getvalue()
     odd = dict(dfl_document, fps=30)
     expect_error(ValueError, lambda: conventions.compare(public_document, odd), "conventions", "fps")
@@ -1531,7 +1552,17 @@ def test_latency_and_shift_command_lines():
                                                                                  None)
     args = parser.parse_args(["latency", "cfg.toml", "dfl"])
     assert (args.source, args.profile, args.seeds, args.truth, args.matches, args.data_dir) == (
-        "dfl", "tracking", 3, "raw", None, None)
+        "dfl", "generic", 3, "raw", None, None)
+    # `shift` reads the latency file of the benchmark's default profile, under the raw truth, and reports the coarse
+    # one beside it: s_b never comes from a profile that is fitted on our match (P27).
+    assert conventions.SHIFT_DFL == (benchmark_run.DEFAULT_PROFILE, "raw") == ("generic", "raw")
+    assert conventions.SHIFT_COARSE == (benchmark_run.DEFAULT_PROFILE, "coarse") == ("generic", "coarse")
+    assert not benchmark_run.needs_calibration(conventions.SHIFT_DFL[0])
+    name = os.path.basename
+    assert name(conventions.latency_path("D", "main", "dfl", *conventions.SHIFT_DFL)) == (
+        "latency_main_dfl_generic_raw.json")
+    assert name(conventions.latency_path("D", "main", "dfl", *conventions.SHIFT_COARSE)) == (
+        "latency_main_dfl_generic_coarse.json")
     args = parser.parse_args(["latency", "cfg.toml", "dfl", "--profile", "gaps", "--seeds", "1", "--truth", "coarse",
                               "--matches", "A", "B", "--data-dir", "D"])
     assert (args.profile, args.seeds, args.truth, args.matches, args.data_dir) == ("gaps", 1, "coarse", ["A", "B"], "D")
@@ -1602,21 +1633,24 @@ def test_latency_main_writes_each_file_and_refuses_a_missing_one():
         assert "FAILED" in printed.getvalue() and "nope" in printed.getvalue()
 
 
-def dfl_latency_file(root, stem, cells, truth="raw", digest="own", **more):
-    """A latency_<stem>_dfl_tracking_<truth>.json as `latency CONFIG dfl` writes it, with these lags per type.
+def dfl_latency_file(root, stem, cells, truth="raw", digest="own", profile=None, **more):
+    """A latency_<stem>_dfl_<profile>_<truth>.json as `latency CONFIG dfl` writes it, with these lags per type.
 
-    `digest` is the config_sha256 it records: "own" (the default) that of <root>/<stem>.toml, or the string given, or
-    None for a file that records none (as those written before the files were tied to their config).
+    `profile` is the one it was measured on: by default the one that `shift` reads (conventions.SHIFT_DFL's, the
+    benchmark's default: generic). `digest` is the config_sha256 it records: "own" (the default) that of
+    <root>/<stem>.toml, or the string given, or None for a file that records none (as those written before the files
+    were tied to their config).
     """
+    profile = conventions.SHIFT_DFL[0] if profile is None else profile
     if digest == "own":
         digest = conventions.config_digest(load_config(os.path.join(root, stem + ".toml")))
-    document = dict({"source": "dfl", "config": stem, "profile": "tracking", "truth": truth, "seeds": [0, 1, 2],
+    document = dict({"source": "dfl", "config": stem, "profile": profile, "truth": truth, "seeds": [0, 1, 2],
                      "matches": ["A", "B"], "fps": 25, "tol": 50,
                      "cells": {kind: {"n": 2 * len(lags), "found": len(lags), "lags": lags}
                                for kind, lags in cells.items()}}, **more)
     if digest is not None:
         document["config_sha256"] = digest
-    path = conventions.latency_path(root, stem, "dfl", "tracking", truth, None, 3)
+    path = conventions.latency_path(root, stem, "dfl", profile, truth, None, 3)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(document, handle)
@@ -1645,6 +1679,15 @@ def test_shift_command_writes_the_table_the_rule_and_the_submission():
                 assert conventions.main(["shift", "--config", cfg, "--gt", gt_path, "--data-dir", root]) == 1
             said = printed.getvalue()
             assert "latency" in said and "dfl" in said and "--truth raw" in said, said
+            assert "--profile generic" in said and "latency_shifty_dfl_generic_raw.json" in said, said
+            assert not os.path.exists(os.path.join(root, "runs", "conventions", "shift_shifty.json"))
+            # A latency file of the tracking profile (the one `shift` read until P27) is not the one it reads: with
+            # it alone the command is refused as before, and nothing is written.
+            stale = dfl_latency_file(root, "shifty", {kind: [-20] * 40 for kind in dfl}, profile="tracking")
+            assert os.path.basename(stale) == "latency_shifty_dfl_tracking_raw.json"
+            with contextlib.redirect_stdout(io.StringIO()) as printed:
+                assert conventions.main(["shift", "--config", cfg, "--gt", gt_path, "--data-dir", root]) == 1
+            assert "latency_shifty_dfl_generic_raw.json" in printed.getvalue(), printed.getvalue()
             assert not os.path.exists(os.path.join(root, "runs", "conventions", "shift_shifty.json"))
             dfl_latency_file(root, "shifty", dfl)
             buffer = io.StringIO()
@@ -1671,7 +1714,8 @@ def test_shift_command_writes_the_table_the_rule_and_the_submission():
         assert (rule["team"]["s_b"], rule["into_dead"]["s_b"], rule["out_of_dead"]["s_b"]) == (4, 0, 0)
         assert [rule[kind]["shift"] for kind in conventions.TYPES] == [10, 10, 10], "s_b + g: 4 + 6, 10, 10"
         assert [rule[kind]["g"] for kind in conventions.TYPES] == [6, 10, 10]
-        assert document["dfl"]["profile"] == "tracking" and document["dfl"]["truth"] == "raw"
+        assert document["dfl"]["profile"] == "generic" == conventions.SHIFT_DFL[0] and document["dfl"]["truth"] == "raw"
+        assert document["dfl"]["file"] == "latency_shifty_dfl_generic_raw.json", "the tracking file is not read"
         oof = pm.label_codes(pm.read_label_csv(oof_path))
         assert np.array_equal(oof, conventions.oof_codes(pred, gt, runs, conventions.shift_rule(
             conventions.latencies(gt, pred, runs), dfl)))
@@ -1744,17 +1788,17 @@ def test_shift_refuses_a_dfl_latency_file_of_another_content_of_the_config():
         with results_in(results):
             output.write_submission(output.default_out_path("shifty"), pred)
             dfl_latency_file(root, "shifty", dfl, digest=OTHER_CONTENT)
-            said = refused(shift, "config_sha256", rerun, " dfl --profile tracking --truth raw", "shifty")
+            said = refused(shift, "config_sha256", rerun, " dfl --profile generic --truth raw", "shifty")
             assert OTHER_CONTENT[:12] in said, "the file's own hash is named, so that the two can be told apart"
             assert not any(os.path.exists(path) for path in written), "nothing is written when a file is refused"
             dfl_latency_file(root, "shifty", dfl, digest=None)             # written before the files carried a hash
-            said = refused(shift, "config_sha256", rerun, " dfl --profile tracking --truth raw", "shifty")
+            said = refused(shift, "config_sha256", rerun, " dfl --profile generic --truth raw", "shifty")
             assert "no config_sha256" in said
             assert not any(os.path.exists(path) for path in written)
             # the coarse file is read with the same rule, though it is only reported
             dfl_latency_file(root, "shifty", dfl)
             dfl_latency_file(root, "shifty", dfl, truth="coarse", digest=OTHER_CONTENT)
-            refused(shift, "config_sha256", rerun, " dfl --profile tracking --truth coarse", "shifty")
+            refused(shift, "config_sha256", rerun, " dfl --profile generic --truth coarse", "shifty")
             assert not any(os.path.exists(path) for path in written)
             dfl_latency_file(root, "shifty", dfl, truth="coarse")
             with contextlib.redirect_stdout(io.StringIO()):

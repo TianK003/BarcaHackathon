@@ -91,8 +91,8 @@ out_of_dead = 6
 def evaluate_clean(*arguments, **keywords):
     """benchmark_run.evaluate_configs on the clean profile unless one is named: what most of these checks are about.
 
-    The runner's default profile is tracking (it needs our Calibration), and the checks that are about the runner, not
-    about a degradation, run on the clean one, which needs none.
+    The runner's default profile is generic (P27: it degrades, with draws of its own, and reads nothing of our match),
+    and the checks that are about the runner, not about a degradation, run on the clean one, which has nothing random.
     """
     keywords.setdefault("profile", "clean")
     return benchmark_run.evaluate_configs(*arguments, **keywords)
@@ -706,7 +706,7 @@ def test_runner_gaps_runs_on_degraded_tracking():
     its own draws, the report holds the Calibration's digest and version, the file name carries `.s<n>` for a number of
     seeds that is not the default, and the printout names the calibration that made the run.
     """
-    assert benchmark_run.PROFILES == degrade.PROFILES == {"clean": 1, "gaps": 1, "tracking": 3, "context": 1}
+    assert benchmark_run.PROFILES == degrade.PROFILES == {"clean": 1, "gaps": 1, "tracking": 3, "context": 1, "generic": 1}
     matches, cal = synthetic_matches(), synthetic_calibration()
     paths = [yardstick_path(50), yardstick_path(0)]
     with tempfile.TemporaryDirectory() as root:
@@ -804,27 +804,64 @@ def test_shift_edges_runs_on_the_benchmark():
             "the shifted config scored the same frames in every half: the refiner did not reach the scorer")
 
 
-def test_runner_default_profile_is_tracking_and_runs_it():
-    """With no --profile the runner degrades with the tracking profile: its version 3, its Calibration, its report.
+def test_runner_default_profile_is_generic_and_runs_it():
+    """With no --profile the runner degrades with the generic profile: its version 1, no Calibration, its report.
 
-    The default is the profile that looks most like our match, the one whose gates all pass (R004c; context is not it,
-    R005); a run that does not name one is the same run as one that names tracking, to the byte of its reports, and says
-    tracking version 3 in the report and in the printout.
-    The synthetic Calibration here has the made-up tracking figures (common.tracking_calibration), whose counts and
-    masks are as long as each other."""
-    assert benchmark_run.DEFAULT_PROFILE == "tracking" and benchmark_run.PROFILES["tracking"] == 3
-    matches, cal = synthetic_matches(), tracking_calibration()
+    The default is the only degraded profile that reads nothing of our match (P27, 9 Nov 2026; until then it was
+    tracking, which is fitted on it, and context never was, R005); a run that does not name one is the same run as one
+    that names generic, to the byte of its reports, and says generic version 1 in the report and in the printout. No
+    Calibration is loaded for it: calibration.load raises here for as long as the default and the named run last, and
+    neither calls it; the result and the reports hold `calibration: None` and the printout has no calibration line.
+    One that is given is refused, since a report must not suggest that it was used.
+
+    The tracking profile is still there when it is named, with its Calibration (the made-up tracking figures of
+    common.tracking_calibration, whose counts and masks are as long as each other): tracking version 3 in the report
+    and in the printout, the Calibration's digest, and other scores than the default's."""
+    assert benchmark_run.DEFAULT_PROFILE == "generic" and benchmark_run.PROFILES["generic"] == 1
+    assert benchmark_run.PROFILES["tracking"] == 3 and not benchmark_run.needs_calibration("generic")
+    matches = synthetic_matches()
     paths = [yardstick_path(50), yardstick_path(0)]
     with tempfile.TemporaryDirectory() as root:
         lines = []
-        default = benchmark_run.evaluate_configs(paths, seeds=2, matches=matches, calibration=cal, data_dir=root,
-                                                 log=lines.append)
-        named = benchmark_run.evaluate_configs(paths, profile="tracking", seeds=2, matches=matches, calibration=cal,
-                                               data_dir=root, log=quiet)
-        assert default["profile"] == {"name": "tracking", "version": 3}
+        real = calibration.load
+
+        def refuse(*arguments, **keywords):
+            raise AssertionError("calibration.load was called for the generic profile, which reads nothing of ours")
+        calibration.load = refuse
+        try:
+            default = benchmark_run.evaluate_configs(paths, seeds=2, matches=matches, data_dir=root, log=lines.append)
+            named = benchmark_run.evaluate_configs(paths, profile="generic", seeds=2, matches=matches, data_dir=root,
+                                                   log=quiet)
+        finally:
+            calibration.load = real
+        assert default["profile"] == {"name": "generic", "version": 1} and default["seeds"] == [0, 1]
+        assert default["calibration"] is None, "no Calibration made this run, and the result says so"
         assert [entry["report"] for entry in default["configs"]] == [entry["report"] for entry in named["configs"]]
-        assert all(entry["report"]["profile"] == {"name": "tracking", "version": 3} for entry in default["configs"])
+        for entry in default["configs"]:
+            assert entry["report"]["profile"] == {"name": "generic", "version": 1}
+            assert entry["report"]["calibration"] is None and entry["report"]["seeds"] == [0, 1]
+            assert len(entry["report"]["halves"]) == 8, "two matches, two seeds, two halves"
+        table = "\n".join(lines)
+        assert "profile   generic (version 1)" in table and "seeds 0,1" in table, lines
+        assert not any(line.startswith("calibration") for line in lines), lines
+        for options in ({}, {"profile": "generic"}):
+            expect_error(benchmark_run.BenchmarkError, lambda options=options: benchmark_run.evaluate_configs(
+                paths, seeds=2, matches=matches, calibration=tracking_calibration(), data_dir=root, log=quiet,
+                **options), "generic", "calibration", "ignored")
+
+        # Named, the tracking profile runs as it did when it was the default: its version, its Calibration, its report.
+        cal = tracking_calibration()
+        lines = []
+        tracking = benchmark_run.evaluate_configs(paths, profile="tracking", seeds=2, matches=matches, calibration=cal,
+                                                  data_dir=root, log=lines.append)
+        assert tracking["profile"] == {"name": "tracking", "version": 3}
+        assert all(entry["report"]["profile"] == {"name": "tracking", "version": 3} for entry in tracking["configs"])
+        assert all(entry["report"]["calibration"] == {"sha256": calibration.digest(cal),
+                                                      "version": calibration.CALIBRATION_VERSION}
+                   for entry in tracking["configs"])
         assert "profile   tracking (version 3)" in "\n".join(lines), lines
+        assert [entry["report"]["pooled"] for entry in tracking["configs"]] != [
+            entry["report"]["pooled"] for entry in default["configs"]], "two profiles, two degradations"
 
 
 # -- what the profile says of itself
@@ -840,17 +877,19 @@ def test_runner_labels_context_as_sensitivity_only_and_says_where_each_profiles_
     """A profile that fails its gates is not offered as the yardstick: the help, the printout and the report say so.
 
     `context` is in SENSITIVITY_ONLY with the reason (R005: two of its gates fail), and the --profile help, a `note`
-    line of the printout and a "sensitivity_only" key of the report carry it; `tracking`, the default, carries none of
-    them, and its report has no such key. The line that names the Calibration says where the ball's gaps came from,
-    which differs by profile: the transplant of ours for gaps and tracking (and tracking's tracklets, slots and counts
-    besides), the hazard fitted on our match for context, whose gaps are drawn and not transplanted; the old line, that
-    the gaps are 'as measured by calibration.py', was false for context. The report of a context run says which version
-    of tracking its players are built from."""
-    assert benchmark_run.SENSITIVITY_ONLY.keys() == {"context"} and benchmark_run.DEFAULT_PROFILE == "tracking"
+    line of the printout and a "sensitivity_only" key of the report carry it; `generic`, the default, and `tracking`,
+    the default before it, carry none of them, and their reports have no such key. The line that names the Calibration
+    says where the ball's gaps came from, which differs by profile: the transplant of ours for gaps and tracking (and
+    tracking's tracklets, slots and counts besides), the hazard fitted on our match for context, whose gaps are drawn
+    and not transplanted; the old line, that the gaps are 'as measured by calibration.py', was false for context. There
+    is a line for every profile that reads the Calibration (degrade.NEEDS_CALIBRATION) and for no other: a generic run
+    has no Calibration, so its printout has no such line and its report holds None. The report of a context run says
+    which version of tracking its players are built from."""
+    assert benchmark_run.SENSITIVITY_ONLY.keys() == {"context"} and benchmark_run.DEFAULT_PROFILE == "generic"
     reason = benchmark_run.SENSITIVITY_ONLY["context"]
     assert "R005" in reason and "two of its gates" in reason and "sensitivity check" in reason, reason
-    assert benchmark_run.PROVENANCE.keys() == set(degrade.PROFILES) - {degrade.CLEAN}, (
-        "a line for every degraded profile")
+    assert benchmark_run.PROVENANCE.keys() == set(degrade.NEEDS_CALIBRATION) == {"gaps", "tracking", "context"}, (
+        "a line for every profile that reads the Calibration, and for no other")
     path = [yardstick_path(50)]
     calibrations = {"gaps": synthetic_calibration(), "tracking": tracking_calibration(),
                     "context": context_calibration()}
@@ -866,7 +905,13 @@ def test_runner_labels_context_as_sensitivity_only_and_says_where_each_profiles_
         # The note: for context, with the reason; for the others, nothing.
         notes = [line for line in lines["context"] if line.startswith("note")]
         assert notes == ["note      profile context {}".format(reason)], notes
-        for profile in ("gaps", "tracking"):
+        # The default reads no Calibration: no line names one, and nothing says that it is a sensitivity check.
+        lines["generic"] = []
+        reports["generic"] = run_on("generic", None, path, root, lines["generic"])["configs"][0]["report"]
+        assert not [line for line in lines["generic"] if line.startswith("calibration")], lines["generic"]
+        assert reports["generic"]["calibration"] is None
+        assert reports["generic"]["profile"] == {"name": "generic", "version": 1}
+        for profile in ("gaps", "tracking", "generic"):
             assert not [line for line in lines[profile] if "sensitivity" in line or line.startswith("note")], profile
             assert "sensitivity_only" not in reports[profile], profile
         assert reports["context"]["sensitivity_only"] == reason
@@ -888,7 +933,8 @@ def test_runner_labels_context_as_sensitivity_only_and_says_where_each_profiles_
                 assert stop.code == 0, stop.code
         helped = " ".join(shown.getvalue().split())
         assert "context " + reason in helped and helped.count("sensitivity") == 1, helped
-        assert benchmark_run.DEFAULT_PROFILE + " " + reason not in helped and "(default tracking)" in helped, helped
+        assert benchmark_run.DEFAULT_PROFILE + " " + reason not in helped and "(default generic)" in helped, helped
+        assert all(name in helped for name in degrade.PROFILES), "the help lists every profile: " + helped
 
 
 def test_runner_report_is_in_match_id_order_whatever_order_the_matches_are_given():
@@ -921,7 +967,8 @@ def test_runner_report_is_in_match_id_order_whatever_order_the_matches_are_given
 
 
 def test_runner_refuses_a_calibration_it_cannot_use():
-    """A degraded profile needs a Calibration (loaded from the data directory if none is given), clean takes none."""
+    """A profile that reads our match needs a Calibration (loaded from the data directory if none is given); clean and
+    generic read nothing of it and take none: one that is given is refused, and none is looked for."""
     matches, cal = synthetic_matches(), synthetic_calibration()
     path = yardstick_path(50)
     refused = benchmark_run.BenchmarkError
@@ -931,6 +978,9 @@ def test_runner_refuses_a_calibration_it_cannot_use():
             "calibration", "Calibration", "calibration.load()")
         expect_error(refused, lambda: evaluate_clean(
             [path], calibration=cal, matches=matches, data_dir=root, log=quiet), "clean", "calibration", "ignored")
+        expect_error(refused, lambda: benchmark_run.evaluate_configs(
+            [path], profile="generic", calibration=cal, matches=matches, data_dir=root, log=quiet),
+            "generic", "calibration", "ignored")
         # None given: it is measured from, or read out of, the data directory, which here has nothing in it.
         try:
             benchmark_run.evaluate_configs([path], profile="gaps", matches=matches, data_dir=root, log=quiet)
@@ -939,6 +989,11 @@ def test_runner_refuses_a_calibration_it_cannot_use():
         else:
             raise AssertionError("an empty data directory has no calibration, and the run must say so")
         assert not os.path.exists(os.path.join(root, "runs")), "a refused run writes nothing"
+        # The same empty data directory is enough for generic and for clean: neither looks for a Calibration in it.
+        for profile in ("generic", "clean"):
+            result = benchmark_run.evaluate_configs([path], profile=profile, seeds=1, matches=matches, data_dir=root,
+                                                    log=quiet)
+            assert result["calibration"] is None and result["configs"][0]["report"]["calibration"] is None, profile
 
 
 def test_runner_names_the_order_of_the_published_baselines_and_how_far_a_run_agrees():
@@ -1068,10 +1123,14 @@ CROSS_PROCESS_CALIBRATIONS = {"gaps": synthetic_calibration, "tracking": trackin
 
 def cross_process_run(root, out, paths, profile="clean", calibration=None):
     """What each process of the determinism checks does: evaluate on `profile` with `calibration`, and write to its own
-    folder. The clean profile takes none; a degraded one is refused without one."""
+    folder. The clean and the generic profile take none (generic runs two seeds, as the others that degrade do); a
+    profile that reads our match is refused without one."""
     configs = [yardstick_path(width) for width in (50, 0, 125)]
     if profile == "clean":
         result = evaluate_clean(configs, matches=cross_process_matches(root, paths), data_dir=root, log=quiet)
+    elif not degrade.needs_calibration(profile):
+        result = benchmark_run.evaluate_configs(configs, profile=profile, seeds=2,
+                                                matches=cross_process_matches(root, paths), data_dir=root, log=quiet)
     else:
         if calibration is None:
             raise ValueError("profile {!r} needs a Calibration; pass CROSS_PROCESS_CALIBRATIONS[{!r}]()".format(
@@ -1096,7 +1155,7 @@ def test_runner_json_identical_across_processes():
 
 
 def test_runner_gaps_json_identical_across_processes():
-    """The default profile too: the degradation, its draws and the Calibration's digest are the same in every process.
+    """A degraded profile too: the degradation, its draws and the Calibration's digest are the same in every process.
 
     Two seeds of the gaps profile on the same three matches, with the Calibration of the synthetic bundle measured by
     each process for itself. The reports hold the digest of it, so a measurement that depended on the process (a set, a
@@ -1106,6 +1165,20 @@ def test_runner_gaps_json_identical_across_processes():
     assert [record["id"] for record in report["matches"]] == ["RND001", "RND002", "SYN001"]
     assert report["seeds"] == [0, 1] and len(report["halves"]) == 3 * 2 * 2
     assert report["calibration"]["sha256"] == calibration.digest(synthetic_calibration())
+
+
+def test_runner_generic_json_identical_across_processes():
+    """The default profile too: the same bytes from three processes with PYTHONHASHSEED 1, 2 and 3, and from this one.
+
+    The generic profile draws the ball's gaps from its own stream ("generic_gaps") and the players' tracked and lost
+    spans from the tracking profile's walk, and gives each piece a slot through dicts of players and pieces: an order
+    that came from a hash would show here as another mask, another slot or another score. No Calibration is built by
+    any process, and the report holds None for it, on the same three matches and two seeds as the other profiles."""
+    report = identical_across_processes("generic", ".m-RND001-RND002-SYN001.s2.json")
+    assert [record["id"] for record in report["matches"]] == ["RND001", "RND002", "SYN001"]
+    assert report["seeds"] == [0, 1] and len(report["halves"]) == 3 * 2 * 2
+    assert report["profile"] == {"name": "generic", "version": 1}
+    assert report["calibration"] is None and "generic" not in CROSS_PROCESS_CALIBRATIONS
 
 
 def test_runner_tracking_json_identical_across_processes():
