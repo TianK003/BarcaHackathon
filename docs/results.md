@@ -2325,6 +2325,47 @@ raised stands: the development machine has AVX2 and no AVX-512, and numpy's floa
 few ulps between the two, enough to flip only a decision whose margin is under about 1e-11 nats; the run manifest does
 not record the CPU's features, so A17 and A18 (the same laptop) do not cover another processor (T20).
 
+### A24 — The organisers' reply to questions 1 to 4, and the rules checked again (2026-11-09, Tian)
+Proposal: all · Commit: the commit that adds this entry (docs only; `main.toml` and its file `762f9073…` unchanged) ·
+Command: `git fetch --all`; `gh api repos/metrica-sports/more-than-a-hack-2027` (and its pull-request list);
+`gh api repos/metrica-sports/sample-data`; nothing of the match was read
+
+**Why.** The organisers replied on 5 Nov to the questions sent on 3 Nov ([rules.md](rules.md), questions 1 to 4), and
+the reply needed recording and reading against the pipeline.
+
+**The reply.** No question is answered by name. The reply says that all the information the organisers can share is in
+the clarification, the challenge details and the T&C, repeats the clarification of 3 Nov word for word, and adds two
+sentences: "Each team is responsible for making sure that its particular project, tool, platform or dataset complies
+with the competition rules. As a reference, anything that is not explicitly allowed is not permitted." Verbatim, with
+our reading of each question, in [rules.md](rules.md) ("The organisers' reply of 5 Nov 2026"). The copy of the
+clarification in rules.md lacked its two closing lines, which are now added.
+
+**What else changed upstream.** `git fetch upstream` still ends at `f8f2629` (23 Oct): no commit carries the
+clarification, and RULES.md and FAQ.md are unchanged. The organisers' repository has its issues switched off
+(`has_issues: false`) and its pull-request list returns 404, so the answers A22 read on GitHub can no longer be read
+there. [rules.md](rules.md) is our record of them. Metrica's sample-data repository still has no licence (`license:
+null`; last push April 2021).
+
+**Our reading, question by question** (the reasons are in rules.md):
+- *1, the degradation fitted on our tracking:* nothing allows it explicitly, and the data both models were trained on
+  and every constant was chosen on carries our match's missing-ball masks and measured rates. **Not permitted by our
+  reading.** Redo on a profile that measures nothing of our match (P27, added), or keep and disclose as a risk:
+  Tian's decision.
+- *2, the repository private until before the deadline:* fine. No rule says when it becomes public. Before the form,
+  the whole git history is checked for anything under `data/` or frame-level, not only the tip.
+- *3, Metrica's sample data:* no licence, so by our reading we do not have the rights the clarification asks for.
+  **Not used again:** P16's timing part and P26 are on hold, and the technical document lists the data as used once
+  (R023) and withdrawn. R023 set the objective of R024's choice (the mean of the two truths; the touch hold 0.60 to
+  0.55). Whether that objective stands on A06 alone, or `main.toml` goes back to R013's hold, is Tian's decision.
+- *4, watching the video to understand how the tracking fails:* not allowed. Watching is only "to better understand
+  what counts as possession", our practice since 3 Nov; issue #14's wider answer is superseded.
+- *5 and 6* (when `D` starts and ends; won headers), drafted on 4 Nov, were not sent. The reply suggests they would get
+  the clarification back. Sending them is Tian's choice.
+
+**Verdict.** Nothing in `main.toml` is changed here. Two things it stands on, the benchmark's degradation and R023's
+objective, are not permitted or doubtful by our reading since 5 Nov. What to do about them is the team's decision, and
+it is recorded in [rules.md](rules.md) and as [P27](proposals.md) in proposals.md. [T56](traps.md) records the trap.
+
 ## Experiments
 
 Copy this template for each run, and add a scoreboard row for anything worth comparing.

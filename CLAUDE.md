@@ -9,7 +9,9 @@ Our team's fork of the organisers' starter repo for **More than a Hack 2027 — 
 `metrica-sports/more-than-a-hack-2027`; organiser fixes to docs, scorer or alignment land there.
 
 - **Team:** **Un Dia de Partit**, 5 members (rules allow 3–5). Questions to the organisers go by email to
-  `hackathon.talentarena@mobileworldcapital.com`, not as GitHub issues (since 3 Nov; `docs/rules.md`). The upload files are named after it:
+  `hackathon.talentarena@mobileworldcapital.com`, not as GitHub issues (since 3 Nov; issues and pull requests are switched off on
+  their repo by 9 Nov; `docs/rules.md`). They answered our questions 1–4 (5 Nov) with the clarification alone, so plan as if
+  any question gets it back (`docs/traps.md` T56). The upload files are named after it:
   `Un Dia de Partit.csv` and `Un Dia de Partit.pdf` (or `.md`); the scorer names the board's row after the file.
 - **Deadline: November 17, 2026.** Results before November 26, 2026.
 - **This stage is tested automatically.** Organisers run this repo's own `evaluation/run_evaluation.py` against a
@@ -24,8 +26,10 @@ Floor to beat: `baseline_smooth50`, full-match **spellF1 0.2433**.
 
 **The rules are the organisers' emailed "Clarification of the rules" (recorded 3 Nov 2026), in `docs/rules.md`
 verbatim with our reading.** It takes precedence over RULES.md, FAQ.md, the clarifications of 22 and 23 Oct (upstream
-`c073f29`, `f8f2629`) and anything written before it; where it says nothing, those still hold. Read `docs/rules.md`
-before building anything that learns, tunes or uses the video.
+`c073f29`, `f8f2629`) and anything written before it; where it says nothing, those still hold. Their reply to our
+questions (5 Nov 2026) added: **"anything that is not explicitly allowed is not permitted"**. So if no text allows
+something by name, treat it as forbidden from the start. Read `docs/rules.md` before building anything that learns,
+tunes or uses the video.
 
 - **Match data must never reach an LLM — including you.** The T&C forbid making any video, dataset or extract of
   them available to a third-party/cloud LLM, and the clarification forbids "uploading the provided data to AI
@@ -49,9 +53,11 @@ before building anything that learns, tunes or uses the video.
   and any constant measured on it. A fixed rule that reads the match at run time is the algorithm running, not fitting;
   a number measured on the match and written into a config or model is fitting (`docs/rules.md`, "How we read it",
   `docs/traps.md` T54). *Changed 3 Nov 2026:* until then label-free learning on this match was allowed. R029 took
-  `smart_tagging` out of `main.toml` for this, because its c_team 0.76 had been measured on this match (R017). **Open:**
-  the benchmark's degradation is fitted on our tracking's label-free statistics, which is question 1 for the organisers
-  (`docs/rules.md`).
+  `smart_tagging` out of `main.toml` for this, because its c_team 0.76 had been measured on this match (R017).
+  **Not permitted by our reading since 5 Nov:** the benchmark's degradation is fitted on our tracking's label-free
+  statistics (`gaps` transplants our missing-ball masks), so both models and every constant chosen on it stand on data
+  that is not only external. The organisers answered question 1 with the clarification alone. Redo on a degradation that
+  measures nothing of our match (`docs/proposals.md` P27), or keep and disclose: **Tian decides** (`docs/rules.md`).
 - **No hand labels on this match at all**, in any amount and for any purpose, and no "human-produced data or any other
   data created manually on the provided game": not to train, validate or calibrate, and no correcting its tracking by
   hand (corrections must come out of code). Hand-labelled data from *other* games is fine, in any amount, if we have
@@ -121,7 +127,8 @@ python pipeline/benchmark/diagnose.py CONFIG --drop-match-only   # A19: the IoU 
 python pipeline/benchmark/fidelity.py --profile tracking --seeds 3   # gates + WARNs: the copy against our match
 python pipeline/benchmark/train_shape.py [--verify|--report]   # P07: train the shape model as JSON; --verify, --report
 python pipeline/benchmark/conventions.py public|dfl|compare|latency|shift ...   # P02: timing, inspected; DFL-lag shift
-python pipeline/benchmark/metrica.py [--offline]        # P16: Metrica's sample games' grain against the two truths (R023)
+python pipeline/benchmark/metrica.py [--offline]        # P16: Metrica's sample games' grain against the two truths (R023);
+                                                        # not to be run since 5 Nov: the data has no licence (docs/rules.md)
 python pipeline/benchmark/selftest.py [--dfl] [--data]  # benchmark checks (seconds); --dfl: the 7 matches, --data: ours
 
 python evaluation/validate_submission.py path/to.csv            # official scorer's checks; run on the exact upload
@@ -199,10 +206,10 @@ keeps that convention: its scripts swap their own folder on `sys.path` for the r
   `restarts` (the stoppages' anatomy, the restart vote's stats, its configs), `dfl_events` (the DFL restart events,
   diagnostics), `headroom` (a config beside variants whose evidence is the truth: what a perfect source would add;
   its `plus_` variants measure `main.toml` itself, A13), `tag_stats` (Smart Tagging's votes against our own
-  pseudo-labels on BAR-ATH, R017; since 3 Nov a check at most, never a source of a constant, `docs/rules.md`), `label_diff` (how a config changes BAR-ATH's labels, aggregates only), `wrong_team` (P21 step 0, dropped in A16: the ratio of over-11 slot frames at the ball to all graded frames, kept for P19's transfer check), `metrica` (P16, R023: H/A/D derived from Metrica's three public sample games' events, fetched at run time and never committed, and their grain against A06's two truths), `diagnose` (A19, P23: the IoU ladder decomposed into clean, merge and split pairs, and the calibration of the sources and of the hmm's posterior) and `checks/`
+  pseudo-labels on BAR-ATH, R017; since 3 Nov a check at most, never a source of a constant, `docs/rules.md`), `label_diff` (how a config changes BAR-ATH's labels, aggregates only), `wrong_team` (P21 step 0, dropped in A16: the ratio of over-11 slot frames at the ball to all graded frames, kept for P19's transfer check), `metrica` (P16, R023: H/A/D derived from Metrica's three public sample games' events, fetched at run time and never committed, and their grain against A06's two truths; not to be run again since 5 Nov: the data has no licence, `docs/rules.md` question 3), `diagnose` (A19, P23: the IoU ladder decomposed into clean, merge and split pairs, and the calibration of the sources and of the hmm's posterior) and `checks/`
   (what `selftest.py` runs). Degradations are fitted once per version on
-  label-free statistics of our tracking, then frozen, never tuned towards a score (T26, T37); whether that fit is
-  allowed under the 3 Nov rules is question 1 for the organisers (`docs/rules.md`). The Calibration and every
+  label-free statistics of our tracking, then frozen, never tuned towards a score (T26, T37); since the organisers'
+  reply of 5 Nov that fit is, by our reading, not permitted (question 1 in `docs/rules.md`; the redo is P27). The Calibration and every
   degraded `Atd` hold BAR-ATH's masks and counts: print none of it, and write no CSV of BAR-ATH labels.
 
 ### Frame alignment — an off-by-one shifts every transition
@@ -272,7 +279,8 @@ frames are all `D`. The public GT labels only 11,185–18,684 (5 minutes, 17 pos
   that depends on possession length under the raw and the coarse truth (`--truth coarse`), and treat a disagreement
   as a warning (T33, A06). R023 (P16, Metrica's own sample games) found **both**: a choice declared since then
   ranks on the unweighted mean of the two truths' pooled spellF1s, each reported; `choose.py --objective mean` applies it (R024, which re-chose
-  R013 under it: the touch hold moved to 0.55).
+  R013 under it: the touch hold moved to 0.55). Since 5 Nov R023's data is withdrawn (Metrica's sample data has no
+  licence), so the grain is unknown again; whether R024's objective and hold stand is Tian's decision (`docs/rules.md`).
 - Two benchmark matches have a team down to 10, so a gate on how many slots are present is measured on full-strength
   frames only (T36).
 - DFL's own jitter is rare jumps on a 1 cm grid (RMS of the second difference 9.0 cm against our 3.3 mm): compare

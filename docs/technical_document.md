@@ -85,7 +85,7 @@ coarse truth), inside the noise (section 5).
 | Public 5-minute ground truth | only to check the pipeline, and to inspect | RULES.md rule 2 (23 Oct 2026): "not training data and not a tuning set"; the organisers' clarification of November 2026 keeps it (no "training, fitting or calibrating your algorithm on the ground-truth possession data"; "running automatic checks using only the provided data" is allowed). It checks every file (valid, deterministic, each source's agreement; the score is not used to choose, T01) and it supplies the 20 changes (12 of team, 4 into `D`, 4 out of it) that A11 inspects, to understand how our truth flips against label-free events. Nothing is trained, calibrated or chosen on it, and no constant of the submission config comes from it (the audit in section 5). The one place the pipeline read it as an input was R012's g, which came out 0 for every type and is now retired, so the shift is s_b alone, from DFL. Nothing of this match was hand-labelled |
 | Labelled tracking of other matches: the DFL/IDSSE open data, 7 matches (P01) | yes, to validate, to train P05's dead-ball model and P07's shape model, and to measure P02's lag | Bassek et al. 2025 (reference below), CC BY 4.0. We use the 25 Hz positions of players and ball, the ball's alive/dead flag and the team in possession on every frame (they give the truth: `D` where dead, otherwise the team), and the match information (teams, roles, pitch, halves). The tracking is degraded to look like ours and run through our pipeline. The ball's alive/dead flag trains the dead-ball model (every fifth graded frame of the degraded matches, and each benchmark match is read by the model that never saw it). The team in possession trains the shape model of P07 (every fifth alive graded frame, each also as its team-swapped mirror, from 26 features that do not read the ball, and again each benchmark match is read by the model fitted without it); it is also used for validation and to measure the touch rule's confidence. For P02 the same matches give the pipeline's own latency against DFL's flag (R012) and DFL's flag timed against the same label-free events (A11). The only other model trained on it is P19's team model, dropped at its feasibility gate (R021); more labelled tracking (P13) is an idea |
 | The DFL/IDSSE event files (the restart events); kloppy's DFL loader and download | the restart events only, as a diagnostic (P17); the loader and the download dropped | The raw events, one of the three files of a match, are read for the restart events only (below, and the labelled-data list), never by the pipeline and never to choose or fit anything. kloppy's loader drops every dead-ball frame by default and its download fails (T30), so our own parser (`pipeline/benchmark/dfl.py`) reads the positions, and kloppy only cross-checks it: 0 disagreements (A05) |
-| Metrica's public sample games: the event files of 3 anonymised games (P16) | yes, as a measurement only (R023) | [metrica-sports/sample-data](https://github.com/metrica-sports/sample-data) at commit `e706dd5` (2021), from the provider of our ground truth. The repository has no licence file; its README asks users to "be responsible" and to "acknowledge the source", which we do here. `pipeline/benchmark/metrica.py` fetches the four event files (two CSVs, one JSON and its metadata) at run time into `data/external/metrica/`, checks each by its git blob SHA and never commits or redistributes them; no tracking file is fetched. Possession is derived from the events by a rule taken from Metrica's own event definitions and declared before the fetch, and its grain set which truth ranks later choices (below, section 5). Nothing is trained, fitted or chosen from them beyond that |
+| Metrica's public sample games: the event files of 3 anonymised games (P16) | used once, as a measurement (R023, 31 Oct 2026); withdrawn on 5 Nov 2026 | [metrica-sports/sample-data](https://github.com/metrica-sports/sample-data) at commit `e706dd5` (2021), from the provider of our ground truth. The repository has no licence file; its README asks users to "be responsible" and to "acknowledge the source", which we do here. We asked the organisers whether that use was fine; they replied with their clarification ("any dataset you have the rights to use. Please check the license") and "anything that is not explicitly allowed is not permitted". A README's request is not a grant of rights, so we do not use the data again (docs/rules.md, question 3). `pipeline/benchmark/metrica.py` fetches the four event files (two CSVs, one JSON and its metadata) at run time into `data/external/metrica/`, checks each by its git blob SHA and never commits or redistributes them; no tracking file is fetched. Possession is derived from the events by a rule taken from Metrica's own event definitions and declared before the fetch, and its grain set which truth ranks later choices (below, section 5). Nothing is trained, fitted or chosen from them beyond that |
 | Other external datasets or pretrained models | no | Nothing beyond the DFL/IDSSE matches and Metrica's sample events above is used: P13 (more labelled tracking, such as SkillCorner's open data) and P14 (a pretrained soccer-ball detector) are ideas, not done; PathCRF's published checkpoint (P20, MPL-2.0; trained by its authors on five of the seven DFL matches) was run only on the held-out DFL match J03WR9, degraded like ours, where it beat P07 on the gap frames by +0.0049, short of the declared +0.04 (R022); it was never run on our match and was dropped |
 
 **The DFL/IDSSE data: sources, citation, licence.** Seven full matches, two Bundesliga and five 2. Bundesliga, 25 Hz.
@@ -106,7 +106,7 @@ the second, and Metrica's sample events in the third.
 |---|---|---|---|---|
 | DFL/IDSSE open data: `BallStatus` (alive or dead) and `BallPossession` (the team) on every frame | Bassek et al. 2025, figshare, CC BY 4.0 (above) | DFL's official data (Bassek et al. 2025). The paper defines `BallStatus` and `BallPossession` but does not say who or what sets them. It says that the positions come from TRACAB Gen5 (ChyronHego), the match information from Sportec Solutions and the events from trained human operators, and that "all data are visually controlled by live operators for plausibility and undergo a final quality check after the game". So we treat the flags as human-checked labels | 7 full matches of other games (2 Bundesliga, 5 2. Bundesliga), 25 Hz: 668.4 graded minutes (about 1.0 million frames) per degradation seed, 437 possessions a match on average and 92 to 113 stoppages a match (A06) | the benchmark's truth (validation); the dead-ball model's labels (601,602 rows: every fifth graded frame, 3 seeds); the shape model's labels (331,881 rows, 663,762 with the team-swapped mirrors); the touch rule's confidence; the pipeline's own lag |
 | DFL/IDSSE open data: the restart events (kick-off, throw-in, corner, goal kick, free kick, penalty, with the team that takes each) | DFL's raw event files, Bassek et al. 2025, figshare, CC BY 4.0 (above) | DFL's data collectors: the paper says the events come from trained human operators and that all data are visually controlled by live operators and pass a final quality check | 681 restart events over the 7 matches of other games (KickOff 22, ThrowIn 308, CornerKick 57, GoalKick 119, FreeKick 172, Penalty 3), placed on the benchmark's timeline by the position file's frame clock (`pipeline/benchmark/dfl_events.py`) | a diagnostic of the restart source's typing only (A12 part 2: recall per kind, a confusion of the called type against the event's kind); nothing is trained, fitted or chosen from it |
-| Metrica's public sample games: the event files (type, subtypes, team, start and end frame of every event) | metrica-sports/sample-data at `e706dd5`; no licence file, its README asks users to acknowledge the source (done here); fetched at run time, never redistributed | Metrica Sports, the provider of our ground truth, tagging events by its own published definitions (`documentation/events-definitions.pdf`); the games are anonymised | 3 games of other teams: 7,300 events in periods 1 and 2, 1,117 derived possessions and 307 stoppages (R023) | R023 only: the grain of possession derived from them, which set the objective of later choices (section 5); nothing is trained, fitted or chosen from them beyond that |
+| Metrica's public sample games: the event files (type, subtypes, team, start and end frame of every event) | metrica-sports/sample-data at `e706dd5`; no licence file, its README asks users to acknowledge the source (done here); fetched at run time, never redistributed | Metrica Sports, the provider of our ground truth, tagging events by its own published definitions (`documentation/events-definitions.pdf`); the games are anonymised | 3 games of other teams: 7,300 events in periods 1 and 2, 1,117 derived possessions and 307 stoppages (R023) | R023 only: the grain of possession derived from them, which set the objective of later choices (section 5); nothing is trained, fitted or chosen from them beyond that. Withdrawn on 5 Nov 2026, as the data has no licence (above) |
 
 Not in the list, and why: the public 5 minutes are published by the organisers, derived from Metrica's corrected
 tracking, and are used to check only (never to train, fit or choose); the Smart Tagging is generated automatically by
@@ -186,7 +186,8 @@ matter.
 - How far our GT's grain differs is not known. The public window has 17 possessions with a median of 7.56 s, but it is
   alive on 80.4% of its frames, more than 96% of DFL's 5-minute windows. Against DFL's windows that lively, it is 1.34
   times slower, which DFL's own conventions can produce. EVALUATION.md's lag table does not reproduce on the public GT
-  (A06, T33). R023 measured it on other games of our provider instead: on Metrica's three sample games, possession
+  (A06, T33). R023 measured it on other games of our provider instead (data withdrawn on 5 Nov 2026 for want of a
+  licence, section 3): on Metrica's three sample games, possession
   derived from their events gives 6.20 possessions per alive minute (DFL's raw truth 8.30, the coarse 4.50) and a
   median of 4.72 s (3.68 and 8.40), between the two truths by its declared rule. It is event-tagged possession, not the
   tracking flag our GT comes from, and how far those two differ is not measured.
@@ -367,8 +368,10 @@ implements.
   alive rises early on ours, and the copy's ball gaps ignore the play, R003). So it is a lead, to understand and not to
   fit: a person may watch the video to see which it is, to understand what counts as possession, and what is seen sets
   no constant (T27); nobody checks our own output against the video (the organisers' clarification of November 2026).
-  The organisers were asked (questions 5 and 6, A22) and had not answered by 4 Nov; the one lawful source of a timing
-  constant is Metrica's sample games (P16).
+  The questions on it (5 and 6 in docs/rules.md, A22) were drafted but not sent: the organisers answered our earlier
+  four on 5 Nov with their clarification alone. Metrica's sample games (P16) were the one lawful-looking source of a
+  timing constant, and they carry no licence, so since 5 Nov no timing constant has a source we may use, and the
+  convention stays a limitation (section 6).
   The `shift_edges` rule is declared, was applied in R012 and was applied again in R013 to the re-chosen pipeline,
   whose lag on DFL came out the same. The shift of a type of edge is s_b, the pipeline's own
   lag on the seven DFL matches (the median of predicted minus true over the changes it matches within 50 frames,
@@ -397,9 +400,13 @@ was traced to its entry in `docs/results.md`. None was set from the public windo
 table say where window-derived values sat in the context of a choice. The organisers' clarification of November 2026
 adds a stricter test: parameters are tuned "on external data" only, so no constant may be measured on this match at
 all, labels or not. One row failed it (`smart_tagging` c_team), so R029 took the source out (the two Smart Tagging
-rows below are kept for the record), and one basis is a question for the organisers (the
+rows below are kept for the record), and one basis was a question for the organisers (the
 degradation that the DFL rows were chosen on is fitted on our tracking's label-free statistics); docs/rules.md has the
-audit against that clarification and the questions.
+audit against that clarification and the questions. The organisers replied on 5 Nov 2026 with the clarification and
+"anything that is not explicitly allowed is not permitted". Nothing allows the degradation explicitly, so by our reading
+it is not permitted, and neither is R023's use of Metrica's unlicensed sample data, which set the objective of R024's
+choice. [Team: the redo (P27) or keeping and disclosing both is Tian's decision, pending on 9 Nov; record it here and
+in section 6.]
 
 | constant | value | set in | basis |
 |---|---|---|---|
@@ -460,7 +467,9 @@ a minute; the 5 s rule was written before the numbers were seen and blind to our
 check, not a correction, and a ranking that differs between the two truths is a warning. R023 (P16, section 3) found
 our provider's grain between them on Metrica's sample games, so its declared outcome, "both", makes the unweighted mean
 of the two pooled spellF1s the objective of every choice declared after it (31 Oct 2026), each truth reported. R024
-re-ranked R013's two stages under it (below); no other earlier choice was re-ranked.
+re-ranked R013's two stages under it (below); no other earlier choice was re-ranked. Since 5 Nov the sample data is
+withdrawn (section 3: it has no licence), so the grain of our truth is unknown again, as A06 left it; the mean of the
+two truths is still the neutral way to rank when neither is known to be right.
 
 **Profiles.** A profile says how a DFL match's tracking is made before a config sees it. Each of the first three adds
 one part of ours to the one before, `context` keeps `tracking`'s players and replaces its ball, and the version of a
@@ -510,7 +519,9 @@ frozen with their measurement in the code, and never tuned towards a published s
 When a gate missed (the first low-count cap, on the tracklet median) we stopped, said so and made two corrections, each
 forced by its measurement: no piece under 8 frames, and one rescale of the tracked spans, applied whether or not the
 gate would then pass (R004b, T37). The degrader never reads `ball_status` or `ball_possession`, and a change to a
-profile bumps its version.
+profile bumps its version. We read this rule as allowed until 5 Nov 2026 and asked the organisers to confirm it. Their
+reply ("anything that is not explicitly allowed is not permitted") makes it, by our reading, a use of the provided
+game in the data our models learn from, and nothing allows that explicitly (docs/rules.md, question 1).
 
 **Statistics on seven clusters.** The pooled spellF1 is the official scorer's number on all halves as one file. An
 interval is the 90% Student t interval of the seven matches' paired deltas against a reference config, beside the exact
@@ -895,7 +906,8 @@ unless a bullet cites another entry):
   the new team's control and a median 0.16 s after the ball is first seen beyond a line. Our GT's timing may be
   inspected on the public window (P02) and cannot be fitted to it (RULES.md, 23 Oct 2026), so the one shift made is the
   pipeline's own lag on DFL; the only way to learn our provider's conventions is other games (P16). R023 measured
-  their grain from Metrica's sample events; their switch timing is not measured.
+  their grain from Metrica's sample events, which we withdrew on 5 Nov 2026 for want of a licence; their switch timing
+  is not measured, and no licensed source of our provider's games is known to us.
 - **The restart team is not modelled beyond the hold.** After a stoppage the hold weakly favours the team that
   controlled the ball before it, until the first new episode names the team, so the team after a stoppage is not decided
   by who restarts. A label-free restart source exists and was measured (R014, R014b), but it did not clear the

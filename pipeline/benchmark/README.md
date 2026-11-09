@@ -22,7 +22,8 @@ python pipeline/benchmark/headroom.py CONFIG  # a config beside five variants wh
 python pipeline/benchmark/label_diff.py REFERENCE CONFIG ...  # how configs change BAR-ATH's labels beside a reference, aggregates only (heavy)
 python pipeline/benchmark/tag_stats.py        # P08: Smart Tagging's votes against our own pseudo-labels (R017), aggregates only (heavy); since 3 Nov a check only, never a constant (docs/rules.md)
 python pipeline/benchmark/wrong_team.py       # P21 step 0: wrong-team slots at the ball against all graded frames (A16), aggregates only (heavy)
-python pipeline/benchmark/metrica.py [--offline]   # P16: the grain of H/A/D derived from Metrica's sample games' events (R023)
+python pipeline/benchmark/metrica.py [--offline]   # P16: the grain of H/A/D derived from Metrica's sample games' events (R023);
+                                                   # not to be run since 5 Nov 2026: the data has no licence (docs/rules.md)
 python pipeline/benchmark/touch_stats.py      # P04's control rule measured: coverage, agreement, flip lags, confidence
 python pipeline/benchmark/train_dead_ball.py --model hgb   # P05: train the dead-ball model (folds + full) as JSON
 python pipeline/benchmark/train_shape.py [--verify|--report]   # P07: train the shape model (folds + full) as JSON
@@ -156,7 +157,10 @@ by git blob SHA, and never committed. It derives H/A/D from them by a rule decla
 grain with A06's two truths: 6.20 possessions per alive minute, between 8.30 (raw) and 4.50 (coarse), and a median of
 4.72 s, on the raw side. The outcome was **both**: a choice declared after R023 ranks on the unweighted mean of the
 two pooled spellF1s, each reported. It is event-tagged possession, not a tracking flag, so how far that grain sits
-from our flag's is not measured (R023's stated limit).
+from our flag's is not measured (R023's stated limit). **Since 5 Nov 2026 the sample data is withdrawn:** it has no
+licence, and the organisers' reply ("any dataset you have the rights to use", "anything that is not explicitly allowed
+is not permitted") leaves us without the rights, so `metrica.py` is not run again. Whether R024's objective stands on
+A06 alone is the team's decision ([docs/rules.md](../../docs/rules.md), question 3).
 
 ### The profiles
 
@@ -165,8 +169,11 @@ version, which goes into every report: change what a profile does and bump it. I
 version, from label-free measurements of our tracking, and then frozen with the measurement in the code; they are never
 tuned towards a gate, a WARN or a score (T26, T37). No label, ground truth or video of our match enters them, and every
 choice made on a profile is made on DFL's own labels. Whether fitting a profile to our tracking is allowed under the
-organisers' clarification of 3 Nov 2026 (training and tuning on external data only) is question 1 for the organisers in
-[docs/rules.md](../../docs/rules.md).
+organisers' clarification of 3 Nov 2026 (training and tuning on external data only) was question 1 for the organisers in
+[docs/rules.md](../../docs/rules.md). They replied on 5 Nov with the clarification and "anything that is not explicitly
+allowed is not permitted", so by our reading it is not permitted: the profiles fitted on our tracking (`gaps`, `tracking`,
+`context`) stand until the team decides between redoing on a profile that measures nothing of our match (P27 in
+[docs/proposals.md](../../docs/proposals.md)) and keeping them with the risk disclosed.
 
 | profile | version | the ball | the players |
 |---|---|---|---|

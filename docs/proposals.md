@@ -30,9 +30,10 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 
 | ID | proposal | attacks | effort | impact | status |
 |---|---|---|---|---|---|
-| [P01](#p01--a-validation-set-we-can-trust) | Validation set we can trust: other matches, degraded to look like ours | deciding anything at all | M | enabling | done → R002–R005 |
+| [P01](#p01--a-validation-set-we-can-trust) | Validation set we can trust: other matches, degraded to look like ours | deciding anything at all | M | enabling | done → R002–R005; **since 5 Nov its degradation is, by our reading, not permitted** (fitted on our tracking; the organisers' reply: "anything that is not explicitly allowed is not permitted", [rules.md](rules.md)) → P27 |
+| [P27](#p27--a-degradation-that-measures-nothing-of-our-match) | A degradation that measures nothing of our match; both models retrained and every choice re-run on it | the rules (question 1); everything P01 decided | M–L | enabling: keeps every learned part and constant on external data only | **decision pending (Tian), added 9 Nov** |
 | [P02](#p02--inspect-the-ground-truths-conventions-on-the-public-window-to-understand-and-never-to-tune) | Inspect the GT's conventions on the public window, to understand and never to tune | boundary timing | S | bounded since the 23 Oct rule: understanding only; so far the pipeline's own lag on DFL, 1 to 2 frames, within noise (R012) | done → A11, R012, A15 (inspection only; a person may watch to understand what counts as possession, never to check our output, 3 Nov) |
-| [P16](#p16--metricas-sample-games-in-our-ground-truth-providers-conventions) | Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing | boundary timing, grain | M | medium | partly done → R023 (the grain: outcome both, so choices rank on the mean of the two truths); the switch timing and the feeds are not done; **A22 (4 Nov): the timing part is the one lawful route to a `D`-edge constant** (the organisers left #31 unanswered; sample game 3's EPTS metadata has no ball-status channel, so the events are what there is) |
+| [P16](#p16--metricas-sample-games-in-our-ground-truth-providers-conventions) | Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing | boundary timing, grain | M | medium | partly done → R023 (the grain: outcome both, so choices rank on the mean of the two truths); the switch timing and the feeds are not done; A22 (4 Nov): the timing part was the one lawful route to a `D`-edge constant; **on hold since 5 Nov: the sample data has no licence, so by our reading we may not use it** ([rules.md](rules.md), question 3); R024's objective, which R023 set, is Tian's decision |
 | [P17](#p17--the-restart-team-channel) | Restart-team channel: who restarts after a stoppage, from the players' arrangement | facts 3, 5 (the hold points at the old team after most stoppages) | S–M | ceiling +0.0198 raw (A12); delivered +0.0040 raw at best, bar not met (R014) | dropped → R014, R014b (the source and the decoder's restart states stay, off by default) |
 | [P18](#p18--the-offpitch-profile-dfls-ball-hidden-off-the-pitch-as-ours-is-and-p05-retrained-on-it) | offpitch profile: DFL's ball hidden off the pitch as ours is, and P05 retrained on it | T39 (P05 overstated by the visible out-of-play ball) | M | A13: a perfect dead-ball source adds +0.029 raw on tracking; main.toml on offpitch 0.5509 raw / 0.5296 coarse; hiding the out-of-play ball cost today's P05 0.013 alive/dead F1 (R015) | dropped → R015, R015b (our tracker's off-pitch ball cannot be reproduced by a simple rule; code removed) |
 | [P19](#p19--a-learned-team-model-where-the-ball-is-seen) | A learned team model where the ball is seen: P05's recipe applied to the team | fact 3; A13's largest lever (+0.194 raw where the ball is seen) | M (feasibility S) | measured: +0.0160 pooled per-frame accuracy against `main.toml`'s decoded labels, gate +0.020 (R021) | dropped → R021 (feasibility: +0.0160 pooled against +0.020, 3 of 7 matches against 6; no spellF1) |
@@ -42,7 +43,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | [P23](#p23--the-hmm-backbone-reviewed-nine-ideas-five-taken) | The HMM backbone reviewed: re-choose under R023's objective (A), decompose the IoU ladder (B), posterior edges (C), calibration (D), a gap weight for P07 (E) | fact 5; the decoder's placement of changes; fact 1 (E) | S each | low: +0.01 to +0.03 for the lot (the advisor's estimate); measured: A +0.0052 on the mean (R024) | done: A adopted → R024; B, D measured → A19; C dropped → R025, R025b; E dropped → R026; F deferred, then run as P22(b) and dropped → R027; G to I not taken |
 | [P24](#p24--the-balls-direction-and-the-touch-timing-as-features-of-a-learned-team-source-p19s-one-retry) | The ball's direction against each team's attacking direction, and the time since and until each team's touches, as features of a learned team source where the ball is seen: P19's one retry | fact 3; A13's largest lever (+0.194 raw where the ball is seen) | S–M | medium: P19's first try reached +0.0160 of the +0.020 gate; False9 calls these its largest gain | idea (added 4 Nov, A22) |
 | [P25](#p25--a-tempo-check-a-normalised-speed-cue-and-a-sparse-tracking-guard-for-the-dead-ball-model) | A tempo check (is our match slower than the degraded DFL?), normalised copies of the speed features, and a guard where fewer than a handful of slots are present | fact 4; T32; coverage that worsens through each half | S check, M retrain | low–medium: two teams found a fixed speed cut flags half the match dead | idea (added 4 Nov, A22) |
-| [P26](#p26--metricas-sample-games-tracking-as-a-second-benchmark-and-training-set) | Metrica's sample games' public tracking (3 games) as a second benchmark and training set, in our provider's grain, degraded as ours | T33, T40, the grain and the timing of our truth | M | medium: the one external data in our provider's conventions; P16's timing part runs on it | idea (added 4 Nov, A22) |
+| [P26](#p26--metricas-sample-games-tracking-as-a-second-benchmark-and-training-set) | Metrica's sample games' public tracking (3 games) as a second benchmark and training set, in our provider's grain, degraded as ours | T33, T40, the grain and the timing of our truth | M | medium: the one external data in our provider's conventions; P16's timing part runs on it | on hold (5 Nov): the sample data has no licence ([rules.md](rules.md), question 3) |
 | [P03](#p03--one-command-deterministic-cached) | One-command, deterministic, cached pipeline | reproducibility | S–M | enabling | done → R001 |
 | [P04](#p04--sticky-ownership-from-controlled-touches) | Sticky ownership from controlled touches | facts 3, 5 | S | high: +0.1421 raw at the chosen decoder (R010) | done → R008, R010; rule re-chosen → R013; hold re-chosen → R024 (0.55) |
 | [P05](#p05--a-real-dead-ball-detector) | Dead-ball detector | fact 4 | M | high: +0.1661 raw at the chosen decoder, on a benchmark that overstates it (R010, T38, T39) | done → R009, R010 |
@@ -364,6 +365,11 @@ allowed. That makes P01 the only place anything is trained or chosen, as it alre
 degradation: `tracking` v3 is fitted on label-free statistics of our tracking (A07 to A09), and whether that is
 allowed is question 1 for the organisers in [rules.md](rules.md).
 
+**The organisers' reply of 5 Nov** ([rules.md](rules.md)) answered question 1 with the clarification and one more
+sentence: "anything that is not explicitly allowed is not permitted". Nothing allows the degradation explicitly, and
+the training data it makes carries our match's missing-ball masks and rates, so by our reading it is not permitted.
+P27 is the redo; whether to do it, with eight days left, is Tian's decision.
+
 **Why.** The public window holds 17 possessions — each worth about 0.06 spellF1 — and it is the easiest 5 minutes of
 the match (fact 2). It already picked the wrong baseline. Until we have a better yardstick, every other proposal is
 a coin flip.
@@ -513,6 +519,12 @@ measuring around the published transitions is fine. Writing labels for frames of
 into a number for a config, is not ([T27](traps.md)).
 
 ### P16 — Metrica's sample games, in our ground truth provider's conventions
+
+**On hold since 5 Nov 2026.** The sample-data repository has no licence (GitHub reports none, checked 9 Nov). The
+organisers' reply to question 3 was the clarification ("any dataset you have the rights to use. Please check the
+license") and "anything that is not explicitly allowed is not permitted". So by our reading we do not have the rights,
+and nothing below runs again. R023 stays in the log as used once, and the technical document says it was withdrawn.
+What R024's objective stands on without it is Tian's decision ([rules.md](rules.md), "Question 3 in detail").
 
 **Status: partly done → [R023](results.md) (signed by Tian and run on 2026-10-31). The three games' event-derived
 labels give 6.20 possessions per alive minute (class both) and a median possession of 4.72 s (class raw, 0.11 s under the
@@ -1186,7 +1198,8 @@ near the end of the first graded block (no home tracks). **Effort** S for the ch
 
 ### P26 — Metrica's sample games' tracking as a second benchmark and training set
 
-**Status: idea.** R023 (P16) read the three sample games' events only. Their tracking is public too (games 1 and 2 as
+**On hold since 5 Nov 2026:** the sample data has no licence, so by our reading we may not use it (P16, question 3 in
+[rules.md](rules.md)). **Status before: idea.** R023 (P16) read the three sample games' events only. Their tracking is public too (games 1 and 2 as
 CSV, game 3 in the EPTS format of our own ATD), and two teams use it: False9 trains its models on the three games with
 the tracking roughened (ball gaps to 59% visibility, 46 slots), and InkSight calibrates on games 1 and 2 with the ball
 dropped in long blocks. The games carry no ball-status flag (checked 4 Nov), so the labels are R023's event-derived
@@ -1198,6 +1211,42 @@ it is the one external data in our provider's conventions, so it answers T33 and
 our truth) directly, and False9's experience that another provider's data (SkillCorner) hurt says the provider's
 convention matters. Nothing of BAR-ATH enters it. **Effort** M (a reader for the two CSV formats and the EPTS game,
 R023's labels, the degradation as it stands). A decision rule before the run, as R023 had.
+
+## After the organisers' reply (added 9 Nov)
+
+### P27 — A degradation that measures nothing of our match
+
+**Status: decision pending (Tian), added 9 Nov 2026.** The organisers' reply of 5 Nov to question 1 was the
+clarification and "anything that is not explicitly allowed is not permitted" ([rules.md](rules.md)). Nothing allows
+fitting the benchmark's degradation on our tracking. `gaps` transplants our missing-ball masks byte for byte, and
+`tracking` v3 adds rates measured on our tracking (A07 to A09). By our reading, then, both models and every constant
+chosen on the benchmark stand on training data that is not "only external data". The other way is to keep them and
+disclose this as a risk in the technical document. That choice is Tian's, and nothing below starts until Tian decides.
+
+**What.** A new profile whose every setting comes from a rule declared before any run and from nothing measured on
+BAR-ATH, followed by the work that already exists, re-run on it:
+1. *The profile.* Research first, then the simplest version that serves; none is chosen yet. The candidates:
+   - (a) the ball hidden in blocks by a generic masking rule (block lengths and a missing share from the literature on
+     optical ball tracking, or a declared range);
+   - (b) a family of such profiles over a wide declared range, with every choice ranked on their mean, so that no
+     single setting stands in for our match;
+   - (c) the gaps of another provider's tracker on other games (SkillCorner's open broadcast tracking, if its licence
+     allows; Metrica's sample tracking is out, P26).
+
+   The players: A14 puts all of `tracking`'s player degradation at 0.013 of `main.toml`'s spellF1. So `clean` players,
+   or a generic fragmentation with declared rates, would do.
+2. *What we know of BAR-ATH is not a setting.* 41% of the ball missing and a median gap of 10.7 s may not become the
+   new profile's numbers, or "rules" that land on them. That would be the same fit, made by hand. `fidelity.py` may
+   still run as a check that passes or fails, but no profile is changed to pass it (T01).
+3. *Retrain:* `train_dead_ball.py` and `train_shape.py` on the new profile, the folds as before.
+4. *Re-choose:* R010's, R011's, R013's and R024's grids by their declared rules (`run.py`, `choose.py`), under the
+   objective declared for P27. Without R023 (question 3) that is A06's: both truths, a disagreement a warning, or
+   their mean.
+5. *Regenerate* `main.csv`, run the selftests and the label-free checks on BAR-ATH (pass or fail only), and update
+   the technical document's audit.
+
+**Effort** M–L: steps 3 to 5 are scripts that exist, and step 1 is the new work. One process at a time on this
+machine, so the grids take most of a day. The feature freeze is Fri 13 Nov.
 
 ## Cheap signals worth checking
 

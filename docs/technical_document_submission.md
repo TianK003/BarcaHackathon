@@ -52,7 +52,7 @@ and each feature can be checked against how our tracking differs from the traini
 | Broadcast assets | no | Own 164,488-frame timeline, no mapping to the tactical frames (A04). |
 | Public 5-minute GT | check, inspection | See "About this match" below. |
 | DFL/IDSSE open data | yes | Trains P05 and P07; the benchmark (below). |
-| Metrica's sample games (events) | measurement | Our provider's grain (R023, section 5). |
+| Metrica's sample games (events) | measurement, withdrawn | Our provider's grain (R023, section 5); used once, withdrawn on 5 Nov 2026: the data has no licence. |
 
 **Tried and dropped**, each by a bar declared before its run:
 - **P17, the restarting team** (R014, R014b): +0.0040 raw at best (p 0.0938), bar +0.005 with p ≤ 0.05.
@@ -93,7 +93,7 @@ We labelled nothing by hand, on any game. The labelled data used are all about o
 | DFL/IDSSE `BallStatus` (alive or dead) and `BallPossession` (the team), every frame | Bassek et al. 2025, figshare, CC BY 4.0 | DFL, in its official match data. The paper does not say whether a person or the system sets the flags, but says all data are visually controlled by live operators and checked after the game: we treat them as human-checked labels. | 7 full matches (2 Bundesliga, 5 2. Bundesliga, R002), 25 Hz, 668.4 graded minutes (A06). Rows: 601,602 for P05 (R009); 331,881 for P07, 663,762 with team-swapped mirrors (R011). | Training P05 and P07 (and P19, dropped, R021); the touch rule's confidence 0.93, measured against the flag (R013); validation, as the benchmark's truth; the pipeline's lag (R012) |
 | DFL/IDSSE events | DFL's raw event files, the same release; for J03WR9, the copy synchronised in PathCRF's repository | DFL's data collectors, trained human operators according to the paper | 681 restart events over the 7 matches (A12); one match's events (R022) | A diagnostic of P17's restart types (A12); R022's correctness check of PathCRF on the clean J03WR9. Nothing trained or chosen from them |
 | PathCRF checkpoint (a model trained on labels) | Kim et al. 2026, MPL-2.0 | Its authors, on possession derived from DFL's events: five of the seven matches for training, a sixth for validation | one checkpoint | R022's measurement only; dropped |
-| Metrica's sample games' events | metrica-sports/sample-data at `e706dd5`; no licence, its README asks for acknowledgement (given here); fetched at run time, not redistributed | Metrica Sports, our ground truth's provider: event types, per its published definitions | 3 anonymised games, 7,300 events | R023's grain only; nothing trained |
+| Metrica's sample games' events | metrica-sports/sample-data at `e706dd5`; no licence, its README asks for acknowledgement (given here); fetched at run time, not redistributed | Metrica Sports, our ground truth's provider: event types, per its published definitions | 3 anonymised games, 7,300 events | R023's grain only; nothing trained. Withdrawn on 5 Nov 2026: with no licence we cannot show the rights the organisers ask for |
 
 **About this match.** No tracking was corrected by hand, and no human-produced data about the match were used. No
 model was trained on the public 5-minute ground truth and no constant of `main.toml` was set on it. Its three uses:
@@ -176,15 +176,19 @@ full match (T01). Today's file scores macroF1 0.7007 and spellF1 0.4000 on it (R
 our components see no truth, and the organisers' scorer grades each half. The truth served as a prediction scores
 1.0000 on all seven (R002). The degradation was fitted on label-free statistics of our tracking and frozen, never tuned
 towards a score: no label, ground truth or video of this match enters it, and every parameter is tuned, and both models
-trained, on the degraded external matches and their own labels. [Team: question 1 to the organisers in docs/rules.md;
-record the answer here.] All eight fidelity gates pass, e.g. ball missing 0.4189 against our 0.4110 (R004c), and the whole
+trained, on the degraded external matches and their own labels. [Team: the organisers answered question 1 on 5 Nov
+with the clarification and "anything that is not explicitly allowed is not permitted"; by our reading the degradation
+is not permitted (docs/rules.md). Write the paragraph after Tian's decision: the redo on P27, or this one kept with
+the risk disclosed.] All eight fidelity gates pass, e.g. ball missing 0.4189 against our 0.4110 (R004c), and the whole
 player degradation costs `main.toml` 0.0129 raw (A16, from A14's table).
 
 **Two truths.** DFL's flag gives 4.58 possessions per graded minute. Our grain is unknown, so every choice is also
 ranked under a coarse truth that absorbs possessions under 5 s between two of the other team: 2.48 a minute (R002; the
 5 s rule was written before the numbers were seen, A06). Disagreement is a warning (T33). On Metrica's own sample
 games, possession derived from their events has 6.20 possessions per alive minute (raw 8.30, coarse 4.50) and a median
-of 4.72 s; R023's declared outcome, "both", ranks later choices on the mean of the two truths.
+of 4.72 s; R023's declared outcome, "both", ranks later choices on the mean of the two truths. The sample data has
+since been withdrawn (no licence, 5 Nov), so our grain is unknown again; the mean stays the neutral ranking while
+neither truth is known to be right. [Team: keep R024's hold on that ground, or return to R013's: Tian decides.]
 
 **Statistics.** Each change is compared with its reference through the seven matches' paired deltas: a 90%
 t-interval, an exact sign-flip test (smallest possible p 0.0156) and matches won. Three seeds, since one moves a pooled
@@ -217,7 +221,8 @@ and +0.1764 in the gaps, a perfect dead ball only +0.0290 (the benchmark oversta
   loses here is not measured.
 - **Our truth's grain is only partly known** (T33). DFL's flag gives 437 possessions a match, median 3.7 s, and the
   public window cannot say how ours compares: it is alive on 80.4% of its frames, livelier than 96% of DFL's 5-minute
-  windows (A06). R023 places our provider between the two, but from events, not the flag our truth comes from. R024's
+  windows (A06). R023 placed our provider between the two, but from events, not the flag our truth comes from, and
+  from data since withdrawn (no licence). R024's
   gain is coarse (+0.0171) at a raw cost (-0.0067): if our truth is as fine as DFL's, it costs a little.
 - **The benchmark overstates the dead ball** (T38, T39). DFL tracks the ball out of play, and ours loses it near the
   lines: among the at-risk rows (frames where a gap could begin) the ball is beyond a line on 17.68% of DFL's against
@@ -234,10 +239,11 @@ and +0.1764 in the gaps, a perfect dead ball only +0.0290 (the benchmark oversta
 - **Timing.** On 10 of the public window's 12 team changes, our truth flips a median 0.96 s before the new team's first
   controlled touch, where DFL's flag flips 1 frame after it; the gap's 90% interval holds 0, so no difference is shown
   (A11), and nothing may be fitted to it. Where the truth's `D` begins and ends (at the crossing, the whistle or the
-  restart) is undocumented and was asked of the organisers (A22); the dead-ball model carries DFL's timing.
+  restart) is undocumented; the question was drafted (A22) but not sent, since the organisers answered our others with
+  their clarification alone. The dead-ball model carries DFL's timing.
 
 **With more time:**
-- learn our provider's switch timing from its other games (P16; its grain is R023's);
+- learn our provider's switch timing from its other games (P16), from a source with a licence;
 - place the edges from pass events (P11);
 - retrain PathCRF on degraded copies (P20 step 1);
 - recover the ball from the video (P14), with a detector trained on other matches only.

@@ -226,7 +226,8 @@ needs the video's homography or the Smart Tagging stops the run and names the as
   looks like our match: eight gates, all of which must pass (it exits 1 otherwise), and ten WARN checks that are printed
   and discussed in `docs/results.md` and never tuned towards. Run it after any change to a profile. Degradations are
   fitted once per version on label-free statistics of our tracking, then frozen ([T37](../docs/traps.md)); whether that
-  fit is allowed under the 3 Nov rules is question 1 for the organisers ([docs/rules.md](../docs/rules.md)).
+  fit is allowed under the 3 Nov rules was question 1 for the organisers; since their reply of 5 Nov it is, by our
+  reading, not permitted, and the redo is P27 ([docs/rules.md](../docs/rules.md)).
 - **Headroom.** `python pipeline/benchmark/headroom.py CONFIG` runs a config beside five variants whose evidence is the
   truth itself (a perfect dead-ball detector, a perfect possessor where the ball is seen or everywhere, and both), to
   say what P05, P04 or P07 could ever deliver to that config before anyone builds them

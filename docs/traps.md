@@ -559,7 +559,9 @@ set a constant, a weight, a prior or a model, however label-free it is.
   or fail a candidate. They may not rank candidates or supply a value (T01).
 - *What it caught on 3 Nov:* `smart_tagging` c_team in `main.toml`, taken out the same day (R029); P14's plan
   to train a detector on our video with the ATD's ball as pseudo-labels; P22(c). The benchmark's degradation, fitted on
-  label-free statistics of our tracking (A07 to A09), is our reading's open case and question 1 for the organisers.
+  label-free statistics of our tracking (A07 to A09), was our reading's open case and question 1 for the organisers.
+  Their reply of 5 Nov did not answer it and said "anything that is not explicitly allowed is not permitted", so by our
+  reading it fails this test too: its constants go from BAR-ATH into the code that makes the training data (T56, P27).
 
 **T55 — A `SET PIECES` tag is a fixed 35 s clip, not a window of a few seconds around the restart.** Measured on our
 tagging on 4 Nov 2026 (`starter/load_smart_tagging.load`, lengths only): 57 of the 59 `SET PIECES` intervals (every
@@ -571,3 +573,19 @@ median 6.3 s after a throw-in tag's start on this match, A22) and its end says n
 and why R017's dead votes from the tags agreed with the dead-ball model on only 0.409 of their frames. Anything that
 reads a set-piece tag as a short window is mis-specified; read it as "a restart happens a few seconds after this
 instant", and set no constant for the offset on this match (T54).
+
+**T56 — An open rules question is not a yes: the organisers answer with the clarification, and what is not allowed
+explicitly is not permitted.** On 3 Nov we read the benchmark's degradation as allowed and asked the organisers to
+confirm (question 1), and we kept building on it meanwhile. Metrica's unlicensed sample data had the same status
+(question 3). Their reply of 5 Nov answered no question by name: it repeated the clarification and added "anything that
+is not explicitly allowed is not permitted" ([rules.md](rules.md)). By then both models and every constant of
+`main.toml` stood on the degradation, and R024's objective on R023, so the open case had become eight days of possible
+rework before the deadline (P27).
+- *The rule:* if no text allows something by name (the clarification, the challenge docs, the T&C), treat it as
+  forbidden from the day it comes up, not from the day an answer comes. Asking is still worth it, but plan as if the
+  answer will be the clarification again.
+- *For a dataset:* "any dataset you have the rights to use. Please check the license". A repository with no licence
+  grants no rights, whoever publishes it, and a README's request to acknowledge the source is not a licence.
+- *For a measurement of our match:* a number that goes from BAR-ATH into anything that trains or chooses (a config, a
+  model, a prior, a threshold, or the data a model is trained on) is fitting (T54), even when the code it goes into is
+  not the algorithm.

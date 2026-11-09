@@ -10,8 +10,8 @@
 >   training or tuning data. No private ground truth, and no human-produced data about this match. The match data
 >   never goes to an AI service and never into this repository. The repository must regenerate the exact submitted
 >   file. Anything we use must be accessible to the organisers, ours to use under its licence, and explained in the
->   technical document. If an idea sits near a line, ask the organisers before building on it. Deadline: 17 November
->   2026.
+>   technical document. The organisers' reply to our questions (5 Nov) adds: "anything that is not explicitly allowed is
+>   not permitted", so an idea near a line is out unless a text allows it by name. Deadline: 17 November 2026.
 > - **[site/index.html](site/index.html): the pipeline overview.** It covers each stage, what is built, what is planned,
 >   the history and the work left.
 >
