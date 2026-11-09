@@ -57,7 +57,8 @@ tunes or uses the video.
   **Not permitted by our reading since 5 Nov:** the benchmark's degradation is fitted on our tracking's label-free
   statistics (`gaps` transplants our missing-ball masks), so both models and every constant chosen on it stand on data
   that is not only external. The organisers answered question 1 with the clarification alone. Redo on a degradation that
-  measures nothing of our match (`docs/proposals.md` P27), or keep and disclose: **Tian decides** (`docs/rules.md`).
+  measures nothing of our match (`docs/proposals.md` P27), or keep and disclose: **decided 9 Nov (Tian): redo, P27**
+  (`docs/rules.md`).
 - **No hand labels on this match at all**, in any amount and for any purpose, and no "human-produced data or any other
   data created manually on the provided game": not to train, validate or calibrate, and no correcting its tracking by
   hand (corrections must come out of code). Hand-labelled data from *other* games is fine, in any amount, if we have
@@ -280,7 +281,7 @@ frames are all `D`. The public GT labels only 11,185–18,684 (5 minutes, 17 pos
   as a warning (T33, A06). R023 (P16, Metrica's own sample games) found **both**: a choice declared since then
   ranks on the unweighted mean of the two truths' pooled spellF1s, each reported; `choose.py --objective mean` applies it (R024, which re-chose
   R013 under it: the touch hold moved to 0.55). Since 5 Nov R023's data is withdrawn (Metrica's sample data has no
-  licence), so the grain is unknown again; whether R024's objective and hold stand is Tian's decision (`docs/rules.md`).
+  licence), so the grain is unknown again; the objective stays (Tian, 9 Nov) and P27 re-chooses the hold under it (`docs/rules.md`).
 - Two benchmark matches have a team down to 10, so a gate on how many slots are present is measured on full-strength
   frames only (T36).
 - DFL's own jitter is rare jumps on a 1 cm grid (RMS of the second difference 9.0 cm against our 3.3 mm): compare

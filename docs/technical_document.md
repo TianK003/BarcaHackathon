@@ -405,8 +405,8 @@ degradation that the DFL rows were chosen on is fitted on our tracking's label-f
 audit against that clarification and the questions. The organisers replied on 5 Nov 2026 with the clarification and
 "anything that is not explicitly allowed is not permitted". Nothing allows the degradation explicitly, so by our reading
 it is not permitted, and neither is R023's use of Metrica's unlicensed sample data, which set the objective of R024's
-choice. [Team: the redo (P27) or keeping and disclosing both is Tian's decision, pending on 9 Nov; record it here and
-in section 6.]
+choice. [Team: decided 9 Nov: the redo (P27), with the mean of the two truths kept as the objective. Rewrite this
+paragraph and the table when P27 lands.]
 
 | constant | value | set in | basis |
 |---|---|---|---|

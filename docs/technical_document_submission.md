@@ -178,8 +178,7 @@ our components see no truth, and the organisers' scorer grades each half. The tr
 towards a score: no label, ground truth or video of this match enters it, and every parameter is tuned, and both models
 trained, on the degraded external matches and their own labels. [Team: the organisers answered question 1 on 5 Nov
 with the clarification and "anything that is not explicitly allowed is not permitted"; by our reading the degradation
-is not permitted (docs/rules.md). Write the paragraph after Tian's decision: the redo on P27, or this one kept with
-the risk disclosed.] All eight fidelity gates pass, e.g. ball missing 0.4189 against our 0.4110 (R004c), and the whole
+is not permitted (docs/rules.md). Decided 9 Nov: the redo, P27. Rewrite this paragraph when it lands.] All eight fidelity gates pass, e.g. ball missing 0.4189 against our 0.4110 (R004c), and the whole
 player degradation costs `main.toml` 0.0129 raw (A16, from A14's table).
 
 **Two truths.** DFL's flag gives 4.58 possessions per graded minute. Our grain is unknown, so every choice is also
@@ -188,7 +187,7 @@ ranked under a coarse truth that absorbs possessions under 5 s between two of th
 games, possession derived from their events has 6.20 possessions per alive minute (raw 8.30, coarse 4.50) and a median
 of 4.72 s; R023's declared outcome, "both", ranks later choices on the mean of the two truths. The sample data has
 since been withdrawn (no licence, 5 Nov), so our grain is unknown again; the mean stays the neutral ranking while
-neither truth is known to be right. [Team: keep R024's hold on that ground, or return to R013's: Tian decides.]
+neither truth is known to be right. [Team: decided 9 Nov: the mean stays the objective; P27 re-chooses the hold under it.]
 
 **Statistics.** Each change is compared with its reference through the seven matches' paired deltas: a 90%
 t-interval, an exact sign-flip test (smallest possible p 0.0156) and matches won. Three seeds, since one moves a pooled

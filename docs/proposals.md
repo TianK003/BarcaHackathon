@@ -31,9 +31,9 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | ID | proposal | attacks | effort | impact | status |
 |---|---|---|---|---|---|
 | [P01](#p01--a-validation-set-we-can-trust) | Validation set we can trust: other matches, degraded to look like ours | deciding anything at all | M | enabling | done → R002–R005; **since 5 Nov its degradation is, by our reading, not permitted** (fitted on our tracking; the organisers' reply: "anything that is not explicitly allowed is not permitted", [rules.md](rules.md)) → P27 |
-| [P27](#p27--a-degradation-that-measures-nothing-of-our-match) | A degradation that measures nothing of our match; both models retrained and every choice re-run on it | the rules (question 1); everything P01 decided | M–L | enabling: keeps every learned part and constant on external data only | **decision pending (Tian), added 9 Nov** |
+| [P27](#p27--a-degradation-that-measures-nothing-of-our-match) | A degradation that measures nothing of our match; both models retrained and every choice re-run on it | the rules (question 1); everything P01 decided | M–L | enabling: keeps every learned part and constant on external data only | **doing (overnight run of 9 Nov; Tian decided the redo that evening)** |
 | [P02](#p02--inspect-the-ground-truths-conventions-on-the-public-window-to-understand-and-never-to-tune) | Inspect the GT's conventions on the public window, to understand and never to tune | boundary timing | S | bounded since the 23 Oct rule: understanding only; so far the pipeline's own lag on DFL, 1 to 2 frames, within noise (R012) | done → A11, R012, A15 (inspection only; a person may watch to understand what counts as possession, never to check our output, 3 Nov) |
-| [P16](#p16--metricas-sample-games-in-our-ground-truth-providers-conventions) | Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing | boundary timing, grain | M | medium | partly done → R023 (the grain: outcome both, so choices rank on the mean of the two truths); the switch timing and the feeds are not done; A22 (4 Nov): the timing part was the one lawful route to a `D`-edge constant; **on hold since 5 Nov: the sample data has no licence, so by our reading we may not use it** ([rules.md](rules.md), question 3); R024's objective, which R023 set, is Tian's decision |
+| [P16](#p16--metricas-sample-games-in-our-ground-truth-providers-conventions) | Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing | boundary timing, grain | M | medium | partly done → R023 (the grain: outcome both, so choices rank on the mean of the two truths); the switch timing and the feeds are not done; A22 (4 Nov): the timing part was the one lawful route to a `D`-edge constant; **on hold since 5 Nov: the sample data has no licence, so by our reading we may not use it** ([rules.md](rules.md), question 3); R024's objective, which R023 set, stays (Tian, 9 Nov) |
 | [P17](#p17--the-restart-team-channel) | Restart-team channel: who restarts after a stoppage, from the players' arrangement | facts 3, 5 (the hold points at the old team after most stoppages) | S–M | ceiling +0.0198 raw (A12); delivered +0.0040 raw at best, bar not met (R014) | dropped → R014, R014b (the source and the decoder's restart states stay, off by default) |
 | [P18](#p18--the-offpitch-profile-dfls-ball-hidden-off-the-pitch-as-ours-is-and-p05-retrained-on-it) | offpitch profile: DFL's ball hidden off the pitch as ours is, and P05 retrained on it | T39 (P05 overstated by the visible out-of-play ball) | M | A13: a perfect dead-ball source adds +0.029 raw on tracking; main.toml on offpitch 0.5509 raw / 0.5296 coarse; hiding the out-of-play ball cost today's P05 0.013 alive/dead F1 (R015) | dropped → R015, R015b (our tracker's off-pitch ball cannot be reproduced by a simple rule; code removed) |
 | [P19](#p19--a-learned-team-model-where-the-ball-is-seen) | A learned team model where the ball is seen: P05's recipe applied to the team | fact 3; A13's largest lever (+0.194 raw where the ball is seen) | M (feasibility S) | measured: +0.0160 pooled per-frame accuracy against `main.toml`'s decoded labels, gate +0.020 (R021) | dropped → R021 (feasibility: +0.0160 pooled against +0.020, 3 of 7 matches against 6; no spellF1) |
@@ -368,7 +368,7 @@ allowed is question 1 for the organisers in [rules.md](rules.md).
 **The organisers' reply of 5 Nov** ([rules.md](rules.md)) answered question 1 with the clarification and one more
 sentence: "anything that is not explicitly allowed is not permitted". Nothing allows the degradation explicitly, and
 the training data it makes carries our match's missing-ball masks and rates, so by our reading it is not permitted.
-P27 is the redo; whether to do it, with eight days left, is Tian's decision.
+P27 is the redo, which Tian decided on 9 Nov.
 
 **Why.** The public window holds 17 possessions — each worth about 0.06 spellF1 — and it is the easiest 5 minutes of
 the match (fact 2). It already picked the wrong baseline. Until we have a better yardstick, every other proposal is
@@ -524,7 +524,7 @@ into a number for a config, is not ([T27](traps.md)).
 organisers' reply to question 3 was the clarification ("any dataset you have the rights to use. Please check the
 license") and "anything that is not explicitly allowed is not permitted". So by our reading we do not have the rights,
 and nothing below runs again. R023 stays in the log as used once, and the technical document says it was withdrawn.
-What R024's objective stands on without it is Tian's decision ([rules.md](rules.md), "Question 3 in detail").
+R024's objective stays without it, on A06's ground (Tian, 9 Nov; [rules.md](rules.md), "Question 3 in detail").
 
 **Status: partly done → [R023](results.md) (signed by Tian and run on 2026-10-31). The three games' event-derived
 labels give 6.20 possessions per alive minute (class both) and a median possession of 4.72 s (class raw, 0.11 s under the
@@ -1216,12 +1216,13 @@ R023's labels, the degradation as it stands). A decision rule before the run, as
 
 ### P27 — A degradation that measures nothing of our match
 
-**Status: decision pending (Tian), added 9 Nov 2026.** The organisers' reply of 5 Nov to question 1 was the
+**Status: doing (overnight run of 9 Nov 2026; Tian decided the redo that evening).** The organisers' reply of 5 Nov to question 1 was the
 clarification and "anything that is not explicitly allowed is not permitted" ([rules.md](rules.md)). Nothing allows
 fitting the benchmark's degradation on our tracking. `gaps` transplants our missing-ball masks byte for byte, and
 `tracking` v3 adds rates measured on our tracking (A07 to A09). By our reading, then, both models and every constant
 chosen on the benchmark stand on training data that is not "only external data". The other way is to keep them and
-disclose this as a risk in the technical document. That choice is Tian's, and nothing below starts until Tian decides.
+disclose this as a risk in the technical document. Tian chose the redo on 9 Nov, with the mean of the two truths
+kept as the objective.
 
 **What.** A new profile whose every setting comes from a rule declared before any run and from nothing measured on
 BAR-ATH, followed by the work that already exists, re-run on it:

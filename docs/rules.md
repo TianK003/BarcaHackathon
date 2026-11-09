@@ -77,9 +77,9 @@ in a published rule, but it contradicts nothing in the clarification, and we fol
 
 | question | does a text allow it explicitly? | our reading since 5 Nov | what follows |
 |---|---|---|---|
-| 1. the benchmark's degradation, fitted on label-free statistics of our tracking | no (below) | **not permitted** | every learned part and every chosen constant rests on it. Redo them on a degradation that measures nothing of our match (P27), or keep them and carry the risk. **Tian decides** |
+| 1. the benchmark's degradation, fitted on label-free statistics of our tracking | no (below) | **not permitted** | every learned part and every chosen constant rests on it. Redo them on a degradation that measures nothing of our match (P27), or keep them and carry the risk. **Decided 9 Nov (Tian): redo, P27** |
 | 2. the repository private until shortly before the deadline | the rules ask for a public repository URL in the form and say nothing about when it becomes public | **fine** | make it public before the form is submitted, after checking the whole git history, not only the tip, for anything under `data/` or frame-level. A deliberate step, Tian's |
-| 3. Metrica's sample data, used once for R023 | no: "Using any dataset you have the rights to use. Please check the license". A repository without a licence grants no rights; its README asks for acknowledgement, which is not permission. That Metrica Sports, one of the organisers, publishes it does not license it either | **not permitted** | no further use: P16's timing part and P26 are on hold and `metrica.py` is not run again; the technical document lists the data as used once and withdrawn; R024's objective, which R023 set, is Tian's decision (below) |
+| 3. Metrica's sample data, used once for R023 | no: "Using any dataset you have the rights to use. Please check the license". A repository without a licence grants no rights; its README asks for acknowledgement, which is not permission. That Metrica Sports, one of the organisers, publishes it does not license it either | **not permitted** | no further use: P16's timing part and P26 are on hold and `metrica.py` is not run again; the technical document lists the data as used once and withdrawn; R024's objective, which R023 set, stays (decided 9 Nov, below) |
 | 4. watching the video to understand how the tracking fails | no: watching and inspecting are allowed "to better understand what counts as possession", nothing more. Issue #14's wider answer (26 Oct) is superseded, since the clarification takes precedence over "answers to individual questions" | **not permitted** | no change: our practice since 3 Nov ("How we read it", point 4) |
 
 **Question 1 in detail.** Three items of the clarification come near it, and none allows it by name.
@@ -115,7 +115,8 @@ both truths and treat a disagreement as a warning. There are two ways to go:
 - keep R024's hold: the mean of the two truths is also the neutral way to rank when neither is known to be right;
 - or put `main.toml` back to R013's 0.60.
 
-**Tian decides.** If P27 goes ahead, the objective it declares settles this as well.
+**Decided 9 Nov (Tian): keep the average.** The mean of the two truths stays the objective, on A06's ground: the
+grain of our truth is unknown, so neither truth is preferred. P27 re-chooses every constant under it.
 
 ## What it changes
 
@@ -192,8 +193,8 @@ out the same day:
 | `D` before each half's kick-off | the organisers' documented kick-off frames | a documented fact |
 | **`smart_tagging` c_team 0.76** | the tags' agreement with our own touch-rule pseudo-labels on BAR-ATH (R017) | **conflicted:** a parameter calibrated on the provided game, not on external data, and no external data has Smart Tagging. **Taken out of `main.toml` by R029** |
 | **`smart_tagging` weight 0.2, spread `frame`** | Tian's pick of two declared options, made after seeing label-free aggregates of our own output on BAR-ATH (R017) | **doubtful:** not fitted to a number, but chosen while looking at this match's output, and never tested on external data. **Gone with the source (R029)** |
-| **the benchmark's `tracking` v3 degradation**, the hazard model included | fitted once on label-free statistics of BAR-ATH's tracking (A07 to A09), then frozen | **not permitted by our reading since 5 Nov** (until then open: it is not the algorithm, and no ground truth or video enters it, so we read it as allowed and asked, question 1). The organisers' reply allows nothing that is not allowed explicitly, and nothing allows it; both models and every external choice were made on data it shaped. Redo on P27, or keep and carry the risk: **Tian decides** |
-| **the objective of R024's choice** (the unweighted mean of the raw and coarse truths), which moved the touch hold to 0.55 | R023's grain, measured on Metrica's sample games | **doubtful since 5 Nov:** the sample data has no licence, so by our reading we do not have the rights to use it (question 3). The objective can stand on A06 alone (the grain unknown, both truths ranked), or `main.toml` goes back to R013's 0.60: **Tian decides** |
+| **the benchmark's `tracking` v3 degradation**, the hazard model included | fitted once on label-free statistics of BAR-ATH's tracking (A07 to A09), then frozen | **not permitted by our reading since 5 Nov** (until then open: it is not the algorithm, and no ground truth or video enters it, so we read it as allowed and asked, question 1). The organisers' reply allows nothing that is not allowed explicitly, and nothing allows it; both models and every external choice were made on data it shaped. **Decided 9 Nov (Tian): redo on P27** |
+| **the objective of R024's choice** (the unweighted mean of the raw and coarse truths), which moved the touch hold to 0.55 | R023's grain, measured on Metrica's sample games | **doubtful since 5 Nov:** the sample data has no licence, so by our reading we do not have the rights to use it (question 3). **Decided 9 Nov (Tian): the objective stays**, on A06 alone (the grain unknown, both truths ranked); P27 re-chooses the hold under it |
 | R011's transfer gate and R013's label-free checks on BAR-ATH | pass or fail | automatic checks |
 | `nearest_player` 0.78, `ball_presence` 0.2 / 0.585, from the public window (A01) | not in `main.toml`; they sat in R009's candidate configs, as the technical document discloses | not changed by the email (already ruled out on 23 Oct) |
 
@@ -213,6 +214,9 @@ file (`762f9073…`) are unchanged until the team decides. There are two ways to
 The redo is the one that follows the organisers' sentence. Most of its work is re-running scripts that exist (the
 two models' training, `run.py` and `choose.py` on each grid's declared rule). The new part is the profile itself.
 
+**Decided 9 Nov 2026 (Tian):** (1) redo the degradation: P27, started the same evening; (2) keep the average: the
+mean of the two truths stays the objective; (3) questions 5 and 6 are not sent.
+
 ## What it rules out among the proposals
 
 - **P14:** a ball detector trained or fine-tuned on our video is out, including one trained with the ATD's own ball as
@@ -230,7 +234,7 @@ two models' training, `run.py` and `choose.py` on each grid's declared rule). Th
 - **P16's timing part and P26** (5 Nov): on hold. Metrica's sample data has no licence, so by our reading we do not
   have the rights to use it (question 3).
 - **P01's degradation** (5 Nov): by our reading not permitted, since it is fitted on our tracking (question 1). P27 is
-  the redo, if the team takes it.
+  the redo (decided 9 Nov).
 
 ## What the organisers' GitHub issues settled (read 4 Nov 2026)
 
@@ -273,7 +277,7 @@ questions as sent (the email put them in fuller words):
    degradation be designed without measuring the provided game? If the answer is no, every learned part and every
    chosen constant has to be redone.
    *Reply (5 Nov): the clarification. Our reading: not permitted, since nothing allows it explicitly. Redo (P27) or
-   keep: Tian decides.*
+   keep: decided 9 Nov (Tian), redo.*
 2. **Our repository's visibility.** It is private while we work and will be made public before the deadline, in time
    for the form. Is that fine?
    *Reply (5 Nov): the clarification. Our reading: fine. The form asks for a public URL and no rule says when the
@@ -281,7 +285,7 @@ questions as sent (the email put them in fuller words):
 3. **Metrica's sample data** (github.com/metrica-sports/sample-data) has no licence file. We used the event files of
    its three games once, for R023's measurement, with acknowledgement and without redistributing them. Is that fine?
    *Reply (5 Nov): the clarification, whose item is "any dataset you have the rights to use. Please check the license".
-   Our reading: without a licence we do not have those rights. No further use; R024's objective: Tian decides.*
+   Our reading: without a licence we do not have those rights. No further use; R024's objective stays (decided 9 Nov, Tian).*
 4. **Watching the video to understand the tracking.** Issue #14 (26 Oct) allowed watching clips to understand why the
    ball goes missing, and turning general observations into rules whose constants come from other matches. The
    clarification allows inspecting the video "to better understand what counts as possession". May team members still
@@ -292,7 +296,7 @@ questions as sent (the email put them in fuller words):
 
 **Drafted 4 Nov 2026, not sent** (the two public issues the organisers left unanswered, A22). The reply of 5 Nov says
 that all the information they can share has been shared, so these would most likely get the clarification back.
-Sending them costs nothing, and the choice is Tian's. Until an answer comes, the docs treat both conventions as unknown.
+**Decided 9 Nov (Tian): they are not sent.** So the docs treat both conventions as unknown.
 A22's reading (dead when the ball leaves play or the referee stops it, alive at the restart) is a lead, and no constant
 comes from the window.
 

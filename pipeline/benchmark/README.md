@@ -172,8 +172,8 @@ choice made on a profile is made on DFL's own labels. Whether fitting a profile 
 organisers' clarification of 3 Nov 2026 (training and tuning on external data only) was question 1 for the organisers in
 [docs/rules.md](../../docs/rules.md). They replied on 5 Nov with the clarification and "anything that is not explicitly
 allowed is not permitted", so by our reading it is not permitted: the profiles fitted on our tracking (`gaps`, `tracking`,
-`context`) stand until the team decides between redoing on a profile that measures nothing of our match (P27 in
-[docs/proposals.md](../../docs/proposals.md)) and keeping them with the risk disclosed.
+`context`) are being replaced by a profile that measures nothing of our match (P27 in
+[docs/proposals.md](../../docs/proposals.md); Tian's decision of 9 Nov).
 
 | profile | version | the ball | the players |
 |---|---|---|---|

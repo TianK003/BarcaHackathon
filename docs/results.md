@@ -2366,6 +2366,9 @@ null`; last push April 2021).
 objective, are not permitted or doubtful by our reading since 5 Nov. What to do about them is the team's decision, and
 it is recorded in [rules.md](rules.md) and as [P27](proposals.md) in proposals.md. [T56](traps.md) records the trap.
 
+**Decided the same evening (Tian, 9 Nov):** redo the degradation (P27); keep the mean of the two truths as the
+objective; do not send questions 5 and 6.
+
 ## Experiments
 
 Copy this template for each run, and add a scoreboard row for anything worth comparing.
