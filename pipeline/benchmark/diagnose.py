@@ -499,15 +499,15 @@ def diagnose(config_path, profile=DEFAULT_PROFILE, seeds=None, match_ids=None, m
     seeds = run.DEFAULT_SEEDS if seeds is None else seeds
     if isinstance(seeds, bool) or not isinstance(seeds, int) or seeds < 1:
         raise run.BenchmarkError("seeds must be a whole number of at least 1, got {!r}".format(seeds))
-    if profile == run.CLEAN and calibration is not None:
+    if not run.needs_calibration(profile) and calibration is not None:
         raise run.BenchmarkError("profile {!r} takes no calibration, and one was given: it would be ignored, and a "
                                  "report must not suggest that it was used".format(profile))
-    if profile != run.CLEAN and calibration is not None and not isinstance(calibration,
+    if run.needs_calibration(profile) and calibration is not None and not isinstance(calibration,
                                                                              calibration_module.Calibration):
         raise run.BenchmarkError("calibration must be a Calibration of our own match, as calibration.load() returns, "
                                  "and it is a {}".format(type(calibration).__name__))
     ids = run.resolve_match_ids(match_ids, matches)
-    if profile != run.CLEAN and calibration is None:
+    if run.needs_calibration(profile) and calibration is None:
         calibration = calibration_module.load(data_dir=data_dir)
     seed_list = [0] if profile == run.CLEAN else list(range(seeds))
     shape = {component.name for component in config.evidence if component.kind in SHAPE_KINDS}
@@ -618,7 +618,7 @@ def diagnose(config_path, profile=DEFAULT_PROFILE, seeds=None, match_ids=None, m
         "dropped_match_only": list(dropped[config.stem]),
         "ladder": ladder,
         "calibration": measured,
-        "tracking_calibration": None if profile == run.CLEAN else {
+        "tracking_calibration": None if not run.needs_calibration(profile) else {
             "sha256": calibration_module.digest(calibration), "version": calibration_module.CALIBRATION_VERSION},
         "git": pipeline_run.git_state(),
         "data_dir": run.shown(data_dir or games.DATA_DIR),

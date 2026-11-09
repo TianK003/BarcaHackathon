@@ -214,8 +214,8 @@ TOL = 50                            # frames (2 s): pm.match_transitions' tolera
 MIN_DFL = 30                        # s_b is 0 where DFL has fewer matched changes of the type than this
 MIN_GAP = 3                         # frames: a median of L' smaller in size than this is not a convention gap to act on
 GAP_SEED = (2, 0)                   # default_rng(GAP_SEED), the design's, for the interval of the median of L'
-SHIFT_DFL = ("tracking", "raw")     # the profile and truth that s_b is read from: the benchmark's default
-SHIFT_COARSE = ("tracking", "coarse")   # reported beside it when its latency file is there, never used (T33)
+SHIFT_DFL = ("generic", "raw")      # the profile and truth that s_b is read from: the benchmark's default (P27)
+SHIFT_COARSE = ("generic", "coarse")    # reported beside it when its latency file is there, never used (T33)
 DESCRIPTORS = ("ball_seen", "ball_seen_1s", "ball_speed", "line_m", "old_near_m", "new_near_m", "new_nearer")
 BOOLEAN_DESCRIPTORS = ("ball_seen", "ball_seen_1s", "new_nearer")   # summarised by a share, the others by quartiles
 NEAR_S = 1                          # ball_seen_1s: the ball is looked for this many seconds either side of a change
@@ -789,7 +789,7 @@ def _plan(profile, seeds, truth, match_ids, matches, calibration, data_dir):
     if truth not in TRUTHS:
         raise run.BenchmarkError("truth {!r} is not one of: {}".format(truth, ", ".join(TRUTHS)))
     ids = run.resolve_match_ids(match_ids, matches)
-    if profile != run.CLEAN and calibration is None:
+    if run.needs_calibration(profile) and calibration is None:
         calibration = calibration_module.load(data_dir=data_dir)
     return ids, ([0] if profile == run.CLEAN else list(range(seeds))), calibration
 

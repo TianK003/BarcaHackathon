@@ -169,9 +169,9 @@ def gather(profile, seeds, stride, matches=None, calibration=None, data_dir=None
     if len(ids) < 2:
         raise BenchmarkError("train_dead_ball: a fold is fitted on the other matches, so it needs at least two "
                              "matches, got {}".format(len(ids)))
-    if profile == run.CLEAN and calibration is not None:
+    if not run.needs_calibration(profile) and calibration is not None:
         raise BenchmarkError("train_dead_ball: profile {!r} takes no calibration, and one was given".format(profile))
-    if profile != run.CLEAN and calibration is None:
+    if run.needs_calibration(profile) and calibration is None:
         calibration = calibration_module.load(data_dir=data_dir)
     seed_list = [0] if profile == run.CLEAN else list(range(seeds))
     log = log or (lambda text: None)
@@ -197,7 +197,7 @@ def gather(profile, seeds, stride, matches=None, calibration=None, data_dir=None
         log("rows      {}   {:,} rows, {:.1%} alive".format(match_id, len(data[match_id][1]),
                                                            float(data[match_id][1].mean())))
         del match, codes
-    digest = None if profile == run.CLEAN else calibration_module.digest(calibration)
+    digest = calibration_module.digest(calibration) if run.needs_calibration(profile) else None
     return Gathered(data, digest, sources, len(seed_list))
 
 
@@ -549,7 +549,7 @@ def measure_rules(profile, seeds, matches=None, calibration=None, data_dir=None,
         raise BenchmarkError("train_dead_ball: profile {!r} is not one of: {}".format(profile,
                                                                                       ", ".join(sorted(run.PROFILES))))
     ids = run.resolve_match_ids(match_ids, matches)
-    if profile != run.CLEAN and calibration is None:
+    if run.needs_calibration(profile) and calibration is None:
         calibration = calibration_module.load(data_dir=data_dir)
     seed_list = [0] if profile == run.CLEAN else list(range(seeds))
     log = log or (lambda text: None)

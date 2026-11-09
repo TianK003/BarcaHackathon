@@ -192,7 +192,7 @@ def gather(profile, seeds, stride, matches=None, calibration=None, data_dir=None
         log("rows      {}   {:,} rows, {:.1%} home".format(match_id, len(data[match_id][1]),
                                                          float(data[match_id][1].mean())))
         del match, codes
-    digest = None if profile == run.CLEAN else calibration_module.digest(calibration)
+    digest = calibration_module.digest(calibration) if run.needs_calibration(profile) else None
     return Gathered(data, digest, sources, len(seed_list))
 
 
@@ -536,9 +536,9 @@ def _known_profile(profile):
 def _calibration_for(profile, calibration, data_dir):
     """The Calibration a degraded profile takes its masks from (measured or read from the cache if none is given); the
     clean profile degrades nothing, so a calibration given to it is refused rather than silently unused."""
-    if profile == run.CLEAN and calibration is not None:
+    if not run.needs_calibration(profile) and calibration is not None:
         raise BenchmarkError("train_shape: profile {!r} takes no calibration, and one was given".format(profile))
-    if profile != run.CLEAN and calibration is None:
+    if run.needs_calibration(profile) and calibration is None:
         return calibration_module.load(data_dir=data_dir)
     return calibration
 

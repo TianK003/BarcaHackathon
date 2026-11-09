@@ -57,15 +57,19 @@ evaluate_configs() is what the team chooses between methods with, so it is built
   tracking was degraded with, and a later run with a newer Calibration writes over the older report of the same name.
 
 The profiles (degrade.py). The tracking is served to every config as an Atd made by degrade.degrade from a TrackingView
-of the match, which has no flag of the truth. There are four (PROFILES, each with the version of its recipe, which a
-report holds). "clean" is DFL's tracking as it is and needs no Calibration. "gaps" has the ball missing where ours was
+of the match, which has no flag of the truth. There are five (PROFILES, each with the version of its recipe, which a
+report holds). "generic", the default since P27 (9 Nov 2026), has a ball with gaps drawn from a declared law at the
+share that the organisers publish and players lost at the rate their published mean count implies: it reads nothing
+of our match and takes no Calibration, and it is the only degraded profile that anything is trained or chosen on
+since the organisers' reply of 5 Nov (docs/rules.md). The other degraded profiles read the Calibration of BAR-ATH and
+are kept for the record of R002 to R029. "clean" is DFL's tracking as it is and needs no Calibration. "gaps" has the ball missing where ours was
 (the Calibration's masks, transplanted), so nearest_player votes on fewer frames, majority_vote has D to give, and the
-scores are no longer those of a ball that is always there. "tracking", the default (version 3), adds the players broken
+scores are no longer those of a ball that is always there. "tracking", the default until P27 (version 3), adds the players broken
 up as ours are (tracked spans and lost spans, 46 anonymous slots, a wrong-team slot now and then, NaN speeds in runs and
 our frames with few players tracked): it is the profile whose gates all pass (R004c). "context" has tracking's players
 and a ball whose gaps a hazard fitted on our match draws; it fails two of its gates (R005), so it is a sensitivity check
-and not the yardstick, and the help, the printout and the report say so (SENSITIVITY_ONLY). Every profile but clean
-needs the Calibration of BAR-ATH (calibration.load, measured once and cached), which evaluate_configs loads unless it is
+and not the yardstick, and the help, the printout and the report say so (SENSITIVITY_ONLY). gaps, tracking and context
+need the Calibration of BAR-ATH (calibration.load, measured once and cached), which evaluate_configs loads unless it is
 given one, and whose digest goes into every report.
 
 What the clean profile is. The tracking exactly as DFL gives it: the ball is present on every frame, so nearest_player
@@ -114,9 +118,12 @@ import possession_metrics as pm  # noqa: E402  isort:skip
 
 # Params
 CLEAN = degrade.CLEAN
+needs_calibration = degrade.needs_calibration   # True for a profile that reads the Calibration of BAR-ATH
 PROFILES = degrade.PROFILES        # name -> version of how its tracking is made (in the report): degrade.py's recipes
-# The default is the profile whose eight gates all pass (R004c: tracking v3); context fails two of its nine (R005).
-DEFAULT_PROFILE = "tracking"       # clean is the floor it is measured against
+# The default is the profile that reads nothing of our match (P27, 9 Nov 2026: generic v1). Until then it was tracking
+# v3, whose eight gates all pass (R004c) and which is fitted on our match: nothing is chosen on it since the organisers'
+# reply of 5 Nov (docs/rules.md, question 1). context fails two of its nine gates (R005).
+DEFAULT_PROFILE = "generic"        # clean is the floor it is measured against
 DEFAULT_SEEDS = 3                  # degradation seeds per match; the clean profile has nothing random and runs seed 0
 # The order of the four yardsticks in the full-match scores that the organisers published (R000: smooth50 0.2433 >
 # smooth125 0.2242 > smooth25 0.1996 > raw 0.0486), best first: what a profile's order is read against (rank_agreement).
@@ -259,14 +266,14 @@ def evaluate_truths(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_ids
     seeds = DEFAULT_SEEDS if seeds is None else seeds
     if isinstance(seeds, bool) or not isinstance(seeds, int) or seeds < 1:
         raise BenchmarkError("seeds must be a whole number of at least 1, got {!r}".format(seeds))
-    if profile == CLEAN and calibration is not None:
+    if not degrade.needs_calibration(profile) and calibration is not None:
         raise BenchmarkError("profile {!r} takes no calibration, and one was given: it would be ignored, and a report "
                              "must not suggest that it was used".format(profile))
-    if profile != CLEAN and calibration is not None and not isinstance(calibration, calibration_module.Calibration):
+    if degrade.needs_calibration(profile) and calibration is not None and not isinstance(calibration, calibration_module.Calibration):
         raise BenchmarkError("calibration must be a Calibration of our own match, as calibration.load() returns, and "
                              "it is a {}".format(type(calibration).__name__))
     ids = resolve_match_ids(match_ids, matches)
-    if profile != CLEAN and calibration is None:
+    if degrade.needs_calibration(profile) and calibration is None:
         calibration = calibration_module.load(data_dir=data_dir)
     data_dir_used = data_dir or games.DATA_DIR
     seed_list = [0] if profile == CLEAN else list(range(seeds))
@@ -316,7 +323,7 @@ def evaluate_truths(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_ids
     git = pipeline_run.git_state()
     environment = _environment()
     profile_info = degrade.profile_record(profile)       # name, version and, for context, tracking's version
-    calibration_info = None if profile == CLEAN else {"sha256": calibration_module.digest(calibration),
+    calibration_info = None if not degrade.needs_calibration(profile) else {"sha256": calibration_module.digest(calibration),
                                                       "version": calibration_module.CALIBRATION_VERSION}
     results = {}
     for name in truth_names:

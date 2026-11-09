@@ -114,7 +114,7 @@ def measure(settings, *, profile=DEFAULT_PROFILE, seeds=None, match_ids=None, ma
     if isinstance(seeds, bool) or not isinstance(seeds, int) or seeds < 1:
         raise run.BenchmarkError("seeds must be a whole number of at least 1, got {!r}".format(seeds))
     ids = run.resolve_match_ids(match_ids, matches)
-    if profile != run.CLEAN and calibration is None:
+    if run.needs_calibration(profile) and calibration is None:
         calibration = calibration_module.load(data_dir=data_dir)
     seed_list = [0] if profile == run.CLEAN else list(range(seeds))
 

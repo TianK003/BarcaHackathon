@@ -182,7 +182,7 @@ def anatomy(config_path, *, profile=DEFAULT_PROFILE, seeds=None, truth="raw", ma
     ids = run.resolve_match_ids(match_ids, matches)
     config = load_config(config_path)
     run.check_scope(config)
-    if profile != run.CLEAN and calibration is None:
+    if run.needs_calibration(profile) and calibration is None:
         calibration = calibration_module.load(data_dir=data_dir)
     seed_list = [0] if profile == run.CLEAN else list(range(seeds))
 
@@ -332,7 +332,7 @@ def measure_restarts(settings, *, model, profile=DEFAULT_PROFILE, seeds=None, ma
     settings = _checked_settings(settings)
     seed_list = _seed_list(profile, seeds)
     ids = run.resolve_match_ids(match_ids, matches)
-    if profile != run.CLEAN and calibration is None:
+    if run.needs_calibration(profile) and calibration is None:
         calibration = calibration_module.load(data_dir=data_dir)
     names, n_types = [label(setting) for setting in settings], len(restart_team.TYPES)
     frames = {name: np.zeros(n_types, dtype=np.int64) for name in names}
@@ -413,7 +413,7 @@ def events_diagnostic(*, model, tail=50, use_ball=False, profile=DEFAULT_PROFILE
     setting = _checked_settings([{"tail": tail, "use_ball": use_ball}])[0]
     seed_list = _seed_list(profile, seeds)
     ids = run.resolve_match_ids(match_ids, matches)
-    if profile != run.CLEAN and calibration is None:
+    if run.needs_calibration(profile) and calibration is None:
         calibration = calibration_module.load(data_dir=data_dir)
     kinds, types = dfl_events.KINDS, restart_team.TYPES
     total = {"events": dict.fromkeys(kinds, 0), "matched": dict.fromkeys(kinds, 0),

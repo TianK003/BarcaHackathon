@@ -21,6 +21,30 @@ as bad as ours, and fidelity.py measures with the Calibration's own statistics f
               than our shortest tracklet (MIN_PIECE_FRAMES) and the walk's tracked spans rescaled once (TRACKED_SCALE),
               all three below. Version 1, which R004 measured, had none of the three, and its three fidelity gates
               about how many slots are present were pending (they are gates now: fidelity.PENDING_GATES is empty).
+    generic   P27 (9 Nov 2026), the default: a ball whose gaps are drawn from a declared law at the share that the
+              organisers publish, and players lost at the rate that their published mean count implies, in 46 slots.
+              It reads NOTHING of our match: no Calibration, no mask, no measured rate (the section below).
+
+Since the organisers' reply of 5 Nov 2026 ("anything that is not explicitly allowed is not permitted", docs/rules.md)
+gaps, tracking and context are kept for the record of R002 to R029 only: they read the Calibration of BAR-ATH
+(NEEDS_CALIBRATION), so nothing is trained or chosen on them any more.
+
+The generic profile (version 1; GENERIC_* constants, generic_mask, generic_parameters, _generic_ball). Every number is
+a fact that the organisers publish in DATA.md or a rule declared before any run
+(docs/superpowers/specs/2026-11-09-p27-degradation-design.md), and none was measured on our match:
+
+* The ball is missing on GENERIC_MISSING_SHARE of the frames in expectation (DATA.md: 41% of the graded frames), in
+  gaps whose length is log-uniform over GENERIC_GAP_SECONDS (declared: every scale from a ball in the air to a long
+  stoppage), starting as a Poisson process that is blind to the play; each half's mask covers its span from the
+  kick-off, and is drawn from the half's "generic_gaps" stream. The ball's speed is NaN everywhere.
+* The players are the tracking profile's machinery with declared parameters (generic_parameters): an on-pitch player
+  is lost on d = 1 - GENERIC_PRESENT_MEAN / 22 of the frames (DATA.md: a mean of 20.5 tracked objects), a tracked span
+  is log-uniform over GENERIC_TRACKED_SECONDS (declared), the pieces take the lowest free slot of 24 home and 22 away
+  slots (the file's layout) and are smoothed over GENERIC_SMOOTH_WINDOW frames (the literature's window). There are no
+  wrong-team episodes, no NaN-speed runs beyond a tracklet's first row, no cap and no shortest piece: DATA.md documents
+  none of them.
+* What it does not have, by design: anything of where our tracker loses the ball or the players. It has no fidelity
+  gate against our match, and fidelity.py is not run on it.
 
 The version of a profile (PROFILES) is part of what a report says about its tracking: change what a profile does and
 bump it, so that two reports of different tracking never carry one version.
@@ -247,9 +271,14 @@ CLEAN = "clean"
 GAPS = "gaps"
 TRACKING = "tracking"
 CONTEXT = "context"
+GENERIC = "generic"
 # name -> version of how its tracking is made (reports say it). tracking 3: a slot is free from the row after its
-# tracklet.
-PROFILES = {CLEAN: 1, GAPS: 1, TRACKING: 3, CONTEXT: 1}
+# tracklet. generic 1: P27, the profile that reads nothing of our match (below).
+PROFILES = {CLEAN: 1, GAPS: 1, TRACKING: 3, CONTEXT: 1, GENERIC: 1}
+# The profiles that read the Calibration of BAR-ATH, and so are fitted on the provided game: since the organisers' reply
+# of 5 Nov 2026 ("anything that is not explicitly allowed is not permitted") nothing is trained or chosen on them
+# (docs/rules.md, question 1). They stay for the record of R002 to R029. clean and generic read nothing of our match.
+NEEDS_CALIBRATION = frozenset({GAPS, TRACKING, CONTEXT})
 # The version of the tracking profile that the context profile's players are built from: its players ARE tracking's, by
 # the same code and the same draws, so a new version of tracking's players is a new version of context's. Pinned to
 # PROFILES[TRACKING] by a check, recorded in context's info and in the reports of a context run (profile_record).
@@ -257,7 +286,25 @@ CONTEXT_TRACKING_VERSION = 3
 # The streams of random numbers, by the part of the degradation that draws them. The number is the stream's place in the
 # key of rng_for, so it never changes for a component and a new component takes the next one. The transplant, the
 # tracklets, the wrong-team episodes and the NaN-speed runs are drawn so far; the hazard's is the context profile's.
-COMPONENTS = {"transplant": 0, "tracklets": 1, "wrong_team": 2, "speed_nan": 3, "hazard": 4}
+COMPONENTS = {"transplant": 0, "tracklets": 1, "wrong_team": 2, "speed_nan": 3, "hazard": 4, "generic_gaps": 5}
+# -- the generic profile (P27, 9 Nov 2026): every number is a fact the organisers publish in DATA.md or a rule declared
+# before any run (docs/superpowers/specs/2026-11-09-p27-degradation-design.md). Nothing here was measured on our match,
+# and none of it may be changed because of a score, a gate or anything seen on our match.
+# DATA.md: "The ball is missing 43% of all frames, and 41% of the graded ones" (present on 94,214 of 158,857 graded).
+GENERIC_MISSING_SHARE = 0.41
+# The length of a gap in the ball, in seconds: log-uniform between the two, so that every scale from a ball in the air
+# to a long stoppage is as likely as any other. DATA.md names the causes ("occlusions, crowded boxes and balls in the
+# air") and no length; a declared range, not a measurement.
+GENERIC_GAP_SECONDS = (1.0, 60.0)
+# DATA.md: "Expect around 22 tracked objects during play - the mean over graded frames is 20.5".
+GENERIC_PRESENT_MEAN = 20.5
+# The length of a tracked span of a player, in seconds: log-uniform between the two, drawn from a fixed grid of
+# GENERIC_TRACKED_GRID quantiles. DATA.md says only that slots "appear, vanish and swap identity"; a declared range.
+GENERIC_TRACKED_SECONDS = (2.0, 300.0)
+GENERIC_TRACKED_GRID = 1024
+# The moving average over each tracklet piece, in frames: the 7-frame window of the velocity filter that is the usual
+# first step on 25 Hz tracking (L. Shaw, Friends of Tracking, Metrica_Velocities.calc_player_velocities: window 7).
+GENERIC_SMOOTH_WINDOW = 7
 TAIL_FRAMES = 7500                  # a mask that runs out goes round the last 300 s of the source (25 Hz)
 INDEX_BYTES = 4                     # an id outside the registry has the first 4 bytes of its sha256 as match_index
 CAP = 18                            # d is taken over the frames with MORE than this many slots present (not the tail)
@@ -705,6 +752,60 @@ def calibrated_parameters(calibration, fps, profile=TRACKING, tracked_scale=None
                                wrong_team_share=calibration.wrong_team_share, scale=WRONG_TEAM_SCALE,
                                nan_runs=runs if runs.size else None, speed_nan_share=calibration.speed_nan_share,
                                smooth=SMOOTH_WINDOW, min_piece=min_piece, tracked_scale=tracked_scale)
+
+
+def needs_calibration(profile):
+    """True for a profile that reads the Calibration of BAR-ATH (NEEDS_CALIBRATION), False for clean and generic."""
+    return profile in NEEDS_CALIBRATION
+
+
+def generic_parameters(fps):
+    """TrackingParameters of the generic profile: declared rules and DATA.md's figures, and nothing of a Calibration.
+
+    The tracked spans are GENERIC_TRACKED_GRID lengths at the mid-quantiles of a log-uniform law over
+    GENERIC_TRACKED_SECONDS, in frames at `fps` (each at least 1): a fixed list, so that a draw is one of them, as the
+    walk draws from a list of ours for the tracking profile. d = 1 - GENERIC_PRESENT_MEAN / 22: an on-pitch player is
+    lost on that share of the frames, so that the mean number present is DATA.md's 20.5 where 22 are on the pitch.
+    No wrong-team episodes, no NaN-speed runs beyond the first row of a tracklet, no cap and no shortest piece
+    (DATA.md documents none of them); the pieces are smoothed over GENERIC_SMOOTH_WINDOW frames. ValueError for an fps
+    that is not a whole number of at least 1.
+    """
+    if _whole("fps", fps) < 1:
+        raise ValueError("fps must be a whole number of at least 1, got {!r}".format(fps))
+    low, high = (math.log(seconds) for seconds in GENERIC_TRACKED_SECONDS)
+    quantiles = (np.arange(GENERIC_TRACKED_GRID, dtype=np.float64) + 0.5) / GENERIC_TRACKED_GRID
+    lengths = np.maximum(1, np.rint(np.exp(low + (high - low) * quantiles) * fps)).astype(np.int64)
+    return tracking_parameters(lengths, 1.0 - GENERIC_PRESENT_MEAN / FULL, smooth=GENERIC_SMOOTH_WINDOW)
+
+
+def generic_mask(rng, n, fps):
+    """(n,) bool, True where the ball is missing: missing and visible spans in turn, drawn from `rng`.
+
+    A missing span is exp(U) seconds long, U uniform between the logs of GENERIC_GAP_SECONDS (log-uniform), rounded to
+    frames at `fps`, at least 1. A visible span is exponential (the gaps start as a Poisson process), rounded, at least
+    1, with the mean that makes the expected missing share GENERIC_MISSING_SHARE: mean gap * (1 - share) / share, the
+    mean gap being that of the log-uniform law, (b - a) / ln(b / a). The first span is missing with the share's own
+    chance. The draws are: one uniform for the first state, then one per span, in time order; the last span is cut at
+    n. ValueError for an n that is not a whole number of at least 0 and an fps of less than 1.
+    """
+    n = _whole("n", n)
+    if _whole("fps", fps) < 1:
+        raise ValueError("fps must be a whole number of at least 1, got {!r}".format(fps))
+    low, high = (math.log(seconds * fps) for seconds in GENERIC_GAP_SECONDS)
+    mean_gap = (GENERIC_GAP_SECONDS[1] - GENERIC_GAP_SECONDS[0]) * fps / (high - low)
+    mean_visible = mean_gap * (1.0 - GENERIC_MISSING_SHARE) / GENERIC_MISSING_SHARE
+    mask = np.zeros(n, dtype=bool)
+    missing = bool(rng.random() < GENERIC_MISSING_SHARE)
+    row = 0
+    while row < n:
+        if missing:
+            length = max(1, int(round(math.exp(rng.uniform(low, high)))))
+            mask[row:row + length] = True
+        else:
+            length = max(1, int(round(rng.exponential(mean_visible))))
+        row += length
+        missing = not missing
+    return mask
 
 
 def walk_run(rng, length, parameters):
@@ -1207,6 +1308,16 @@ def degrade(view, profile, calibration, seed):
             "match_index": view.match_index}
     if profile == CLEAN:
         return atd, info
+    if profile == GENERIC:
+        if calibration is not None:
+            raise ValueError("profile {!r} reads nothing of our match and takes no Calibration, and one was given: "
+                             "it would be ignored, and a report must not suggest that it was used".format(profile))
+        ball_xy, ball_speed, info["ball"], info["mask_share"] = _generic_ball(view, atd, seed)
+        parameters = generic_parameters(view.fps)
+        xy, speed, records, counts = degraded_players(view, parameters, seed)
+        info["players"] = _players_record(view, parameters, records, counts)
+        return Atd(players_xy=xy, players_speed=speed, ball_xy=ball_xy, ball_speed=ball_speed,
+                   slot_team=slot_team()), info
     if calibration is None:
         raise ValueError("profile {!r} takes its ball gaps{} from our own match, so it needs the Calibration; pass "
                          "calibration.load()".format(profile, " and its tracklets" if profile in (TRACKING, CONTEXT)
@@ -1287,6 +1398,29 @@ def _gap_ball(view, atd, calibration, seed):
     ball_xy, ball_speed = _remove_ball(view, atd, masks)
     return (ball_xy, ball_speed, {half: transplants[half] for half in sorted(transplants)},
             missing / covered if covered else None)
+
+
+def _generic_ball(view, atd, seed):
+    """(ball_xy, ball_speed, record, mask_share): the clean ball with the generic profile's gaps taken out of it.
+
+    Each half's mask is generic_mask over its span (from the kick-off to the end of the graded block, as the other
+    profiles' masks), drawn from rng_for(seed, match_index, "generic_gaps", half): nothing of the play and nothing of
+    our match is read. The ball is taken out by the function every masked profile shares (_remove_ball: x and y
+    together, the speed NaN everywhere). `record` is JSON-ready and holds no frame: the declared share and range, and
+    per half the rows, the gaps drawn and the frames they take; mask_share is the missing share of the masks."""
+    masks, halves, covered, missing = {}, {}, 0, 0
+    for half, _, _ in view.graded:
+        kickoff, stop = _span(view, half)
+        mask = generic_mask(rng_for(seed, view.match_index, "generic_gaps", half), stop - kickoff, view.fps)
+        masks[half] = mask
+        first, _ = _runs(mask)
+        halves[half] = {"rows": stop - kickoff, "gaps": int(first.size), "missing_frames": int(mask.sum())}
+        covered += stop - kickoff
+        missing += int(mask.sum())
+    ball_xy, ball_speed = _remove_ball(view, atd, masks)
+    record = {"missing_share_target": GENERIC_MISSING_SHARE, "gap_seconds": list(GENERIC_GAP_SECONDS),
+              "halves": {half: halves[half] for half in sorted(halves)}}
+    return ball_xy, ball_speed, record, (missing / covered if covered else None)
 
 
 def _transplant_records(view, calibration, seed):
