@@ -1551,7 +1551,7 @@ def test_touch_backdate_rejects_bad_parameters():
     # Without backdate_tau the other two are a mistake in the config and not a default to fall back on.
     expect_error(ValueError, lambda: touch(run, backdate_confidence=0.8), "controlled_touch", "backdate_tau")
     expect_error(ValueError, lambda: touch(run, backdate_cap=5), "controlled_touch", "backdate_tau")
-    touch(run, backdate_tau=np.float64(3.0), backdate_confidence=0.9, backdate_cap=np.int64(3))   # the confidence itself
+    touch(run, backdate_tau=np.float64(3.0), backdate_confidence=0.9, backdate_cap=np.int64(3))  # the confidence itself
     touch(run, hold=0.7, backdate_tau=3, backdate_confidence=0.7)                                  # the hold itself
     touch(run, backdate_tau=3.0, backdate_confidence=0.51)
     for name, bads in (("radius", (0, np.inf)), ("duel_radius", (0, np.nan)),

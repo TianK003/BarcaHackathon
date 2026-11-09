@@ -50,6 +50,11 @@ module of its topic:
                  and that the full oracle scores exactly 1.0 (synthetic only)
     touch.py     touch_stats: its figures against a plain loop over the frames, the confidence rule, the grid and its
                  labels, and that the source is never handed the truth (synthetic only)
+    touch_backdate.py
+                 touch_backdate_stats, step 0 of P28: (i), (ii) under every cap, the rates and the gate against a plain
+                 loop on a ball relayed between standing players, the floor, the command line's last lines and its
+                 file (counts and shares, no per-frame array), that the source is never handed the truth, and what is
+                 refused before a match is loaded (synthetic only)
     dead_ball.py P05's dead-ball trainer: the exported trees against scikit-learn, the same bytes on 1 and 4
                  threads, the folds that exclude the held-out match, no truth in the features, the JSON artifact
                  (exact, LF, bounded), the logistic reference's bookkeeping, the rule values' rounding, and --verify
@@ -115,8 +120,8 @@ what two of them share goes to common.py (test_a_check_module_imports_no_other_c
 from pipeline.benchmark.checks import (
     calibration, cap, choose, context, conventions, dead_ball, degrade, dfl, dfl_events, diagnose, fidelity, harness,
     hazard, headroom, inputs, label_diff, metrica, restarts, run, score, shape, sources, tag_stats, tracking, touch,
-    truth, wrong_team)
+    touch_backdate, truth, wrong_team)
 
 MODULES = (sources, dfl, dfl_events, truth, inputs, score, run, choose, hazard, calibration, degrade, cap, tracking, context,
-           fidelity, headroom, touch, dead_ball, conventions, restarts, shape, label_diff, wrong_team, tag_stats, metrica,
-           diagnose, harness)
+           fidelity, headroom, touch, touch_backdate, dead_ball, conventions, restarts, shape, label_diff, wrong_team,
+           tag_stats, metrica, diagnose, harness)

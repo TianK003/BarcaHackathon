@@ -25,6 +25,7 @@ python pipeline/benchmark/wrong_team.py       # P21 step 0: wrong-team slots at 
 python pipeline/benchmark/metrica.py [--offline]   # P16: the grain of H/A/D derived from Metrica's sample games' events (R023);
                                                    # not to be run since 5 Nov 2026: the data has no licence (docs/rules.md)
 python pipeline/benchmark/touch_stats.py      # P04's control rule measured: coverage, agreement, flip lags, confidence
+python pipeline/benchmark/touch_backdate_stats.py --radius R --max-rel-speed V --min-frames K   # P28 step 0: the gate
 python pipeline/benchmark/train_dead_ball.py --model hgb   # P05: train the dead-ball model (folds + full) as JSON
 python pipeline/benchmark/train_shape.py [--verify|--report]   # P07: train the shape model (folds + full) as JSON
 python pipeline/benchmark/conventions.py public|dfl|compare|latency|shift ...   # P02: when a truth flips, the shift
@@ -742,6 +743,41 @@ chosen config on `context`. The checks are in `checks/touch.py` (synthetic): `te
 `test_touch_stats_confidence_rule`, `test_touch_stats_default_grid`, `test_touch_stats_r013_grid`,
 `test_touch_stats_never_passes_truth` and `test_touch_stats_refuses_what_it_cannot_measure`.
 
+### P28's step 0: the gate of back-dating to the first touch
+
+`controlled_touch` can give a team its vote from its first touch before the episode (`backdate_tau`, off by default;
+the [spec](../../docs/superpowers/specs/2026-11-10-p28-touch-backdating-design.md) and
+[the source's README](../evidence/README.md)). Before a config is given it, `touch_backdate_stats.py` measures the gate
+that the spec declares, on the raw truth:
+
+```
+.venv/Scripts/python pipeline/benchmark/touch_backdate_stats.py --radius R --max-rel-speed V --min-frames K
+    [--duel-radius 1.0] [--taus 3 6] [--profile generic] [--seeds 3] [--matches ID ...] [--data-dir D] [--out PATH]
+result = touch_backdate_stats.measure({"radius": R, "max_rel_speed": V, "min_frames": K}, taus=(3.0, 6.0), ...)
+```
+
+For the control rule given and each tau, per match and pooled over matches and seeds:
+
+- **(i)**: among the truth's team flips (`touch_stats`' definition) where the served ball is visible at the flip, the
+  share with a touch of the new team dated within 12 frames and no kept episode of the new team starting within 12
+  frames, both in the flip's half; beside it the flips, the ball-visible ones, those with the touch and those with the
+  episode. Needed: 10%.
+- **(ii)**: over every frame the rule would back-date, the share where the truth names the touching team (a `D` frame
+  counts against), with the frames, the stretches and the quartiles of their lengths; the same with each stretch cut
+  to its last 12, 25 and 50 frames (`backdate_cap`), for the spec's one retry. Needed: 70%.
+- per match and seed, the back-dated stretches per graded minute with the ball visible, and their lowest and highest:
+  the band of the spec's one label-free check on our match.
+
+The last lines are, for each tau, `gate tau=<x>: (i) <share> >= 0.10 <pass|FAIL>; (ii) <share> >= 0.70 <pass|FAIL> ->
+<PASS|FAIL>` and the suggested `backdate_confidence`, the floor of (ii) to a hundredth (`floored`:
+`confidence_from_agreement`'s flooring without its clip; the config clips it to [`hold`, `confidence`]). It is a
+measurement, so the exit code is 0 whether the gate passes or not, and 1 only for an error. The back-dated frames are
+read off the evidence of `controlled_touch.compute` itself, called with `backdate_tau` (and `backdate_cap`), so what
+is measured is what a config would get; the source is called on a `MatchInputs` with no flag, and the result and the
+`--out` JSON hold counts and shares and no frame. The checks are in `checks/touch_backdate.py` (synthetic, a ball
+relayed between standing players): `test_touch_backdate_stats_matches_a_loop`, `..._floor_and_labels`,
+`..._gate_lines`, `..._command_line`, `..._never_passes_truth` and `..._refuses_what_it_cannot_measure`.
+
 Stage B's configs (R009) are `p45b_{src}_w{WWW}_bp{B}.toml`: `src` is `hgb`, `logit` or `rules`, `WWW` the weight in
 thousandths (`010` to `100`) and `B` is 1 with `ball_presence` at its defaults, 0 without; each holds `nearest_player`
 at 0.78 and `hmm` at (8, 32, 75, 1) (24 files).
@@ -1011,6 +1047,7 @@ machine also builds the caches (A05).
 The checks live in `pipeline/benchmark/checks/`, one module per topic, listed in `checks.MODULES` (the folder's
 `__init__.py` says what each holds): `sources`, `dfl`, `truth`, `inputs`, `score`, `run`, `choose` (choose.py's), `hazard`,
 `calibration`, `degrade`, `cap`, `tracking`, `context`, `fidelity`, `headroom` (the Headroom section's), `touch` (touch_stats's),
+`touch_backdate` (touch_backdate_stats's, P28's step 0),
 `dead_ball` (the Dead-ball model section's), `conventions` (the Conventions section's), `shape` (the Shape model
 section's) and `harness` (the harness itself). The profiles' are `degrade` (the transplant worked out exactly,
 determinism, what the `gaps` profile touches and what it does not, no truth, the order of the matches), `tracking`
