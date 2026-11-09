@@ -44,7 +44,7 @@ import tempfile
 import numpy as np
 
 from pipeline.benchmark import calibration, conventions, degrade, diagnose, fidelity, restarts, score, sources
-from pipeline.benchmark import touch_stats, train_dead_ball, train_shape, truth
+from pipeline.benchmark import touch_backdate_stats, touch_stats, train_dead_ball, train_shape, truth
 from pipeline.benchmark import inputs as match_inputs
 from pipeline.benchmark import run as benchmark_run
 from pipeline.benchmark.checks.common import (leaks, loading, made_up_calibration, random_match, read, smoothed_plain,
@@ -280,7 +280,8 @@ def test_generic_no_instrument_loads_a_calibration():
     calibration.load raises for as long as each of them runs (no_calibration_load), on the synthetic matches: the two
     trainers' rows (train_dead_ball.gather and train_shape.gather, whose provenance then has no digest) and the rules'
     counts, the conventions instrument and the pipeline's latency, diagnose (whose report holds None for the
-    Calibration), touch_stats and the restarts' anatomy. A Calibration handed to any of them with this profile is
+    Calibration), touch_stats, touch_backdate_stats (P28's step 0) and the restarts' anatomy. A Calibration handed to
+    any of them with this profile is
     refused: by the trainers and diagnose themselves (BenchmarkError), and for the rest by the degrader that they
     serve the match through (a ValueError that names the profile)."""
     matches, cal = synthetic_matches(), synthetic_calibration()
@@ -308,6 +309,9 @@ def test_generic_no_instrument_loads_a_calibration():
             touched = touch_stats.measure([TOUCH_SETTING], profile="generic", seeds=1, matches=matches, data_dir=root,
                                           log=quiet)
             assert touched["settings"], "touch_stats measured its setting on the generic profile"
+            backdated = touch_backdate_stats.measure(TOUCH_SETTING, taus=(6.0,), profile="generic", seeds=1,
+                                                     matches=matches, data_dir=root, log=quiet)
+            assert backdated["profile"] == "generic" and backdated["seeds"] == [0] and list(backdated["taus"]) == ["6"]
             restarts.anatomy(yardstick_path(50), profile="generic", seeds=1, matches=matches, data_dir=root, log=quiet)
 
         # One that is given is refused, and never silently unused.
@@ -324,6 +328,8 @@ def test_generic_no_instrument_loads_a_calibration():
                                                            data_dir=root),
                      lambda: touch_stats.measure([TOUCH_SETTING], profile="generic", seeds=1, matches=matches,
                                                  calibration=cal, data_dir=root, log=quiet),
+                     lambda: touch_backdate_stats.measure(TOUCH_SETTING, taus=(6.0,), profile="generic", seeds=1,
+                                                          matches=matches, calibration=cal, data_dir=root, log=quiet),
                      lambda: restarts.anatomy(yardstick_path(50), profile="generic", seeds=1, matches=matches,
                                               calibration=cal, data_dir=root, log=quiet)):
             expect_error(ValueError, call, "generic", "one was given")
