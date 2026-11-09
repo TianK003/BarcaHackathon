@@ -93,7 +93,10 @@ not extended tonight.
 time (12 configs): `switch_dead` {16, 32, 64} × `min_dead` {1, 25}; the dead-ball weight {0.1, 0.25, 0.5, 1.0}; the
 shape scope {gaps, all}; and the config without the shape source. *Rule:* the incumbent value stays unless another
 beats it by more than the tie band (0.005 on the mean). The shape source stays if the config with it is not worse
-than the config without it.
+than the config without it. If more than one group changes, the combined config is run as well: it is kept only if
+its mean is not below the best single change's; otherwise only the best single change is kept. The rules of Stages A,
+C and D are applied by `pipeline/benchmark/p27_choose.py`, and the configs are written by `p27_grid.py`, so the whole
+re-choice can be re-run from the repository.
 
 **Stage E. The shift** (R012's rule): `conventions.py latency` of the final pre-shift config on `generic`, raw truth;
 the shift of a type of edge is minus the rounded median lag, and 0 below 30 matched changes. *Guard:* the shifted
@@ -106,6 +109,9 @@ under the coarse truth, each with a sign-flip p of at most 0.05 over the seven m
 choose nothing, T01):
 - the file validates, has no `X` inside a graded block, and two runs give the same sha256;
 - predicted `D` share inside [30%, 62%] (R010's band, set on DFL);
+- the shape model's transfer gate (R011's rule): on our match, `touch_agreement` of the model fitted on all seven
+  matches is at least the lowest held-out value among the seven DFL matches in the new `--report`. If it fails, the
+  shape source leaves the config, and nothing else changes;
 - the public window is scored once as a correctness check, and its number chooses nothing.
 
 A failed check stops the upload and goes to Tian. It does not send us back to change the profile.
