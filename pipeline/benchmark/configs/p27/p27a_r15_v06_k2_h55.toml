@@ -1,0 +1,32 @@
+# P27 (docs/superpowers/specs/2026-11-09-p27-degradation-design.md): written by pipeline/benchmark/p27_grid.py.
+
+description = "P27 Stage A: the touch rule 1.5 m / 6.0 m/s / 2 frames / hold 0.55"
+seed = 0
+scope = "halves"
+
+[[evidence]]
+kind = "controlled_touch"
+radius = 1.5
+max_rel_speed = 6.0
+min_frames = 2
+confidence = 0.93    # touch_stats.py --grid r013 --profile generic: floor of the pooled agreement
+hold = 0.55
+
+[[evidence]]
+kind = "dead_ball_model"
+weight = 1.0
+model = "pipeline/models/dead_ball_hgb.json"
+
+[[evidence]]
+kind = "shape_possession"
+weight = 0.2
+model = "pipeline/models/shape_possession_hgb.json"
+scope = "all"
+min_prob = 0.02
+
+[decoder]
+kind = "hmm"
+switch_team = 4
+switch_dead = 32
+min_possession = 35
+min_dead = 25
