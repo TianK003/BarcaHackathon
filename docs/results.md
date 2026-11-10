@@ -12,7 +12,9 @@ uncertainty is per-match t-intervals and an exact sign-flip test, never a bootst
 ## Scoreboard
 
 Our runs, best first. *Public* means the 5-minute public GT (17 possessions, mean 14.2 s); *val* means the P01
-benchmark: other matches (DFL open data), degraded to look like ours. Hand labels on this match are not allowed
+benchmark: other matches (DFL open data), their tracking degraded. Since R030 the degradation is a declared profile
+that measures nothing of our match (`generic`); up to R029 it was fitted to look like ours (`tracking` v3), so the
+two sets of numbers are different benchmarks. Hand labels on this match are not allowed
 ([T27](traps.md)).
 
 | ID | date | what | public macroF1 | public spellF1 | poss / dur | val spellF1 | verdict |
@@ -51,7 +53,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R027 | 2026-10-31 | P22(b): P07's logit plus a per-half intercept fitted on the other half's touch-rule frames (E2, noise-aware at ε 0.07), served by a new source `shape_selftrain`; part 1: the gate on DFL (rung 1's pooled log-loss in the held-out half's gaps at least 0.002 nats below P07's, no match more than 0.002 above), the shift, the bar (the mean of the two truths: pooled Δ ≥ +0.005 on `tracking`, no match below −0.005), two vetoes, the BAR-ATH checks; rung 3 the one retry (R027b); part 2a: the gate run | — | — | — | — | dropped 2026-10-31, code removed (recover from `1e5a5d2` and the local tag `archive/r027-source`): the gate failed, rung 1's pooled log-loss +0.0061 (0.3820 against P07's 0.3759; needed −0.002) and worse on 5 of 7 matches (worst +0.0148, J03WMX), rung 3 +0.0838; the touch-to-gap transfer 0.296 against the teacher's noise 0.107 (E/B 1.18); no shift, bar or BAR-ATH run, no spellF1 |
 | R028 | 2026-11-01 | P15 use 1: the TV broadcast's usable ball fills our tactical ball's gaps (`[inputs] ball_fill = "broadcast"`: aligned by code, live-tested, runs of 13+ frames); on DFL a simulated broadcast transplanted from BAR-ATH's real fill; part 1: the fidelity gates, the shift, the bar (ii: the mean of the two truths, pooled Δ ≥ +0.005 on `tracking`, no match below −0.005), two vetoes, the BAR-ATH checks; R028b (`filled_confidence` 0.79) the one retry; part 2a: the fidelity run | — | — | — | — | dropped 2026-11-02, code removed (recover from `659a6c2` and the local tag `archive/r028-source`): the stand-in's fidelity gates failed on `tracking` (F1 0.2176 against ours 0.2952, F2 0.0885 against 0.0412, F3 first 0.4012 against 0.2974, inside 0.1414 against 0.0727), and the advisor found no departure of the code from part 1; no lag, bar or BAR-ATH run, no spellF1; the broadcast's value in our gaps is untested, not refuted |
 | R029 | 2026-11-03 | `smart_tagging` (P08) taken out of `main.toml`: its `c_team` was measured on BAR-ATH, which the organisers' clarification of 3 Nov forbids (A21, [rules.md](rules.md)); nothing else changed | 0.7149 | 0.4444 | 19 / 14.8 s | 0.5363 raw and 0.5764 coarse: R024's, by construction (the benchmark always ran `main.toml` with `--drop-match-only`, which removed exactly this source) | **adopted, for the rules and not for a score**; sha256 `762f9073…`; the public figures chose nothing (T01) |
-| R030 | 2026-11-10 | P27: the benchmark's degradation replaced by `generic` v1 (no measurement of ours enters it: two figures quoted from the organisers' DATA.md and declared rules for the rest), both models retrained on it, and every constant re-chosen by rules declared before the runs: Stage A the touch rule (192 configs), Stage C the decoder and P07's weight (144), Stage D what R009 to R011 chose (11), Stage E the shift | 0.7238 | 0.5029 | 18 / 15.7 s | **0.5414 raw and 0.5829 coarse (mean 0.5622) on `generic`**, against the incumbent constants' 0.5388 and 0.5779 (mean 0.5584) there; `nearest_w50` 0.1885 raw, `nearest_w125` 0.2092 coarse | **adopted, because the rules require the redo** ([rules.md](rules.md)): the hold 0.55 → 0.60, switch_team 4 → 6, P07's weight 0.2 → 0.3, everything else unchanged; the bar passes (7 wins in 7 under each truth) and so do the declared checks (both `--verify`, the profile's shares, the transfer gate 0.8199 against 0.7426, the file twice and from a clean clone, sha256 `2dd51320...`); two ties decided by the declared tie-break are knife-edges and are left for Tian (the hold: inside the band by 0.000004; the decoder); not uploaded |
+| R030 | 2026-11-10 | P27: the benchmark's degradation replaced by `generic` v1 (no measurement of ours enters it: two figures quoted from the organisers' DATA.md and declared rules for the rest), both models retrained on it, and every constant re-chosen by rules declared before the runs: Stage A the touch rule (192 configs), Stage C the decoder and P07's weight (144), Stage D what R009 to R011 chose (11), Stage E the shift | 0.7238 | 0.5029 | 18 / 15.7 s | **0.5414 raw and 0.5829 coarse (mean 0.5622) on `generic`**, against the incumbent constants' 0.5388 and 0.5779 (mean 0.5584) there; `nearest_w50` 0.1885 raw, `nearest_w125` 0.2092 coarse | **adopted, because the rules require the redo** ([rules.md](rules.md)): the hold 0.55 → 0.60, switch_team 4 → 6, P07's weight 0.2 → 0.3, everything else unchanged; the bar passes (7 wins in 7 under each truth) and so do the declared checks (both `--verify`, the profile's shares, the transfer gate 0.8199 against 0.7426, the file twice and from a clean clone, sha256 `2dd51320...`); two ties decided by the declared tie-break are knife-edges (the hold: inside the band by 0.000004; the decoder); **Tian reviewed both on 10 Nov and kept the declared outcome**; not uploaded |
 | R031 | 2026-11-10 | P28: a possession back-dated to the team's first touch (a kink of the ball's velocity inside a player's zone, τ in {3, 6} m/s); step 0, the gate declared before any config | — | — | — | — (no config was built) | **dropped at the gate**: the frames the rule would back-date name the touching team 33.8% (τ = 3) and 46.5% (τ = 6) of the time against the 70% needed, and at τ = 6 the touch-without-episode share is 9.8% against 10%; nothing built into the pipeline, the branch `p28-touch-backdating` keeps the code |
 
 ### The four yardsticks on every profile, in one table
@@ -9753,7 +9755,8 @@ Changed vs the previous `main.toml` (R029): both model files (retrained); the to
 4 → 6; the shape weight 0.2 → 0.3. Unchanged: the touch rule 1.5 m / 6.0 m/s / 1 frame at confidence 0.93,
 `min_possession` 35, `switch_dead` 32, `min_dead` 25, the dead-ball weight 1.0, the shape scope `all`, the shift
 +1 / −2 / 0
-Verdict: **adopted, because the rules require the redo**; the bar and every declared check pass
+Verdict: **adopted, because the rules require the redo**; the bar and every declared check pass. **Tian kept the
+declared outcome on 10 Nov**, after reviewing the two knife-edge choices (the entry's last section but one)
 
 **Why.** The organisers' reply of 5 Nov ([rules.md](rules.md), A24): "anything that is not explicitly allowed is not
 permitted". The benchmark's `tracking` v3 degradation was fitted on label-free statistics of our own match (its
@@ -9840,7 +9843,8 @@ four throttled runs; `p27_choose.py a`).
   +0.0076 (p 0.0156, 7 wins in 7), coarse −0.0176 (p 0.0156, 0 wins), mean −0.0050 (p 0.1406).
 - *Leave one match out, the whole rule:* it picks `h55` in four folds and `h60` in three; mean −0.0048
   [−0.0099, +0.0002] against `p27_ref`.
-- **This is the first choice that is not obvious**, and it is listed for Tian. The tie-break was declared for this
+- **This is the first choice that is not obvious**, and it was listed for Tian (who kept it on 10 Nov: "Tian's
+  decision", below). The tie-break was declared for this
   case (R024: the hedge for a grain we do not know), and it was applied as written. On the objective alone the
   incumbent's hold is 0.0050 better, and the tie that brings `h60` in is a knife-edge: another set of seeds could
   leave it out. R024 chose 0.55 by the same rule on the old profile, where `h60` was 0.0054 below and outside the
@@ -9868,7 +9872,8 @@ minutes; `p27_choose.py c`).
 - *Leave one match out, the whole rule:* mean −0.0009 [−0.0047, +0.0030] against `p27_ref`. Out of sample the rule's
   picks are no better than the incumbent constants. The objective alone picks `t08_mp050_w300` in all seven folds:
   mean +0.0071 (7 wins in 7), raw −0.0142 (1 win), coarse +0.0284.
-- **This is the second choice that is not obvious**, listed for Tian. The best mean moves along the raw-against-coarse
+- **This is the second choice that is not obvious**, listed for Tian (who kept it on 10 Nov, too). The best mean
+  moves along the raw-against-coarse
   trade-off (longer possessions: 2.72 a minute against 2.98), and the tie-break refuses the 0.015 it costs under the
   raw truth.
 
@@ -10079,6 +10084,16 @@ coarse +0.0074 (p 0.0938, 5 wins). **The two are the same score within the bench
 leans to the raw truth and the alternative to the coarse one, which is the trade-off that neither truth can settle
 (T33). The alternative was not run on our match or on the public window.
 
+**Tian's decision (10 Nov 2026, in the morning): keep the declared outcome.** Tian read the three options as the
+night's summary set them out (A, the declared outcome; B, the alternative from the hold 0.55; C, Stage C's best
+mean), with the six-seed table and the pros and cons of each, and answered "Keep A". So `main.toml`, the file
+`2dd51320...` and every constant above stand as the declared rules gave them, and the two choices are closed. What
+the review had in front of it: the three options are the same score on the benchmark (means 0.5620, 0.5639 and
+0.5653 at six seeds, no difference clearing its test); they differ only in how far they lean to the coarse truth,
+which nothing we are allowed to use can settle; and A is the only one that is the declared rule's outcome, applied
+as written. `alt55*` and the six-seed reports stay as the record of the review; nothing is to be chosen from them.
+The residual risk of quoting DATA.md's two figures stays as it is, stated in the technical document.
+
 **Not uploaded.** The upload and the public repository are Tian's.
 
 ### R031 — P28: back-dating a possession to the team's first touch: step 0's gate fails, nothing built (declared 2026-11-09; run 2026-11-10, Tian away, an advisor agent in Tian's place)
@@ -10203,8 +10218,8 @@ rebuilt cache, and from a clean clone of that commit in a fresh environment buil
 again with the BLAS thread variables unset (`5ca7126`) and on Linux under WSL 2 (`1be0107`, twice); and last from a
 clean clone of `6864c13`, the night's last commit before this line, with every document of R030 in it. All of it on
 one laptop (AMD Ryzen 5 5500U): a second CPU is still to do (T21). A copy named `Un Dia de Partit.csv` sits beside the repository
-(`C:\Users\Tian\Desktop\`), passes `validate_submission.py`, and has **NOT been uploaded**: the upload is Tian's, after
-the two choices that R030 lists as not obvious.
+(`C:\Users\Tian\Desktop\`), passes `validate_submission.py`, and has **NOT been uploaded**: the upload is Tian's. On 10 Nov Tian reviewed the two choices that R030 lists as
+not obvious and kept the declared outcome, so this is the file to upload.
 
 **10 Nov 2026: do not upload R029's file** (`762f9073...`). By our reading of the organisers' reply of 5 Nov, its models
 and constants stood on a degradation fitted on our own match ([rules.md](rules.md)). It can no longer be rebuilt from

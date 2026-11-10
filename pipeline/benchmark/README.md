@@ -29,6 +29,7 @@ python pipeline/benchmark/p27_choose.py bar STEM         # P27: the final bar, S
 python pipeline/benchmark/p27_choose.py guard STEM BASE  # P27: the shift's guard, STEM (shifted) against BASE (not)
 python pipeline/benchmark/p27_shift.py STEM   # P27 Stage E: the shift, from the pipeline's own lag on DFL (generic, raw truth)
 python pipeline/benchmark/p27_profile_check.py   # P27: the generic profile against its declared shares, on the 21 match-seeds
+python pipeline/benchmark/p27_sensitivity.py REFERENCE STEM ...   # R030: the six-seed reports read as seeds 0-2, 3-5, 0-5; a report, never a choice
 python pipeline/benchmark/diagnose.py CONFIG --drop-match-only   # A19: the IoU ladder decomposed, the sources' and the posterior's calibration
 python pipeline/benchmark/fidelity.py --profile tracking|gaps|context   # how far a profile that reads our match looks like it
                                               # (gates, warnings); default tracking; generic has no gates, by design
@@ -944,6 +945,17 @@ they chose is [R030](../../docs/results.md).
 - **`p27_profile_check.py`** degrades each match under each seed again and sums the counts the degrader records (no
   frame is kept or printed). It passes if the pooled mask share is 0.41 ± 0.02 and the pooled share of on-pitch
   player-frames lost is 0.068 ± 0.01, and exits 2 otherwise.
+- **`p27_sensitivity.py`** reads the reports of one run at six seeds (`run.py ... --seeds 6 --truth both`, which
+  writes `<stem>.s6.json` and `<stem>.coarse.s6.json` beside the three-seed reports) and prints each config's pooled
+  spellF1 on seeds 0 to 2 (they reproduce the three-seed reports), on seeds 3 to 5 (the only ones that played no part
+  in the choice) and on all six, with each config's delta of the mean against the reference. It applies no rule and
+  names no winner. R030 used it once, after the choice, to show how fragile two ties were; the declared outcome
+  stood, and Tian kept it on 10 Nov.
+- **`--prefix P`** on `p27_grid.py` and `p27_choose.py` (stages `c` and `d`) writes and reads the same grids under
+  other stems. The `alt55*` configs in `configs/p27/` are R030's labelled alternative, the protocol re-run from the
+  hold 0.55: a record of the review, not a candidate. `p27d_notouch.toml` is the touch rule's ablation.
+- **`checks/p27.py`** holds both tools to the declared rules on synthetic reports: the tie band's edge at R030's
+  two real margins, every tie order, Stage D's groups, the guard, the bar and the `NEXT` lines.
 
 The order R030 ran them in: both models retrained (`train_dead_ball.py`, `train_shape.py`), the touch rule's
 confidences measured (`touch_stats.py`), then `ref` and Stage A, Stage C at Stage A's choice, Stage D at Stage C's,

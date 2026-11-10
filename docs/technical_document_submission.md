@@ -258,7 +258,8 @@ without the touch rule by 0.0304 (R030).
   would replace but -0.0146 under the raw truth. If our truth is coarse, both choices cost a little. A run at six
   seeds, made after the choice and choosing nothing, tells no option from another: the declared constants, the hold
   0.55 with the decoder chosen again from it, the best-mean decoder and the constants before R030 lie within 0.0054 on
-  the mean. On its three fresh seeds the hold 0.60 alone is 0.0084 below 0.55, so the tie did not repeat (R030).
+  the mean. On its three fresh seeds the hold 0.60 alone is 0.0084 below 0.55, so the tie did not repeat (R030). We kept the
+  declared rule's outcome: the benchmark cannot tell the options apart, and nothing was picked after a result.
 - **The benchmark is not our tracking** (T38, T39). `generic`'s gaps ignore the play, and ours fall where the tracker
   loses the ball; DFL also tracks the ball out of play, which ours loses near the lines (among the rows where a gap
   could begin, the ball is beyond a line on 17.68% of DFL's against 4.07% of ours, R009). So the benchmark still

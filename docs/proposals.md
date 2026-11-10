@@ -31,7 +31,7 @@ Measured on 2026-10-21; details in [results.md](results.md) A01–A03. These fiv
 | ID | proposal | attacks | effort | impact | status |
 |---|---|---|---|---|---|
 | [P01](#p01--a-validation-set-we-can-trust) | Validation set we can trust: other matches, degraded to look like ours | deciding anything at all | M | enabling | done → R002–R005; **since 5 Nov its degradation is, by our reading, not permitted** (fitted on our tracking; the organisers' reply: "anything that is not explicitly allowed is not permitted", [rules.md](rules.md)) → P27, done → R030: since 10 Nov the default profile is `generic` v1, which measures nothing of our match |
-| [P27](#p27--a-degradation-that-measures-nothing-of-our-match) | A degradation that measures nothing of our match; both models retrained and every choice re-run on it | the rules (question 1); everything P01 decided | M–L | enabling: keeps every learned part and constant on external data only; measured on `generic`: 0.5414 raw and 0.5829 coarse (mean 0.5622), against 0.5584 for the incumbent constants | **done → R030 (10 Nov 2026)**: the profile `generic` v1 is the benchmark's default, both models are retrained on it and every numeric constant is re-chosen on it (hold 0.55 → 0.60, `switch_team` 4 → 6, shape weight 0.2 → 0.3; the rest unchanged); the bar passes; two knife-edge choices are listed for Tian; not uploaded |
+| [P27](#p27--a-degradation-that-measures-nothing-of-our-match) | A degradation that measures nothing of our match; both models retrained and every choice re-run on it | the rules (question 1); everything P01 decided | M–L | enabling: keeps every learned part and constant on external data only; measured on `generic`: 0.5414 raw and 0.5829 coarse (mean 0.5622), against 0.5584 for the incumbent constants | **done → R030 (10 Nov 2026)**: the profile `generic` v1 is the benchmark's default, both models are retrained on it and every numeric constant is re-chosen on it (hold 0.55 → 0.60, `switch_team` 4 → 6, shape weight 0.2 → 0.3; the rest unchanged); the bar passes; two knife-edge choices, which Tian reviewed on 10 Nov, keeping the declared outcome; not uploaded |
 | [P28](#p28--a-possession-back-dated-to-the-teams-first-touch) | A possession back-dated to the team's first touch: a kink of the ball's velocity inside a player's zone, then control | boundary timing at a change of team (a first-time pass or a header before the control) | S–M | none: the gate failed | **dropped at its gate → R031** (10 Nov): the frames it would back-date name the touching team 33.8% and 46.5% of the time against the 70% needed; nothing built into the pipeline |
 | [P02](#p02--inspect-the-ground-truths-conventions-on-the-public-window-to-understand-and-never-to-tune) | Inspect the GT's conventions on the public window, to understand and never to tune | boundary timing | S | bounded since the 23 Oct rule: understanding only; so far the pipeline's own lag on DFL, 1 to 2 frames, within noise (R012) | done → A11, R012, A15 (inspection only; a person may watch to understand what counts as possession, never to check our output, 3 Nov) |
 | [P16](#p16--metricas-sample-games-in-our-ground-truth-providers-conventions) | Metrica's sample games, in our GT provider's conventions: derive H/A/D from their events, study the switch timing | boundary timing, grain | M | medium | partly done → R023 (the grain: outcome both, so choices rank on the mean of the two truths); the switch timing and the feeds are not done; A22 (4 Nov): the timing part was the one lawful route to a `D`-edge constant; **on hold since 5 Nov: the sample data has no licence, so by our reading we may not use it** ([rules.md](rules.md), question 3); R024's objective, which R023 set, stays (Tian, 9 Nov) |
@@ -77,13 +77,19 @@ Week 4: feature freeze **Fri 13 Nov**; regenerate the file from a clean clone on
 *Where the plan stands on 10 Nov ([R030](results.md)).* The redo the organisers' reply of 5 Nov made necessary (P27)
 is done: `main.toml` is the config re-chosen on the `generic` profile, and both models are retrained on it. What is
 left before the upload:
-- Tian's review of R030's two knife-edge choices (the hold 0.60; the decoder at `switch_team` 6 with the shape weight
-  0.3), which the declared tie-break decided ([P27](#p27--a-degradation-that-measures-nothing-of-our-match));
+- Tian's review of R030's two knife-edge choices: **done 10 Nov, the declared outcome kept** (the hold 0.60; the
+  decoder at `switch_team` 6 with the shape weight 0.3; [P27](#p27--a-degradation-that-measures-nothing-of-our-match));
 - the checks on our match (pass or fail only) and the clean-clone regeneration of R030's file: their results are in
   R030, and a failed one stops the upload;
 - the technical document brought to R030, with the residual risk of the two quoted figures stated
   ([rules.md](rules.md));
+- a run of the file on a second processor (T21): so far one laptop, under Windows and Linux;
+- the technical document read and trimmed for the PDF;
 - the upload and making the repository public, which are Tian's.
+
+The next-step lane after R030, P28 (a possession back-dated to the first touch), was dropped at its gate (R031), and
+no other lane was opened. A25 puts the remaining score where A13 did, in who has the ball where the ball is seen
+(+0.20 for a perfect source). P24 would address that, and it is not started.
 
 From here on, anything trained or chosen on the benchmark runs on `generic` (`run.py`'s default). The numbers
 measured on `gaps`, `tracking` or `context` (R002 to R029) stay as history: nothing is trained or chosen on those
@@ -1284,8 +1290,10 @@ kept as the objective.
   0.5779, mean 0.5584. The yardsticks: `nearest_w50` 0.1885 raw and 0.1698 coarse, `nearest_w125` 0.1616 raw and
   0.2092 coarse. The bar passes, with 7 wins in 7 under each truth. The re-choice is worth a third of a point on its
   own benchmark; what it buys is that every constant now stands on external data only.
-- *Two choices were knife-edges, left for Tian's review.* The rule declared before the runs decided both (within
-  0.005 of the best mean, the larger min(raw, coarse)).
+- *Two choices were knife-edges; Tian reviewed them on 10 Nov and kept the declared outcome.* The rule declared
+  before the runs decided both (within 0.005 of the best mean, the larger min(raw, coarse)). For the review the
+  protocol was re-run from the hold 0.55 and the finalists at six seeds, each declared first and choosing nothing:
+  the benchmark could not tell the options apart (R030, "After the choice").
   - The hold, 0.60: it is inside the tie band by 0.000004, and on the mean alone 0.55 is 0.0050 better.
   - The decoder: the tie-break chose `switch_team` 6, `min_possession` 35 and the shape weight 0.3 (mean 0.5621, raw
     0.5410) over the best-mean config, `switch_team` 8, `min_possession` 50 and weight 0.3 (mean 0.5653, raw 0.5242).

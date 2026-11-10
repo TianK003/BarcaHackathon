@@ -100,7 +100,8 @@ aggregates only, never raw data rows.
   shape any design; A05–A09 and R002–R005 are the benchmark's (P01, done; R004c's `tracking` was the default until
   R030); A13 says where `main.toml`'s remaining spellF1 is (who has the ball, not the dead ball); A21 audits
   `main.toml` against the 3 Nov rules; R030 (P27) is today's `main.toml`: both models retrained and every numeric
-  constant re-chosen on the `generic` profile, which measures nothing of our match.
+  constant re-chosen on the `generic` profile, which measures nothing of our match (Tian kept its outcome on 10 Nov);
+  A25 repeats A13 and A19 on `generic` (the same reading); R031 is P28, dropped at its gate.
 - `docs/traps.md` — pitfalls `T01…`. Add one whenever something costs real time.
 - `docs/technical_document.md` — the draft of deliverable 3. Update it when a pipeline decision lands.
 
@@ -133,6 +134,7 @@ python pipeline/benchmark/p27_grid.py ref|a|c|d|final --confidences FILE ...   #
 python pipeline/benchmark/p27_choose.py a|c|d           # P27: a stage's declared rule on its reports (also: bar STEM, guard STEM BASE)
 python pipeline/benchmark/p27_shift.py STEM             # P27: the shift from the pipeline's own lag on DFL (generic, raw truth)
 python pipeline/benchmark/p27_profile_check.py          # P27: the generic profile against its declared shares, 21 match-seeds
+python pipeline/benchmark/p27_sensitivity.py REF STEM ...   # R030: six-seed reports as seeds 0-2 / 3-5 / 0-5; a report, never a choice
 python pipeline/benchmark/diagnose.py CONFIG --drop-match-only   # A19: the IoU ladder decomposed, sources' and posterior's calibration
 python pipeline/benchmark/fidelity.py --profile tracking --seeds 3   # gates + WARNs: the copy against our match
 python pipeline/benchmark/train_shape.py [--verify|--report]   # P07: train the shape model as JSON; --verify, --report
@@ -304,8 +306,10 @@ frames are all `D`. The public GT labels only 11,185–18,684 (5 minutes, 17 pos
   ranks on the unweighted mean of the two truths' pooled spellF1s, each reported; `choose.py --objective mean` applies it (R024, which re-chose
   R013 under it: the touch hold moved to 0.55). Since 5 Nov R023's data is withdrawn (Metrica's sample data has no
   licence), so the grain is unknown again; the objective stays (Tian, 9 Nov), and R030 re-chose every constant under
-  it on `generic`: the hold is 0.60, by the tie-break declared before the runs (a knife-edge, listed for Tian's
-  review, as is the decoder's `switch_team` 6 with the shape weight 0.3; `docs/rules.md`).
+  it on `generic`: the hold is 0.60 and the decoder `switch_team` 6 with the shape weight 0.3, both by the tie-break
+  declared before the runs and both knife-edges. Tian reviewed them on 10 Nov, with a six-seed run and an alternative
+  re-chosen from the hold 0.55 that the benchmark could not tell from the declared outcome, and kept the declared
+  outcome: the choice is closed (R030, "After the choice"; `docs/rules.md`).
 - Two benchmark matches have a team down to 10, so a gate on how many slots are present is measured on full-strength
   frames only (T36).
 - DFL's own jitter is rare jumps on a 1 cm grid (RMS of the second difference 9.0 cm against our 3.3 mm): compare

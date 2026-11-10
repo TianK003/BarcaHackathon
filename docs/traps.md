@@ -94,6 +94,21 @@ window and not allowed). g came out 0 for every type, so `main.toml`'s shift is 
 it stays 0 by rule, `conventions.py shift` still prints it for reference, and any future shift comes from other games
 only (P16).
 
+**T57 — A tie-break that turns on the last digits is a coin flip: say so, and check it on fresh seeds before anyone
+reads it as a choice.** R030's declared rule took the touch hold 0.60 because its mean was within 0.005 of the best,
+by 0.000004, and it kept a second config out by 0.000034. Both margins are thousands of times smaller than what
+one seed moves a pooled score (up to 0.015, R007). Three fresh seeds put the hold 0.60 0.0084 below the best,
+outside the band, and the whole protocol re-run from the other side of the tie ended at the same score (R030,
+"After the choice"). Nothing was wrong with the rule: it was declared first and applied by code. But "the rule
+chose 0.60" read like evidence, and it was a coin.
+- *The rule:* when a declared rule decides on a margin below the seed noise, report the exact margin beside the
+  choice. Keep the declared outcome: changing it after the fact is choosing on a result. If the choice matters to
+  someone, run fresh seeds, declared beforehand as choosing nothing, with what they may and may not change written
+  down first. Tian reviewed R030's two ties that way on 10 Nov and kept the declared outcome.
+- *Two smaller ones from the same night:* count what a grid really runs (Stage D was 11 configs, written down as 12
+  and then 13), and check the tool that applies a rule at the rule's own edge (`checks/p27.py` was written after
+  the choice; it should have come before).
+
 ## Alignment
 
 **T08 — Off by one.** ATD `frame_id` runs 1…199,319, while submission rows, homography `frame` and video frames all

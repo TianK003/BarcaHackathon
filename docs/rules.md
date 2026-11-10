@@ -149,8 +149,8 @@ grain of our truth is unknown, so neither truth is preferred. P27 re-chooses eve
 
 *Done 10 Nov ([R030](results.md)).* Under that objective, on `generic`, the hold went from 0.55 to 0.60. The rule
 declared before the runs decided it: 0.60 is inside the 0.005 tie band of the best mean, by 0.000004, and has the
-larger min(raw, coarse). On the mean alone 0.55 is 0.0050 better. It is a knife-edge, and it is listed for Tian's
-review ([Where we stand on 10 Nov](#where-we-stand-on-10-nov-r030)).
+larger min(raw, coarse). On the mean alone 0.55 is 0.0050 better. It is a knife-edge. Tian reviewed it on 10 Nov and kept 0.60, the
+declared outcome ([Where we stand on 10 Nov](#where-we-stand-on-10-nov-r030)).
 
 ## What it changes
 
@@ -258,7 +258,7 @@ mean of the two truths stays the objective; (3) questions 5 and 6 are not sent.
 
 **The redo is done (10 Nov 2026, [R030](results.md)).** Tian was away for the night of 9 to 10 Nov and gave full
 authority over its decisions. The spec's open points went to an advisor before the runs (R030, "Who decided what"),
-and the choices that are not obvious are listed for Tian below. The profile and the protocol were declared before any run
+and the choices that were not obvious were listed for Tian, who decided them on 10 Nov (below). The profile and the protocol were declared before any run
 ([the spec](superpowers/specs/2026-11-09-p27-degradation-design.md)), and the rules were applied by code
 (`pipeline/benchmark/p27_choose.py`), not by a reading of the tables.
 
@@ -286,14 +286,22 @@ on the seven DFL matches degraded with `generic` v1. The architecture (which com
 against `nearest_w125` under the coarse one (0.2092). R029's 0.5363 and 0.5764 were scored on `tracking` v3, a
 different benchmark, so they are no comparison.
 
-**Two choices listed for Tian's review.** Both were decided by the tie-break declared before the runs (within 0.005
-of the best mean, the larger min(raw, coarse)), and both are knife-edges:
+**Two choices reviewed by Tian, and kept (10 Nov 2026).** Both were decided by the tie-break declared before the
+runs (within 0.005 of the best mean, the larger min(raw, coarse)), and both are knife-edges:
 - *The hold, 0.60.* It is inside the tie band by 0.000004. On the mean alone 0.55 is 0.0050 better.
 - *The decoder and the shape weight.* The tie-break chose `switch_team` 6, `min_possession` 35 and weight 0.3 (mean
   0.5621) over the best-mean config, `switch_team` 8, `min_possession` 50 and weight 0.3 (mean 0.5653, with 0.5242
   under the raw truth against the choice's 0.5410).
 
-**What is left.** The file is not uploaded. The upload and making the repository public are Tian's. `generic` v1 is
+For the review, three things were run after the choice, each declared first and choosing nothing (R030, "After the
+choice"): the whole protocol again from the hold 0.55, a run of the finalists at six seeds, and each source's
+ablation. The benchmark could not tell the declared outcome from the alternatives (means within 0.0054 at six
+seeds); they differ in how far they lean to the coarse truth, which nothing we may use can settle. **Tian's
+decision: keep the declared outcome.** It is the rule applied as written, so nothing in `main.toml` was picked
+after a result was seen. No alternative was run on our match or on the public window.
+
+**What is left.** The file is not uploaded. The upload and making the repository public are Tian's. A second
+processor has not reproduced the file yet (T21); every reproduction so far is one laptop, under Windows and Linux. `generic` v1 is
 final for this submission.
 
 ## What it rules out among the proposals
