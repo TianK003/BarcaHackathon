@@ -9849,8 +9849,18 @@ source.)
 baselines rebuilt byte for byte, `main.toml` twice the same); `pipeline/benchmark/selftest.py` 472 passed. New with
 P27: `checks/generic.py` (11 checks: no `Calibration` is loaded for the profile, its declared shares, one draw per
 seed, the refusals), and the nine checks that pinned the old default profile now name theirs. `fidelity.py`'s own
-default is `tracking` again: the runner's default, `generic`, has no gates, so the bare command failed. `p27_grid.py`
-and `p27_choose.py` have no checks of their own; `choose.py`, whose rule they call, has.
+default is `tracking` again: the runner's default, `generic`, has no gates, so the bare command failed.
+
+*Added after the choice (the advisor's condition, since two choices turned on the band's edge):* `checks/p27.py`, 21
+checks of `p27_choose.py` and `p27_grid.py` on synthetic reports, so the suite is at 493. They pin R030's two real
+margins (0.004996 below the best mean is tied, 0.005034 is not, on the unrounded scores), the tie orders of every
+stage and group, the incumbent as a candidate in Stage D, the guard's and the bar's edges, the `NEXT` lines the
+chain parses, and that every config the grid writes loads as the runner loads it. 101 hand-made mutants of the three
+modules were all caught. They found no fault that touches R030's choices. What they did find, and what is left as it
+is: a mean exactly 0.005 below the best is decided by the last bit of the floats (`>=`, no tolerance; R030's margins
+are 4 and 34 millionths away from it); `p27_grid.py a` writes part of its grid before refusing a setting that the
+touch file lacks; a stage called without its arguments ends in a traceback and not a sentence. One was fixed:
+`p27_shift.py` now prints `--shift=a,b,c`, because argparse refused a shift whose first value is negative.
 
 **What is not re-chosen.** Which components exist (the touch rule, the two tree models, the hmm, the shift), the trees'
 settings, `min_prob` 0.02 and the hmm's structure. Each was adopted on the old benchmark by a bar. On `generic`, Stage

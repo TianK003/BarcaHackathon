@@ -93,6 +93,12 @@ module of its topic:
                  calibration's figures and a known miscalibration recovered, and diagnose() end to end: the declared
                  layout, the runner's spellF1, every measure's frames tallied, no long list, the file, what it refuses
                  (synthetic only)
+    p27.py       P27's two tools (R030), on made-up reports and configs written to a temporary folder: p27_choose's
+                 rules (the tie band's edge on the unrounded scores with R030's own margins, and what a mean exactly
+                 0.005 below does; the stages' tie orders; Stage D's groups with the incumbent a candidate, the shape
+                 source, the changes handed on; the shift's guard; the final bar; the exit codes and the NEXT line)
+                 and p27_grid's configs (the declared grids under the stems that p27_choose reads, each loaded as the
+                 runner loads it, the shift, the confidence read from the touch file, the prefix) (synthetic only)
     harness.py   the harness itself: what it collects, how it reports NOT RUN, the console set-up, and that no check
                  module imports another one
     common.py    what several modules share, and no checks of its own: the synthetic DFL match, the random one
@@ -119,9 +125,9 @@ what two of them share goes to common.py (test_a_check_module_imports_no_other_c
 
 from pipeline.benchmark.checks import (
     calibration, cap, choose, context, conventions, dead_ball, degrade, dfl, dfl_events, diagnose, fidelity, generic,
-    harness, hazard, headroom, inputs, label_diff, metrica, restarts, run, score, shape, sources, tag_stats, tracking,
-    touch, truth, wrong_team)
+    harness, hazard, headroom, inputs, label_diff, metrica, p27, restarts, run, score, shape, sources, tag_stats,
+    tracking, touch, truth, wrong_team)
 
 MODULES = (sources, dfl, dfl_events, truth, inputs, score, run, choose, hazard, calibration, degrade, cap, tracking, context,
            generic, fidelity, headroom, touch, dead_ball, conventions, restarts, shape, label_diff, wrong_team,
-           tag_stats, metrica, diagnose, harness)
+           tag_stats, metrica, diagnose, p27, harness)

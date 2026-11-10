@@ -6,7 +6,7 @@ Reads <data dir>/runs/conventions/latency_<STEM>_dfl_generic_raw.json, which
 `conventions.py latency pipeline/benchmark/configs/p27/<STEM>.toml dfl --profile generic --seeds 3 --truth raw` wrote,
 and prints, per type of edge, the changes, the matched ones, the median lag and s_b = conventions.pipeline_lag: minus
 the rounded median, and 0 below 30 matched changes. The last line starts with `NEXT` and holds the --shift argument of
-p27_grid.py final. It reads DFL's lags and nothing of our match (conventions.py's `shift` command also reads the
+p27_grid.py final (as `--shift=a,b,c`, which argparse takes whatever the sign of a). It reads DFL's lags and nothing of our match (conventions.py's `shift` command also reads the
 public window, which is why it is not used here).
 """
 
@@ -53,7 +53,8 @@ def main(argv=None):
         print("type      {:12s} changes {:6d}  matched {:6d}  median lag {:+.1f} frames  s_b {:+d}{}".format(
             kind, cell["n"], len(lags), median, shift,
             "" if len(lags) >= conventions.MIN_DFL else "  (below {} matched: 0)".format(conventions.MIN_DFL)))
-    print("NEXT --shift {}".format(",".join(str(shift) for shift in shifts)))
+    # "--shift=" and not "--shift ": argparse would take a value that starts with a minus sign for an option.
+    print("NEXT --shift={}".format(",".join(str(shift) for shift in shifts)))
     return 0
 
 
