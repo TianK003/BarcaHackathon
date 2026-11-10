@@ -9925,13 +9925,13 @@ What it shows, for Tian's review of the two choices:
 - **Stage A's tie is not there on fresh seeds.** At the old decoder the hold 0.60 is 0.0084 below 0.55 on the mean on
   seeds 3 to 5 (1 match won in 7), and 0.0067 below on all six: outside the 0.005 band both times. On the choice's
   seeds it was inside by 0.000004. The hold 0.60 still gains under the raw truth (+0.0025 to +0.0076) and loses
-  three to seven times as much under the coarse one.
+  two to eight times as much under the coarse one (−0.0176 to −0.0194).
 - **The declared outcome is no better than the constants it replaced, on fresh seeds:** +0.0004 on the mean (3
   matches won). Its in-sample +0.0038 was mostly the seeds'. This agrees with R030's leave-one-match-out figures.
 - **No option is told apart from another.** On six seeds the five means lie between 0.5599 and 0.5653, within 0.0054,
   and no difference clears its test. What does differ, steadily across the seeds, is the lean: from the declared
   outcome (raw 0.5401, coarse 0.5839) through the alternative (0.5360, 0.5919) to Stage C's best mean (0.5241,
-  0.6066), each step gives up raw score for about twice as much coarse score.
+  0.6066), each step gives up raw score for more coarse score (0.0041 for 0.0080, then 0.0119 for 0.0147).
 - It changes nothing: `main.toml` and the prepared file are R030's declared outcome, as ruled before the run.
 
 **The alternative branch at the hold 0.55, for Tian's review** (run 10 Nov, 01:43 to 02:27; stems `alt55*`,
