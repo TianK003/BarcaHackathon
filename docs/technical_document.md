@@ -1227,8 +1227,9 @@ python3.11 -m venv .venv                     # Windows: py -3.11 -m venv .venv
 
 Expected sha256 of `main.csv` (R030): `2dd51320b1d32f8be6d06e63f833e6d8e196ddcaad294b606db3914c351c1660` (the run
 prints it). R030 wrote it twice, each from a rebuilt ATD cache, and a clean clone of `c8d596e` in a fresh Python 3.11.9
-environment from `requirements-pipeline.txt` gave the same file. That was on the same machine, so a second processor
-is still untried (T21).
+environment from `requirements-pipeline.txt` gave the same file. So did a clean clone run with the BLAS thread
+variables unset, and two runs on Linux (WSL 2, Ubuntu 24.04, LF configs, the ATD parsed again). All of that was on one
+laptop, so a second processor is still untried (T21).
 
 The files before it, for the record: R029's was `762f9073e0d0c56bf8fd4e0b801b80d79defe87246b4f0a8c201d9b5337cdf6e`
 (written twice, never regenerated from a fresh clone), R024's

@@ -353,6 +353,7 @@ const DATA = {
     { p: "P22(b)", name: "P07 recalibrated per half from the touch rule's labels", status: "dropped" },
     { p: "P23 C", name: "Posterior edges", status: "dropped" },
     { p: "P23 E", name: "P07 weighted apart in the gaps", status: "dropped" },
+    { p: "P28", name: "A possession back-dated to the first touch", status: "dropped" },
     { p: "P16", name: "The grain of our provider (Metrica's sample games)", status: "measured" }
   ],
 
@@ -408,7 +409,9 @@ const DATA = {
     { prop: "P22", feature: "P07 recalibrated per half from the touch rule's own labels (b)", entry: "R027", date: "2026-10-31", dr: "—", dc: "—", status: "dropped",
       why: "Dropped at the gate on DFL: rung 1, an intercept on P07's logit fitted on the other half's touch-rule frames (noise-aware), made P07's pooled log-loss in the held-out half's gaps 0.3820 against 0.3759 (+0.0061; needed −0.002), worse on 5 of 7 matches (worst +0.0148); rung 3, the retry's column, 0.4597. The offsets exist (0.276 on average, up to 0.765), but the touches' is not the gaps' (transfer 0.296 against the teacher's noise 0.107). No shift, bar or BAR-ATH run, no spellF1; code removed, recoverable from `1e5a5d2` and the local tag `archive/r027-source`." },
     { prop: "P27", feature: "A degradation that measures nothing of our match: both models retrained, every constant chosen again", entry: "R030", date: "2026-11-10", dr: "+0.0026", dc: "+0.0050", status: "adopted",
-      why: "Adopted because the rules require the redo (the organisers' reply of 5 Nov); the bar and every declared check pass. Profile `generic` v1: two figures from the organisers' DATA.md, the rest declared before any run. 0.5414 raw / 0.5829 coarse (mean 0.5622) against 0.5388 / 0.5779 for the constants it replaced, on the same profile and models; the deltas are over those (mean +0.0038, p 0.0312, 6 wins in 7). The hold 0.55 to 0.60, `switch_team` 4 to 6, the shape weight 0.2 to 0.3; two of the choices were knife-edges under the declared tie-break. BAR-ATH: `D` 34.5%, 393 possessions; `main.csv` `2dd51320…`, the same from a clean clone." }
+      why: "Adopted because the rules require the redo (the organisers' reply of 5 Nov); the bar and every declared check pass. Profile `generic` v1: two figures from the organisers' DATA.md, the rest declared before any run. 0.5414 raw / 0.5829 coarse (mean 0.5622) against 0.5388 / 0.5779 for the constants it replaced, on the same profile and models; the deltas are over those (mean +0.0038, p 0.0312, 6 wins in 7). The hold 0.55 to 0.60, `switch_team` 4 to 6, the shape weight 0.2 to 0.3; two of the choices were knife-edges under the declared tie-break. BAR-ATH: `D` 34.5%, 393 possessions; `main.csv` `2dd51320…`, the same from a clean clone." },
+    { prop: "P28", feature: "A possession back-dated to the team's first touch (a kink of the ball's velocity next to a player)", entry: "R031", date: "2026-11-10", dr: "—", dc: "—", status: "dropped",
+      why: "Dropped at its gate on DFL, before any config: the frames the rule would back-date name the touching team 33.8% (τ = 3 m/s) and 46.5% (τ = 6) of the time against the 70% needed, and at τ = 6 the touch-without-episode share is 9.8% against 10%. A team's first touch after the other team's control is usually not the start of its possession. Nothing was built into the pipeline; the code is on the branch `p28-touch-backdating`." }
   ],
   statuses: {
     adopted: { label: "adopted", cls: "ok", glyph: "✓" },

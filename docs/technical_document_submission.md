@@ -321,8 +321,9 @@ py -3.11 -m venv .venv                         # macOS/Linux: python3.11 -m venv
   commands stage by stage. The retired profiles stay in the code for the record of R002 to R029, marked as such.
 
 **From a fresh clone.** R030's file (`2dd51320…`) came out the same on two runs in the working repository and from a
-clean clone of `c8d596e` in a fresh Python 3.11.9 environment built from `requirements-pipeline.txt`; both models'
-`--verify` pass. That was one machine, so another processor is untried. Earlier, A17 and A18 regenerated R017's file
+clean clone of `c8d596e` in a fresh Python 3.11.9 environment built from `requirements-pipeline.txt`; again with the
+BLAS thread variables unset, and twice on Linux (WSL 2, Ubuntu 24.04, LF configs); both models' `--verify` pass. That
+was one machine, so another processor is untried. Earlier, A17 and A18 regenerated R017's file
 (`7ba575c0…`, an earlier config) from a fresh clone under Windows and under Linux (WSL 2; one laptop, AMD Ryzen 5
 5500U, CPU only), with the self-tests passing.
 

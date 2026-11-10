@@ -9936,6 +9936,12 @@ source.)
   pipeline/configs/main.toml --rebuild-cache`: **the same sha256, `2dd51320...`.** The same machine, so not yet a
   second CPU (T21): that run is Tian's. That file was copied to `Un Dia de Partit.csv` beside the repository and
   passes `evaluation/validate_submission.py`.
+- *With the thread variables unset* (A17's second run; a clean clone of `5ca7126`, `OPENBLAS_NUM_THREADS`,
+  `OMP_NUM_THREADS` and `MKL_NUM_THREADS` not set, so the libraries choose): **the same sha256.**
+- *On Linux* (A18's method: WSL 2, Ubuntu 24.04, kernel 6.18.54.1, on the same laptop; a clone of `1be0107` with LF
+  configs, 0 CR bytes in `main.toml`; Python 3.11.9 from uv, numpy 2.4.6 and pandas 3.0.6 from
+  `requirements-pipeline.txt`; the four raw tactical files as symbolic links, no cache, one thread): **the same
+  sha256 on both runs**, the first with the ATD parsed again. The folder was removed afterwards and WSL stopped.
 
 **The checks of the code.** `pipeline/selftest.py` 192 of 192 and, with `--data`, 194 of 194 (the four committed
 baselines rebuilt byte for byte, `main.toml` twice the same); `pipeline/benchmark/selftest.py` 472 passed. New with
@@ -10193,8 +10199,9 @@ clone.
 `main.toml` was rewritten an eighth time by R030 (2026-11-10, P27): both models retrained and every constant re-chosen
 on the benchmark's `generic` profile, which measures nothing of our match. It now produces sha256
 `2dd51320b1d32f8be6d06e63f833e6d8e196ddcaad294b606db3914c351c1660` (commit `c8d596e`): the same on two runs from a
-rebuilt cache, and from a clean clone of that commit in a fresh environment built from `requirements-pipeline.txt`
-(the same machine; a second CPU is still to do, T21). A copy named `Un Dia de Partit.csv` sits beside the repository
+rebuilt cache, and from a clean clone of that commit in a fresh environment built from `requirements-pipeline.txt`;
+again with the BLAS thread variables unset (`5ca7126`) and on Linux under WSL 2 (`1be0107`, twice). All of it on one
+laptop (AMD Ryzen 5 5500U): a second CPU is still to do (T21). A copy named `Un Dia de Partit.csv` sits beside the repository
 (`C:\Users\Tian\Desktop\`), passes `validate_submission.py`, and has **NOT been uploaded**: the upload is Tian's, after
 the two choices that R030 lists as not obvious.
 

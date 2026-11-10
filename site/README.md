@@ -16,7 +16,10 @@ the drops included), the public window as a correctness check only, and how to a
 (one per entry that scored `main.toml` on the benchmark), `ledger` (one row per measured proposal, always), `features`
 (final statuses, which the cards count) and `publicWindow`. When a lane finishes, append its entry to `points` (only if
 results.md gives a benchmark score) and to `ledger`, check the numbers against `docs/results.md`, and bump `asOf` and
-`footer`. A dash in the ledger means results.md has no benchmark number; never invent one.
+`footer`. A dash in the ledger means results.md has no benchmark number; never invent one. Since R030 the points before
+it are on the retired `tracking` v3 and R030's is on `generic`, a different benchmark: `reference` holds the
+`nearest_w50` yardstick on today's profile, which the headline card's gain is computed against, and `headlineNote` is
+the line under that card. Update both when the benchmark's profile changes.
 
 ## Open it
 
