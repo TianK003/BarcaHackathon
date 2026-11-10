@@ -275,7 +275,8 @@ graded frames; a mean of 20.5 tracked objects) and declares round rules for the 
 1 s and 60 s, onsets a Poisson process blind to the play, no ball speed, players lost independently on 6.8% of the
 frames in tracked spans log-uniform between 2 s and 300 s, a 7-frame moving average, 46 slots as 24 home and 22 away,
 and no wrong-team slots, NaN-speed runs or low-count frames. The residual risk is that no text allows quoting the two
-figures by name ([docs/rules.md](../docs/rules.md)). On it `main.toml` scores 0.5414 raw and 0.5829 coarse, and the
+figures by name ([docs/rules.md](../docs/rules.md)); Tian decided on 10 Nov to keep them, as public information of the
+task statement. On it `main.toml` scores 0.5414 raw and 0.5829 coarse, and the
 yardsticks `nearest_w50` 0.1885 raw and 0.1698 coarse and `nearest_w125` 0.1616 raw and 0.2092 coarse
 ([R030](../docs/results.md)). Version 1 is final for this submission: a version 2 is made only on a rules ground,
 never after a score.

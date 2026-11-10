@@ -542,7 +542,9 @@ organisers publish in the challenge documents, a rule declared before any run wi
 
 - **The residual risk.** The two figures quoted from DATA.md (41% and 20.5) are statistics of this match. The
   organisers publish them in the task statement, as they publish 25 fps and 46 slots. But no text allows quoting them
-  by name, so a risk remains, and we state it.
+  by name, so a risk remains, and we state it. The team decided on 10 Nov to keep them: we read statistics that the
+  organisers publish to every team as public information about the task, not as the provided data, and quoting them
+  puts none of the match's data into the benchmark.
 - **What the declared gap law gives:** a median gap of 7.7 s, a mean of 14.4 s and a 90th percentile of 40 s, by
   arithmetic.
 - **A check on external data, made after the law was written.** In SkillCorner's open data (MIT licence, automatic
@@ -984,6 +986,7 @@ classes balance exactly and the model has no prior to subtract and no notion of 
   expected to be small, and it is not measured on our match.
 - **The gap law is one declared range.** Another range would give other constants, and no second range was run.
 - **Two figures are quoted from DATA.md**, and no text allows quoting them by name (section 5, the residual risk).
+  We read them as public information of the task statement, and keep them.
 - **No fidelity gate says how far it is from our tracking**, by design: a profile may not be changed to pass one
   (docs/rules.md), and `generic` is never run through `fidelity.py`. So nothing measured says whether it is nearer to
   our match than `tracking` v3 was.

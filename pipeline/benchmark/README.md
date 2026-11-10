@@ -233,7 +233,8 @@ Calibration) may not, nor may a number picked because it lands near one of those
   report's `calibration` is null, and so is `calibration_sha256` in a model's provenance.
 - *Two figures are quoted from the task statement,* as 25 fps and 46 slots are: the 41% and the 20.5. They are
   statistics of the match, published by the organisers. No text allows quoting them by name, so a residual risk
-  remains ([docs/rules.md](../../docs/rules.md)).
+  remains ([docs/rules.md](../../docs/rules.md)). Tian decided on 10 Nov to keep them: statistics that the organisers
+  publish are public information, not the provided data.
 - *A check made after the law was written, on external data only.* In SkillCorner's open data (MIT licence, automatic
   broadcast tracking, three A-League matches read) the ball is undetected on 39% to 46% of the frames, in gaps with a
   median of 5.4 to 5.8 s, a mean of 11.5 to 14.0 s and a 90th percentile of 27 to 36 s. No number was taken from it.

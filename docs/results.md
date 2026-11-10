@@ -9776,6 +9776,7 @@ go, with changes, all applied before the stage they concern ran). The rules belo
 - Two figures are quoted from the organisers' DATA.md, as 25 fps and 46 slots are: the ball is missing on 41% of the
   graded frames, and the mean number of tracked objects is 20.5. They are statistics of the match, published in the
   task statement. No text allows quoting them by name, so a residual risk remains (the advisor's wording).
+  Tian decided on 10 Nov to keep them ("Tian's decision", below).
 - Everything else is a rule declared before any run: gap lengths log-uniform between 1 s and 60 s, placed by a Poisson
   process blind to the play; no ball speed; each player lost on 1 − 20.5 / 22 = 6.8% of the frames, independently, in
   tracked spans log-uniform between 2 s and 300 s; a 7-frame moving average; no wrong-team slots, NaN-speed runs,
@@ -10092,7 +10093,11 @@ the review had in front of it: the three options are the same score on the bench
 0.5653 at six seeds, no difference clearing its test); they differ only in how far they lean to the coarse truth,
 which nothing we are allowed to use can settle; and A is the only one that is the declared rule's outcome, applied
 as written. `alt55*` and the six-seed reports stay as the record of the review; nothing is to be chosen from them.
-The residual risk of quoting DATA.md's two figures stays as it is, stated in the technical document.
+The residual risk of quoting DATA.md's two figures was a separate point, and Tian decided it later the same morning:
+**keep them as they are.** Tian's reading: statistics of the match that the organisers publish are public
+information, quoting them is not using the data in a way that was not intended, and it would make no sense to
+restrict it. So `generic` v1 stays, with no version 2 and no new question to the organisers, and the technical
+document goes on stating that the profile quotes the two figures and how we read them.
 
 **Not uploaded.** The upload and the public repository are Tian's.
 

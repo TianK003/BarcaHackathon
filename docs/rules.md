@@ -134,6 +134,13 @@ them ([the spec](superpowers/specs/2026-11-09-p27-degradation-design.md); the ad
 - *The residual risk, in the advisor's wording:* no measurement of ours enters; two figures quoted from the task
   statement. The two figures are statistics of the match, published by the organisers, and no text allows quoting
   them by name. The technical document states this.
+- *Tian's decision (10 Nov 2026): keep the two figures.* Tian's reading: statistics of the match that the
+  organisers publish in the task statement are public information, given to every team. Quoting them is not using
+  the provided data in a way that was not intended, and it would make no sense to restrict it. The two other
+  options were a version 2 of the profile with round shares of its own (a night of retraining and re-choosing, for
+  shares that would still be picked knowing the published ones) and a new question to the organisers (who answered
+  the first four with the clarification alone, T56). So the point is closed on our side. The technical document
+  goes on saying that we quote the two figures, and how we read them.
 - `generic` v1 is final for this submission. A version 2 is made only on a rules ground, never after a score.
 
 **Question 3 in detail.** R023 fetched the four event files once (31 Oct) and measured the grain of possession
@@ -275,7 +282,7 @@ on the seven DFL matches degraded with `generic` v1. The architecture (which com
 | `dead_ball_model` weight 1.0; `shape_possession` scope `all`; `hmm` `switch_dead` 32, `min_dead` 25 | Stage D's groups on `generic`, same rule; no group changed | external data only |
 | `shift_edges` +1 / −2 / 0 | the pipeline's own lag on DFL under `generic`, raw truth (R012's rule), kept by the declared guard; the three values are unchanged | external data only |
 | `D` before each half's kick-off | the organisers' documented kick-off frames | a documented fact |
-| the benchmark's `generic` v1 degradation | rules declared before any run, the file format (46 slots, 25 fps) and two figures quoted from DATA.md (41% of the graded frames without a ball, a mean of 20.5 tracked objects). No `Calibration` is loaded | no measurement of ours enters; two figures quoted from the task statement. **A residual risk:** no text allows quoting them by name ([above](#the-organisers-reply-of-5-nov-2026)) |
+| the benchmark's `generic` v1 degradation | rules declared before any run, the file format (46 slots, 25 fps) and two figures quoted from DATA.md (41% of the graded frames without a ball, a mean of 20.5 tracked objects). No `Calibration` is loaded | no measurement of ours enters; two figures quoted from the task statement. **A residual risk:** no text allows quoting them by name ([above](#the-organisers-reply-of-5-nov-2026)). Tian decided on 10 Nov to keep them, as public information of the task statement |
 | the objective (the unweighted mean of the raw and coarse truths' pooled spellF1) | kept by Tian on 9 Nov, on A06's ground: the grain of our truth is unknown | a declared rule. R023's data is not used again |
 | the architecture: which components exist, the trees' settings, `min_prob` 0.02, the hmm's structure | each adopted by a bar on the old benchmark (`tracking` v3); on `generic`, Stage D's ablation re-verifies the shape source and the final bar the whole | **inherited and re-verified, not re-chosen** (R030, "What is not re-chosen") |
 | the checks on our match (the file validates, the `D` share's band, the shape model's transfer gate, the public window scored once) | pass or fail; their results are in R030 | automatic checks. They chose nothing (T01) |
@@ -370,7 +377,9 @@ questions as sent (the email put them in fuller words):
    *Status (10 Nov): redone, [R030](results.md). The degradation is now `generic` v1, designed without measuring the
    provided game, and both models and every numeric constant stand on it. It quotes two figures from DATA.md (41% of
    the graded frames without a ball, a mean of 20.5 tracked objects); no text allows quoting them by name, so that is
-   a residual risk, stated in the technical document.*
+   a residual risk, stated in the technical document. Decided 10 Nov (Tian): keep them. Statistics that the
+   organisers publish about the match are public information, and quoting them is not an unintended use of the
+   data.*
 2. **Our repository's visibility.** It is private while we work and will be made public before the deadline, in time
    for the form. Is that fine?
    *Reply (5 Nov): the clarification. Our reading: fine. The form asks for a public URL and no rule says when the

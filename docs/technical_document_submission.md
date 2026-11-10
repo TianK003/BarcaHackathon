@@ -189,8 +189,10 @@ measured on our match enters it. It quotes two figures from the organisers' DATA
 graded frames, and 20.5 objects are tracked on average, so each player is lost on 1 - 20.5 / 22 = 6.8% of the frames.
 The rest was declared before any run: gap lengths log-uniform between 1 s and 60 s, placed by a Poisson process blind
 to the play; no ball speed; players lost independently, in tracked spans log-uniform between 2 s and 300 s; a 7-frame
-moving average; no wrong-team slots, NaN-speed runs or low-count frames. One risk remains: the two figures are
-statistics of this match, and no text allows quoting them by name. A check on external data, made after the gap law
+moving average; no wrong-team slots, NaN-speed runs or low-count frames. One point we state openly: the two figures are
+statistics of this match, and no text allows quoting them by name. We read them as public information about the task,
+which the organisers publish to every team, so quoting them puts none of the match's data into the benchmark.
+A check on external data, made after the gap law
 was written and taking no number from it: in SkillCorner's open data (MIT licence, three A-League matches) the ball is
 undetected on 39% to 46% of the frames, in gaps with a median of 5.4 to 5.8 s (the declared law gives 7.7 s). Until
 9 Nov 2026 the benchmark's profile was fitted on label-free statistics of our own tracking and checked by eight

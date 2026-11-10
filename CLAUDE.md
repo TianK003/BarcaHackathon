@@ -60,7 +60,9 @@ tunes or uses the video.
   alone, and Tian decided the redo on 9 Nov (`docs/proposals.md` P27). **Done 10 Nov (R030):** both models are trained,
   and every numeric constant of `main.toml` is chosen, on the `generic` profile, into which no measurement of ours enters.
   It quotes two figures from the organisers' DATA.md (41% of graded frames without a ball, a mean of 20.5 tracked
-  objects): a residual risk, since no text allows quoting them by name. The architecture (which components exist, the
+  objects). No text allows quoting them by name; Tian decided on 10 Nov to keep them, reading statistics that the
+  organisers publish in the task statement as public information, not as the provided data (stated in the technical
+  document; `docs/rules.md`). The architecture (which components exist, the
   trees' settings, `min_prob`, the hmm's structure) was inherited from the old benchmark and re-verified on `generic`.
   Train or choose nothing on `gaps`, `tracking` or `context` again (`docs/rules.md`).
 - **No hand labels on this match at all**, in any amount and for any purpose, and no "human-produced data or any other

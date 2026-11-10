@@ -82,7 +82,8 @@ left before the upload:
 - the checks on our match (pass or fail only) and the clean-clone regeneration of R030's file: their results are in
   R030, and a failed one stops the upload;
 - the technical document brought to R030, with the residual risk of the two quoted figures stated
-  ([rules.md](rules.md));
+  ([rules.md](rules.md)): **decided 10 Nov, Tian keeps the two figures** (published statistics are public
+  information);
 - a run of the file on a second processor (T21): so far one laptop, under Windows and Linux;
 - the technical document read and trimmed for the PDF;
 - the upload and making the repository public, which are Tian's.
@@ -1265,7 +1266,7 @@ kept as the objective.
   Poisson process blind to the play, no ball speed, players lost independently on 6.8% of the frames in tracked spans
   log-uniform between 2 s and 300 s, a 7-frame moving average, 46 slots as 24 home and 22 away, and no wrong-team
   slots, NaN-speed runs or low-count frames. *The residual risk:* no text allows quoting the two figures by name
-  ([rules.md](rules.md)). Candidates (b) and (c) were not taken. SkillCorner's open data (MIT licence) was read once,
+  ([rules.md](rules.md)); Tian decided on 10 Nov to keep them, as public information of the task statement. Candidates (b) and (c) were not taken. SkillCorner's open data (MIT licence) was read once,
   after the law was written, as a check on external data; no number was taken from it. `generic` v1 is final for
   this submission: a version 2 is made only on a rules ground, never after a score.
 - *The check of the profile itself* passes on the 21 match-seeds: a pooled mask share of 0.4109 against the declared
