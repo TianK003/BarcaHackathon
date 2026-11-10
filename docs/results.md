@@ -51,6 +51,8 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R027 | 2026-10-31 | P22(b): P07's logit plus a per-half intercept fitted on the other half's touch-rule frames (E2, noise-aware at ε 0.07), served by a new source `shape_selftrain`; part 1: the gate on DFL (rung 1's pooled log-loss in the held-out half's gaps at least 0.002 nats below P07's, no match more than 0.002 above), the shift, the bar (the mean of the two truths: pooled Δ ≥ +0.005 on `tracking`, no match below −0.005), two vetoes, the BAR-ATH checks; rung 3 the one retry (R027b); part 2a: the gate run | — | — | — | — | dropped 2026-10-31, code removed (recover from `1e5a5d2` and the local tag `archive/r027-source`): the gate failed, rung 1's pooled log-loss +0.0061 (0.3820 against P07's 0.3759; needed −0.002) and worse on 5 of 7 matches (worst +0.0148, J03WMX), rung 3 +0.0838; the touch-to-gap transfer 0.296 against the teacher's noise 0.107 (E/B 1.18); no shift, bar or BAR-ATH run, no spellF1 |
 | R028 | 2026-11-01 | P15 use 1: the TV broadcast's usable ball fills our tactical ball's gaps (`[inputs] ball_fill = "broadcast"`: aligned by code, live-tested, runs of 13+ frames); on DFL a simulated broadcast transplanted from BAR-ATH's real fill; part 1: the fidelity gates, the shift, the bar (ii: the mean of the two truths, pooled Δ ≥ +0.005 on `tracking`, no match below −0.005), two vetoes, the BAR-ATH checks; R028b (`filled_confidence` 0.79) the one retry; part 2a: the fidelity run | — | — | — | — | dropped 2026-11-02, code removed (recover from `659a6c2` and the local tag `archive/r028-source`): the stand-in's fidelity gates failed on `tracking` (F1 0.2176 against ours 0.2952, F2 0.0885 against 0.0412, F3 first 0.4012 against 0.2974, inside 0.1414 against 0.0727), and the advisor found no departure of the code from part 1; no lag, bar or BAR-ATH run, no spellF1; the broadcast's value in our gaps is untested, not refuted |
 | R029 | 2026-11-03 | `smart_tagging` (P08) taken out of `main.toml`: its `c_team` was measured on BAR-ATH, which the organisers' clarification of 3 Nov forbids (A21, [rules.md](rules.md)); nothing else changed | 0.7149 | 0.4444 | 19 / 14.8 s | 0.5363 raw and 0.5764 coarse: R024's, by construction (the benchmark always ran `main.toml` with `--drop-match-only`, which removed exactly this source) | **adopted, for the rules and not for a score**; sha256 `762f9073…`; the public figures chose nothing (T01) |
+| R030 | 2026-11-10 | P27: the benchmark's degradation replaced by `generic` v1 (no measurement of ours enters it: two figures quoted from the organisers' DATA.md and declared rules for the rest), both models retrained on it, and every constant re-chosen by rules declared before the runs: Stage A the touch rule (192 configs), Stage C the decoder and P07's weight (144), Stage D what R009 to R011 chose (13), Stage E the shift | 0.7238 | 0.5029 | 18 / 15.7 s | **0.5414 raw and 0.5829 coarse (mean 0.5622) on `generic`**, against the incumbent constants' 0.5388 and 0.5779 (mean 0.5584) there; `nearest_w50` 0.1885 raw, `nearest_w125` 0.2092 coarse | **adopted, because the rules require the redo** ([rules.md](rules.md)): the hold 0.55 → 0.60, switch_team 4 → 6, P07's weight 0.2 → 0.3, everything else unchanged; the bar passes (7 wins in 7 under each truth) and so do the declared checks (both `--verify`, the profile's shares, the transfer gate 0.8199 against 0.7426, the file twice and from a clean clone, sha256 `2dd51320...`); two ties decided by the declared tie-break are knife-edges and are left for Tian (the hold: inside the band by 0.000004; the decoder); not uploaded |
+| R031 | 2026-11-10 | P28: a possession back-dated to the team's first touch (a kink of the ball's velocity inside a player's zone, τ in {3, 6} m/s); step 0, the gate declared before any config | — | — | — | — (no config was built) | **dropped at the gate**: the frames the rule would back-date name the touching team 33.8% (τ = 3) and 46.5% (τ = 6) of the time against the 70% needed, and at τ = 6 the touch-without-episode share is 9.8% against 10%; nothing built into the pipeline, the branch `p28-touch-backdating` keeps the code |
 
 ### The four yardsticks on every profile, in one table
 
@@ -67,8 +69,9 @@ configs; absolute spellF1 on the benchmark is not our leaderboard's.
 | `gaps` v1 (R003) | 0.0784 | 0.2021 | **0.2102** | 0.1712 | 0.0342 | 0.1541 | 0.1960 | **0.2302** |
 | `tracking` v1 (R004) | 0.0768 | 0.1895 | **0.2000** | 0.1660 | 0.0332 | 0.1426 | 0.1826 | **0.2195** |
 | `tracking` v2 (R004b) | 0.0779 | 0.1897 | **0.1989** | 0.1624 | 0.0341 | 0.1422 | 0.1811 | **0.2173** |
-| **`tracking` v3 (R004c), the default** | 0.0777 | 0.1900 | **0.2018** | 0.1665 | 0.0342 | 0.1432 | 0.1842 | **0.2226** |
+| `tracking` v3 (R004c), the default until R030 | 0.0777 | 0.1900 | **0.2018** | 0.1665 | 0.0342 | 0.1432 | 0.1842 | **0.2226** |
 | `context` v1 (R005), sensitivity only | 0.0812 | 0.2097 | **0.2193** | 0.1774 | 0.0369 | 0.1608 | 0.2057 | **0.2443** |
+| **`generic` v1 (R030), the default** | not run | not run | **0.1885** | 0.1616 | not run | not run | 0.1698 | **0.2092** |
 
 Bold is the first of the four. For comparison, the published full-match scores (R000) are `w50` 0.2433, `w125` 0.2242,
 `w25` 0.1996 and `w0` 0.0486. One line of verdict for each row:
@@ -90,7 +93,13 @@ Bold is the first of the four. For comparison, the published full-match scores (
   0.4110 +-0.02, pooled), so it is a sensitivity check and not the default; it gives `tracking` v3's order under both
   truths (Kendall tau +1.000 between the two profiles' orders) with every config 0.3 to 2.2 points higher.
 
-What every row says: `w0` is last under both truths, and the rest of the order follows the truth. The raw truth puts
+- **`generic` v1 (R030), the default since 10 Nov:** the only profile that takes nothing from our tracking (two
+  figures quoted from DATA.md, declared rules for the rest; no gate against our match, by design). Only `w50` and
+  `w125` were run on it, the two that R010's bar uses; the raw truth puts `w50` first and the coarse one `w125`, as
+  on every other row. The rows above it read our match's `Calibration`: since the organisers' reply of 5 Nov nothing
+  is trained or chosen on them ([rules.md](rules.md)), and they stay as the record of R002 to R029.
+
+What every row says: `w0` is last under both truths (where it was run), and the rest of the order follows the truth. The raw truth puts
 `w50` first and the coarse one puts `w125` first, and neither gives the published order `w50 > w125 > w25 > w0` (R000).
 So rank any choice that depends on possession length under both truths, and treat a disagreement as a warning (T33).
 
@@ -9616,6 +9625,291 @@ window that ranks versions wrongly (T01). It played no part in the decision and 
 tags. What is lost is a weak team vote over 49.9% of the graded frames without a ball (R017). There, the shape model and
 the hold now decide alone, as they did up to R013.
 
+### R030 — P27: both models retrained and every constant re-chosen on a degradation that measures nothing of our match (declared 2026-11-09; run 2026-11-09 to 10, Tian away, an advisor agent in Tian's place)
+Proposal: P27 · Spec (part 1, declared before any run):
+[2026-11-09-p27-degradation-design.md](superpowers/specs/2026-11-09-p27-degradation-design.md), commits `c5668f6`,
+`0deb151` and `1ddfcf3` · Code: the profile and the tools `95c75ce`, the checks `ed83d14`, the two models and Stage A's
+configs `b30e0f2`, `p27_shift.py` `704ecf0`, Stage C's configs `4b207cd`, the profile check `d33ad11`, Stage D's
+configs and the pre-shift config `ce0a135`, the final config and `main.toml` `c8d596e` ·
+Commands: below, stage by stage; every run is `--profile generic --seeds 3`, the seven DFL matches, both truths
+Public: macroF1 0.7238 · spellF1 0.5029 · poss 18 / 15.7 s (a gross-error check; it chose nothing, T01)
+Validation (P01 benchmark, `generic` v1): **0.5414 raw and 0.5829 coarse pooled spellF1 (mean 0.5622)**, against the
+incumbent constants' 0.5388 and 0.5779 (mean 0.5584) on the same profile and the same retrained models
+Changed vs the previous `main.toml` (R029): both model files (retrained); the touch hold 0.55 → 0.60; `switch_team`
+4 → 6; the shape weight 0.2 → 0.3. Unchanged: the touch rule 1.5 m / 6.0 m/s / 1 frame at confidence 0.93,
+`min_possession` 35, `switch_dead` 32, `min_dead` 25, the dead-ball weight 1.0, the shape scope `all`, the shift
++1 / −2 / 0
+Verdict: **adopted, because the rules require the redo**; the bar and every declared check pass
+
+**Why.** The organisers' reply of 5 Nov ([rules.md](rules.md), A24): "anything that is not explicitly allowed is not
+permitted". The benchmark's `tracking` v3 degradation was fitted on label-free statistics of our own match (its
+missing-ball masks, tracklet lengths, wrong-team share, NaN-speed share, low-count frames). Both models were trained on
+DFL matches degraded that way, and every constant of `main.toml` was chosen on them. By our reading that is no longer
+"only external data". Tian decided the redo on 9 Nov and kept R024's objective, the unweighted mean of the two truths'
+pooled spellF1s.
+
+**Who decided what.** Tian was away for the night and gave full authority over its decisions, with the choices that
+are not obvious to be listed at the end. The spec's open points went to an advisor agent before the runs (its ruling:
+go, with changes, all applied before the stage they concern ran). The rules below were applied by code
+(`p27_choose.py`), not by a reading of the tables.
+
+**The profile `generic`, version 1** (`pipeline/benchmark/degrade.py`; the spec has the table and the reasons).
+- No measurement of ours enters it, and no `Calibration` is loaded for it: `degrade.needs_calibration("generic")` is
+  False, the runner and the trainers refuse a `Calibration` for it, and a check proves `calibration.load` is not called.
+- Two figures are quoted from the organisers' DATA.md, as 25 fps and 46 slots are: the ball is missing on 41% of the
+  graded frames, and the mean number of tracked objects is 20.5. They are statistics of the match, published in the
+  task statement. No text allows quoting them by name, so a residual risk remains (the advisor's wording).
+- Everything else is a rule declared before any run: gap lengths log-uniform between 1 s and 60 s, placed by a Poisson
+  process blind to the play; no ball speed; each player lost on 1 − 20.5 / 22 = 6.8% of the frames, independently, in
+  tracked spans log-uniform between 2 s and 300 s; a 7-frame moving average; no wrong-team slots, NaN-speed runs,
+  low-count frames or shortest tracklet (DATA.md documents none).
+- *A check made after the law was written, on external data only:* in SkillCorner's open data (MIT licence, automatic
+  broadcast tracking, three A-League matches read) the ball is undetected on 39% to 46% of the frames, in gaps with a
+  median of 5.4 to 5.8 s, a mean of 11.5 to 14.0 s and a 90th percentile of 27 to 36 s. The declared law gives 7.7 s,
+  14.4 s and 40 s. No number was taken from it.
+- `generic` v1 is final for this submission. A version 2 is made only on a rules ground, never after a score.
+
+**The check of the profile itself** (`p27_profile_check.py`, the 21 match-seeds degraded again, counts only):
+the pooled share of the ball's masks is 0.4109 (1,236,063 of 3,007,932 rows) against the declared 0.41 ± 0.02, and the
+pooled share of on-pitch player-frames lost is 0.0681 (4,467,232 of 65,622,702) against 0.0682 ± 0.01. **Both pass.**
+Per match and seed the mask share runs from 0.374 to 0.474.
+
+**The yardsticks on `generic`** (the organisers' baselines decoded per half): `nearest_w50` 0.1885 raw and 0.1698
+coarse, `nearest_w125` 0.1616 raw and 0.2092 coarse. The raw truth puts `w50` first and the coarse one `w125`, as on
+every earlier profile.
+
+**Stage 0. Both models retrained on `generic`** (the settings they had: seeds 0 to 2, every fifth graded frame, the
+trees' settings unchanged).
+- *Dead-ball model* (`train_dead_ball.py --model hgb --profile generic --seeds 3`): held out per match, log-loss
+  0.0654, 0.0901, 0.0725, 0.0852, 0.0650, 0.0918, 0.0823 and AUC 0.9942 to 0.9973; pooled log-loss 0.0788 and Brier
+  0.0227 over 601,602 held-out rows; the reliability table is flat.
+- *The advisor's condition on it:* the logistic reference retrained on `generic` (`--model logistic`, written to a
+  scratch file and not committed) has a pooled held-out log-loss of 0.1524 (Brier 0.0427, AUC 0.9831 to 0.9890). The
+  boosted trees are lower in 7 of 7 matches, so they stay. It ran after the grids, because only one heavy process
+  runs at a time; had it failed, the grids would have been void.
+- *Shape model* (`train_shape.py --profile generic --seeds 3`, then `--report`): pooled held-out log-loss on alive
+  frames with the ball missing 0.3560 (accuracy 0.8458, 685,247 frames), against the stop rule's 0.6831: the rule does
+  not fire. On all alive frames: 0.3567 and 0.8454. `touch_agreement` per held-out match 0.8586, 0.7426, 0.8313,
+  0.8486, 0.8462, 0.8351, 0.8679 (pooled 0.8334), so the transfer gate on our match is **at least 0.7426**.
+- *`--verify`:* both pass. Each retraining gives the committed file, the three source hashes aside
+  (`train_dead_ball.py --model hgb --profile generic --seeds 3 --verify` and `train_shape.py --profile generic
+  --seeds 3 --verify`: "is what the code trains").
+
+**Stage 1. The touch rule's confidence** (`touch_stats.py --grid r013 --profile generic --seeds 3`, 48 settings). The
+incumbent 1.5 m / 6.0 m/s / 1 frame: coverage 41.9% of the alive frames, agreement 93.5% (90.6% to 95.2% per match),
+so confidence 0.93, as on the old profile (93.1%). It finds a new-team episode at 53.1% of the truth's changes of team,
+with a median lag of −1 frame (quartiles −6 and +4).
+
+**The reference, `p27_ref`:** the incumbent constants before the shift, on the retrained models: 0.5388 raw, 0.5779
+coarse, mean 0.5584; macroF1 0.893; alive/dead F1 0.9740; 3.03 possessions per graded minute; `D` 44.6%. (R029's
+`main.toml` scored 0.5363 and 0.5764 on `tracking` v3. The two profiles are different benchmarks, so that is no
+comparison of them.)
+
+**Stage A. The touch rule** (R013's grid, 192 configs, `pipeline/benchmark/configs/p27/p27a_*.toml`; 48 minutes in
+four throttled runs; `p27_choose.py a`).
+
+| config | mean | raw | coarse | mean Δ | p | wins |
+|---|---|---|---|---|---|---|
+| `p27a_r15_v06_k1_h55` (the incumbent, = `p27_ref`) | **0.5584** | 0.5388 | 0.5779 | 0 | | |
+| `p27a_r15_v06_k2_h55` | 0.5555 | 0.5334 | 0.5777 | −0.0028 | 0.0781 | 2 |
+| `p27a_r20_v06_k1_h55` | 0.5554 | 0.5356 | 0.5752 | −0.0029 | 0.0469 | 1 |
+| **`p27a_r15_v06_k1_h60`** (chosen) | 0.5534 | **0.5463** | 0.5604 | −0.0050 | 0.1406 | 2 |
+| `p27a_r15_v06_k1_h52` | 0.5533 | 0.5274 | 0.5792 | −0.0051 | 0.0312 | 1 |
+
+- The best mean is the incumbent itself. Four configs are within 0.005 of it. Among them the rule takes the larger
+  min(raw, coarse): `h60`'s 0.5463 against the incumbent's 0.5388.
+- **`h60` is inside the band by 0.000004**: its mean is 0.553356 against the best's 0.558352, 0.004996 below. `h52`,
+  at 0.005054 below, is outside. The comparison is the code's, on the unrounded scores, written before the runs.
+- So **the touch rule stays 1.5 m / 6.0 m/s / 1 frame, and the hold goes from 0.55 to 0.60.** Against `p27_ref`: raw
+  +0.0076 (p 0.0156, 7 wins in 7), coarse −0.0176 (p 0.0156, 0 wins), mean −0.0050 (p 0.1406).
+- *Leave one match out, the whole rule:* it picks `h55` in four folds and `h60` in three; mean −0.0048
+  [−0.0099, +0.0002] against `p27_ref`.
+- **This is the first choice that is not obvious**, and it is listed for Tian. The tie-break was declared for this
+  case (R024: the hedge for a grain we do not know), and it was applied as written. On the objective alone the
+  incumbent's hold is 0.0050 better, and the tie that brings `h60` in is a knife-edge: another set of seeds could
+  leave it out. R024 chose 0.55 by the same rule on the old profile, where `h60` was 0.0054 below and outside the
+  band.
+
+**Stage C. The decoder and the shape weight** (R013's grid, 144 configs at Stage A's choice, `p27c_*.toml`; 32
+minutes; `p27_choose.py c`).
+
+| config | mean | raw | coarse | mean Δ | p | wins |
+|---|---|---|---|---|---|---|
+| `p27_ref` | 0.5584 | 0.5388 | 0.5779 | | | |
+| `p27c_t08_mp050_w300` (the best mean) | **0.5653** | 0.5242 | 0.6064 | +0.0069 | 0.0156 | 7 |
+| `p27c_t06_mp050_w300` | 0.5646 | 0.5312 | 0.5981 | +0.0063 | 0.0156 | 7 |
+| `p27c_t08_mp035_w300` | 0.5637 | 0.5335 | 0.5938 | +0.0053 | 0.0156 | 7 |
+| `p27c_t08_mp025_w300` | 0.5636 | 0.5382 | 0.5890 | +0.0053 | 0.0156 | 7 |
+| **`p27c_t06_mp035_w300`** (chosen) | 0.5621 | **0.5410** | 0.5833 | +0.0038 | 0.0781 | 6 |
+| `p27c_t06_mp025_w300` | 0.5603 | 0.5437 | 0.5768 | +0.0019 | 0.1719 | 6 |
+
+- Eleven configs are within 0.005 of the best mean. The larger min(raw, coarse) among them is `t06_mp035_w300`'s
+  0.5410, which is 0.0032 below the best mean. (`t06_mp025_w300` has a larger minimum, 0.5437, and is outside the
+  band by 0.000034: 0.005034 below the best mean, on the unrounded scores. A second knife-edge, on the other side.)
+- So **`switch_team` goes from 4 to 6, `min_possession` stays 35, and the shape weight goes from 0.2 to 0.3.** The
+  choice is on no edge of the grid. Against `p27_ref`: raw +0.0022 (p 0.2969, 5 wins), coarse +0.0054 (p 0.0469, 6
+  wins), mean +0.0038 (p 0.0781, 6 wins).
+- *Leave one match out, the whole rule:* mean −0.0009 [−0.0047, +0.0030] against `p27_ref`. Out of sample the rule's
+  picks are no better than the incumbent constants. The objective alone picks `t08_mp050_w300` in all seven folds:
+  mean +0.0071 (7 wins in 7), raw −0.0142 (1 win), coarse +0.0284.
+- **This is the second choice that is not obvious**, listed for Tian. The best mean moves along the raw-against-coarse
+  trade-off (longer possessions: 2.72 a minute against 2.98), and the tie-break refuses the 0.015 it costs under the
+  raw truth.
+
+**Stage D. What R009, R010 and R011 chose** (13 configs at Stage C's choice, `p27d_*.toml`; 4.5 minutes;
+`p27_choose.py d`; the incumbent of every group is Stage C's config, `p27d_base`, 0.5621).
+
+| group | candidates (mean) | chosen |
+|---|---|---|
+| `switch_dead` × `min_dead` | 64/25 0.5623, 64/1 0.5623, **32/25 0.5621**, 32/1 0.5620, 16/25 0.5601, 16/1 0.5597 | 32 / 25: six tied, the larger min(raw, coarse) (0.5410 against 0.5407) |
+| dead-ball weight | **1.0 0.5621**, 0.5 0.5614, 0.25 0.5581, 0.1 0.5196 | 1.0: the best mean and the larger minimum |
+| shape scope | **`all` 0.5621**, `gaps` 0.5380 (coarse −0.0440, 0 wins in 7) | `all` |
+| the shape source | with 0.5621, without 0.4584 (−0.1037; 0 wins in 7 under both truths) | it stays |
+
+No group changes, so there is no combined config to run.
+
+**Stage E. The shift** (R012's rule; `conventions.py latency p27_preshift.toml dfl --profile generic --seeds 3
+--truth raw`, then `p27_shift.py p27_preshift`).
+
+| type of edge | truth's changes | matched | median lag | s_b |
+|---|---|---|---|---|
+| team | 7,053 | 2,967 | −1 frame | +1 |
+| into `D` | 2,130 | 1,114 | +2 frames | −2 |
+| out of `D` | 2,097 | 1,645 | 0 | 0 |
+
+- The shift is +1 / −2 / 0, the three values R012 and R013 found on the old profile.
+- *The guard* (`p27_choose.py guard p27_final p27_preshift`): mean +0.000029 (3 wins, 4 losses), raw +0.0004, coarse
+  −0.0004. The declared guard keeps a shift whose mean is above the unshifted config's with neither truth more than
+  0.005 below, so **the shift is kept, by a hair**: on spellF1 it is worth nothing either way (macroF1 +0.0003, 6
+  wins in 7). It is R012's measured lag, not a tuned value.
+
+**The final config, `p27_final`, and the bar.**
+- Pooled spellF1 **0.5414 raw, 0.5829 coarse, mean 0.5622**; macroF1 0.8934 and 0.8941; alive/dead F1 0.9741; 2.98
+  possessions per graded minute (the truths have 4.58 and 2.48); `D` on 44.7% of the graded frames against the truth's
+  44.8%.
+- Per match, raw: 0.4865, 0.4784, 0.5713, 0.5729, 0.5437, 0.5769, 0.5785 (mean 0.5440, 90% interval
+  [0.5120, 0.5761]). Coarse: 0.5926, 0.5375, 0.5830, 0.5685, 0.6262, 0.5961, 0.5826 (0.5838, [0.5639, 0.6037]).
+- *The bar (R010's)* (`p27_choose.py bar p27_final`): raw 0.5414 against `nearest_w50`'s 0.1885, +0.3529, p 0.0156,
+  7 wins in 7; coarse 0.5829 against `nearest_w125`'s 0.2092, +0.3738, p 0.0156, 7 wins in 7. **It passes.**
+- Against `p27_ref`, for information: mean +0.0038 (p 0.0312, 6 wins in 7), raw +0.0026 (p 0.2188, 5 wins), coarse
+  +0.0050 (p 0.0469, 6 wins). The re-choice is worth a third of a point on its own benchmark; what it buys is that
+  every constant now stands on external data only.
+
+**The checks on our match, pass or fail only** (they choose nothing, T01).
+- *The shape model's transfer gate* (R011's rule; the threshold is the lowest held-out value on `generic`):
+  `touch_agreement` of the model fitted on all seven matches is **0.8199 on 41,052 frames, against at least 0.7426:
+  pass.** (The old model: 0.8251 against 0.7486.) `main.toml` was switched only after this.
+- *The file* (`python pipeline/run.py pipeline/configs/main.toml --rebuild-cache`, twice, one BLAS thread): valid,
+  199,319 rows; sha256 `2dd51320b1d32f8be6d06e63f833e6d8e196ddcaad294b606db3914c351c1660` both times, each from a
+  rebuilt ATD cache; no `X` on a graded frame. **Pass.**
+- *The `D` share:* 34.5% of the graded frames, inside [30%, 62%]. **Pass.** (`H` 38.5%, `A` 27.0%; 393 possessions in
+  the graded halves, mean 10.6 s. R029's file: 37.5%, 26.6%, 35.9%; 413 possessions, mean 9.9 s.)
+- *The public window, as a gross-error check:* macroF1 0.7238, against the constant files' 0.2102 (all `H`), 0.1705
+  (all `A`) and 0.1092 (all `D`); each source agrees with it on more than half of its frames (`controlled_touch`
+  86.8% of 5,484, `dead_ball_model` 86.5% of 7,500, `shape_possession` 91.2% of 6,031). **Pass.** For the record
+  only: spellF1 0.5029, 18 possessions against the truth's 17 (R029's file: 0.7149, 0.4444, 19). One possession moves
+  that spellF1 by about 0.06 and the window ranks versions wrongly (T01): it chose nothing and says nothing about the
+  full match.
+- *Against R029's file, label-free* (`label_diff`, aggregates only; reported, not a check): 3.41% of the graded frames
+  changed, 64.2% of them where the ball is not seen; `D` 35.92% → 34.49%; possessions 190 → 187 in half 1 and 223 →
+  206 in half 2; `D` onsets 107 → 106 (58 moved, a median of +4.5 frames; 17 lost).
+- *From a clean clone* (the advisor's condition; T21): `git clone` of `c8d596e` into an empty folder, a fresh
+  Python 3.11.9 environment from `requirements-pipeline.txt` (numpy 2.4.6, pandas 3.0.6), `python pipeline/run.py
+  pipeline/configs/main.toml --rebuild-cache`: **the same sha256, `2dd51320...`.** The same machine, so not yet a
+  second CPU (T21): that run is Tian's. That file was copied to `Un Dia de Partit.csv` beside the repository and
+  passes `evaluation/validate_submission.py`.
+
+**The checks of the code.** `pipeline/selftest.py` 192 of 192 and, with `--data`, 194 of 194 (the four committed
+baselines rebuilt byte for byte, `main.toml` twice the same); `pipeline/benchmark/selftest.py` 472 passed. New with
+P27: `checks/generic.py` (11 checks: no `Calibration` is loaded for the profile, its declared shares, one draw per
+seed, the refusals), and the nine checks that pinned the old default profile now name theirs. `fidelity.py`'s own
+default is `tracking` again: the runner's default, `generic`, has no gates, so the bare command failed. `p27_grid.py`
+and `p27_choose.py` have no checks of their own; `choose.py`, whose rule they call, has.
+
+**What is not re-chosen.** Which components exist (the touch rule, the two tree models, the hmm, the shift), the trees'
+settings, `min_prob` 0.02 and the hmm's structure. Each was adopted on the old benchmark by a bar. On `generic`, Stage
+D's ablation re-verifies the shape source and the bar the whole. The honest wording of the claim is: every numeric
+constant was chosen, and both models were trained, on `generic`; the architecture was inherited and re-verified.
+
+**What the entry cannot settle.**
+- `generic`'s gaps ignore the play, and ours do not (DATA.md), so the benchmark still overstates the dead-ball model
+  (T38, T39) and cannot value a feature about where the ball is lost.
+- It has no wrong-team slots and no long NaN-speed runs, which our tracking has (T31, T32). The old benchmark put the
+  whole player degradation at 0.013 spellF1 (A14).
+- The gap law is one declared range. Another range would give other constants.
+- The raw and the coarse truth still pull the hold and the decoder in opposite directions (T33), and both choices
+  above sit on that trade-off.
+- The reports' commit fields carry `+dirty`: configs and docs were being written while they ran. No pipeline code
+  changed between `95c75ce` and the last run.
+
+**Not uploaded.** The upload and the public repository are Tian's.
+
+### R031 — P28: back-dating a possession to the team's first touch: step 0's gate fails, nothing built (declared 2026-11-09; run 2026-11-10, Tian away, an advisor agent in Tian's place)
+Proposal: P28 · Spec (declared before any run):
+[2026-11-10-p28-touch-backdating-design.md](superpowers/specs/2026-11-10-p28-touch-backdating-design.md), commits
+`2a7915d` and `49fc34c` · Code: branch `p28-touch-backdating` at `fce0ced`, not merged (the touch detector, the
+off-by-default rule and the diagnostic `pipeline/benchmark/touch_backdate_stats.py`, with their checks) ·
+Command: `python pipeline/benchmark/touch_backdate_stats.py --radius 1.5 --max-rel-speed 6.0 --min-frames 1`
+(`generic`, raw truth, the seven DFL matches × three seeds; from the branch)
+Public: — (nothing was run on our match)
+Validation (P01 benchmark): — (no config was built: the gate comes before any)
+Changed vs `main.toml`: nothing
+Verdict: **dropped at the gate; a negative result**
+
+**The belief.** `controlled_touch` speaks only where the ball moves with the nearest player. A first-time pass, a
+header or a deflection that the same team then controls is not an episode, so the decoder's change of team would land
+on the control, one pass flight after the truth's flag. The advisor ruled the lane, the gate and the bar on 9 Nov,
+after a research agent ranked what had not been tried; it put a pass of the bar at about one in ten.
+
+**What speaks against it, known beforehand.** Where a new-team episode is found near a flip, it starts 0 to 5 frames
+before the flag (R008, R013), so the found half is not late. The belief needed a real share of the ball-visible flips
+to have a touch and no episode. Step 0 measured exactly that.
+
+**The touch** (the spec's): the ball visible on [t − 7, t + 7]; the nearest slot within `radius` and the other team's
+nearest farther than `duel_radius`; and the ball's velocity changes by at least τ between t − 4 and t + 4, with τ in
+{3, 6} m/s the only grid dimension. The rule it would feed: a kept episode of team T that follows one of the other
+team gets T's vote from T's earliest touch after that episode, if the ball is visible throughout and no touch of the
+other team lies between.
+
+**The gate, declared before the run** (both parts, for at least one τ):
+- (i) among the truth's team flips with the ball visible, at least 10% have a touch of the new team within ±12 frames
+  and no kept episode of the new team starting within ±12 frames;
+- (ii) on at least 70% of the frames the rule would back-date, the truth names the touching team (`D` counts against).
+
+**Step 0** (10 Nov, 01:30; 7,053 flips, 4,107 of them with the ball visible; the touch rule is R030's, 1.5 m /
+6.0 m/s / 1 frame).
+
+| τ | (i) touch, no episode | (i) | (ii) back-dated frames agreeing | (ii) | stretches | gate |
+|---|---|---|---|---|---|---|
+| 3 m/s | 520 of 4,107 | 12.7%, pass | 5,435 of 16,069 | **33.8%, fail** | 595 | **fail** |
+| 6 m/s | 401 of 4,107 | **9.8%, fail** | 4,853 of 10,436 | **46.5%, fail** | 541 | **fail** |
+
+- Per match, (i) runs from 10.2% to 18.3% at τ = 3 and from 7.6% to 12.5% at τ = 6; (ii) from 18.5% to 51.6% and from
+  18.7% to 72.5%.
+- Not gating: without the flips at which a new-team episode is already running (1,915 of them, where the rule has
+  nothing to back-date), (i) is 8.6% and 8.0%.
+- The stretches are short and a few are long: the median is 1 frame and the upper quartile 24 frames (τ = 3) or 4
+  (τ = 6). (ii) counts frames, so the long ones decide it.
+- With the stretch capped at 12, 25 and 50 frames, (ii) is 59.5%, 60.7% and 57.8% at τ = 3, and 66.6%, 71.0% and
+  71.9% at τ = 6. The caps were declared for one retry, which exists only after a candidate has run with a mean Δ
+  above 0. No candidate ran, so they open nothing; and τ = 6 fails (i) whatever the cap.
+
+**Verdict, by the spec.** The gate fails for both τ, so P28 stops here. No config was built or run, nothing was run
+on our match, and nothing of P28 is in `main`. The branch keeps the detector, the rule (off by default, the output
+byte-identical when off) and the diagnostic for the record.
+
+**What it says.** The touch the belief needs does exist: near one ball-visible flip in eight, the new team touches the
+ball and no episode starts. But the frames between a team's first touch and its next episode belong to that team only
+one time in three (τ = 3) or less than half the time (τ = 6): the first touch after the other team's last episode is
+usually not the start of the new possession. Either the other team still has the ball by the truth's flag (a touch
+that does not win it: CHALLENGE.md's "a touch without control is no change"), or the ball is dead in between. The
+frames that would be gained are fewer than those that would be relabelled wrongly, which is what the gate was written
+to catch before a config was spent on it.
+
+**Not tried, and why.** A cap or a stricter touch chosen after seeing this table would be a rule shaped by the result;
+the one retry was tied to a bar that was never reached. The ball-state shift (the lane's fallback) was struck by the
+advisor before any run: `generic`'s gaps are blind to the play, so a lag measured inside them would not transfer.
+
 ## Submission log
 
 The form keeps only the last response before the deadline, so log every upload.
@@ -9664,6 +9958,18 @@ its `smart_tagging` `c_team` was calibrated on our own match (A21).
 now produces sha256 `762f9073e0d0c56bf8fd4e0b801b80d79defe87246b4f0a8c201d9b5337cdf6e` (branch `rules-nov3`); R024's
 file is still what `r024_both.toml` writes. It has NOT been uploaded, and it has not yet been regenerated from a fresh
 clone.
+
+`main.toml` was rewritten an eighth time by R030 (2026-11-10, P27): both models retrained and every constant re-chosen
+on the benchmark's `generic` profile, which measures nothing of our match. It now produces sha256
+`2dd51320b1d32f8be6d06e63f833e6d8e196ddcaad294b606db3914c351c1660` (commit `c8d596e`): the same on two runs from a
+rebuilt cache, and from a clean clone of that commit in a fresh environment built from `requirements-pipeline.txt`
+(the same machine; a second CPU is still to do, T21). A copy named `Un Dia de Partit.csv` sits beside the repository
+(`C:\Users\Tian\Desktop\`), passes `validate_submission.py`, and has **NOT been uploaded**: the upload is Tian's, after
+the two choices that R030 lists as not obvious.
+
+**10 Nov 2026: do not upload R029's file** (`762f9073...`). By our reading of the organisers' reply of 5 Nov, its models
+and constants stood on a degradation fitted on our own match ([rules.md](rules.md)). It can no longer be rebuilt from
+today's tree, since R030 retrained the model files that every older config names: check out `b113f21` for it.
 
 Before each upload:
 1. Regenerate the file from a clean clone, ideally on a second machine, and compare the sha256 ([T21](traps.md)).
