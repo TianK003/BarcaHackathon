@@ -11,13 +11,27 @@ that seven matches allow.
 The plan is [P01](../../docs/proposals.md); what was measured is in [results.md](../../docs/results.md) (A05 to A11,
 R002 to R012).
 
+**Since R030 (10 Nov 2026) the benchmark's default profile is `generic`, which reads nothing of our match**
+([P27](../../docs/proposals.md), [the spec](../../docs/superpowers/specs/2026-11-09-p27-degradation-design.md)). Both
+models are trained on it and every numeric constant of `main.toml` is chosen on it. The three older degraded
+profiles (`gaps`, `tracking`, `context`) read our match. Since the organisers' reply of 5 Nov nothing is trained or
+chosen on them, and they stay for the record of R002 to R029 ([The profiles](#the-profiles)).
+
 ```
 python pipeline/benchmark/sources.py          # data -> data/external/dfl/   (21 files, 2.6 GB, size and md5 checked)
-python pipeline/benchmark/run.py CONFIG ...   # configs -> scores, intervals, comparisons, one JSON report per config
+python pipeline/benchmark/run.py CONFIG ...   # configs -> scores, intervals, comparisons, one JSON report per config;
+                                              # --profile generic is the default since R030
 python pipeline/benchmark/choose.py --reference main STEM ...   # a grid's declared rule applied to its reports, + LOMO
 python pipeline/benchmark/choose.py --reference main --objective mean STEM ...   # R023's objective: the mean of the two truths (R024)
+python pipeline/benchmark/p27_grid.py ref|a|c|d|final --confidences FILE ...   # P27 (R030): write a stage's configs into configs/p27/
+python pipeline/benchmark/p27_choose.py a|c|d            # P27: the declared rule applied to a stage's reports; prints the next call
+python pipeline/benchmark/p27_choose.py bar STEM         # P27: the final bar, STEM against the two yardsticks
+python pipeline/benchmark/p27_choose.py guard STEM BASE  # P27: the shift's guard, STEM (shifted) against BASE (not)
+python pipeline/benchmark/p27_shift.py STEM   # P27 Stage E: the shift, from the pipeline's own lag on DFL (generic, raw truth)
+python pipeline/benchmark/p27_profile_check.py   # P27: the generic profile against its declared shares, on the 21 match-seeds
 python pipeline/benchmark/diagnose.py CONFIG --drop-match-only   # A19: the IoU ladder decomposed, the sources' and the posterior's calibration
-python pipeline/benchmark/fidelity.py         # how far the degraded profile looks like our match (gates, warnings)
+python pipeline/benchmark/fidelity.py --profile tracking|gaps|context   # how far a profile that reads our match looks like it
+                                              # (gates, warnings); default tracking; generic has no gates, by design
 python pipeline/benchmark/headroom.py CONFIG  # a config beside five variants whose evidence is the truth itself
 python pipeline/benchmark/label_diff.py REFERENCE CONFIG ...  # how configs change BAR-ATH's labels beside a reference, aggregates only (heavy)
 python pipeline/benchmark/tag_stats.py        # P08: Smart Tagging's votes against our own pseudo-labels (R017), aggregates only (heavy); since 3 Nov a check only, never a constant (docs/rules.md)
@@ -25,8 +39,8 @@ python pipeline/benchmark/wrong_team.py       # P21 step 0: wrong-team slots at 
 python pipeline/benchmark/metrica.py [--offline]   # P16: the grain of H/A/D derived from Metrica's sample games' events (R023);
                                                    # not to be run since 5 Nov 2026: the data has no licence (docs/rules.md)
 python pipeline/benchmark/touch_stats.py      # P04's control rule measured: coverage, agreement, flip lags, confidence
-python pipeline/benchmark/train_dead_ball.py --model hgb   # P05: train the dead-ball model (folds + full) as JSON
-python pipeline/benchmark/train_shape.py [--verify|--report]   # P07: train the shape model (folds + full) as JSON
+python pipeline/benchmark/train_dead_ball.py --model hgb   # P05: train the dead-ball model (folds + full) as JSON; --profile generic is the default
+python pipeline/benchmark/train_shape.py [--verify|--report]   # P07: train the shape model (folds + full) as JSON; --profile generic is the default
 python pipeline/benchmark/conventions.py public|dfl|compare|latency|shift ...   # P02: when a truth flips, the shift
 python pipeline/benchmark/selftest.py [--dfl] [--data]   # the checks
 ```
@@ -102,7 +116,7 @@ not touch `dfl.py`, so the caches are not rebuilt.
 | option | meaning |
 |---|---|
 | `CONFIG ...` | pipeline TOML configs (`pipeline/config.py`), per half (`scope = "halves"`). **The first one is the reference**: every other config is compared with it, and a delta is `other - first`, so positive means the other is better. Put the config you want to beat first. |
-| `--profile P` | how the tracking is made (below): `tracking` (the default), `context` (a sensitivity check only: it fails two of its gates, R005, and the help, the printout and the report say so), `gaps` or `clean`. |
+| `--profile P` | how the tracking is made (below): `generic` (the default since R030: it reads nothing of our match), `clean`, or one of the three that read our match and are kept for the record of R002 to R029 only: `tracking` (the default until R030), `gaps` and `context` (a sensitivity check only: it fails two of its gates, R005, and the help, the printout and the report say so). |
 | `--seeds N` | degradation seeds per match (default 3: seeds 0, 1 and 2). The clean profile has nothing random to repeat, so it always runs seed 0 only; if you pass `--seeds` with more than 1 it says that it ignored it, and says nothing when you pass none. |
 | `--matches ID ...` | the matches to run, in this order (default: all seven). Fewer than seven are filed under a name that says which (see the report, below). |
 | `--truth raw\|coarse\|both` | the truth to score against (below). Default `raw`. `both` decodes each config once and scores the codes against each truth (`evaluate_truths`): the two reports and tables are exactly those of a raw and a coarse run (`test_runner_scores_both_truths_from_one_decode`), in about half the time, because the decoder and not the scoring is what a config's time goes on (R013). |
@@ -111,10 +125,11 @@ not touch `dfl.py`, so the caches are not rebuilt.
 | `--drop-match-only` | drop, from every config, the evidence sources that declare `MATCH_ONLY` (below). |
 
 A run takes about 10 s on the clean profile with the caches warm (one cached load per match, a second or so per config);
-the gaps profile runs each config once for each of its seeds. Everything that can be refused is refused before the first
+a degraded profile runs each config once for each of its seeds. Everything that can be refused is refused before the first
 match is loaded, with a sentence that names what to change: no config, a config that does not load, `scope = "file"`
 (which decodes across half time; only `pipeline/configs/smooth50_repro.toml` needs it), a config whose file name has a
-dot, two configs with the same name, an unknown profile, truth or match, a calibration that is not one.
+dot, two configs with the same name, an unknown profile, truth or match, a calibration that is not one, and a
+Calibration handed to `generic` or `clean`, which take none.
 A source that needs something a benchmark match does not have (the video's homography, the Smart Tagging) stops the run
 with its config, its name and kind and the asset named; it is never scored as zeros.
 A source that needs an asset only our match has (the Smart Tagging, the whistle) declares `MATCH_ONLY = True` in its own
@@ -159,28 +174,84 @@ grain with A06's two truths: 6.20 possessions per alive minute, between 8.30 (ra
 two pooled spellF1s, each reported. It is event-tagged possession, not a tracking flag, so how far that grain sits
 from our flag's is not measured (R023's stated limit). **Since 5 Nov 2026 the sample data is withdrawn:** it has no
 licence, and the organisers' reply ("any dataset you have the rights to use", "anything that is not explicitly allowed
-is not permitted") leaves us without the rights, so `metrica.py` is not run again. Whether R024's objective stands on
-A06 alone is the team's decision ([docs/rules.md](../../docs/rules.md), question 3).
+is not permitted") leaves us without the rights, so `metrica.py` is not run again. Tian decided on 9 Nov that R024's
+objective stays, on A06's ground alone (the grain of our truth is unknown, so neither truth is preferred), and R030
+re-chose every constant under it ([docs/rules.md](../../docs/rules.md), question 3).
 
 ### The profiles
 
 A profile says how the tracking of a DFL match is made before the config sees it (`degrade.py`). A profile has a
-version, which goes into every report: change what a profile does and bump it. Its constants are fitted once per
-version, from label-free measurements of our tracking, and then frozen with the measurement in the code; they are never
-tuned towards a gate, a WARN or a score (T26, T37). No label, ground truth or video of our match enters them, and every
-choice made on a profile is made on DFL's own labels. Whether fitting a profile to our tracking is allowed under the
+version, which goes into every report: change what a profile does and bump it. There are five, of two kinds.
+
+**`generic` (version 1) is the default since R030** (10 Nov 2026; `run.DEFAULT_PROFILE = "generic"`). It reads nothing
+of our match. Every setting is a figure that the organisers publish in DATA.md or a round rule declared before any
+run ([the spec](../../docs/superpowers/specs/2026-11-09-p27-degradation-design.md)), and no `Calibration` is loaded
+for it (`degrade.needs_calibration("generic")` is False). It is the only degraded profile that anything is trained
+or chosen on. Version 1 is final for this submission: a version 2 is made only on a rules ground, never after a
+score. `clean` reads nothing of our match either, and degrades nothing: it is the floor.
+
+**`gaps`, `tracking` and `context` read our match, and are retired for training and choosing**
+(`degrade.NEEDS_CALIBRATION = {gaps, tracking, context}`). Their constants were fitted once per version, from
+label-free measurements of our tracking, and then frozen with the measurement in the code; they were never tuned
+towards a gate, a WARN or a score (T26, T37). No label, ground truth or video of our match entered them, and every
+choice made on them was made on DFL's own labels. Whether fitting a profile to our tracking is allowed under the
 organisers' clarification of 3 Nov 2026 (training and tuning on external data only) was question 1 for the organisers in
 [docs/rules.md](../../docs/rules.md). They replied on 5 Nov with the clarification and "anything that is not explicitly
-allowed is not permitted", so by our reading it is not permitted: the profiles fitted on our tracking (`gaps`, `tracking`,
-`context`) are being replaced by a profile that measures nothing of our match (P27 in
-[docs/proposals.md](../../docs/proposals.md); Tian's decision of 9 Nov).
+allowed is not permitted", so by our reading it is not permitted. Tian decided the redo on 9 Nov (P27 in
+[docs/proposals.md](../../docs/proposals.md)), and R030 did it on 10 Nov. The three profiles stay in the code for the
+record of R002 to R029, and nothing is trained or chosen on them again.
 
 | profile | version | the ball | the players |
 |---|---|---|---|
+| `generic` | 1 | missing on 41% of the frames in expectation (DATA.md's share of the graded frames), in gaps whose length is log-uniform between 1 s and 60 s and whose onsets are a Poisson process blind to the play; its speed is NaN everywhere | each on-pitch player is lost on 1 − 20.5 / 22 = 6.8% of the frames (DATA.md's mean of 20.5 tracked objects), independently of the others, in tracked spans log-uniform between 2 s and 300 s; 46 slots, 24 home and 22 away, each tracklet in the lowest free slot of its pool; a centred 7-frame moving average over each tracked piece; no wrong-team slots, no NaN-speed runs (a speed is NaN only on a tracklet's first row), no low-count frames and no shortest piece. **The default since R030** (below) |
 | `clean` | 1 | DFL's, as it is: on every frame | DFL's, one slot per player |
 | `gaps` | 1 | missing where **ours** was: our own missing-ball masks, transplanted onto each half with their pattern and not their clock (below); its speed is NaN everywhere (T31) | untouched |
-| `tracking` | 3 | `gaps`'s, byte for byte | broken into tracklets of ours and given 46 slots, 24 home and 22 away, as ours are; a wrong-team slot now and then (10.5% of frames), NaN speeds in runs (7.8% of the slot-frames), 5-frame smoothing; **since version 2** only the players nearest the ball are tracked where ours has few (the cap), no piece is shorter than 8 frames, and the walk's spans are rescaled once (below). **since version 3** a slot is taken by a new tracklet only from the row after its last one stopped, and the scale is derived again (below); this is the default profile. Version 1 (R004) had none of the three of version 2, and versions 1 and 2 had the slot handovers that version 3 removes (R004c) |
+| `tracking` | 3 | `gaps`'s, byte for byte | broken into tracklets of ours and given 46 slots, 24 home and 22 away, as ours are; a wrong-team slot now and then (10.5% of frames), NaN speeds in runs (7.8% of the slot-frames), 5-frame smoothing; **since version 2** only the players nearest the ball are tracked where ours has few (the cap), no piece is shorter than 8 frames, and the walk's spans are rescaled once (below). **since version 3** a slot is taken by a new tracklet only from the row after its last one stopped, and the scale is derived again (below); this was the default profile from R004c until R030. Version 1 (R004) had none of the three of version 2, and versions 1 and 2 had the slot handovers that version 3 removes (R004c) |
 | `context` | 1 | missing where our tracker loses it: a hazard fitted on our own match (A08) places the gaps by the ball's distance to a line, its speed, the players within 3 m of it (a crowd raises the hazard) and the minute of the half, with our gap lengths (`HAZARD_SCALE` 0.699, rescaled once). **It fails two of its gates**, the near-line share badly (its gaps start within 2 m of a line 56% of the time, against 28% of ours) and the missing share narrowly (R005), so it is **not the default**, and is kept for the agreement check between generators | `tracking`'s, draw for draw (`test_context_players_equal_tracking`) |
+
+**The `generic` profile** (version 1; `degrade.GENERIC_*`, `generic_mask`, `generic_parameters`). Three sources may
+shape it, and nothing else: a figure the organisers publish in the challenge documents, a rule declared in the spec
+before any run, and the file format the pipeline parses. What we measured on our match (A01 to A03, A07 to A09, the
+Calibration) may not, nor may a number picked because it lands near one of those.
+
+- *The ball.* Each half's mask runs from its kick-off to the end of its graded block and is drawn from the half's
+  own stream, `rng_for(seed, match_index, "generic_gaps", half)`: missing and visible spans in turn. A missing span
+  is log-uniform between 1 s and 60 s (`GENERIC_GAP_SECONDS`): every scale from a ball in the air to a long stoppage
+  is equally likely. A visible span is exponential, so the gaps start as a Poisson process, with the mean that makes
+  the expected missing share 0.41 (`GENERIC_MISSING_SHARE`; DATA.md: "The ball is missing 43% of all frames, and 41%
+  of the graded ones"). Nothing of the play is read. The ball's speed is NaN on every frame, so no component can lean
+  on one. By arithmetic the law gives a median gap of 7.7 s, a mean of 14.4 s and a 90th percentile of 40 s.
+- *The players.* `tracking`'s machinery with declared parameters. An on-pitch player is lost on d = 1 − 20.5 / 22 of
+  the frames (`GENERIC_PRESENT_MEAN`; DATA.md: "the mean over graded frames is 20.5"), independently of the others. A
+  tracked span is log-uniform between 2 s and 300 s (`GENERIC_TRACKED_SECONDS`), and a lost span is geometric with the
+  mean that makes the lost share d. The pieces take the lowest free slot of 24 home and 22 away slots and are smoothed
+  with a centred 7-frame moving average (`GENERIC_SMOOTH_WINDOW`, the window of Shaw's velocity filter for 25 Hz
+  tracking). There are no wrong-team episodes, no NaN-speed runs beyond a tracklet's first row, no cap and no shortest
+  piece: DATA.md documents none of them.
+- *No Calibration, by code.* `degrade.degrade` refuses one for `generic`, and so do the runner and the trainers. A
+  report's `calibration` is null, and so is `calibration_sha256` in a model's provenance.
+- *Two figures are quoted from the task statement,* as 25 fps and 46 slots are: the 41% and the 20.5. They are
+  statistics of the match, published by the organisers. No text allows quoting them by name, so a residual risk
+  remains ([docs/rules.md](../../docs/rules.md)).
+- *A check made after the law was written, on external data only.* In SkillCorner's open data (MIT licence, automatic
+  broadcast tracking, three A-League matches read) the ball is undetected on 39% to 46% of the frames, in gaps with a
+  median of 5.4 to 5.8 s, a mean of 11.5 to 14.0 s and a 90th percentile of 27 to 36 s. No number was taken from it.
+- *The check of the profile itself* (`p27_profile_check.py`: the 21 match-seeds degraded again, counts only). The
+  pooled share of the ball's masks is 0.4109 against the declared 0.41 ± 0.02, and the pooled share of on-pitch
+  player-frames lost is 0.0681 against 0.0682 ± 0.01. Both pass (R030). A miss would be a bug in the code.
+- *No fidelity gate against our match.* `fidelity.py` measures a profile against the Calibration. `generic` is not
+  built to pass it and is never run through it.
+
+Its checks are in `checks/generic.py` (synthetic): `test_generic_constants_are_the_declared_ones`,
+`test_generic_takes_no_calibration_and_refuses_one`, `test_generic_no_instrument_loads_a_calibration`,
+`test_generic_is_held_to_no_fidelity_gate_against_our_match`, `test_generic_never_sees_the_truth`,
+`test_generic_is_deterministic_and_independent_of_the_other_matches`, `test_generic_mask_is_the_documented_draws`,
+`test_generic_ball_is_missing_exactly_where_the_masks_say`, `test_generic_parameters_are_the_declared_rules`,
+`test_generic_players_are_lost_at_the_declared_rate_in_46_slots` and
+`test_generic_runs_on_the_runner_with_no_calibration`.
+
+*From here to "No truth reaches the degrader" the text describes the three profiles that read our match. It is the
+record of how R002 to R029 were measured. Nothing is trained or chosen on those profiles since R030.*
 
 **The transplant.** `Calibration.ball_masks[half]` is our match's missing-ball mask of each half, from its kick-off to
 the end of its graded block (M frames: 79,467 for the first half and 76,456 for the second, A07; `calibration.py`; the
@@ -222,9 +293,9 @@ episodes of that kind. The onsets are a Bernoulli process over the rows of the h
 target / mean episode frames per row, the target being `Calibration.wrong_team_share` and the episode lengths ours
 (`Calibration.wrong_team_episodes_s`, both directions together, at least 1 frame). At an onset row, among the players
 tracked then, it finds the closest home-away pair, in metres, ties to the lowest columns; **only if they are within 2.0
-m** (identity swaps happen where players come close) does a random one of the two become an episode: his rows from the
-onset to the end of the episode (or of his tracked span) form a separate tracklet in **the other team's pool**, and the
-rest of his span is cut into a piece before it and a new tracklet after it (the split is an identity switch). An onset
+m** (identity swaps happen where players come close) does a random one of the two become an episode: their rows from the
+onset to the end of the episode (or of their tracked span) form a separate tracklet in **the other team's pool**, and the
+rest of their span is cut into a piece before it and a new tracklet after it (the split is an identity switch). An onset
 with no such pair is skipped and counted (`skipped_far`), and so is one whose player is already in an episode
 (`skipped_overlap`). Everything an onset needs is drawn up front from `rng_for(seed, match_index, "wrong_team", half)`,
 in the order: one uniform per row (the onsets), one pick per onset, one duration per onset, so that no draw depends on
@@ -275,7 +346,7 @@ none its last place in the half, then the centre spot. Membership is sticky: wit
 pieces kept stay kept, and it changes only when the count requires it (it falls: the farthest go; it rises or a kept
 piece ends: the nearest present piece that is not kept comes in), never because two distances swap; at the run's end
 everybody is back. A piece that loses frames is cut into the pieces between them, each a new tracklet that takes the
-lowest free slot, so a player who comes back after a drop may not get his own slot back (the first thing the cap does to
+lowest free slot, so a player who comes back after a drop may not get their own slot back (the first thing the cap does to
 slot identity, R004b). The cap draws nothing, so no stream of the other parts moves. Over the seven matches and three
 seeds 10.1% of the frames are capped (ours 10.6%), 2,363,692 slot-frames are dropped and 4,513 pieces are cut.
 
@@ -396,9 +467,12 @@ on `context` (R005).
 deep walk of the inputs, `test_degrade_serves_inputs_without_the_truth`). Its random draws are
 `rng_for(seed, match_index, component, half)`, one stream for each, with no profile and no loop order in the key
 (`test_degrade_independent_of_match_order`), so a match gets the same degradation whichever matches are run with it, and
-the `tracking` profile, which degrades the players as well, has exactly `gaps`'s ball.
+the `tracking` profile, which degrades the players as well, has exactly `gaps`'s ball. The same holds for `generic`
+(`test_generic_never_sees_the_truth`, `test_generic_is_deterministic_and_independent_of_the_other_matches`), whose
+ball has its own stream, `generic_gaps`.
 
-**A new calibration, a new report.** The report holds the digest of the Calibration its gaps were taken from. A report
+**A new calibration, a new report.** For `gaps`, `tracking` and `context` the report holds the digest of the
+Calibration its gaps were taken from (for `generic` and `clean`, which take none, it holds null). A report
 is named by what was run (below), not by which calibration, so a later run with a newer Calibration writes over the
 older report of the same name; compare the digests before comparing two reports.
 
@@ -409,13 +483,21 @@ older report of the same name; compare the digests before comparing two reports.
 .venv/Scripts/python pipeline/benchmark/fidelity.py --profile tracking --seeds 3
 ```
 
+**Fidelity is measured for `gaps`, `tracking` and `context` only** (`fidelity.GATES`): the profiles that read our
+match. `generic` has no gates, by design: it is not built to look like our match by measurement, and `fidelity.py
+--profile generic` is refused before a Calibration or a match is loaded
+(`test_generic_is_held_to_no_fidelity_gate_against_our_match`). A bare `fidelity.py` measures `tracking`
+(`fidelity.DEFAULT_PROFILE`), not the runner's default. Since R030 a fidelity report is part of the record of R003 to
+R005. It gates nothing that is trained or chosen today, and no profile may be changed to pass it (T01).
+
 `fidelity.py` degrades each match under seeds 0 .. N-1, measures it with **the same two functions that measured ours**
 (`calibration.ball_stats` and `player_stats`), pools over matches and seeds (counts add, arrays are laid end to end: a
 median is the median of every gap), and sets the result against the Calibration. Two kinds of criteria, fixed before
 anything was measured and never tuned towards:
 
-- **Gates**: the command exits 1 if one fails, and a profile can be the default only if all its gates pass (`context`
-  fails two and is kept as a sensitivity check, R005). Each is our Calibration's
+- **Gates**: the command exits 1 if one fails, and until R030 a profile could be the default only if all its gates
+  passed (`context` fails two and is kept as a sensitivity check, R005; `generic`, the default since R030, has none).
+  Each is our Calibration's
   own value, measured on the kick-off spans (a benchmark half starts at its kick-off, so both sides are measured alike),
   plus or minus the plan's tolerance. For `gaps`: the share of frames without a ball, +-0.02, and the median gap, +-1.5
   s. For `tracking`, those two and: the share of frames with exactly 22 slots present +-0.06, the mean number present
@@ -461,9 +543,9 @@ The DFL ball is tracked on every frame, so `nearest_player` votes everywhere and
 where nobody voted, labels almost nothing `D`, where the truth has 41% to 52% of every match dead. So on `clean`
 the alive/dead F1 is the same for every yardstick (it is the F1 of "always alive", the scorer's ALIVE being the positive
 class), the macroF1 is held down by an empty `D` class, and the ranking is only about who has the ball. That is
-expected, and is why the degraded profiles (which give the ball our tracking's gaps) exist. It is not a bug of the
-configs. `gaps` gives the ball our gaps, so that `majority_vote` has `D` to give, and the scores are no longer those of
-a ball that is always there.
+expected, and is why the degraded profiles (which take the ball away in gaps) exist. It is not a bug of the
+configs. `generic` draws the ball's gaps from its declared law, and `gaps` gave the ball our gaps, so that
+`majority_vote` has `D` to give, and the scores are no longer those of a ball that is always there.
 
 ## Reading the printout
 
@@ -517,7 +599,7 @@ renamed over the old report; the same inputs, seed and versions give the same by
 | `config` | `path`, and `text`: the TOML as run, with LF line endings |
 | `profile`, `seeds`, `truth` | the profile's `name` and `version` (and for `context` `tracking_version`, the version of tracking's players that it is built from), the seeds run, and `{name, min_s}` of the truth |
 | `sensitivity_only` | only in the report of a profile that is a sensitivity check and not the yardstick (`context`): why, as `run.SENSITIVITY_ONLY` says it; absent for the others |
-| `calibration` | `{sha256, version}` of the Calibration the tracking was degraded with (`calibration.digest`); null for `clean`, which degrades nothing |
+| `calibration` | `{sha256, version}` of the Calibration the tracking was degraded with (`calibration.digest`), for `gaps`, `tracking` and `context`; null for `generic` and `clean`, which take none |
 | `matches` | per match, in match-id order whatever order they were run in: `id`, `frames`, `graded_frames`, `fps`, `carried_frames` (frames the truth had to carry: 0), and `sources`: the size and sha256 of the two DFL files it was made from (null if the match was not read through the cache, with `sources_reason`) |
 | `git`, `environment` | the commit and whether the tree was dirty; the Python, numpy and lxml versions and the platform |
 | `pooled`, `per_match` | the scores of all halves, and of each match: `spell_f1_mean`, `spell_f1` at each IoU, `macro_f1`, `alive_dead_f1`, `n_gt`, `n_pred`, `halves` |
@@ -549,8 +631,8 @@ classic home variants (`home_visible`, `home_all`, `alive_home_visible`, `alive_
 | `<stem>__alive_home_all` | both, whole: the truth itself, which a decoder free to follow it reproduces (exactly 1.0 on all three scores for an hmm with switch penalties near 0 and minimums of 1) |
 
 The oracles are exact: `oracle_alive` is 1 on the truth's `H` and `A` and 0 on its `D`; the home oracles are 1 on `H`
-and 0 on `A`, the visible one only where `atd.ball_present` (as the profile degraded it, so the ball is missing where
-ours was), and every channel they do not speak on is NaN. A source that replaces `nearest_player` keeps its weight,
+and 0 on `A`, the visible one only where `atd.ball_present` (as the profile degraded it: on `tracking`, where A10 and
+A13 were measured, the ball is missing where ours was), and every channel they do not speak on is NaN. A source that replaces `nearest_player` keeps its weight,
 takes the name of its own kind and none of its parameters; `oracle_alive` is added after the config's own sources, at
 weight 1. To the hmm decoder a perfect source is about 13.8 nats a frame at the default `eps`, so the table is a bound
 on what the evidence could give this config and its penalties, and not an estimate of what a real source will.
@@ -661,7 +743,8 @@ only (the first two are the anatomy of A12 part 1, the last three belong to the 
 .venv/Scripts/python pipeline/benchmark/restarts.py configs STATS_JSON --out-dir DIR [--main pipeline/configs/main.toml] [--span after|stoppage_end] [--from-tail TAIL] [--switch-restart X ...]
 ```
 
-- **`anatomy`** runs on the benchmark (default profile `tracking`, 3 seeds). The pipeline's labels are made as the runner
+- **`anatomy`** runs on the benchmark (the runner's default profile, `generic` since R030, and 3 seeds; A12's figures
+  are `tracking`'s). The pipeline's labels are made as the runner
   makes them (the degraded copy, `MatchInputs` with no flag, `run.predict`), and the truth is read only to find the
   restarts, a restart being a maximal `D` run inside a graded block followed by `H` or `A`. For each match and pooled,
   by sums over matches and seeds (a restart is counted once per seed), it reports the number of restarts and the
@@ -673,7 +756,7 @@ only (the first two are the anatomy of A12 part 1, the last three belong to the 
 - **`bar-ath`** is label-free and has no truth: it counts `CONFIG`'s own predicted stoppages on our match (a `D` run
   followed by `H` or `A`, per half) and for each whether the ball is missing on more than half of the 50 frames before it
   and after it. It says how much of the time a rule that reads the ball around a restart would have no ball, which is
-  the share against which the benchmark's ball gaps, a transplant of ours, can be held. Only counts and shares leave it,
+  the share against which the `tracking` profile's ball gaps, a transplant of ours, could be held (A12). Only counts and shares leave it,
   never a frame or a label sequence.
 
 - **`stats`** measures what a vote of each restart type is worth, on the benchmark (the source `restart_team` run on the
@@ -712,8 +795,8 @@ result = touch_stats.measure(settings, profile=..., seeds=..., match_ids=None, m
 
 For each of the 12 settings (radius 1.0, 1.5, 2.0 m x `max_rel_speed` 3.0, 6.0 m/s x `min_frames` 3, 8: `DEFAULT_GRID`,
 `--grid stage_a`, the default), or of R013's 48 (radius 1.5 to 3.0 m x 6, 9, 12 m/s x 1, 2, 3, 5 frames: `R013_GRID`,
-`--grid r013`), it runs the source once per match and seed on the degraded tracking (default profile `tracking`, seeds 0 to 2), and
-counts, among the alive graded frames where the served tracking has the ball:
+`--grid r013`), it runs the source once per match and seed on the degraded tracking (the runner's default profile,
+`generic` since R030; seeds 0 to 2), and counts, among the alive graded frames where the served tracking has the ball:
 
 - **coverage**, the share inside a kept episode, and **agreement**, the share of those whose team is the truth's, per
   match and pooled over matches and seeds;
@@ -766,6 +849,17 @@ hundredths (`52`, `55`, `60`, `70`), each at the confidence `touch_stats.py --gr
 choice and varies the `hmm`'s `switch_team` `TT` and `min_possession` `MMM` and `shape_possession`'s weight `WWW` in
 thousandths (144 files).
 
+R030's configs (P27) are in `configs/p27/`, written by `p27_grid.py` and never by hand; the section on
+[P27's re-choice](#p27s-re-choice-on-generic-r030) has the tools. They are R013's two grids again, on `generic`:
+- `p27_ref`: the incumbent constants (R029's `main.toml` without the shift), the reference of Stages A and C;
+- Stage A, `p27a_r{RR}_v{VV}_k{K}_h{HH}.toml` (192 files, named as R013's), each at the confidence that
+  `touch_stats.py --grid r013 --profile generic --seeds 3` measured;
+- Stage C, `p27c_t{TT}_mp{MMM}_w{WWW}.toml` (144 files) at Stage A's choice;
+- Stage D, `p27d_base` (Stage C's choice, the incumbent of every group) beside `p27d_sd{SS}_md{MM}`,
+  `p27d_dw{WWW}` (the dead-ball weight in hundredths), `p27d_scope_gaps` and `p27d_noshape`;
+- `p27_preshift` (the chosen config before the shift) and `p27_final` (with it), whose constants `main.toml` carries
+  since R030.
+
 ## Choosing from a grid
 
 ```
@@ -802,6 +896,60 @@ is the mean of the two truths' Δs, and its p and wins are taken on the per-matc
 the six-match min(raw mean, coarse mean). `--objective raw`, the default, is R008 to R016's rule to the bit (a check
 compares it with the code before the change).
 
+`--profile` defaults to the runner's, so since R030 `choose.py` reads the reports under `runs/benchmark/generic/`.
+The grids of R008 to R024 were run on `tracking`: their reports are read with `--profile tracking`, as a record and
+not for a new choice.
+
+## P27's re-choice on `generic` (R030)
+
+Four tools re-run the whole re-choice from the repository. Every run is `--profile generic --seeds 3`, the seven
+matches, both truths, and the objective is the mean of the two truths' pooled spellF1. The profile and every rule
+were declared before the runs ([the spec](../../docs/superpowers/specs/2026-11-09-p27-degradation-design.md)); what
+they chose is [R030](../../docs/results.md).
+
+```
+.venv/Scripts/python pipeline/benchmark/p27_grid.py ref   --confidences FILE
+.venv/Scripts/python pipeline/benchmark/p27_grid.py a     --confidences FILE
+.venv/Scripts/python pipeline/benchmark/p27_grid.py c     --confidences FILE --touch R,V,K,H
+.venv/Scripts/python pipeline/benchmark/p27_grid.py d     --confidences FILE --touch R,V,K,H --decoder T,MP --weight W
+.venv/Scripts/python pipeline/benchmark/p27_grid.py final --confidences FILE --touch R,V,K,H --decoder T,MP --weight W \
+    [--switch-dead SD] [--min-dead MD] [--dead-weight DW] [--scope S] [--no-shape] [--shift TEAM,INTO_DEAD,OUT_OF_DEAD] [--name STEM]
+.venv/Scripts/python pipeline/benchmark/p27_choose.py a|c|d [--data-dir D]
+.venv/Scripts/python pipeline/benchmark/p27_choose.py bar STEM
+.venv/Scripts/python pipeline/benchmark/p27_choose.py guard STEM BASE
+.venv/Scripts/python pipeline/benchmark/p27_shift.py STEM
+.venv/Scripts/python pipeline/benchmark/p27_profile_check.py [--seeds 3] [--data-dir D]
+```
+
+- **`p27_grid.py`** writes the configs of a stage into `configs/p27/` and prints their stems in the stage's tie
+  order. `FILE` is what `touch_stats.py --grid r013 --profile generic --seeds 3 --out FILE` wrote: a touch setting's
+  confidence is read from it and never typed in. It reads no match. `--prefix P` (stages `c` and `d`, here and on
+  `p27_choose.py`; default `p27`, the declared branch) names the stems of a labelled alternative branch beside the
+  declared one.
+- **`p27_choose.py a`, `c` and `d`** apply the declared rule to the stage's reports through `choose.py`'s mean
+  objective: the best mean, a tie band of 0.005, the larger min(raw, coarse), then the stage's tie order, against the
+  reference `p27_ref`. Stage D takes each group by the same rule, Stage C's choice being one candidate, and the shape
+  source stays if the config with it is not worse than the config without it. Each prints aggregates of the DFL
+  benchmark and a last line that starts with `NEXT`, holding the arguments of the next `p27_grid.py` call, and writes
+  its selection as JSON under `<data dir>/runs/p27/`.
+- **`p27_choose.py bar STEM`** is R010's bar: `STEM` must beat `nearest_w50` under the raw truth and `nearest_w125`
+  under the coarse truth, each with a sign-flip p of at most 0.05 over the seven matches. It exits 2 if the bar fails.
+- **`p27_choose.py guard STEM BASE`** is the shift's guard: the shifted config is kept only if its mean is above the
+  unshifted one's and neither truth falls by more than 0.005.
+- **`p27_shift.py STEM`** reads the latency file that `conventions.py latency pipeline/benchmark/configs/p27/STEM.toml
+  dfl --profile generic --seeds 3 --truth raw` wrote, and prints, per type of edge, the changes, the matched ones, the
+  median lag and the shift by R012's rule: minus the rounded median, and 0 below 30 matched changes. It reads DFL's
+  lags and nothing of our match. `conventions.py shift` also reads the public window, which is why R030 did not use
+  it.
+- **`p27_profile_check.py`** degrades each match under each seed again and sums the counts the degrader records (no
+  frame is kept or printed). It passes if the pooled mask share is 0.41 ± 0.02 and the pooled share of on-pitch
+  player-frames lost is 0.068 ± 0.01, and exits 2 otherwise.
+
+The order R030 ran them in: both models retrained (`train_dead_ball.py`, `train_shape.py`), the touch rule's
+confidences measured (`touch_stats.py`), then `ref` and Stage A, Stage C at Stage A's choice, Stage D at Stage C's,
+the shift from the pre-shift config's lag, the guard, and the bar on the final config. One heavy process runs at a
+time.
+
 ## A19's diagnosis: the ladder and the calibration
 
 ```
@@ -820,6 +968,10 @@ aggregates of DFL only. It has two parts.
 Its matching is the scorer's own (`pm.matched_gt_flags`), and the code checks it on every half. Its pooled spellF1
 must equal `score.pooled`'s.
 
+`--profile` defaults to the runner's, and the report of the default profile is named `<stem>.json` with no profile in
+it. So a bare `<stem>.json` written before 10 Nov 2026 is A19's `tracking` report, and one written since R030 is
+`generic`'s.
+
 ## Dead-ball model
 
 P05's classifier is trained here, on the benchmark's matches, and run by the pipeline from a file (`pipeline/models/`,
@@ -829,11 +981,12 @@ trees with numpy alone, so the submission pipeline's pins stay numpy and pandas.
 
 ```
 .venv/Scripts/python pipeline/benchmark/train_dead_ball.py --model hgb|logistic \
-    [--profile tracking] [--seeds 3] [--stride 5] [--out PATH] [--verify] [--data-dir D]
-.venv/Scripts/python pipeline/benchmark/train_dead_ball.py --rules [--profile tracking] [--seeds 3] [--data-dir D]
+    [--profile generic] [--seeds 3] [--stride 5] [--out PATH] [--verify] [--data-dir D]
+.venv/Scripts/python pipeline/benchmark/train_dead_ball.py --rules [--profile generic] [--seeds 3] [--data-dir D]
 ```
 
-- **Rows.** Every match under every seed of the profile (default `tracking`, version 3, seeds 0 to 2) is served as
+- **Rows.** Every match under every seed of the profile (default `generic`, version 1, since R030; `tracking`,
+  version 3, until then; seeds 0 to 2) is served as
   `MatchInputs`, and `play_features` computes the 30 features from those inputs, so no truth reaches them
   (`test_trainer_never_passes_truth`). A row is every `stride`-th graded frame of a block from its start (default 5,
   which is deterministic and cuts the autocorrelation), labelled 1 where `truth.truth_codes` is not `D`.
@@ -851,7 +1004,8 @@ trees with numpy alone, so the submission pipeline's pins stay numpy and pandas.
   out of scikit-learn's fitted predictors (a private structure, hence the exact pins in `requirements-benchmark.txt`);
   `test_exported_trees_match_sklearn` holds the numpy walk of the exported trees to 1e-12 of `predict_proba`, NaNs
   included, and `test_training_is_deterministic_across_threads` that one thread and four write the same bytes.
-- **Provenance** is the scikit-learn version, the Calibration's digest, the DFL files' sha256 and the sha256 of the
+- **Provenance** is the scikit-learn version, the Calibration's digest (null for a model trained on `generic`, which
+  takes no Calibration), the DFL files' sha256 and the sha256 of the
   three source files the model depends on (`train_dead_ball.py`, `play_features.py`, `kinematics.py`), and no git
   commit, which would change with every later commit. **`--verify`** retrains and compares with the committed file
   everything but those three hashes: a different hash is a note (a comment edited after training is not a different
@@ -868,7 +1022,14 @@ trees with numpy alone, so the submission pipeline's pins stay numpy and pandas.
 
 The source takes the file's model for `inputs.game` or else `full`, and gives the decoder a likelihood, not a
 posterior: `logit(alive) = logit(p) - logit(prior_alive)`, clipped to `[min_prob, 1 - min_prob]`; the decoder sets the
-prior, and DFL's class balance does not leak into it. The artefacts and their scores are R009's.
+prior, and DFL's class balance does not leak into it.
+
+**The committed artefacts.** `pipeline/models/dead_ball_hgb.json`, the one `main.toml` reads, is R030's: retrained on
+`generic` with the settings above (pooled held-out log-loss 0.0788 and Brier 0.0227 over 601,602 rows, AUC 0.9942 to
+0.9973 per match). R009's version of it, trained on `tracking` v3, is in the git history, and its scores are R009's.
+`pipeline/models/dead_ball_logistic.json` is still R009's reference, trained on `tracking` v3, and no config of the
+submission reads it. R030 retrained the logistic reference on `generic` into a scratch file, for its comparison only
+(pooled held-out log-loss 0.1524; the trees are lower in 7 of 7 matches, so they stay), and did not commit it.
 
 ## Shape model
 
@@ -878,11 +1039,12 @@ pipeline from a file: training needs scikit-learn and the seven DFL matches and 
 with numpy alone (`pipeline/evidence/trees.py` is the walk, shared with `dead_ball_model`).
 
 ```
-.venv/Scripts/python pipeline/benchmark/train_shape.py [--profile tracking] [--seeds 3] [--stride 5] [--out PATH] \
+.venv/Scripts/python pipeline/benchmark/train_shape.py [--profile generic] [--seeds 3] [--stride 5] [--out PATH] \
     [--verify] [--report] [--data-dir D]
 ```
 
-- **Rows.** Every match under every seed of the profile (default `tracking`, version 3, seeds 0 to 2) is served as
+- **Rows.** Every match under every seed of the profile (default `generic`, version 1, since R030; `tracking`,
+  version 3, until then; seeds 0 to 2) is served as
   `MatchInputs`, and `shape_features` computes the 26 features from those inputs, so no truth reaches them: the label
   is read from `truth.truth_codes` beside them. A row is every `stride`-th frame (default 5) of a graded block from its
   start, kept where the truth is `H` or `A` (who has the ball is not asked of a dead ball), and labelled 1 where it is
@@ -899,8 +1061,10 @@ with numpy alone (`pipeline/evidence/trees.py` is the walk, shared with `dead_ba
   `inputs.game` of a served match), and `full` on all seven. A benchmark match is scored by its own fold and BAR-ATH by
   `full`. The file is `pipeline/models/shape_possession_hgb.json`, in P05's layout (`{format, kind, feature_version,
   features, profile, seeds, stride, provenance, folds, full}`; sorted keys, LF, no NaN, under 10 MB), 3,668,856 bytes
-  (R011). The trees are exported by `train_dead_ball.export_hgb`, so the version of scikit-learn is pinned for it too.
-- **Provenance and `--verify`.** The provenance is the scikit-learn version, the Calibration's digest, the DFL files'
+  in R011's version. The committed file is R030's, retrained on `generic` with the same settings. The trees are
+  exported by `train_dead_ball.export_hgb`, so the version of scikit-learn is pinned for it too.
+- **Provenance and `--verify`.** The provenance is the scikit-learn version, the Calibration's digest (null for
+  `generic`), the DFL files'
   sha256 and the sha256 of the three source files the model depends on (`shape_features.py`, `trees.py` and the
   trainer), and no git commit. `--verify` retrains and compares everything but those three hashes with the committed
   file; a different hash is a note, anything else exits 1. It is a same-machine check, as P05's is.
@@ -909,12 +1073,16 @@ with numpy alone (`pipeline/evidence/trees.py` is the walk, shared with `dead_ba
   and on those whose served ball is missing, `ln 2`, the frames where the source is silent (counted apart), and
   `touch_agreement`. It says whether the stop rule P07's design declared fires: the pooled held-out log-loss on the
   alive frames with the ball missing must be below `ln 2 - 0.01` = 0.6831. A fold missing from the artefact is an error,
-  because the source would fall back to `full`, which saw the match. The numbers are R011's part 1.
+  because the source would fall back to `full`, which saw the match. R011's part 1 has the numbers on `tracking`.
+  On `generic` (R030) the pooled held-out log-loss on the alive frames with the ball missing is 0.3560 (accuracy
+  0.8458 over 685,247 frames), so the rule does not fire.
 - **`touch_agreement(inputs, model)`** is the statistic that needs no truth: among the frames inside kept
   `controlled_touch` episodes (`conventions.TOUCH`, confidence 0.99, hold off, so that `home` is a number exactly on
   the kept frames), the share where the shape `home` (scope `all`, at least 0.5) names the episode's team. It takes any
   `Inputs`, so it can be asked of our own match with `full`: R011's transfer gate (0.8251 on BAR-ATH against 0.7486,
-  the lowest held-out match). It is a proxy, and not an accuracy.
+  the lowest held-out match, with the model trained on `tracking`). For R030's model the lowest held-out match is
+  0.7426 (pooled 0.8334), so the gate on our match is at least 0.7426; its result is in R030. It is a check that
+  passes or fails, a proxy, and not an accuracy.
 
 The checks are in `checks/shape.py` (synthetic): the rows, the augmentation, the exported trees against scikit-learn's
 raw score, the same bytes on one and four threads, the folds, that no truth reaches the features, the artefact, the
@@ -929,9 +1097,9 @@ to understand how our truth flips, and never tuned on: it is "not training data 
 
 ```
 .venv/Scripts/python pipeline/benchmark/conventions.py public  [--gt PATH] [--data-dir D]
-.venv/Scripts/python pipeline/benchmark/conventions.py dfl     [--profile tracking] [--seeds 3] [--truth raw|coarse] \
+.venv/Scripts/python pipeline/benchmark/conventions.py dfl     [--profile generic] [--seeds 3] [--truth raw|coarse] \
     [--matches ID ...] [--data-dir D]
-.venv/Scripts/python pipeline/benchmark/conventions.py compare [--profile tracking] [--truth raw] [--data-dir D]
+.venv/Scripts/python pipeline/benchmark/conventions.py compare [--profile generic] [--truth raw] [--data-dir D]
 .venv/Scripts/python pipeline/benchmark/conventions.py latency CONFIG public|dfl [the options of public or dfl]
 .venv/Scripts/python pipeline/benchmark/conventions.py shift --config CONFIG [--s-b-rejected TYPE ...] [--gt PATH]
 ```
@@ -971,11 +1139,14 @@ to understand how our truth flips, and never tuned on: it is "not training data 
   seed, evidence, decoder and refine, no comment), and the public one also of the CSV it was read from; `shift`
   refuses a file of another content or of none, with the `latency` command to run again.
 - **`shift --config CONFIG`** is P02's declared rule, and nothing in it is tuned. For each type, s_b is minus the
-  rounded median of DFL's latencies (profile `tracking`, raw truth, so the benchmark's own default; the coarse truth's
+  rounded median of DFL's latencies (the benchmark's own default profile and the raw truth: `conventions.SHIFT_DFL`,
+  `("generic", "raw")` since R030 and `tracking` for R012 and R013; the coarse truth's
   is reported beside it, T33), and 0 below 30 matched changes. A guard on the benchmark confirms or rejects s_b as a
-  whole (`--s-b-rejected` names the types whose guard failed): `configs/p02/p02_sb.toml` against R011's config on
-  `tracking` and `context`, raw and coarse, kept only if the `tracking` raw gain is above 0 and no cell is below
-  -0.005. The rule R012 declared had a second term, g: minus the rounded median of the public latencies after s_b,
+  whole (`--s-b-rejected` names the types whose guard failed). R012's guard was `configs/p02/p02_sb.toml` against
+  R011's config on `tracking` and `context`, raw and coarse, kept only if the `tracking` raw gain is above 0 and no
+  cell is below -0.005. R030's guard is the spec's, on `generic` alone (`p27_choose.py guard`): the shifted config's
+  mean of the two truths above the unshifted one's, and neither truth more than 0.005 below. The rule R012 declared
+  had a second term, g: minus the rounded median of the public latencies after s_b,
   taken only where that median is at least 3 frames in absolute value, its 90% bootstrap interval excludes 0 and every
   leave-one-out median has its sign; a single public change never sets a shift. **g is retired since the organisers'
   rule of 23 Oct 2026 (`f8f2629`)**: reading it off the public window is a tuning use of a window that is "not a tuning
@@ -985,7 +1156,10 @@ to understand how our truth flips, and never tuned on: it is "not training data 
   boundary matched to change i moves by the shift learned without i), as a correctness check and never as a choice.
 
 R012 applied the rule: s_b is team +1, into_dead -2, out_of_dead 0, g is 0 for every type (and is now retired), and
-`main.toml` carries it.
+`main.toml` carries it. R030 derived s_b again on `generic` from the pre-shift config's lag (`p27_shift.py`, which
+reads DFL's lags only and not the public window): median lags of -1, +2 and 0 frames over 2,967, 1,114 and 1,645
+matched changes, so the same +1, -2 and 0. The guard kept it by a hair (mean +0.000029), and on spellF1 it is worth
+nothing either way.
 The checks are in `checks/conventions.py` (synthetic): the window rule against a plain loop, the detectors on hand-built
 tracking, that the DFL mode reads the truth beside its inputs, that no transition frame is printed, the bootstrap, the
 typed matching at the tolerance, each condition of the rule on a list that fails it, the out-of-fold prediction
@@ -1002,7 +1176,8 @@ against `shift_edges.apply`, and that a latency file of another content of the c
 The synthetic run is 377 checks (P06's added 16 to the 272 of A05, then P04's touch_stats 5 and P05's trainer 19,
 which made 312; then P07's trainer and source 20 in `shape`, P02's instrument and rule 40 in `conventions`, and one in
 `run` that a config with `shift_edges` is scored like any other, 373; then R013's four: both truths from one decode,
-R013's touch grid and the two of `choose`). Its time, 49 to 115 s, is as of A05 and not measured
+R013's touch grid and the two of `choose`; that is the count as of R013, and the later modules, `generic`'s among
+them, have added to it: R030 has the count of its own run). Its time, 49 to 115 s, is as of A05 and not measured
 again. `--dfl` and `--data` are as of A05 (2026-10-23, `fdc5eae`), when the synthetic run was 272 checks: `--dfl`
 added 16 and `--data` 7, and all of them (295 checks then) took 949 s (15 min 49 s) with the seven DFL caches and the
 Calibration rebuilt after an edit to `dfl.py` and `calibration.py`. The machine's load decides, and the first run on a
@@ -1010,14 +1185,17 @@ machine also builds the caches (A05).
 
 The checks live in `pipeline/benchmark/checks/`, one module per topic, listed in `checks.MODULES` (the folder's
 `__init__.py` says what each holds): `sources`, `dfl`, `truth`, `inputs`, `score`, `run`, `choose` (choose.py's), `hazard`,
-`calibration`, `degrade`, `cap`, `tracking`, `context`, `fidelity`, `headroom` (the Headroom section's), `touch` (touch_stats's),
+`calibration`, `degrade`, `cap`, `tracking`, `context`, `generic` (P27's profile), `fidelity`, `headroom` (the Headroom section's), `touch` (touch_stats's),
 `dead_ball` (the Dead-ball model section's), `conventions` (the Conventions section's), `shape` (the Shape model
 section's) and `harness` (the harness itself). The profiles' are `degrade` (the transplant worked out exactly,
 determinism, what the `gaps` profile touches and what it does not, no truth, the order of the matches), `tracking`
 (the tracklets, the episodes, the NaN-speed runs and the smoothing worked out exactly, and how it nests in `gaps`),
 `cap` (the low-count tail's cap, its shortest-piece rule and the scale of the tracked spans), `context` (what the
 hazard is given, the chance, the class, third and durations read at the at-risk frame, the counts of its record on
-hand-built halves, the odds rescale and the frozen scale) and `fidelity` (every gate and check worked out by other
+hand-built halves, the odds rescale and the frozen scale), `generic` (its constants are the declared ones; no
+Calibration is taken or loaded by the degrader, the runner, the trainers or the instruments; no truth reaches it; the
+ball's mask is the documented draws, laid from each kick-off; the players are lost at the declared rate in 46 slots;
+the runner reports it with no Calibration; and `fidelity.py` refuses it) and `fidelity` (every gate and check worked out by other
 code, pooling by sums, the exit code, the pending gates, the full-strength frames of the count gates and the gate
 kinds). The one that anchors the rest is `test_dfl_oracle_scores_perfectly`: an evidence source that is the truth
 itself, decoded by `majority_vote` with half-width 0, must score exactly 1.0 on spellF1, macroF1 and alive/dead F1 on
@@ -1057,6 +1235,22 @@ What the benchmark cannot show, and where its copy of our match is not ours. Sec
 and this is the detail behind that list. None of them makes a benchmark number ours: absolute spellF1 here is not our
 leaderboard's, and a ranking that holds under both truths and in both competitions is worth more than one that does not.
 
+Since R030 the default profile is `generic`, and its own limits are the first item. The items that name `tracking`,
+`context`, the transplant, the cap or the tracklets describe the profiles that read our match: they are the limits
+of R002 to R029's numbers, kept as that record.
+
+- **`generic` is declared, not measured, so how far it looks like our match is unknown by design** (R030, the spec).
+  - Its gaps ignore the play, and ours do not (DATA.md: the ball "goes missing disproportionately on the frames that
+    matter"). So the benchmark still overstates the dead-ball model (T38, T39) and cannot value a feature about where
+    the ball is lost.
+  - It has no wrong-team slots and no long NaN-speed runs, which our tracking has (T31, T32). The old benchmark put
+    the whole player degradation at 0.013 spellF1 (A14); the cost is not measured on our match.
+  - The gap law is one declared range. Another range would give other constants.
+  - It has no fidelity gate and is never run through `fidelity.py`. No profile may be changed to pass a measurement
+    of our match ([docs/rules.md](../../docs/rules.md)).
+  - The raw and the coarse truth still pull the hold and the decoder in opposite directions (T33), and both of R030's
+    knife-edge choices sit on that trade-off.
+
 - **Conventions and grain.** DFL's flags are one provider's, and ours may flip at other moments and cut possessions at
   another grain. DFL's flag is fine-grained, 437 possessions a match with a median of 3.7 s, and its `D` is its own
   ball-in-play clock to within 2 frames (A06). How fine our ground truth is cannot be told from the public window: the
@@ -1079,12 +1273,15 @@ leaderboard's, and a ranking that holds under both truths and in both competitio
   unobservable on 10 against 11, which lowers that share in those two matches (R004).
 - **No video, audio, homography or Smart Tagging.** DFL has none, so whatever uses the camera, the audio, the homography
   or the tagging cannot be benchmarked here. It is checked on the public window for correctness only, with its strength
-  fixed by a declared constant, or simulated from the benchmark's truth with noise measured on our match (A03).
+  fixed by a declared constant. Until 5 Nov the other way was to simulate it from the benchmark's truth with noise
+  measured on our match (A03; R019 and R028 tried it and failed their gates). By T56's test a stand-in whose noise is
+  measured on our match is fitting too, as the old profiles are, so it is not an option now
+  ([docs/rules.md](../../docs/rules.md)).
 - **Aerial projection.** A camera-based tracker projects an airborne ball onto the pitch plane, which displaces it.
   DFL's positions carry no such error and the benchmark adds none, and our ATD has no ball height, so the error cannot
   be measured on ours. Nor can we tell how many of our ball gaps come from airborne balls: the plan said "crowded and
   aerial", and what was measured is "lines and slow balls" (A08).
-- **No positional bias.** The profile brings the players' jitter down towards ours (next item) and does nothing else
+- **No positional bias.** The `tracking` profile brings the players' jitter down towards ours (next item) and does nothing else
   about their positional error. A slowly varying bias against the true position cannot be measured on ours (there is no
   reference to measure it against), so none is added. Published accuracies for video-derived positions run from 0.08 to
   0.09 m RMSE for a multi-camera stadium system against a motion-capture reference (Linke, Link and Lames 2020, PLoS ONE
@@ -1092,18 +1289,20 @@ leaderboard's, and a ranking that holds under both truths and in both competitio
   WACV 2022, arXiv:2110.11107, Table 3), so a bias of the order of 0.5 to 2 m is plausible for ours and would hurt a
   method that reads distances more than the benchmark says (the plan's range of 0.5 to 2 m is not stated by either
   source, which are the nearest published figures; it is not our measurement).
-- **Rougher positions.** After the 5-frame smoothing the jitter is 1.80 cm per slot against our 3.3 mm, 5.5 times ours
-  in RMS (T35, R004c). DFL's clean 9.0 cm is a few jumps on a 1 cm grid, and the average takes it down to a fifth; what
+- **Rougher positions.** On `tracking`, after the 5-frame smoothing the jitter is 1.80 cm per slot against our 3.3 mm,
+  5.5 times ours in RMS (T35, R004c). `generic` smooths over 7 frames by a declared rule, and its jitter is not set
+  against ours. DFL's clean 9.0 cm is a few jumps on a 1 cm grid, and the average takes it down to a fifth; what
   is left is DFL's, lowered. A method that reads positions, speeds or accelerations sees rougher ones than ours, so
   compare medians and percentiles and not an RMS (T35).
-- **The default's ball gaps are transplanted with their pattern and not their clock, and are blind to the play.** The
+- **`tracking`'s ball gaps (the default until R030) are transplanted with their pattern and not their clock, and are
+  blind to the play.** The
   offset is drawn uniformly, so the pattern lags by up to M - n frames (our half less the benchmark's), 7.6 minutes in
   a 68,000-frame half (R003's offsets reached 11,222 frames), and most of the climb through each half (A02) arrives
   shifted. Separately, the mask is cut from our match and laid over DFL's play: a dead ball is no likelier to be missing
   than any other frame, where in the public window ours is about three times as likely (33.6% of the dead frames
   against 11.8% of all of them, A01), and 36.0% of the gaps start within 2 m of a line against 28.0% of ours (R003):
   placed without regard to the play, they start near a line more often in a DFL match than ours do, and DFL tracks the
-  ball out of play (R005). The default has no gate on that share, which is `context`'s, and 36.0% is outside the +-0.05
+  ball out of play (R005). `tracking` has no gate on that share, which is `context`'s, and 36.0% is outside the +-0.05
   that gate allows (R005). The ball is visible on 0.5684 of the benchmark's dead frames against 0.6637 in the public
   window (R003, R004c), which is far better covered than the match (12% of its frames without the ball against 41%), so
   ours over the whole match is unmeasured. A method that depends on where the gaps fall is validated on gaps that ignore
@@ -1129,7 +1328,7 @@ leaderboard's, and a ranking that holds under both truths and in both competitio
   version 3: of the pools of 24 and 22, 13 and 13 slots are ever present, 12 and 12 on at least a tenth of the frames
   and 13 and 12 on at least a hundredth, where ours has 22 and 21, 21 and 20, 22 and 21; printed by
   `test_data_tracking_profile_on_a_real_match_with_our_real_calibration`). A player who comes back after a lost span
-  lands in the slot he had 47.4% of the time (529 of 1,117 returns; 48.1% of 1,147 in version 2, 69.0% in version 1,
+  lands in the slot they had 47.4% of the time (529 of 1,117 returns; 48.1% of 1,147 in version 2, 69.0% in version 1,
   R004, and 67.6% of 562 returns with the walk, the episodes, the scale and the shortest piece but no cap), and a slot
   idles between two tracklets for a median of 4.3 s (39.4% of its gaps at most 3 s, 5.3% over 60 s), where ours idles
   for 7.4 s (17.7% and 15.0%; A09, R004c; version 2: 4.1 s, 42.0%, 5.3%; version 1: 2.3 s, 59.7%, 3.8%). No evidence

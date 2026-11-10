@@ -25,7 +25,7 @@
 #     the declared tie-break (within 0.005 of the best mean, the larger of the worse truth's score);
 #   - Stage C re-chose the decoder and P07's weight (144 configs): switch_team 4 -> 6, min_possession stayed 35, the
 #     weight went 0.2 -> 0.3;
-#   - Stage D re-chose what R009 to R011 had chosen (13 configs): switch_dead 32, min_dead 25, the dead-ball weight
+#   - Stage D re-chose what R009 to R011 had chosen (11 configs): switch_dead 32, min_dead 25, the dead-ball weight
 #     1.0 and scope "all" all stayed, and the config without the shape source is 0.10 lower;
 #   - Stage E re-derived the shift by R012's rule: +1, -2, 0, as before; its guard keeps it on a hair (the mean of
 #     the two truths +0.00003, raw +0.0004, coarse -0.0004).

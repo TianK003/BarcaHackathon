@@ -51,7 +51,7 @@ benchmark: other matches (DFL open data), degraded to look like ours. Hand label
 | R027 | 2026-10-31 | P22(b): P07's logit plus a per-half intercept fitted on the other half's touch-rule frames (E2, noise-aware at ε 0.07), served by a new source `shape_selftrain`; part 1: the gate on DFL (rung 1's pooled log-loss in the held-out half's gaps at least 0.002 nats below P07's, no match more than 0.002 above), the shift, the bar (the mean of the two truths: pooled Δ ≥ +0.005 on `tracking`, no match below −0.005), two vetoes, the BAR-ATH checks; rung 3 the one retry (R027b); part 2a: the gate run | — | — | — | — | dropped 2026-10-31, code removed (recover from `1e5a5d2` and the local tag `archive/r027-source`): the gate failed, rung 1's pooled log-loss +0.0061 (0.3820 against P07's 0.3759; needed −0.002) and worse on 5 of 7 matches (worst +0.0148, J03WMX), rung 3 +0.0838; the touch-to-gap transfer 0.296 against the teacher's noise 0.107 (E/B 1.18); no shift, bar or BAR-ATH run, no spellF1 |
 | R028 | 2026-11-01 | P15 use 1: the TV broadcast's usable ball fills our tactical ball's gaps (`[inputs] ball_fill = "broadcast"`: aligned by code, live-tested, runs of 13+ frames); on DFL a simulated broadcast transplanted from BAR-ATH's real fill; part 1: the fidelity gates, the shift, the bar (ii: the mean of the two truths, pooled Δ ≥ +0.005 on `tracking`, no match below −0.005), two vetoes, the BAR-ATH checks; R028b (`filled_confidence` 0.79) the one retry; part 2a: the fidelity run | — | — | — | — | dropped 2026-11-02, code removed (recover from `659a6c2` and the local tag `archive/r028-source`): the stand-in's fidelity gates failed on `tracking` (F1 0.2176 against ours 0.2952, F2 0.0885 against 0.0412, F3 first 0.4012 against 0.2974, inside 0.1414 against 0.0727), and the advisor found no departure of the code from part 1; no lag, bar or BAR-ATH run, no spellF1; the broadcast's value in our gaps is untested, not refuted |
 | R029 | 2026-11-03 | `smart_tagging` (P08) taken out of `main.toml`: its `c_team` was measured on BAR-ATH, which the organisers' clarification of 3 Nov forbids (A21, [rules.md](rules.md)); nothing else changed | 0.7149 | 0.4444 | 19 / 14.8 s | 0.5363 raw and 0.5764 coarse: R024's, by construction (the benchmark always ran `main.toml` with `--drop-match-only`, which removed exactly this source) | **adopted, for the rules and not for a score**; sha256 `762f9073…`; the public figures chose nothing (T01) |
-| R030 | 2026-11-10 | P27: the benchmark's degradation replaced by `generic` v1 (no measurement of ours enters it: two figures quoted from the organisers' DATA.md and declared rules for the rest), both models retrained on it, and every constant re-chosen by rules declared before the runs: Stage A the touch rule (192 configs), Stage C the decoder and P07's weight (144), Stage D what R009 to R011 chose (13), Stage E the shift | 0.7238 | 0.5029 | 18 / 15.7 s | **0.5414 raw and 0.5829 coarse (mean 0.5622) on `generic`**, against the incumbent constants' 0.5388 and 0.5779 (mean 0.5584) there; `nearest_w50` 0.1885 raw, `nearest_w125` 0.2092 coarse | **adopted, because the rules require the redo** ([rules.md](rules.md)): the hold 0.55 → 0.60, switch_team 4 → 6, P07's weight 0.2 → 0.3, everything else unchanged; the bar passes (7 wins in 7 under each truth) and so do the declared checks (both `--verify`, the profile's shares, the transfer gate 0.8199 against 0.7426, the file twice and from a clean clone, sha256 `2dd51320...`); two ties decided by the declared tie-break are knife-edges and are left for Tian (the hold: inside the band by 0.000004; the decoder); not uploaded |
+| R030 | 2026-11-10 | P27: the benchmark's degradation replaced by `generic` v1 (no measurement of ours enters it: two figures quoted from the organisers' DATA.md and declared rules for the rest), both models retrained on it, and every constant re-chosen by rules declared before the runs: Stage A the touch rule (192 configs), Stage C the decoder and P07's weight (144), Stage D what R009 to R011 chose (11), Stage E the shift | 0.7238 | 0.5029 | 18 / 15.7 s | **0.5414 raw and 0.5829 coarse (mean 0.5622) on `generic`**, against the incumbent constants' 0.5388 and 0.5779 (mean 0.5584) there; `nearest_w50` 0.1885 raw, `nearest_w125` 0.2092 coarse | **adopted, because the rules require the redo** ([rules.md](rules.md)): the hold 0.55 → 0.60, switch_team 4 → 6, P07's weight 0.2 → 0.3, everything else unchanged; the bar passes (7 wins in 7 under each truth) and so do the declared checks (both `--verify`, the profile's shares, the transfer gate 0.8199 against 0.7426, the file twice and from a clean clone, sha256 `2dd51320...`); two ties decided by the declared tie-break are knife-edges and are left for Tian (the hold: inside the band by 0.000004; the decoder); not uploaded |
 | R031 | 2026-11-10 | P28: a possession back-dated to the team's first touch (a kink of the ball's velocity inside a player's zone, τ in {3, 6} m/s); step 0, the gate declared before any config | — | — | — | — (no config was built) | **dropped at the gate**: the frames the rule would back-date name the touching team 33.8% (τ = 3) and 46.5% (τ = 6) of the time against the 70% needed, and at τ = 6 the touch-without-episode share is 9.8% against 10%; nothing built into the pipeline, the branch `p28-touch-backdating` keeps the code |
 
 ### The four yardsticks on every profile, in one table
@@ -9683,9 +9683,11 @@ trees' settings unchanged).
 - *Dead-ball model* (`train_dead_ball.py --model hgb --profile generic --seeds 3`): held out per match, log-loss
   0.0654, 0.0901, 0.0725, 0.0852, 0.0650, 0.0918, 0.0823 and AUC 0.9942 to 0.9973; pooled log-loss 0.0788 and Brier
   0.0227 over 601,602 held-out rows; the reliability table is flat.
-- *The advisor's condition on it:* the logistic reference retrained on `generic` (`--model logistic`, written to a
-  scratch file and not committed) has a pooled held-out log-loss of 0.1524 (Brier 0.0427, AUC 0.9831 to 0.9890). The
-  boosted trees are lower in 7 of 7 matches, so they stay. It ran after the grids, because only one heavy process
+- *The advisor's condition on it:* the logistic reference retrained on `generic` (`--model logistic`) has a pooled
+  held-out log-loss of 0.1524 (Brier 0.0427, AUC 0.9831 to 0.9890). The boosted trees are lower in 7 of 7 matches, so
+  they stay. That file now replaces R009's `pipeline/models/dead_ball_logistic.json`, which was trained on `tracking`
+  v3: no config of the pipeline reads it, but no model file in the tree now stands on a profile fitted on our match
+  (R009's `p45b_logit_*` configs name it, so they no longer reproduce R009's numbers; check out `b113f21` for those). It ran after the grids, because only one heavy process
   runs at a time; had it failed, the grids would have been void.
 - *Shape model* (`train_shape.py --profile generic --seeds 3`, then `--report`): pooled held-out log-loss on alive
   frames with the ball missing 0.3560 (accuracy 0.8458, 685,247 frames), against the stop rule's 0.6831: the rule does
@@ -9756,7 +9758,7 @@ minutes; `p27_choose.py c`).
   trade-off (longer possessions: 2.72 a minute against 2.98), and the tie-break refuses the 0.015 it costs under the
   raw truth.
 
-**Stage D. What R009, R010 and R011 chose** (13 configs at Stage C's choice, `p27d_*.toml`; 4.5 minutes;
+**Stage D. What R009, R010 and R011 chose** (11 configs at Stage C's choice: the incumbent and ten variants, `p27d_*.toml`; 4.5 minutes;
 `p27_choose.py d`; the incumbent of every group is Stage C's config, `p27d_base`, 0.5621).
 
 | group | candidates (mean) | chosen |
@@ -9766,7 +9768,9 @@ minutes; `p27_choose.py c`).
 | shape scope | **`all` 0.5621**, `gaps` 0.5380 (coarse −0.0440, 0 wins in 7) | `all` |
 | the shape source | with 0.5621, without 0.4584 (−0.1037; 0 wins in 7 under both truths) | it stays |
 
-No group changes, so there is no combined config to run.
+No group changes, so there is no combined config to run. (The spec's "12 configs" counts the incumbent once in each of
+the three grids; the distinct configs are the incumbent, nine variants of those grids and the one without the shape
+source.)
 
 **Stage E. The shift** (R012's rule; `conventions.py latency p27_preshift.toml dfl --profile generic --seeds 3
 --truth raw`, then `p27_shift.py p27_preshift`).

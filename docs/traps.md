@@ -265,8 +265,12 @@ benchmark must be set against the tracklet median first, and a rescale of this k
 measurement and never tuned.
 
 **T38 — The default profile cannot value evidence about where the ball's gaps fall, so a choice that depends on them is
-read on `context` too.** `tracking` v3 transplants our ball masks with their pattern and not their clock (R003), so a
-gap has nothing to do with the play. In our public window the ball is missing on 33.6% of dead frames against 6.5% of
+read on `context` too.** *(The default was `tracking` v3 until R030; `generic` since. `generic` also draws its gaps
+blind to the play, so the trap holds on it. `tracking` and `context` read our match, and nothing is chosen on them
+since 5 Nov ([rules.md](rules.md)), so the second look on `context` described below is history: on `generic` the
+limit is stated and not worked around, R030.)* `tracking` v3 transplants our ball masks with their pattern and not
+their clock (R003), so a gap has nothing to do with the play. In our public window the ball is missing on 33.6% of
+dead frames against 6.5% of
 in-play frames (A01), a missing frame being 5.2 times likelier in a stoppage; on `tracking` it is visible on 56.8% of
 the dead frames against about 59% of all graded frames (R005), so a missing frame says almost nothing about `D`. P06's
 `ball_presence` is evidence of exactly that kind, so R006 and R007 chose `switch_dead` on a profile that cannot value
@@ -561,7 +565,8 @@ set a constant, a weight, a prior or a model, however label-free it is.
   to train a detector on our video with the ATD's ball as pseudo-labels; P22(c). The benchmark's degradation, fitted on
   label-free statistics of our tracking (A07 to A09), was our reading's open case and question 1 for the organisers.
   Their reply of 5 Nov did not answer it and said "anything that is not explicitly allowed is not permitted", so by our
-  reading it fails this test too: its constants go from BAR-ATH into the code that makes the training data (T56, P27).
+  reading it fails this test too: its constants go from BAR-ATH into the code that makes the training data (T56, P27;
+  redone on the `generic` profile, R030).
 
 **T55 — A `SET PIECES` tag is a fixed 35 s clip, not a window of a few seconds around the restart.** Measured on our
 tagging on 4 Nov 2026 (`starter/load_smart_tagging.load`, lengths only): 57 of the 59 `SET PIECES` intervals (every
@@ -580,7 +585,7 @@ confirm (question 1), and we kept building on it meanwhile. Metrica's unlicensed
 (question 3). Their reply of 5 Nov answered no question by name: it repeated the clarification and added "anything that
 is not explicitly allowed is not permitted" ([rules.md](rules.md)). By then both models and every constant of
 `main.toml` stood on the degradation, and R024's objective on R023, so the open case had become eight days of possible
-rework before the deadline (P27).
+rework before the deadline (P27; done on 10 Nov as R030).
 - *The rule:* if no text allows something by name (the clarification, the challenge docs, the T&C), treat it as
   forbidden from the day it comes up, not from the day an answer comes. Asking is still worth it, but plan as if the
   answer will be the clarification again.

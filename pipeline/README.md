@@ -61,7 +61,7 @@ Two design decisions run through the whole diagram:
 | # | stage | takes | gives | its job | today | lands here |
 |---|---|---|---|---|---|---|
 | 1 | [inputs](inputs/README.md) | `data/tactical/*` and `games.py` | `Inputs`: read-only arrays where row *i* = tactical video frame *i*; graded halves, kick-offs, pitch size | do every alignment once and check it; parse the 195 MB ATD once and cache it | ATD (cached), homography, Smart Tagging | P10 audio, P14 ball from video, P15 broadcast |
-| 2 | [evidence](evidence/README.md) | `Inputs` (the whole match) + config parameters | one `Evidence` per source: `alive` = P(ball in play), `home` = P(home has it \| in play), each float64 per frame, NaN = no opinion | per-frame opinions, never labels | `nearest_player` (baseline step 1; its optional `confidence` replaces the hard 0/1 vote), `ball_presence` (whether the tracker sees the ball, as `alive` evidence; P05 replaced it), `controlled_touch` (P04: `home` from control episodes and a weak hold for the last controlling team, NaN without the ball), `dead_ball_rules` and `dead_ball_model` (P05: `alive` from 30 play features, by fixed triggers or by a model loaded from JSON: gradient-boosted trees, or the logistic reference), `shape_possession` (P07: `home` from 26 features of how the two teams stand and move, none reading the ball, by boosted trees loaded from JSON; it speaks where the ball is missing and, in `main.toml`, at weight 0.2 on every graded frame), `restart_team` (P17: who restarts after a stoppage, from the players' arrangement; built and measured, not in `main.toml`, P17 dropped) | P08, P10, P11; A13 puts the remaining score in who has the ball (P04, P05 and P07 are in) |
+| 2 | [evidence](evidence/README.md) | `Inputs` (the whole match) + config parameters | one `Evidence` per source: `alive` = P(ball in play), `home` = P(home has it \| in play), each float64 per frame, NaN = no opinion | per-frame opinions, never labels | `nearest_player` (baseline step 1; its optional `confidence` replaces the hard 0/1 vote), `ball_presence` (whether the tracker sees the ball, as `alive` evidence; P05 replaced it), `controlled_touch` (P04: `home` from control episodes and a weak hold for the last controlling team, NaN without the ball), `dead_ball_rules` and `dead_ball_model` (P05: `alive` from 30 play features, by fixed triggers or by a model loaded from JSON: gradient-boosted trees, or the logistic reference), `shape_possession` (P07: `home` from 26 features of how the two teams stand and move, none reading the ball, by boosted trees loaded from JSON; it speaks where the ball is missing and, in `main.toml`, at weight 0.3 on every graded frame since R030 (0.2 from R011 until then)), `restart_team` (P17: who restarts after a stoppage, from the players' arrangement; built and measured, not in `main.toml`, P17 dropped) | P08, P10, P11; A13 puts the remaining score in who has the ball (P04, P05 and P07 are in) |
 | 3 | [decode](decode/README.md) | one block (a graded half) and every source cut to it | `Decoded`: one int8 label per frame (`H`, `A`, `D`, `X` = 0–3) and an optional posterior | turn opinions into a sequence that looks like football: intervals, few spurious changes | `majority_vote` (baseline step 2, a stand-in), `hmm` (P06: a Viterbi per block with switch penalties and minimum runs, and an optional posterior; restart states behind `restart_source`, P17, off by default) | duration priors beyond the minimums (semi-Markov) |
 | 4 | [refine](refine/README.md) | the same block + the current `Decoded` | a new `Decoded`, same frames | metric-aware clean-ups, each switchable and measured | `shift_edges` (P02: each kind of edge moved by a fixed number of frames; every default is 0, and `main.toml` sets team +1, into_dead -2, out_of_dead 0, R012) | P11, P12 |
 | 5 | [output](output/README.md) | labels for the whole match | the CSV (LF, validated, sha256), the run manifest; with `--score`, the scores | own the bytes of the deliverable and check them as the organisers will | — | — |
@@ -123,7 +123,7 @@ half_width = 50
 
 | config | what it is |
 |---|---|
-| [`main.toml`](configs/main.toml) | the team's current pipeline, i.e. the file we would submit today (not uploaded): `controlled_touch` (1.5 m, 6 m/s, 1 frame, hold 0.55) and `shape_possession` (weight 0.2, every graded frame) for `home`, the gradient-boosted `dead_ball_model` for `alive`, the `hmm` decoder (4 / 32 / 35 / 25) and `shift_edges` (team +1, into_dead -2, out_of_dead 0). P05 was chosen in R009 and R010 and P07's model in R011; R013 chose the touch rule, `switch_team`, `min_possession` and P07's weight again with no window-derived value in any candidate, and re-derived the shift by R012's rule, all on the benchmark; R017 then added `smart_tagging` at Tian's pick of its strength (untested on any benchmark, DFL has no tags, so the benchmark runs this file with `--drop-match-only`); R024 re-chose R013's two stages under R023's objective, the mean of the raw and coarse pooled spellF1s, and moved only the hold, from 0.60 to 0.55 (benchmark 0.5363 raw and 0.5764 coarse, mean +0.0052, p 0.0469, 6 wins in 7; sha256 `e6496a9b…`); R029 (3 Nov) took `smart_tagging` out again under the organisers' rules of 3 Nov, because its `c_team` was measured on our match ([docs/rules.md](../docs/rules.md)): the benchmark score is R024's, since the benchmark always dropped the source, and the file is sha256 `762f9073…` (the benchmark overstates P05 for our match, T38, T39, and its gains are not a forecast for it) |
+| [`main.toml`](configs/main.toml) | the team's current pipeline, i.e. the file we would submit today (not uploaded): `controlled_touch` (1.5 m, 6 m/s, 1 frame, confidence 0.93, hold 0.60) and `shape_possession` (weight 0.3, every graded frame) for `home`, the gradient-boosted `dead_ball_model` (weight 1.0) for `alive`, the `hmm` decoder (6 / 32 / 35 / 25) and `shift_edges` (team +1, into_dead -2, out_of_dead 0). **Since R030 (10 Nov 2026) every numeric constant is chosen, and both models are trained, on the benchmark's `generic` profile,** which measures nothing of our match (P27, [docs/rules.md](../docs/rules.md)); the architecture (which components exist, the trees' settings, `min_prob`, the hmm's structure) is inherited from the old benchmark and re-verified on `generic`. On `generic` it scores 0.5414 raw and 0.5829 coarse pooled spellF1 (mean 0.5622), against 0.5388 and 0.5779 (mean 0.5584) for the constants it replaced, and it passes the bar against the yardsticks with 7 wins in 7 under each truth. Against R029's file: both model files retrained, the hold 0.55 → 0.60, `switch_team` 4 → 6, the shape weight 0.2 → 0.3; the rest is unchanged. The hold and the decoder were decided by the tie-break declared before the runs, both on a knife-edge, and are listed for Tian's review. The file's sha256 and the checks on our match are in [R030](../docs/results.md). *How it got here:* P05 was chosen in R009 and R010 and P07's model in R011; R013 chose the touch rule, `switch_team`, `min_possession` and P07's weight again with no window-derived value in any candidate, and re-derived the shift by R012's rule, all on the benchmark; R017 then added `smart_tagging` at Tian's pick of its strength (untested on any benchmark, DFL has no tags, so the benchmark runs this file with `--drop-match-only`); R024 re-chose R013's two stages under R023's objective, the mean of the raw and coarse pooled spellF1s, and moved only the hold, from 0.60 to 0.55 (benchmark 0.5363 raw and 0.5764 coarse, mean +0.0052, p 0.0469, 6 wins in 7; sha256 `e6496a9b…`); R029 (3 Nov) took `smart_tagging` out again under the organisers' rules of 3 Nov, because its `c_team` was measured on our match ([docs/rules.md](../docs/rules.md)): the benchmark score was R024's, since the benchmark always dropped the source, and the file was sha256 `762f9073…`. Every score in this history is on `tracking` v3, the old default profile, which was fitted on our match; since the organisers' reply of 5 Nov that fit is, by our reading, not permitted, which is why R030 redid the models and the choices on `generic` (the benchmark overstates P05 for our match on either profile, T38, T39, and its gains are not a forecast for it) |
 | [`r024_both.toml`](configs/r024_both.toml) | R024's adopted config, written when it was chosen: R017's file with the hold at 0.55, Smart Tagging included; it writes R024's CSV (sha256 `e6496a9b…`), which `main.toml` wrote until R029 |
 | [`r017_frame.toml`](configs/r017_frame.toml) | R017's adopted config, written when it was chosen: R013's file plus `smart_tagging` per frame at weight 0.2; it writes the file `main.toml` wrote before R024 (sha256 `7ba575c0…`) |
 | [`r017_tag.toml`](configs/r017_tag.toml) | R017's other strength, not adopted: `smart_tagging` at one observation per tag, weight 1.0 |
@@ -133,6 +133,15 @@ half_width = 50
 | [`p45_hmm.toml`](configs/p45_hmm.toml) | R010's chosen config, written when it was chosen: `controlled_touch`, `dead_ball_model` and the `hmm`; it writes the file `main.toml` wrote before R011 |
 | [`smooth50_repro.toml`](configs/smooth50_repro.toml) | a regression check: it must rebuild `evaluation/results/baseline_smooth50.csv` byte for byte |
 | [`p06_hmm.toml`](configs/p06_hmm.toml) | P06's candidate: the `hmm` decoder with the parameters the benchmark chose (R006, R007), `nearest_player` at `confidence` 0.78 and `ball_presence`. It does not clear P06's bar and is not the submission config; those constants came from the public window (A01), so since the 23 Oct rule it must not become one unless they are re-derived from other games |
+
+**The older configs and the retrained models (R030).** Every config in the table from `r024_both.toml` down to
+`p45_hmm.toml` reads `pipeline/models/dead_ball_hgb.json`, and all of them but `p45_hmm.toml` read
+`shape_possession_hgb.json` too. R030
+retrained both files on `generic`. So on today's tree those configs no longer write the files and sha256s that the
+table names: each does so only with the model files of its own commit. R029's `main.toml` (sha256 `762f9073…`) has
+no file of its own here: it is in the git history at `b113f21`, with the models of that commit. The older configs
+stay as the record of what `main.toml` was, and none of them is a file to upload: their constants were chosen, and
+their models trained, on `tracking` v3 ([docs/rules.md](../docs/rules.md)).
 
 Configs are checked strictly before any data loads. An unknown key, an unknown component, a duplicate source name or
 a parameter the function doesn't accept (`half_widht = 50`) stops the run with a sentence that says what to change.
@@ -161,7 +170,7 @@ Each stage's README has a template, its rules and the traps that apply. After an
 | contracts | `python pipeline/selftest.py` | every stage rejects malformed input with a readable error; the cache parses bit-exactly; the evidence and the vote equal `starter/baseline.py` on synthetic tracking with every awkward case (ties, missing balls, empty frames); nothing risky is visible to git |
 | regression | `python pipeline/selftest.py --data` | on the real match, all four committed baselines are rebuilt byte for byte, and `main.toml` gives the same bytes twice |
 | the file | `python evaluation/validate_submission.py <csv>` | the organisers' own format check (the pipeline already runs the same functions) |
-| the scores | `python pipeline/run.py <config> --score` | public-window scores plus each source's agreement with the GT. For `main.toml` (R013) `controlled_touch` agrees on `home` on 86.8% of 5,484 frames, `dead_ball_model` on `alive` on 86.6% of 7,500 and `shape_possession` on `home` on 90.9% of 6,031 (a correctness check, T01); `nearest_player` agrees on 77.8% of 5,640 frames, exactly [A01](../docs/results.md) |
+| the scores | `python pipeline/run.py <config> --score` | public-window scores plus each source's agreement with the GT. For R013's `main.toml`, with the models of that day, `controlled_touch` agreed on `home` on 86.8% of 5,484 frames, `dead_ball_model` on `alive` on 86.6% of 7,500 and `shape_possession` on `home` on 90.9% of 6,031 (a correctness check, T01); today's `main.toml` has retrained models, and its agreements are in [R030](../docs/results.md). `nearest_player` agrees on 77.8% of 5,640 frames, exactly [A01](../docs/results.md) |
 
 The public window is for correctness only, by the organisers' rule since 23 Oct 2026 (`f8f2629`): it is "not training
 data and not a tuning set". It holds 17 possessions and ranks the baselines the wrong way round
@@ -178,8 +187,9 @@ made on **P01's benchmark**, never on the public window. The window checks that 
 each source's agreement) and can be inspected to understand this ground truth's timing conventions (P02), but no
 constant is set from it; it cannot rank versions ([T01](../docs/traps.md)). With no hand labels allowed on this match,
 the labels come from other matches: the seven open DFL/IDSSE matches (two Bundesliga, five 2. Bundesliga; CC BY 4.0),
-whose tracking is degraded to look like ours, run through the pipeline's own components and scored by the organisers'
-scorer half by half.
+whose tracking is degraded, run through the pipeline's own components and scored by the organisers' scorer half by
+half. Since R030 (10 Nov 2026) the degradation is the `generic` profile: rules declared before any run and two
+figures the organisers publish, with nothing measured on our match ("The default profile", below).
 
 ```bash
 pip install -r requirements-benchmark.txt && python pipeline/benchmark/sources.py     # once: the 7 matches, md5-checked
@@ -189,8 +199,10 @@ python pipeline/benchmark/run.py pipeline/benchmark/configs/nearest_w50.toml pip
 
 The first config is the reference, and every other one is compared with it (delta = other minus first, so positive
 means the other is better). The first run parses the seven matches (174 to 326 s, [A05](../docs/results.md)); later
-runs read them from `data/cache/` and take about 6 s a config on the default profile
-([R004c](../docs/results.md)). A config must run per graded half and use only what a benchmark match has: a source that
+runs read them from `data/cache/` and took about 6 s a yardstick config on `tracking`
+([R004c](../docs/results.md)); R030's grids of `main.toml`-like configs took about a quarter of a minute a config on
+`generic`, both truths from one decode (192 configs in 48 minutes). A config must run per graded half and use only
+what a benchmark match has: a source that
 needs the video's homography or the Smart Tagging stops the run and names the asset.
 
 **How to read the printout.**
@@ -215,19 +227,26 @@ needs the video's homography or the Smart Tagging stops the run and names the as
   absorbs every possession under 5 s that sits between two possessions of the other team. Run both and read them side
   by side: a choice that depends on possession length and ranks differently under the two is a warning, not a licence
   to pick the truth that suits. Since R023 a declared choice ranks on the unweighted mean of the two pooled spellF1s,
-  each reported (`choose.py --objective mean`, first used by R024). Absolute spellF1 on the benchmark is not our
-  leaderboard's under either truth.
+  each reported (`choose.py --objective mean`, first used by R024). R023's data was withdrawn on 5 Nov; Tian kept the
+  objective on 9 Nov, on A06's ground, and R030 re-chose every constant under it. Absolute spellF1 on the benchmark
+  is not our leaderboard's under either truth.
 - **The yardstick check.** `nearest_w{0,25,50,125}.toml` are the organisers' four baselines decoded per half, and a
   change has to beat them here before it is worth anything. They are also the benchmark's own test: the check holds in
   its robust part (`w0` is last under both truths, R002 to R004c), the rest of the order follows the truth, and neither
   truth gives the published full-match order (Kendall tau +0.667 under each, from R003 on). It is a check, not a target
   ([T26](../docs/traps.md)).
-- **Fidelity.** `python pipeline/benchmark/fidelity.py --profile tracking --seeds 3` measures how far the degraded copy
-  looks like our match: eight gates, all of which must pass (it exits 1 otherwise), and ten WARN checks that are printed
-  and discussed in `docs/results.md` and never tuned towards. Run it after any change to a profile. Degradations are
-  fitted once per version on label-free statistics of our tracking, then frozen ([T37](../docs/traps.md)); whether that
-  fit is allowed under the 3 Nov rules was question 1 for the organisers; since their reply of 5 Nov it is, by our
-  reading, not permitted, and the redo is P27 ([docs/rules.md](../docs/rules.md)).
+- **Fidelity, for the three profiles that read our match.** `python pipeline/benchmark/fidelity.py --profile tracking
+  --seeds 3` measures how far the `tracking` copy looks like our match: eight gates, all of which must pass (it exits 1
+  otherwise), and ten WARN checks that are printed and discussed in `docs/results.md` and never tuned towards. It
+  measures `gaps`, `tracking` and `context` only. Those degradations were fitted once per version on label-free
+  statistics of our tracking, then frozen ([T37](../docs/traps.md)). Whether that fit is allowed under the 3 Nov rules
+  was question 1 for the organisers; since their reply of 5 Nov it is, by our reading, not permitted
+  ([docs/rules.md](../docs/rules.md)). The redo was P27, done as R030: nothing is trained or chosen on those three
+  profiles again, and `generic` has no fidelity gate, by design.
+- **The re-choice on `generic` (R030).** `pipeline/benchmark/p27_grid.py` writes each stage's configs,
+  `p27_choose.py` applies the rules declared before the runs, `p27_shift.py` reads the shift from the pipeline's own
+  lag on DFL, and `p27_profile_check.py` holds the profile to its declared shares. The
+  [benchmark README](benchmark/README.md#p27s-re-choice-on-generic-r030) has the commands.
 - **Headroom.** `python pipeline/benchmark/headroom.py CONFIG` runs a config beside five variants whose evidence is the
   truth itself (a perfect dead-ball detector, a perfect possessor where the ball is seen or everywhere, and both), to
   say what P05, P04 or P07 could ever deliver to that config before anyone builds them
@@ -239,39 +258,56 @@ needs the video's homography or the Smart Tagging stops the run and names the as
   label changes against events that our tracking shows (A11), measures the pipeline's own lag on the DFL matches and
   applies P02's declared rule for `shift_edges` ([R012](../docs/results.md), the
   [benchmark README](benchmark/README.md#conventions-when-our-truth-flips-and-the-edge-shift)); the rule's public half,
-  g, is retired since 23 Oct 2026, so only the DFL lag is applied. `public` writes a file of the public truth's changes
+  g, is retired since 23 Oct 2026, so only the DFL lag is applied. R030 derived that lag again on `generic`, and the
+  shift came out unchanged (+1 / -2 / 0). `public` writes a file of the public truth's changes
   under `data/runs/conventions/` for a person to watch the video by, to understand what counts as possession and never
   to fit; the person watches the truth's changes and not the detector columns, which are our own output (3 Nov,
   [docs/rules.md](../docs/rules.md)); no LLM reads it.
-- **The default profile cannot value evidence about the ball's gaps.** Its gaps are our masks transplanted blind to
-  the play, so a source or a parameter that depends on where the gaps fall (`ball_presence`, `switch_dead`, P05's and
-  P07's features) is also read on `context`, under both truths ([T38](../docs/traps.md)).
+- **The default profile cannot value evidence about the ball's gaps.** `generic` draws its gaps blind to the play, as
+  `tracking`'s transplanted masks were placed. So the benchmark cannot value a source or a parameter that depends on where
+  the gaps fall (`ball_presence`, `switch_dead`, P05's and P07's features), and it still overstates the dead-ball
+  model ([T38](../docs/traps.md), T39). Until R030 such a choice was also read on `context`, under both truths;
+  `context` reads our match, so nothing is chosen on it now, and the limit is stated and not worked around.
 
-**The default profile, as of R004c, is `tracking` version 3.** The ball is missing as ours was (our own masks,
-transplanted with their pattern and not their clock, and not placed by the play). The players have our
-tracklets in 46 slots, wrong-team slots (10.5% of our frames from each kick-off, 10.8% of the graded ones, T32), NaN
-speeds in runs, smoothing, and our low-count frames (only the players nearest the ball tracked). The 5-frame smoothing
-leaves a jitter per slot of 1.80 cm against our 3.3 mm. Since v3 a slot is freed for a new tracklet only from the row
-after its last one stopped, which removed the slot handovers that had inflated the jitter to 6.5 to 8.5 cm (T35). All
-eight gates pass and none of the ten checks warns ([R004c](../docs/results.md)).
+**The default profile, since R030 (10 Nov 2026), is `generic` version 1.** No measurement of ours enters it, and no
+Calibration is loaded for it. It quotes two figures from the organisers' DATA.md (the ball missing on 41% of the
+graded frames; a mean of 20.5 tracked objects) and declares round rules for the rest: gap lengths log-uniform between
+1 s and 60 s, onsets a Poisson process blind to the play, no ball speed, players lost independently on 6.8% of the
+frames in tracked spans log-uniform between 2 s and 300 s, a 7-frame moving average, 46 slots as 24 home and 22 away,
+and no wrong-team slots, NaN-speed runs or low-count frames. The residual risk is that no text allows quoting the two
+figures by name ([docs/rules.md](../docs/rules.md)). On it `main.toml` scores 0.5414 raw and 0.5829 coarse, and the
+yardsticks `nearest_w50` 0.1885 raw and 0.1698 coarse and `nearest_w125` 0.1616 raw and 0.2092 coarse
+([R030](../docs/results.md)). Version 1 is final for this submission: a version 2 is made only on a rules ground,
+never after a score.
+
+**Until R030 the default was `tracking` version 3** (as of R004c), the profile behind the benchmark numbers of R006
+to R029. The ball was missing as ours was (our own masks, transplanted with their pattern and not their clock, and
+not placed by the play).
+The players had our tracklets in 46 slots, wrong-team slots (10.5% of our frames from each kick-off, 10.8% of the
+graded ones, T32), NaN speeds in runs, smoothing, and our low-count frames (only the players nearest the ball
+tracked). The 5-frame smoothing left a jitter per slot of 1.80 cm against our 3.3 mm. Since v3 a slot is freed for a
+new tracklet only from the row after its last one stopped, which removed the slot handovers that had inflated the
+jitter to 6.5 to 8.5 cm (T35). All eight gates passed and none of the ten checks warned ([R004c](../docs/results.md)).
+It reads our match, so it stays in the code for that record only.
 
 **`context` is a sensitivity check, not a default.** It places the ball's gaps where our tracker loses the ball
 ([A08](../docs/results.md)) and fails two of its gates ([R005](../docs/results.md)): the near-line share badly, 0.5586
 against our 0.2797 +-0.05, because DFL tracks the ball out of play, and the share missing narrowly, 0.4313 against
 0.4110 +-0.02; the default's transplanted gaps measure 36.0% on the near-line statistic (R003), but only `context` has a
-gate on it. So `run.DEFAULT_PROFILE` stays `tracking`. Run `context` to see whether a
-ranking depends on how the gaps are placed, and say so when you quote it or set its number beside another profile's:
-`context` and `tracking` v3 order the four configs the same way under both truths (Kendall tau +1.000), and every config
-scores 0.3 to 2.2 points of spellF1 higher on `context` (R005). `run.py --profile clean|gaps|tracking|context` picks a
-profile, and every report names its profile and version.
+gate on it. So it never became the default: `run.DEFAULT_PROFILE` stayed `tracking` until R030 and is `generic`
+since. Until 5 Nov `context` was run to see whether a ranking depends on how the gaps are placed: `context` and
+`tracking` v3 order the four configs the same way under both truths (Kendall tau +1.000), and every config scores 0.3
+to 2.2 points of spellF1 higher on `context` (R005). It reads our match (a hazard fitted on our tracker), so nothing
+is chosen on it now. `run.py --profile generic|clean|gaps|tracking|context` picks a profile, and every report names
+its profile and version.
 
 What it cannot test: whatever uses the homography, the Smart Tagging, the camera or the audio (DFL has no video), and
 the conventions of our ground truth beyond what the public window shows. The window may be inspected for those, to
 understand them, and read as a correctness check; it is no tuning set, so a constant that depends on them is declared
 and argued, never fitted to it. The details (profiles, gates and WARN bands, the report, limitations) are in
 [`benchmark/README.md`](benchmark/README.md), and what was measured is in [`docs/results.md`](../docs/results.md) (A05
-to A09, R002 to R005; R004c is the default's; R006, R007 and A10 are P06's runs on it, R008 to R010 are P04's and P05's,
-R011 is P07's, and A11 and R012 are P02's).
+to A09, R002 to R005; R004c is the old default's; R006, R007 and A10 are P06's runs on it, R008 to R010 are P04's and
+P05's, R011 is P07's, and A11 and R012 are P02's; R030 is the retraining and the re-choice on `generic`).
 
 ## Rules that the code enforces, and ones it can't
 
@@ -295,8 +331,9 @@ R011 is P07's, and A11 and R012 are P02's).
   took the source out of `main.toml` on 3 Nov.
 - **Per-frame arrays in reprs (a note for the team).** `Evidence` and `Decoded` (in `contracts.py`) and `RunResult` (a
   dataclass in `run.py`, not in `contracts.py`) print their per-frame arrays in their default reprs, so a
-  `print(decoded)` in a notebook shows values of this match. On a benchmark match a printed `Evidence` would show part
-  of our match's transplanted ball mask in its NaN pattern. `contracts.py` is team-owned and the benchmark work left it
+  `print(decoded)` in a notebook shows values of this match. On a benchmark match degraded with `gaps` or `tracking`
+  a printed `Evidence` would show part of our match's transplanted ball mask in its NaN pattern (`generic`, the
+  default since R030, carries nothing of our match). `contracts.py` is team-owned and the benchmark work left it
   alone: please give those per-frame fields `repr=False`, as `benchmark/calibration.Calibration` does for its arrays.
 - **Don't modify `evaluation/` or `starter/`.** The pipeline imports the official scorer and the organisers' loaders,
   so its checks are theirs.
@@ -321,20 +358,22 @@ pipeline/
 ├── config.py            reads and strictly checks a TOML config
 ├── contracts.py         Evidence, Block, RunContext, BlockContext, Decoded and their checks
 ├── selftest.py          synthetic contract checks; --data for the byte-exact regression
-├── configs/             main.toml (current pipeline), smooth50_repro.toml (regression), p06_hmm.toml (P06),
-│                        p45_hmm.toml (P04 + P05, R010), p07_shape.toml (+ P07, R011),
+├── configs/             main.toml (current pipeline, R030's constants), smooth50_repro.toml (regression),
+│                        p06_hmm.toml (P06), p45_hmm.toml (P04 + P05, R010), p07_shape.toml (+ P07, R011),
 │                        p02_shift.toml (+ P02's shift, R012), r013_retune.toml (R013's file, main.toml's
 │                        before R017), r017_frame.toml (R017's file, main.toml's before R024), r017_tag.toml
-│                        (R017, not adopted), r024_both.toml (R024: main.toml's file)
+│                        (R017, not adopted), r024_both.toml (R024's file, main.toml's until R029)
 ├── inputs/              stage 1: Inputs, the ATD cache                       README.md
 ├── evidence/            stage 2: REGISTRY, nearest_player, ball_presence,    README.md
 │                        controlled_touch, dead_ball_rules, dead_ball_model,
 │                        shape_possession (and trees.py, shape_features.py), smart_tagging
 ├── models/              the trained models, JSON (no pickles): the dead-ball
-│                        ones (P05) and the shape one (P07)
+│                        ones (P05) and the shape one (P07); the two that main.toml
+│                        reads are R030's, trained on the generic profile
 ├── decode/              stage 3: REGISTRY, majority_vote, hmm                README.md
 ├── refine/              stage 4: REGISTRY, shift_edges                       README.md
 ├── output/              stage 5: write, validate, summarise, score, manifest README.md
 └── benchmark/           validation (P01): degraded DFL matches; headroom.py, tag_stats.py  README.md
-                         train_shape.py (P07), conventions.py (P02), diagnose.py (A19)
+                         train_shape.py (P07), conventions.py (P02), diagnose.py (A19),
+                         p27_grid.py, p27_choose.py, p27_shift.py, p27_profile_check.py (P27, R030)
 ```

@@ -12,6 +12,10 @@ it, the technical document explains it).
 On 5 Nov the organisers answered our questions 1 to 4 with this clarification again, and one new sentence: "anything
 that is not explicitly allowed is not permitted" ([The organisers' reply of 5 Nov](#the-organisers-reply-of-5-nov-2026)).
 
+On 10 Nov the redo that this reading required was done (P27, [R030](results.md)). Both models and every numeric
+constant of `main.toml` now stand on a benchmark degradation that measures nothing of our match
+([Where we stand on 10 Nov](#where-we-stand-on-10-nov-r030)).
+
 Upstream has no commit carrying the email yet: on 3 Nov `git fetch upstream` still ended at `f8f2629`, and on 4 and 9 Nov
 it still does. When one lands, compare it with this file and update both. On 9 Nov the organisers' repository had its
 issues and pull requests switched off (the GitHub API reports `has_issues: false`, and its pull-request list returns 404),
@@ -77,9 +81,9 @@ in a published rule, but it contradicts nothing in the clarification, and we fol
 
 | question | does a text allow it explicitly? | our reading since 5 Nov | what follows |
 |---|---|---|---|
-| 1. the benchmark's degradation, fitted on label-free statistics of our tracking | no (below) | **not permitted** | every learned part and every chosen constant rests on it. Redo them on a degradation that measures nothing of our match (P27), or keep them and carry the risk. **Decided 9 Nov (Tian): redo, P27** |
+| 1. the benchmark's degradation, fitted on label-free statistics of our tracking | no (below) | **not permitted** | every learned part and every chosen constant rests on it. Redo them on a degradation that measures nothing of our match (P27), or keep them and carry the risk. **Decided 9 Nov (Tian): redo, P27. Done 10 Nov ([R030](results.md)):** the profile `generic` v1, both models retrained on it and every numeric constant re-chosen on it |
 | 2. the repository private until shortly before the deadline | the rules ask for a public repository URL in the form and say nothing about when it becomes public | **fine** | make it public before the form is submitted, after checking the whole git history, not only the tip, for anything under `data/` or frame-level. A deliberate step, Tian's |
-| 3. Metrica's sample data, used once for R023 | no: "Using any dataset you have the rights to use. Please check the license". A repository without a licence grants no rights; its README asks for acknowledgement, which is not permission. That Metrica Sports, one of the organisers, publishes it does not license it either | **not permitted** | no further use: P16's timing part and P26 are on hold and `metrica.py` is not run again; the technical document lists the data as used once and withdrawn; R024's objective, which R023 set, stays (decided 9 Nov, below) |
+| 3. Metrica's sample data, used once for R023 | no: "Using any dataset you have the rights to use. Please check the license". A repository without a licence grants no rights; its README asks for acknowledgement, which is not permission. That Metrica Sports, one of the organisers, publishes it does not license it either | **not permitted** | no further use: P16's timing part and P26 are on hold and `metrica.py` is not run again; the technical document lists the data as used once and withdrawn; R024's objective, which R023 set, stays (decided 9 Nov, below), and R030 re-chose every constant under it (10 Nov) |
 | 4. watching the video to understand how the tracking fails | no: watching and inspecting are allowed "to better understand what counts as possession", nothing more. Issue #14's wider answer (26 Oct) is superseded, since the clarification takes precedence over "answers to individual questions" | **not permitted** | no change: our practice since 3 Nov ("How we read it", point 4) |
 
 **Question 1 in detail.** Three items of the clarification come near it, and none allows it by name.
@@ -103,12 +107,34 @@ If the team follows the reading, everything below has to be redone on a degradat
 - re-run the choices of R010, R011, R013 and R024 by their declared rules;
 - regenerate the file.
 
+*Done 10 Nov 2026 ([R030](results.md)).* The new profile is `generic` version 1, now the benchmark's default. Both
+models were retrained on it, the choices were re-run on it by rules declared before the runs, and `main.toml` carries
+the result. The regenerated file's sha256 and its checks are in R030. `gaps`, `tracking` and `context` stay in the
+code for the record of R002 to R029, marked as reading our match (`degrade.NEEDS_CALIBRATION`). Nothing is trained or
+chosen on them again.
+
 The fidelity gates compare a profile with our match. They may still run as a check that passes or fails, but no
-profile may be changed to pass them (T01). Nor may what we measured on BAR-ATH ourselves (a median gap of 10.7 s, the
+profile may be changed to pass them (T01). `generic` has no fidelity gate and is never run through `fidelity.py`: it
+is not built to pass one. Nor may what we measured on BAR-ATH ourselves (a median gap of 10.7 s, the
 tracklet lengths, the wrong-team share) become the new profile's settings: that would be the same fit, made by hand.
 The figures that the organisers publish in DATA.md are another matter (41% of the graded frames without a ball, a mean
 of 20.5 tracked objects, 46 slots): they are part of the task statement, like the kick-off frames, and P27 quotes
 them ([the spec](superpowers/specs/2026-11-09-p27-degradation-design.md); the advisor's ruling of 9 Nov).
+
+**What `generic` takes from the task statement, and the risk that stays.**
+- *Quoted from DATA.md, two figures:* the ball is missing on 41% of the graded frames, and the mean number of tracked
+  objects is 20.5 (so each player is lost on 1 − 20.5 / 22 = 6.8% of the frames). The 46 slots, 24 home and 22 away,
+  and the 25 fps are the file format.
+- *Declared before any run, everything else:* gap lengths log-uniform between 1 s and 60 s, their onsets a Poisson
+  process blind to the play, no ball speed, players lost independently in tracked spans log-uniform between 2 s and
+  300 s, a 7-frame moving average, and no wrong-team slots, NaN-speed runs or low-count frames (DATA.md documents
+  none).
+- *By code:* no `Calibration` is loaded for it. `degrade.needs_calibration("generic")` is False, the runner and the
+  trainers refuse a `Calibration` for it, and a check proves that `calibration.load` is not called.
+- *The residual risk, in the advisor's wording:* no measurement of ours enters; two figures quoted from the task
+  statement. The two figures are statistics of the match, published by the organisers, and no text allows quoting
+  them by name. The technical document states this.
+- `generic` v1 is final for this submission. A version 2 is made only on a rules ground, never after a score.
 
 **Question 3 in detail.** R023 fetched the four event files once (31 Oct) and measured the grain of possession
 derived from them. Its declared outcome, "both", made the unweighted mean of the raw and coarse truths the objective of
@@ -120,6 +146,11 @@ both truths and treat a disagreement as a warning. There are two ways to go:
 
 **Decided 9 Nov (Tian): keep the average.** The mean of the two truths stays the objective, on A06's ground: the
 grain of our truth is unknown, so neither truth is preferred. P27 re-chooses every constant under it.
+
+*Done 10 Nov ([R030](results.md)).* Under that objective, on `generic`, the hold went from 0.55 to 0.60. The rule
+declared before the runs decided it: 0.60 is inside the 0.005 tie band of the best mean, by 0.000004, and has the
+larger min(raw, coarse). On the mean alone 0.55 is 0.0050 better. It is a knife-edge, and it is listed for Tian's
+review ([Where we stand on 10 Nov](#where-we-stand-on-10-nov-r030)).
 
 ## What it changes
 
@@ -185,7 +216,9 @@ it is read strictly from the start.
 
 The audit of `main.toml` in [technical_document.md](technical_document.md) section 5, read against the email (A21 in
 [results.md](results.md)). The two Smart Tagging rows describe `main.toml` as it was before R029, which took the source
-out the same day:
+out the same day. The table is the audit as it stood on 3 Nov, with what 5, 9 and 10 Nov added to its degradation and
+objective rows. Its other rows name the constants and entries of that day (the `hmm` 4/32/35/25, R010 to R024).
+Today's `main.toml` is R030's, and its audit is in [Where we stand on 10 Nov](#where-we-stand-on-10-nov-r030):
 
 | part of `main.toml` or of how it was chosen | how it was set | under the email |
 |---|---|---|
@@ -196,13 +229,14 @@ out the same day:
 | `D` before each half's kick-off | the organisers' documented kick-off frames | a documented fact |
 | **`smart_tagging` c_team 0.76** | the tags' agreement with our own touch-rule pseudo-labels on BAR-ATH (R017) | **conflicted:** a parameter calibrated on the provided game, not on external data, and no external data has Smart Tagging. **Taken out of `main.toml` by R029** |
 | **`smart_tagging` weight 0.2, spread `frame`** | Tian's pick of two declared options, made after seeing label-free aggregates of our own output on BAR-ATH (R017) | **doubtful:** not fitted to a number, but chosen while looking at this match's output, and never tested on external data. **Gone with the source (R029)** |
-| **the benchmark's `tracking` v3 degradation**, the hazard model included | fitted once on label-free statistics of BAR-ATH's tracking (A07 to A09), then frozen | **not permitted by our reading since 5 Nov** (until then open: it is not the algorithm, and no ground truth or video enters it, so we read it as allowed and asked, question 1). The organisers' reply allows nothing that is not allowed explicitly, and nothing allows it; both models and every external choice were made on data it shaped. **Decided 9 Nov (Tian): redo on P27** |
-| **the objective of R024's choice** (the unweighted mean of the raw and coarse truths), which moved the touch hold to 0.55 | R023's grain, measured on Metrica's sample games | **doubtful since 5 Nov:** the sample data has no licence, so by our reading we do not have the rights to use it (question 3). **Decided 9 Nov (Tian): the objective stays**, on A06 alone (the grain unknown, both truths ranked); P27 re-chooses the hold under it |
+| **the benchmark's `tracking` v3 degradation**, the hazard model included | fitted once on label-free statistics of BAR-ATH's tracking (A07 to A09), then frozen | **not permitted by our reading since 5 Nov** (until then open: it is not the algorithm, and no ground truth or video enters it, so we read it as allowed and asked, question 1). The organisers' reply allows nothing that is not allowed explicitly, and nothing allows it; both models and every external choice were made on data it shaped. **Decided 9 Nov (Tian): redo on P27. Done 10 Nov (R030):** the benchmark's default is `generic` v1, into which no measurement of ours enters, and both models and every numeric constant now stand on it. `tracking` v3 stays in the code for the record of R002 to R029 only |
+| **the objective of R024's choice** (the unweighted mean of the raw and coarse truths), which moved the touch hold to 0.55 | R023's grain, measured on Metrica's sample games | **doubtful since 5 Nov:** the sample data has no licence, so by our reading we do not have the rights to use it (question 3). **Decided 9 Nov (Tian): the objective stays**, on A06 alone (the grain unknown, both truths ranked); P27 re-chooses the hold under it. **Done 10 Nov (R030):** every numeric constant re-chosen under it on `generic`; the hold is 0.60, by the declared tie-break (a knife-edge, listed for Tian) |
 | R011's transfer gate and R013's label-free checks on BAR-ATH | pass or fail | automatic checks |
 | `nearest_player` 0.78, `ball_presence` 0.2 / 0.585, from the public window (A01) | not in `main.toml`; they sat in R009's candidate configs, as the technical document discloses | not changed by the email (already ruled out on 23 Oct) |
 
-**Before the upload.** *Done:* `smart_tagging` is out of `main.toml` (R029, 3 Nov, Tian: "it violates the new rules").
-The file now has sha256 `762f9073…`. R024's `e6496a9b…` is not to be uploaded. Every remaining constant of `main.toml`
+**Before the upload (as written on 3 Nov).** *Done:* `smart_tagging` is out of `main.toml` (R029, 3 Nov, Tian: "it
+violates the new rules"). The file then had sha256 `762f9073…` (R029's; R030 replaced it on 10 Nov, and neither it
+nor R024's `e6496a9b…` is to be uploaded). Every remaining constant of `main.toml`
 is set on external data, by a fixed rule or from a documented fact. The one question that could still move it is
 question 1: if the answer is no, every learned part and every chosen constant has to be redone on a degradation that is
 not fitted on our match. That is a large job, so ask early.
@@ -219,6 +253,48 @@ two models' training, `run.py` and `choose.py` on each grid's declared rule). Th
 
 **Decided 9 Nov 2026 (Tian):** (1) redo the degradation: P27, started the same evening; (2) keep the average: the
 mean of the two truths stays the objective; (3) questions 5 and 6 are not sent.
+
+## Where we stand on 10 Nov (R030)
+
+**The redo is done (10 Nov 2026, [R030](results.md)).** Tian was away for the night of 9 to 10 Nov and gave full
+authority over its decisions. The spec's open points went to an advisor before the runs (R030, "Who decided what"),
+and the choices that are not obvious are listed for Tian below. The profile and the protocol were declared before any run
+([the spec](superpowers/specs/2026-11-09-p27-degradation-design.md)), and the rules were applied by code
+(`pipeline/benchmark/p27_choose.py`), not by a reading of the tables.
+
+**The claim, in its honest wording:** every numeric constant of `main.toml` was chosen, and both models were trained,
+on the seven DFL matches degraded with `generic` v1. The architecture (which components exist, the trees' settings,
+`min_prob`, the hmm's structure) was inherited from the old benchmark and re-verified on `generic`.
+
+| part of `main.toml` or of how it was chosen | how it is set (R030) | under the rules |
+|---|---|---|
+| `controlled_touch` 1.5 m / 6.0 m/s / 1 frame, hold 0.60 | Stage A's grid on `generic` (192 configs), by the rule declared before the runs. The touch rule is unchanged; the hold went from 0.55 to 0.60 by the declared tie-break | external data only |
+| `controlled_touch` confidence 0.93 | the floor of its pooled agreement with DFL's flag on `generic` (93.5%), measured and not tuned | external data only |
+| the `dead_ball_model` and `shape_possession` models | retrained on DFL's flags, on the seven matches degraded with `generic` (seeds 0 to 2), the trees' settings unchanged | external data only |
+| `shape_possession` weight 0.3; `hmm` `switch_team` 6, `min_possession` 35 | Stage C's grid on `generic` (144 configs), same rule. `switch_team` went from 4 to 6 and the weight from 0.2 to 0.3, by the declared tie-break | external data only |
+| `dead_ball_model` weight 1.0; `shape_possession` scope `all`; `hmm` `switch_dead` 32, `min_dead` 25 | Stage D's groups on `generic`, same rule; no group changed | external data only |
+| `shift_edges` +1 / −2 / 0 | the pipeline's own lag on DFL under `generic`, raw truth (R012's rule), kept by the declared guard; the three values are unchanged | external data only |
+| `D` before each half's kick-off | the organisers' documented kick-off frames | a documented fact |
+| the benchmark's `generic` v1 degradation | rules declared before any run, the file format (46 slots, 25 fps) and two figures quoted from DATA.md (41% of the graded frames without a ball, a mean of 20.5 tracked objects). No `Calibration` is loaded | no measurement of ours enters; two figures quoted from the task statement. **A residual risk:** no text allows quoting them by name ([above](#the-organisers-reply-of-5-nov-2026)) |
+| the objective (the unweighted mean of the raw and coarse truths' pooled spellF1) | kept by Tian on 9 Nov, on A06's ground: the grain of our truth is unknown | a declared rule. R023's data is not used again |
+| the architecture: which components exist, the trees' settings, `min_prob` 0.02, the hmm's structure | each adopted by a bar on the old benchmark (`tracking` v3); on `generic`, Stage D's ablation re-verifies the shape source and the final bar the whole | **inherited and re-verified, not re-chosen** (R030, "What is not re-chosen") |
+| the checks on our match (the file validates, the `D` share's band, the shape model's transfer gate, the public window scored once) | pass or fail; their results are in R030 | automatic checks. They chose nothing (T01) |
+
+**The result on `generic`** (seven DFL matches, three seeds, pooled spellF1): 0.5414 raw and 0.5829 coarse, mean
+0.5622. The incumbent constants on the same profile and the same retrained models score 0.5388 and 0.5779, mean
+0.5584. The bar passes with 7 wins in 7 under each truth: against `nearest_w50` under the raw truth (0.1885) and
+against `nearest_w125` under the coarse one (0.2092). R029's 0.5363 and 0.5764 were scored on `tracking` v3, a
+different benchmark, so they are no comparison.
+
+**Two choices listed for Tian's review.** Both were decided by the tie-break declared before the runs (within 0.005
+of the best mean, the larger min(raw, coarse)), and both are knife-edges:
+- *The hold, 0.60.* It is inside the tie band by 0.000004. On the mean alone 0.55 is 0.0050 better.
+- *The decoder and the shape weight.* The tie-break chose `switch_team` 6, `min_possession` 35 and weight 0.3 (mean
+  0.5621) over the best-mean config, `switch_team` 8, `min_possession` 50 and weight 0.3 (mean 0.5653, with 0.5242
+  under the raw truth against the choice's 0.5410).
+
+**What is left.** The file is not uploaded. The upload and making the repository public are Tian's. `generic` v1 is
+final for this submission.
 
 ## What it rules out among the proposals
 
@@ -237,7 +313,9 @@ mean of the two truths stays the objective; (3) questions 5 and 6 are not sent.
 - **P16's timing part and P26** (5 Nov): on hold. Metrica's sample data has no licence, so by our reading we do not
   have the rights to use it (question 3).
 - **P01's degradation** (5 Nov): by our reading not permitted, since it is fitted on our tracking (question 1). P27 is
-  the redo (decided 9 Nov).
+  the redo (decided 9 Nov). *Done 10 Nov (R030):* the benchmark's default profile is `generic` v1, which measures
+  nothing of our match. Nothing is trained or chosen on `gaps`, `tracking` or `context` again, and `fidelity.py`
+  measures only those three. So a proposal that trains or chooses on the benchmark now runs on `generic`.
 
 ## What the organisers' GitHub issues settled (read 4 Nov 2026)
 
@@ -252,7 +330,7 @@ holds only where the clarification agrees with it. What the answers settle, beyo
 | #2 (22 Oct) | a ball detector trained on the match's video with the ATD as labels; a GPU to reproduce | not allowed: no labelling of the provided dataset, even automatic, to train a model; weights are fine if trained on other data with the source stated; runtime is not a requirement and a GPU is fine | P14 may run only weights trained elsewhere (already here); our run is CPU, 17 s |
 | #8 (22 Oct) | how much hand labelling is "small" | none on BAR-ATH for any purpose; unlimited on other matches if accessible and documented | compliant: our labels are DFL's and Metrica's own |
 | #10 (23 Oct) | own hand labels used only to choose parameter values | not allowed: it fits the match; annotate another match, apply the values unchanged, share the video and the annotations | compliant (A21) |
-| #11 (26 Oct) | must reproduction be byte-identical | training need not reproduce; the CSV must, byte for byte: commit the weights, infer on the CPU, pin the dependencies, fix the seeds | compliant: JSON models, CPU, pins; R029's file still has to be regenerated from a fresh clone |
+| #11 (26 Oct) | must reproduction be byte-identical | training need not reproduce; the CSV must, byte for byte: commit the weights, infer on the CPU, pin the dependencies, fix the seeds | compliant: JSON models, CPU, pins; R029's file still has to be regenerated from a fresh clone (since 10 Nov the file is R030's; see [R030](results.md) for its clean-clone check) |
 | #14 (26 Oct) | committing a stage's small intermediate output; watching clips to understand why the ball goes missing, then rules with thresholds from other matches | yes to both; not allowed: labels, corrections, or rules and constants tied to specific frames | the first part is recorded below ("Settled without asking"); the second is superseded: the clarification allows watching only "to better understand what counts as possession", and the reply of 5 Nov to question 4 added nothing |
 | #15 (26 Oct) | is look-ahead allowed | yes: the task is post-match; a causal approach is scored the same | the Viterbi decode over a whole half is fine |
 | #16 (26 Oct) | training a team-shape prior on the IDSSE dataset | fully permissible: other games, open, inspectable; cite CC BY 4.0; choose every hyperparameter on IDSSE or other games, never on the 5 public minutes | the organisers bless the dataset P01, P05 and P07 rest on |
@@ -281,6 +359,10 @@ questions as sent (the email put them in fuller words):
    chosen constant has to be redone.
    *Reply (5 Nov): the clarification. Our reading: not permitted, since nothing allows it explicitly. Redo (P27) or
    keep: decided 9 Nov (Tian), redo.*
+   *Status (10 Nov): redone, [R030](results.md). The degradation is now `generic` v1, designed without measuring the
+   provided game, and both models and every numeric constant stand on it. It quotes two figures from DATA.md (41% of
+   the graded frames without a ball, a mean of 20.5 tracked objects); no text allows quoting them by name, so that is
+   a residual risk, stated in the technical document.*
 2. **Our repository's visibility.** It is private while we work and will be made public before the deadline, in time
    for the form. Is that fine?
    *Reply (5 Nov): the clarification. Our reading: fine. The form asks for a public URL and no rule says when the
