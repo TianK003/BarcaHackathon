@@ -281,20 +281,24 @@ pre { background: var(--code-bg); padding: 10px 12px; border-radius: 8px; overfl
 const DATA = {
   title: "Progress",
   subtitle: "The benchmark spellF1 of main.toml by entry, and the feature that moved it",
-  asOf: "2026-11-03",
-  footer: "As of 2026-11-03 (R029 took P08's Smart Tagging votes out of `main.toml` under the organisers' rules of 3 Nov, its c_team having been measured on our match; the benchmark score is R024's by construction, so there is no new point. Before it, P23 done: R024 re-chose R013's grids on the mean of the two truths and moved the hold to 0.55; A19 measured where the decoder loses; R025, R025b and R026 were dropped; then P22(b) was dropped at R027's gate, with no benchmark score). [docs/results.md](../docs/results.md) is the source of truth; this page only repeats it. Benchmark scores rank versions of our pipeline on other matches; they are not our leaderboard score.",
+  asOf: "2026-11-10",
+  footer: "As of 2026-11-10: R030 (P27) moved the benchmark to the profile `generic` v1, which measures nothing of our match, retrained both models and chose every numeric constant again; its point is on a different benchmark from the points before it. Before that, as of 2026-11-03 (R029 took P08's Smart Tagging votes out of `main.toml` under the organisers' rules of 3 Nov, its c_team having been measured on our match; the benchmark score is R024's by construction, so there is no new point. Before it, P23 done: R024 re-chose R013's grids on the mean of the two truths and moved the hold to 0.55; A19 measured where the decoder loses; R025, R025b and R026 were dropped; then P22(b) was dropped at R027's gate, with no benchmark score). [docs/results.md](../docs/results.md) is the source of truth; this page only repeats it. Benchmark scores rank versions of our pipeline on other matches; they are not our leaderboard score.",
   links: [
     { href: "index.html", label: "← Team overview", cls: "home" },
     { href: "rules.html", label: "Rules" }
   ],
   sections: [["headline", "Where we are"], ["chart", "The chart"], ["ledger", "Feature ledger"], ["window", "Public window"], ["add", "Add a point"]],
 
-  /* The benchmark: pooled spellF1 over 7 DFL matches, `tracking` v3, 3 seeds, both truths. */
-  benchmarkNote: "`tracking` v3, 7 DFL matches, 3 seeds, pooled spellF1; raw and coarse truth.",
+  /* The benchmark: pooled spellF1 over 7 DFL matches, 3 seeds, both truths; `generic` v1 since R030, `tracking` v3 before. */
+  benchmarkNote: "7 DFL matches, 3 seeds, pooled spellF1; raw and coarse truth. Since R030 the profile is `generic` v1, which measures nothing of our match; the points up to R026 are on the retired `tracking` v3.",
 
-  /* The yardstick of the first entry (R001, `nearest_w50`): the benchmark's analogue of the floor `baseline_smooth50`
-     (full-match spellF1 0.2433 on our match). */
-  reference: { raw: 0.2018, coarse: 0.1842, label: "`nearest_w50` yardstick", floorNote: "`baseline_smooth50`'s analogue on the benchmark; it scores 0.2433 on the full match." },
+  /* The line under the first headline card. */
+  headlineNote: "On the profile `generic` v1, with both models retrained on it. The constants it replaced score 0.5388 raw and 0.5779 coarse there.",
+
+  /* The `nearest_w50` yardstick on today's profile (`generic` v1, R030): the benchmark's analogue of the floor
+     `baseline_smooth50` (full-match spellF1 0.2433 on our match). On the retired `tracking` v3 it was R001's point,
+     0.2018 raw and 0.1842 coarse. */
+  reference: { raw: 0.1885, coarse: 0.1698, label: "`nearest_w50` yardstick on `generic`", floorNote: "`baseline_smooth50`'s analogue on the benchmark; it scores 0.2433 on the full match." },
 
   /* One point per entry that scored main.toml, or a candidate against it, on the benchmark. adopted: false = tried, not adopted.
      dr / dc = Δ spellF1 over the previous adopted point (raw / coarse): the entry's own pooled difference where it states one;
@@ -317,15 +321,17 @@ const DATA = {
     { id: "R014b", date: "2026-10-26", raw: 0.5433, coarse: 0.5589, adopted: false, dr: 0.0003, dc: -0.0004, prop: "P17",
       what: "P17's restart states in the decoder (`r014b_s04_b1`)", note: "Bar not met (+0.0003 raw, p 0.8125); P17 dropped." },
     { id: "R024", date: "2026-10-31", raw: 0.5363, coarse: 0.5764, adopted: true, dr: -0.0067, dc: 0.0171, prop: "P23 A",
-      what: "R013's grids re-chosen on the mean of the two truths: today's `main.toml`", note: "Only the hold moved, 0.60 to 0.55; the decoder, P07's weight and the shift came back unchanged. Ranked on the mean since R023: +0.0052 (p 0.0469, 6 wins in 7), from a raw loss and a coarse gain. R029 later took out only the tags, which the benchmark never ran, so this is still `main.toml`'s score." },
+      what: "R013's grids re-chosen on the mean of the two truths: `main.toml` until R030", note: "Only the hold moved, 0.60 to 0.55; the decoder, P07's weight and the shift came back unchanged. Ranked on the mean since R023: +0.0052 (p 0.0469, 6 wins in 7), from a raw loss and a coarse gain. R029 later took out only the tags, which the benchmark never ran, so this stayed `main.toml`'s score until R030." },
     { id: "R025", date: "2026-10-31", raw: 0.5361, coarse: 0.5745, adopted: false, dr: -0.0002, dc: -0.0018, prop: "P23 C",
       what: "Posterior edges (`r025_final`)", note: "Guard failed: mean −0.0010, 2 wins in 7. The posterior is too sharp for its median to leave Viterbi's edge (A19)." },
     { id: "R025b", date: "2026-10-31", raw: 0.5121, coarse: 0.5441, adopted: false, dr: -0.0242, dc: -0.0323, prop: "P23 C",
       what: "Posterior edges on a posterior tempered at T = 5 (`r025b_final`)", note: "The one retry. Guard failed: mean −0.0282, 0 wins in 7; the edges moved 3 frames and their errors widened. C dropped." },
     { id: "R026", date: "2026-10-31", raw: 0.5396, coarse: 0.5589, adopted: false, dr: 0.0033, dc: -0.0174, prop: "P23 E",
-      what: "P07 at 0.1 where the ball is seen, 0.2 in the gaps (`r026_v100_g200`)", note: "The best of R026's five configs that differ from `main.toml`, mean −0.0071; every heavier gap weight lost more. No config beat `main.toml`; E dropped." }
+      what: "P07 at 0.1 where the ball is seen, 0.2 in the gaps (`r026_v100_g200`)", note: "The best of R026's five configs that differ from `main.toml`, mean −0.0071; every heavier gap weight lost more. No config beat `main.toml`; E dropped." },
+    { id: "R030", date: "2026-11-10", raw: 0.5414, coarse: 0.5829, adopted: true, dr: 0.0026, dc: 0.0050, prop: "P27",
+      what: "Both models retrained and every constant chosen again on the new profile `generic` v1: today's `main.toml`", note: "A different benchmark from the points before it (the retired `tracking` v3), so the step from R024 is not a gain. Both deltas are the entry's own, over the constants it replaced scored on `generic` (0.5388 raw, 0.5779 coarse): mean +0.0038 (p 0.0312, 6 wins in 7). The hold went from 0.55 to 0.60, `switch_team` from 4 to 6 and the shape weight from 0.2 to 0.3. Bar met: +0.3529 raw over `nearest_w50` and +0.3738 coarse over `nearest_w125`, 7 wins in 7 each." }
   ],
-  chartCaption: "Pooled spellF1 of `main.toml` on the benchmark at each entry that scored it. Filled points were adopted and are joined by the step line, which is the running `main.toml`; hollow points are candidates that were tried and not adopted. Points are spaced by entry, not by date. Select a point (hover, tab, tap) for its feature and its change over the previous adopted point. R015 to R023, A19 and R027 changed no score on the benchmark and are in the ledger. Since R023 a choice ranks on the mean of the two truths, so R024 is adopted with a lower raw and a higher coarse score. Today's `main.toml` also carries P08 (R017), which no benchmark can score (DFL has no tags); `--drop-match-only` switches it off and reproduces R024's numbers.",
+  chartCaption: "Pooled spellF1 of `main.toml` on the benchmark at each entry that scored it. Filled points were adopted and are joined by the step line, which is the running `main.toml`; hollow points are candidates that were tried and not adopted. Points are spaced by entry, not by date. Select a point (hover, tab, tap) for its feature and its change over the previous adopted point. R015 to R023, A19 and R027 changed no score on the benchmark and are in the ledger. Since R023 a choice ranks on the mean of the two truths, so R024 is adopted with a lower raw and a higher coarse score. P08 (R017) was in `main.toml` from R017 to R029, and no benchmark could score it (DFL has no tags). **R030 is on the new profile `generic` v1, a different benchmark from the points before it:** the step into it is a change of benchmark, not a gain, and the dashed yardstick line is `generic`'s (on `tracking` v3 the yardstick was R001's point).",
 
   /* Each proposal's final status: drives the counts on the cards. P12's shift is counted under P02. */
   features: [
@@ -392,7 +398,7 @@ const DATA = {
     { prop: "P16", feature: "Metrica's sample games: the grain of our provider's possession", entry: "R023", date: "2026-10-31", dr: "—", dc: "—", status: "measured",
       why: "A measurement that sets the objective, not a feature. Possession derived from the events of 3 anonymised games by a rule declared before the fetch: 6.20 per alive minute (class both, 5.31 to 7.03) and a median of 4.72 s (class raw, under 4.83 s). Outcome **both**: choices declared from now on rank on the mean of the raw and coarse pooled spellF1s. `main.toml` untouched; the switch timing is not measured." },
     { prop: "P23 A", feature: "R013's touch rule, decoder and P07 weight re-chosen on the mean of the two truths", entry: "R024", date: "2026-10-31", dr: "−0.0067", dc: "+0.0171", status: "adopted",
-      why: "Today's `main.toml` on the benchmark (R029 took out only the tags): only the hold moved, 0.60 to 0.55. Mean of the two truths +0.0052 (p 0.0469, 6 wins in 7), the objective since R023; `context` +0.0010. BAR-ATH: 399 possessions (413), `D` 36.00%, 1.66% of graded frames relabelled; `main.csv` `e6496a9b…`, not yet regenerated from a fresh clone." },
+      why: "`main.toml` on the benchmark until R030 (R029 took out only the tags): only the hold moved, 0.60 to 0.55. Mean of the two truths +0.0052 (p 0.0469, 6 wins in 7), the objective since R023; `context` +0.0010. BAR-ATH: 399 possessions (413), `D` 36.00%, 1.66% of graded frames relabelled; `main.csv` `e6496a9b…`, not yet regenerated from a fresh clone." },
     { prop: "P23 B, D", feature: "The IoU ladder decomposed; the calibration of the sources and the decoder's posterior", entry: "A19", date: "2026-10-31", dr: "—", dc: "—", status: "measured",
       why: "A measurement, not a feature. The fall from IoU 0.3 to 0.7 is mostly edges on otherwise right possessions (0.0704 on the mean; merges 0.0254, splits 0.0273), which passed R025's gate (0.015). The sources are near calibrated (dead ball α 1.00, P07 1.07 to 1.10); the posterior is 4 to 5 times too sharp (α 0.19 team, 0.27 alive). New tool `diagnose.py`." },
     { prop: "P23 C", feature: "Posterior edges, then on a posterior tempered at T = 5", entry: "R025, R025b", date: "2026-10-31", dr: "−0.0002, −0.0242", dc: "−0.0018, −0.0323", status: "dropped",
@@ -400,7 +406,9 @@ const DATA = {
     { prop: "P23 E", feature: "P07 weighted apart in the gaps and where the ball is seen", entry: "R026", date: "2026-10-31", dr: "−0.0031 to +0.0033", dc: "−0.0416 to −0.0174", status: "dropped",
       why: "Six configs; the rule kept `main.toml`'s weights (0.2, 0.2), which scored as `main.toml` to the last digit. Every heavier gap weight added possessions (3.22 to 3.35 a minute against 3.06) and lost on the mean (−0.010 to −0.020), the coarse truth most. No retry (the advisor: A19 shows P07 calibrated alike in both ball states). Code removed, recoverable from `57013a1`." },
     { prop: "P22", feature: "P07 recalibrated per half from the touch rule's own labels (b)", entry: "R027", date: "2026-10-31", dr: "—", dc: "—", status: "dropped",
-      why: "Dropped at the gate on DFL: rung 1, an intercept on P07's logit fitted on the other half's touch-rule frames (noise-aware), made P07's pooled log-loss in the held-out half's gaps 0.3820 against 0.3759 (+0.0061; needed −0.002), worse on 5 of 7 matches (worst +0.0148); rung 3, the retry's column, 0.4597. The offsets exist (0.276 on average, up to 0.765), but the touches' is not the gaps' (transfer 0.296 against the teacher's noise 0.107). No shift, bar or BAR-ATH run, no spellF1; code removed, recoverable from `1e5a5d2` and the local tag `archive/r027-source`." }
+      why: "Dropped at the gate on DFL: rung 1, an intercept on P07's logit fitted on the other half's touch-rule frames (noise-aware), made P07's pooled log-loss in the held-out half's gaps 0.3820 against 0.3759 (+0.0061; needed −0.002), worse on 5 of 7 matches (worst +0.0148); rung 3, the retry's column, 0.4597. The offsets exist (0.276 on average, up to 0.765), but the touches' is not the gaps' (transfer 0.296 against the teacher's noise 0.107). No shift, bar or BAR-ATH run, no spellF1; code removed, recoverable from `1e5a5d2` and the local tag `archive/r027-source`." },
+    { prop: "P27", feature: "A degradation that measures nothing of our match: both models retrained, every constant chosen again", entry: "R030", date: "2026-11-10", dr: "+0.0026", dc: "+0.0050", status: "adopted",
+      why: "Adopted because the rules require the redo (the organisers' reply of 5 Nov); the bar and every declared check pass. Profile `generic` v1: two figures from the organisers' DATA.md, the rest declared before any run. 0.5414 raw / 0.5829 coarse (mean 0.5622) against 0.5388 / 0.5779 for the constants it replaced, on the same profile and models; the deltas are over those (mean +0.0038, p 0.0312, 6 wins in 7). The hold 0.55 to 0.60, `switch_team` 4 to 6, the shape weight 0.2 to 0.3; two of the choices were knife-edges under the declared tie-break. BAR-ATH: `D` 34.5%, 393 possessions; `main.csv` `2dd51320…`, the same from a clean clone." }
   ],
   statuses: {
     adopted: { label: "adopted", cls: "ok", glyph: "✓" },
@@ -420,7 +428,8 @@ const DATA = {
       { id: "R013", what: "Touch rule and decoder re-chosen", spell: "0.4649", macro: "0.7152", poss: "20" },
       { id: "R017", what: "+ P08 team votes (seen after Tian's pick)", spell: "0.4000", macro: "0.6986", poss: "—" },
       { id: "R024", what: "Hold 0.55, on the mean of the two truths", spell: "0.4000", macro: "0.7007", poss: "19" },
-      { id: "R029", what: "P08's team votes out (rules of 3 Nov)", spell: "0.4444", macro: "0.7149", poss: "19" }
+      { id: "R029", what: "P08's team votes out (rules of 3 Nov)", spell: "0.4444", macro: "0.7149", poss: "19" },
+      { id: "R030", what: "Every constant chosen again on `generic`, both models retrained", spell: "0.5029", macro: "0.7238", poss: "18" }
     ]
   },
 
@@ -512,7 +521,7 @@ const DATA = {
   /* ---------- 1. Headline cards ---------- */
   function headline() {
     const adopted = DATA.points.filter(p => p.adopted);
-    const first = adopted[0], last = adopted[adopted.length - 1];
+    const first = DATA.reference, last = adopted[adopted.length - 1];
     const nA = DATA.features.filter(f => f.status === "adopted").length;
     const dropped = DATA.features.filter(f => f.status === "dropped");
     return h("section", { class: "block", id: "headline", "aria-labelledby": "h-headline" },
@@ -521,11 +530,11 @@ const DATA = {
         h("div", { class: "card" }, h("div", { class: "kpi-label", text: "`main.toml` on the benchmark, raw truth".replace(/`/g, "") }),
           h("div", { class: "kpi-value", text: f4(last.raw) }),
           h("div", { class: "kpi-second", text: f4(last.coarse) + " coarse" }),
-          h("p", { class: "kpi-text", html: md("Entry " + last.id + ", with `--drop-match-only` (P08 off, which no benchmark can score).") })),
-        h("div", { class: "card" }, h("div", { class: "kpi-label", text: "Gain over the first yardstick" }),
+          h("p", { class: "kpi-text", html: md("Entry " + last.id + ". " + DATA.headlineNote) })),
+        h("div", { class: "card" }, h("div", { class: "kpi-label", text: "Gain over the yardstick" }),
           h("div", { class: "kpi-value", text: signed(last.raw - first.raw, 4) }),
           h("div", { class: "kpi-second", text: signed(last.coarse - first.coarse, 4) + " coarse" }),
-          h("p", { class: "kpi-text", html: md("From `nearest_w50` (" + f4(first.raw) + " raw, " + f4(first.coarse) + " coarse), the difference of the two scores.") })),
+          h("p", { class: "kpi-text", html: md("From `nearest_w50` on the same profile (" + f4(first.raw) + " raw, " + f4(first.coarse) + " coarse), the difference of the two scores.") })),
         h("div", { class: "card" }, h("div", { class: "kpi-label", text: "Features adopted" }),
           h("div", { class: "kpi-value", text: String(nA) }),
           h("p", { class: "kpi-text", text: DATA.features.filter(f => f.status === "adopted").map(f => f.p).join(", ") })),
