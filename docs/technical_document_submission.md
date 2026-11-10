@@ -238,8 +238,10 @@ validates, with no `X` in a graded block and the same sha256 on two runs. Its `D
 inside [30%, 62%], a band set on DFL (393 possessions). The shape model agrees with the touch episodes on 0.8199 of
 41,052 frames; its gate is 0.7426, its worst held-out DFL match. docs/results.md, R030, has the rest.
 
-**Where the remaining score is** (A13, on the retired profile; not measured again). A perfect team would add +0.1942
-raw where the ball is seen and +0.1764 in the gaps, a perfect dead ball only +0.0290.
+**Where the remaining score is** (A25, on `generic`). A perfect team would add +0.1989 raw (+0.2151 coarse) where the
+ball is seen and +0.1800 (+0.1035) in the gaps, a perfect dead ball only +0.0278 (+0.0389): what is left is who has
+the ball. Each source earns its place: without the shape source the mean of the two truths falls by 0.1037, and
+without the touch rule by 0.0304 (R030).
 
 ## 6. Limitations
 
@@ -253,7 +255,10 @@ raw where the ball is seen and +0.1764 in the gaps, a perfect dead ball only +0.
   R030's rule decided both on a knife-edge. The hold 0.60 is inside the 0.005 tie band by 0.000004; on the mean alone
   0.55 is 0.0050 better (0.60 gains 0.0076 raw and loses 0.0176 coarse). The decoder is the tie-break's choice over
   the best-mean config (`switch_team` 8, `min_possession` 50), which is +0.0069 on the mean over the constants it
-  would replace but -0.0146 under the raw truth. If our truth is coarse, both choices cost a little.
+  would replace but -0.0146 under the raw truth. If our truth is coarse, both choices cost a little. A run at six
+  seeds, made after the choice and choosing nothing, tells no option from another: the declared constants, the hold
+  0.55 with the decoder chosen again from it, the best-mean decoder and the constants before R030 lie within 0.0054 on
+  the mean. On its three fresh seeds the hold 0.60 alone is 0.0084 below 0.55, so the tie did not repeat (R030).
 - **The benchmark is not our tracking** (T38, T39). `generic`'s gaps ignore the play, and ours fall where the tracker
   loses the ball; DFL also tracks the ball out of play, which ours loses near the lines (among the rows where a gap
   could begin, the ball is beyond a line on 17.68% of DFL's against 4.07% of ours, R009). So the benchmark still

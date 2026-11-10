@@ -814,9 +814,13 @@ changed, T43) and partly the rest of the distance to a real source: coverage (73
 agreement (72 to 93% by type), the error in the estimated restart frame, and the vote's strength (the oracle's about
 13.8 nats a frame against about 2.4 for a 0.92 vote).
 
-**Where the remaining score is** (A13). On the benchmark's `tracking` v3, a perfect team where the ball is seen would add
-+0.194 raw spellF1 to `main.toml` and in the gaps +0.176, against +0.029 for a perfect dead-ball source, so what is left
-is who has the ball, and not whether it is dead, on the benchmark (T39).
+**Where the remaining score is** (A25, on `generic`, with today's `main.toml`). A perfect team where the ball is seen
+would add +0.199 raw spellF1 (+0.215 coarse) and in the gaps +0.180 (+0.104), against +0.028 (+0.039) for a perfect
+dead-ball source, so what is left is who has the ball, and not whether it is dead, on the benchmark (T39). With both
+perfect the decoder reaches 0.917 raw and 0.969 coarse. A13 measured the same on the retired `tracking` v3 (+0.194,
++0.176 and +0.029 raw). The ladder's loss is mostly late edges on possessions that are otherwise right (0.068 of
+spellF1 on the mean, against 0.026 each for merges and splits), and the decoder's posterior is four to six times too
+sharp (A25; A19 on the retired profile).
 
 **R013 chosen again on the mean of the two truths** (R024, P23 A). A protocol declared before the selection re-ranked
 R013's two stages under R023's objective: the mean of the pooled raw and coarse spellF1s on `tracking` v3 (3 seeds), a
@@ -987,7 +991,12 @@ classes balance exactly and the model has no prior to subtract and no notion of 
   on that trade-off.** The hold 0.60 came in through a tie band that it is inside by 0.000004: another set of seeds
   could leave it out, and on the objective alone 0.55 is 0.0050 better. The decoder is the tie-break's choice over a
   best-mean config that is +0.0069 on the mean and -0.0146 under the raw truth, against the incumbent constants. Both
-  were decided by the rule as declared, and both are listed for Tian.
+  were decided by the rule as declared, and both are listed for Tian. Three runs made after the choice, declared
+  first and choosing nothing, size it (R030, "After the choice"). At six seeds the hold 0.60 alone is 0.0084 below
+  0.55 on the three fresh seeds, so the tie did not repeat. The whole protocol re-run from the hold 0.55 ends at
+  0.5374 raw and 0.5903 coarse (mean 0.5639) against the declared 0.5414 and 0.5829 (0.5622): the same score, leaning
+  to the coarse truth. And the declared constants, that alternative, the best-mean decoder and the constants before
+  R030 lie within 0.0054 on the mean at six seeds, with no difference clearing its test.
 - **Out of sample the re-choice is no better than the constants it replaced.** Leave one match out: -0.0048
   [-0.0099, +0.0002] for Stage A's rule and -0.0009 [-0.0047, +0.0030] for Stage C's. What R030 buys is the ground
   the constants stand on, not a score.
