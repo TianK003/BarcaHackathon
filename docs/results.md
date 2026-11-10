@@ -9898,6 +9898,42 @@ place). Neither changes `main.toml`, the file or the rule's outcome. Their resul
 - It is labelled post hoc because the spec did not declare it. If the config without the touch rule scores higher on
   the mean, that goes to Tian and nothing is changed tonight.
 
+**The sensitivity run's result** (10 Nov, 02:29 to 02:36; `p27_sensitivity.py p27_ref p27a_r15_v06_k1_h60
+p27_preshift p27c_t06_mp025_w300 p27c_t08_mp050_w300 alt55_preshift`, from the `.s6` reports). **It chooses nothing.**
+Seeds 0 to 2 reproduce the three-seed reports to the last digit. Pooled spellF1, raw / coarse / mean:
+
+| config (all before the shift) | seeds 0–2, the choice's | seeds 3–5, fresh | seeds 0–5 |
+|---|---|---|---|
+| `p27_ref`: hold 0.55, hmm 4/35, weight 0.2 (before R030) | 0.5388 / 0.5779 / 0.5584 | 0.5405 / 0.5824 / 0.5614 | 0.5396 / 0.5801 / 0.5599 |
+| `p27a_r15_v06_k1_h60`: the hold 0.60 alone | 0.5463 / 0.5604 / 0.5534 | 0.5430 / 0.5630 / 0.5530 | 0.5447 / 0.5617 / 0.5532 |
+| **`p27_preshift`: the declared outcome** (0.60, 6/35, 0.3) | 0.5410 / 0.5833 / 0.5621 | 0.5392 / 0.5844 / 0.5618 | 0.5401 / 0.5839 / 0.5620 |
+| `p27c_t06_mp025_w300`: the second knife-edge | 0.5437 / 0.5768 / 0.5603 | 0.5430 / 0.5774 / 0.5602 | 0.5433 / 0.5771 / 0.5602 |
+| `p27c_t08_mp050_w300`: Stage C's best mean (0.60, 8/50, 0.3) | 0.5242 / 0.6064 / 0.5653 | 0.5240 / 0.6067 / 0.5654 | 0.5241 / 0.6066 / 0.5653 |
+| `alt55_preshift`: the alternative (0.55, 6/64/25, 0.2) | 0.5363 / 0.5905 / 0.5634 | 0.5357 / 0.5933 / 0.5645 | 0.5360 / 0.5919 / 0.5639 |
+
+The mean of the two truths against `p27_ref`, with the sign-flip p over the seven matches and the matches won:
+
+| config | seeds 0–2 | seeds 3–5, fresh | seeds 0–5 |
+|---|---|---|---|
+| the hold 0.60 alone | −0.0050 (p 0.1406, 2) | **−0.0084 (p 0.0312, 1)** | −0.0067 (p 0.0312, 1) |
+| the declared outcome | +0.0038 (p 0.0781, 6) | +0.0004 (p 0.8438, 3) | +0.0021 (p 0.3125, 3) |
+| the second knife-edge | +0.0019 (p 0.1719, 6) | −0.0013 (p 0.7188, 3) | +0.0003 (p 0.7812, 4) |
+| Stage C's best mean | +0.0069 (p 0.0156, 7) | +0.0039 (p 0.3594, 4) | +0.0054 (p 0.0938, 5) |
+| the alternative | +0.0050 (p 0.0781, 5) | +0.0031 (p 0.2969, 4) | +0.0040 (p 0.1250, 5) |
+
+What it shows, for Tian's review of the two choices:
+- **Stage A's tie is not there on fresh seeds.** At the old decoder the hold 0.60 is 0.0084 below 0.55 on the mean on
+  seeds 3 to 5 (1 match won in 7), and 0.0067 below on all six: outside the 0.005 band both times. On the choice's
+  seeds it was inside by 0.000004. The hold 0.60 still gains under the raw truth (+0.0025 to +0.0076) and loses
+  three to seven times as much under the coarse one.
+- **The declared outcome is no better than the constants it replaced, on fresh seeds:** +0.0004 on the mean (3
+  matches won). Its in-sample +0.0038 was mostly the seeds'. This agrees with R030's leave-one-match-out figures.
+- **No option is told apart from another.** On six seeds the five means lie between 0.5599 and 0.5653, within 0.0054,
+  and no difference clears its test. What does differ, steadily across the seeds, is the lean: from the declared
+  outcome (raw 0.5401, coarse 0.5839) through the alternative (0.5360, 0.5919) to Stage C's best mean (0.5241,
+  0.6066), each step gives up raw score for about twice as much coarse score.
+- It changes nothing: `main.toml` and the prepared file are R030's declared outcome, as ruled before the run.
+
 **The alternative branch at the hold 0.55, for Tian's review** (run 10 Nov, 01:43 to 02:27; stems `alt55*`,
 `pipeline/benchmark/configs/p27/`; `p27_grid.py` and `p27_choose.py` with `--prefix alt55`). It is not the declared
 rule's outcome and it changed nothing. It exists because Stage A's tie-break turned on 0.000004: if Tian prefers the
