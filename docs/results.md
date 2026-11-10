@@ -2378,7 +2378,7 @@ it is recorded in [rules.md](rules.md) and as [P27](proposals.md) in proposals.m
 **Decided the same evening (Tian, 9 Nov):** redo the degradation (P27); keep the mean of the two truths as the
 objective; do not send questions 5 and 6.
 
-### A25 — main.toml's headroom and its IoU ladder on `generic` (declared 2026-11-10, before the runs; the advisor's ruling, in Tian's place)
+### A25 — main.toml's headroom and its IoU ladder on `generic` (declared and run 2026-11-10; the advisor's ruling, in Tian's place)
 
 **Part 1, declared before any run** (10 Nov, 02:00). A13 (where `main.toml`'s remaining spellF1 is) and A19 (the IoU
 ladder and the calibration) were measured on `tracking` v3 and on the `main.toml` of their day. Both are retired by
@@ -2399,6 +2399,98 @@ A19's report, `data/runs/diagnose/main.json`, is renamed `main.tracking.json` fi
 **Its limit, known beforehand.** `generic`'s gaps ignore the play. So the split of the headroom between the frames
 with a ball and the frames without one, and the dead-ball oracle's headroom, are the benchmark's and not our match's
 (T38, T39). The `main` row must reproduce R030's 0.5414 raw and 0.5829 coarse.
+
+**Part 2, the runs** (10 Nov, 02:36 to 02:48; one throttled process at a time; `main.toml` at R030's constants, the
+commands of part 1, all `EXIT=0`). The `main` row reproduces R030 in both headroom runs and in `diagnose.py`: 0.5414
+raw, 0.5829 coarse. A19's report was renamed `main.tracking.json` first. Aggregates of the DFL benchmark only.
+
+**The headroom: pooled spellF1** (macroF1, alive/dead F1 in brackets), and beside it A13's figure on `tracking` v3 with
+the `main.toml` of its day:
+
+| variant | `generic` raw | `generic` coarse | A13, `tracking` raw | A13, `tracking` coarse |
+|---|---|---|---|---|
+| main | 0.5414 (0.8934, 0.9741) | 0.5829 (0.8941, 0.9741) | 0.5430 | 0.5593 |
+| alive | 0.5692 (0.9170, 0.9987) | 0.6219 (0.9178, 0.9987) | 0.5720 | 0.5983 |
+| plus_home_visible | 0.7403 (0.9319, 0.9729) | 0.7980 (0.9386, 0.9734) | 0.7372 | 0.7906 |
+| plus_home_gaps | 0.7214 (0.9342, 0.9766) | 0.6864 (0.9336, 0.9779) | 0.7194 | 0.6669 |
+| plus_home_all | 0.8829 (0.9691, 0.9752) | 0.9142 (0.9743, 0.9772) | 0.8832 | 0.9138 |
+| alive_plus_home_visible | 0.7671 (0.9557, 0.9987) | 0.8417 (0.9626, 0.9987) | 0.7663 | 0.8353 |
+| alive_plus_home_gaps | 0.7568 (0.9562, 0.9985) | 0.7338 (0.9551, 0.9985) | 0.7546 | 0.7130 |
+| alive_plus_home_all | 0.9169 (0.9915, 0.9984) | 0.9686 (0.9960, 0.9985) | 0.9178 | 0.9688 |
+
+**Pooled delta over `main`** and the 90% t-interval of the per-match deltas. Every delta has an interval that excludes
+0, an exact sign-flip p of 0.0156 and 7 wins in 7:
+
+| variant | `generic` raw | `generic` coarse |
+|---|---|---|
+| alive | +0.0278 [+0.0234, +0.0328] | +0.0389 [+0.0327, +0.0448] |
+| plus_home_visible | +0.1989 [+0.1865, +0.2099] | +0.2151 [+0.2025, +0.2269] |
+| plus_home_gaps | +0.1800 [+0.1688, +0.1897] | +0.1035 [+0.0945, +0.1119] |
+| plus_home_all | +0.3416 [+0.3217, +0.3586] | +0.3313 [+0.3140, +0.3472] |
+| alive_plus_home_visible | +0.2257 [+0.2129, +0.2375] | +0.2587 [+0.2434, +0.2729] |
+| alive_plus_home_gaps | +0.2154 [+0.2044, +0.2252] | +0.1509 [+0.1373, +0.1639] |
+| alive_plus_home_all | +0.3755 [+0.3559, +0.3926] | +0.3856 [+0.3657, +0.4041] |
+
+**The ladder** (`diagnose.py`; pooled over 42 halves; the losses in spellF1 units), and A19's on `tracking` v3:
+
+| | raw truth | coarse truth | mean | A19's mean |
+|---|---|---|---|---|
+| true / predicted possessions | 9,183 / 5,982 | 4,977 / 5,982 | | |
+| F1 at IoU 0.3, 0.4, 0.5, 0.6, 0.7 | 0.668, 0.616, 0.551, 0.478, 0.395 | 0.697, 0.652, 0.591, 0.531, 0.445 | | |
+| pooled spellF1 | 0.5414 | 0.5829 | 0.5622 | 0.5563 |
+| pairs matched at 0.3: clean, merge, split, both | 3,962; 954; 133; 14 | 3,194; 53; 565; 6 | | |
+| **ladder loss, clean pairs** | **0.0707** | **0.0654** | **0.0681** | 0.0704 |
+| ladder loss, merge pairs | 0.0467 | 0.0045 | 0.0256 | 0.0254 |
+| ladder loss, split pairs | 0.0078 | 0.0434 | 0.0256 | 0.0273 |
+| ladder loss, both | 0.0012 | 0.0006 | 0.0009 | 0.0010 |
+| predicted spells over 2+ true ones of their team (merges) | 18.2% | 1.2% | | |
+| true spells under 2+ predicted ones of their team (splits) | 1.8% | 12.9% | | |
+| clean pairs' IoU: median; share at least 0.5, 0.7 | 0.827; 88.3%, 68.6% | 0.849; 90.7%, 73.3% | | |
+| clean pairs' start error, frames: median [quartiles]; within ±5 | +0 [−5, +14]; 45.7% | +0 [−4, +19]; 44.8% | | |
+| clean pairs' end error, frames: median [quartiles]; within ±5 | +0 [−5, +23]; 38.3% | +0 [−5, +27]; 34.4% | | |
+| unmatched at 0.3, true: overlapping a spell of their team / alone | 1,718 / 2,402 | 328 / 831 | | |
+| unmatched at 0.3, predicted: overlapping / alone | 527 / 392 | 1,020 / 1,144 | | |
+
+**The calibration** (raw truth, graded frames; a Platt fit logit P(truth) = α · logit(p) + β):
+
+| | frames | log-loss | Brier | ECE | α | β | weight |
+|---|---|---|---|---|---|---|---|
+| `controlled_touch` home | 972,880 | 0.4353 | 0.1370 | 0.1416 | 1.45 | +0.07 | 1.0 |
+| `dead_ball_model` alive | 3,007,932 | 0.0798 | 0.0228 | 0.0045 | 1.01 | +0.20 | 1.0 |
+| `shape_possession` home | 1,659,315 | 0.3567 | 0.1114 | 0.0157 | 1.08 | +0.14 | 0.3 |
+| ... where the ball is seen / where it is missing | 974,068 / 685,247 | 0.3571 / 0.3560 | 0.1114 / 0.1114 | 0.0148 / 0.0181 | 1.08 / 1.08 | +0.12 / +0.16 | |
+| posterior alive, every graded frame | 3,007,932 | 0.3126 | 0.0275 | 0.0268 | **0.28** | −0.02 | |
+| ... where `controlled_touch` and P07 speak | 1,769,384 | 0.0189 | 0.0025 | 0.0022 | 0.50 | −0.31 | |
+| ... where only P07 speaks | 1,238,548 | 0.7321 | 0.0631 | 0.0619 | 0.21 | +0.00 | |
+| posterior home (the team, on alive frames) | 1,659,315 | 1.1700 | 0.1157 | 0.1113 | **0.17** | +0.16 | |
+
+**Reading.** A13's and A19's readings hold on `generic`, almost figure for figure.
+- **The team is where the score is, not the dead ball.** A perfect dead-ball detector adds +0.028 raw and +0.039
+  coarse (A13: +0.029 and +0.039), with the alive/dead F1 already at 0.974. A perfect team where the ball is seen adds
+  +0.199 and +0.215 (A13: +0.194 and +0.231); in the gaps +0.180 and +0.104 (+0.176 and +0.108); on every live frame
+  +0.342 and +0.331.
+- **The decoder's own ceiling with perfect evidence** is 0.917 raw and 0.969 coarse, as in A13 (0.918 and 0.969):
+  `switch_team` 6 in place of 4 costs it nothing.
+- **The ladder is mostly edges on pairs that are otherwise right:** the clean-pair loss is 0.068 on the mean (A19:
+  0.070), against 0.026 each for merges and for splits. Merges are the raw truth's loss (18.2% of predicted
+  possessions span two true ones) and splits the coarse truth's (12.9%), the two sides of the grain that R030's
+  tie-breaks sat on. A clean pair's edges have a median error of 0 frames and a long late tail (upper quartiles +14 to
+  +27 frames): the late edges, not a bias, cost the upper rungs. R025 and R025b tried to move those edges from the
+  posterior and failed their guard.
+- **The sources are near calibrated; the posterior is not.** The two models have α 1.01 and 1.08. The touch rule's
+  two fixed votes are conservative (α 1.45; 1.22 in A19, at the hold 0.55). The decoder's posterior is four to six
+  times too sharp (α 0.28 for alive, 0.17 for the team; 0.27 and 0.19 in A19): a product of per-frame terms over
+  correlated frames. With the shape weight at 0.3 the team posterior is a little sharper than at 0.2.
+- **What transfers and what does not.** The shares between "ball seen" and "in the gaps", and the dead-ball oracle's
+  headroom, are the benchmark's: `generic`'s gaps are blind to the play and DFL tracks the ball out of play, so on our
+  match more of the loss may sit in the gaps and in the dead ball than here (T38, T39). The order of magnitude between
+  "who has the ball" (+0.33 to +0.34) and "is it alive" (+0.03 to +0.04) is too large for that to reverse.
+
+**What A25 changes.** Nothing. It is a measurement: no lane is opened by it and nothing is adopted. For Tian's
+decision on P24 (a learned team source where the ball is seen): the headroom it would address is the +0.20 of
+`plus_home_visible`, unchanged since A13; P19 missed its feasibility gate on the old benchmark (R021: +0.0160 pooled
+against the +0.020 needed, 3 matches of 7 against 6), and R031 found that a team's first touch after the other
+team's control is its possession's start less than half the time.
 
 ## Experiments
 
@@ -9943,6 +10035,17 @@ What it shows, for Tian's review of the two choices:
   outcome (raw 0.5401, coarse 0.5839) through the alternative (0.5360, 0.5919) to Stage C's best mean (0.5241,
   0.6066), each step gives up raw score for more coarse score (0.0041 for 0.0080, then 0.0119 for 0.0147).
 - It changes nothing: `main.toml` and the prepared file are R030's declared outcome, as ruled before the run.
+
+**The clean-tree run's result** (10 Nov, 02:48 to 02:51; commit `a6b1fd3`, nothing uncommitted; `run.py
+p27_preshift.toml p27_final.toml p27d_notouch.toml --profile generic --seeds 3 --truth both`).
+- `p27_preshift` and `p27_final` score as before to the sixth decimal (0.540956 / 0.583301 and 0.541378 / 0.582936),
+  and their reports now carry a clean commit. The code changes since `95c75ce` were docstrings, a default and checks.
+- **Without the touch rule** (`p27d_notouch`): raw 0.4519, coarse 0.6115, mean 0.5317. Against `p27_preshift` the mean
+  falls by 0.0304 (p 0.0156, 0 wins in 7): raw −0.0890 (0 wins), coarse +0.0282 (7 wins), with 2.44 possessions a
+  minute against 2.98. So **the touch rule stays**, and every source is now re-verified on `generic`: without the
+  shape source the mean falls by 0.1037, without the touch rule by 0.0304, and the dead-ball weight below 1.0 loses
+  (Stage D). That the coarse truth alone prefers the pipeline without the touch rule is the same trade-off again: the
+  touch rule is what cuts possessions finely.
 
 **The alternative branch at the hold 0.55, for Tian's review** (run 10 Nov, 01:43 to 02:27; stems `alt55*`,
 `pipeline/benchmark/configs/p27/`; `p27_grid.py` and `p27_choose.py` with `--prefix alt55`). It is not the declared
