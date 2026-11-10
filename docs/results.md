@@ -9898,6 +9898,32 @@ place). Neither changes `main.toml`, the file or the rule's outcome. Their resul
 - It is labelled post hoc because the spec did not declare it. If the config without the touch rule scores higher on
   the mean, that goes to Tian and nothing is changed tonight.
 
+**The alternative branch at the hold 0.55, for Tian's review** (run 10 Nov, 01:43 to 02:27; stems `alt55*`,
+`pipeline/benchmark/configs/p27/`; `p27_grid.py` and `p27_choose.py` with `--prefix alt55`). It is not the declared
+rule's outcome and it changed nothing. It exists because Stage A's tie-break turned on 0.000004: if Tian prefers the
+best mean there, this is what Stages C, D and E give from it, by the same rules.
+
+- *Stage C at the hold 0.55* (144 configs): the best mean is `alt55c_t08_mp025_w200`, 0.5658 (raw 0.5279, coarse
+  0.6037); 13 configs are within 0.005 of it; the larger min(raw, coarse) is `alt55c_t06_mp025_w200`: raw 0.5362,
+  coarse 0.5895, mean 0.5629. So `switch_team` 6, `min_possession` 25, shape weight 0.2. Leave one match out, the
+  whole rule: mean +0.0041 [+0.0015, +0.0067] against `p27_ref` (p 0.0469, 6 wins in 7).
+- *Stage D* (11 configs): one group changes, `switch_dead` 32 → 64 with `min_dead` 25 (mean 0.5634, the larger
+  minimum by 0.0001 among six tied). The dead-ball weight, the scope and the shape source stay (without it: 0.4603).
+- *Stage E:* the lags are the same (−1, +2, 0), so the shift is +1 / −2 / 0; the guard keeps it (mean +0.0005, raw
+  +0.0012, coarse −0.0001); the bar passes (raw 0.5374 against 0.1885, coarse 0.5903 against 0.2092, 7 wins in 7
+  each).
+
+| | hold | hmm | shape weight | raw | coarse | mean |
+|---|---|---|---|---|---|---|
+| `p27_final`, the declared outcome, in `main.toml` | 0.60 | 6 / 32 / 35 / 25 | 0.3 | **0.5414** | 0.5829 | 0.5622 |
+| `alt55_final`, the alternative | 0.55 | 6 / 64 / 25 / 25 | 0.2 | 0.5374 | **0.5903** | **0.5639** |
+| `p27_ref` with no shift, the constants before R030 | 0.55 | 4 / 32 / 35 / 25 | 0.2 | 0.5388 | 0.5779 | 0.5584 |
+
+The alternative against the declared outcome: mean +0.0017 (p 0.6250, 5 wins in 7), raw −0.0039 (p 0.3438, 3 wins),
+coarse +0.0074 (p 0.0938, 5 wins). **The two are the same score within the benchmark's noise.** The declared one
+leans to the raw truth and the alternative to the coarse one, which is the trade-off that neither truth can settle
+(T33). The alternative was not run on our match or on the public window.
+
 **Not uploaded.** The upload and the public repository are Tian's.
 
 ### R031 — P28: back-dating a possession to the team's first touch: step 0's gate fails, nothing built (declared 2026-11-09; run 2026-11-10, Tian away, an advisor agent in Tian's place)
