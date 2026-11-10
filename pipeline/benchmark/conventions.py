@@ -1492,7 +1492,7 @@ def run_shift(config, gt_path, data_dir, rejected=(), tol=TOL, log=print):
     """The shift rule of `config`, its table, shift_<stem>.json, and the out-of-fold prediction's CSV; the document.
 
     The public side is worked out from the CSV that `pipeline/run.py CONFIG` wrote (public_pair), so it cannot disagree
-    with the prediction that is shifted; DFL's is read from latency_<stem>_dfl_tracking_raw.json (SHIFT_DFL), which
+    with the prediction that is shifted; DFL's is read from latency_<stem>_dfl_generic_raw.json (SHIFT_DFL), which
     `latency CONFIG dfl` writes, and refused if it is another config's content (config_digest; a file that records
     none is refused too) or at another tolerance. A latency file for the coarse truth (SHIFT_COARSE) is reported
     beside it when there is one and held to the same rule, and so is the public one (`latency CONFIG public`), which

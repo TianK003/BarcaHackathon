@@ -140,35 +140,35 @@ def stage_a(table):
                                                   .format(*s), s, confidence_of(table, s))) for s in settings]
 
 
-def stage_c(table, touch):
+def stage_c(table, touch, prefix="p27"):
     """144 configs; tie order: larger switch_team, larger min_possession, smaller weight."""
     settings = [(t, mp, w) for t in SWITCH_TEAMS for mp in MIN_POSSESSIONS for w in WEIGHTS]
     settings.sort(key=lambda s: (-s[0], -s[1], s[2]))
     confidence = confidence_of(table, touch)
-    return [write("p27c_t{:02d}_mp{:03d}_w{:03d}".format(t, mp, int(round(w * 1000))),
+    return [write("{}c_t{:02d}_mp{:03d}_w{:03d}".format(prefix, t, mp, int(round(w * 1000))),
                   render("P27 Stage C: switch_team {} / min_possession {} / shape weight {}".format(t, mp, w), touch,
                          confidence, decoder=(t, mp), weight=w)) for t, mp, w in settings]
 
 
-def stage_d(table, touch, decoder, weight):
+def stage_d(table, touch, decoder, weight, prefix="p27"):
     """Stage D's groups at Stage C's choice; the incumbent of every group is the Stage C config itself (p27d_base)."""
     confidence = confidence_of(table, touch)
     common = dict(touch=touch, confidence=confidence, decoder=decoder, weight=weight)
-    stems = [write("p27d_base", render("P27 Stage D: Stage C's choice, the incumbent of every group", **common))]
+    stems = [write(prefix + "d_base", render("P27 Stage D: Stage C's choice, the incumbent of every group", **common))]
     for sd in SWITCH_DEADS:
         for md in MIN_DEADS:
             if (sd, md) != (SWITCH_DEAD, MIN_DEAD):
-                stems.append(write("p27d_sd{:02d}_md{:02d}".format(sd, md), render(
+                stems.append(write("{}d_sd{:02d}_md{:02d}".format(prefix, sd, md), render(
                     "P27 Stage D: switch_dead {} / min_dead {}".format(sd, md), switch_dead=sd, min_dead=md, **common)))
     for dw in DEAD_WEIGHTS:
         if dw != DEAD_WEIGHT:
-            stems.append(write("p27d_dw{:03d}".format(int(round(dw * 100))), render(
+            stems.append(write("{}d_dw{:03d}".format(prefix, int(round(dw * 100))), render(
                 "P27 Stage D: dead-ball weight {}".format(dw), dead_weight=dw, **common)))
     for scope in SCOPES:
         if scope != SCOPE:
-            stems.append(write("p27d_scope_{}".format(scope), render(
+            stems.append(write("{}d_scope_{}".format(prefix, scope), render(
                 "P27 Stage D: shape scope {}".format(scope), scope=scope, **common)))
-    stems.append(write("p27d_noshape", render("P27 Stage D: without the shape source", shape=False, **common)))
+    stems.append(write(prefix + "d_noshape", render("P27 Stage D: without the shape source", shape=False, **common)))
     return stems
 
 
@@ -193,6 +193,9 @@ def main(argv=None):
     parser.add_argument("--no-shape", action="store_true")
     parser.add_argument("--shift", help="team,into_dead,out_of_dead (frames); omitted: no refiner")
     parser.add_argument("--name", default="p27_final", help="the stem of the final config")
+    parser.add_argument("--prefix", default="p27",
+                        help="the stems' prefix for stages c and d (default p27, the declared branch; another prefix "
+                             "is a labelled alternative branch beside it)")
     args = parser.parse_args(argv)
     table = confidences(args.confidences)
     touch = numbers(args.touch, (float, float, int, float)) if args.touch else None
@@ -202,9 +205,9 @@ def main(argv=None):
     elif args.stage == "a":
         stems = stage_a(table)
     elif args.stage == "c":
-        stems = stage_c(table, touch)
+        stems = stage_c(table, touch, args.prefix)
     elif args.stage == "d":
-        stems = stage_d(table, touch, decoder, args.weight)
+        stems = stage_d(table, touch, decoder, args.weight, args.prefix)
     else:
         shift = numbers(args.shift, (int, int, int)) if args.shift else None
         stems = [write(args.name, render(

@@ -467,7 +467,7 @@ def diagnose(config_path, profile=DEFAULT_PROFILE, seeds=None, match_ids=None, m
              data_dir=None, drop_match_only=False, log=print):
     """A19 of one config: the ladder under both truths and the calibration of its sources and posterior; the report.
 
-    The arguments are run.evaluate_configs': `profile` (default tracking), `seeds` (0 up to seeds - 1; default
+    The arguments are run.evaluate_configs': `profile` (default generic since P27), `seeds` (0 up to seeds - 1; default
     run.DEFAULT_SEEDS; the clean profile has seed 0 only), `match_ids` (default all seven), `matches` ({id: DflMatch}
     to use instead of loading: the checks pass synthetic ones), `calibration` (the Calibration of BAR-ATH a degraded
     profile is made with; none given, calibration.load(data_dir) reads it), `data_dir`, and `drop_match_only`, which
@@ -633,8 +633,9 @@ def diagnose(config_path, profile=DEFAULT_PROFILE, seeds=None, match_ids=None, m
 def report_path(data_dir, stem, profile, match_ids=None, seeds=None):
     """<data dir>/runs/diagnose/<stem>[.<profile>][.m-<ids>][.s<n>].json: where a report goes.
 
-    The declared run (the default profile, all seven matches, the default number of seeds) is <stem>.json. A profile
-    other than the default adds its name, and the matches and seeds add what run.name_suffixes adds to a runner's
+    The declared run (the default profile, all seven matches, the default number of seeds) is <stem>.json. The default
+    profile is generic since P27, so a bare <stem>.json written before 10 Nov 2026 is A19's `tracking` report and one
+    written since is generic's. A profile other than the default adds its name, and the matches and seeds add what run.name_suffixes adds to a runner's
     report for the same reason: a run on fewer matches or seeds never replaces the declared report.
     """
     parts = [stem] + ([profile] if profile != DEFAULT_PROFILE else []) + run.name_suffixes(profile, match_ids, seeds)

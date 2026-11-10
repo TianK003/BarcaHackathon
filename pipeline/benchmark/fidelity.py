@@ -213,8 +213,9 @@ def report(profile, seeds=DEFAULT_SEEDS, match_ids=None, matches=None, calibrati
     if profile not in degrade.PROFILES:
         raise FidelityError("profile {!r} is not one of: {}".format(profile, ", ".join(sorted(degrade.PROFILES))))
     if profile not in GATES:
-        raise FidelityError("profile {!r} degrades nothing, so it has no gates to hold it to; fidelity is measured "
-                            "for: {}".format(profile, ", ".join(sorted(GATES))))
+        raise FidelityError("profile {!r} has no gates to hold it to (clean degrades nothing, and generic is not built "
+                            "to look like our match and reads nothing of it, P27); fidelity is measured for: {}".format(
+                                profile, ", ".join(sorted(GATES))))
     if isinstance(seeds, bool) or not isinstance(seeds, int) or seeds < 1:
         raise FidelityError("seeds must be a whole number of at least 1, got {!r}".format(seeds))
     ids = run.resolve_match_ids(match_ids, matches)
@@ -710,12 +711,18 @@ def write(result, data_dir=None):
     return path
 
 
+# The profile measured when none is named. Not the runner's default: that is generic since P27, which has no gates
+# (it is not measured against our match). The profiles that have gates read our match's Calibration, and since the
+# organisers' reply of 5 Nov nothing is trained or chosen on them (docs/rules.md); this is kept for R003 to R005's record.
+DEFAULT_PROFILE = "tracking"
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Measure how far a degraded profile looks like our match: gates (exit 1 if one fails), warnings.")
-    parser.add_argument("--profile", default=run.DEFAULT_PROFILE,
+    parser.add_argument("--profile", default=DEFAULT_PROFILE,
                         help="the profile to measure: {} (default {})".format(", ".join(sorted(GATES)),
-                                                                              run.DEFAULT_PROFILE))
+                                                                              DEFAULT_PROFILE))
     parser.add_argument("--seeds", type=int, default=DEFAULT_SEEDS,
                         help="degradation seeds per match (default {})".format(DEFAULT_SEEDS))
     parser.add_argument("--matches", nargs="+", metavar="ID", help="the matches to measure (default: all 7)")

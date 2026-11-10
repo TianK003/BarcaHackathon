@@ -337,14 +337,16 @@ def test_generic_is_held_to_no_fidelity_gate_against_our_match():
     refused, by name and with the profiles that have gates, before a Calibration is loaded (calibration.load raises
     here) and before a match is (the loader raises too); the command says FAILED, exits 1 and writes nothing.
 
-    What is held here is the refusal, not its reason. fidelity.py's sentence gives the clean profile's reason for every
-    profile without gates ("degrades nothing"), which is not true of generic: it degrades, and is not held to our
-    match. And fidelity.py's --profile defaults to the runner's default, so a bare `fidelity.py` asks for this refusal.
-    Both are reported with P27 and are fidelity.py's to fix; neither is asserted, so that the fix needs no change
-    here."""
+    What is held here is the refusal, not its reason. Until R030 fidelity.py's sentence gave the clean profile's reason
+    for every profile without gates ("degrades nothing"), which is not true of generic (it degrades, and is not held
+    to our match), and its --profile defaulted to the runner's default, so a bare `fidelity.py` asked for this
+    refusal. R030 fixed both: the sentence now gives each profile's reason, and fidelity.DEFAULT_PROFILE is tracking.
+    Only the default is asserted here."""
     assert set(fidelity.GATES) == set(degrade.NEEDS_CALIBRATION) == {"gaps", "tracking", "context"}, (
         "a gate holds a profile to a measurement of our match: only the profiles that read it have any")
     assert "generic" not in fidelity.GATES and "clean" not in fidelity.GATES
+    assert fidelity.DEFAULT_PROFILE in fidelity.GATES and fidelity.DEFAULT_PROFILE != benchmark_run.DEFAULT_PROFILE, (
+        "a bare fidelity.py measures a profile that has gates, not the runner's default (generic has none)")
 
     def no_match(match_id):
         raise AssertionError("a match was loaded for a fidelity report that is refused: " + match_id)

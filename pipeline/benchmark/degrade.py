@@ -1284,9 +1284,10 @@ def degrade(view, profile, calibration, seed):
     """(Atd, info): the tracking of `view` as `profile` makes it under `seed`, and what was drawn to make it.
 
     `calibration` is the Calibration of BAR-ATH (calibration.load()): the gaps, tracking and context profiles need it,
-    the clean one does not use it. The Atd has the BAR-ATH cache's own layout (inputs.clean_atd), every array read-only,
-    and the length of the match; the tracking and context profiles' have 46 slots (slot_team) where the others have one
-    per DFL player.
+    the clean one does not use it, and the generic one takes None and nothing else (it reads nothing of our match,
+    P27). The Atd has the BAR-ATH cache's own layout (inputs.clean_atd), every array read-only, and the length of the
+    match; the tracking, context and generic profiles' have 46 slots (slot_team) where the others have one per DFL
+    player. For generic, `info` holds "ball" (the gaps drawn, per half), "mask_share" and "players".
     `info` is JSON-ready and holds no frame of anybody: {"profile", "version", "seed", "match_id", "match_index"} and,
     for gaps and tracking, "transplants" ({half: {"source_half", "offset", "frames"}}) and "mask_share": the share of
     the frames that the transplant covers where the transplanted mask says the ball is missing. It is the mask's

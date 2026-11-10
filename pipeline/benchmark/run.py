@@ -193,8 +193,10 @@ def make_atd(match, profile, seed, calibration=None):
     (degrade.py), and degrade.degrade makes the Atd: "clean" is DFL's tracking as it is (nothing is degraded, so the
     seed and the calibration are not used); "gaps" has our ball's missing masks transplanted onto it; "tracking" adds
     the players broken up as ours are (tracklets, slots, a wrong-team slot now and then, NaN speeds, a cap on the frames
-    where ours tracks few); "context" has tracking's players and a ball whose gaps the hazard fitted on our match draws.
-    Every profile but clean needs `calibration`. BenchmarkError, listing the profiles there are, for any other name.
+    where ours tracks few); "context" has tracking's players and a ball whose gaps the hazard fitted on our match draws;
+    "generic" (P27, the default) has a ball and players lost by declared rules and two figures of the task statement,
+    and reads nothing of our match. gaps, tracking and context need `calibration`; clean does not use it, and generic
+    refuses one. BenchmarkError, listing the profiles there are, for any other name.
     """
     _check_profile(profile)
     return degrade.degrade(degrade.tracking_view(match), profile, calibration, seed)[0]
@@ -212,7 +214,7 @@ def evaluate_configs(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_id
     """Run each config on each match and score it; the result holds a JSON-ready report per config.
 
     `config_paths` are TOML files for pipeline.config.load_config; the first is the reference of the comparisons.
-    `profile` names how the tracking is made (PROFILES; the default is tracking) and `seeds` is how many degradation
+    `profile` names how the tracking is made (PROFILES; the default is generic since P27) and `seeds` is how many degradation
     seeds to run, 0 up to seeds - 1 (None, the default, is DEFAULT_SEEDS). The clean profile has none to repeat: its one
     seed is 0, and a note says so when a number of seeds was asked for (and is not 1) and not otherwise. `match_ids` are
     the matches, in the order to run them (default: all seven, sources.MATCH_IDS' order; a report lists them in id order

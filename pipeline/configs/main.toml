@@ -6,36 +6,42 @@
 # name), change it, run it, and log the run in docs/results.md. When an experiment wins on validation, its changes
 # come back here.
 #
-# Today this is P04 + P05 + P07 + P02 together, with the touch rule and the decoder re-chosen by R013 (P08, Smart
-# Tagging, was added by R017 and taken out again by R029, see below):
-# controlled_touch for `home` (P04: radius 1.5 m, 6.0 m/s, 1 frame, hold 0.55 since R024), the hgb dead_ball_model for `alive`
-# (P05), shape_possession for `home` on every graded frame (P07, weight 0.2), the hmm decoder (switch_team 4,
+# Today this is P04 + P05 + P07 + P02 together, with both models retrained and every constant re-chosen by R030 (P27,
+# 10 Nov 2026) on the benchmark's `generic` profile:
+# controlled_touch for `home` (P04: radius 1.5 m, 6.0 m/s, 1 frame, hold 0.60), the hgb dead_ball_model for `alive`
+# (P05), shape_possession for `home` on every graded frame (P07, weight 0.3), the hmm decoder (switch_team 6,
 # switch_dead 32, min_possession 35, min_dead 25) and, after the decoder, shift_edges at the pipeline's own lag (P02: a
-# change of team 1 frame later, a change into D 2 frames earlier, a change out of D unmoved). Every constant was chosen
-# on the P01 benchmark (the seven DFL matches degraded as `tracking` v3, three seeds) by a rule declared before its runs,
-# or is a measurement, a fixed rule or the documented kick-offs (the audit in docs/technical_document.md, section 5):
-# the dead-ball model in R009 and R010, P07's model in R011, and R013 re-chose the touch rule (Stage A, 192 configs),
-# then switch_team, min_possession and P07's weight (Stage C, 144 configs) on this file's own evidence, with none of the
-# window-derived sources (nearest_player, ball_presence) in any candidate, and re-derived the shift by R012's rule (it
-# came out as R012's: +1, -2, 0). R017 then added P08's Smart Tagging team votes to what R013 left, at Tian's pick of
-# strength (2026-10-30): the `smart_tagging` source with c_team 0.76, the towards_half of its measured agreement with our
-# own controlled_touch pseudo-labels (0.761; the dead votes failed their bar at 0.409 and were dropped), spread "frame"
-# and weight 0.2, both Tian's pick and neither tested on a benchmark (DFL has no tags; the source is MATCH_ONLY, so the
-# benchmark runs this file with --drop-match-only). The R013 sentences that follow describe the file before R017.
-# R024 (P23 A) then re-chose R013's two stages under R023's objective, the mean of the raw and the coarse truth: the
-# touch hold moved from 0.60 to 0.55, and the decoder, P07's weight and the shift stayed (docs/results.md R024).
-# R029 (2026-11-03) took the `smart_tagging` source out again: its c_team was measured on our own match, and the
-# organisers' clarification of 3 Nov 2026 has every parameter tuned on external data only (docs/rules.md); its weight
-# was picked after seeing our match's output, and DFL has no tags to set either on. So this file now has no match-only
-# source, and its benchmark score is R024's (the benchmark always ran it with --drop-match-only). R024's file with the
-# tags is r024_both.toml, R017's r017_frame.toml.
-# R013's guard against R012's main.toml passed (`tracking` raw +0.0267, p 0.0156, 7 wins in 7; `tracking` coarse
-# +0.0001; `context`, a sensitivity check, +0.0327 raw and +0.0097 coarse) and so did its label-free checks on BAR-ATH. Its file is r013_retune.toml; R012's main.toml is p02_shift.toml, R011's p07_shape.toml
-# and R010's p45_hmm.toml. The benchmark overstates P05 for BAR-ATH by an amount it cannot measure (docs/traps.md T38,
-# T39), the shape model was trained on other teams' matches, and the raw and the coarse truth still disagree on how
-# finely to cut possessions (T33): read R010 to R013 before trusting the size of any gain.
+# change of team 1 frame later, a change into D 2 frames earlier, a change out of D unmoved).
+#
+# Why R030. The organisers' reply of 5 Nov 2026 ("anything that is not explicitly allowed is not permitted",
+# docs/rules.md) makes, by our reading, the benchmark's old degradation not permitted: `tracking` v3 was fitted on
+# label-free statistics of our own match, and both models and every constant up to R029 stood on it. P27 replaced it
+# with `generic` v1 (docs/superpowers/specs/2026-11-09-p27-degradation-design.md): no measurement of ours enters it. It
+# quotes two figures from the organisers' DATA.md (41% of the graded frames without a ball, a mean of 20.5 tracked
+# objects) and declares round rules for the rest. On the seven DFL matches degraded that way (three seeds), by rules
+# declared before the runs and applied by pipeline/benchmark/p27_choose.py:
+#   - both models were retrained (pipeline/models/), and the touch rule's confidence measured again (0.93);
+#   - Stage A re-chose the touch rule (192 configs): 1.5 m / 6.0 m/s / 1 frame stayed, the hold went 0.55 -> 0.60 by
+#     the declared tie-break (within 0.005 of the best mean, the larger of the worse truth's score);
+#   - Stage C re-chose the decoder and P07's weight (144 configs): switch_team 4 -> 6, min_possession stayed 35, the
+#     weight went 0.2 -> 0.3;
+#   - Stage D re-chose what R009 to R011 had chosen (13 configs): switch_dead 32, min_dead 25, the dead-ball weight
+#     1.0 and scope "all" all stayed, and the config without the shape source is 0.10 lower;
+#   - Stage E re-derived the shift by R012's rule: +1, -2, 0, as before; its guard keeps it on a hair (the mean of
+#     the two truths +0.00003, raw +0.0004, coarse -0.0004).
+# Its benchmark score is 0.5414 raw and 0.5829 coarse pooled spellF1 (mean 0.5622), against 0.5388 and 0.5779 (mean
+# 0.5584) for the constants it had before on the same profile and models (docs/results.md R030). The components
+# themselves (the touch rule, the two tree models, the hmm, the shift) and the trees' settings were adopted on the old
+# benchmark and are not re-chosen; the bar on `generic` re-verifies the whole.
+# This file before R030 (R029's, sha256 762f9073...) is in the git history at
+# commit b113f21, with the models of that commit; the older configs beside this one (r024_both.toml, r013_retune.toml,
+# p02_shift.toml, p07_shape.toml, p45_hmm.toml) name the same model files, which R030 retrained, so none of them
+# rebuilds its logged file from today's tree: check out its commit for that.
+# The benchmark overstates P05 for BAR-ATH by an amount it cannot measure (docs/traps.md T38, T39), `generic`'s gaps
+# ignore the play, the shape model was trained on other teams' matches, and the raw and the coarse truth still disagree
+# on how finely to cut possessions (T33): read R030 before trusting the size of any gain.
 
-description = "P04 + P05 + P07 + P02, re-chosen by R013 (the hold re-chosen by R024; P08, added by R017, taken out by R029 under the 3 Nov rules): controlled_touch 1.5 m / 6.0 m/s / 1 frame / hold 0.55 (confidence 0.93) + dead_ball_model (hgb, pipeline/models/dead_ball_hgb.json) at weight 1.0 + shape_possession (hgb, pipeline/models/shape_possession_hgb.json) at weight 0.2, scope all, min_prob 0.02, hmm 4/32/35/25, decoded per half, then shift_edges team +1 / into_dead -2 / out_of_dead 0 frames."
+description = "P04 + P05 + P07 + P02, every constant re-chosen by R030 (P27) on the benchmark's generic profile: controlled_touch 1.5 m / 6.0 m/s / 1 frame / hold 0.60 (confidence 0.93) + dead_ball_model (hgb, pipeline/models/dead_ball_hgb.json) at weight 1.0 + shape_possession (hgb, pipeline/models/shape_possession_hgb.json) at weight 0.3, scope all, min_prob 0.02, hmm 6/32/35/25, decoded per half, then shift_edges team +1 / into_dead -2 / out_of_dead 0 frames."
 seed = 0
 scope = "halves"
 
@@ -47,8 +53,8 @@ kind = "controlled_touch"
 radius = 1.5                                  # metres: the nearest player must be this close
 max_rel_speed = 6.0                           # m/s: and move with the ball
 min_frames = 1                                # an episode shorter than this is dropped
-confidence = 0.93                             # touch_stats.py --grid r013: floor of the pooled agreement (93.1%)
-hold = 0.55                                   # the weak vote of the last team between episodes; 0.5 = off (R024)
+confidence = 0.93                             # touch_stats.py --grid r013 --profile generic: floor of the pooled agreement (93.5%)
+hold = 0.6                                    # the weak vote of the last team between episodes; 0.5 = off (R030)
 
 [[evidence]]
 kind = "dead_ball_model"
@@ -57,7 +63,7 @@ model = "pipeline/models/dead_ball_hgb.json"  # relative to the repo root
 
 [[evidence]]
 kind = "shape_possession"
-weight = 0.2                                          # an exponent on the source's likelihood (R011, kept by R013)
+weight = 0.3                                          # an exponent on the source's likelihood (R030)
 model = "pipeline/models/shape_possession_hgb.json"   # relative to the repo root; BAR-ATH has no fold, so `full`
 scope = "all"                                         # "gaps": ball missing only; "all": every graded frame
 min_prob = 0.02                                       # home is clipped to [0.02, 0.98]
@@ -65,7 +71,7 @@ min_prob = 0.02                                       # home is clipped to [0.02
 # Exactly one decoder (pipeline/decode/). Every key but kind is a keyword argument.
 [decoder]
 kind = "hmm"
-switch_team = 4                               # nats a change of team (H <-> A) costs
+switch_team = 6                               # nats a change of team (H <-> A) costs
 switch_dead = 32                              # nats a change into or out of D costs
 min_possession = 35                           # frames: no run of H or A shorter than this (1 is no minimum)
 min_dead = 25                                 # frames: no run of D shorter than this (1 is no minimum)

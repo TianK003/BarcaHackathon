@@ -40,10 +40,11 @@ def _stage_a():
     return {"p27a_" + p27_grid.touch_stem(s): s for s in settings}
 
 
-def _stage_c():
+def _stage_c(prefix="p27"):
     settings = [(t, mp, w) for t in p27_grid.SWITCH_TEAMS for mp in p27_grid.MIN_POSSESSIONS for w in p27_grid.WEIGHTS]
     settings.sort(key=lambda s: (-s[0], -s[1], s[2]))
-    return {"p27c_t{:02d}_mp{:03d}_w{:03d}".format(t, mp, int(round(w * 1000))): (t, mp, w) for t, mp, w in settings}
+    return {"{}c_t{:02d}_mp{:03d}_w{:03d}".format(prefix, t, mp, int(round(w * 1000))): (t, mp, w)
+            for t, mp, w in settings}
 
 
 def _write(name, choice, data_dir):
@@ -61,37 +62,38 @@ def _mean(choice, stem):
     return choice["rows"][stem]["mean"]["spell"]
 
 
-def stage(name, table, data_dir, reference=REFERENCE, top=12):
+def stage(name, table, data_dir, reference=REFERENCE, top=12, prefix="p27"):
     choice = choose.choose(list(table), reference, profile=PROFILE, band=BAND, objective="mean", data_dir=data_dir)
     _show(choice, top)
-    _write("stage_{}_choice.json".format(name), choice, data_dir)
+    _write("{}stage_{}_choice.json".format("" if prefix == "p27" else prefix + "_", name), choice, data_dir)
     return choice
 
 
-def stage_d(data_dir):
+def stage_d(data_dir, prefix="p27"):
     """Stage D: each group by the rule of Stages A and C, the incumbent (p27d_base) one candidate among the others,
     in the tie order of the entry that first chose it; returns the arguments that differ from Stage C's choice."""
-    incumbent = "p27d_base"
+    incumbent = prefix + "d_base"
     groups = {     # name -> [(stem, the argument that makes it; None for the incumbent)], in the declared tie order
         # R010: larger switch_dead, then larger min_dead.
         "decoder_dead": [(incumbent if (sd, md) == (p27_grid.SWITCH_DEAD, p27_grid.MIN_DEAD)
-                          else "p27d_sd{:02d}_md{:02d}".format(sd, md),
+                          else "{}d_sd{:02d}_md{:02d}".format(prefix, sd, md),
                           None if (sd, md) == (p27_grid.SWITCH_DEAD, p27_grid.MIN_DEAD)
                           else "--switch-dead {} --min-dead {}".format(sd, md))
                          for sd in sorted(p27_grid.SWITCH_DEADS, reverse=True)
                          for md in sorted(p27_grid.MIN_DEADS, reverse=True)],
         # R009: the smaller weight.
-        "dead_weight": [(incumbent if dw == p27_grid.DEAD_WEIGHT else "p27d_dw{:03d}".format(int(round(dw * 100))),
+        "dead_weight": [(incumbent if dw == p27_grid.DEAD_WEIGHT
+                         else "{}d_dw{:03d}".format(prefix, int(round(dw * 100))),
                          None if dw == p27_grid.DEAD_WEIGHT else "--dead-weight {}".format(dw))
                         for dw in sorted(p27_grid.DEAD_WEIGHTS)],
         # R011: gaps over all.
-        "scope": [("p27d_scope_gaps", "--scope gaps"), (incumbent, None)],
+        "scope": [(prefix + "d_scope_gaps", "--scope gaps"), (incumbent, None)],
     }
-    stems = [stem for group in groups.values() for stem, _ in group if stem != incumbent] + ["p27d_noshape"]
+    stems = [stem for group in groups.values() for stem, _ in group if stem != incumbent] + [prefix + "d_noshape"]
     choice = choose.choose([incumbent] + stems, incumbent, profile=PROFILE, band=BAND, objective="mean",
                            data_dir=data_dir)
     _show(choice, None)
-    _write("stage_d_choice.json", choice, data_dir)
+    _write("{}stage_d_choice.json".format("" if prefix == "p27" else prefix + "_"), choice, data_dir)
     rows = choice["rows"]
     arguments, changed = [], 0
     for name, group in groups.items():
@@ -105,7 +107,7 @@ def stage_d(data_dir):
         if chosen != incumbent:
             arguments.append(dict(group)[chosen])
             changed += 1
-    base, without = _mean(choice, incumbent), _mean(choice, "p27d_noshape")
+    base, without = _mean(choice, incumbent), _mean(choice, prefix + "d_noshape")
     keeps = base >= without
     print("group     shape         with {:.4f}, without {:.4f}: {}".format(
         base, without, "the shape source stays" if keeps else "the shape source is DROPPED"))
@@ -148,6 +150,8 @@ def main(argv=None):
     parser.add_argument("stage", choices=("a", "c", "d", "bar", "guard"))
     parser.add_argument("stems", nargs="*")
     parser.add_argument("--data-dir")
+    parser.add_argument("--prefix", default="p27",
+                        help="the stems' prefix for stages c and d (default p27, the declared branch)")
     args = parser.parse_args(argv)
     reconfigure = getattr(sys.stdout, "reconfigure", None)
     if reconfigure is not None:
@@ -158,8 +162,8 @@ def main(argv=None):
             chosen = table[stage("a", table, args.data_dir)["chosen"]]
             print("NEXT --touch {},{},{},{}".format(*chosen))
         elif args.stage == "c":
-            table = _stage_c()
-            choice = stage("c", table, args.data_dir)
+            table = _stage_c(args.prefix)
+            choice = stage("c", table, args.data_dir, prefix=args.prefix)
             t, mp, w = table[choice["chosen"]]
             edge = [name for name, value, values in (("switch_team", t, p27_grid.SWITCH_TEAMS),
                                                       ("min_possession", mp, p27_grid.MIN_POSSESSIONS),
@@ -169,7 +173,7 @@ def main(argv=None):
                     ", ".join(edge)))
             print("NEXT --decoder {},{} --weight {}".format(t, mp, w))
         elif args.stage == "d":
-            print("NEXT {}".format(" ".join(stage_d(args.data_dir))))
+            print("NEXT {}".format(" ".join(stage_d(args.data_dir, args.prefix))))
         elif args.stage == "bar":
             return 0 if bar(args.stems[0], args.data_dir) else 2
         else:
