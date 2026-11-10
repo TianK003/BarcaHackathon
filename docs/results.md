@@ -10200,8 +10200,9 @@ clone.
 on the benchmark's `generic` profile, which measures nothing of our match. It now produces sha256
 `2dd51320b1d32f8be6d06e63f833e6d8e196ddcaad294b606db3914c351c1660` (commit `c8d596e`): the same on two runs from a
 rebuilt cache, and from a clean clone of that commit in a fresh environment built from `requirements-pipeline.txt`;
-again with the BLAS thread variables unset (`5ca7126`) and on Linux under WSL 2 (`1be0107`, twice). All of it on one
-laptop (AMD Ryzen 5 5500U): a second CPU is still to do (T21). A copy named `Un Dia de Partit.csv` sits beside the repository
+again with the BLAS thread variables unset (`5ca7126`) and on Linux under WSL 2 (`1be0107`, twice); and last from a
+clean clone of `6864c13`, the night's last commit before this line, with every document of R030 in it. All of it on
+one laptop (AMD Ryzen 5 5500U): a second CPU is still to do (T21). A copy named `Un Dia de Partit.csv` sits beside the repository
 (`C:\Users\Tian\Desktop\`), passes `validate_submission.py`, and has **NOT been uploaded**: the upload is Tian's, after
 the two choices that R030 lists as not obvious.
 
