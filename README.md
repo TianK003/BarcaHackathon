@@ -15,9 +15,35 @@
 > - **[site/index.html](site/index.html): the pipeline overview.** It covers each stage, what is built, what is planned,
 >   the history and the work left.
 >
+> - **[Reproducing our submission](#reproducing-our-submission-team-un-dia-de-partit):** the install and the one
+>   command that goes from `data/` to the submitted CSV, just below.
+>
 > Open the pages from a local clone: double-click them, or run `start site/index.html` on Windows or `open` on macOS.
 > GitHub shows their source, not the rendered page. Then read [CLAUDE.md](CLAUDE.md) and [docs/](docs/README.md).
-> Below is the organisers' original README.
+> The organisers' original README follows the next section.
+
+## Reproducing our submission (team Un Dia de Partit)
+
+Python 3.11.9. Unpack the organisers' data bundle into `data/` as [data/README.md](data/README.md) describes (the
+match data is not in this repository, by the competition's terms). Then, from the repository root:
+
+```bash
+py -3.11 -m venv .venv                                             # macOS/Linux: python3.11 -m venv .venv
+.venv/Scripts/python -m pip install -r requirements-pipeline.txt   # macOS/Linux: .venv/bin/python; exact pins
+.venv/Scripts/python pipeline/run.py pipeline/configs/main.toml    # data/ -> evaluation/results/main.csv
+```
+
+The command parses the tracking, runs the pipeline, writes the CSV, validates it with the official checks and prints
+its sha256. That hash must equal the one in the submission log at the end of [docs/results.md](docs/results.md); the
+file is the same byte for byte from a clean clone. Rename the CSV to `Un Dia de Partit.csv` to get the uploaded file
+(or pass `--out "../Un Dia de Partit.csv"`).
+
+- The two trained models are committed as JSON (`pipeline/models/`), so nothing is trained at run time and no GPU is
+  needed. Retraining them from the public DFL matches, and re-running the choice of every constant, takes
+  `requirements-benchmark.txt` and the commands in [pipeline/benchmark/README.md](pipeline/benchmark/README.md).
+- How it works: [pipeline/README.md](pipeline/README.md) and the technical document,
+  [docs/technical_document_submission.md](docs/technical_document_submission.md).
+- Checks: `python pipeline/selftest.py` (seconds, no data needed) and `python pipeline/selftest.py --data`.
 
 **Organised by [Metrica Sports](https://metrica-sports.com), [FC Barcelona](https://www.fcbarcelona.com)
 and the [Mobile World Capital Barcelona](https://www.mwcbarcelona.com)**, at the Talent Arena in Barcelona.

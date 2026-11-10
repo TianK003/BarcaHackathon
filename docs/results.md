@@ -2378,6 +2378,28 @@ it is recorded in [rules.md](rules.md) and as [P27](proposals.md) in proposals.m
 **Decided the same evening (Tian, 9 Nov):** redo the degradation (P27); keep the mean of the two truths as the
 objective; do not send questions 5 and 6.
 
+### A25 — main.toml's headroom and its IoU ladder on `generic` (declared 2026-11-10, before the runs; the advisor's ruling, in Tian's place)
+
+**Part 1, declared before any run** (10 Nov, 02:00). A13 (where `main.toml`'s remaining spellF1 is) and A19 (the IoU
+ladder and the calibration) were measured on `tracking` v3 and on the `main.toml` of their day. Both are retired by
+R030. This repeats them on `generic` v1 and today's `main.toml`, because the technical document and Tian's decision
+on P24 need today's figures. **It is a measurement: nothing is adopted and no lane is opened by it.**
+
+Commands, one process at a time on one BLAS thread:
+
+```bash
+python pipeline/benchmark/headroom.py pipeline/configs/main.toml --profile generic --seeds 3 --variants alive plus_home_visible plus_home_gaps plus_home_all alive_plus_home_visible alive_plus_home_gaps alive_plus_home_all --truth raw --write
+python pipeline/benchmark/headroom.py pipeline/configs/main.toml --profile generic --seeds 3 --variants alive plus_home_visible plus_home_gaps plus_home_all alive_plus_home_visible alive_plus_home_gaps alive_plus_home_all --truth coarse --write
+python pipeline/benchmark/diagnose.py pipeline/configs/main.toml --profile generic --seeds 3
+```
+
+A19's report, `data/runs/diagnose/main.json`, is renamed `main.tracking.json` first: the bare name now means
+`generic` (the default profile).
+
+**Its limit, known beforehand.** `generic`'s gaps ignore the play. So the split of the headroom between the frames
+with a ball and the frames without one, and the dead-ball oracle's headroom, are the benchmark's and not our match's
+(T38, T39). The `main` row must reproduce R030's 0.5414 raw and 0.5829 coarse.
+
 ## Experiments
 
 Copy this template for each run, and add a scoreboard row for anything worth comparing.
@@ -9845,6 +9867,36 @@ constant was chosen, and both models were trained, on `generic`; the architectur
   above sit on that trade-off.
 - The reports' commit fields carry `+dirty`: configs and docs were being written while they ran. No pipeline code
   changed between `95c75ce` and the last run.
+
+**After the choice: two runs declared before they are made** (10 Nov, 02:00; the advisor's ruling of 01:53, in Tian's
+place). Neither changes `main.toml`, the file or the rule's outcome. Their results are added below when they exist.
+
+*1. R030, sensitivity to the seeds: made after the choice, outside the spec, chooses nothing.*
+- **Why.** Two choices turned on the tie band's edge (Stage A's `h60` inside it by 0.000004, Stage C's
+  `t06_mp025_w300` outside it by 0.000034), and three seeds made those margins. Tian is to review both choices, so
+  this shows how fragile each tie is. It is information for that review and nothing else.
+- **What.** One run, `run.py ... --profile generic --seeds 6 --truth both`, of six configs, all before the shift:
+  `p27_ref` (the incumbent constants, first), `p27a_r15_v06_k1_h60` (Stage A's choice at the incumbent decoder: the
+  hold alone), `p27_preshift` (the declared outcome), `p27c_t06_mp025_w300` (the second knife-edge),
+  `p27c_t08_mp050_w300` (Stage C's best mean) and the alternative branch's pre-shift config (Stage C and D re-run at
+  the hold 0.55, stems `alt55*`, a labelled alternative for the same review). The reports carry the suffix `.s6`, so
+  the three-seed reports stay and `p27_choose.py` cannot read the new ones.
+- **What is reported.** Seeds 0 to 5 pooled, and seeds 3 to 5 alone: only those three played no part in the
+  selection.
+- **What it may not do.** It may not change `main.toml` or the prepared file, open a new config or another seed run,
+  or become a rule. The declared outcome is the default whatever it shows: the options' means lie within about 0.007
+  of each other, and a gap under 0.04 on the full match is not real.
+- **Neither alternative is run on our match or on the public window** before Tian has decided on the benchmark's
+  figures alone. An overturn repeats the whole close-out.
+
+*2. A run from a clean tree, and the touch source's ablation; post hoc.*
+- `p27_preshift`, `p27_final` and a new `p27d_notouch` (`p27_preshift` without `controlled_touch`), `--profile generic
+  --seeds 3 --truth both`, from a tree with nothing uncommitted.
+- It replaces the `+dirty` reports of the final configs with clean ones, which must score as before to the last
+  digit. And it completes "each source re-verified on `generic`": Stage D removed the shape source and weighed the
+  dead-ball model down; nothing removed the touch rule.
+- It is labelled post hoc because the spec did not declare it. If the config without the touch rule scores higher on
+  the mean, that goes to Tian and nothing is changed tonight.
 
 **Not uploaded.** The upload and the public repository are Tian's.
 

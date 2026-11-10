@@ -1,0 +1,25 @@
+# P27, post hoc (docs/results.md R030, "After the choice"): p27_preshift.toml with its controlled_touch block
+# removed and nothing else changed. The ablation of the touch source, which the spec's Stage D did not hold.
+
+description = "P27, post hoc (R030): the chosen pipeline, pre-shift, without controlled_touch"
+seed = 0
+scope = "halves"
+
+[[evidence]]
+kind = "dead_ball_model"
+weight = 1.0
+model = "pipeline/models/dead_ball_hgb.json"
+
+[[evidence]]
+kind = "shape_possession"
+weight = 0.3
+model = "pipeline/models/shape_possession_hgb.json"
+scope = "all"
+min_prob = 0.02
+
+[decoder]
+kind = "hmm"
+switch_team = 6
+switch_dead = 32
+min_possession = 35
+min_dead = 25
