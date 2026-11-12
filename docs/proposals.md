@@ -1403,7 +1403,11 @@ smallest.
 
 ### P30 — Timing-aware shape features
 
-**Status: started 12 Nov 2026.** Effort M. Odds put at about one in four.
+**Status: cleared the bar 12 Nov 2026 → [R033](results.md): gate G2 passed (held-out log-loss in the gaps 0.3189
+against 0.3560, lower on all seven matches); the pick `p30_w030` (the version 2 model at today's weight 0.3) gained
++0.0143 on the mean of the two truths (raw +0.0215, coarse +0.0072; all seven matches won, p 0.016). It is the
+night's candidate, `pipeline/configs/candidates/p30_shape_v2.toml`: not adopted, Tian decides.** Effort M. Odds put
+at about one in four.
 
 **The belief.** Clean pairs have a median edge error of 0 but an upper quartile of +14 to +27 frames (A25), 42% of
 DFL's changes of team happen with the ball hidden (R031), and P07's time features are centred windows of ±1 s and
