@@ -42,6 +42,7 @@ python pipeline/benchmark/metrica.py [--offline]   # P16: the grain of H/A/D der
 python pipeline/benchmark/touch_stats.py      # P04's control rule measured: coverage, agreement, flip lags, confidence
 python pipeline/benchmark/train_dead_ball.py --model hgb   # P05: train the dead-ball model (folds + full) as JSON; --profile generic is the default
 python pipeline/benchmark/train_shape.py [--verify|--report]   # P07: train the shape model (folds + full) as JSON; --profile generic is the default
+python pipeline/benchmark/train_team.py [--verify|--dry-run|--feasibility]   # P32: train the team model (folds + full), count its rows, or test it against p30_w030; --profile generic is the default
 python pipeline/benchmark/conventions.py public|dfl|compare|latency|shift ...   # P02: when a truth flips, the shift
 python pipeline/benchmark/selftest.py [--dfl] [--data]   # the checks
 ```
