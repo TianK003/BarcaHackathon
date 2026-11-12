@@ -104,8 +104,7 @@ module of its topic:
     p31.py       P31's config: p27_final but for the decoder's team_neutral_dead flag (config files)
     team.py      P32's team model where the ball is seen (train_team) and its four configs (synthetic and config files)
     p33.py       P33: shape features version 3 in the trainer, and its two configs (synthetic and config files)
-    p34.py       P34: the shape model trained on both truths' labels (train_shape --labels) and its config (synthetic
-                 and config files)
+    p34.py       train_shape's report: the coarse-truth cells kept from P34 (dropped, R036) (synthetic only)
     harness.py   the harness itself: what it collects, how it reports NOT RUN, the console set-up, and that no check
                  module imports another one
     common.py    what several modules share, and no checks of its own: the synthetic DFL match, the random one
