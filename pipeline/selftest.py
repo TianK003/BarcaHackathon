@@ -3884,7 +3884,7 @@ def test_shape_features_v2_names_and_shape():
     names = shape_features.feature_names(2)
     assert names == tuple("h_" + t for t in V2_TEAM) + tuple("a_" + t for t in V2_TEAM) + ("adv_gap", "n_diff")
     assert len(names) == 42 and len(set(names)) == 42
-    assert shape_features.VERSIONS == (1, 2) and shape_features.ONE_SIDED_S == (2.0, 5.0, 10.0)
+    assert shape_features.VERSIONS == (1, 2, 3) and shape_features.ONE_SIDED_S == (2.0, 5.0, 10.0)
     assert shape_features.feature_names(1) == shape_features.FEATURE_NAMES == SHAPE_NAMES
     assert shape_features.columns(2) == {name: index for index, name in enumerate(names)}
     assert shape_features.columns(1) == shape_features.COLUMN
@@ -3895,8 +3895,8 @@ def test_shape_features_v2_names_and_shape():
     assert names2 == names and X2.shape == (len(players), 42) and X2.dtype == np.float64
     assert not X2.flags.writeable and shape_features.features(inputs, 2)[1] is X2
     assert np.isfinite(X2[graded[0][1]:graded[0][2], shape_features.columns(2)["h_spread"]]).any()
-    expect_error(ValueError, lambda: shape_features.features(inputs, 3), "shape_features", "version", "3")
-    expect_error(ValueError, lambda: shape_features.feature_names(3), "shape_features", "version", "3")
+    expect_error(ValueError, lambda: shape_features.features(inputs, 4), "shape_features", "version", "4")
+    expect_error(ValueError, lambda: shape_features.feature_names(4), "shape_features", "version", "4")
 
 
 def test_shape_features_v2_keeps_v1():
@@ -3978,6 +3978,134 @@ def test_shape_features_v2_swap():
     flipped = shape_features.swap(row)
     assert flipped[:20].tolist() == list(range(20, 40)) and flipped[20:40].tolist() == list(range(20))
     assert flipped[40] == -40.0 and flipped[41] == -41.0
+    expect_error(ValueError, lambda: shape_features.swap(np.zeros((4, 30))), "shape_features.swap", "30")
+
+
+def shape_matrix_v3(players, teams, graded):
+    from pipeline.evidence import shape_features
+    names, X = shape_features.features(shape_inputs(players, teams, graded), 3)
+    assert len(names) == 60
+    return {name: X[:, index] for index, name in enumerate(names)}, X
+
+
+V3_NEW = ("spread_past_5s", "spread_fut_5s", "width_past_5s", "width_fut_5s", "adv_past_20s", "adv_fut_20s")
+V3_DIFFS = tuple("adv_{}_{}s_diff".format(side, seconds) for side in ("past", "fut") for seconds in (2, 5, 10))
+
+
+def test_shape_features_v3_names_and_keeps_v2():
+    from pipeline.evidence import shape_features
+    names = shape_features.feature_names(3)
+    team = tuple(V2_TEAM) + V3_NEW
+    assert names == tuple("h_" + t for t in team) + tuple("a_" + t for t in team) + ("adv_gap", "n_diff") + V3_DIFFS
+    assert shape_features.TEAM_COLUMNS_V3 == team and len(team) == 26
+    assert shape_features.CROSS_COLUMNS_V3 == ("adv_gap", "n_diff") + V3_DIFFS
+    assert shape_features.FEATURE_NAMES_V3 == names and len(names) == 60 and len(set(names)) == 60
+    assert shape_features.VERSIONS == (1, 2, 3)
+    assert shape_features.columns(3) == {name: index for index, name in enumerate(names)}
+    for seed in range(3):
+        players, teams, graded = shape_scene(seed)
+        inputs = shape_inputs(players, teams, graded)
+        X1 = shape_features.features(inputs, 1)[1]
+        X2 = shape_features.features(inputs, 2)[1]
+        names3, X3 = shape_features.features(inputs, 3)
+        assert names3 == names and X3.shape == (len(players), 60) and X3.dtype == np.float64
+        assert not X3.flags.writeable and shape_features.features(inputs, 3)[1] is X3
+        assert shape_features.features(inputs, 1)[1] is X1 and shape_features.features(inputs, 2)[1] is X2
+        column = shape_features.columns(3)
+        for index, name in enumerate(shape_features.feature_names(2)):
+            assert np.array_equal(X2[:, index], X3[:, column[name]], equal_nan=True), (seed, name)
+    expect_error(ValueError, lambda: shape_features.features(inputs, 4), "shape_features", "version", "4")
+    expect_error(ValueError, lambda: shape_features.feature_names(4), "shape_features", "version", "4")
+
+
+def test_shape_features_v3_known_values():
+    n = 600
+    # two home slots spreading apart by 0.2 m in x and 0.1 m in y a frame: the distance to the centroid grows by
+    # hypot(0.1, 0.05) a frame, the p90 - p10 of y by 0.8 * 0.1
+    t = np.arange(n)[:, None]
+    spreading = np.stack([np.concatenate([60.0 - 0.1 * t, 34.0 - 0.05 * t], axis=1),
+                          np.concatenate([60.0 + 0.1 * t, 34.0 + 0.05 * t], axis=1),
+                          np.tile([[80.0, 30.0]], (n, 1))], axis=1)
+    values, _ = shape_matrix_v3(spreading, np.array([0, 0, 1]), [(1, 0, n)])
+    for name, want in (("spread_past_5s", 125 * np.hypot(0.1, 0.05)), ("spread_fut_5s", 125 * np.hypot(0.1, 0.05)),
+                       ("width_past_5s", 10.0), ("width_fut_5s", 10.0)):
+        column = values["h_" + name]
+        assert np.isfinite(column).sum() == n - 125, name
+        assert np.allclose(column[np.isfinite(column)], want, atol=1e-9, rtol=0), name
+    assert np.isnan(values["h_spread_past_5s"][:125]).all() and np.isnan(values["h_spread_fut_5s"][-125:]).all()
+    assert np.allclose(values["h_spread_past_5s"][125:], values["h_spread"][125:] - values["h_spread"][:-125])
+    # a team walking forward at 0.2 m a frame (5 m/s) advances 100 m in 20 s; the other stands still
+    n = 700
+    walking = np.array([(10.0, 10.0), (20.0, 20.0), (60.0, 30.0)])[None] + np.arange(n)[:, None, None] * np.array(
+        [0.2, 0.0])[None, None]
+    walking[:, 2] = (150.0, 30.0)           # far on the right, so that home is the team on the left whatever its walk
+    values, _ = shape_matrix_v3(walking, np.array([0, 0, 1]), [(1, 0, n)])
+    for name in ("h_adv_past_20s", "h_adv_fut_20s"):
+        column = values[name]
+        assert np.isfinite(column).sum() == n - 500, name
+        assert np.allclose(column[np.isfinite(column)], 100.0, atol=1e-9, rtol=0), name
+    assert np.allclose(values["a_adv_past_20s"][500:], 0.0, atol=1e-9)
+    # the differences are the teams' one-sided changes subtracted, NaN where either side is
+    assert np.allclose(values["adv_past_5s_diff"][125:], 25.0, atol=1e-9)
+    assert np.isnan(values["adv_past_5s_diff"][:125]).all() and np.isnan(values["adv_fut_10s_diff"][-250:]).all()
+    for seed in range(4):
+        players, teams, graded = shape_scene(seed)
+        values, _ = shape_matrix_v3(players, teams, graded)
+        for name in V3_DIFFS:
+            want = values["h_" + name[:-5]] - values["a_" + name[:-5]]
+            assert np.array_equal(values[name], want, equal_nan=True), (seed, name)
+    gone = np.random.default_rng(5).random((1400, 8, 2)) * PLAY_PITCH
+    gone[300:320, 1::2] = np.nan
+    values, _ = shape_matrix_v3(gone, np.arange(8) % 2, [(1, 100, 1300)])
+    diff = values["adv_past_2s_diff"]
+    assert np.isnan(diff[300:320]).all() and np.isfinite(diff[320:350]).all() and np.isnan(diff[350:370]).all()
+    assert np.isfinite(diff[370:1300]).all() and np.isfinite(values["h_adv_past_2s"][300:370]).all()
+    long = values["a_adv_past_20s"]
+    assert np.isnan(long[100:600]).all() and np.isfinite(long[600:800]).all() and np.isnan(long[800:820]).all()
+    assert np.isfinite(values["h_adv_past_20s"][600:1300]).all()
+
+
+def test_shape_features_v3_block_edges():
+    rng = np.random.default_rng(37)
+    n = 3000
+    players = rng.random((n, 8, 2)) * PLAY_PITCH
+    graded = [(1, 100, 1400), (2, 1500, 2800)]
+    values, X = shape_matrix_v3(players, np.arange(8) % 2, graded)
+    for prefix in ("h_", "a_"):
+        for start, stop in ((100, 1400), (1500, 2800)):
+            for name, k in (("adv_past_20s", 500), ("spread_past_5s", 125), ("width_past_5s", 125)):
+                column = values[prefix + name]
+                assert np.isnan(column[start:start + k]).all() and np.isfinite(column[start + k:stop]).all(), name
+            for name, k in (("adv_fut_20s", 500), ("spread_fut_5s", 125), ("width_fut_5s", 125)):
+                column = values[prefix + name]
+                assert np.isnan(column[stop - k:stop]).all() and np.isfinite(column[start:stop - k]).all(), name
+    # never across the gap between the blocks: the second block's first 500 frames do not read the first block's end
+    assert np.isnan(values["h_adv_past_20s"][1500:2000]).all() and np.isnan(values["adv_past_10s_diff"][1500:1750]).all()
+    outside = np.ones(n, dtype=bool)
+    outside[100:1400] = outside[1500:2800] = False
+    assert np.isnan(X[outside]).all()
+    # moving the first block's end changes nothing in the second block
+    moved = players.copy()
+    moved[1300:1400] += 7.0
+    values2, _ = shape_matrix_v3(moved, np.arange(8) % 2, graded)
+    for name in ("h_adv_past_20s", "a_spread_past_5s", "adv_past_10s_diff"):
+        assert np.array_equal(values[name][1500:], values2[name][1500:], equal_nan=True), name
+
+
+def test_shape_features_v3_swap():
+    from pipeline.evidence import shape_features
+    for seed in range(8):
+        players, teams, graded = shape_scene(seed)
+        X3 = shape_features.features(shape_inputs(players, teams, graded), 3)[1]
+        relabelled = shape_features.features(shape_inputs(players, 1 - teams, graded), 3)[1]
+        swapped = shape_features.swap(X3)
+        assert swapped is not X3 and not np.shares_memory(swapped, X3) and swapped.shape == X3.shape
+        assert np.array_equal(swapped, relabelled, equal_nan=True), "seed {}: swap is not exact".format(seed)
+        assert np.array_equal(shape_features.swap(swapped), X3, equal_nan=True)
+    row = np.arange(60, dtype=np.float64)
+    flipped = shape_features.swap(row)
+    assert flipped[:26].tolist() == list(range(26, 52)) and flipped[26:52].tolist() == list(range(26))
+    assert flipped[52:].tolist() == [-float(i) for i in range(52, 60)]
     expect_error(ValueError, lambda: shape_features.swap(np.zeros((4, 30))), "shape_features.swap", "30")
 
 

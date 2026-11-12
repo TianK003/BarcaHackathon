@@ -1,5 +1,5 @@
 """P07's per-frame features of the two teams' shape and movement, none of which reads the ball. Twenty-six numbers
-(version 1), or forty-two with P30's version 2.
+(version 1), forty-two with P30's version 2, or sixty with P33's version 3.
 
 The ball is missing from the tracking on 41% of the graded frames, in long gaps (a median 10.7 s, docs/results.md A01,
 T12), and those are the frames nothing else says who has it on. A team in possession is more advanced, wider, and
@@ -40,6 +40,21 @@ The one-sided changes are windows of the same block (nothing reads across half t
 a team's absence included; like `d_adv_ks` they are the trees' missing value there. `features(inputs, version)` takes
 the version (1 by default) and `feature_names(version)` and `columns(version)` give its names and indices.
 
+Version 3 (P33) is version 2's matrix, its columns copied the same way, with six more columns per team after the
+twenty and six more cross columns after `adv_gap` and `n_diff`: twenty-six `h_*`, twenty-six `a_*`, then eight cross
+columns (60). The one-sided rule is version 2's, on other quantities and one longer window.
+
+    spread_past_5s, _fut_5s   spread now minus spread 5 s earlier, and 5 s later minus now: the team opening up or closing
+    width_past_5s, _fut_5s    the same for width
+    adv_past_20s, _fut_20s    adv_mean now minus 20 s earlier, and 20 s later minus now: a slow advance or retreat
+                              that the 10 s window cuts short
+
+    adv_past_2s_diff, _5s_diff, _10s_diff, adv_fut_2s_diff, _5s_diff, _10s_diff
+                              the `h_` one-sided advance minus the `a_` one, of the same window: who is gaining ground
+
+The `_diff` columns are subtracted from the team columns already built, so they are exactly antisymmetric under `swap`
+and NaN wherever either team's column is.
+
 Each team is seen in its own frame. A team's `adv` is x or L - x, whichever points at the goal it attacks, so no column
 carries "home is on the left" or "home is Barcelona": the classifier cannot learn a home bias from the geometry, and
 relabelling the teams gives the features of the same frames with the two blocks exchanged. `swap` does that exchange,
@@ -77,7 +92,7 @@ from pipeline.evidence import kinematics, play_features
 
 # Params
 FEATURE_VERSION = 1
-VERSIONS = (1, 2)
+VERSIONS = (1, 2, 3)
 TEAM_COLUMNS = ("n", "adv_mean", "adv_p10", "adv_p90", "width", "vel_adv", "speed_mean", "att_third", "own_third",
                 "d_adv_1s", "d_adv_2s", "vel_adv_1s")
 CROSS_COLUMNS = ("adv_gap", "n_diff")
@@ -88,6 +103,14 @@ TEAM_COLUMNS_V2 = TEAM_COLUMNS + ("length", "spread") + tuple(
     "adv_{}_{}s".format(side, int(seconds)) for side in ("past", "fut") for seconds in ONE_SIDED_S)
 FEATURE_NAMES_V2 = (tuple("h_" + name for name in TEAM_COLUMNS_V2) + tuple("a_" + name for name in TEAM_COLUMNS_V2)
                     + CROSS_COLUMNS)
+SPREAD_WIDTH_S = 5.0                                      # version 3: the one-sided change of spread and width
+ADVANCE_LONG_S = 20.0                                     # version 3: the one-sided change of adv_mean over 20 s
+TEAM_COLUMNS_V3 = TEAM_COLUMNS_V2 + ("spread_past_5s", "spread_fut_5s", "width_past_5s", "width_fut_5s",
+                                     "adv_past_20s", "adv_fut_20s")
+CROSS_COLUMNS_V3 = CROSS_COLUMNS + tuple("adv_{}_{}s_diff".format(side, int(seconds)) for side in ("past", "fut")
+                                         for seconds in ONE_SIDED_S)
+FEATURE_NAMES_V3 = (tuple("h_" + name for name in TEAM_COLUMNS_V3) + tuple("a_" + name for name in TEAM_COLUMNS_V3)
+                    + CROSS_COLUMNS_V3)
 LOW_PERCENTILE, HIGH_PERCENTILE = 10.0, 90.0
 DISPLACEMENT_S = (("d_adv_1s", 1.0), ("d_adv_2s", 2.0))   # seconds either side of the frame
 VELOCITY_WINDOW_S = 1.0                                   # vel_adv_1s: seconds either side of the frame
@@ -95,13 +118,17 @@ CHUNK = 1024                                              # frames per step of t
 
 COLUMN = {name: index for index, name in enumerate(FEATURE_NAMES)}
 TEAM_WIDTH = len(TEAM_COLUMNS)
-_NAMES = {1: FEATURE_NAMES, 2: FEATURE_NAMES_V2}
-_BLOCK_OF_WIDTH = {len(_NAMES[1]): TEAM_WIDTH, len(_NAMES[2]): len(TEAM_COLUMNS_V2)}   # matrix width -> a team's block
+_NAMES = {1: FEATURE_NAMES, 2: FEATURE_NAMES_V2, 3: FEATURE_NAMES_V3}
+# matrix width -> (a team's block, the cross columns after the two blocks; every one of them antisymmetric)
+_BLOCK_OF_WIDTH = {len(_NAMES[1]): (TEAM_WIDTH, len(CROSS_COLUMNS)),
+                   len(_NAMES[2]): (len(TEAM_COLUMNS_V2), len(CROSS_COLUMNS)),
+                   len(_NAMES[3]): (len(TEAM_COLUMNS_V3), len(CROSS_COLUMNS_V3))}
 _MEMO = weakref.WeakKeyDictionary()                       # Inputs -> {version: (names, X)}
 
 
 def feature_names(version):
-    """The column names of a feature version (1: FEATURE_NAMES, 2: FEATURE_NAMES_V2); refuses any other version."""
+    """The column names of a feature version (1: FEATURE_NAMES, 2: FEATURE_NAMES_V2, 3: FEATURE_NAMES_V3); refuses any
+    other version."""
     if type(version) is not int or version not in VERSIONS:      # not True or 2.0, which `in` would let through
         raise ValueError("shape_features: version must be one of {}, got {!r}".format(VERSIONS, version))
     return _NAMES[version]
@@ -113,29 +140,33 @@ def columns(version):
 
 
 def features(inputs, version=1):
-    """(names, X): the names of `version` and its (n, 26) or (n, 42) float64 feature matrix of `inputs`, read-only,
-    memoised per object and version. Version 2 holds version 1's columns, unchanged. Refuses any other version."""
+    """(names, X): the names of `version` and its (n, 26), (n, 42) or (n, 60) float64 feature matrix of `inputs`,
+    read-only, memoised per object and version. Version 2 holds version 1's columns and version 3 version 2's,
+    unchanged. Refuses any other version."""
     feature_names(version)
     memo = _MEMO.setdefault(inputs, {})
     if version not in memo:
         if 1 not in memo:
             memo[1] = (FEATURE_NAMES, _build(inputs))
-        if version == 2:
+        if version >= 2 and 2 not in memo:
             memo[2] = (FEATURE_NAMES_V2, _build_v2(inputs, memo[1][1]))
+        if version == 3:
+            memo[3] = (FEATURE_NAMES_V3, _build_v3(inputs, memo[2][1]))
     return memo[version]
 
 
 def swap(X):
     """A new array: the features of the same frames with the two teams relabelled, from the features X (..., 26) of
-    version 1 or (..., 42) of version 2; refuses any other width.
+    version 1, (..., 42) of version 2 or (..., 60) of version 3; refuses any other width.
 
-    The `h_*` and `a_*` blocks trade places and the two cross columns change sign. Applied twice it is the identity.
+    The `h_*` and `a_*` blocks trade places and every cross column (two in versions 1 and 2, eight in version 3: each
+    is an `h_` quantity minus the `a_` one) changes sign. Applied twice it is the identity.
     """
     X = np.asarray(X, dtype=np.float64)
     if X.ndim == 0 or X.shape[-1] not in _BLOCK_OF_WIDTH:
         raise ValueError("shape_features.swap: X must have {} columns (a feature version's width), got shape {}".format(
             " or ".join(str(width) for width in _BLOCK_OF_WIDTH), X.shape))
-    block = _BLOCK_OF_WIDTH[X.shape[-1]]
+    block, _ = _BLOCK_OF_WIDTH[X.shape[-1]]
     out = np.empty(X.shape)
     out[..., :block] = X[..., block:2 * block]
     out[..., block:2 * block] = X[..., :block]
@@ -180,11 +211,39 @@ def _build_v2(inputs, X1):
             if stop > start:
                 _spread_column(X[start:stop, column[prefix + "spread"]], players, np.flatnonzero(teams == team), start)
             for seconds in ONE_SIDED_S:
-                k = int(round(seconds * inputs.fps))
-                if stop - start > k:
-                    change = adv_mean[start + k:stop] - adv_mean[start:stop - k]    # NaN where either end is
-                    X[start + k:stop, column["{}adv_past_{}s".format(prefix, int(seconds))]] = change
-                    X[start:stop - k, column["{}adv_fut_{}s".format(prefix, int(seconds))]] = change
+                _one_sided(X, column, start, stop, adv_mean, prefix + "adv", seconds, inputs.fps)
+    X.flags.writeable = False
+    return X
+
+
+def _one_sided(X, column, start, stop, values, stem, seconds, fps):
+    """Fills `<stem>_past_<s>s` and `<stem>_fut_<s>s` of X within the block [start, stop) from `values` (a column of
+    X): `past_k[t] = v[t] - v[t - k]`, `fut_k[t] = v[t + k] - v[t]`, k = round(seconds * fps) frames, NaN where either
+    end is NaN and outside the block (the cells stay NaN, so nothing reads across half time)."""
+    k = int(round(seconds * fps))
+    if stop - start > k:
+        change = values[start + k:stop] - values[start:stop - k]
+        X[start + k:stop, column["{}_past_{}s".format(stem, int(seconds))]] = change
+        X[start:stop - k, column["{}_fut_{}s".format(stem, int(seconds))]] = change
+
+
+def _build_v3(inputs, X2):
+    """The (n, 60) matrix of version 3: X2's columns copied into their places, the one-sided changes of spread, width
+    and the 20 s advance filled in per team and block, then the cross columns, read-only."""
+    blocks = kinematics.blocks(inputs)
+    column = columns(3)
+    column2 = columns(2)
+    X = np.full((len(X2), len(FEATURE_NAMES_V3)), np.nan)
+    for name in FEATURE_NAMES_V2:
+        X[:, column[name]] = X2[:, column2[name]]
+    for prefix in ("h_", "a_"):
+        for start, stop in blocks:
+            for stem, source, seconds in (("spread", "spread", SPREAD_WIDTH_S), ("width", "width", SPREAD_WIDTH_S),
+                                          ("adv", "adv_mean", ADVANCE_LONG_S)):
+                _one_sided(X, column, start, stop, X[:, column[prefix + source]], prefix + stem, seconds, inputs.fps)
+    for name in CROSS_COLUMNS_V3[len(CROSS_COLUMNS):]:
+        stem = name[:-len("_diff")]
+        X[:, column[name]] = X[:, column["h_" + stem]] - X[:, column["a_" + stem]]    # NaN where either side is
     X.flags.writeable = False
     return X
 
