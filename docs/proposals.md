@@ -1381,7 +1381,10 @@ lower. One retry at most, then the lane's code is removed.
 
 ### P29 — A learned hold
 
-**Status: started 12 Nov 2026.** Effort S, then M. Odds put at about one in three.
+**Status: dropped 12 Nov 2026 → [R032](results.md): the gate passed (deviation 0.098), the pick `p29_s025` gained
++0.0054 on the mean with both truths up and missed the sign-flip test (p 0.078, six of seven matches); the advisor
+found no change the evidence points to, so no retry. Code removed in `57279e9`, recoverable from `3eee56e`. A near
+miss: Tian can reopen it as `p29_s025` exactly as run.** Effort S, then M. Odds put at about one in three.
 
 **The belief.** Between two control episodes `controlled_touch` votes 0.60 for the last controlling team on every
 frame with the ball visible, however long that lasts: through ball gaps and through stoppages, after which the other

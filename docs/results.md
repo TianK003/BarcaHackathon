@@ -10167,6 +10167,120 @@ to catch before a config was spent on it.
 the one retry was tied to a bar that was never reached. The ball-state shift (the lane's fallback) was struck by the
 advisor before any run: `generic`'s gaps are blind to the play, so a lag measured inside them would not transfer.
 
+### R032 — P29: a hold that follows the measured curve: the gate passes, the pick misses the bar on one match, dropped (declared 2026-11-12; run 2026-11-12, Tian away, an advisor agent in Tian's place)
+Proposal: P29 · Spec (declared before any run):
+[2026-11-12-p29-p31-design.md](superpowers/specs/2026-11-12-p29-p31-design.md) · Code: removed from the branch
+`p29-p31` in `57279e9`, recoverable from `3eee56e` (the hold's state and `pipeline/benchmark/hold_stats.py` are
+`f6b7bdd`, the curve and the vote `cee9736`, the file `pipeline/models/hold_curve.json` `3eee56e`, the four configs
+`5007445`). The bar's script `pipeline/benchmark/p29_bar.py` stays: P30 and P31 use it ·
+Command (all at `3eee56e`): `python pipeline/benchmark/hold_stats.py --profile generic --seeds 3 --write` (the gate
+and the file); `python pipeline/benchmark/run.py pipeline/benchmark/configs/p27/p27_final.toml
+pipeline/benchmark/configs/p29/p29_s025.toml …p29_s050.toml …p29_s075.toml …p29_s100.toml --profile generic --seeds 3
+--truth both`; `python pipeline/benchmark/p29_bar.py pick --reference p27_final p29_s025 p29_s050 p29_s075 p29_s100`,
+then `bar --reference p27_final p29_s025`; `python pipeline/benchmark/choose.py --reference p27_final --objective mean
+p29_s025 p29_s050 p29_s075 p29_s100` for the leave-one-match-out estimate
+Public: — (no candidate was run on our match; `main.toml` rebuilt its file at `3eee56e` with the same sha256,
+`2dd51320…1660`)
+Validation (P01 benchmark, `generic`, 3 seeds), the pick `p29_s025`: raw 0.5481 against 0.5414 (+0.0067), coarse
+0.5870 against 0.5829 (+0.0041), the mean of the two +0.0054, sign-flip p 0.078 (six of seven matches)
+Changed vs `main.toml`: nothing
+Verdict: **dropped: the pick clears the size of the bar and loses on neither truth, and misses the sign-flip test
+(p 0.078, needs 0.05). A near miss, logged; the advisor found no change the evidence points to, so no retry; the code
+is removed**
+
+**The belief.** Between two control episodes `controlled_touch` votes a constant 0.60 for the last controlling team
+on every frame with the ball visible, however long that lasts. How likely the last controller still has the ball
+falls with the time since their last touch, and further once the ball has been out of sight. A vote that follows that
+curve is stronger where the constant is too timid (a pass in flight) and silent or reversed where it is wrong (long
+after, behind a gap or a stoppage). Falsified if the agreement is flat across time, or if the benchmark does not move.
+
+**Step 0, the gate, declared before the run.** On the hold frames of `main.toml`'s touch rule (1.5 m / 6.0 m/s /
+1 frame / duel 1.0 m; ball visible, outside every kept episode, after the block's first one) where DFL's truth is
+alive: the share of frames where the truth's team is the last controller's, in ten bins of time since the last kept
+frame and by whether the ball was hidden in between. The gate passes if the 20 cells differ from the pooled agreement
+by at least 0.05 on average, weighted by frames.
+
+| time since the last kept frame | no gap: frames | agreement | ball hidden since: frames | agreement |
+|---|---|---|---|---|
+| 0 to 0.4 s | 115,650 | 90.7% | 0 | — |
+| 0.4 to 1 s | 149,369 | 90.9% | 0 | — |
+| 1 to 2 s | 125,623 | 91.1% | 1,122 | 92.2% |
+| 2 to 3 s | 47,648 | 85.8% | 2,430 | 84.2% |
+| 3 to 5 s | 33,967 | 74.7% | 4,669 | 81.7% |
+| 5 to 8 s | 10,536 | 70.1% | 4,860 | 72.7% |
+| 8 to 12 s | 4,091 | 67.7% | 3,954 | 62.1% |
+| 12 to 20 s | 4,634 | 56.7% | 7,569 | 55.0% |
+| 20 to 40 s | 5,744 | 48.3% | 18,875 | 46.5% |
+| 40 s and more | 1,491 | 29.8% | 22,160 | 51.0% |
+
+- 564,392 hold frames (seven matches × three seeds), pooled agreement 84.1%, frame-weighted mean absolute deviation
+  **0.0979** (needs 0.05): **the gate passes**. The same numbers came out of the run that wrote the file.
+- 69% of the hold frames lie within 2 s of the last touch, at 91%: there the constant 0.60 says less than the data.
+  Beyond 12 s (11% of the frames) the agreement is 57% and falling to a coin flip or below.
+- The gap flag adds little beyond time: the frames with the ball hidden since are mostly the late bins, and within a
+  bin the two rows differ by a few points either way.
+
+**The mechanism** (as built; off by default, `main.toml`'s file unchanged with it merged). The 20 cells, smoothed as
+(agree + 1) / (frames + 2), in `pipeline/models/hold_curve.json`: one curve per held-out match, built from the other
+six, and one from all seven; a benchmark match is scored by the curve built without it. On a hold frame the vote for
+the last controller is `0.5 + hold_scale * (p − 0.5)`, clipped to the episode's confidence.
+
+**Candidates and the pick, declared before the run.** `hold_scale` 0.25, 0.5, 0.75 and 1.0, everything else
+`p27_final`'s. The pick: the highest mean of the two truths; among those within 0.005 of it, the smallest scale.
+
+**The run** (12 Nov, 22:42 to 22:45; `p27_final`: raw 0.5414, coarse 0.5829, mean 0.5622, 2.98 possessions per graded
+minute; the truth has 4.58 raw and 2.48 coarse).
+
+| config | raw | Δ raw (p, wins of 7) | coarse | Δ coarse (p, wins) | mean | Δ mean (p, wins) | possessions / min |
+|---|---|---|---|---|---|---|---|
+| `p29_s025` | 0.5481 | +0.0067 (0.047, 6) | 0.5870 | **+0.0041** (0.27, 6) | 0.5675 | **+0.0054** (0.078, 6) | 2.99 |
+| `p29_s050` | 0.5611 | +0.0197 (0.016, 7) | 0.5759 | −0.0071 (0.125, 1) | 0.5685 | +0.0063 (0.0625, 6) | 3.07 |
+| `p29_s075` | 0.5645 | +0.0231 (0.016, 7) | 0.5715 | −0.0114 (0.047, 1) | 0.5680 | +0.0059 (0.0625, 5) | 3.11 |
+| `p29_s100` | 0.5663 | +0.0249 (0.016, 7) | 0.5680 | −0.0150 (0.031, 1) | 0.5671 | +0.0050 (0.078, 5) | 3.14 |
+
+- The dead ball is predicted on 44.7% of the graded frames by every config (the truth 44.8%); alive/dead F1 0.9742.
+- **The pick: `p29_s025`.** The best mean is `p29_s050`'s 0.5685 and all four are within 0.005 of it, so the smallest
+  scale.
+- **The bar: missed.** The mean gains +0.0054 (needs +0.005) and neither truth is lower, but the sign-flip p of the
+  mean difference is 0.078 (needs 0.05): six matches won and the seventh, J03WQQ, lost by too much (raw −0.0020,
+  coarse −0.0108). Per match, raw / coarse: J03WMX +0.0041 / +0.0091, J03WN1 +0.0138 / +0.0164, J03WOH +0.0126 /
+  +0.0027, J03WOY +0.0006 / +0.0025, J03WPY +0.0104 / +0.0039, J03WQQ −0.0020 / −0.0108, J03WR9 +0.0067 / +0.0030.
+- No other scale passes: 0.5 and up lose more than 0.005 under the coarse truth, and their p is 0.0625 or more.
+- The leave-one-match-out estimate of picking by the mean alone (a report): +0.0046 [−0.0000, +0.0093], p 0.11 (raw
+  +0.0179, coarse −0.0086).
+
+**What it says.** The belief has two halves and the run separates them. At scale 0.25 the vote within 2 s is
+0.5 + 0.25 × (0.91 − 0.5) = 0.60, which is today's constant, and after that it decays (the no-gap row): 0.59 at 2 to
+3 s, then 0.56, 0.55, 0.54, 0.52, 0.50 at 20 to 40 s and 0.45 beyond. So `p29_s025` differs from `p27_final` only by letting the hold
+fade, and it is the only candidate that gains under both truths. The larger scales add the other half, a stronger
+vote within 2 s (0.70, 0.81, 0.91): each step raises the raw truth's score, lowers the coarse truth's and adds
+possessions (2.98 to 3.14 per minute). That is the grain trade-off of T33, a finer output that the fine truth rewards
+and the coarse one punishes, not better evidence about who has the ball. "Silent where it is wrong" has support under
+both truths; "stronger where the constant is too timid" depends on a grain we do not know.
+
+**The advisor's ruling (22:52, in Tian's place): drop.** The spec allows one retry only for a specific change that
+the first run's evidence points to. The obvious one, a decay-only hold, has in effect been run: it is `p29_s025`, and
+it missed. A hold capped at 0.60 with a larger scale would start to fade at 8 to 12 s instead of 2 s, a smaller dose
+of the same idea, with nothing in the run to say it would do better. The miss is one match, the worst coarse match at
+every scale, which looks like the match and not like a flaw a fix could aim at. New candidates chosen after seeing
+these seven matches and tested on the same seven would be a second look that the p-value does not correct for, and a
+pass near 0.047 would carry less than the 0.078 already measured. Even if real, +0.005 is about an eighth of what the
+full match can tell apart (0.04).
+
+**What stays, what went.** The result and the table above stay. The code went in `57279e9`: `controlled_touch.py`
+is byte for byte what it was before the night. `p29_bar.py` and its checks stay as the bar and the guard of P30 and
+P31.
+
+**Not tried, and why.** A second covariate for the curve (the nearest opponent's distance, the ball's speed away from
+the controller: the literature pass's suggestion) has no support in this run's numbers and would be a new idea, not a
+retry. More seeds or a re-scoring of the same candidate would be a second roll of a declared test.
+
+**For Tian.** `p29_s025` is a near miss: +0.0054 on the mean, both truths up, six of seven matches. It can be
+reopened by overturning the ruling, as `p29_s025` exactly as run and with its miss stated, not as a new variant. "The
+hold never expires" is a known limit of `main.toml` either way (the constant 0.60 is voted at any distance in time
+from the last touch); it should be tested again only with an expiry rule declared beforehand and on new evidence, not
+by another pass over these seven matches.
+
 ### R034 — P31: team evidence level with the dead ball in the decoder: the guard holds, with a small loss under both truths (declared 2026-11-12; run 2026-11-12, Tian away)
 Proposal: P31 · Spec (declared before any run):
 [2026-11-12-p29-p31-design.md](superpowers/specs/2026-11-12-p29-p31-design.md) · Code: branch `p29-p31`, commit
