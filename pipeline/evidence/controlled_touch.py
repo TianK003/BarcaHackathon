@@ -8,6 +8,8 @@
     confidence = 0.9       # home on a home episode (1 - confidence on an away one), in (0.5, 1.0]
     duel_radius = 1.0      # optional: the other team must be farther than this, or the ball is contested
     hold = 0.5             # optional, in [0.5, confidence]: the weak vote of the last team; 0.5 = off
+    hold_curve = "pipeline/models/hold_curve.json"   # optional: the hold follows this measured curve (needs hold 0.5)
+    hold_scale = 1.0       # optional, in (0, 1], only with hold_curve: 1 = the curve, less = shrunk towards 0.5
 
 `nearest_player` names a team on every frame the ball is visible and is wrong on 22% of the in-play ones: a pass in
 flight, a duel or a deflection is not a possession (docs/traps.md T14). The rules of football in the data's terms:
@@ -35,18 +37,29 @@ team's first control frame; without it the change lands on the first frame after
 rule (pipeline/decode/hmm.py). A frame without a ball stays NaN. `hold` = 0.5 is off and is written as NaN, not 0.5:
 NaN is not 0.5 (pipeline/evidence/README.md).
 
+`hold_curve` replaces the constant by a measured one (P29, pipeline/benchmark/hold_stats.py): the last controller's team
+keeps the ball less often the longer ago its last touch was, and less often again if the ball was hidden since. The file
+holds, for the two cases (`no_gap`, `gap`: the ball was hidden on some frame since the last kept one) and the ten bins of
+`HOLD_BINS_S` (seconds since that frame), the share of hold frames on which the last controller's team had the ball,
+measured on the benchmark's other matches. On a hold frame the vote for that team is q = 0.5 + hold_scale * (p - 0.5)
+with p the curve's cell, clipped to [1 - confidence, confidence], so it never out-votes a control episode; `home` is q
+if that team is home, else 1 - q. The curve is `folds[inputs.game]` (built without that match) if the file has one, else
+`full`. `hold_curve` and a `hold` other than 0.5 would say the same thing twice and are refused; so is a file that was
+measured for another control rule or another bin layout. Without `hold_curve` nothing changes.
+
 Everything is per graded block (kinematics.blocks): an episode is cut at the block's edge, a hold never crosses it, and
 frames outside the blocks are NaN. `alive` is NaN everywhere: whether the ball is in play is P05's question.
 `confidence` is measured, not tuned (docs/proposals.md P04).
 """
 
 import collections
+import math
 import numbers
 
 import numpy as np
 
 from pipeline.contracts import Evidence, no_opinion
-from pipeline.evidence import kinematics
+from pipeline.evidence import kinematics, trees
 from starter.baseline import HOME
 
 
@@ -55,9 +68,21 @@ HOLD_BINS_S = (0.0, 0.4, 1.0, 2.0, 3.0, 5.0, 8.0, 12.0, 20.0, 40.0)   # seconds 
 HoldState = collections.namedtuple("HoldState", "last_is_home elapsed gap")
 
 
-def compute(run, *, radius, max_rel_speed, min_frames, confidence, duel_radius=1.0, hold=0.5):
-    """Evidence(home = confidence / 1 - confidence in kept control episodes, hold / 1 - hold between them, else NaN;
-    alive = NaN)."""
+NAME = "controlled_touch"
+CURVE_FORMAT = 1
+CURVE_ROWS = ("no_gap", "gap")                         # the order of the table's rows, as hold_stats writes them
+CURVE_COMMAND = "python pipeline/benchmark/hold_stats.py --write"
+_CURVES = {}                                           # absolute path -> (stamp, artifact), for trees.load_artifact
+
+
+def compute(run, *, radius, max_rel_speed, min_frames, confidence, duel_radius=1.0, hold=0.5, hold_curve=None,
+            hold_scale=1.0):
+    """Evidence(home = confidence / 1 - confidence in kept control episodes, hold / 1 - hold between them (or the
+    clipped curve of `hold_curve`, scaled by `hold_scale`), else NaN; alive = NaN).
+
+    ValueError for a parameter it refuses, for `hold_curve` together with a `hold` above 0.5, for a `hold_scale` other
+    than 1.0 without `hold_curve`, and for a curve file that is unreadable, not a hold curve, or measured for another
+    control rule."""
     radius, max_rel_speed, min_frames, duel_radius = _checked(radius, max_rel_speed, min_frames, duel_radius)
     if isinstance(confidence, bool) or not isinstance(confidence, numbers.Real) or not 0.5 < confidence <= 1.0:
         raise ValueError("controlled_touch: confidence must be a number in (0.5, 1.0] (0.5 would say nothing), "
@@ -67,15 +92,43 @@ def compute(run, *, radius, max_rel_speed, min_frames, confidence, duel_radius=1
         raise ValueError("controlled_touch: hold must be a number in [0.5, confidence = {}] (0.5 = no hold; more than "
                          "confidence would out-vote a control episode), got {!r}".format(confidence, hold))
     hold = float(hold)
+    if isinstance(hold_scale, bool) or not isinstance(hold_scale, numbers.Real) or not 0.0 < hold_scale <= 1.0:
+        raise ValueError("controlled_touch: hold_scale must be a number in (0, 1] (1 = the curve as measured, less "
+                         "shrinks it towards 0.5), got {!r}".format(hold_scale))
+    hold_scale = float(hold_scale)
+    if hold_curve is None and hold_scale != 1.0:
+        raise ValueError("controlled_touch: hold_scale {} scales the hold curve, and no hold_curve is given".format(
+            hold_scale))
+    if hold_curve is not None and hold != 0.5:
+        raise ValueError("controlled_touch: hold_curve gives the hold its own votes, so hold must stay 0.5 (off) with "
+                         "it, got hold = {!r}".format(hold))
 
     inputs = run.inputs
     n_frames = inputs.atd.n_frames
+    table = None
+    if hold_curve is not None:
+        if not isinstance(hold_curve, str) or not hold_curve:
+            raise ValueError("controlled_touch: hold_curve must be the path of a hold curve file relative to the "
+                             "repository root, such as \"pipeline/models/hold_curve.json\", got {!r}".format(
+                                 hold_curve))
+        path = trees.model_path(hold_curve, NAME, "pipeline/models/hold_curve.json")
+        artifact = _curve_artifact(path, dict(radius=radius, max_rel_speed=max_rel_speed, min_frames=min_frames,
+                                              duel_radius=duel_radius))
+        folds = artifact["folds"]
+        game = getattr(inputs, "game", None)
+        curve = folds[game] if isinstance(game, str) and game in folds else artifact["full"]
+        table = np.array([curve[name] for name in CURVE_ROWS], dtype=np.float64)
     candidate, nearest_is_home, visible = _candidates(inputs, radius, max_rel_speed, duel_radius)
     home = no_opinion(n_frames)
     for start, stop in kinematics.blocks(inputs):
         if stop > start:
-            home[start:stop] = _block_home(candidate[start:stop], nearest_is_home[start:stop],
-                                           visible[start:stop], min_frames, confidence, hold)
+            if table is None:
+                home[start:stop] = _block_home(candidate[start:stop], nearest_is_home[start:stop],
+                                               visible[start:stop], min_frames, confidence, hold)
+            else:
+                home[start:stop] = _block_curve_home(candidate[start:stop], nearest_is_home[start:stop],
+                                                     visible[start:stop], min_frames, confidence, table, hold_scale,
+                                                     inputs.fps)
     return Evidence(alive=no_opinion(n_frames), home=home)
 
 
@@ -85,7 +138,9 @@ def hold_state(run, *, radius, max_rel_speed, min_frames, duel_radius=1.0):
     The hold frames are those with the ball visible, outside every kept episode and after the block's first one, the
     same `compute(..., hold > 0.5)` votes on. There `elapsed` is the number of frames since the last kept frame (>= 1)
     and `last_is_home` that frame's team; `gap` says the ball was hidden on some frame in between. Elsewhere `elapsed`
-    is -1 and the other two are False. The same checks on the parameters as `compute`; ValueError otherwise.
+    is -1 and `gap` is False; `last_is_home` is the last kept frame's team on every frame after a block's first kept
+    frame (False before it) and means something only where `elapsed` >= 0. The same checks on the parameters as
+    `compute`; ValueError otherwise.
     """
     radius, max_rel_speed, min_frames, duel_radius = _checked(radius, max_rel_speed, min_frames, duel_radius)
     inputs = run.inputs
@@ -167,6 +222,66 @@ def _block_home(candidate, is_home, visible, min_frames, confidence, hold):
         between = visible & ~kept & (last >= 0)
         home[between] = np.where(is_home[last[between]], hold, 1.0 - hold)
     return home
+
+
+def _block_curve_home(candidate, is_home, visible, min_frames, confidence, table, scale, fps):
+    """One block's home evidence with the hold following `table` ([no_gap, gap] x bins of p): kept episodes at
+    confidence, hold frames at q = 0.5 + scale * (p - 0.5) clipped to [1 - confidence, confidence] for the last team."""
+    kept = _block_kept(candidate, is_home, min_frames)
+    home = np.full(len(candidate), np.nan)
+    home[kept] = np.where(is_home[kept], confidence, 1.0 - confidence)
+    last, elapsed, gap = _block_hold_state(kept, visible)
+    between = elapsed >= 0
+    p = table[gap[between].astype(np.int64), hold_bin(elapsed[between], fps)]
+    q = np.clip(0.5 + scale * (p - 0.5), 1.0 - confidence, confidence)
+    home[between] = np.where(is_home[last[between]], q, 1.0 - q)
+    return home
+
+
+def _curve_artifact(path, touch):
+    """The hold curve file at `path`, read once and checked as a curve measured for the control rule `touch` (a dict of
+    radius, max_rel_speed, min_frames, duel_radius); ValueError naming the file and the command otherwise."""
+    artifact = trees.load_artifact(
+        path, NAME, _check_curve, _CURVES, unreadable="measure it with `{}`".format(CURVE_COMMAND),
+        not_json="measure it again with `{}`".format(CURVE_COMMAND))
+    named = artifact["touch"]
+    if any(float(named[key]) != float(touch[key]) for key in touch):               # "inf" reads as float("inf")
+        raise ValueError("controlled_touch: the hold curve {} was measured for the control rule {} and this source "
+                         "runs {}; measure it again with `{}`".format(path, named, touch, CURVE_COMMAND))
+    return artifact
+
+
+def _check_curve(artifact, path):
+    """ValueError unless `artifact` is a format-1 hold curve with ten numbers in [0, 1] per row, `full` and each fold."""
+    def refuse(reason):
+        raise ValueError("controlled_touch: {} is not a usable hold curve ({}); measure it again with `{}`".format(
+            path, reason, CURVE_COMMAND))
+
+    if not isinstance(artifact, dict):
+        refuse("the top level is not an object")
+    if artifact.get("format") != CURVE_FORMAT or artifact.get("kind") != "hold_curve":
+        refuse("format {!r} and kind {!r}, expected format {} and kind \"hold_curve\"".format(
+            artifact.get("format"), artifact.get("kind"), CURVE_FORMAT))
+    if artifact.get("bins_s") != list(HOLD_BINS_S):
+        refuse("its bins_s are {!r} and the code's are {}".format(artifact.get("bins_s"), list(HOLD_BINS_S)))
+    touch = artifact.get("touch")
+    if not isinstance(touch, dict) or set(touch) != {"radius", "max_rel_speed", "min_frames", "duel_radius"}:
+        refuse("its touch must name radius, max_rel_speed, min_frames and duel_radius, got {!r}".format(touch))
+    for key, value in touch.items():
+        if isinstance(value, bool) or not (isinstance(value, numbers.Real) or value == "inf"):
+            refuse("touch {} is {!r}, not a number".format(key, value))
+    folds = artifact.get("folds")
+    if not isinstance(folds, dict):
+        refuse("its folds are not an object")
+    for where, curve in [("full", artifact.get("full"))] + [("folds[{}]".format(game), folds[game]) for game in folds]:
+        if not isinstance(curve, dict) or set(curve) != set(CURVE_ROWS):
+            refuse("{} must have exactly the rows {}".format(where, ", ".join(CURVE_ROWS)))
+        for name in CURVE_ROWS:
+            cells = curve[name]
+            if not isinstance(cells, list) or len(cells) != len(HOLD_BINS_S) or any(
+                    isinstance(cell, bool) or not isinstance(cell, numbers.Real) or not 0.0 <= cell <= 1.0
+                    or not math.isfinite(cell) for cell in cells):
+                refuse("{} {} must be {} numbers in [0, 1]".format(where, name, len(HOLD_BINS_S)))
 
 
 def _block_hold_state(kept, visible):

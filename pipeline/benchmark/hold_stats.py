@@ -1,6 +1,6 @@
 """hold_stats: how often the last controlling team still has the ball, by time since its touch and ball hidden since.
 
-    python pipeline/benchmark/hold_stats.py [--profile P] [--seeds N] [--data-dir D]
+    python pipeline/benchmark/hold_stats.py [--profile P] [--seeds N] [--data-dir D] [--write | --verify] [--out FILE]
 
     result = measure(profile="generic", seeds=3)       # {"pooled": {"no_gap": [[frames, agree] x 10], "gap": ...}, ...}
 
@@ -16,11 +16,19 @@ The gate (P29's step 0): the curve is worth building only if the agreement moves
 the frame-weighted mean absolute difference between each cell's agreement and the pooled one; the gate passes when it
 is at least GATE_DEVIATION. A flat hold (every cell near the pooled rate) is what the constant already says.
 
+`--write` measures and writes the curve file controlled_touch's `hold_curve` reads (`curves`; by default
+pipeline/models/hold_curve.json): per cell, (agree + 1) / (frames + 2), a Laplace-smoothed share that is 0.5 where
+nothing was seen, once from all the matches (`full`) and once per match from the others (`folds`, used on that match so
+that no number is scored in sample). `--verify` measures again and compares with the file, exit 0 or 1. The gate is
+printed either way and does not change their exit code. An infinite `max_rel_speed` is written as "inf" in `touch`.
+
 No truth reaches the source. hold_state is called on a MatchInputs (inputs.py), which holds the degraded tracking and no
 flag; the truth is read here, from the match, only to count, and the result holds counts and no frame.
 """
 
 import argparse
+import json
+import math
 import os
 import sys
 
@@ -37,6 +45,7 @@ from pipeline.benchmark import calibration as calibration_module  # noqa: E402
 from pipeline.benchmark import dfl, run  # noqa: E402
 from pipeline.benchmark import inputs as match_inputs  # noqa: E402
 from pipeline.benchmark import truth as truths  # noqa: E402
+from pipeline.benchmark.train_dead_ball import dumps, write  # noqa: E402  (the JSON layout train_shape.write uses)
 from pipeline.config import ConfigError  # noqa: E402
 from pipeline.contracts import RunContext  # noqa: E402
 from pipeline.evidence import controlled_touch  # noqa: E402
@@ -48,6 +57,7 @@ import possession_metrics as pm  # noqa: E402  isort:skip
 TOUCH = {"radius": 1.5, "max_rel_speed": 6.0, "min_frames": 1, "duel_radius": 1.0}
 GATE_DEVIATION = 0.05           # the frame-weighted mean |cell agreement - pooled agreement| the curve must reach
 DEFAULT_PROFILE = run.DEFAULT_PROFILE
+DEFAULT_CURVE_PATH = os.path.join(ROOT, "pipeline", "models", "hold_curve.json")
 ROWS = ("no_gap", "gap")        # the ball was never hidden since the last touch, or was hidden on some frame
 
 
@@ -61,10 +71,11 @@ def measure(*, touch=None, profile=DEFAULT_PROFILE, seeds=None, match_ids=None, 
 
     Returns {"profile", "seeds", "matches", "bins_s", "touch", "pooled", "per_match"}; pooled and each per_match[id]
     are {"no_gap": [[frames, agree] x 10], "gap": [[frames, agree] x 10]} over the hold frames whose truth is H or A,
-    `agree` counting those where the truth's team is the last controller's. ValueError from controlled_touch for a rule
-    it refuses; the runner's BenchmarkError for a profile, seeds or match it refuses (before a match is loaded).
+    `agree` counting those where the truth's team is the last controller's. ValueError (hold_stats) for a `touch` that
+    misses, adds or misspells a key or holds a value controlled_touch refuses; the runner's BenchmarkError for a
+    profile, seeds or match it refuses. Both come before any match is loaded.
     """
-    touch = dict(TOUCH if touch is None else touch)
+    touch = _checked_touch(TOUCH if touch is None else touch)
     run._check_profile(profile)
     seeds = run.DEFAULT_SEEDS if seeds is None else seeds
     if isinstance(seeds, bool) or not isinstance(seeds, int) or seeds < 1:
@@ -103,6 +114,19 @@ def measure(*, touch=None, profile=DEFAULT_PROFILE, seeds=None, match_ids=None, 
             "per_match": {match_id: _cells(per_match[match_id]) for match_id in sorted(per_match)}}
 
 
+def _checked_touch(touch):
+    """`touch` as a dict copy, or ValueError unless it has exactly the keys of TOUCH and values controlled_touch takes."""
+    if not isinstance(touch, dict) or set(touch) != set(TOUCH):
+        given = sorted(touch) if isinstance(touch, dict) else touch
+        raise ValueError("hold_stats: touch must be a dict with exactly the keys {}, got {!r}".format(
+            ", ".join(sorted(TOUCH)), given))
+    try:
+        controlled_touch._checked(**touch)
+    except ValueError as error:
+        raise ValueError("hold_stats: touch is refused by the source: {}".format(error)) from error
+    return dict(touch)
+
+
 def _cells(counts):
     return {name: counts[row].tolist() for row, name in enumerate(ROWS)}
 
@@ -122,6 +146,69 @@ def gate(result):
     deviation = sum(cell[0] * abs(cell[1] / cell[0] - agreement) for cell in cells if cell[0]) / frames
     return {"frames": frames, "agreement": agreement, "deviation": deviation,
             "passes": bool(deviation >= GATE_DEVIATION - 1e-12)}
+
+
+# -- the curve file ---------------------------------------------------------------------------------------------------
+
+def curves(result):
+    """The hold curve artifact of a measure() `result`: what controlled_touch's `hold_curve` reads.
+
+    {"format": 1, "kind": "hold_curve", "bins_s", "touch", "profile", "seeds", "matches", "counts", "folds", "full"}:
+    `counts` is the pooled [frames, agree] cells; `full` and each `folds[match]` are {"no_gap": [10 numbers], "gap":
+    [10 numbers]}, each (agree + 1) / (frames + 2) of the pooled counts, for a fold of the pooled counts minus that
+    match's. A max_rel_speed of infinity is written "inf" (JSON has none)."""
+    pooled = result["pooled"]
+
+    def curve(counts):
+        return {name: [(cell[1] + 1) / (cell[0] + 2) for cell in counts[name]] for name in ROWS}
+
+    folds = {}
+    for match_id, own in result["per_match"].items():
+        rest = {name: [[cell[0] - mine[0], cell[1] - mine[1]] for cell, mine in zip(pooled[name], own[name])]
+                for name in ROWS}
+        folds[match_id] = curve(rest)
+    touch = {key: ("inf" if isinstance(value, float) and math.isinf(value) else value)
+             for key, value in result["touch"].items()}
+    return {"format": 1, "kind": "hold_curve", "bins_s": list(result["bins_s"]), "touch": touch,
+            "profile": result["profile"], "seeds": list(result["seeds"]), "matches": list(result["matches"]),
+            "counts": pooled, "folds": folds, "full": curve(pooled)}
+
+
+def verify(path, fresh):
+    """Compare the file at `path` with the measured artifact `fresh`; print what differs; the exit code (0 or 1)."""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            committed = json.load(handle)
+    except (OSError, ValueError) as error:
+        print("FAILED    cannot read the hold curve {} ({}); measure it with `python {}`".format(
+            path, error, "pipeline/benchmark/hold_stats.py --write"))
+        return 1
+    problems = []
+    _differences(committed, json.loads(dumps(fresh)), os.path.basename(path), problems)
+    for problem in problems[:20]:
+        print("FAILED    {}".format(problem))
+    if problems:
+        print("FAILED    {} differs from its measurement in {} place(s)".format(path, len(problems)))
+        return 1
+    print("verified  {} is what the code measures".format(path))
+    return 0
+
+
+def _differences(committed, fresh, where, problems):
+    """Append to `problems` a line for every place where two parsed JSON values differ (exactly: floats are read back
+    to the bit)."""
+    if isinstance(committed, dict) and isinstance(fresh, dict):
+        for key in sorted(set(committed) | set(fresh)):
+            if key not in committed or key not in fresh:
+                problems.append("{}: key {!r} is only in the {}".format(
+                    where, key, "measurement" if key in fresh else "file"))
+            else:
+                _differences(committed[key], fresh[key], "{}.{}".format(where, key), problems)
+    elif isinstance(committed, list) and isinstance(fresh, list) and len(committed) == len(fresh):
+        for index, (one, other) in enumerate(zip(committed, fresh)):
+            _differences(one, other, "{}[{}]".format(where, index), problems)
+    elif committed != fresh or type(committed) is not type(fresh):
+        problems.append("{}: file {!r}, measurement {!r}".format(where, committed, fresh))
 
 
 # -- the table --------------------------------------------------------------------------------------------------------
@@ -162,7 +249,17 @@ def main(argv=None):
     parser.add_argument("--seeds", type=int,
                         help="degradation seeds per match (default {})".format(run.DEFAULT_SEEDS))
     parser.add_argument("--data-dir", help="the data bundle (default: data/, or $MTAH_DATA_DIR)")
+    parser.add_argument("--write", action="store_true",
+                        help="also write the hold curve file (curves) to --out; the exit code is 0 unless it fails")
+    parser.add_argument("--verify", action="store_true",
+                        help="compare the file at --out with the measurement; exit 0 if equal, 1 if not")
+    parser.add_argument("--out", help="the curve file (default {})".format(DEFAULT_CURVE_PATH))
     args = parser.parse_args(argv)
+    if args.write and args.verify:
+        parser.error("--write and --verify are two commands: write the file, or check the one there")
+    if args.out and not (args.write or args.verify):
+        parser.error("--out names the curve file: give --write or --verify with it")
+    path = args.out or DEFAULT_CURVE_PATH
     try:
         result = measure(profile=args.profile, seeds=args.seeds, data_dir=args.data_dir)
     except (ConfigError, run.BenchmarkError, OSError) as error:
@@ -171,6 +268,16 @@ def main(argv=None):
     print("")
     for line in render(result):
         print(line)
+    if args.write:
+        try:
+            write(path, curves(result))
+        except (OSError, ValueError) as error:
+            print("FAILED    {}".format(error))
+            return 1
+        print("wrote     {} ({:,} bytes)".format(path, os.path.getsize(path)))
+        return 0
+    if args.verify:
+        return verify(path, curves(result))
     return 0 if gate(result)["passes"] else 2
 
 
