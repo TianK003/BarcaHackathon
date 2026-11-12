@@ -142,7 +142,8 @@ LABELS = ("raw", "both")                      # P34: whose labels the rows carry
 PRIOR_HOME = shape_possession.PRIOR_HOME      # the share of homes among the rows and their mirrors
 # One file per feature version (P30): the file names its version, and `shape_possession` reads the features of it.
 DEFAULT_MODEL_PATHS = {1: "pipeline/models/shape_possession_hgb.json",
-                       2: "pipeline/models/shape_possession_v2_hgb.json"}     # relative to the repository root
+                       2: "pipeline/models/shape_possession_v2_hgb.json",
+                       3: "pipeline/models/shape_possession_v3_hgb.json"}     # relative to the repository root
 DEFAULT_MODEL_PATH = os.path.join(ROOT, *DEFAULT_MODEL_PATHS[1].split("/"))
 SOURCE_FILES = (("train_shape.py", os.path.join(HERE, "train_shape.py")),
                 ("shape_features.py", os.path.join(ROOT, "pipeline", "evidence", "shape_features.py")),
