@@ -1463,7 +1463,9 @@ ties to the smallest. No transfer check on our match (stated).
 
 ### P33 — Shape features version 3
 
-**Status: started 12 Nov 2026.** Effort about 2.5 h. Odds about one in four.
+**Status: dropped 13 Nov 2026 → [R035](results.md): the gate passed by 0.0002 (gap log-loss 0.3137),
+the benchmark did not move against `p30_w030` (mean +0.0010, p 0.44); no retry (the advisor); code removed.
+Version 2 seems to have taken what the teams' shape says in time.** Effort about 2.5 h. Odds about one in four.
 
 **The belief.** P30 showed that one-sided time is where the shape signal is. Version 3 adds the difference of the two
 teams' one-sided advance changes, one-sided changes of spread and width over 5 s, and a 20 s horizon (60 columns).
@@ -1472,7 +1474,9 @@ teams' one-sided advance changes, one-sided changes of spread and width over 5 s
 
 ### P34 — The version 2 shape model trained on both truths' labels
 
-**Status: started 12 Nov 2026.** Effort about 2 h. Odds about one in seven.
+**Status: dropped at step 0, 13 Nov 2026 → [R036](results.md): the sanity gate missed (the mean of the raw
+and coarse gap log-losses fell 0.0007 against 0.003; raw +0.0075, coarse −0.0088, a trade along the grain); no
+retry (the advisor); code removed, the report's coarse cells kept.** Effort about 2 h. Odds about one in seven.
 
 **The belief.** The objective is the mean of the two truths and the model learns the raw one only; the teams' shape
 cannot see a 2-second possession, which the coarse truth merges. Training on both labels (each weighted half where they
