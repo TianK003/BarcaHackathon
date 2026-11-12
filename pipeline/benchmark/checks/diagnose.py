@@ -594,6 +594,27 @@ def test_diagnose_drops_match_only_sources_when_asked():
     assert any(line.startswith("dropped") and "smart_tagging" in line for line in lines), lines
 
 
+def test_diagnose_passes_the_neutral_flag_on():
+    """A config with team_neutral_dead = true gets the posterior of its own emissions (P31): its pooled figures differ
+    from the same config's without the flag, each set is the independent tally's (whose hmm.decode reads the config's
+    decoder as the pipeline does), and the flagless config's figures are what the decoder's defaults give."""
+    matches = synthetic_matches()
+    flagged = MAIN_LIKE.replace("min_dead = 5\n", "min_dead = 5\nteam_neutral_dead = true\n")
+    assert flagged != MAIN_LIKE
+    with tempfile.TemporaryDirectory() as root:
+        figures = {}
+        for name, text in (("flagless", MAIN_LIKE), ("flagged", flagged)):
+            report = diagnose.diagnose(write_text(root, name + ".toml", text), profile="gaps", seeds=1, matches=matches,
+                                       calibration=synthetic_calibration(), log=quiet)
+            same_measures(report, *tallies(text, matches, root))
+            figures[name] = report["calibration"]["posterior"]
+        assert figures["flagless"]["alive"]["all"]["mean_p"] != figures["flagged"]["alive"]["all"]["mean_p"], figures
+        assert diagnose.posterior_parameters(load_config(write_text(root, "a.toml", MAIN_LIKE)))[
+            "team_neutral_dead"] is False
+        assert diagnose.posterior_parameters(load_config(write_text(root, "b.toml", flagged)))[
+            "team_neutral_dead"] is True
+
+
 def test_diagnose_refuses_a_non_hmm_decoder():
     """A majority_vote decoder has no posterior, the restart states have none either, and a source may not be named as
     one of the report's own keys ("posterior", "none", "other"): each is a BenchmarkError naming the config and what to

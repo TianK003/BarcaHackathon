@@ -2924,6 +2924,60 @@ def test_hmm_restart_states_refuse_posterior_and_unknown_source():
                  "restart_source", "'s9'")
 
 
+# P31: team_neutral_dead. Under the flag each `home` term also gives D the larger of the two team terms, so that team
+# evidence ranks H against A and leaves the better of them level with D. Off, the decoder is what it was.
+
+def test_hmm_team_neutral_dead_emissions():
+    from pipeline.contracts import Evidence, no_opinion
+    from pipeline.decode import hmm
+    source = Evidence(alive=no_opinion(3), home=np.array([0.93, 0.07, np.nan]), name="s", weight=2.0)
+    off = hmm.log_likelihoods([source], 3, hmm.EPS)
+    on = hmm.log_likelihoods([source], 3, hmm.EPS, neutral_dead=True)
+    assert np.array_equal(off[:, hmm.H], on[:, hmm.H]) and np.array_equal(off[:, hmm.A], on[:, hmm.A]), (off, on)
+    assert (off[:, hmm.D] == 0.0).all(), off[:, hmm.D]
+    expected = np.array([2 * np.log(1.86), 2 * np.log(1.86), 0.0])
+    assert np.allclose(on[:, hmm.D], expected, atol=1e-12, rtol=0.0), (on[:, hmm.D], expected)
+    assert np.array_equal(on[:, hmm.D], np.maximum(on[:, hmm.H], on[:, hmm.A])), on
+
+
+def test_hmm_team_neutral_dead_leaves_alive_terms():
+    from pipeline.contracts import Evidence, no_opinion
+    from pipeline.decode import hmm
+    rng = np.random.default_rng([6, 5100])
+    alive = np.where(rng.random(100) < 0.3, np.nan, rng.random(100))
+    source = Evidence(alive=alive, home=no_opinion(100), name="s", weight=1.5)
+    assert np.array_equal(hmm.log_likelihoods([source], 100, hmm.EPS),
+                          hmm.log_likelihoods([source], 100, hmm.EPS, neutral_dead=True)), "an alive term moved"
+
+
+def test_hmm_team_neutral_dead_decodes_dead():
+    from pipeline.contracts import D, H
+    from pipeline.decode import REGISTRY, hmm
+    ctx = hmm_context([np.full(100, 0.93), np.full(100, np.nan)], [None, np.full(100, 0.45)])
+    parameters = {"switch_team": 6, "switch_dead": 32, "min_possession": 35, "min_dead": 25}
+    off = REGISTRY["hmm"](ctx, **parameters).labels
+    on = REGISTRY["hmm"](ctx, team_neutral_dead=True, **parameters)
+    assert (off == H).all(), letters(off)
+    assert (on.labels == D).all(), letters(on.labels)
+    with_posterior = REGISTRY["hmm"](ctx, team_neutral_dead=True, posterior=True, **parameters).posterior
+    assert (np.argmax(with_posterior, axis=1) == hmm.D).all(), with_posterior.min(axis=0)
+
+
+def test_hmm_team_neutral_dead_refusals():
+    from pipeline.contracts import no_opinion
+    from pipeline.decode import REGISTRY
+    ctx = hmm_context([np.full(10, VOTE), no_opinion(10)])
+
+    def decode(**parameters):
+        return REGISTRY["hmm"](ctx, **dict({"switch_team": 1.0, "switch_dead": 1.0}, **parameters))
+
+    for bad in (1, 0, "yes", None):
+        expect_error(ValueError, lambda: decode(team_neutral_dead=bad), "hmm", "team_neutral_dead")
+    expect_error(ValueError, lambda: decode(team_neutral_dead=True, restart_source="s1"), "hmm", "team_neutral_dead",
+                 "restart_source")
+    assert len(decode(team_neutral_dead=np.True_).labels) == 10
+
+
 # -- dead ball (P05) --------------------------------------------------------------------------------------------------
 #
 # Hand-built scenes, in metres on the default 105.3 x 68.0 pitch (centre spot (52.65, 34), penalty spots (11, 34) and
