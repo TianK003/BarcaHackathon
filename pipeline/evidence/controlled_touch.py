@@ -40,6 +40,7 @@ frames outside the blocks are NaN. `alive` is NaN everywhere: whether the ball i
 `confidence` is measured, not tuned (docs/proposals.md P04).
 """
 
+import collections
 import numbers
 
 import numpy as np
@@ -49,17 +50,15 @@ from pipeline.evidence import kinematics
 from starter.baseline import HOME
 
 
+HOLD_BINS_S = (0.0, 0.4, 1.0, 2.0, 3.0, 5.0, 8.0, 12.0, 20.0, 40.0)   # seconds since the last kept frame; last is open
+
+HoldState = collections.namedtuple("HoldState", "last_is_home elapsed gap")
+
+
 def compute(run, *, radius, max_rel_speed, min_frames, confidence, duel_radius=1.0, hold=0.5):
     """Evidence(home = confidence / 1 - confidence in kept control episodes, hold / 1 - hold between them, else NaN;
     alive = NaN)."""
-    radius = _positive("radius", radius, "metres from the ball", allow_inf=False)
-    duel_radius = _positive("duel_radius", duel_radius, "metres from the ball", allow_inf=False)
-    max_rel_speed = _positive("max_rel_speed", max_rel_speed, "metres per second; inf turns the test off",
-                              allow_inf=True)
-    if isinstance(min_frames, bool) or not isinstance(min_frames, numbers.Integral) or min_frames < 1:
-        raise ValueError("controlled_touch: min_frames must be a whole number of frames >= 1, got {!r}".format(
-            min_frames))
-    min_frames = int(min_frames)
+    radius, max_rel_speed, min_frames, duel_radius = _checked(radius, max_rel_speed, min_frames, duel_radius)
     if isinstance(confidence, bool) or not isinstance(confidence, numbers.Real) or not 0.5 < confidence <= 1.0:
         raise ValueError("controlled_touch: confidence must be a number in (0.5, 1.0] (0.5 would say nothing), "
                          "got {!r}".format(confidence))
@@ -70,11 +69,67 @@ def compute(run, *, radius, max_rel_speed, min_frames, confidence, duel_radius=1
     hold = float(hold)
 
     inputs = run.inputs
+    n_frames = inputs.atd.n_frames
+    candidate, nearest_is_home, visible = _candidates(inputs, radius, max_rel_speed, duel_radius)
+    home = no_opinion(n_frames)
+    for start, stop in kinematics.blocks(inputs):
+        if stop > start:
+            home[start:stop] = _block_home(candidate[start:stop], nearest_is_home[start:stop],
+                                           visible[start:stop], min_frames, confidence, hold)
+    return Evidence(alive=no_opinion(n_frames), home=home)
+
+
+def hold_state(run, *, radius, max_rel_speed, min_frames, duel_radius=1.0):
+    """HoldState of every frame: what the hold's vote is made of (P29), on the frames `compute` gives a hold.
+
+    The hold frames are those with the ball visible, outside every kept episode and after the block's first one, the
+    same `compute(..., hold > 0.5)` votes on. There `elapsed` is the number of frames since the last kept frame (>= 1)
+    and `last_is_home` that frame's team; `gap` says the ball was hidden on some frame in between. Elsewhere `elapsed`
+    is -1 and the other two are False. The same checks on the parameters as `compute`; ValueError otherwise.
+    """
+    radius, max_rel_speed, min_frames, duel_radius = _checked(radius, max_rel_speed, min_frames, duel_radius)
+    inputs = run.inputs
+    n_frames = inputs.atd.n_frames
+    candidate, nearest_is_home, visible = _candidates(inputs, radius, max_rel_speed, duel_radius)
+    last_is_home = np.zeros(n_frames, dtype=bool)
+    elapsed = np.full(n_frames, -1, dtype=np.int64)
+    gap = np.zeros(n_frames, dtype=bool)
+    for start, stop in kinematics.blocks(inputs):
+        if stop > start:
+            kept = _block_kept(candidate[start:stop], nearest_is_home[start:stop], min_frames)
+            last, elapsed[start:stop], gap[start:stop] = _block_hold_state(kept, visible[start:stop])
+            last_is_home[start:stop] = nearest_is_home[start:stop][np.maximum(last, 0)] & (last >= 0)
+    return HoldState(last_is_home=last_is_home, elapsed=elapsed, gap=gap)
+
+
+def hold_bin(elapsed, fps):
+    """The bin (0 to len(HOLD_BINS_S) - 1) of each elapsed frame count, -1 where `elapsed` is negative.
+
+    The edges are rint(HOLD_BINS_S * fps) frames; a bin holds its lower edge, the last is open.
+    """
+    edges = np.rint(np.asarray(HOLD_BINS_S) * float(fps)).astype(np.int64)
+    elapsed = np.asarray(elapsed)
+    return np.where(elapsed < 0, -1, np.searchsorted(edges, elapsed, side="right") - 1).astype(np.int64)
+
+
+def _checked(radius, max_rel_speed, min_frames, duel_radius):
+    """The four parameters of the control rule, checked and as (float, float, int, float); ValueError otherwise."""
+    radius = _positive("radius", radius, "metres from the ball", allow_inf=False)
+    duel_radius = _positive("duel_radius", duel_radius, "metres from the ball", allow_inf=False)
+    max_rel_speed = _positive("max_rel_speed", max_rel_speed, "metres per second; inf turns the test off",
+                              allow_inf=True)
+    if isinstance(min_frames, bool) or not isinstance(min_frames, numbers.Integral) or min_frames < 1:
+        raise ValueError("controlled_touch: min_frames must be a whole number of frames >= 1, got {!r}".format(
+            min_frames))
+    return radius, max_rel_speed, int(min_frames), duel_radius
+
+
+def _candidates(inputs, radius, max_rel_speed, duel_radius):
+    """(candidate, nearest slot is home, ball visible), each of full length: what compute and hold_state start from."""
     atd = inputs.atd
     ball = kinematics.ball_track(inputs)
     players = kinematics.player_track(inputs)
-    n_frames = atd.n_frames
-    frames = np.arange(n_frames)
+    frames = np.arange(atd.n_frames)
 
     distance = kinematics.ball_distances(players.xy_m, ball.xy_m)
     distance[np.isnan(distance)] = np.inf                  # absent slot, absent ball, outside the blocks: never near
@@ -86,24 +141,24 @@ def compute(run, *, radius, max_rel_speed, min_frames, confidence, duel_radius=1
     with np.errstate(invalid="ignore"):                    # NaN velocities compare False: not a candidate
         candidate = (ball.visible & (nearest_distance <= radius) & (rival > duel_radius)
                      & (np.hypot(delta[:, 0], delta[:, 1]) <= max_rel_speed))
-
-    home = no_opinion(n_frames)
-    for start, stop in kinematics.blocks(inputs):
-        if stop > start:
-            home[start:stop] = _block_home(candidate[start:stop], nearest_is_home[start:stop],
-                                           ball.visible[start:stop], min_frames, confidence, hold)
-    return Evidence(alive=no_opinion(n_frames), home=home)
+    return candidate, nearest_is_home, ball.visible
 
 
-def _block_home(candidate, is_home, visible, min_frames, confidence, hold):
-    """One block's home evidence: kept episodes, then the hold between them."""
-    m = len(candidate)
-    kept = np.zeros(m, dtype=bool)
+def _block_kept(candidate, is_home, min_frames):
+    """One block's kept mask: the frames of the episodes (runs of one team's candidates) of at least min_frames."""
+    kept = np.zeros(len(candidate), dtype=bool)
     for team_is_home in (True, False):
         starts, stops = kinematics.runs(candidate & (is_home == team_is_home))
         for first, last in zip(starts, stops):
             if last - first >= min_frames:
                 kept[first:last] = True
+    return kept
+
+
+def _block_home(candidate, is_home, visible, min_frames, confidence, hold):
+    """One block's home evidence: kept episodes, then the hold between them."""
+    m = len(candidate)
+    kept = _block_kept(candidate, is_home, min_frames)
     home = np.full(m, np.nan)
     home[kept] = np.where(is_home[kept], confidence, 1.0 - confidence)
     if hold > 0.5:
@@ -112,6 +167,19 @@ def _block_home(candidate, is_home, visible, min_frames, confidence, hold):
         between = visible & ~kept & (last >= 0)
         home[between] = np.where(is_home[last[between]], hold, 1.0 - hold)
     return home
+
+
+def _block_hold_state(kept, visible):
+    """(last, elapsed, gap) of one block: the index of the last kept frame at or before each frame (-1 before the
+    first), the frames since it on a hold frame (visible, not kept, after the first kept frame; else -1), and whether
+    the ball was hidden on any frame since it on a hold frame (else False)."""
+    index = np.arange(len(kept))
+    last = np.maximum.accumulate(np.where(kept, index, -1))
+    between = visible & ~kept & (last >= 0)
+    elapsed = np.where(between, index - last, -1)
+    hidden = np.cumsum(~visible)
+    gap = between & (hidden - hidden[np.maximum(last, 0)] > 0)
+    return last, elapsed, gap
 
 
 def _positive(name, value, unit, allow_inf):

@@ -1048,6 +1048,68 @@ def test_touch_matches_a_loop():
     assert min(seen.values()) > 100, "the random scenes no longer reach every branch: {}".format(seen)
 
 
+def test_touch_hold_state_of_a_block():
+    from pipeline.evidence import controlled_touch
+    kept = np.array([0, 1, 1, 0, 0, 0, 0, 1, 0, 0], dtype=bool)
+    visible = np.array([1, 1, 1, 1, 0, 1, 1, 1, 1, 1], dtype=bool)
+    last, elapsed, gap = controlled_touch._block_hold_state(kept, visible)
+    assert last.tolist() == [-1, 1, 2, 2, 2, 2, 2, 7, 7, 7]
+    assert elapsed.tolist() == [-1, -1, -1, 1, -1, 3, 4, -1, 1, 2]
+    assert gap.tolist() == [False, False, False, False, False, True, True, False, False, False]
+
+
+def test_touch_hold_bin():
+    from pipeline.evidence import controlled_touch
+    elapsed = np.array([-1, 1, 9, 10, 24, 25, 999, 1000, 50000])
+    assert controlled_touch.hold_bin(elapsed, 25.0).tolist() == [-1, 0, 0, 1, 1, 2, 8, 9, 9]
+
+
+def test_touch_hold_state_of_the_hold_scene():
+    from pipeline.evidence import controlled_touch
+    rule = {key: value for key, value in TOUCH.items() if key != "confidence"}
+    state = controlled_touch.hold_state(hold_scene(), **rule)
+    on = np.zeros(60, dtype=bool)
+    for span in (slice(15, 25), slice(30, 35), slice(45, 60)):
+        on[span] = True
+    assert np.array_equal(state.elapsed >= 0, on), np.flatnonzero((state.elapsed >= 0) != on)
+    assert [int(state.elapsed[t]) for t in (15, 24, 30, 34, 45, 59)] == [1, 10, 16, 20, 1, 15], state.elapsed
+    gap = np.zeros(60, dtype=bool)
+    gap[30:35] = True
+    assert np.array_equal(state.gap, gap), np.flatnonzero(state.gap != gap)
+    home = np.zeros(60, dtype=bool)
+    home[15:25] = home[30:35] = True
+    assert np.array_equal(state.last_is_home[on], home[on]), state.last_is_home
+
+
+def test_touch_hold_state_matches_the_hold():
+    from pipeline.evidence import controlled_touch
+    rng = np.random.default_rng(7)
+    seen = {"gap": 0, "no_gap": 0}
+
+    def walk(shape):   # a random walk from a point of a 4 m square
+        return 15.0 + rng.random(shape[1:]) * 4.0 + np.cumsum(rng.normal(0.0, 0.05, shape), axis=0)
+
+    for scene in range(200):
+        n, slots = 80, 6
+        ball = walk((n, 2))
+        players = np.stack([walk((n, 2)) for _ in range(slots)], axis=1)
+        for track, shape in ((players, (n, slots)), (ball, (n,))):
+            track[np.cumsum(rng.random(shape) < 0.04, axis=0) % 2 == 1] = np.nan   # on, off, on ... in runs
+        parameters = dict(radius=float(rng.uniform(1.0, 3.0)), duel_radius=float(rng.uniform(0.5, 2.5)),
+                          max_rel_speed=float(rng.choice([1.0, 2.0, 4.0, np.inf])),
+                          min_frames=int(rng.integers(1, 7)))
+        run = touch_scene(n, ball=ball, slots={s: players[:, s] for s in range(slots)}, graded=[(5, 40), (45, 78)])
+        state = controlled_touch.hold_state(run, **parameters)
+        held = touch(run, confidence=0.9, hold=0.6, **parameters).home
+        bare = touch(run, confidence=0.9, hold=0.5, **parameters).home
+        on = state.elapsed >= 0
+        assert np.array_equal(on, np.isnan(bare) & ~np.isnan(held)), scene
+        assert np.array_equal(held[on], np.where(state.last_is_home, 0.6, 0.4)[on]), scene
+        seen["gap"] += int((on & state.gap).sum())
+        seen["no_gap"] += int((on & ~state.gap).sum())
+    assert min(seen.values()) > 100, "the random scenes no longer reach every branch: {}".format(seen)
+
+
 def test_touch_rejects_bad_parameters():
     run = touch_scene(20)
     for name, bads in (("radius", (0, -1.0, True, np.inf, np.nan, "2")),
