@@ -10167,6 +10167,65 @@ to catch before a config was spent on it.
 the one retry was tied to a bar that was never reached. The ball-state shift (the lane's fallback) was struck by the
 advisor before any run: `generic`'s gaps are blind to the play, so a lag measured inside them would not transfer.
 
+### R034 — P31: team evidence level with the dead ball in the decoder: the guard holds, with a small loss under both truths (declared 2026-11-12; run 2026-11-12, Tian away)
+Proposal: P31 · Spec (declared before any run):
+[2026-11-12-p29-p31-design.md](superpowers/specs/2026-11-12-p29-p31-design.md) · Code: branch `p29-p31`, commit
+`48c8aa8` (merged as `b427246`): the decoder flag `team_neutral_dead`, off by default, and
+`pipeline/benchmark/configs/p31/p31_neutral.toml` ·
+Command: `python pipeline/benchmark/run.py pipeline/benchmark/configs/p27/p27_final.toml
+pipeline/benchmark/configs/p31/p31_neutral.toml --profile generic --seeds 3 --truth both`, then
+`python pipeline/benchmark/p29_bar.py guard --reference p27_final p31_neutral` (both at `b427246`)
+Public: — (no candidate was run on our match; `main.toml` rebuilt its file at `b427246` with the same sha256,
+`2dd51320…1660`)
+Validation (P01 benchmark, `generic`, 3 seeds): raw 0.5399 against 0.5414 (−0.0014), coarse 0.5811 against 0.5829
+(−0.0018), the mean of the two −0.0016
+Changed vs `main.toml`: nothing
+Verdict: **the guard holds; not quite neutral: a small loss on six of the seven matches under both truths. The flag
+stays off; adopting it is Tian's call**
+
+**The belief.** A `home` term of the decoder goes to `H` and to `A` and not to `D`, so every confident team vote also
+pushes the frame away from the dead ball: a control episode by +0.62 nats per frame, the hold by +0.18 and P07 by up
+to +0.20 (A19). Whether the ball is alive should be decided by the evidence about that (the dead-ball model), not by
+how confident the team evidence happens to be. Proposed as a matter of principle and expected to be neutral.
+
+**The mechanism.** `hmm.decode(..., team_neutral_dead=true)`: each `home` term also gives `D` the larger of the two
+team terms, `weight * max(log 2p, log 2(1 − p))`, so team evidence ranks `H` against `A` and leaves the better of
+them level with `D`. Off by default (the output is bit for bit today's), refused together with `restart_source`.
+One candidate: `p27_final` with the flag on.
+
+**The guard, declared before the run.** Neither truth's pooled spellF1 more than 0.005 below `p27_final`'s. No bar:
+a neutral change is not asked to win.
+
+**The run** (12 Nov, 22:30 to 22:33).
+
+| truth | `p27_final` | `p31_neutral` | pooled Δ | per-match mean Δ [90% t-interval] | sign-flip p | wins / losses |
+|---|---|---|---|---|---|---|
+| raw | 0.5414 | 0.5399 | **−0.0014** | −0.0015 [−0.0023, −0.0007] | 0.031 | 1 / 6 |
+| coarse | 0.5829 | 0.5811 | **−0.0018** | −0.0018 [−0.0036, +0.0000] | 0.109 | 1 / 6 |
+| mean of the two | | | **−0.0016** | | 0.047 | 1 / 6 |
+
+- Guard: raw −0.0014 and coarse −0.0018 are both above −0.005: **kept** (`p29_bar.py guard` exits 0).
+- Per match, raw / coarse: J03WMX −0.0008 / −0.0014, J03WN1 −0.0021 / −0.0017, J03WOH −0.0016 / −0.0025, J03WOY
+  −0.0019 / −0.0029, J03WPY +0.0004 / +0.0034, J03WQQ −0.0012 / −0.0035, J03WR9 −0.0030 / −0.0039.
+- macroF1 −0.0003 under both truths (3 wins, 4 losses; p 0.25 and 0.36); alive/dead F1 0.9741 to 0.9737.
+- The dead ball: predicted on 44.7% of the graded frames before and 45.0% with the flag, against the truth's 44.8%.
+  Possessions: 2.98 per graded minute both ways (the truth 4.58 raw, 2.48 coarse).
+
+**What it says.** Without the push, `D` takes 0.3 points more of the graded frames and the number of possessions does
+not move: the flag changes where a few stoppages begin and end, not which possessions exist. The loss is a third of
+the guard's width and far below what the full match can tell apart (0.04), but its sign is the same on six of seven
+matches under both truths, so it is a small real cost on this benchmark and not noise around zero. "Expected neutral"
+was close and not exact: the push the principle objects to was worth about 0.0015 of spellF1 here.
+
+**The limit of this test, declared with it.** The decoder's other constants (the switch costs, the minimum runs, the
+dead-ball model's weight) were chosen in R030 with the push in place and were not re-chosen with the flag on. A
+re-choice could recover the loss or not; it was not run, because a re-choice of the decoder is a grid of its own and
+the spec left it out.
+
+**What follows, by the spec.** P31 never enters a candidate by itself. If P29 or P30 gives a candidate, that candidate
+is run once more with the flag on and held to the same guard against the candidate; the result is added below. The
+code stays on the branch behind its flag, off by default.
+
 ## Submission log
 
 The form keeps only the last response before the deadline, so log every upload.

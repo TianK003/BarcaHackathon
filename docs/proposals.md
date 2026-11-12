@@ -1416,7 +1416,9 @@ Candidates: the new model at weight 0.3, 0.2 and 0.45; within 0.005 of the best 
 
 ### P31 — Team evidence that does not vote on the dead ball
 
-**Status: started 12 Nov 2026.** Effort S. A matter of principle; expected neutral on the benchmark.
+**Status: measured 12 Nov 2026 → [R034](results.md): the guard holds (raw −0.0014, coarse −0.0018; six of seven
+matches a little lower under both truths). The flag stays off by default; adopting it is Tian's call.** Effort S. A
+matter of principle; expected neutral on the benchmark.
 
 **The belief.** A `home` term goes to `H` and `A` and not to `D`, so a control episode adds +0.62 nats per frame for
 play over `D`, the hold +0.18 and P07 up to +0.20 (A19). Who has the ball should not say whether it is alive.
