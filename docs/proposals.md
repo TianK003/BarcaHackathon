@@ -1367,6 +1367,64 @@ not the start of the possession. The code (the detector, the off-by-default rule
 same table. The ball-state shift, the lane's fallback, was struck before any run: `generic`'s gaps are blind to the
 play, so a lag measured inside them does not transfer.
 
+## From the review of 12 Nov
+
+A code and logic review on 12 Nov found no bug that changes a label (A23 holds) and three places where the evidence
+is weaker than it could be. Each became a proposal with a gate and a bar declared before any run
+([the spec](superpowers/specs/2026-11-12-p29-p31-design.md), [the plan](superpowers/plans/2026-11-12-p29-p31.md)),
+built overnight on the branch `p29-p31` in the order P29, P30, P31. Everything is measured on `generic`, three seeds,
+both truths, against `p27_final`; `main.toml` and the file are not touched until Tian decides.
+
+**The bar (P29, P30):** the mean of the two truths' pooled spellF1 at least +0.005, the sign-flip p of that difference
+at most 0.05 (seven matches: all seven won, or six with a small loss on the seventh), neither truth more than 0.005
+lower. One retry at most, then the lane's code is removed.
+
+### P29 — A learned hold
+
+**Status: started 12 Nov 2026.** Effort S, then M. Odds put at about one in three.
+
+**The belief.** Between two control episodes `controlled_touch` votes 0.60 for the last controlling team on every
+frame with the ball visible, however long that lasts: through ball gaps and through stoppages, after which the other
+team restarts in 57 to 90% of the cases per DFL match (A12). How likely the last controller still has the ball falls
+with the time since their last touch and falls further once the ball has been out of sight. A vote that follows that
+curve is stronger where the constant is too timid and silent or reversed where it is wrong.
+
+**Step 0, the gate.** On the hold frames where DFL's truth is alive, the agreement of the truth's team with the last
+controller's, in ten bins of time since the last kept frame and by whether the ball was hidden in between: the 20
+cells differ from the pooled agreement by at least 0.05 on average, weighted by frames.
+
+**The mechanism.** The cells, smoothed, as `pipeline/models/hold_curve.json` (a curve per held-out match and one from
+all seven); `controlled_touch` takes `hold_curve` and `hold_scale`, and the vote for the last controller is
+`0.5 + hold_scale * (p - 0.5)`. Candidates: the scale at 0.25, 0.5, 0.75 and 1.0; within 0.005 of the best mean, the
+smallest.
+
+### P30 — Timing-aware shape features
+
+**Status: started 12 Nov 2026.** Effort M. Odds put at about one in four.
+
+**The belief.** Clean pairs have a median edge error of 0 but an upper quartile of +14 to +27 frames (A25), 42% of
+DFL's changes of team happen with the ball hidden (R031), and P07's time features are centred windows of ±1 s and
+±2 s, which see the average of before and after. One-sided windows see the change itself: the team that has just won
+the ball starts to advance and to spread.
+
+**The mechanism.** A second feature set beside the first (42 columns): the 26 of today plus, per team, `length`,
+`spread` and the advance over the last and the next 2, 5 and 10 s. The model file names its feature version, so
+today's file gives today's numbers; the version 2 model is a second file.
+
+**The gate.** The pooled held-out log-loss on alive frames with the ball missing at most 0.3510 (0.3560 today).
+Candidates: the new model at weight 0.3, 0.2 and 0.45; within 0.005 of the best mean, the weight nearest 0.3.
+
+### P31 — Team evidence that does not vote on the dead ball
+
+**Status: started 12 Nov 2026.** Effort S. A matter of principle; expected neutral on the benchmark.
+
+**The belief.** A `home` term goes to `H` and `A` and not to `D`, so a control episode adds +0.62 nats per frame for
+play over `D`, the hold +0.18 and P07 up to +0.20 (A19). Who has the ball should not say whether it is alive.
+
+**The mechanism.** A decoder flag `team_neutral_dead`: each `home` term also gives `D` the larger of the two team
+terms. One candidate, and a guard instead of a bar: neither truth more than 0.005 lower. The decoder's other constants
+were chosen with the push in place and are not re-chosen. Adoption is Tian's call.
+
 ## Cheap signals worth checking
 
 ### P09 — Camera aim as a coarse ball-zone prior
