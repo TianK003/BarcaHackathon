@@ -292,9 +292,9 @@ def test_shape_trainer_never_passes_truth():
         seen, real = [], shape_features.features
         match = matches["RND001"]
 
-        def spy(inputs):
+        def spy(inputs, version=1):
             seen.append([leaks(inputs, other) for other in matches.values()])      # against every match's truth
-            return real(inputs)
+            return real(inputs, version)
         shape_features.features = spy
         real_fit = trainer.fit
         trainer.fit = recording_fit([])
@@ -422,6 +422,56 @@ def test_shape_artifact_round_trip():
         expect_error(ValueError, lambda: trainer.write(os.path.join(root, "big.json"), big), "10")
         assert not os.path.exists(os.path.join(root, "big.json"))
         expect_error(ValueError, lambda: trainer.dumps({"x": float("nan")}), "NaN")
+
+
+def test_shape_trainer_version_2_names_its_features_and_version_1_is_unchanged():
+    """P30: `version=2` trains on the 42 columns and the file says so; the default is version 1, byte for byte."""
+    matches, artifact = planted()
+    calibration = synthetic_calibration()
+    names2 = shape_features.feature_names(2)
+    assert len(names2) == 42
+    artifact2 = trainer.train("gaps", PLANTED_SEEDS, PLANTED_STRIDE, matches=matches, calibration=calibration,
+                              version=2)
+    assert artifact2["feature_version"] == 2 and artifact2["features"] == list(names2)
+    assert sorted(artifact2["folds"]) == list(FOLD_IDS) and "full" in artifact2
+    for name, model in list(artifact2["folds"].items()) + [("full", artifact2["full"])]:
+        trees.check_trees(model, 42, name, "shape_possession")
+        assert any(feature >= len(NAMES) for tree in model["trees"] for feature in tree["feature"]), (
+            "{} never split on a column of version 2".format(name))
+    with tempfile.TemporaryDirectory() as root:
+        path = os.path.join(root, "v2.json")
+        trainer.write(path, artifact2)
+        shape_possession.load(path)                       # the source accepts it: names, version and tree width agree
+    # the artifact trained with version=1 given is the one trained without the keyword
+    explicit = trainer.train("gaps", PLANTED_SEEDS, PLANTED_STRIDE, matches=matches, calibration=calibration,
+                             version=1)
+    assert trainer.dumps(explicit) == trainer.dumps(artifact)
+    assert artifact["feature_version"] == 1 and artifact["features"] == list(NAMES)
+    # what is refused
+    for bad in (3, 0, True, 2.0, None, "2"):
+        expect_error(ValueError, lambda: trainer.rows(*_rows_args(matches), version=bad), "shape_features", "version")
+    expect_error(ValueError, lambda: trainer.augment(np.zeros((4, 26)), np.zeros(4), version=2), "train_shape", "42")
+    assert trainer.DEFAULT_MODEL_PATHS == {1: "pipeline/models/shape_possession_hgb.json",
+                                           2: "pipeline/models/shape_possession_v2_hgb.json"}
+    assert trainer.DEFAULT_MODEL_PATH == os.path.join(trainer.ROOT, "pipeline", "models", "shape_possession_hgb.json")
+    args = trainer.build_parser().parse_args([])
+    assert args.features == 1
+    assert trainer.build_parser().parse_args(["--features", "2"]).features == 2
+    for bad in (["--features", "3"], ["--features", "0"], ["--features", "x"]):
+        buffer = io.StringIO()
+        with contextlib.redirect_stderr(buffer):
+            try:
+                trainer.build_parser().parse_args(bad)
+            except SystemExit:
+                continue
+        raise AssertionError("{} was accepted".format(bad))
+
+
+def _rows_args(matches):
+    match = matches[FOLD_IDS[0]]
+    inputs = trainer.served_inputs(match, "gaps", 0, synthetic_calibration(), None)
+    codes, _ = truth.truth_codes(match)
+    return inputs, codes, 5
 
 
 def test_shape_verify_ignores_only_source_hashes():

@@ -102,7 +102,7 @@ _MEMO = weakref.WeakKeyDictionary()                       # Inputs -> {version: 
 
 def feature_names(version):
     """The column names of a feature version (1: FEATURE_NAMES, 2: FEATURE_NAMES_V2); refuses any other version."""
-    if version not in VERSIONS:
+    if type(version) is not int or version not in VERSIONS:      # not True or 2.0, which `in` would let through
         raise ValueError("shape_features: version must be one of {}, got {!r}".format(VERSIONS, version))
     return _NAMES[version]
 

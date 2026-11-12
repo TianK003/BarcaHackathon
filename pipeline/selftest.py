@@ -3938,18 +3938,20 @@ SHAPE_TRAINER = "pipeline/benchmark/train_shape.py"
 STUMP_LOGIT = 1.5
 
 
-def shape_model(baseline, left, right, feature="adv_gap", threshold=0.0, missing_left=0, prior=0.5):
+def shape_model(baseline, left, right, feature="adv_gap", threshold=0.0, missing_left=0, prior=0.5, version=1):
+    from pipeline.evidence import shape_features
     return {"baseline": baseline, "prior_home": prior,
-            "trees": [stump(SHAPE_COLUMN[feature], threshold, left, right, missing_left)]}
+            "trees": [stump(shape_features.columns(version)[feature], threshold, left, right, missing_left)]}
 
 
-def write_shape_model(folder, folds=None, full=None, name="shape_hgb.json", **changes):
+def write_shape_model(folder, folds=None, full=None, name="shape_hgb.json", version=1, **changes):
     import json
     from pipeline.evidence import shape_features
-    artifact = {"format": 1, "kind": "hgb", "feature_version": shape_features.FEATURE_VERSION,
-                "features": list(SHAPE_NAMES), "profile": "tracking", "seeds": 3, "stride": 5, "provenance": {},
-                "folds": {"FOLD1": shape_model(-0.2, 1.0, -1.0)} if folds is None else folds,
-                "full": shape_model(0.7, -1.0, 2.0) if full is None else full}
+    artifact = {"format": 1, "kind": "hgb", "feature_version": version,
+                "features": list(shape_features.feature_names(version)), "profile": "tracking", "seeds": 3, "stride": 5,
+                "provenance": {},
+                "folds": {"FOLD1": shape_model(-0.2, 1.0, -1.0, version=version)} if folds is None else folds,
+                "full": shape_model(0.7, -1.0, 2.0, version=version) if full is None else full}
     artifact.update(changes)
     return write_text(folder, name, json.dumps(artifact, sort_keys=True) + "\n")
 
@@ -4105,8 +4107,14 @@ def test_shape_possession_rejects_bad_artifacts():
                                 *fragments)
 
         for label, changes in (("format", {"format": 2}), ("format", {"format": None}),
-                               ("feature_version", {"feature_version": 2}),
-                               ("feature_version", {"feature_version": shape_features.FEATURE_VERSION + 1}),
+                               ("features", {"feature_version": 2}),    # version 2 with version 1's 26 names
+                               ("features", {"features": list(shape_features.FEATURE_NAMES_V2)}),   # and the reverse
+                               ("feature_version", {"feature_version": max(shape_features.VERSIONS) + 1}),
+                               ("feature_version", {"feature_version": 0}),
+                               ("feature_version", {"feature_version": None}),
+                               ("feature_version", {"feature_version": True}),
+                               ("feature_version", {"feature_version": 2.0}),
+                               ("feature_version", {"feature_version": "1"}),
                                ("features", {"features": list(SHAPE_NAMES)[::-1]}), ("features", {"features": renamed}),
                                ("features", {"features": list(SHAPE_NAMES)[:-1]}),
                                ("features", {"features": ["a"] * 30}),
@@ -4114,6 +4122,11 @@ def test_shape_possession_rejects_bad_artifacts():
                                ("folds", {"folds": [good]}), ("folds", {"folds": "FOLD1"})):
             refused(write_shape_model(root, name="other.json", **changes), label)
         refused(write_text(root, "list.json", "[1, 2]"), "model object")
+        # a version 2 file whose trees reach for column 42 (it has 0 to 41)
+        refused(write_shape_model(root, name="narrow2.json", version=2,
+                                  full=dict(good, trees=[stump(42, 0.0, -1.0, 1.0)])), "tree 0", "full")
+        refused(write_shape_model(root, name="wide1.json", full=dict(good, trees=[stump(30, 0.0, -1.0, 1.0)])),
+                "tree 0", "full")
         for bad in (0.6, 0.0, 1.0, -0.5, True, "0.5", None):
             refused(write_shape_model(root, full=dict(good, prior_home=bad), name="prior.json"), "prior_home", "full")
             refused(write_shape_model(root, folds={"FOLD1": dict(good, prior_home=bad)}, name="prior.json"),
@@ -4136,6 +4149,37 @@ def test_shape_possession_rejects_bad_artifacts():
         refused(os.path.join(root, "text.json"), "text.json")
         # dead_ball_model's file is a model of other features: it must not load here
         refused(write_model(root, name="dead.json"), "features")
+
+
+def test_shape_possession_reads_a_v2_file():
+    from pipeline.evidence import shape_features
+    column = shape_features.columns(2)
+    with tempfile.TemporaryDirectory() as root:
+        # a stump on the home team's advance over the next 2 s, leaves -1.0 (<= 0 or NaN, missing_left) and 2.0
+        stump_model = shape_model(0.4, -1.0, 2.0, feature="h_adv_fut_2s", missing_left=1, version=2)
+        path = write_shape_model(root, version=2, full=stump_model, folds={"FOLD1": stump_model})
+        sides, same = 0, 0
+        for seed in range(4):
+            players, teams, graded = shape_scene(seed)
+            inputs = shape_inputs(players, teams, graded)
+            home = shape_home(inputs, path, scope="all")
+            X = shape_features.features(inputs, 2)[1]
+
+            def leaf(values):
+                left = np.isnan(values) | (values <= 0.0)         # a NaN goes where missing_left sends it: left
+                return np.where(left, -1.0, 2.0)
+            own, other = X[:, column["h_adv_fut_2s"]], X[:, column["a_adv_fut_2s"]]
+            want = np.clip(1.0 / (1.0 + np.exp(-(leaf(own) - leaf(other)) / 2.0)), 0.02, 0.98)
+            known = ~np.isnan(home)
+            assert known.sum() > 100, seed
+            assert np.allclose(home[known], want[known], rtol=0, atol=1e-12), seed
+            apart = known & (leaf(own) != leaf(other))
+            together = known & (leaf(own) == leaf(other))
+            assert np.allclose(np.abs(np.log(home[apart] / (1.0 - home[apart]))), 1.5, rtol=0, atol=1e-12)
+            assert np.array_equal(home[together], np.full(int(together.sum()), 0.5))
+            sides += int(apart.sum())
+            same += int(together.sum())
+        assert sides > 50 and same > 50, "the scene must hold both cases ({}, {})".format(sides, same)
 
 
 def test_shape_possession_parameters():
@@ -4228,7 +4272,7 @@ def test_shape_possession_refuses_infinite_features():
         broken = X.copy()
         broken[40, SHAPE_COLUMN["h_adv_mean"]] = np.inf
         real = shape_features.features
-        shape_features.features = lambda given: (names, broken)
+        shape_features.features = lambda given, version=1: (names, broken)
         try:
             expect_error(ValueError, lambda: shape_home(inputs, path), "shape_possession", "infinite")
         finally:
