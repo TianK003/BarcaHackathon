@@ -58,6 +58,8 @@ two sets of numbers are different benchmarks. Hand labels on this match are not 
 | R032 | 2026-11-12 | P29: a learned hold: `controlled_touch`'s vote between episodes follows the measured agreement by time since the last touch and a hidden ball since (20 cells, a curve per held-out match), at scale 0.25 / 0.5 / 0.75 / 1.0 | — | — | — | the pick `p29_s025` 0.5481 raw and 0.5870 coarse (mean 0.5675) against `p27_final`'s 0.5414 and 0.5829 (mean 0.5622) | **dropped**: the gate passed (deviation 0.098 against 0.05), the pick gained +0.0054 on the mean with both truths up and missed the sign-flip test (p 0.078, six of seven matches); the larger scales trade raw against coarse (T33); the advisor found no change the evidence points to, so no retry; code removed, recoverable from `3eee56e` |
 | R033 | 2026-11-12 | P30: timing-aware shape features: a version 2 shape model (42 features: length, spread and the one-sided advance over the last and the next 2, 5 and 10 s, per team) at weight 0.3 / 0.2 / 0.45 | — | — | — | **the pick `p30_w030` 0.5629 raw and 0.5901 coarse (mean 0.5765)** against `p27_final`'s 0.5414 and 0.5829 (mean 0.5622) | **cleared the bar** (mean +0.0143, p 0.016, all seven matches won on the mean; raw +0.0215, coarse +0.0072); gate G2 passed (held-out log-loss in the gaps 0.3189 against 0.3560); the night's candidate `pipeline/configs/candidates/p30_shape_v2.toml`, **not adopted: Tian decides** |
 | R034 | 2026-11-12 | P31: team evidence level with the dead ball in the decoder (`team_neutral_dead`) | — | — | — | 0.5399 raw and 0.5811 coarse (mean 0.5605) against `p27_final`'s 0.5414 and 0.5829 | **the guard holds** (raw −0.0014, coarse −0.0018), a small loss on six of seven matches under both truths; the flag stays off by default; Tian's call |
+| R035 | 2026-11-13 | P33: shape features version 3 (one-sided compactness over 5 s, the advance over 20 s, the teams' differences of the one-sided advance changes; 60 columns) at weight 0.3 / 0.45 | — | — | — | the pick `p33_w030` 0.5616 raw and 0.5934 coarse (mean 0.5775) against `p30_w030`'s 0.5629 and 0.5901 (mean 0.5765) | **dropped**: the gate passed by 0.0002 (gap log-loss 0.3137 against 0.3139), the bar missed (mean +0.0010, p 0.44); no retry; code removed |
+| R036 | 2026-11-13 | P34: the version 2 shape model trained on both truths' labels (weighted half each where they differ) | — | — | — | — (no config was run: the gate comes first) | **dropped at its sanity gate**: the mean of the raw and coarse held-out gap log-losses fell 0.0007 against the 0.003 needed (raw +0.0075, coarse −0.0088: a trade along the grain); no retry; code removed, the report's coarse cells kept |
 
 ### The four yardsticks on every profile, in one table
 
@@ -10491,6 +10493,129 @@ the spec left it out.
 **What follows, by the spec.** P31 never enters a candidate by itself. If P29 or P30 gives a candidate, that candidate
 is run once more with the flag on and held to the same guard against the candidate; the result is added below. The
 code stays on the branch behind its flag, off by default.
+
+### R035 — P33: shape features version 3: the gate passes by a hair, the benchmark does not move, dropped (declared 2026-11-12, 23:50; run 2026-11-13, Tian away, an advisor agent in Tian's place)
+Proposal: P33 · Spec (declared before any run): [2026-11-13-p32-p34-design.md](superpowers/specs/2026-11-13-p32-p34-design.md)
+· Code: removed in `c9c0708`, recoverable from `a92000e` (version 3 is `411b881`, the model `a92000e`) ·
+Command (at `768d3f5` and `a92000e`): `python pipeline/benchmark/train_shape.py --features 3 --out
+pipeline/models/shape_possession_v3_hgb.json`, `train_shape.py --report --out pipeline/models/shape_possession_v3_hgb.json`
+(the gate); `python pipeline/benchmark/run.py pipeline/benchmark/configs/p30/p30_w030.toml
+pipeline/benchmark/configs/p33/p33_w030.toml pipeline/benchmark/configs/p33/p33_w045.toml --profile generic --seeds 3
+--truth both`, then `p29_bar.py pick --reference p30_w030 p33_w030 p33_w045` and `bar --reference p30_w030 p33_w030`
+Public: — (nothing was run on our match; `main.toml` rebuilt its file with the same sha256 with version 3 merged)
+Validation (P01 benchmark, `generic`, 3 seeds), the pick `p33_w030` against the candidate `p30_w030`: raw 0.5616
+against 0.5629 (−0.0013), coarse 0.5934 against 0.5901 (+0.0034), the mean +0.0010, sign-flip p 0.44
+Changed vs `main.toml`: nothing
+Verdict: **dropped: the benchmark does not move (the belief's own falsifier); no retry**
+
+**The belief.** P30 showed that one-sided time is where the shape signal is. Version 2 leaves out the difference of
+the two teams' one-sided advance changes (one advances while the other drops), which an axis-aligned tree reaches only
+through a staircase of splits; one-sided changes of compactness, not only of position; and a 20 s horizon for the long
+gaps. Falsified if the held-out gap log-loss does not fall by P30's own margin, or the benchmark does not move.
+
+**The mechanism.** Version 3 of the shape features (60 columns): version 2's 42 copied, plus per team
+`spread_past_5s`, `spread_fut_5s`, `width_past_5s`, `width_fut_5s`, `adv_past_20s`, `adv_fut_20s`, and as cross
+columns the six differences `h_adv_{past,fut}_{2,5,10}s − a_…` (negated by `swap`). Version 2's recipe on 60 columns.
+
+**The gate, declared before the run:** the pooled held-out log-loss on alive frames with the ball missing at most
+0.3139 (version 2's 0.3189 − 0.005).
+
+| match | version 2 gap log-loss | version 3 gap log-loss |
+|---|---|---|
+| J03WMX | 0.3583 | **0.3515** |
+| J03WN1 | **0.3937** | 0.3981 |
+| J03WOH | 0.2977 | **0.2913** |
+| J03WOY | 0.3274 | **0.3219** |
+| J03WPY | 0.3123 | **0.3016** |
+| J03WQQ | 0.2919 | **0.2805** |
+| J03WR9 | **0.2654** | 0.2672 |
+| pooled (685,247 frames) | 0.3189 | **0.3137** |
+
+- **The gate passes, by 0.0002**, lower on five of seven matches. Under the coarse truth the gap log-loss is 0.3123
+  (version 2: 0.3185); on all alive frames 0.3162 (0.3213); the touch-episode agreement 0.8514 (0.8470).
+
+**The run** (13 Nov, 00:30 to 00:33; `p30_w030` reproduced to the last digit: raw 0.5629, coarse 0.5901, mean 0.5765).
+
+| config | raw (Δ, p, wins of 7) | coarse (Δ, p, wins) | mean (Δ, p, wins) | possessions / min |
+|---|---|---|---|---|
+| `p33_w030` | 0.5616 (−0.0013, 0.34, 3) | 0.5934 (+0.0034, 0.14, 6) | 0.5775 (**+0.0010**, 0.44, 5) | 3.00 |
+| `p33_w045` | 0.5623 (−0.0006, 0.88, 4) | 0.5917 (+0.0016, 0.67, 4) | 0.5770 (+0.0005, 0.89, 5) | 3.04 |
+
+- **The pick: `p33_w030`** (the best mean; 0.45 within the band). **The bar: missed** (+0.0010 against +0.005, p 0.44
+  against 0.05); neither truth more than 0.005 lower.
+
+**What it says.** P30 turned 0.0371 of gap log-loss into +0.0143 of spellF1 (about 0.39 per unit); version 3's 0.0052
+predicted about +0.002, and +0.0010 came out, inside the noise. The extra columns sharpen the model a little where it
+was already right and move the decoded labels hardly at all. Version 2 seems to have taken what the shape of the teams
+says about a hand-over in time.
+
+**The advisor's ruling (00:39, in Tian's place): drop, no retry.** The belief's own falsifier holds (the benchmark does
+not move); the gate passed by a hair with two matches worse; a retry would need about 0.013 of log-loss gain, 2.5 times
+what the 18 columns gave; the one candidate retry (without the 20 s columns, from the coarse truth's 6 of 7 against
+the raw truth's 3 of 7) would be a story fitted to a split that is not significant (p 0.14 and 0.34), a sixteenth
+configuration on the same seven matches. Nothing of P33 is kept, not even the helper it factored out of version 2's
+code: `shape_features.py` is byte for byte what it was before P33.
+
+**For Tian.** Stop adding shape features before the deadline: at P30's rate, a further version needs about 0.013 of
+held-out gap log-loss to have a chance at the bar.
+
+### R036 — P34: the version 2 shape model trained on both truths' labels: the sanity gate misses, dropped (declared 2026-11-12, 23:50; run 2026-11-13, Tian away, an advisor agent in Tian's place)
+Proposal: P34 · Spec (declared before any run): [2026-11-13-p32-p34-design.md](superpowers/specs/2026-11-13-p32-p34-design.md)
+· Code: removed in `d767596`, recoverable from `a92000e` (and `768d3f5`) (`train_shape.py --labels both` is `6a3e7bc`, the model
+`66fe24b`); the report's coarse-truth cells were kept (below) ·
+Command (at `e106e5e` and `66fe24b`): `python pipeline/benchmark/train_shape.py --features 2 --labels both --out
+pipeline/models/shape_possession_v2both_hgb.json`, then `train_shape.py --report --out
+pipeline/models/shape_possession_v2_hgb.json` and the same for the new file; `train_shape.py --verify` (version 1
+unchanged with the option merged)
+Public: — (nothing was run on our match; `main.toml` rebuilt its file with the same sha256 at every merge)
+Validation (P01 benchmark): — (no config was run: the gate comes first)
+Changed vs `main.toml`: nothing
+Verdict: **dropped at its sanity gate; the advisor found no retry the evidence points to**
+
+**The belief.** The objective is the mean of the raw and the coarse truth's spellF1, and the shape model learns the raw
+truth only. The coarse truth merges each short possession that sits between two of the other team; the teams' shape
+cannot see a 2-second possession, so for the model those raw labels are noise and for the coarse truth they are wrong.
+Training on both labels, each weighted half where they differ, trains on the objective's own target.
+
+**The mechanism.** `train_shape.py --labels both`: the coarse codes from the benchmark's own `truth.coarse_codes` on
+the same frames; where the two labels agree a row at weight 1, where they differ two rows, one with each label, at 0.5;
+the mirrors alike; the trees fitted with `sample_weight`. Version 2's features, rows, stride and tree settings.
+
+**The gate, declared before the run as a sanity gate** (it is close to the model's own training objective, so it
+screens a broken build, not a weak idea): on alive frames with the ball missing, the mean of the raw and coarse pooled
+held-out log-losses at most version 2's mean − 0.003, and the raw log-loss at most version 2's + 0.010.
+
+| model (685,247 held-out alive frames with the ball missing) | raw log-loss (accuracy) | coarse log-loss (accuracy) | mean |
+|---|---|---|---|
+| version 2, raw labels (the candidate's, R033) | 0.3189 (0.8645) | 0.3185 (0.8647) | 0.3187 |
+| version 2, both labels (P34) | 0.3264 (0.8596) | 0.3097 (0.8687) | **0.3181** |
+
+- **The gate misses**: the mean falls 0.0007 (needs 0.003); the raw condition holds (0.3264 ≤ 0.3289).
+- On all alive frames (1,659,315): version 2 0.3213 raw / 0.3212 coarse, both labels 0.3280 / 0.3108.
+- Per match on the gap frames the coarse log-loss is lower on all seven matches and the raw one higher.
+- The build is sound: the weights reach the fit (checked by the review with a synthetic probe), and `train_shape.py
+  --verify` passes on the version 1 file with the option merged.
+
+**What it says.** The model traded the raw truth for the coarse one almost one for one (raw +0.0075, coarse −0.0088):
+it moved its calibration along the grain and learned nothing new about who has the ball, which is what the belief
+itself implies once the shape cannot see the short possessions. By P30's ratio (−0.0371 of log-loss for +0.0143 of
+spellF1) a fall of 0.0007 is worth about +0.0003, and the raw truth, where P30 made most of its gain, is the side P34
+worsens.
+
+**The advisor's ruling (00:21, in Tian's place): drop, no retry.** A miss at the gate drops the lane; "the bar decides"
+applies only to a lane past its gate. Weighting 0.5/0.5 everywhere is the scheme already run (an agreeing frame twice at
+0.5 is one row at 1.0); more weight on the coarse label moves further along the same trade; a rule by possession length
+would be a setting chosen after the miss; and running the benchmark anyway would only re-read the gate, as the
+fifteenth configuration of the night on the same seven matches. The option not taken (the 3-minute benchmark): it would
+have answered the spellF1 question directly, against a declared threshold already missed.
+
+**What stays.** `train_shape.py --report` keeps the coarse-truth cells P34 added (log-loss and accuracy under the
+coarse truth beside the raw ones, all alive frames and those with the ball missing): they only report and gate
+nothing, and they measure any shape model against the objective's second truth (the advisor's call, for Tian to
+check). Everything else of P34 is removed.
+
+**For Tian.** Relabelling cannot settle the raw-against-coarse grain while the features cannot see short possessions;
+that question still needs our provider's own data (P16, P26).
 
 ## Submission log
 
