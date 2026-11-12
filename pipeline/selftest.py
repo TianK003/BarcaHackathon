@@ -4017,6 +4017,120 @@ def test_shape_features_speed():
     assert elapsed < 6.0, "{:.2f} s for 160,000 frames x 30 slots (the budget is 6 s)".format(elapsed)
 
 
+V2_TEAM = ("n", "adv_mean", "adv_p10", "adv_p90", "width", "vel_adv", "speed_mean", "att_third", "own_third",
+           "d_adv_1s", "d_adv_2s", "vel_adv_1s", "length", "spread", "adv_past_2s", "adv_past_5s", "adv_past_10s",
+           "adv_fut_2s", "adv_fut_5s", "adv_fut_10s")
+
+
+def shape_matrix_v2(players, teams, graded):
+    from pipeline.evidence import shape_features
+    names, X = shape_features.features(shape_inputs(players, teams, graded), 2)
+    assert len(names) == 42
+    return {name: X[:, index] for index, name in enumerate(names)}, X
+
+
+def test_shape_features_v2_names_and_shape():
+    from pipeline.evidence import shape_features
+    names = shape_features.feature_names(2)
+    assert names == tuple("h_" + t for t in V2_TEAM) + tuple("a_" + t for t in V2_TEAM) + ("adv_gap", "n_diff")
+    assert len(names) == 42 and len(set(names)) == 42
+    assert shape_features.VERSIONS == (1, 2) and shape_features.ONE_SIDED_S == (2.0, 5.0, 10.0)
+    assert shape_features.feature_names(1) == shape_features.FEATURE_NAMES == SHAPE_NAMES
+    assert shape_features.columns(2) == {name: index for index, name in enumerate(names)}
+    assert shape_features.columns(1) == shape_features.COLUMN
+    players, teams, graded = shape_scene(0)
+    inputs = shape_inputs(players, teams, graded)
+    assert shape_features.features(inputs)[1] is shape_features.features(inputs, 1)[1]
+    names2, X2 = shape_features.features(inputs, 2)
+    assert names2 == names and X2.shape == (len(players), 42) and X2.dtype == np.float64
+    assert not X2.flags.writeable and shape_features.features(inputs, 2)[1] is X2
+    assert np.isfinite(X2[graded[0][1]:graded[0][2], shape_features.columns(2)["h_spread"]]).any()
+    expect_error(ValueError, lambda: shape_features.features(inputs, 3), "shape_features", "version", "3")
+    expect_error(ValueError, lambda: shape_features.feature_names(3), "shape_features", "version", "3")
+
+
+def test_shape_features_v2_keeps_v1():
+    from pipeline.evidence import shape_features
+    for seed in range(4):
+        players, teams, graded = shape_scene(seed)
+        inputs = shape_inputs(players, teams, graded)
+        names1, X1 = shape_features.features(inputs, 1)
+        names2, X2 = shape_features.features(inputs, 2)
+        column = shape_features.columns(2)
+        for index, name in enumerate(names1):
+            assert np.array_equal(X1[:, index], X2[:, column[name]], equal_nan=True), (seed, name)
+
+
+def test_shape_features_v2_known_values():
+    n = 600
+    # a team of two slots 10 m apart: both are 5 m from their centroid
+    players = np.tile(np.array([(10.0, 10.0), (20.0, 10.0), (60.0, 30.0), (70.0, 40.0)])[None], (n, 1, 1))
+    values, _ = shape_matrix_v2(players, np.array([0, 0, 1, 1]), [(1, 0, n)])
+    assert np.allclose(values["h_spread"][:n], 5.0, atol=1e-9)
+    assert np.allclose(values["a_spread"][:n], np.hypot(10.0, 10.0) / 2, atol=1e-9)
+    assert np.allclose(values["h_length"], values["h_adv_p90"] - values["h_adv_p10"], atol=1e-12)
+    # every slot advances 0.1 m a frame (2.5 m/s): the mean advance moves 0.1 k m over k frames
+    starts = np.array([(10.0, 10.0), (20.0, 20.0), (60.0, 30.0)])
+    walking = starts[None] + np.arange(n)[:, None, None] * np.array([0.1, 0.0])[None, None]
+    values, _ = shape_matrix_v2(walking, np.array([0, 0, 1]), [(1, 0, n)])
+    for name, want, k in (("adv_past_2s", 5.0, 50), ("adv_fut_5s", 12.5, 125), ("adv_past_10s", 25.0, 250)):
+        column = values["h_" + name]
+        assert np.isfinite(column).any()
+        assert np.allclose(column[np.isfinite(column)], want, atol=1e-9, rtol=0), name
+        assert np.isfinite(column).sum() == n - k, name
+    # the away team attacks the other way, and walks +x: it loses ground
+    assert np.allclose(values["a_adv_past_2s"][50:], -5.0, atol=1e-9)
+    assert np.allclose(values["h_spread"], np.hypot(10.0, 10.0) / 2, atol=1e-9)
+
+
+def test_shape_features_v2_nan_at_block_edges():
+    rng = np.random.default_rng(31)
+    n = 1400
+    players = rng.random((n, 8, 2)) * PLAY_PITCH
+    graded = [(1, 100, 700), (2, 750, 1350)]
+    values, X = shape_matrix_v2(players, np.arange(8) % 2, graded)
+    for prefix in ("h_", "a_"):
+        for start, stop in ((100, 700), (750, 1350)):
+            for name, k, side in (("adv_past_2s", 50, "past"), ("adv_past_10s", 250, "past"),
+                                  ("adv_fut_2s", 50, "fut"), ("adv_fut_10s", 250, "fut")):
+                column = values[prefix + name]
+                if side == "past":
+                    assert np.isnan(column[start:start + k]).all() and np.isfinite(column[start + k]), name
+                    assert np.isfinite(column[start + k:stop]).all(), name
+                else:
+                    assert np.isnan(column[stop - k:stop]).all() and np.isfinite(column[stop - k - 1]), name
+                    assert np.isfinite(column[start:stop - k]).all(), name
+    outside = np.ones(n, dtype=bool)
+    outside[100:700] = outside[750:1350] = False
+    assert np.isnan(X[outside]).all()
+    # a team that is gone for a stretch has NaN in every column that reads that stretch
+    gone = players.copy()
+    gone[300:320, 1::2] = np.nan
+    values, _ = shape_matrix_v2(gone, np.arange(8) % 2, graded)
+    assert np.isnan(values["a_spread"][300:320]).all() and np.isnan(values["a_length"][300:320]).all()
+    assert np.isnan(values["a_adv_past_2s"][300:320]).all() and np.isnan(values["a_adv_past_2s"][350:370]).all()
+    assert np.isfinite(values["a_adv_past_2s"][320:350]).all() and np.isnan(values["a_adv_fut_2s"][250:270]).all()
+    assert np.isnan(values["a_adv_fut_2s"][300:320]).all() and np.isfinite(values["a_adv_fut_2s"][270:300]).all()
+    assert np.isfinite(values["a_adv_past_2s"][371]) and np.isfinite(values["h_adv_past_2s"][300:370]).all()
+
+
+def test_shape_features_v2_swap():
+    from pipeline.evidence import shape_features
+    for seed in range(8):
+        players, teams, graded = shape_scene(seed)
+        X2 = shape_features.features(shape_inputs(players, teams, graded), 2)[1]
+        relabelled = shape_features.features(shape_inputs(players, 1 - teams, graded), 2)[1]
+        swapped = shape_features.swap(X2)
+        assert swapped is not X2 and not np.shares_memory(swapped, X2) and swapped.shape == X2.shape
+        assert np.array_equal(swapped, relabelled, equal_nan=True), "seed {}: swap is not exact".format(seed)
+        assert np.array_equal(shape_features.swap(swapped), X2, equal_nan=True)
+    row = np.arange(42, dtype=np.float64)
+    flipped = shape_features.swap(row)
+    assert flipped[:20].tolist() == list(range(20, 40)) and flipped[20:40].tolist() == list(range(20))
+    assert flipped[40] == -40.0 and flipped[41] == -41.0
+    expect_error(ValueError, lambda: shape_features.swap(np.zeros((4, 30))), "shape_features.swap", "30")
+
+
 # -- the shape possession source (P07) --------------------------------------------------------------------------------
 #
 # Hand-made artifacts whose trees are stumps on the shape features, so that every number is worked out here and not by
@@ -4028,18 +4142,20 @@ SHAPE_TRAINER = "pipeline/benchmark/train_shape.py"
 STUMP_LOGIT = 1.5
 
 
-def shape_model(baseline, left, right, feature="adv_gap", threshold=0.0, missing_left=0, prior=0.5):
+def shape_model(baseline, left, right, feature="adv_gap", threshold=0.0, missing_left=0, prior=0.5, version=1):
+    from pipeline.evidence import shape_features
     return {"baseline": baseline, "prior_home": prior,
-            "trees": [stump(SHAPE_COLUMN[feature], threshold, left, right, missing_left)]}
+            "trees": [stump(shape_features.columns(version)[feature], threshold, left, right, missing_left)]}
 
 
-def write_shape_model(folder, folds=None, full=None, name="shape_hgb.json", **changes):
+def write_shape_model(folder, folds=None, full=None, name="shape_hgb.json", version=1, **changes):
     import json
     from pipeline.evidence import shape_features
-    artifact = {"format": 1, "kind": "hgb", "feature_version": shape_features.FEATURE_VERSION,
-                "features": list(SHAPE_NAMES), "profile": "tracking", "seeds": 3, "stride": 5, "provenance": {},
-                "folds": {"FOLD1": shape_model(-0.2, 1.0, -1.0)} if folds is None else folds,
-                "full": shape_model(0.7, -1.0, 2.0) if full is None else full}
+    artifact = {"format": 1, "kind": "hgb", "feature_version": version,
+                "features": list(shape_features.feature_names(version)), "profile": "tracking", "seeds": 3, "stride": 5,
+                "provenance": {},
+                "folds": {"FOLD1": shape_model(-0.2, 1.0, -1.0, version=version)} if folds is None else folds,
+                "full": shape_model(0.7, -1.0, 2.0, version=version) if full is None else full}
     artifact.update(changes)
     return write_text(folder, name, json.dumps(artifact, sort_keys=True) + "\n")
 
@@ -4195,8 +4311,14 @@ def test_shape_possession_rejects_bad_artifacts():
                                 *fragments)
 
         for label, changes in (("format", {"format": 2}), ("format", {"format": None}),
-                               ("feature_version", {"feature_version": 2}),
-                               ("feature_version", {"feature_version": shape_features.FEATURE_VERSION + 1}),
+                               ("features", {"feature_version": 2}),    # version 2 with version 1's 26 names
+                               ("features", {"features": list(shape_features.FEATURE_NAMES_V2)}),   # and the reverse
+                               ("feature_version", {"feature_version": max(shape_features.VERSIONS) + 1}),
+                               ("feature_version", {"feature_version": 0}),
+                               ("feature_version", {"feature_version": None}),
+                               ("feature_version", {"feature_version": True}),
+                               ("feature_version", {"feature_version": 2.0}),
+                               ("feature_version", {"feature_version": "1"}),
                                ("features", {"features": list(SHAPE_NAMES)[::-1]}), ("features", {"features": renamed}),
                                ("features", {"features": list(SHAPE_NAMES)[:-1]}),
                                ("features", {"features": ["a"] * 30}),
@@ -4204,6 +4326,11 @@ def test_shape_possession_rejects_bad_artifacts():
                                ("folds", {"folds": [good]}), ("folds", {"folds": "FOLD1"})):
             refused(write_shape_model(root, name="other.json", **changes), label)
         refused(write_text(root, "list.json", "[1, 2]"), "model object")
+        # a version 2 file whose trees reach for column 42 (it has 0 to 41)
+        refused(write_shape_model(root, name="narrow2.json", version=2,
+                                  full=dict(good, trees=[stump(42, 0.0, -1.0, 1.0)])), "tree 0", "full")
+        refused(write_shape_model(root, name="wide1.json", full=dict(good, trees=[stump(30, 0.0, -1.0, 1.0)])),
+                "tree 0", "full")
         for bad in (0.6, 0.0, 1.0, -0.5, True, "0.5", None):
             refused(write_shape_model(root, full=dict(good, prior_home=bad), name="prior.json"), "prior_home", "full")
             refused(write_shape_model(root, folds={"FOLD1": dict(good, prior_home=bad)}, name="prior.json"),
@@ -4226,6 +4353,37 @@ def test_shape_possession_rejects_bad_artifacts():
         refused(os.path.join(root, "text.json"), "text.json")
         # dead_ball_model's file is a model of other features: it must not load here
         refused(write_model(root, name="dead.json"), "features")
+
+
+def test_shape_possession_reads_a_v2_file():
+    from pipeline.evidence import shape_features
+    column = shape_features.columns(2)
+    with tempfile.TemporaryDirectory() as root:
+        # a stump on the home team's advance over the next 2 s, leaves -1.0 (<= 0 or NaN, missing_left) and 2.0
+        stump_model = shape_model(0.4, -1.0, 2.0, feature="h_adv_fut_2s", missing_left=1, version=2)
+        path = write_shape_model(root, version=2, full=stump_model, folds={"FOLD1": stump_model})
+        sides, same = 0, 0
+        for seed in range(4):
+            players, teams, graded = shape_scene(seed)
+            inputs = shape_inputs(players, teams, graded)
+            home = shape_home(inputs, path, scope="all")
+            X = shape_features.features(inputs, 2)[1]
+
+            def leaf(values):
+                left = np.isnan(values) | (values <= 0.0)         # a NaN goes where missing_left sends it: left
+                return np.where(left, -1.0, 2.0)
+            own, other = X[:, column["h_adv_fut_2s"]], X[:, column["a_adv_fut_2s"]]
+            want = np.clip(1.0 / (1.0 + np.exp(-(leaf(own) - leaf(other)) / 2.0)), 0.02, 0.98)
+            known = ~np.isnan(home)
+            assert known.sum() > 100, seed
+            assert np.allclose(home[known], want[known], rtol=0, atol=1e-12), seed
+            apart = known & (leaf(own) != leaf(other))
+            together = known & (leaf(own) == leaf(other))
+            assert np.allclose(np.abs(np.log(home[apart] / (1.0 - home[apart]))), 1.5, rtol=0, atol=1e-12)
+            assert np.array_equal(home[together], np.full(int(together.sum()), 0.5))
+            sides += int(apart.sum())
+            same += int(together.sum())
+        assert sides > 50 and same > 50, "the scene must hold both cases ({}, {})".format(sides, same)
 
 
 def test_shape_possession_parameters():
@@ -4318,7 +4476,7 @@ def test_shape_possession_refuses_infinite_features():
         broken = X.copy()
         broken[40, SHAPE_COLUMN["h_adv_mean"]] = np.inf
         real = shape_features.features
-        shape_features.features = lambda given: (names, broken)
+        shape_features.features = lambda given, version=1: (names, broken)
         try:
             expect_error(ValueError, lambda: shape_home(inputs, path), "shape_possession", "infinite")
         finally:
