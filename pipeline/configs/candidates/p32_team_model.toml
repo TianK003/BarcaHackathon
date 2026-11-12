@@ -1,0 +1,56 @@
+# A CANDIDATE, not the submission. main.toml is the config that produces the file we would submit; this is main.toml
+# with two changes: shape_possession reads the version 2 model (P30, R033), and a fourth source, team_model, P19's team
+# model where the ball is seen, restored and retrained on `generic` with P24's ball direction (P32, R037), at weight 0.3.
+#
+#   python pipeline/run.py pipeline/configs/candidates/p32_team_model.toml   # -> evaluation/results/p32_team_model.csv
+#
+# Where it stands (docs/results.md R037, night of 12 to 13 Nov 2026). On the benchmark (`generic`, three seeds, both
+# truths) its copy, pipeline/benchmark/configs/p32/p32_w030.toml, cleared the bar declared before the run against the
+# night's first candidate p30_w030 (P30 alone): the mean of the two truths' pooled spellF1 +0.0162 (raw +0.0262, coarse
+# +0.0062), all seven matches won on the mean; against main.toml's copy p27_final +0.0305 (a report). Nothing was adopted:
+# whether this, P30 alone (candidates/p30_shape_v2.toml) or neither replaces main.toml is Tian's decision. No score and
+# no statistic of its file on our match was computed that night. P32 has no transfer check on our match (R037).
+#
+# Everything else is main.toml's, the shift included (the one the candidate cleared the bar with).
+
+description = "Candidate (R037, P32 on P30): main.toml with the version 2 shape model (pipeline/models/shape_possession_v2_hgb.json, 42 features) at weight 0.3 and the team model where the ball is seen (pipeline/models/team_model_hgb.json, 72 features) at weight 0.3; everything else main.toml's: controlled_touch 1.5 m / 6.0 m/s / 1 frame / hold 0.60 (confidence 0.93) + dead_ball_model (hgb) at weight 1.0, hmm 6/32/35/25, decoded per half, then shift_edges team +1 / into_dead -2 / out_of_dead 0 frames."
+seed = 0
+scope = "halves"
+
+[[evidence]]
+kind = "controlled_touch"
+radius = 1.5                                  # metres: the nearest player must be this close
+max_rel_speed = 6.0                           # m/s: and move with the ball
+min_frames = 1                                # an episode shorter than this is dropped
+confidence = 0.93                             # touch_stats.py --grid r013 --profile generic: floor of the pooled agreement (93.5%)
+hold = 0.6                                    # the weak vote of the last team between episodes; 0.5 = off (R030)
+
+[[evidence]]
+kind = "dead_ball_model"
+weight = 1.0
+model = "pipeline/models/dead_ball_hgb.json"  # relative to the repo root
+
+[[evidence]]
+kind = "shape_possession"
+weight = 0.3                                             # an exponent on the source's likelihood (R030; R033 kept it)
+model = "pipeline/models/shape_possession_v2_hgb.json"   # the one line that differs from main.toml; BAR-ATH has no fold, so `full`
+scope = "all"                                            # "gaps": ball missing only; "all": every graded frame
+min_prob = 0.02                                          # home is clipped to [0.02, 0.98]
+
+[[evidence]]
+kind = "team_model"
+weight = 0.3                                          # R037: P32's pick (0.075 / 0.15 / 0.30 / 0.60; ties to the smallest)
+model = "pipeline/models/team_model_hgb.json"       # relative to the repo root; BAR-ATH has no fold, so `full`
+
+[decoder]
+kind = "hmm"
+switch_team = 6                               # nats a change of team (H <-> A) costs
+switch_dead = 32                              # nats a change into or out of D costs
+min_possession = 35                           # frames: no run of H or A shorter than this (1 is no minimum)
+min_dead = 25                                 # frames: no run of D shorter than this (1 is no minimum)
+
+[[refine]]
+kind = "shift_edges"
+team = 1                                      # frames: s_b, the pipeline's own lag on DFL (g = 0)
+into_dead = -2
+out_of_dead = 0

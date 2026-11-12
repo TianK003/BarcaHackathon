@@ -1,0 +1,39 @@
+# Close-out of the night's second round (docs/results.md R037): the candidate p32/p32_w030.toml without shift_edges, for
+# the pipeline's own lag on DFL (conventions.py latency ... dfl --profile generic --seeds 3 --truth raw, then
+# p27_shift.py night2_preshift: R030's rule). Reported beside the candidate, not applied.
+
+description = "Night of 12 Nov, second round: p32_w030 without the shift"
+seed = 0
+scope = "halves"
+
+[[evidence]]
+kind = "controlled_touch"
+radius = 1.5
+max_rel_speed = 6.0
+min_frames = 1
+confidence = 0.93    # touch_stats.py --grid r013 --profile generic: floor of the pooled agreement
+hold = 0.6
+
+[[evidence]]
+kind = "dead_ball_model"
+weight = 1.0
+model = "pipeline/models/dead_ball_hgb.json"
+
+[[evidence]]
+kind = "shape_possession"
+weight = 0.3
+model = "pipeline/models/shape_possession_v2_hgb.json"
+scope = "all"
+min_prob = 0.02
+
+[[evidence]]
+kind = "team_model"
+weight = 0.3
+model = "pipeline/models/team_model_hgb.json"
+
+[decoder]
+kind = "hmm"
+switch_team = 6
+switch_dead = 32
+min_possession = 35
+min_dead = 25
