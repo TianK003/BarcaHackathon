@@ -448,18 +448,16 @@ def test_shape_trainer_version_2_names_its_features_and_version_1_is_unchanged()
     assert trainer.dumps(explicit) == trainer.dumps(artifact)
     assert artifact["feature_version"] == 1 and artifact["features"] == list(NAMES)
     # what is refused
-    for bad in (4, 0, True, 2.0, None, "2"):
+    for bad in (3, 0, True, 2.0, None, "2"):
         expect_error(ValueError, lambda: trainer.rows(*_rows_args(matches), version=bad), "shape_features", "version")
     expect_error(ValueError, lambda: trainer.augment(np.zeros((4, 26)), np.zeros(4), version=2), "train_shape", "42")
     assert trainer.DEFAULT_MODEL_PATHS == {1: "pipeline/models/shape_possession_hgb.json",
-                                           2: "pipeline/models/shape_possession_v2_hgb.json",
-                                           3: "pipeline/models/shape_possession_v3_hgb.json"}
+                                           2: "pipeline/models/shape_possession_v2_hgb.json"}
     assert trainer.DEFAULT_MODEL_PATH == os.path.join(trainer.ROOT, "pipeline", "models", "shape_possession_hgb.json")
     args = trainer.build_parser().parse_args([])
     assert args.features == 1
     assert trainer.build_parser().parse_args(["--features", "2"]).features == 2
-    assert trainer.build_parser().parse_args(["--features", "3"]).features == 3
-    for bad in (["--features", "4"], ["--features", "0"], ["--features", "x"]):
+    for bad in (["--features", "3"], ["--features", "0"], ["--features", "x"]):
         buffer = io.StringIO()
         with contextlib.redirect_stderr(buffer):
             try:
