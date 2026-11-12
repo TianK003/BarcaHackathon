@@ -33,7 +33,7 @@ model = "pipeline/models/dead_ball_hgb.json"  # relative to the repo root
 [[evidence]]
 kind = "shape_possession"
 weight = 0.3                                             # an exponent on the source's likelihood (R030; R033 kept it)
-model = "pipeline/models/shape_possession_v2_hgb.json"   # the one line that differs from main.toml; BAR-ATH has no fold, so `full`
+model = "pipeline/models/shape_possession_v2_hgb.json"   # P30 (R033): version 2; BAR-ATH has no fold, so `full`
 scope = "all"                                            # "gaps": ball missing only; "all": every graded frame
 min_prob = 0.02                                          # home is clipped to [0.02, 0.98]
 
