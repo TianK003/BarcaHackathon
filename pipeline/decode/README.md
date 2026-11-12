@@ -101,6 +101,7 @@ first and last run, which its edges may have cut short. The decoder returns a va
 | `posterior` | `false` | `true` also returns `Decoded.posterior`, the probability of `H`, `A` and `D` per frame ([below](#the-posterior)); the labels are the same either way |
 | `restart_source` | none | the name of the evidence source whose `home` says who restarts after a stoppage: turns on the restart states ([below](#restart-states-p17)) |
 | `switch_restart` | `inf` | with `restart_source`: nats a restart by the team the vote did not name costs on top of `switch_dead`; `inf` forbids it |
+| `team_neutral_dead` | `false` | `true` also gives `D` the larger of the two team terms of every `home` vote, so team evidence ranks `H` against `A` and leaves the better of them level with `D` (P31; [below](#team-neutral-dead-p31)); refused with `restart_source` |
 
 All four numbers are validated (no bool, no NaN or infinity, minimums are whole numbers of frames >= 1) and named in the
 error, and so are the restart states' two: `switch_restart` must be > 0 or `inf`, and is refused when finite without a
@@ -120,6 +121,23 @@ machine, 26 Oct 2026): a plain-Python recursion over run starts with a running m
 one substate per run length would cost O(minimum) a frame. The recursion is written once over any number of states (a
 matrix of change costs in which `inf` forbids a change, a minimum per state, a tie order); the four restart states take
 0.40 to 0.45 s on the same frames.
+
+### Team-neutral dead (P31)
+
+By the rule above `home` adds `w log 2h` to `H` and `w log 2(1 - h)` to `A` and nothing to `D`, so a confident team vote
+(whichever team it names) is also evidence against a stoppage. With
+
+```toml
+[decoder]
+kind = "hmm"
+team_neutral_dead = true    # default false: today's emissions, bit for bit
+```
+
+every `home` term also gives `D` the larger of the two (`w max(log 2h, log 2(1 - h))`): `D` is level with the better team
+wherever `home` is known, and `H` against `A` is ranked as before. The `alive` terms are unchanged. Off, nothing moves:
+the same code path, the same floats. It belongs to the three states: `team_neutral_dead = true` with `restart_source` is
+refused, a value that is not a bool is refused, and `posterior = true` gives the posterior of the emissions as the flag
+shapes them. [`configs/p31/p31_neutral.toml`](../benchmark/configs/p31/p31_neutral.toml) is `p27_final` with the flag on.
 
 ### The posterior
 

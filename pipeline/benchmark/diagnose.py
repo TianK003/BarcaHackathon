@@ -56,7 +56,8 @@ Against the raw truth only, the frame-level one (the coarse truth is a construct
   truth's alive (y = the truth is not D). A channel the source never speaks on is left out. Every learned model is
   out of fold: dead_ball_model and shape_possession score a benchmark match with the fold that never saw it.
 * The decoder's posterior: hmm.marginals at the config's own [decoder] parameters (switch_team, switch_dead,
-  min_possession, min_dead, and eps), on hmm.log_likelihoods of every source cut to the graded block, so before any
+  min_possession, min_dead, eps, and team_neutral_dead, which turns on the emissions' D term of every `home` vote),
+  on hmm.log_likelihoods of every source cut to the graded block, so before any
   refiner (shift_edges). P(H) + P(A) against alive, on all graded frames and split by whether a team source speaks on
   the frame (any source with a finite `home`): `hmm` adds w log 2h and w log 2(1 - h) to H and A and nothing to D, so
   wherever a team source speaks the better alive state sits w log 2 max(h, 1 - h) above D, and beta on team_speaks
@@ -137,7 +138,7 @@ MAX_SPEAKER_KEYS = 16                 # the most keys alive_by_team_sources has 
 RESERVED = (POSTERIOR, NO_TEAM_SOURCE, OTHER_SPEAKERS)   # names a source may not have: the report uses them
 REPORT_FOLDER = ("runs", "diagnose")  # <data dir>/runs/diagnose/<stem>[.<profile>][.m-<ids>][.s<n>].json
 MAX_LIST = 64                         # the longest list a report may hold: aggregates only
-POSTERIOR_PARAMETERS = ("switch_team", "switch_dead", "min_possession", "min_dead", "eps")
+POSTERIOR_PARAMETERS = ("switch_team", "switch_dead", "min_possession", "min_dead", "eps", "team_neutral_dead")
 
 
 # -- B, the ladder ----------------------------------------------------------------------------------------------------
@@ -437,7 +438,7 @@ class _Pool:
 # -- the run ----------------------------------------------------------------------------------------------------------
 
 def posterior_parameters(config):
-    """{switch_team, switch_dead, min_possession, min_dead, eps}: the config's [decoder] parameters for hmm.marginals,
+    """{switch_team, switch_dead, min_possession, min_dead, eps, team_neutral_dead}: the config's [decoder] parameters for hmm.marginals,
     hmm.decode's defaults where it leaves one out. BenchmarkError unless the decoder is hmm without restart_source."""
     if config.decoder.kind != "hmm":
         raise run.BenchmarkError(
@@ -559,7 +560,7 @@ def diagnose(config_path, profile=DEFAULT_PROFILE, seeds=None, match_ids=None, m
                     if known.any():
                         pool(name, "alive").add(key, alive[known], live[known])
                 window = [source.window(start, stop) for source in sources.values()]
-                emissions = hmm.log_likelihoods(window, stop - start, decoder["eps"])
+                emissions = hmm.log_likelihoods(window, stop - start, decoder["eps"], decoder["team_neutral_dead"])
                 posterior = hmm.marginals(emissions, decoder["switch_team"], decoder["switch_dead"],
                                           decoder["min_possession"], decoder["min_dead"])
                 in_play = posterior[:, H] + posterior[:, A]
