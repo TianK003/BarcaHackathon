@@ -1,6 +1,6 @@
 """p29_bar: the bar of P29 to P31 as a script, declared before any run and applied to the benchmark's reports.
 
-    python pipeline/benchmark/p29_bar.py pick --reference REF STEM [STEM ...]   # the scale: STEMs in tie-break order
+    python pipeline/benchmark/p29_bar.py pick --reference REF STEM [STEM ...]   # a lane's pick: STEMs in tie-break order
     python pipeline/benchmark/p29_bar.py bar --reference REF STEM               # STEM against the bar; exit 0 or 2
     python pipeline/benchmark/p29_bar.py guard --reference REF STEM             # the guard alone; exit 0 or 2
 

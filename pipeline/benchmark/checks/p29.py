@@ -1,9 +1,8 @@
-"""Checks of the bar of P29 to P31 as a script (pipeline/benchmark/p29_bar.py) and of P29's four configs.
+"""Checks of the bar of P29 to P31 as a script (pipeline/benchmark/p29_bar.py).
 
-Everything is synthetic or a config file: the bar's thresholds on the unrounded numbers, the tie-break of the pick, the
-three commands on made-up reports (as checks/p27.py builds them), and the four configs, which are parsed with tomllib
-and compared with p27_final.toml, not loaded, because hold_curve and hold_scale belong to the touch component of
-another lane. Filled by Task 3 of docs/superpowers/plans/2026-11-12-p29-p31.md.
+Everything is synthetic: the bar's thresholds on the unrounded numbers, the tie-break of the pick, and the three
+commands on made-up reports (as checks/p27.py builds them). Filled by Task 3 of
+docs/superpowers/plans/2026-11-12-p29-p31.md; P29's own four configs and their check went with P29 (R032).
 """
 
 import contextlib
@@ -11,7 +10,6 @@ import io
 import json
 import os
 import tempfile
-import tomllib
 
 from pipeline.benchmark import p29_bar, score, sources
 from pipeline.benchmark import run as benchmark_run
@@ -20,8 +18,6 @@ from pipeline.selftest import write_text
 PROFILE = "generic"
 MADE_UP_CONFIG = "# a made-up config: the reports of checks/p29.py are of no run\n"
 UNIT = 1_000_000                    # the possessions of each made-up match: a score is a count of millionths
-CONFIGS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "configs")
-SCALES = {"p29_s025": 0.25, "p29_s050": 0.5, "p29_s075": 0.75, "p29_s100": 1.0}
 
 
 def reported(root, scores):
@@ -71,24 +67,6 @@ def test_p29_pick_takes_the_first_in_order_within_the_band():
     assert p29_bar.pick_from({"a": 0.5700, "b": 0.5740, "c": 0.5712}, order) == "a"
     assert p29_bar.pick_from({"a": 0.5600, "b": 0.5740, "c": 0.5712}, order) == "b"
     assert p29_bar.pick_from({"a": 0.5600, "b": 0.5700, "c": 0.5740}, ["c", "b", "a"]) == "c"
-
-
-def test_p29_configs_are_p27_final_but_for_the_hold():
-    with open(os.path.join(CONFIGS, "p27", "p27_final.toml"), "rb") as handle:
-        final = tomllib.load(handle)
-    final.pop("description")
-    touch = next(entry for entry in final["evidence"] if entry["kind"] == "controlled_touch")
-    assert touch.pop("hold") == 0.6
-    folder = os.path.join(CONFIGS, "p29")
-    names = sorted(name for name in os.listdir(folder) if name.endswith(".toml"))
-    assert names == sorted(stem + ".toml" for stem in SCALES), names
-    for stem, scale in SCALES.items():
-        with open(os.path.join(folder, stem + ".toml"), "rb") as handle:
-            config = tomllib.load(handle)
-        assert config.pop("description").startswith("P29: "), stem
-        own = next(entry for entry in config["evidence"] if entry["kind"] == "controlled_touch")
-        assert (own.pop("hold_curve"), own.pop("hold_scale")) == ("pipeline/models/hold_curve.json", scale), stem
-        assert "hold" not in own and config == final, stem
 
 
 def test_p29_bar_commands_on_made_up_reports():
