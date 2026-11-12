@@ -1434,6 +1434,51 @@ play over `D`, the hold +0.18 and P07 up to +0.20 (A19). Who has the ball should
 terms. One candidate, and a guard instead of a bar: neither truth more than 0.005 lower. The decoder's other constants
 were chosen with the push in place and are not re-chosen. Adoption is Tian's call.
 
+## The night's second round (12 to 13 Nov)
+
+With P29 to P31 measured by 23:20, Tian asked for as many more proposals as the night allows. A research agent
+proposed six (C0 and P32 to P36); the advisor, in Tian's place, ruled that C0, P32, P33 and P34 run tonight and
+amended their gates ([the spec](superpowers/specs/2026-11-13-p32-p34-design.md), declared at 23:50 before any run;
+[the plan](superpowers/plans/2026-11-13-p32-p34.md)). **All three are measured against the night's candidate
+`p30_w030` (P30), not `main.toml`'s copy**: each replaces or reads the version 2 shape source. If Tian does not adopt
+P30, none of them carries to `main.toml` without a run against `p27_final`. The bar is the night's. Not run tonight:
+P35 (a turnover hazard as a per-frame switch cost, about 6 h with a decoder change: a lane for another night) and P36
+(the decoder re-chosen with version 2 in place: reopens a choice Tian closed on 10 Nov, odds about 1 in 10).
+
+### P32 — The team model where the ball is seen, on `generic`, measured on spellF1 (P19's one retry, in P24's slot)
+
+**Status: started 12 Nov 2026.** Effort about 3.5 h. Odds about one in three. **No retry: a miss drops P19 and P24
+for good.**
+
+**The belief.** Where the ball is seen and no control episode runs, the evidence is the constant hold 0.60 and the
+shape model. P19's tree model, which reads the ball against both teams, was better than the touch rule and its hold
+in 7 of 7 matches (R021) but was dropped at a per-frame gate against the decoded output of all sources, and no spellF1
+was ever measured. P32 restores it from `15e7e14`, retrains it on `generic` with P24's change (the ball's advance and
+velocity towards each team's attack; `over11` and the gap timers dropped, the version 2 shape block), and lets the
+bar on spellF1 decide; R021's per-frame statistic is printed and gates nothing.
+
+**The gate.** The dry run's rows within ±20% of a declared estimate; then the held-out log-loss on the feasibility
+frames at most 0.2700 and below the rule-with-hold's on all seven matches. Candidates: weight 0.075, 0.15, 0.30, 0.60;
+ties to the smallest. No transfer check on our match (stated).
+
+### P33 — Shape features version 3
+
+**Status: started 12 Nov 2026.** Effort about 2.5 h. Odds about one in four.
+
+**The belief.** P30 showed that one-sided time is where the shape signal is. Version 3 adds the difference of the two
+teams' one-sided advance changes, one-sided changes of spread and width over 5 s, and a 20 s horizon (60 columns).
+**The gate:** held-out log-loss in the gaps at most 0.3139 (version 2's 0.3189 − 0.005). Candidates: weight 0.3 and
+0.45; ties to 0.3.
+
+### P34 — The version 2 shape model trained on both truths' labels
+
+**Status: started 12 Nov 2026.** Effort about 2 h. Odds about one in seven.
+
+**The belief.** The objective is the mean of the two truths and the model learns the raw one only; the teams' shape
+cannot see a 2-second possession, which the coarse truth merges. Training on both labels (each weighted half where they
+differ) trains on the objective's own target. **A sanity gate:** the mean of the raw and coarse held-out log-losses in
+the gaps at most version 2's − 0.003, the raw one at most +0.010 worse. One config at weight 0.3.
+
 ## Cheap signals worth checking
 
 ### P09 — Camera aim as a coarse ball-zone prior
