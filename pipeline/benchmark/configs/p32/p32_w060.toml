@@ -1,0 +1,44 @@
+# P32: p30_w030 with P19's team model where the ball is seen (team features version 2) at weight 0.60;
+# nothing else differs. The model file is trained by pipeline/benchmark/train_team.py.
+
+description = "P32: p30_w030 with the team model where the ball is seen (team features version 2) at weight 0.60"
+seed = 0
+scope = "halves"
+
+[[evidence]]
+kind = "controlled_touch"
+radius = 1.5
+max_rel_speed = 6.0
+min_frames = 1
+confidence = 0.93    # touch_stats.py --grid r013 --profile generic: floor of the pooled agreement
+hold = 0.6
+
+[[evidence]]
+kind = "dead_ball_model"
+weight = 1.0
+model = "pipeline/models/dead_ball_hgb.json"
+
+[[evidence]]
+kind = "shape_possession"
+weight = 0.3
+model = "pipeline/models/shape_possession_v2_hgb.json"
+scope = "all"
+min_prob = 0.02
+
+[[evidence]]
+kind = "team_model"
+weight = 0.6
+model = "pipeline/models/team_model_hgb.json"
+
+[decoder]
+kind = "hmm"
+switch_team = 6
+switch_dead = 32
+min_possession = 35
+min_dead = 25
+
+[[refine]]
+kind = "shift_edges"
+team = 1
+into_dead = -2
+out_of_dead = 0
