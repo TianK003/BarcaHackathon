@@ -10,8 +10,11 @@ match whose positions have been degraded to look like ours (the benchmark's `gen
 the same `Inputs` both times. `features(inputs)` returns the names and an (n, 72) float64 matrix, row i = frame i, in
 this order:
 
-    h_*, a_*    ten columns for each team, from the team's slots and the team's own attacking direction only (so a
-                column's value does not depend on the other team's slots, and `swap` is exact):
+    h_*, a_*    ten columns for each team, computed by the same code for either team with the labels exchanged (which
+                is what makes `swap` exact). The distances, closing, rel_speed and reach_s read the team's own slots
+                only; the episode columns read controlled_touch, whose rule looks at both teams' slots and treats them
+                alike; ball_adv and ball_vel_adv read the team's attacking direction, which comes from both teams'
+                mean x in the block, as it does for shape_features' adv_mean:
         ball_d1, ball_d2   metres from the ball to the team's nearest and second-nearest present slot
         closing            the nearest slot s's approach to the ball over 0.2 s either side, m/s: (d_s(t - 5) -
                            d_s(t + 5)) / 0.4 s; positive = approaching
@@ -55,9 +58,11 @@ column that needs it is NaN, `ball_adv` and `ball_vel_adv` included; the shape c
 
 `swap(X)` is the features of the same frames with the two teams relabelled: the two ten-column blocks trade places,
 the shared ten stay, and the 42 go through `shape_features.swap`. It doubles a training set with its mirror image and
-makes the model's output exactly antisymmetric, as P07's does. Like `shape_features`, it is exact except on a block
-where the two teams' mean x are equal to the last bit (the direction then falls to the team labels), which does not
-happen with real tracking.
+makes the model's output exactly antisymmetric, as P07's does. Like `shape_features`, it is exact except where the
+block's direction falls to the team labels: a block where the two teams' mean x are equal to the last bit, one where
+the only team present has its mean x exactly on the halfway line, and one where no slot of either team is present at
+all while the ball is visible (`own_half_is_left` then says True under both labellings, so the two teams' `ball_adv`
+and `ball_vel_adv` do not exchange). None of them occurs with real tracking.
 
 The constants are the design's and are fixed with `FEATURE_VERSION`, never tuned (T26, T37). TOUCH_RULE is
 `main.toml`'s touch rule as R013 left it and R030 kept it, frozen here (a check compares the two): a later retune of

@@ -25,7 +25,8 @@ pipeline/evidence/team_model.py runs with numpy alone. What is held against it h
   source hashes (test_team_verify_ignores_only_source_hashes);
 * the dry run is aggregates and flags the columns that cannot carry information
   (test_team_dry_run_is_aggregates_and_flags_dead_columns); it exits 1 on a dead column, on a row count outside the
-  declared window and on a projected peak over 8 GB (test_team_dry_run_exit_code_and_pause_gates); the window is the
+  declared window and on a projected peak over 8 GB, against stubbed peaks so that the check does not depend on the
+  process it runs in (test_team_dry_run_exit_code_and_pause_gates); the window is the
   declared estimate's for the declared run on `generic` (test_team_dry_run_window_is_the_declared_estimate); the
   peak-memory helper returns a positive int, or None off Windows where the platform does not say;
 * the feasibility counts R021's frames, worked out on a hand-built scene with the truth's D frames, the decoder's D and
@@ -872,12 +873,19 @@ def varying(real):
 
 
 def test_team_dry_run_exit_code_and_pause_gates():
+    """The dry run's gates and exit code. The peak-memory helper is stubbed with a fixed peak throughout: its real value
+    is the peak of whatever process runs the check (a --dfl or --data self-test may already be past the limit), and the
+    projection's arithmetic is held against stubbed peaks below; test_team_peak_memory_is_a_positive_int_or_none
+    checks the helper itself."""
     matches = {"J03WMX": random_match("J03WMX", rows=(700, 600)), "J03WN1": random_match("J03WN1", seed=1)}
     real = team_features.features
+    real_peak = trainer.peak_memory_bytes
+    stub_peak = 500_000_000                                                     # 0.5 GB: under the limit with room
     with tempfile.TemporaryDirectory() as root, loading(lambda match_id: matches[match_id]):
         flags = ["--dry-run", "--profile", "clean", "--seeds", "1", "--matches", "J03WMX", "--data-dir", root]
         varied = varying(real)
         team_features.features = varied
+        trainer.peak_memory_bytes = lambda: stub_peak
         try:
             code, text = quietly(trainer.main, flags)
             assert code == 0 and "constant columns: none" in text and "OK" in text, text
@@ -914,16 +922,29 @@ def test_team_dry_run_exit_code_and_pause_gates():
             tight = trainer.dry_run("clean", 1, ["J03WMX"], 5, matches=matches, peak_limit_gb=0.0)
             assert tight["checks"]["projection"] == {"limit_gb": 0.0, "ok": False} and tight["ok"] is False
             assert base["checks"]["projection"]["ok"] is True and base["projected_peak_gb"] < 8.0
+            # the projection: the peak where the helper gives one, else the rows' bytes, plus the training set
             extra = trainer.TRAINING_ROWS * 2 * WIDTH * 8 * trainer.COPIES / 1e9
-            floor = (base["peak_memory_bytes"] or base["per_match"]["J03WMX"]["x_bytes"]) / 1e9 + extra
-            assert abs(base["projected_peak_gb"] - floor) < 1e-9, "the peak or the row bytes, plus the training set"
-            assert base["projection_basis"] in ("peak", "row bytes")
+            assert base["peak_memory_bytes"] == stub_peak and base["projection_basis"] == "peak"
+            assert abs(base["projected_peak_gb"] - (stub_peak / 1e9 + extra)) < 1e-9
+            trainer.peak_memory_bytes = lambda: None
+            unknown = trainer.dry_run("clean", 1, ["J03WMX"], 5, matches=matches)
+            assert unknown["peak_memory_bytes"] is None and unknown["projection_basis"] == "row bytes"
+            assert abs(unknown["projected_peak_gb"] - (unknown["per_match"]["J03WMX"]["x_bytes"] / 1e9 + extra)) < 1e-9
+            # a peak that projects over 8 GB fails the dry run, and the command exits 1 on it alone
+            trainer.peak_memory_bytes = lambda: int((8.0 - extra) * 1e9) + 1_000_000
+            over = trainer.dry_run("clean", 1, ["J03WMX"], 5, matches=matches)
+            assert over["checks"]["projection"] == {"limit_gb": 8.0, "ok": False} and over["ok"] is False
+            assert over["checks"]["rows"]["ok"] is None and not over["all_nan"] and not over["constant"]
+            code, text = quietly(trainer.main, flags)
+            assert code == 1 and "projected peak FAIL" in text, text
+            trainer.peak_memory_bytes = lambda: stub_peak
             # the declared run on the command line: outside the window is exit 1, whatever else is true of it
             code, text = quietly(trainer.main, ["--dry-run", "--seeds", "1", "--matches", "J03WMX", "--data-dir",
                                                 root])
             assert code == 1 and "FAIL, outside the window [8,290, 12,434]" in text and "projected peak PASS" in text
         finally:
             team_features.features = real
+            trainer.peak_memory_bytes = real_peak
 
 
 class Stand:
