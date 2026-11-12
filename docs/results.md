@@ -55,6 +55,9 @@ two sets of numbers are different benchmarks. Hand labels on this match are not 
 | R029 | 2026-11-03 | `smart_tagging` (P08) taken out of `main.toml`: its `c_team` was measured on BAR-ATH, which the organisers' clarification of 3 Nov forbids (A21, [rules.md](rules.md)); nothing else changed | 0.7149 | 0.4444 | 19 / 14.8 s | 0.5363 raw and 0.5764 coarse: R024's, by construction (the benchmark always ran `main.toml` with `--drop-match-only`, which removed exactly this source) | **adopted, for the rules and not for a score**; sha256 `762f9073…`; the public figures chose nothing (T01) |
 | R030 | 2026-11-10 | P27: the benchmark's degradation replaced by `generic` v1 (no measurement of ours enters it: two figures quoted from the organisers' DATA.md and declared rules for the rest), both models retrained on it, and every constant re-chosen by rules declared before the runs: Stage A the touch rule (192 configs), Stage C the decoder and P07's weight (144), Stage D what R009 to R011 chose (11), Stage E the shift | 0.7238 | 0.5029 | 18 / 15.7 s | **0.5414 raw and 0.5829 coarse (mean 0.5622) on `generic`**, against the incumbent constants' 0.5388 and 0.5779 (mean 0.5584) there; `nearest_w50` 0.1885 raw, `nearest_w125` 0.2092 coarse | **adopted, because the rules require the redo** ([rules.md](rules.md)): the hold 0.55 → 0.60, switch_team 4 → 6, P07's weight 0.2 → 0.3, everything else unchanged; the bar passes (7 wins in 7 under each truth) and so do the declared checks (both `--verify`, the profile's shares, the transfer gate 0.8199 against 0.7426, the file twice and from a clean clone, sha256 `2dd51320...`); two ties decided by the declared tie-break are knife-edges (the hold: inside the band by 0.000004; the decoder); **Tian reviewed both on 10 Nov and kept the declared outcome**; not uploaded |
 | R031 | 2026-11-10 | P28: a possession back-dated to the team's first touch (a kink of the ball's velocity inside a player's zone, τ in {3, 6} m/s); step 0, the gate declared before any config | — | — | — | — (no config was built) | **dropped at the gate**: the frames the rule would back-date name the touching team 33.8% (τ = 3) and 46.5% (τ = 6) of the time against the 70% needed, and at τ = 6 the touch-without-episode share is 9.8% against 10%; nothing built into the pipeline, the branch `p28-touch-backdating` keeps the code |
+| R032 | 2026-11-12 | P29: a learned hold: `controlled_touch`'s vote between episodes follows the measured agreement by time since the last touch and a hidden ball since (20 cells, a curve per held-out match), at scale 0.25 / 0.5 / 0.75 / 1.0 | — | — | — | the pick `p29_s025` 0.5481 raw and 0.5870 coarse (mean 0.5675) against `p27_final`'s 0.5414 and 0.5829 (mean 0.5622) | **dropped**: the gate passed (deviation 0.098 against 0.05), the pick gained +0.0054 on the mean with both truths up and missed the sign-flip test (p 0.078, six of seven matches); the larger scales trade raw against coarse (T33); the advisor found no change the evidence points to, so no retry; code removed, recoverable from `3eee56e` |
+| R033 | 2026-11-12 | P30: timing-aware shape features: a version 2 shape model (42 features: length, spread and the one-sided advance over the last and the next 2, 5 and 10 s, per team) at weight 0.3 / 0.2 / 0.45 | — | — | — | **the pick `p30_w030` 0.5629 raw and 0.5901 coarse (mean 0.5765)** against `p27_final`'s 0.5414 and 0.5829 (mean 0.5622) | **cleared the bar** (mean +0.0143, p 0.016, all seven matches won on the mean; raw +0.0215, coarse +0.0072); gate G2 passed (held-out log-loss in the gaps 0.3189 against 0.3560); the night's candidate `pipeline/configs/candidates/p30_shape_v2.toml`, **not adopted: Tian decides** |
+| R034 | 2026-11-12 | P31: team evidence level with the dead ball in the decoder (`team_neutral_dead`) | — | — | — | 0.5399 raw and 0.5811 coarse (mean 0.5605) against `p27_final`'s 0.5414 and 0.5829 | **the guard holds** (raw −0.0014, coarse −0.0018), a small loss on six of seven matches under both truths; the flag stays off by default; Tian's call |
 
 ### The four yardsticks on every profile, in one table
 
@@ -10280,6 +10283,155 @@ reopened by overturning the ruling, as `p29_s025` exactly as run and with its mi
 hold never expires" is a known limit of `main.toml` either way (the constant 0.60 is voted at any distance in time
 from the last touch); it should be tested again only with an expiry rule declared beforehand and on new evidence, not
 by another pass over these seven matches.
+
+### R033 — P30: timing-aware shape features: the gate passes, the pick clears the bar on all seven matches (declared 2026-11-12; run 2026-11-12, Tian away)
+Proposal: P30 · Spec (declared before any run):
+[2026-11-12-p29-p31-design.md](superpowers/specs/2026-11-12-p29-p31-design.md) · Code: branch `p29-p31`, `22e5857`
+(the version 2 features), `10587c1` (the model file names its feature version; `train_shape.py --features 2`; the
+three configs), `11dfa6e` (the version 2 model, `pipeline/models/shape_possession_v2_hgb.json`), `da698fb` (the
+candidate's config and the close-out configs) ·
+Command: `python pipeline/benchmark/train_shape.py --features 2 --out pipeline/models/shape_possession_v2_hgb.json`
+(at `8a66b0d`), `train_shape.py --report --out pipeline/models/shape_possession_v2_hgb.json` and `train_shape.py
+--report` (the gate, at `11dfa6e`), `train_shape.py --verify` (version 1 unchanged); `python
+pipeline/benchmark/run.py pipeline/benchmark/configs/p27/p27_final.toml pipeline/benchmark/configs/p30/p30_w030.toml
+…p30_w020.toml …p30_w045.toml --profile generic --seeds 3 --truth both` (at `dad5acd`), then `python
+pipeline/benchmark/p29_bar.py pick --reference p27_final p30_w030 p30_w020 p30_w045` and `bar --reference p27_final
+p30_w030`; `python pipeline/benchmark/choose.py --reference p27_final --objective mean p30_w030 p30_w020 p30_w045` for
+the leave-one-match-out estimate
+Public: — (no score or statistic of the candidate on our match was computed: its file was written and validated only;
+`main.toml` rebuilt its file at every merge of the night with the same sha256, `2dd51320…1660`)
+Validation (P01 benchmark, `generic`, 3 seeds), the pick `p30_w030`: raw 0.5629 against 0.5414 (+0.0215), coarse
+0.5901 against 0.5829 (+0.0072), the mean of the two +0.0143, sign-flip p 0.016 (all seven matches)
+Changed vs `main.toml`: nothing (the candidate is `pipeline/configs/candidates/p30_shape_v2.toml`)
+Verdict: **cleared the bar; the night's candidate. Not adopted: Tian decides**
+
+**The belief.** A team that has just won the ball starts to advance and to spread, and the team that lost it drops
+and narrows. P07's time features are centred windows (±1 s, ±2 s), which see the average of before and after; a
+one-sided window sees the change itself, so the model can place a hand-over inside a ball gap earlier and more
+exactly. Falsified if the held-out log-loss in the gaps does not fall, or if the benchmark does not move.
+
+**The mechanism.** A second feature set beside the first, version 2 (42 columns): version 1's 26 plus, per team,
+`length` (`adv_p90 − adv_p10`), `spread` (the mean distance of the team's present slots to their centroid, metres),
+`adv_past_2s/5s/10s` (`adv_mean` now minus k seconds ago) and `adv_fut_2s/5s/10s` (k seconds ahead minus now), NaN
+within k of a block's edge and never across half time. The model file names its feature version (`feature_version`,
+checked as a plain int, against the version's 42 names and against every tree node's feature index), and
+`shape_possession` computes the set its file was trained on: the committed version 1 file gives today's numbers bit
+for bit (`main.toml`'s sha256 unchanged, `train_shape.py --verify` passes). The version 2 model is version 1's recipe
+on 42 columns: the same rows (every 5th graded frame), the same mirror augmentation, the same tree settings and seeds,
+a model per held-out match and one from all seven.
+
+**The gate, declared before the run:** the pooled held-out log-loss on alive frames with the ball missing at most
+0.3510 (version 1: 0.3560).
+
+| match | gap frames | version 1 log-loss | version 2 log-loss | version 1 accuracy | version 2 accuracy |
+|---|---|---|---|---|---|
+| J03WMX | 100,677 | 0.3910 | **0.3583** | 0.8381 | 0.8504 |
+| J03WN1 | 83,916 | 0.4626 | **0.3937** | 0.7865 | 0.8266 |
+| J03WOH | 84,142 | 0.3362 | **0.2977** | 0.8582 | 0.8690 |
+| J03WOY | 98,570 | 0.3515 | **0.3274** | 0.8468 | 0.8630 |
+| J03WPY | 102,035 | 0.3414 | **0.3123** | 0.8526 | 0.8651 |
+| J03WQQ | 109,913 | 0.3253 | **0.2919** | 0.8603 | 0.8769 |
+| J03WR9 | 105,994 | 0.3043 | **0.2654** | 0.8675 | 0.8920 |
+| pooled | 685,247 | 0.3560 | **0.3189** | 0.8458 | 0.8645 |
+
+- **The gate passes**: 0.3189, lower on all seven matches (by 0.024 to 0.069).
+- On all alive frames: 0.3213 against 0.3567 (accuracy 0.8636 against 0.8454); on the frames of a kept touch episode,
+  the agreement with the touch rule is 0.8470 against 0.8334.
+
+**Candidates and the pick, declared before the run.** The version 2 model at weight 0.3, 0.2 and 0.45, everything
+else `p27_final`'s (the shift included). The pick: the highest mean of the two truths; among those within 0.005 of
+it, the weight nearest today's 0.3.
+
+**The run** (12 Nov, 23:07 to 23:10; `p27_final`: raw 0.5414, coarse 0.5829, mean 0.5622, 2.98 possessions per
+graded minute; the truth has 4.58 raw and 2.48 coarse).
+
+| config | raw | Δ raw (p, wins of 7) | coarse | Δ coarse (p, wins) | mean | Δ mean (p, wins) | possessions / min | D share |
+|---|---|---|---|---|---|---|---|---|
+| `p30_w030` | 0.5629 | +0.0215 (0.016, 7) | 0.5901 | +0.0072 (0.16, 5) | 0.5765 | **+0.0143 (0.016, 7)** | 3.04 | 44.7% |
+| `p30_w020` | 0.5577 | +0.0163 (0.016, 7) | 0.5861 | +0.0032 (0.19, 4) | 0.5719 | +0.0097 (0.016, 7) | 3.01 | 44.8% |
+| `p30_w045` | 0.5644 | +0.0231 (0.016, 7) | 0.5892 | +0.0063 (0.34, 4) | 0.5768 | +0.0147 (0.016, 7) | 3.09 | 44.5% |
+
+- **The pick: `p30_w030`.** The best mean is `p30_w045`'s 0.5768; `p30_w030` (0.5765) is within 0.005 of it and is
+  today's weight.
+- **The bar: cleared.** The mean gains +0.0143 (needs +0.005), the sign-flip p is 0.016 (all seven matches won on the
+  mean; needs 0.05), and neither truth is lower (raw +0.0215, coarse +0.0072). All three weights clear it.
+- Per match, raw / coarse: J03WMX +0.0182 / +0.0081, J03WN1 +0.0335 / +0.0307, J03WOH +0.0281 / +0.0072, J03WOY
+  +0.0118 / −0.0075, J03WPY +0.0125 / −0.0002, J03WQQ +0.0247 / +0.0063, J03WR9 +0.0205 / +0.0045.
+- macroF1 0.8993 raw and 0.8977 coarse against 0.8934 and 0.8941; alive/dead F1 0.9740 against 0.9741; the dead ball
+  is predicted on 44.7% of the graded frames either way (the truth 44.8%).
+- The leave-one-match-out estimate (a report): picking by the mean alone gives +0.0118 [+0.0041, +0.0195] on the mean,
+  p 0.016, seven wins (raw +0.0205, coarse +0.0031 with four losses); `choose.py`'s own tie-break would have named
+  `p30_w045`, which is not the declared rule.
+
+**What it says.** The gain is in who has the ball where the ball is not seen, as the belief said: the model is better
+on the gap frames of every held-out match, and the benchmark's gain is under both truths, larger under the raw one.
+The count of possessions moves up a little (2.98 to 3.04 per minute), less than P29's larger scales moved it, and
+the coarse truth still gains: this is not only the grain trade-off of T33. The coarse truth's gain is the less sure
+half (five of seven matches, p 0.16 on its own).
+
+**Where the gain is: the edges** (`python pipeline/benchmark/diagnose.py pipeline/benchmark/configs/p30/p30_w030.toml`
+and the same for `p27_final`, at `da698fb`; a report, A19's decomposition).
+
+| | `p27_final` raw | `p30_w030` raw | `p27_final` coarse | `p30_w030` coarse |
+|---|---|---|---|---|
+| predicted possessions (true 9,183 raw, 4,977 coarse) | 5,982 | 6,102 | 5,982 | 6,102 |
+| clean pairs matched at IoU 0.3 | 3,962 | 4,126 | 3,194 | 3,218 |
+| their IoU median | 0.827 | 0.839 | 0.849 | 0.865 |
+| start error, quartiles (frames, predicted − true) | [−5, +14] | **[−7, +7]** | [−4, +19] | **[−7, +11]** |
+| end error, quartiles | [−4.8, +23] | **[−7, +16]** | [−5, +27] | **[−9, +18]** |
+| ladder loss: clean / merge / split | 0.0707 / 0.0467 / 0.0078 | 0.0660 / 0.0450 / 0.0080 | 0.0654 / 0.0045 / 0.0434 | 0.0585 / 0.0036 / 0.0463 |
+| the shape source's log-loss on alive frames (α) | 0.3567 (1.08) | 0.3213 (1.07) | | |
+| the posterior's `home` log-loss | 1.170 | 1.084 | | |
+
+The late tail of the edges shrank by about a third: the upper quartile of the start error went from +14 to +7 frames
+under the raw truth and from +19 to +11 under the coarse one, the end error's from +23 to +16 and from +27 to +18. The
+hand-over is placed earlier, which is what the belief said one-sided windows would do; the medians stay at 0. The
+coarse truth's split loss rose a little (+0.003): the extra possessions. The shape source is as well calibrated as
+before (α 1.07 against 1.08).
+
+**P31's flag on the candidate** (declared: run once beside the candidate and held to the guard against it;
+`pipeline/benchmark/configs/night/night_neutral.toml`, at `da698fb`): raw 0.5618 against 0.5629 (−0.0011, one match
+won of seven), coarse 0.5885 against 0.5901 (−0.0016, two won), the mean −0.0014. The guard holds (`p29_bar.py guard
+--reference p30_w030 night_neutral` exits 0), the same small loss as against `p27_final` (R034). P31 does not enter
+the candidate.
+
+**The shift by R030's rule** (declared: reported, not applied; `conventions.py latency
+pipeline/benchmark/configs/night/night_preshift.toml dfl --profile generic --seeds 3 --truth raw`, then `p27_shift.py
+night_preshift`): the candidate without `shift_edges` lags a change of team by −1 frame (7,053 changes, 45% matched
+within 50 frames), a change into `D` by +2 (2,130, 53%) and out of `D` by 0 (2,097, 79%), so the rule gives **+1, −2,
+0, the shift the candidate already has**. Nothing to apply.
+
+**The candidate's file** (`python pipeline/run.py pipeline/configs/candidates/p30_shape_v2.toml`, at `da698fb`):
+`evaluation/results/p30_shape_v2.csv`, 199,319 rows, sha256 `ca44ca10a2aafbe455a1c629fd1a9e49669768315e4dc88c37b95e45cde7c14b`;
+`evaluation/validate_submission.py` says valid. As declared, nothing else of it was read: no score, no label shares,
+no count of possessions on our match. `main.toml`'s own file is unchanged (`2dd51320…1660`).
+
+**On fresh seeds** (C0, a check made after the choice that chooses nothing, declared at 23:50 in
+[the next spec](superpowers/specs/2026-11-13-p32-p34-design.md); `python pipeline/benchmark/run.py
+pipeline/benchmark/configs/p27/p27_final.toml pipeline/benchmark/configs/p30/p30_w030.toml --profile generic --seeds 6
+--truth both`, then `python pipeline/benchmark/p27_sensitivity.py p27_final p30_w030`, at `da698fb`). Seeds 3 to 5
+redraw the ball's gaps and the players' losses on the same seven matches and played no part in the choice.
+
+| seeds | `p27_final` raw / coarse / mean | `p30_w030` raw / coarse / mean | Δ mean (raw, coarse) | p, wins of 7 |
+|---|---|---|---|---|
+| 0 to 2 (the choice's) | 0.5414 / 0.5829 / 0.5622 | 0.5629 / 0.5901 / 0.5765 | +0.0143 (+0.0215, +0.0072) | 0.016, 7 |
+| **3 to 5 (fresh)** | 0.5397 / 0.5839 / 0.5618 | 0.5592 / 0.5906 / 0.5749 | **+0.0131 (+0.0196, +0.0066)** | 0.016, 7 |
+| 0 to 5 | 0.5405 / 0.5834 / 0.5620 | 0.5611 / 0.5903 / 0.5757 | +0.0137 (+0.0205, +0.0069) | 0.016, 7 |
+
+Seeds 0 to 2 reproduce the choice's reports to the last digit. On the fresh seeds the gain is +0.0131, 92% of the
+in-sample +0.0143, and all seven matches win again; both truths gain. R030's lesson (an in-sample +0.0038 that was
++0.0004 on fresh seeds) does not repeat here: the gain is a model's, not a knife-edge of a tie band. The matches are the
+same seven, so this guards against a lucky degradation and not against the seven matches themselves.
+
+**The transfer gate for adoption, declared before anyone computes it** (the advisor's ruling 6, at 23:45): by R011's
+and R030's rule, the version 2 model's `full` `touch_agreement` on BAR-ATH must be at least the lowest held-out
+per-match value of its own `--report`, **0.7656** (J03WN1; the others 0.8383 to 0.8865). A pass/fail check on our
+match, run at adoption by Tian, never a choice; not computed tonight.
+
+**The limits, stated with it.** The model was trained on other teams' matches (as version 1 was), so the benchmark's
+gain is not a forecast for our match; `generic`'s ball gaps ignore the play (T38, T39), and the one-sided windows read
+up to 10 s ahead and behind inside those gaps, which our match's tracking may serve differently. The decoder's
+constants and the shift were chosen in R030 with version 1 in place and were not re-chosen.
 
 ### R034 — P31: team evidence level with the dead ball in the decoder: the guard holds, with a small loss under both truths (declared 2026-11-12; run 2026-11-12, Tian away)
 Proposal: P31 · Spec (declared before any run):
