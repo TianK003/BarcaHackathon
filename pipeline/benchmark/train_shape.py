@@ -1,7 +1,7 @@
 """P07's trainer: fit the shape-possession model on the benchmark's matches and write it as JSON.
 
     python pipeline/benchmark/train_shape.py [--profile tracking] [--seeds 3] [--stride 5] [--features {1,2}]
-                                             [--out PATH] [--verify] [--report] [--data-dir D]
+                                             [--labels {raw,both}] [--out PATH] [--verify] [--report] [--data-dir D]
 
     artifact = train(profile="tracking", seeds=3, stride=5)             # the dict that is written, JSON-ready
     held_out = report(artifact, profile="tracking", seeds=3)            # aggregates of each fold on its own match
@@ -45,6 +45,20 @@ model's `prior_home` is 0.5, and a classifier that is an honest likelihood is wh
 subtract) and teaches the symmetry. It does not make the fitted classifier exactly antisymmetric; `shape_possession`
 makes the output so, by (r(x) - r(swap(x))) / 2. The mirror rows follow the rows, in the same order, so the fit is
 deterministic. A fold is fitted on the other matches' rows and their mirrors: the held-out match contributes neither.
+
+`--labels both` (P34)
+---------------------
+The objective that ranks a choice is the mean of two truths, `raw` and `coarse` (`truth.coarse_codes`: short
+possessions between two of the other team merged), and the default trains on `raw` alone. `--labels both` trains on
+the target the objective scores. For each match and seed the coarse codes are built from the raw ones with the graded
+blocks and fps of the served inputs (never from the features), and the rows are the very frames the raw rows take (a
+frame alive in one truth and not in the other is refused: `coarse_codes` never changes a D). Where the two labels agree
+a row has weight 1.0; where they differ the frame is two rows, one with each label, at weight 0.5 each, so the model
+sees the disagreement as the probability it is: a frame that is H in one truth and A in the other teaches 0.5. The
+mirror rows carry the same weights with the label flipped, and the fit passes them as `sample_weight`. The artifact
+gets `"labels": "both"` (and only then: with `raw` nothing differs from the file that `--verify` has always checked,
+and `fit` is called with no weight at all). The report always adds the coarse truth's log-loss and accuracy
+(`report["coarse"]`), beside the raw cells.
 
 Folds, the artifact, `--verify`
 -------------------------------
@@ -124,6 +138,7 @@ FORMAT = trees.FORMAT
 KIND = "hgb"
 HOME, AWAY = pm.H, pm.A                       # the codes of the truth that are alive; a dead ball has no team to name
 DEFAULT_STRIDE = 5
+LABELS = ("raw", "both")                      # P34: whose labels the rows carry; raw is the committed model's
 PRIOR_HOME = shape_possession.PRIOR_HOME      # the share of homes among the rows and their mirrors
 # One file per feature version (P30): the file names its version, and `shape_possession` reads the features of it.
 DEFAULT_MODEL_PATHS = {1: "pipeline/models/shape_possession_hgb.json",
@@ -158,11 +173,46 @@ def rows(inputs, codes, stride, version=1):
     return X[frames], (codes[frames] == HOME).astype(np.int64)
 
 
+def rows_both(inputs, codes, coarse, stride, version=1):
+    """(X, y, w): `rows`' frames with both truths' labels: a row of weight 1.0 where the raw and the coarse label agree,
+    and where they differ the frame twice, the raw label then the coarse one, each at weight 0.5.
+
+    `codes` and `coarse` are the raw truth's and the coarse truth's codes per frame. ValueError if a frame that `rows`
+    looks at is alive (H or A) in one and not in the other: `coarse_codes` never changes a D or an X, so that is a
+    mistake of the caller's, and the weights would mean nothing there.
+    """
+    stride = _whole("stride", stride, 1)
+    codes, coarse = np.asarray(codes), np.asarray(coarse)
+    for name, value in (("codes", codes), ("coarse", coarse)):
+        if value.shape != (inputs.n_frames,):
+            raise ValueError("train_shape: {} must hold one code per frame of the match ({}), got shape {}"
+                             .format(name, inputs.n_frames, value.shape))
+    frames = np.concatenate([np.arange(start, stop, stride) for _, start, stop in inputs.graded])
+    raw_alive = (codes[frames] == HOME) | (codes[frames] == AWAY)
+    coarse_alive = (coarse[frames] == HOME) | (coarse[frames] == AWAY)
+    if (raw_alive != coarse_alive).any():
+        raise ValueError("train_shape: the raw and the coarse truth disagree on whether {} of the frames taken are "
+                         "alive; the coarse truth only relabels possessions, never a dead ball".format(
+                             int((raw_alive != coarse_alive).sum())))
+    frames = frames[raw_alive]
+    differ = (codes[frames] == HOME) != (coarse[frames] == HOME)
+    copies = np.where(differ, 2, 1)
+    taken = np.repeat(frames, copies)
+    second = np.zeros(len(taken), dtype=bool)                  # the later copy of a frame taken twice
+    second[np.cumsum(copies)[differ] - 1] = True
+    y = np.where(second, coarse[taken] == HOME, codes[taken] == HOME).astype(np.int64)
+    w = np.where(np.repeat(differ, copies), 0.5, 1.0)
+    _, X = shape_features.features(inputs, version)
+    return X[taken], y, w
+
+
 def gather(profile, seeds, stride, matches=None, calibration=None, data_dir=None, match_ids=None, log=None,
-           version=1):
+           version=1, labels="raw"):
     """Gathered: the rows of every match under every seed of `profile`, served as the pipeline serves them.
 
-    `version` is the feature version of the rows (`shape_features.VERSIONS`; ValueError for any other).
+    `version` is the feature version of the rows (`shape_features.VERSIONS`; ValueError for any other). `labels` is
+    "raw" (the rows of `rows`; `data` is {match_id: (X, y)}) or "both" (P34, the rows of `rows_both`; `data` is
+    {match_id: (X, y, w)}); ValueError for any other.
 
     `matches` is {id: DflMatch} to use instead of loading the seven from `data_dir` (the checks pass synthetic ones);
     `calibration` is the Calibration that a degraded profile takes its masks from, measured or read from its cache when
@@ -172,6 +222,7 @@ def gather(profile, seeds, stride, matches=None, calibration=None, data_dir=None
     """
     seeds = _whole("seeds", seeds, 1)
     _whole("stride", stride, 1)
+    _known_labels(labels)
     shape_features.feature_names(version)               # refuses an unknown version before any match is loaded
     _known_profile(profile)
     ids = run.resolve_match_ids(match_ids, matches)
@@ -190,13 +241,17 @@ def gather(profile, seeds, stride, matches=None, calibration=None, data_dir=None
         parts = []
         for seed in seed_list:
             inputs = served_inputs(match, profile, seed, calibration, data_dir)
-            parts.append(rows(inputs, codes, stride, version))
+            if labels == "raw":
+                parts.append(rows(inputs, codes, stride, version))
+            else:
+                coarse = truths.coarse_codes(codes, inputs.graded, inputs.fps)
+                parts.append(rows_both(inputs, codes, coarse, stride, version))
             if seed == seed_list[0]:
                 recorded = inputs.atd_manifest["sources"]
                 sources[match_id] = None if recorded is None else {name: recorded[name]["sha256"]
                                                                    for name in sorted(recorded)}
             del inputs
-        data[match_id] = (np.concatenate([X for X, _ in parts]), np.concatenate([y for _, y in parts]))
+        data[match_id] = tuple(np.concatenate([part[column] for part in parts]) for column in range(len(parts[0])))
         log("rows      {}   {:,} rows, {:.1%} home".format(match_id, len(data[match_id][1]),
                                                          float(data[match_id][1].mean())))
         del match, codes
@@ -206,12 +261,14 @@ def gather(profile, seeds, stride, matches=None, calibration=None, data_dir=None
 
 # -- the model --------------------------------------------------------------------------------------------------------
 
-def augment(X, y, version=1):
-    """(X', y'): the rows, then their mirror images (`shape_features.swap`) with the label flipped.
+def augment(X, y, version=1, weight=None):
+    """(X', y'): the rows, then their mirror images (`shape_features.swap`) with the label flipped; with `weight` (P34)
+    (X', y', w'): the weights are repeated for the mirrors, which keep their row's weight.
 
     The classes balance exactly, whatever the rows' own balance: half the labels of y' are 1. The rows come first and
     unchanged, so the order is the input's and the fit is deterministic. ValueError for X that is not (n, 26)
-    (version 2: (n, 42)) or a y that is not one 0 or 1 per row.
+    (version 2: (n, 42)), a y that is not one 0 or 1 per row and a weight that is not one finite number above 0 per
+    row.
     """
     X = np.asarray(X, dtype=np.float64)
     y = np.asarray(y)
@@ -219,58 +276,83 @@ def augment(X, y, version=1):
     if X.ndim != 2 or X.shape[1] != names or y.shape != (len(X),) or not np.isin(y, (0, 1)).all():
         raise ValueError("train_shape: X must be (n, {}) and y one 0 or 1 per row, got X {} and y {}"
                          .format(names, X.shape, y.shape))
-    return np.concatenate([X, shape_features.swap(X)]), np.concatenate([y, 1 - y]).astype(np.int64)
+    mirrored = np.concatenate([X, shape_features.swap(X)]), np.concatenate([y, 1 - y]).astype(np.int64)
+    if weight is None:
+        return mirrored
+    weight = np.asarray(weight, dtype=np.float64)
+    if weight.shape != (len(X),) or not (np.isfinite(weight).all() and (weight > 0).all()):
+        raise ValueError("train_shape: weight must be one finite number above 0 per row ({}), got shape {}"
+                         .format(len(X), weight.shape))
+    return mirrored + (np.concatenate([weight, weight]),)
 
 
-def hgb_estimator(X, y):
+def hgb_estimator(X, y, weight=None):
     """The fitted `HistGradientBoostingClassifier` with P05's fixed settings and no monotone constraint, on X and y as
-    they are (the caller has augmented them)."""
+    they are (the caller has augmented them). `weight` (P34) goes to `fit` as `sample_weight`; without it `fit` is
+    called as it always was, with no such argument."""
     from sklearn.ensemble import HistGradientBoostingClassifier
-    return HistGradientBoostingClassifier(**HGB_SETTINGS).fit(np.asarray(X, dtype=np.float64),
-                                                              np.asarray(y, dtype=np.int64))
+    estimator = HistGradientBoostingClassifier(**HGB_SETTINGS)
+    if weight is None:
+        return estimator.fit(np.asarray(X, dtype=np.float64), np.asarray(y, dtype=np.int64))
+    return estimator.fit(np.asarray(X, dtype=np.float64), np.asarray(y, dtype=np.int64),
+                         sample_weight=np.asarray(weight, dtype=np.float64))
 
 
-def fit(X, y, version=1):
-    """One model, as a JSON-ready dict {baseline, trees, prior_home}: fitted on the rows X, y and their mirrors.
+def fit(X, y, version=1, weight=None):
+    """One model, as a JSON-ready dict {baseline, trees, prior_home}: fitted on the rows X, y and their mirrors, with
+    `weight` (P34, one per row) as the rows' sample weights if given.
 
     ValueError for the shapes `augment` refuses and for rows of one class only: a model of who has the ball needs both
     homes and aways (the mirror rows would teach the symmetry alone, from a sample that says nothing of the game).
     """
     X = np.asarray(X, dtype=np.float64)
     y = np.asarray(y)
-    augmented = augment(X, y, version)              # checks the shapes
+    augmented = augment(X, y, version, weight)      # checks the shapes
     if len(y) == 0 or y.min() == y.max():
         raise ValueError("train_shape: the rows hold one class only ({} home among {}); a model needs both home and "
                          "away frames".format(int(y.sum()), len(y)))
-    model = export_hgb(hgb_estimator(*augmented))
+    model = export_hgb(hgb_estimator(*augmented))          # a third element is the weight
     model["prior_home"] = PRIOR_HOME
     return model
 
 
-def build(gathered, profile, stride, version=1):
+def build(gathered, profile, stride, version=1, labels="raw"):
     """The artifact: one model per held-out match (fitted on the others), `full`, and the provenance.
 
     `version` names the feature version of the rows in `gathered`; the artifact's `feature_version` and `features` are
-    that version's, which is what `shape_possession` reads back to know which columns to compute."""
+    that version's, which is what `shape_possession` reads back to know which columns to compute. `labels` says what
+    the rows are (`gather`): with "both" the weights of `gathered.data` are fitted and the artifact says `"labels":
+    "both"`; with "raw" (the default) it has no such key and `fit` gets no weight."""
+    _known_labels(labels)
     names = shape_features.feature_names(version)
     ids = sorted(gathered.data)
 
     def fitted(match_ids):
         X = np.concatenate([gathered.data[match_id][0] for match_id in match_ids])
         y = np.concatenate([gathered.data[match_id][1] for match_id in match_ids])
+        if labels == "both":
+            return fit(X, y, version, weight=np.concatenate([gathered.data[match_id][2] for match_id in match_ids]))
         return fit(X, y) if version == 1 else fit(X, y, version)      # version 1 is the call that was always made
 
-    return {"format": FORMAT, "kind": KIND, "feature_version": version, "features": list(names), "profile": profile,
-            "seeds": gathered.seeds, "stride": stride, "provenance": provenance(gathered),
-            "folds": {held_out: fitted([other for other in ids if other != held_out]) for held_out in ids},
-            "full": fitted(ids)}
+    artifact = {"format": FORMAT, "kind": KIND, "feature_version": version, "features": list(names),
+                "profile": profile, "seeds": gathered.seeds, "stride": stride, "provenance": provenance(gathered),
+                "folds": {held_out: fitted([other for other in ids if other != held_out]) for held_out in ids},
+                "full": fitted(ids)}
+    if labels == "both":
+        artifact["labels"] = labels
+    return artifact
 
 
-def train(profile, seeds, stride, matches=None, calibration=None, data_dir=None, log=None, version=1):
+def train(profile, seeds, stride, matches=None, calibration=None, data_dir=None, log=None, version=1, labels="raw"):
     """The artifact: gather the rows, then fit every fold and `full` (see the module docstring)."""
+    _known_labels(labels)
+    if labels == "raw":                                  # the calls that were always made
+        gathered = gather(profile, seeds, stride, matches=matches, calibration=calibration, data_dir=data_dir,
+                          log=log, version=version)
+        return build(gathered, profile, stride, version)
     gathered = gather(profile, seeds, stride, matches=matches, calibration=calibration, data_dir=data_dir, log=log,
-                      version=version)
-    return build(gathered, profile, stride, version)
+                      version=version, labels=labels)
+    return build(gathered, profile, stride, version, labels)
 
 
 def provenance(gathered):
@@ -349,10 +431,14 @@ def stop_rule_fires(log_loss):
 def report(artifact, profile, seeds, matches=None, calibration=None, data_dir=None):
     """Aggregates of each fold model on its own held-out match, all seeds pooled, and the same pooled over the matches.
 
-    {profile, seeds, ln2, per_match: {id: cell}, pooled: cell, stop_rule: {threshold, log_loss, fires}} where a cell is
-    {alive: {frames, silent, log_loss, accuracy}, missing: {frames, log_loss, accuracy}, touch: {frames, agreement}}:
-    the symmetrised, clipped `home` of `shape_possession` (scope "all") against the truth on the alive frames, on those
-    where the served ball is missing, and `touch_agreement`. Numbers and strings only, no per-frame array.
+    {profile, seeds, ln2, per_match: {id: cell}, pooled: cell, stop_rule: {threshold, log_loss, fires}, coarse:
+    {per_match: {id: ccell}, pooled: ccell}} where a cell is {alive: {frames, silent, log_loss, accuracy}, missing:
+    {frames, log_loss, accuracy}, touch: {frames, agreement}}: the symmetrised, clipped `home` of `shape_possession`
+    (scope "all") against the truth on the alive frames, on those where the served ball is missing, and
+    `touch_agreement`. `coarse` (P34) is the same two scores against the coarse truth (`truth.coarse_codes` of the raw
+    codes, per seed, with the served inputs' blocks and fps), a ccell being {alive: {frames, log_loss, accuracy},
+    missing: {...}}; the alive frames are the raw truth's (ValueError if the coarse truth's differ). Numbers and
+    strings only, no per-frame array.
 
     BenchmarkError for an unknown profile, for an artifact that lacks the fold of one of the matches (the source would
     score it with `full`, which saw it) and for matches with no alive frame whose ball is missing (the stop rule would
@@ -393,17 +479,20 @@ def report(artifact, profile, seeds, matches=None, calibration=None, data_dir=No
     return {"profile": profile, "seeds": len(seed_list), "ln2": LN2,
             "per_match": {match_id: _cell(tallies[match_id]) for match_id in sorted(tallies)},
             "pooled": pooled_cell,
-            "stop_rule": {"threshold": STOP_LOSS, "log_loss": loss, "fires": stop_rule_fires(loss)}}
+            "stop_rule": {"threshold": STOP_LOSS, "log_loss": loss, "fires": stop_rule_fires(loss)},
+            "coarse": {"per_match": {match_id: _coarse_cell(tallies[match_id]) for match_id in sorted(tallies)},
+                       "pooled": _coarse_cell(pooled)}}
 
 
 def _empty_tally():
     """The sums behind a cell: [frames, summed log-loss, frames right] for alive and for ball-missing frames, the
     alive frames the source was silent on, and [touch frames, frames that agree]. Sums pool; ratios would not."""
-    return {"alive": [0, 0.0, 0], "missing": [0, 0.0, 0], "silent": 0, "touch": [0, 0]}
+    return {"alive": [0, 0.0, 0], "missing": [0, 0.0, 0], "silent": 0, "touch": [0, 0],
+            "coarse_alive": [0, 0.0, 0], "coarse_missing": [0, 0.0, 0]}
 
 
 def _add(total, part):
-    for name in ("alive", "missing", "touch"):
+    for name in ("alive", "missing", "touch", "coarse_alive", "coarse_missing"):
         total[name] = [a + b for a, b in zip(total[name], part[name])]
     total["silent"] += part["silent"]
 
@@ -416,6 +505,11 @@ def _tally(match, codes, profile, seed_list, calibration, data_dir, path):
     tally = _empty_tally()
     for seed in seed_list:
         inputs = served_inputs(match, profile, seed, calibration, data_dir)
+        coarse = truths.coarse_codes(codes, inputs.graded, inputs.fps)
+        if ((coarse == HOME) | (coarse == AWAY) != alive).any():
+            raise ValueError("train_shape: the coarse truth has other alive frames than the raw one; it only "
+                             "relabels possessions, never a dead ball")
+        coarse_home = coarse == HOME
         home = shape_possession.compute(RunContext(inputs=inputs, seed=0), model=path, scope="all").home
         spoken = ~np.isnan(home)
         part = _empty_tally()
@@ -423,9 +517,11 @@ def _tally(match, codes, profile, seed_list, calibration, data_dir, path):
         for name, wanted in (("alive", alive), ("missing", alive & ~inputs.atd.ball_present)):
             take = wanted & spoken
             p = np.clip(home[take], LOG_FLOOR, 1.0 - LOG_FLOOR)
-            truly_home = is_home[take]
-            loss = -np.where(truly_home, np.log(p), np.log(1.0 - p))
-            part[name] = [int(take.sum()), float(loss.sum()), int(((home[take] >= HOME_LEVEL) == truly_home).sum())]
+            for cell, homes in ((name, is_home), ("coarse_" + name, coarse_home)):
+                truly_home = homes[take]
+                loss = -np.where(truly_home, np.log(p), np.log(1.0 - p))
+                part[cell] = [int(take.sum()), float(loss.sum()),
+                              int(((home[take] >= HOME_LEVEL) == truly_home).sum())]
         touch = touch_agreement(inputs, model=path)
         if touch["frames"]:
             part["touch"] = [touch["frames"], int(round(touch["agreement"] * touch["frames"]))]
@@ -443,6 +539,15 @@ def _cell(tally):
     frames, agreed = tally["touch"]
     return {"alive": dict(scored("alive"), silent=tally["silent"]), "missing": scored("missing"),
             "touch": {"frames": frames, "agreement": agreed / frames if frames else None}}
+
+
+def _coarse_cell(tally):
+    """The JSON-ready coarse cell of a tally: {alive, missing}, each {frames, log_loss, accuracy}."""
+    def scored(name):
+        frames, loss, right = tally[name]
+        return {"frames": frames, "log_loss": loss / frames if frames else None,
+                "accuracy": right / frames if frames else None}
+    return {"alive": scored("coarse_alive"), "missing": scored("coarse_missing")}
 
 
 def render_report(report):
@@ -470,6 +575,15 @@ def render_report(report):
     lines.append("stop rule  {}".format(
         "FIRES: P07 stops here, the result is a negative one and the rest of the lane is skipped" if rule["fires"]
         else "does not fire: P07 goes on"))
+    if "coarse" in report:                              # P34: the same scores against the coarse truth, after the rest
+        lines.append("coarse    the coarse truth (short possessions between two of the other team merged), same frames")
+        lines.append("coarse    {:<8} | {:>10} {:>8} {:>8} | {:>10} {:>8} {:>8}".format(
+            "match", "frames", "log-loss", "accuracy", "frames", "log-loss", "accuracy"))
+        for name, cell in list(sorted(report["coarse"]["per_match"].items())) + [("pooled", report["coarse"]["pooled"])]:
+            alive, missing = cell["alive"], cell["missing"]
+            lines.append("coarse    {:<8} | {:>10,} {:>8} {:>8} | {:>10,} {:>8} {:>8}".format(
+                name, alive["frames"], number(alive["log_loss"], ".4f"), number(alive["accuracy"], ".4f"),
+                missing["frames"], number(missing["log_loss"], ".4f"), number(missing["accuracy"], ".4f")))
     return lines
 
 
@@ -487,6 +601,10 @@ def build_parser():
     parser.add_argument("--features", type=int, choices=shape_features.VERSIONS, default=1,
                         help="the feature version to train, write or --verify (default 1: 26 columns, the committed "
                              "file; 2: 42 columns, P30); --report takes the version from the file it reads")
+    parser.add_argument("--labels", choices=LABELS, default="raw",
+                        help="the truth(s) whose labels the rows carry (default raw: the committed models; both: P34, "
+                             "the raw and the coarse truth's labels, each at weight 0.5 where they differ); used by "
+                             "training and --verify, and --report reads it from the file")
     parser.add_argument("--out", help="where to write the artifact, or to read it from with --report (default "
                                       "pipeline/models/shape_possession_hgb.json, or shape_possession_v2_hgb.json "
                                       "with --features 2)")
@@ -507,8 +625,9 @@ def main(argv=None):
     given = {text.split("=")[0] for text in (sys.argv[1:] if argv is None else argv)}
     if args.seeds < 1 or args.stride < 1:
         parser.error("--seeds and --stride must be at least 1")
-    if args.report and (args.verify or "--stride" in given):
-        parser.error("--report takes no --verify or --stride: it reads the artifact and reports, and trains nothing")
+    if args.report and (args.verify or "--stride" in given or "--labels" in given):
+        parser.error("--report takes no --verify, --stride or --labels: it reads the artifact and reports, and trains "
+                     "nothing")
     path = args.out or os.path.join(ROOT, *DEFAULT_MODEL_PATHS[args.features].split("/"))
     try:
         if args.report:
@@ -522,7 +641,7 @@ def main(argv=None):
                 print(line)
             return 0
         artifact = train(args.profile, args.seeds, args.stride, data_dir=args.data_dir, log=print,
-                         version=args.features)
+                         version=args.features, labels=args.labels)
         if args.verify:
             return verify(path, artifact)
         write(path, artifact)
@@ -542,6 +661,11 @@ def _whole(name, value, minimum):
     if isinstance(value, bool) or not isinstance(value, numbers.Integral) or value < minimum:
         raise ValueError("train_shape: {} must be a whole number of at least {}, got {!r}".format(name, minimum, value))
     return int(value)
+
+
+def _known_labels(labels):
+    if labels not in LABELS:
+        raise ValueError("train_shape: labels must be one of {}, got {!r}".format(", ".join(LABELS), labels))
 
 
 def _known_profile(profile):
