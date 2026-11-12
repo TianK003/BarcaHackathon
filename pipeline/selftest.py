@@ -1110,6 +1110,94 @@ def test_touch_hold_state_matches_the_hold():
     assert min(seen.values()) > 100, "the random scenes no longer reach every branch: {}".format(seen)
 
 
+CURVE_FULL = {"no_gap": [0.9, 0.8, 0.7, 0.6, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5], "gap": [0.3] * 10}
+
+
+def curve_file(folder, name="curve.json", **changes):
+    """A hold-curve artifact for TOUCH's control rule, written to `folder`; `changes` replace its top-level keys."""
+    import json
+    from pipeline.evidence import controlled_touch
+    rule = {key: value for key, value in TOUCH.items() if key != "confidence"}
+    artifact = {"format": 1, "kind": "hold_curve", "bins_s": list(controlled_touch.HOLD_BINS_S),
+                "touch": dict(rule, duel_radius=1.0), "profile": "generic", "seeds": [0], "matches": [],
+                "counts": {}, "folds": {}, "full": CURVE_FULL}
+    artifact.update(changes)
+    return write_text(folder, name, json.dumps(artifact, sort_keys=True) + "\n")
+
+
+def curve_home(run, path, game="BAR-ATH", **values):
+    run.inputs.game = game
+    return touch(run, hold_curve=path, **values).home
+
+
+def test_touch_hold_curve_values():
+    with tempfile.TemporaryDirectory() as folder:
+        path = curve_file(folder)
+        home = curve_home(hold_scene(), path, hold_scale=0.5)
+        expected = np.full(60, np.nan)
+        for span, value in ((slice(5, 15), 0.9), (slice(15, 24), 0.7), (slice(24, 25), 0.65), (slice(30, 35), 0.4),
+                            (slice(35, 45), 0.1), (slice(45, 54), 0.3), (slice(54, 60), 0.35)):
+            expected[span] = value
+        assert np.array_equal(np.isnan(home), np.isnan(expected)), np.flatnonzero(np.isnan(home) != np.isnan(expected))
+        assert np.nanmax(np.abs(home - expected)) < 1e-12, home
+        full = dict(CURVE_FULL, no_gap=[0.99] + CURVE_FULL["no_gap"][1:])
+        home = curve_home(hold_scene(), curve_file(folder, "wide.json", full=full), hold_scale=1.0)
+        assert np.allclose(home[15:24], 0.9, atol=1e-12) and np.allclose(home[45:54], 0.1, atol=1e-12), home
+        assert abs(home[24] - 0.8) < 1e-12 and abs(home[54] - 0.2) < 1e-12, home
+        assert np.array_equal(home[:5], np.full(5, np.nan), equal_nan=True)
+        # no curve: today's path, the constant hold
+        assert np.array_equal(touch(hold_scene(), hold=0.6).home, touch(hold_scene(), hold=0.6, hold_scale=1.0).home,
+                              equal_nan=True)
+
+
+def test_touch_hold_curve_fold_choice():
+    with tempfile.TemporaryDirectory() as folder:
+        path = curve_file(folder, folds={"G1": {"no_gap": [0.6] * 10, "gap": [0.6] * 10}})
+        mine = curve_home(hold_scene(), path, game="G1", hold_scale=1.0)
+        assert np.allclose(mine[15:25], 0.6, atol=1e-12) and np.allclose(mine[30:35], 0.6, atol=1e-12), mine
+        other = curve_home(hold_scene(), path, game="G2", hold_scale=1.0)
+        assert np.allclose(other[15:24], 0.9, atol=1e-12) and abs(other[24] - 0.8) < 1e-12, other
+        assert np.allclose(other[30:35], 0.3, atol=1e-12), other
+
+
+def test_touch_hold_curve_rejects():
+    import json
+    from pipeline.evidence import controlled_touch
+    run = hold_scene()
+    run.inputs.game = "BAR-ATH"
+    command = "hold_stats.py --write"
+    with tempfile.TemporaryDirectory() as folder:
+        path = curve_file(folder)
+        touch(run, hold_curve=path)
+        expect_error(ValueError, lambda: touch(run, hold_curve=path, hold=0.6), "controlled_touch", "hold_curve", "hold")
+        for bad in (0, -0.5, 1.5, True, np.nan, "1"):
+            expect_error(ValueError, lambda: touch(run, hold_curve=path, hold_scale=bad), "controlled_touch",
+                         "hold_scale")
+        expect_error(ValueError, lambda: touch(run, hold_scale=0.5), "controlled_touch", "hold_scale", "hold_curve")
+        touch(run, hold_curve=path, hold_scale=np.float64(0.5))
+        expect_error(ValueError, lambda: touch(run, hold_curve=os.path.join(folder, "missing.json")),
+                     "controlled_touch", "missing.json", command)
+        expect_error(ValueError, lambda: touch(run, hold_curve=7), "controlled_touch", "hold_curve")
+        broken = write_text(folder, "broken.json", "{not json")
+        expect_error(ValueError, lambda: touch(run, hold_curve=broken), "controlled_touch", "broken.json", command)
+        good = json.loads(open(path, encoding="utf-8").read())
+        short = {"no_gap": [0.5] * 9, "gap": [0.5] * 10}
+        wrong_touch = dict(good["touch"], radius=9.0)
+        missing_touch = {key: value for key, value in good["touch"].items() if key != "radius"}
+        cases = {"format": dict(format=2), "kind": dict(kind="shape"), "bins": dict(bins_s=[0.0, 1.0]),
+                 "bins_s_shifted": dict(bins_s=[1.0] + list(controlled_touch.HOLD_BINS_S[1:])),
+                 "touch": dict(touch=wrong_touch), "touch_key": dict(touch=missing_touch),
+                 "short": dict(full=short), "range": dict(full={"no_gap": [1.2] * 10, "gap": [0.5] * 10}),
+                 "nan": dict(full={"no_gap": [None] * 10, "gap": [0.5] * 10}),
+                 "text": dict(full={"no_gap": ["0.5"] * 10, "gap": [0.5] * 10}),
+                 "flag": dict(full={"no_gap": [True] * 10, "gap": [0.5] * 10}),
+                 "no_full": dict(full=None), "fold": dict(folds={"BAR-ATH": short}),
+                 "rows": dict(full={"no_gap": [0.5] * 10})}
+        for name, changes in cases.items():
+            bad = curve_file(folder, name + ".json", **changes)
+            expect_error(ValueError, lambda: touch(run, hold_curve=bad), "controlled_touch", name + ".json", command)
+
+
 def test_touch_rejects_bad_parameters():
     run = touch_scene(20)
     for name, bads in (("radius", (0, -1.0, True, np.inf, np.nan, "2")),
