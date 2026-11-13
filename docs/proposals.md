@@ -1557,7 +1557,10 @@ spec](superpowers/specs/2026-11-13-p40-c2-design.md), the rulings first). The re
 
 ### P40 — The pressed side: opponents' approach as shape columns (version 5)
 
-**Status: in progress (13 Nov).** Effort about 1.5 h. Odds about one in eight (× 0.85 for T32).
+**Status: dropped at its gate 13 Nov 2026 → [R041](results.md): better than version 2 in the gaps but short of
+the gate (gap log-loss 0.3140 against at most 0.3059; hand-over gaps 0.3363 against at most 0.3272, better on 6
+of 7); no retry, declared before the run; code and model removed, version 5 retired.** Effort about 1.5 h. Odds
+about one in eight (× 0.85 for T32).
 
 **The belief.** In a gap the shape model reads each team alone, so a change of team shows only when a team's shape
 has reorganised, seconds late (A26). One thing is visible from the players at once that no column reads: who is being
@@ -1576,12 +1579,33 @@ fails too (the into-`D` upper quartile +21 against the team ends' +31.5). It reo
 
 ### C2 — The candidate under declared wrong-team slots (a check)
 
-**Status: in progress (13 Nov).** It chooses nothing. Two sensitivity profiles of `generic` with wrong-team slot
+**Status: done 13 Nov 2026 → [A27](results.md): the gains hold (P32 over `p30_w030` +0.0166 under the 0.20
+profile against +0.0162 on `generic`; P30 +0.0139 against +0.0143); the declared wording is not triggered; the
+realised surplus (2.3% at most) was far below ours, so it says nothing about heavier slot errors.** It chooses nothing. Two sensitivity profiles of `generic` with wrong-team slot
 episodes at declared shares of 0.05 and 0.20 (scale 1.0, no Calibration), refused by every tool but `run.py`, rerun
 P30's and P32's gains to size the candidate's largest unseen risk (T32). The grid was declared knowing our measured
 10.8%, so it can never be a setting, a gate or a rank (T01, T54); its result is a stated risk in the technical
 document. Wording declared: under 0.20, if P32's gain over `p30_w030` falls below half its `generic` gain (+0.0081) or
 is negative on either truth, "P32's gain depends on clean slot teams".
+
+## The night's fifth round (13 Nov)
+
+P40's early drop left about two hours before the night's last benchmark, so the advisor allowed a capped fifth round
+at 03:38: at most two proposals on A26's headroom (changes of team inside ball-missing gaps), neither a shape feature
+nor an edge mover where the ball is seen, each with a cheap held-out check before any benchmark. A research agent
+found one candidate.
+
+### P42 — The touch hold stops at ball gaps
+
+**Status: struck 13 Nov 2026 (the advisor), as P29's retry; nothing built.** The idea: `controlled_touch`'s hold 0.60
+carries the last controller across a ball-missing gap, so the visible frames after the gap, before the next control
+episode, still vote for the old team and push the hand-over late; an off-by-default flag would leave them without an
+opinion. The advisor struck it because R032's belief was that the hold should go silent where it is wrong "behind a gap
+or a stoppage", and P42 is its gap half: on 74% of R032's 65,639 frames after a gap `p29_s025` already voted 0.49 to
+0.51 (in effect silent) and missed the bar, while on the other 26% the hold is right 75.6% of the time; its first gate
+could not miss (R032's table: 56.6% right after a gap against 87.7% in sight). What is new is the base (P32's team
+model now speaks where the ball is seen): whether that reopens the hold is Tian's call, with a protocol declared in the
+night's workspace (`rulings-5.md`) in case.
 
 ## Cheap signals worth checking
 

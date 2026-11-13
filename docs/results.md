@@ -64,6 +64,7 @@ two sets of numbers are different benchmarks. Hand labels on this match are not 
 | R038 | 2026-11-13 | P39: `p32_w030` with the shape source silent where the ball is seen (its existing `scope = "gaps"`), so that P32's model, which reads the 42 shape columns itself, does not count them a second time | — | — | — | 0.5878 raw and 0.5807 coarse (mean 0.5843) against `p32_w030`'s 0.5891 and 0.5963 (mean 0.5927) | **dropped**: the bar missed (mean −0.0084; raw −0.0013, p 0.72; coarse −0.0156, p 0.016, lower on all seven matches), the direction R026 predicted and the spec declared; no gate, no retry; config and check removed |
 | R039 | 2026-11-13 | P37: shape features version 4 (version 2 plus each team's time since and until its control episode by the touch rule, capped at 30 s), speaking only in the ball-missing gaps (scope `"visible"` for version 2 where the ball is seen) | — | — | — | — (no config was run: the gate comes first) | **dropped at its gate**: the held-out gap log-loss 0.3206 against at most 0.3059 (version 2 reproduced 0.3189), the hand-over gaps 0.3448 against at most 0.3272 (version 2 0.3402; worse on 6 of 7 matches); no retry (the advisor); code and model removed, the report's gap cells kept |
 | R040 | 2026-11-13 | P35: a turnover hazard (a tree model of a direct change of team within ±12 frames, where the ball is seen) as the hmm decoder's per-frame switch cost, at scale 0 / 0.5 / 1 / 2 on top of `p32_w030` | — | — | — | the pick `p35_s050` 0.5906 raw and 0.5945 coarse (mean 0.5926) against `p32_w030`'s 0.5891 and 0.5963 (mean 0.5927) | **dropped**: the gate passed (held-out AUC 0.910, log-loss 0.2033 against 0.90 × the base rate's 0.3267); the bar missed at every scale (mean −0.0001 to −0.0005): a raw/coarse trade growing with the scale, more possessions; no retry (the advisor); code removed (the model side, then the decoder's team cost at the fourth round's ruling) |
+| R041 | 2026-11-13 | P40: shape features version 5 (version 2 plus, per team, how fast the nearest opponent within 5 m approaches its players: the mean, the 90th percentile and the share above 2 m/s; and the teams' difference now and over 2 s each side), players only, on every frame | — | — | — | — (no config was run: the gate comes first) | **dropped at its gate**: the held-out gap log-loss 0.3140 against at most 0.3059 (version 2 reproduced 0.3189), the hand-over gaps 0.3363 against at most 0.3272 (version 2 0.3402; better on 6 of 7 matches); no retry, declared before the run; code and model removed, version 5 retired |
 
 ### The four yardsticks on every profile, in one table
 
@@ -2535,6 +2536,47 @@ in a gap +13 [−9, +40]; into `D`, both states, −1 [−11, 0].
   upper quartile near a second, and only about 15% fall within ±5. The decoder learns of a hand-over in a gap late.
 - That is P37's target (each team's time since and until its control, in the gaps). P35's hazard, which speaks only
   where the ball is seen (amendment 4), does not reach it.
+
+### A27 — The night's gains under declared wrong-team slots (C2; declared 2026-11-13, 02:50; run 03:35 to 03:44, Tian away, an advisor agent in Tian's place)
+Proposal: C2 (a check of the fourth round; [the spec](superpowers/specs/2026-11-13-p40-c2-design.md), amendment 5) ·
+Code: `bc90fe7`, `003982d` (two sensitivity profiles in `degrade.py`), merged as `97e8086` · Command: `python
+pipeline/benchmark/run.py pipeline/benchmark/configs/p27/p27_final.toml pipeline/benchmark/configs/p30/p30_w030.toml
+pipeline/benchmark/configs/p32/p32_w030.toml --profile generic_swap05|generic_swap20 --seeds 3 --truth both` (at
+`97e8086`) · It trains, chooses, ranks and gates nothing.
+
+**What it asks.** Our tracking puts a slot on the wrong team on at least 10.8% of the graded frames (T32, A07);
+`generic` has none. P30's and P32's sources read the teams' slots (P32 per team: distances, reach times), so a slot on
+the wrong team reads as the other team's player. C2 asks whether the night's gains survive wrong-team slots on DFL.
+
+**How, declared** (the advisor's amendment 5): two profiles, `generic` v1 bit for bit plus wrong-team slot episodes at a
+declared share of 0.05 and 0.20 (round numbers from rare to common; DATA.md says slots "appear, vanish and swap
+identity" and gives no rate), through the existing episode code at scale 1.0, episode lengths from `generic`'s declared
+grid, pairs within the declared 2 m, their own random stream, no Calibration. **The grid was declared knowing our
+measured 10.8%**: it can therefore never be a setting, a gate or a rank (T01, T54), and both profiles are refused by
+every tool except `run.py`. A wording was declared before the run: if under 0.20 P32's gain over `p30_w030` fell below
+half its `generic` gain (+0.0081) or turned negative on either truth, the summary would say "P32's gain depends on clean
+slot teams".
+
+**The run.** Realised (never tuned): at 0.05, 1.9% of graded frames in an episode and 0.8% with a team showing more
+slots than players (the observable surplus); at 0.20, 5.6% and 2.3% (about 45% of the onsets at 0.20 found no pair
+within 2 m and were skipped).
+
+| profile | P30 over `p27_final`: raw, coarse (wins of 7), mean | P32 over `p30_w030`: raw, coarse (wins), mean | both over `p27_final`, mean |
+|---|---|---|---|
+| `generic` | +0.0215 (7), +0.0072 (5), +0.0143 | +0.0262 (7), +0.0062 (6), +0.0162 | +0.0305 |
+| `generic_swap05` | +0.0216 (7), +0.0068 (5), +0.0142 | +0.0264 (7), +0.0062 (6), +0.0163 | +0.0305 |
+| `generic_swap20` | +0.0206 (7), +0.0072 (5), +0.0139 | +0.0267 (7), +0.0066 (6), +0.0166 | +0.0305 |
+
+`p32_w030` itself: raw 0.5891, 0.5896, 0.5873 and coarse 0.5963, 0.5955, 0.5941 under the three profiles; `p32_w030`
+reproduced to the last digit on `generic` in the same chain.
+
+**What it says.**
+- The declared wording is **not triggered**: under 0.20 P32's gain is +0.0166 (at least +0.0081 needed; positive under
+  both truths), and P30's +0.0139.
+- **The limit, stated:** at scale 1.0 the realised surplus (0.8% and 2.3% of the graded frames) is far below the
+  declared rates and below what our tracking shows. C2 says the gains do not depend on perfectly clean slot teams; it
+  says nothing about wrong-team slots as frequent as ours. That risk stays in the technical document's limitations, in
+  words (T32), and only a check on BAR-ATH at adoption, declared before anyone looks, could test it.
 
 ## Experiments
 
@@ -10926,6 +10968,50 @@ The dead ball is predicted on 44.7% of the graded frames by every config; macroF
 edges are already within a few frames (A26), so the hazard can only let the decoder switch more or less often, which
 trades the raw truth against the coarse one. The headroom is in the gaps, where no source tonight has found a signal
 (T59).
+
+### R041 — P40: shape features version 5, opponents' approach: better than version 2 in the gaps, short of its gate, dropped (declared 2026-11-13, 02:50; run 03:12 to 03:28, Tian away, an advisor agent in Tian's place)
+Proposal: P40 · Spec (declared before any run): [2026-11-13-p40-c2-design.md](superpowers/specs/2026-11-13-p40-c2-design.md)
+(amendment 3) · Code: `fd4a05c`, `4d7e16f` (merged as `d4ef852`, `a86f210`), the model `656fba3`; removed in `f740312`,
+recoverable from `656fba3` · Command: `python pipeline/benchmark/p40_sanity.py --matches J03WMX --seeds 1`,
+`train_shape.py --features 5`, then `train_shape.py --features 5 --report` and `--features 2 --report` (at `656fba3`)
+Public: — (nothing of our match was run)
+Validation (P01 benchmark, `generic`, 3 seeds, held out per match): the gate only; no config was benchmarked
+Changed vs `main.toml`: nothing
+Verdict: **dropped at its gate; no retry (declared before the run)**
+
+**The belief.** In a gap the shape model reads each team alone, so a change of team shows only once a team's shape has
+reorganised, seconds late (A26). One thing visible from the players at once is who is being run at: defenders close
+down the carrier and the players near him, and after a turnover the team that lost the ball presses at once (the
+velocity pressure of Bekkers' pressing intensity; the pressure event's ~5 yards). Version 5 adds, per team, for each of
+its players the speed at which the nearest opponent within 5 m approaches (0 if none, NaN for a pair closer than
+0.01 m), as the mean, the 90th percentile and the share above 2 m/s, and the teams' difference of the 90th percentile now
+and over 2 s before and after. The constants were declared, not knobs; players only.
+
+**Declared before the run** (the advisor's ruling of 02:50, amendment 3): a feature sanity step; the gate (i) the gap
+log-loss at most 0.3059 and (ii) on the hand-over gaps at most 0.3272, with version 2's cells reproducing R039's exactly;
+one config `p40_v5`; no retry.
+
+**The run.** The sanity step (J03WMX, seed 0): version 2's 42 columns equal in version 5 (served separately), the nine
+new columns never NaN and never constant (standard deviations 0.07 to 1.21). Training 03:14 to 03:22. The reports (held
+out, seeds pooled; log-loss, accuracy):
+
+| version | alive frames | ball missing (the gate) | hand-over gaps (290,525) | same team (383,579) | unknown (11,143) | touch-episode agreement |
+|---|---|---|---|---|---|---|
+| 2 | 0.3213, 0.8636 | **0.3189**, 0.8645 | 0.3402, 0.8516 | 0.2981, 0.8769 | 0.4804, 0.7712 | 0.8470 |
+| 5 | 0.3152, 0.8676 | **0.3140**, 0.8683 | 0.3363, 0.8542 | 0.2920, 0.8817 | 0.4921, 0.7738 | 0.8529 |
+
+- Version 2 reproduced R039's cells exactly.
+- **Both gates miss**: 0.3140 against at most 0.3059 (0.0049 of the 0.013 needed), and the hand-over gaps 0.3363 against
+  at most 0.3272 (0.0039 of 0.013; better than version 2 on 6 of 7 matches, worse on J03WN1).
+- The touch-episode agreement rose by 0.006, under the +0.02 that T58's warning would have flagged: the columns do not
+  replay the touch rule.
+- No retry, as declared; the benchmark was not run.
+
+**What it says.** Unlike P37's columns, the pressure columns are new information and help where they speak, in the gaps
+and on the hand-overs, on 6 of 7 matches. But the gain is P33's size (0.0049 of gap log-loss against P33's 0.0052), which
+by P30's rate would have moved the benchmark by about +0.002, well under the bar. The gate did its job: it turned away a
+real but small signal before a benchmark that would most likely have read as noise. Shape features look used up as a way
+into the gaps (the advisor's note after P33, R035); version 5 is retired with 3 and 4.
 
 ## Submission log
 
