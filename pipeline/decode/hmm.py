@@ -1,5 +1,6 @@
 """P06's decoder: a three-state hidden Markov model over H, A and D, decoded by Viterbi, once per block; with
-restart_source (P17), D splits into two restart states.
+restart_source (P17), D splits into two restart states; with hazard_source (P35), a change of team costs a price per
+frame.
 
     [decoder]
     kind = "hmm"
@@ -11,6 +12,8 @@ restart_source (P17), D splits into two restart states.
     posterior = false      # true: also return P(H), P(A), P(D) per frame (default false: Decoded.posterior is None)
     restart_source = "restart_team"   # optional: the evidence source whose `home` says who restarts (default: none)
     switch_restart = inf   # nats a restart by the other team costs on top of switch_dead (default inf: forbidden)
+    hazard_source = "hazard"   # optional: the evidence source whose `home` is a turnover hazard (default: none)
+    hazard_scale = 1.0     # with hazard_source: how far the hazard's log-odds move switch_team (default 1.0)
 
 The model
 ---------
@@ -88,6 +91,48 @@ D_H at the block's end), no four-state path scores more than the three-state pat
 picks the twin of the three-state choice. pipeline/selftest.py checks that on random blocks, and the four-state
 decoder against every path of tiny blocks.
 
+Per-frame team cost (P35)
+-------------------------
+With hazard_source naming one of the block's evidence sources, a change of team no longer costs switch_team on every
+frame. The named source's `home` is a hazard z_t: how likely a direct change of team is near frame t, against its base
+rate (turnover_hazard, P35's model, writes z = p / (p + b), so that logit z = log(p / b)). It speaks where the ball is
+seen and is NaN elsewhere. A change between H and A from frame t - 1 to frame t costs
+
+    team_cost[t] = clip(switch_team - hazard_scale * logit(clip(z_t, eps, 1 - eps)), HAZARD_FLOOR, 2 * switch_team)
+
+and exactly switch_team where z_t is NaN. Nothing else changes: a change into or out of D costs switch_dead, the
+minimums, the validity and the tie order are the three states' above, and the emissions are every other source's (the
+named source adds nothing to them, neither its `home` nor its `alive`). HAZARD_FLOOR, 1 nat, keeps a change from ever
+becoming free, and the cap of 2 * switch_team keeps a frame the hazard rules out from becoming a wall that no team
+evidence could climb. Both were declared with P35 and are not knobs.
+
+Which frame's cost. A change from frame t - 1 to frame t costs team_cost[t]: the cost belongs to the first frame of the
+run it starts, and is paid once, however long that run lasts. In the recursion over run starts (below) a run of A
+entered at frame a from H has the entry score L[H][a - 1] - team_cost[a], which Q[a] carries from then on, so the
+running maximum over the starts is the same recursion. team_cost[0] is never read: no change enters a block's first
+frame.
+
+Why. In an input-dependent HMM the cost of a change at t is minus the log of its probability at t. switch_team is that
+cost at the base rate, and z_t moves it by its log-odds against the base rate: a change is cheaper where the evidence of
+a hand-over is strong and dearer where it is weak, and hazard_scale above 1 counts the hazard more than once (the
+emissions are counted several times over, A25, so the right scale in the decoder's units may be above 1).
+
+Off (no hazard_source, the default), viterbi runs the loop it always ran: which of the two loops runs is chosen once,
+before either. A hazard NaN everywhere, a hazard of 0.5, and hazard_scale 0 all cost exactly switch_team on every
+frame, and a team_cost of switch_team on every frame gives the labels of the loop without it, to the label: the same
+candidates in the same order and the same floats. pipeline/selftest.py checks that on random blocks and on exactly
+tied ones, and the priced decoder against every path of tiny blocks.
+
+Refused: hazard_scale without hazard_source (nothing would read it); a hazard_source that names none of the block's
+sources; a scale that is negative, infinite, NaN or not a number; a hazard with restart_source or with
+team_neutral_dead (it prices the three states' changes of team under today's emissions); a hazard with posterior =
+true (marginals takes no per-frame cost); a hazard with switch_team below HAZARD_FLOOR (a frame at the base rate would
+then cost more than switch_team, and hazard_scale 0 would not be the decoder without a hazard); and a weight other than
+1 on the named source (the hazard's strength is hazard_scale, and a weight would be read by nothing).
+pipeline/config.py refuses, before any data is read, a hazard_source that is not a "turnover_hazard" source and a
+"turnover_hazard" source that the decoder does not name (read as an ordinary source, its `home` would vote for the
+home team wherever a change is likely).
+
 Why each parameter exists
 -------------------------
 * switch_team is how many nats of evidence a change of team has to beat. Two changes (out and back) cost twice that,
@@ -105,6 +150,8 @@ Why each parameter exists
   log(2e-6) = -13 nats against a state, more than most switch penalties: it is a numerical guard, not a knob.
 * restart_source and switch_restart are the restart states' (above). switch_restart must be a number > 0 or inf, and
   is refused when given finite without restart_source, where nothing would read it.
+* hazard_source and hazard_scale are the per-frame team cost's (above). hazard_scale must be a finite number >= 0, is
+  1.0 when left out with a source, and is refused without one.
 
 Ties
 ----
@@ -118,6 +165,10 @@ then A, in both places. Three consequences hold the tie rule in place:
 * a change of team across a stretch without evidence lands on the stretch's first frame: the run that ends the
   stretch has the earlier start, because it extends the longer;
 * without restart evidence, D_H's choices are D's: it comes first, so the four states pick the three states' path.
+
+With a per-frame team cost the order is the same. Across a stretch without team evidence the change of team then lands
+on the stretch's cheapest frame, the earliest of them on a tie: where the hazard is silent there (NaN, so switch_team
+on every frame), that is the stretch's first frame, as without it.
 
 How it is solved
 ----------------
@@ -137,6 +188,11 @@ change (a forbidden change is no way in at all), a minimum per state and a tie o
 `restart_viterbi` H, A, D_H and D_A. test_hmm_speed's 80,000 frames with both minimums at 50 take 0.33 s with three
 states and 0.40 to 0.45 s with four (best of three, the machine otherwise idle, 26 Oct 2026).
 
+A per-frame team cost (team_cost, from hazard_costs) is a second copy of the loop, chosen once before it, in which an
+H <-> A candidate is priced at team_cost[frame] instead of its penalty; without one the first copy runs, as it always
+did. test_hmm_hazard_speed's 80,000 frames with a hazard take 1.07 to 1.08 times the decode without it (0.17 s against
+0.16 s, medians of three, 13 Nov 2026).
+
 The posterior
 -------------
 With posterior = true, Decoded.posterior is the (len(block), 3) marginal probability of H, A and D per frame under the
@@ -152,7 +208,8 @@ but not for a probability of 1e-12. The chain costs O(min_possession + min_dead)
 (2 * min_possession + min_dead) * 8 bytes, so it is off by default: the benchmark never asks for it. 80,000 frames with
 both minimums at 50 take about 2 s.
 
-The posterior is the three states' only: posterior = true with restart_source is refused.
+The posterior is the three states' only: posterior = true with restart_source is refused. It has no per-frame team cost
+either: posterior = true with hazard_source is refused.
 
 What it does not do yet
 -----------------------
@@ -185,10 +242,13 @@ RESTART_PREFERENCE = (D_H, D_A, H, A)                  # the tie order with rest
 RESTART_LABELS = np.array([H, A, D, D], dtype=np.int8)  # four-state column -> label code: both dead states are D
 RESTART_LABELS.flags.writeable = False
 CHUNK = 4096                  # frames per step of the posterior's final normalisation: bounds its temporary arrays
+HAZARD_FLOOR = 1.0            # nats: the least a change of team costs under a hazard (P35, declared; not a knob)
+DEFAULT_HAZARD_SCALE = 1.0    # hazard_scale when hazard_source is given without one
 
 
 def decode(ctx, *, switch_team, switch_dead, min_possession=1, min_dead=1, eps=EPS, posterior=False,
-           restart_source=None, switch_restart=math.inf, team_neutral_dead=False):
+           restart_source=None, switch_restart=math.inf, team_neutral_dead=False, hazard_source=None,
+           hazard_scale=None):
     """Decoded(labels) for ctx.block: the best valid path through the block's emissions.
 
     With posterior=True, Decoded.posterior is also the (len(block), 3) marginal probability of H, A and D per frame
@@ -201,6 +261,14 @@ def decode(ctx, *, switch_team, switch_dead, min_possession=1, min_dead=1, eps=E
     With team_neutral_dead (a bool, default False), every `home` term also gives D the larger of the two team terms:
     team evidence ranks H against A and leaves the better of them level with D (the module docstring). It is the three
     states' only, so it is refused with restart_source.
+
+    With hazard_source, the name of one of ctx.evidence's sources, that source's `home` is a hazard z and a change of
+    team into frame t costs hazard_costs(z, switch_team, hazard_scale, eps)[t] instead of switch_team (the module
+    docstring's per-frame team cost); the source adds nothing to the emissions. hazard_scale is a finite number >= 0,
+    None meaning DEFAULT_HAZARD_SCALE. Refused (ValueError): hazard_scale without hazard_source; a hazard_source that is
+    not a non-empty string or names none of the block's sources, or whose source has a weight other than 1; a hazard
+    with restart_source, with team_neutral_dead or with posterior = True; and a hazard with switch_team below
+    HAZARD_FLOOR.
     """
     _check_costs(switch_team, switch_dead, min_possession, min_dead)
     _check_eps(eps)
@@ -212,6 +280,14 @@ def decode(ctx, *, switch_team, switch_dead, min_possession=1, min_dead=1, eps=E
     if team_neutral_dead and restart_source is not None:
         raise ValueError("hmm: team_neutral_dead = true is the three states' only, and restart_source {!r} asks for "
                          "the four restart states; leave one of them out".format(restart_source))
+    hazard_scale = _check_hazard(hazard_source, hazard_scale, switch_team, restart_source, team_neutral_dead,
+                                 posterior)
+    if hazard_source is not None:
+        hazard = _hazard_source(ctx.evidence, hazard_source, len(ctx.block))
+        emissions = log_likelihoods([source for name, source in ctx.evidence.items() if name != hazard_source],
+                                    len(ctx.block), eps)
+        team_cost = hazard_costs(hazard.home, float(switch_team), hazard_scale, eps)
+        return Decoded(labels=viterbi(emissions, switch_team, switch_dead, min_possession, min_dead, team_cost))
     if restart_source is None:
         emissions = log_likelihoods(ctx.evidence.values(), len(ctx.block), eps, bool(team_neutral_dead))
         labels = viterbi(emissions, switch_team, switch_dead, min_possession, min_dead)
@@ -270,6 +346,22 @@ def restart_log_likelihoods(evidence, restart_source, n_frames, eps):
     return emissions
 
 
+def hazard_costs(hazard, switch_team, hazard_scale, eps):
+    """(n_frames,) float64: the nats a change of team into each frame costs under the hazard z = `hazard` (a source's
+    `home`, NaN where it has no opinion), by the rule in the module docstring:
+
+        clip(switch_team - hazard_scale * logit(clip(z, eps, 1 - eps)), HAZARD_FLOOR, 2 * switch_team)
+
+    and exactly switch_team where z is NaN. The arguments are decode's, already checked (switch_team >= HAZARD_FLOOR, so
+    z = 0.5 and hazard_scale 0 give exactly switch_team). Reads the hazard, never writes it.
+    """
+    hazard = np.asarray(hazard, dtype=np.float64)
+    z = np.clip(hazard, eps, 1.0 - eps)                  # a NaN stays NaN, and is replaced below
+    costs = np.clip(switch_team - hazard_scale * np.log(z / (1.0 - z)), HAZARD_FLOOR, 2.0 * switch_team)
+    costs[np.isnan(hazard)] = switch_team
+    return costs
+
+
 def _add_source(emissions, source, n_frames, eps, home=True, neutral_dead=False):
     """Add one source's terms to the (n_frames, 3) `emissions` in place, by the rule in the docstring: its `home` to H
     and A (unless home is False; with neutral_dead, also the larger of the two to D), its `alive` to H, A and D.
@@ -300,14 +392,19 @@ def _add_source(emissions, source, n_frames, eps, home=True, neutral_dead=False)
         emissions[known, D] += weight * np.log(PRIOR_CHANCE * (1.0 - alive))
 
 
-def viterbi(emissions, switch_team, switch_dead, min_possession, min_dead):
+def viterbi(emissions, switch_team, switch_dead, min_possession, min_dead, team_cost=None):
     """int8 labels of a valid path of maximal score through `emissions` ((n_frames, 3), columns H, A, D).
 
-    Valid, scored and tied as the module docstring says. n_frames = 0 gives no labels.
+    Valid, scored and tied as the module docstring says. n_frames = 0 gives no labels. With team_cost, one finite
+    number of nats >= 0 per frame, a change between H and A from frame t - 1 to frame t costs team_cost[t] instead of
+    switch_team (team_cost[0] is never read: no change enters the first frame); ValueError naming what is wrong with its
+    shape or values. None, the default, runs the recursion as it always ran.
     """
     switch_team, switch_dead, min_possession, min_dead = _check_costs(
         switch_team, switch_dead, min_possession, min_dead)
     emissions = _check_emissions(emissions, len(STATES))
+    if team_cost is not None:
+        team_cost = _check_team_cost(team_cost, len(emissions))
     # Every path takes one state per frame, so subtracting a frame's H score from all three states moves every path's
     # score by the same constant: in exact arithmetic that changes no decision. In floats it changes which of several
     # exactly tied paths wins, and that is its purpose: it makes the tie inside a ball gap exact, so that the module
@@ -320,7 +417,7 @@ def viterbi(emissions, switch_team, switch_dead, min_possession, min_dead):
                (switch_team, 0.0, switch_dead),          # from A
                (switch_dead, switch_dead, 0.0))          # from D
     # The columns are the label codes, so the path is the labels.
-    return _best_path(emissions, penalty, (min_possession, min_possession, min_dead), PREFERENCE)
+    return _best_path(emissions, penalty, (min_possession, min_possession, min_dead), PREFERENCE, team_cost)
 
 
 def restart_viterbi(emissions, switch_team, switch_dead, min_possession, min_dead, switch_restart):
@@ -342,11 +439,12 @@ def restart_viterbi(emissions, switch_team, switch_dead, min_possession, min_dea
     return _best_path(emissions, penalty, minimum, RESTART_PREFERENCE)
 
 
-def _best_path(emissions, penalty, minimum, preference):
+def _best_path(emissions, penalty, minimum, preference, team_cost=None):
     """int8 column indices of a valid path of maximal score through `emissions` ((n_frames, k), finite): the recursion
     over run starts of the module docstring, over any k states. penalty[r][s] is what a change from r to s costs (inf:
     forbidden; the diagonal is not read), minimum[s] the shortest run of s, and `preference` the k states in the order a
-    tie is decided. n_frames = 0 gives an empty path.
+    tie is decided. With team_cost (an (n_frames,) float64 array, checked), a change between columns H and A whose new
+    run starts at frame t costs team_cost[t] instead of its penalty. n_frames = 0 gives an empty path.
     """
     n_frames, n_states = emissions.shape
     path = np.empty(n_frames, dtype=np.int8)
@@ -369,21 +467,47 @@ def _best_path(emissions, penalty, minimum, preference):
     entry = [[0.0] * n_frames for _ in states]
     origin = [[0] * n_frames for _ in states]
     started = [[0] * n_frames for _ in states]
-    for frame in range(1, n_frames):
-        mature = [cumulative[state][frame] + best[state] for state in states]  # L[state][frame - 1]
-        for state in states:
-            value, source = -math.inf, preference[0]
-            for other, cost in predecessors[state]:
-                candidate = mature[other] - cost
-                if candidate > value:
-                    value, source = candidate, other
-            entry[state][frame] = value - cumulative[state][frame]
-            origin[state][frame] = source
-        for state in states:
-            first = frame - minimum[state] + 1  # the latest start that has reached the minimum by this frame
-            if first >= 1 and entry[state][first] > best[state]:
-                best[state], start[state] = entry[state][first], first
-            started[state][frame] = start[state]
+    # Which loop runs is chosen here, once: without a per-frame team cost it is the loop as it always was.
+    if team_cost is None:
+        for frame in range(1, n_frames):
+            mature = [cumulative[state][frame] + best[state] for state in states]  # L[state][frame - 1]
+            for state in states:
+                value, source = -math.inf, preference[0]
+                for other, cost in predecessors[state]:
+                    candidate = mature[other] - cost
+                    if candidate > value:
+                        value, source = candidate, other
+                entry[state][frame] = value - cumulative[state][frame]
+                origin[state][frame] = source
+            for state in states:
+                first = frame - minimum[state] + 1  # the latest start that has reached the minimum by this frame
+                if first >= 1 and entry[state][first] > best[state]:
+                    best[state], start[state] = entry[state][first], first
+                started[state][frame] = start[state]
+    else:
+        # The same loop, but a change between H and A into this frame costs team_cost[frame]: the run it starts is
+        # entered at that price, which Q (entry) carries for as long as the run lasts. The same candidates in the same
+        # order and the same strict comparison, so the tie order is the loop's above, and a team_cost equal to the
+        # penalty on every frame gives the same floats and the same path.
+        priced = tuple(tuple((other, cost, (other, state) in ((H, A), (A, H))) for other, cost in predecessors[state])
+                       for state in states)
+        frame_cost = team_cost.tolist()
+        for frame in range(1, n_frames):
+            mature = [cumulative[state][frame] + best[state] for state in states]  # L[state][frame - 1]
+            change = frame_cost[frame]
+            for state in states:
+                value, source = -math.inf, preference[0]
+                for other, cost, team in priced[state]:
+                    candidate = mature[other] - (change if team else cost)
+                    if candidate > value:
+                        value, source = candidate, other
+                entry[state][frame] = value - cumulative[state][frame]
+                origin[state][frame] = source
+            for state in states:
+                first = frame - minimum[state] + 1
+                if first >= 1 and entry[state][first] > best[state]:
+                    best[state], start[state] = entry[state][first], first
+                started[state][frame] = start[state]
 
     # The block's last run needs no minimum, so a run that began fewer than m frames ago may end the path as well.
     final_score, final_state, final_start = -math.inf, preference[0], 0
@@ -526,6 +650,75 @@ def _check_switch_restart(switch_restart):
         raise ValueError("hmm: switch_restart must be a number of nats > 0, or inf (a restart by the team the vote did "
                          "not name is then forbidden), got {!r}".format(switch_restart))
     return float(switch_restart)
+
+
+def _check_hazard(hazard_source, hazard_scale, switch_team, restart_source, team_neutral_dead, posterior):
+    """hazard_scale as a float (DEFAULT_HAZARD_SCALE where None is given with a source; None without a source).
+    ValueError naming hazard_source or hazard_scale, whichever is wrong, or the setting a hazard cannot go with: a scale
+    without a source, a source that is not a non-empty string, a scale that is not a finite number >= 0,
+    restart_source, team_neutral_dead, posterior, and switch_team below HAZARD_FLOOR. Whether the source is one of the
+    block's is _hazard_source's check."""
+    if hazard_source is None:
+        if hazard_scale is not None:
+            raise ValueError("hmm: hazard_scale = {!r} is read only with hazard_source, and none is given; name the "
+                             "evidence source whose `home` is the hazard, or leave hazard_scale out".format(
+                                 hazard_scale))
+        return None
+    if not isinstance(hazard_source, str) or not hazard_source:
+        raise ValueError("hmm: hazard_source must be the name of an evidence source (a non-empty string), or left "
+                         "out, got {!r}".format(hazard_source))
+    if hazard_scale is None:
+        hazard_scale = DEFAULT_HAZARD_SCALE
+    elif (isinstance(hazard_scale, (bool, np.bool_)) or not isinstance(hazard_scale, numbers.Real)
+            or not math.isfinite(hazard_scale) or hazard_scale < 0):
+        raise ValueError("hmm: hazard_scale must be a finite number >= 0 (it multiplies the hazard's log-odds; 0 "
+                         "leaves switch_team on every frame), got {!r}".format(hazard_scale))
+    if restart_source is not None:
+        raise ValueError("hmm: hazard_source {!r} prices the three states' changes of team, and restart_source {!r} "
+                         "asks for the four restart states; leave one of them out".format(hazard_source,
+                                                                                         restart_source))
+    if team_neutral_dead:
+        raise ValueError("hmm: hazard_source {!r} is not written for team_neutral_dead = true (P35 prices the changes "
+                         "of today's emissions); leave one of them out".format(hazard_source))
+    if posterior:
+        raise ValueError("hmm: posterior = true has no per-frame team cost (marginals takes none), and hazard_source "
+                         "{!r} asks for one; leave one of them out".format(hazard_source))
+    if float(switch_team) < HAZARD_FLOOR:
+        raise ValueError("hmm: hazard_source {!r} needs switch_team >= HAZARD_FLOOR ({} nat), got {!r}: below it a "
+                         "frame at the hazard's base rate would cost more than switch_team, and hazard_scale 0 would "
+                         "not be the decoder without a hazard".format(hazard_source, HAZARD_FLOOR, switch_team))
+    return float(hazard_scale)
+
+
+def _hazard_source(evidence, hazard_source, n_frames):
+    """The source of `evidence` (ctx.evidence) named hazard_source, whose `home` is the hazard. ValueError if the block
+    has no such source, if its weight is not 1 (hazard_scale is the hazard's strength: a weight would be read by
+    nothing), or if its length is not the block's."""
+    if hazard_source not in evidence:
+        raise ValueError("hmm: hazard_source {!r} names no evidence source of this block; its sources are {}".format(
+            hazard_source, ", ".join(repr(name) for name in evidence) or "none"))
+    source = evidence[hazard_source]
+    if source.weight != 1.0:
+        raise ValueError("hmm: evidence {!r} is the hazard_source, whose weight is not read: its strength is "
+                         "hazard_scale; leave its weight at 1, got {!r}".format(hazard_source, source.weight))
+    if len(source.home) != n_frames:
+        raise ValueError("hmm: evidence {!r} has {} frames of hazard, the block has {}".format(
+            hazard_source, len(source.home), n_frames))
+    return source
+
+
+def _check_team_cost(team_cost, n_frames):
+    """team_cost as an (n_frames,) float64 array; ValueError naming what is wrong with its shape or values: one finite
+    number of nats >= 0 per frame."""
+    team_cost = np.asarray(team_cost, dtype=np.float64)
+    if team_cost.shape != (n_frames,):
+        raise ValueError("hmm: team_cost must be one number of nats per frame, shape ({},), got shape {}".format(
+            n_frames, team_cost.shape))
+    finite = np.isfinite(team_cost)
+    if not finite.all() or (team_cost < 0).any():
+        raise ValueError("hmm: team_cost must be finite numbers of nats >= 0, but {} of {} values are NaN, infinite "
+                         "or negative".format(int((~finite).sum() + (team_cost[finite] < 0).sum()), team_cost.size))
+    return team_cost
 
 
 def _check_eps(eps):
