@@ -250,6 +250,119 @@ def test_ladder_pairs_are_the_scorers_matching():
     assert close(summary["spell_f1"] + parts, whole, 1e-9), (summary["spell_f1"], parts, whole)
 
 
+def edge_half():
+    """C1's half [10, 590) of N = 600 frames: eleven true possessions, each matched to a clean prediction a few frames off.
+
+    Truth: H [10,50) A [50,90) H [90,130) D A [150,190) D H [210,250) D A [270,310) H [310,350) D A [370,410) D H
+    [430,470) D A [490,530) D H [550,590). Each prediction is its possession with edges moved by (start, end) frames:
+    (0,+3) (+3,+5) (+5,-4) (+7,+2) (-6,+10) (-3,+4) (+4,+6) (+1,-8) (-12,+1) (+20,-5) (+2,0); D elsewhere. Every
+    pair is clean (a possession's prediction overlaps no other spell of its team) with IoU of 0.375 or more.
+    Returns (truth, predicted, the truth's spells' starts, their ends, the starts' errors, the ends' errors).
+    """
+    truth = np.full(N, X, dtype=np.int8)
+    truth[10:590] = D
+    spec = [(10, 50, H, 0, 3), (50, 90, A, 3, 5), (90, 130, H, 5, -4), (150, 190, A, 7, 2), (210, 250, H, -6, 10),
+            (270, 310, A, -3, 4), (310, 350, H, 4, 6), (370, 410, A, 1, -8), (430, 470, H, -12, 1),
+            (490, 530, A, 20, -5), (550, 590, H, 2, 0)]
+    predicted = truth.copy()
+    for start, stop, label, _, _ in spec:
+        truth[start:stop] = label
+    for start, stop, label, ds, de in spec:
+        predicted[start + ds:stop + de] = label
+    return (truth, predicted, [row[0] for row in spec], [row[1] for row in spec],
+            [row[3] for row in spec], [row[4] for row in spec])
+
+
+def edge_mask(gaps):
+    """The ball is seen on every frame of N = 600 except `gaps`."""
+    mask = np.ones(N, dtype=bool)
+    mask[list(gaps)] = False
+    return mask
+
+
+# The ball is missing at the true start of P2, P3, P8 and P9 and on the last frame of P1, P4, P7, P8 and P10.
+EDGE_GAPS = (90, 150, 430, 490, 89, 249, 409, 469, 589)
+CELL = ("n", "median", "q25", "q75", "within_5")
+
+
+def cell(n, median, q25, q75, within):
+    return dict(zip(CELL, (n, median, q25, q75, within)))
+
+
+def test_edges_by_kind_hand_built_half():
+    """C1: every cell of the start and end errors by boundary kind and ball state, worked out by hand.
+
+    Start errors, by the truth's label before the true start and the ball at the true start frame: team seen {+3, +4},
+    team gap {+5}, out_of_d seen {-6, -3, +1, +2}, out_of_d gap {+7, -12, +20}, edge seen {0}, edge gap none. End errors,
+    by the label after the true end and the ball at its last frame: team seen {+3, +4}, team gap {+5}, into_d seen {-4,
+    +2, +6, -5}, into_d gap {+10, -8, +1}, edge gap {0}, edge seen none. Quartiles are numpy's linear ones.
+    """
+    truth, predicted, _, _, start_errors, end_errors = edge_half()
+    half = diagnose.ladder_half(truth, predicted, 10, 590, edge_mask(EDGE_GAPS))
+    assert half["pairs"] == {"clean": 11, "merge": 0, "split": 0, "both": 0}, half["pairs"]
+    summary = diagnose.ladder_summary([half])
+    cells = summary["edges_by_kind"]
+    assert set(cells) == {"start", "end"} and set(cells["start"]) == {"team", "out_of_d", "edge"}, cells.keys()
+    assert set(cells["end"]) == {"team", "into_d", "edge"}, cells["end"].keys()
+    empty = cell(0, None, None, None, None)
+    expected = {
+        "start": {"team": {"seen": cell(2, 3.5, 3.25, 3.75, 1.0), "gap": cell(1, 5.0, 5.0, 5.0, 1.0)},
+                  "out_of_d": {"seen": cell(4, -1.0, -3.75, 1.25, 0.75), "gap": cell(3, 7.0, -2.5, 13.5, 0.0)},
+                  "edge": {"seen": cell(1, 0.0, 0.0, 0.0, 1.0), "gap": empty}},
+        "start_all": {"team": cell(3, 4.0, 3.5, 4.5, 1.0), "out_of_d": cell(7, 1.0, -4.5, 4.5, 3 / 7),
+                      "edge": cell(1, 0.0, 0.0, 0.0, 1.0)},
+        "end_all": {"team": cell(3, 4.0, 3.5, 4.5, 1.0), "into_d": cell(7, 1.0, -4.5, 4.0, 4 / 7),
+                    "edge": cell(1, 0.0, 0.0, 0.0, 1.0)},
+        "end": {"team": {"seen": cell(2, 3.5, 3.25, 3.75, 1.0), "gap": cell(1, 5.0, 5.0, 5.0, 1.0)},
+                "into_d": {"seen": cell(4, -1.0, -4.25, 3.0, 0.75), "gap": cell(3, 1.0, -3.5, 5.5, 1 / 3)},
+                "edge": {"seen": empty, "gap": cell(1, 0.0, 0.0, 0.0, 1.0)}}}
+    for side in ("start", "end"):
+        for kind, want in expected[side + "_all"].items():
+            expected[side][kind]["all"] = want
+        for kind, states in expected[side].items():
+            assert (states["seen"]["n"] + states["gap"]["n"] == states["all"]["n"]
+                    == cells[side][kind]["seen"]["n"] + cells[side][kind]["gap"]["n"]), (side, kind)
+            for state, want in states.items():
+                got = cells[side][kind][state]
+                assert set(got) == set(CELL), (side, kind, state, got)
+                for key in CELL:
+                    if want[key] is None or isinstance(want[key], int):
+                        assert got[key] == want[key], (side, kind, state, key, got)
+                    else:
+                        assert close(got[key], want[key]), (side, kind, state, key, got)
+    # The cells add up to the pooled errors: the same eleven values, in the same quartiles.
+    for side, errors in (("start", start_errors), ("end", end_errors)):
+        assert sum(states["all"]["n"] for states in cells[side].values()) == 11, side
+        pooled = summary["clean_pairs"][side + "_error"]
+        assert pooled == diagnose._errors(errors), (side, pooled)
+    # Two halves pool their cells' counts.
+    twice = diagnose.ladder_summary([half, half])["edges_by_kind"]
+    assert twice["start"]["out_of_d"]["gap"]["n"] == 6 and twice["end"]["edge"]["gap"]["n"] == 2, twice
+    lines = diagnose.render_edges("raw", cells)
+    assert any("out_of_d" in line for line in lines) and any("into_d" in line for line in lines), lines
+
+
+def test_edges_by_kind_leaves_the_rest_unchanged():
+    """C1: without a ball mask the half and its summary are today's, with no edges_by_kind; with one, nothing else
+    moves; a mask of the wrong shape or a half that has one and another that has not is refused."""
+    truth, predicted = codes_of(TRUTH), codes_of(PREDICTED)
+    plain = diagnose.ladder_half(truth, predicted, *HALF)
+    masked = diagnose.ladder_half(truth, predicted, *HALF, np.ones(N, dtype=bool))
+    assert "clean_edges" not in plain and "edges_by_kind" not in diagnose.ladder_summary([plain]), plain
+    assert {key: value for key, value in masked.items() if key != "clean_edges"} == plain, (masked, plain)
+    without = diagnose.ladder_summary([plain])
+    with_mask = diagnose.ladder_summary([masked])
+    assert {key: value for key, value in with_mask.items() if key != "edges_by_kind"} == without, with_mask
+    # The hand-built half's two clean pairs: g0 starts at 100 = HALF[0], an edge start; g4's start follows D; both
+    # end before D.
+    cells = with_mask["edges_by_kind"]
+    assert cells["start"]["edge"]["seen"]["n"] == 1 and cells["start"]["out_of_d"]["seen"]["n"] == 1, cells
+    assert cells["end"]["into_d"]["seen"]["n"] == 2 and cells["end"]["team"]["seen"]["n"] == 0, cells
+    expect_error(ValueError, lambda: diagnose.ladder_half(truth, predicted, *HALF, np.ones(N - 1, dtype=bool)),
+                 "ball_present", "shape")
+    expect_error(ValueError, lambda: diagnose.ladder_summary([plain, masked]), "ladder_summary", "ball_present")
+
+
 # -- the calibration --------------------------------------------------------------------------------------------------
 
 def test_calibration_recovers_known_miscalibration():
@@ -449,6 +562,10 @@ def test_diagnose_end_to_end_on_synthetic_matches():
         assert report["profile"]["name"] == "gaps" and report["seeds"] == [0], report
         assert report["matches"] == sorted(matches) and report["dropped_match_only"] == [], report
         assert set(report["ladder"]) == {"raw", "coarse", "mean"}, report["ladder"]
+        for name in ("raw", "coarse"):
+            ladder = report["ladder"][name]
+            for side in ("start", "end"):
+                assert sum(states["all"]["n"] for states in ladder["edges_by_kind"][side].values())                     == ladder["clean_pairs"]["n"], (name, side, ladder["edges_by_kind"][side])
         runner = benchmark_run.evaluate_truths([path], profile="gaps", seeds=1, matches=matches,
                                                calibration=synthetic_calibration(), data_dir=root, log=quiet)
         for name in ("raw", "coarse"):
