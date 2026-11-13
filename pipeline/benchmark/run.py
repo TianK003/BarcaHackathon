@@ -138,6 +138,11 @@ METRICS = (("spell_f1_mean", "spellF1"), ("macro_f1", "macroF1"))   # what a com
 # printout and the report of a run on it say so (R005: context fails two of its gates).
 SENSITIVITY_ONLY = {"context": "fails two of its gates (R005), the near-line share badly and the missing share "
                                "narrowly: a sensitivity check, not the yardstick"}
+# C2's two profiles (degrade.SENSITIVITY_PROFILES) are described apart, so that SENSITIVITY_ONLY stays context's: name ->
+# the note that the printout and the report carry. They choose nothing: no tool but this runner accepts them.
+SWAP_NOTES = {name: "is a sensitivity profile (C2): generic v1 plus wrong-team slot episodes at a declared {:.2f}; a "
+                    "description that trains, chooses, ranks and gates nothing, its grid declared knowing our measured "
+                    "share".format(share) for name, share in degrade.SENSITIVITY_PROFILES.items()}
 # What _unavailable adds when the source that asked for the missing asset is one that declares MATCH_ONLY.
 DROP_HINT = (" Run with --drop-match-only to benchmark the config without its match-only sources (they are "
              "listed in the report).")
@@ -203,8 +208,9 @@ def make_atd(match, profile, seed, calibration=None):
 
 
 def _check_profile(profile):
-    if profile not in PROFILES:
-        raise BenchmarkError("profile {!r} is not one of: {}".format(profile, ", ".join(sorted(PROFILES))))
+    if profile not in PROFILES and profile not in degrade.SENSITIVITY_PROFILES:
+        raise BenchmarkError("profile {!r} is not one of: {}".format(
+            profile, ", ".join(sorted(PROFILES) + sorted(degrade.SENSITIVITY_PROFILES))))
 
 
 # -- every config on every match --------------------------------------------------------------------------------------
@@ -297,7 +303,14 @@ def evaluate_truths(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_ids
                   "graded_frames": int(sum(stop - start for _, start, stop in match.graded)), "fps": int(match.fps),
                   "carried_frames": int(carried["carried_possession_frames"] + carried["carried_status_frames"])}
         for seed in seed_list:
-            atd = make_atd(match, profile, seed, calibration)
+            if profile in degrade.SENSITIVITY_PROFILES:
+                atd, drawn = degrade.degrade(degrade.tracking_view(match), profile, calibration, seed)
+                swap = record.setdefault("swap", {"rows": 0, "episode_rows": 0, "surplus_rows": 0})
+                swap["rows"] += drawn["swap"]["graded_rows"]
+                swap["episode_rows"] += drawn["swap"]["episode_rows"]
+                swap["surplus_rows"] += drawn["swap"]["surplus_frames"]
+            else:
+                atd = make_atd(match, profile, seed, calibration)
             inputs = match_inputs.MatchInputs(match, atd, profile=profile, seed=seed, data_dir=data_dir)
             if seed == seed_list[0]:
                 record["sources"] = inputs.atd_manifest["sources"]
@@ -310,6 +323,10 @@ def evaluate_truths(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_ids
                                                                     match.match_id, seed)
                 seconds[config.stem] += time.perf_counter() - started
             del atd, inputs, codes
+        if "swap" in record:      # C2: the realised shares over the seeds, aggregates only, never tuned
+            swap = record["swap"]
+            record["swap"] = {"episode_share": swap["episode_rows"] / swap["rows"],
+                              "surplus_share": swap["surplus_rows"] / swap["rows"]}
         records.append(record)
         log("match     {}   {:,} rows, {:,} graded   truth {}".format(
             record["id"], record["frames"], record["graded_frames"], "+".join(truth_names)))
@@ -505,6 +522,8 @@ def _report(config, halves, records, seed_list, profile, truth, git, environment
     }
     if profile["name"] in SENSITIVITY_ONLY:
         report["sensitivity_only"] = SENSITIVITY_ONLY[profile["name"]]      # only for a profile that is one
+    elif profile["name"] in SWAP_NOTES:
+        report["sensitivity_only"] = SWAP_NOTES[profile["name"]]
     return plain(report)
 
 
@@ -663,6 +682,15 @@ def render(result):
                  len(ids), git["commit"] or "?", " +dirty" if git["dirty"] else "")]
     if profile["name"] in SENSITIVITY_ONLY:
         lines.append("note      profile {} {}".format(profile["name"], SENSITIVITY_ONLY[profile["name"]]))
+    elif profile["name"] in SWAP_NOTES:
+        lines.append("note      profile {} {}".format(profile["name"], SWAP_NOTES[profile["name"]]))
+    if any("swap" in record for record in result["matches"]):
+        rows = [record["swap"] for record in result["matches"]]
+        lines.append("swap      realised episode share {} (declared {}), observable surplus share {} (mean of the "
+                     "matches; reported, never tuned or rescaled)".format(
+                         _number(sum(r["episode_share"] for r in rows) / len(rows)),
+                         degrade.SENSITIVITY_PROFILES[profile["name"]],
+                         _number(sum(r["surplus_share"] for r in rows) / len(rows))))
     if result["calibration"] is not None:
         lines.append("calibration   {}... (version {}): {}".format(
             result["calibration"]["sha256"][:12], result["calibration"]["version"], PROVENANCE[profile["name"]]))
@@ -771,7 +799,7 @@ def profile_help():
     """The --profile help: the profiles, the default, and which of them are a sensitivity check and not the
     yardstick."""
     return "how the tracking is made: {} (default {}){}".format(
-        ", ".join(sorted(PROFILES)), DEFAULT_PROFILE,
+        ", ".join(sorted(PROFILES) + sorted(degrade.SENSITIVITY_PROFILES)), DEFAULT_PROFILE,
         "".join("; {} {}".format(name, reason) for name, reason in sorted(SENSITIVITY_ONLY.items())))
 
 

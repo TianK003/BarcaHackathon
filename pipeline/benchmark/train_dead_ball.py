@@ -93,7 +93,7 @@ if __name__ == "__main__":
 import numpy as np  # noqa: E402
 
 from pipeline.benchmark import calibration as calibration_module  # noqa: E402
-from pipeline.benchmark import dfl, hazard, run  # noqa: E402
+from pipeline.benchmark import degrade, dfl, hazard, run  # noqa: E402
 from pipeline.benchmark import inputs as match_inputs  # noqa: E402
 from pipeline.benchmark import truth as truths  # noqa: E402
 from pipeline.benchmark.run import BenchmarkError, make_atd  # noqa: E402
@@ -162,6 +162,9 @@ def gather(profile, seeds, stride, matches=None, calibration=None, data_dir=None
     """
     seeds = _whole("seeds", seeds, 1)
     _whole("stride", stride, 1)
+    refused = degrade.sensitivity_refusal(profile, "train_dead_ball")
+    if refused:
+        raise BenchmarkError(refused)
     if profile not in run.PROFILES:
         raise BenchmarkError("train_dead_ball: profile {!r} is not one of: {}".format(profile,
                                                                                       ", ".join(sorted(run.PROFILES))))
@@ -545,6 +548,9 @@ def rule_values(counts):
 def measure_rules(profile, seeds, matches=None, calibration=None, data_dir=None, match_ids=None, log=None):
     """The counts of `count_triggers`, summed over every match and seed of `profile`."""
     seeds = _whole("seeds", seeds, 1)
+    refused = degrade.sensitivity_refusal(profile, "train_dead_ball")
+    if refused:
+        raise BenchmarkError(refused)
     if profile not in run.PROFILES:
         raise BenchmarkError("train_dead_ball: profile {!r} is not one of: {}".format(profile,
                                                                                       ", ".join(sorted(run.PROFILES))))

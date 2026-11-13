@@ -76,7 +76,7 @@ if __name__ == "__main__":
 import numpy as np  # noqa: E402
 
 from pipeline.benchmark import calibration as calibration_module  # noqa: E402
-from pipeline.benchmark import dfl, run  # noqa: E402
+from pipeline.benchmark import degrade, dfl, run  # noqa: E402
 from pipeline.benchmark import truth as truths  # noqa: E402
 from pipeline.benchmark.run import BenchmarkError  # noqa: E402
 from pipeline.benchmark.train_dead_ball import (  # noqa: E402
@@ -747,6 +747,9 @@ def _whole(name, value, minimum):
 
 
 def _known_profile(profile):
+    refused = degrade.sensitivity_refusal(profile, "train_team")
+    if refused:
+        raise BenchmarkError(refused)
     if profile not in run.PROFILES:
         raise BenchmarkError("train_team: profile {!r} is not one of: {}".format(profile,
                                                                                  ", ".join(sorted(run.PROFILES))))

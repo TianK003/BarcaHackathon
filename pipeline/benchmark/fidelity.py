@@ -210,6 +210,9 @@ def report(profile, seeds=DEFAULT_SEEDS, match_ids=None, matches=None, calibrati
     nothing) or that is not one, for seeds below 1, for a calibration that is not a Calibration, and for count gates
     with no full-strength frame to measure; run.BenchmarkError for matches that are not as asked.
     """
+    refused = degrade.sensitivity_refusal(profile, "fidelity")
+    if refused:
+        raise FidelityError(refused)
     if profile not in degrade.PROFILES:
         raise FidelityError("profile {!r} is not one of: {}".format(profile, ", ".join(sorted(degrade.PROFILES))))
     if profile not in GATES:

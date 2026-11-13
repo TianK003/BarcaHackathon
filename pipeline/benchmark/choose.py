@@ -49,7 +49,7 @@ if __name__ == "__main__":
     sys.path[0] = ROOT
 
 import games  # noqa: E402
-from pipeline.benchmark import run, score  # noqa: E402
+from pipeline.benchmark import degrade, run, score  # noqa: E402
 
 # Params
 TIE_BAND = 0.005                 # spellF1: the configs within this of the best objective are tied (R008 to R013, R024)
@@ -110,6 +110,9 @@ def choose(stems, reference, profile=run.DEFAULT_PROFILE, band=TIE_BAND, data_di
     the two truths' `metric`, the tie-break the larger min(raw, coarse), and every row, `versus` and both lomo rules
     gain a "mean" entry (_mean_compare's, for the deltas). The result says which, under "objective".
     """
+    refused = degrade.sensitivity_refusal(profile, "choose")
+    if refused:
+        raise ChooseError(refused)
     if metric not in METRICS:
         raise ChooseError("metric must be one of {}; got {!r}".format(sorted(METRICS), metric))
     if objective not in OBJECTIVES:
