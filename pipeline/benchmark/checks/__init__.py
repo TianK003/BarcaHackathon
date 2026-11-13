@@ -105,6 +105,9 @@ module of its topic:
     team.py      P32's team model where the ball is seen (train_team) and its four configs (synthetic and config files)
     p34.py       train_shape's report: the coarse-truth cells kept from P34 (dropped, R036) (synthetic only)
     p38.py       P38: play features version 2 for the dead-ball onset, its config (synthetic and config files)
+    p40.py       P40: the config p40_v5 (p32_w030 but for the shape model's path), the trainer's version 5 file, and the
+                 feature sanity step (p40_sanity) on a synthetic match: aggregates only, and exit 1 on a bad column
+                 (synthetic and config files)
     harness.py   the harness itself: what it collects, how it reports NOT RUN, the console set-up, and that no check
                  module imports another one
     common.py    what several modules share, and no checks of its own: the synthetic DFL match, the random one
@@ -131,9 +134,9 @@ what two of them share goes to common.py (test_a_check_module_imports_no_other_c
 
 from pipeline.benchmark.checks import (
     calibration, cap, choose, context, conventions, dead_ball, degrade, dfl, dfl_events, diagnose, fidelity, generic,
-    harness, hazard, headroom, inputs, label_diff, metrica, p27, p29, p30, p31, p34, p38, restarts, run,
+    harness, hazard, headroom, inputs, label_diff, metrica, p27, p29, p30, p31, p34, p38, p40, restarts, run,
     score, shape, sources, tag_stats, team, tracking, touch, truth, wrong_team)
 
 MODULES = (sources, dfl, dfl_events, truth, inputs, score, run, choose, hazard, calibration, degrade, cap, tracking, context,
            generic, fidelity, headroom, touch, dead_ball, conventions, restarts, shape, label_diff, wrong_team,
-           tag_stats, metrica, diagnose, p27, p29, p30, p31, team, p34, p38, harness)
+           tag_stats, metrica, diagnose, p27, p29, p30, p31, team, p34, p38, p40, harness)

@@ -1,5 +1,5 @@
 """P07's per-frame features of the two teams' shape and movement, none of which reads the ball. Twenty-six numbers
-(version 1), or forty-two with P30's version 2.
+(version 1), forty-two with P30's version 2, or fifty-one with P40's version 5.
 
 The ball is missing from the tracking on 41% of the graded frames, in long gaps (a median 10.7 s, docs/results.md A01,
 T12), and those are the frames nothing else says who has it on. A team in possession is more advanced, wider, and
@@ -40,8 +40,27 @@ The one-sided changes are windows of the same block (nothing reads across half t
 a team's absence included; like `d_adv_ks` they are the trees' missing value there. `features(inputs, version)` takes
 the version (1 by default) and `feature_names(version)` and `columns(version)` give its names and indices.
 
-Versions 3 (P33, git history 411b881) and 4 (P37, git history 963861b) were dropped at their gates and are retired: they
+Versions 3 (P33, git history a92000e) and 4 (P37, git history 963861b) were dropped at their gates and are retired: they
 are never reused for another matrix, and `feature_names`, `features` and the model loader refuse them.
+
+Version 5 (P40) is version 2's 42 columns, copied and not recomputed, plus three per team after its twenty (`h_*` 23,
+`a_*` 23) and three cross columns after `adv_gap` and `n_diff` (51 in all): who is being run at. For every present slot
+i of a team, j is its nearest present slot of the other team; `approach_i` is the component of j's velocity (from
+`kinematics`, players only: version 5 reads no ball) towards i, v_j . (p_i - p_j) / |p_i - p_j|, in m/s, when j is
+within PRESS_RADIUS_M of i (the ~5 yards of an event provider's pressure event), 0 when no opponent is that close, and
+NaN when j has no velocity (a one-frame run) or the pair is closer than PRESS_MIN_PAIR_M (a duplicated track, DATA.md,
+whose direction is undefined). It is asymmetric on purpose: who moves towards whom.
+
+    press_mean              mean of approach_i over the team's slots that have a value
+    press_p90               their 90th percentile (numpy's linear rule): the two or three most approached players, and
+                            not the maximum (T32)
+    press_share             the share of them with approach_i >= PRESS_SPEED_MS (faster than a walk)
+
+    press_gap               h_press_p90 - a_press_p90 (antisymmetric, so `swap` negates it)
+    press_gap_past_2s,      its means over the PRESS_WINDOW_S before and after the frame (the frame included), clipped
+    press_gap_fut_2s        to the block, NaN without a finite value
+
+The three constants are declared, not tuned. The three team columns are NaN when the team has no slot with a value.
 
 Each team is seen in its own frame. A team's `adv` is x or L - x, whichever points at the goal it attacks, so no column
 carries "home is on the left" or "home is Barcelona": the classifier cannot learn a home bias from the geometry, and
@@ -80,7 +99,7 @@ from pipeline.evidence import kinematics, play_features
 
 # Params
 FEATURE_VERSION = 1
-VERSIONS = (1, 2)                                         # 3 (P33, git history 411b881) and 4 (P37, git history
+VERSIONS = (1, 2, 5)                                      # 3 (P33, git history a92000e) and 4 (P37, git history
                                                           # 963861b) are retired and never reused; refused like any other
 TEAM_COLUMNS = ("n", "adv_mean", "adv_p10", "adv_p90", "width", "vel_adv", "speed_mean", "att_third", "own_third",
                 "d_adv_1s", "d_adv_2s", "vel_adv_1s")
@@ -92,6 +111,15 @@ TEAM_COLUMNS_V2 = TEAM_COLUMNS + ("length", "spread") + tuple(
     "adv_{}_{}s".format(side, int(seconds)) for side in ("past", "fut") for seconds in ONE_SIDED_S)
 FEATURE_NAMES_V2 = (tuple("h_" + name for name in TEAM_COLUMNS_V2) + tuple("a_" + name for name in TEAM_COLUMNS_V2)
                     + CROSS_COLUMNS)
+PRESS_COLUMNS = ("press_mean", "press_p90", "press_share")                  # version 5, per team
+PRESS_CROSS = ("press_gap", "press_gap_past_2s", "press_gap_fut_2s")        # version 5, antisymmetric
+TEAM_COLUMNS_V5 = TEAM_COLUMNS_V2 + PRESS_COLUMNS
+FEATURE_NAMES_V5 = (tuple("h_" + name for name in TEAM_COLUMNS_V5) + tuple("a_" + name for name in TEAM_COLUMNS_V5)
+                    + CROSS_COLUMNS + PRESS_CROSS)
+PRESS_RADIUS_M = 5.0                                      # version 5: an opponent this close is "at" the slot
+PRESS_SPEED_MS = 2.0                                      # version 5: approach at or above this counts for the share
+PRESS_WINDOW_S = 2.0                                      # version 5: seconds either side for the one-sided gaps
+PRESS_MIN_PAIR_M = 0.01                                   # version 5: a closer pair is a duplicated track: NaN
 LOW_PERCENTILE, HIGH_PERCENTILE = 10.0, 90.0
 DISPLACEMENT_S = (("d_adv_1s", 1.0), ("d_adv_2s", 2.0))   # seconds either side of the frame
 VELOCITY_WINDOW_S = 1.0                                   # vel_adv_1s: seconds either side of the frame
@@ -99,15 +127,18 @@ CHUNK = 1024                                              # frames per step of t
 
 COLUMN = {name: index for index, name in enumerate(FEATURE_NAMES)}
 TEAM_WIDTH = len(TEAM_COLUMNS)
-_NAMES = {1: FEATURE_NAMES, 2: FEATURE_NAMES_V2}
-_BLOCK_OF_WIDTH = {len(_NAMES[1]): TEAM_WIDTH, len(_NAMES[2]): len(TEAM_COLUMNS_V2)}   # matrix width -> a team's block
+_NAMES = {1: FEATURE_NAMES, 2: FEATURE_NAMES_V2, 5: FEATURE_NAMES_V5}
+_BLOCK_OF_WIDTH = {len(_NAMES[1]): TEAM_WIDTH, len(_NAMES[2]): len(TEAM_COLUMNS_V2),
+                   len(_NAMES[5]): len(TEAM_COLUMNS_V5)}   # matrix width -> a team's block; live versions only
 _MEMO = weakref.WeakKeyDictionary()                       # Inputs -> {version: (names, X)}
 
 
 def feature_names(version):
-    """The column names of a feature version (1: FEATURE_NAMES, 2: FEATURE_NAMES_V2); refuses any other version."""
+    """The column names of a feature version (1: FEATURE_NAMES, 2: FEATURE_NAMES_V2, 5: FEATURE_NAMES_V5); refuses any
+    other version, 3 and 4 (retired) included."""
     if type(version) is not int or version not in VERSIONS:      # not True or 2.0, which `in` would let through
-        raise ValueError("shape_features: version must be one of {}, got {!r}".format(VERSIONS, version))
+        raise ValueError("shape_features: version must be one of {} (3 and 4 are retired), got {!r}".format(
+            VERSIONS, version))
     return _NAMES[version]
 
 
@@ -117,21 +148,24 @@ def columns(version):
 
 
 def features(inputs, version=1):
-    """(names, X): the names of `version` and its (n, 26) or (n, 42) float64 feature matrix of `inputs`, read-only,
-    memoised per object and version. Version 2 holds version 1's columns, unchanged. Refuses any other version."""
+    """(names, X): the names of `version` and its (n, 26), (n, 42) or (n, 51) float64 feature matrix of `inputs`,
+    read-only, memoised per object and version. Version 2 holds version 1's columns, unchanged, and version 5 version
+    2's. Refuses any other version."""
     feature_names(version)
     memo = _MEMO.setdefault(inputs, {})
     if version not in memo:
         if 1 not in memo:
             memo[1] = (FEATURE_NAMES, _build(inputs))
-        if version == 2:
+        if version >= 2 and 2 not in memo:
             memo[2] = (FEATURE_NAMES_V2, _build_v2(inputs, memo[1][1]))
+        if version == 5:
+            memo[5] = (FEATURE_NAMES_V5, _build_v5(inputs, memo[2][1]))
     return memo[version]
 
 
 def swap(X):
     """A new array: the features of the same frames with the two teams relabelled, from the features X (..., 26) of
-    version 1 or (..., 42) of version 2; refuses any other width.
+    version 1, (..., 42) of version 2 or (..., 51) of version 5; refuses any other width.
 
     The `h_*` and `a_*` blocks trade places and the two cross columns change sign. Applied twice it is the identity.
     """
@@ -191,6 +225,73 @@ def _build_v2(inputs, X1):
                     X[start:stop - k, column["{}adv_fut_{}s".format(prefix, int(seconds))]] = change
     X.flags.writeable = False
     return X
+
+
+def _build_v5(inputs, X2):
+    """The (n, 51) matrix of version 5: X2's columns copied into their places and the pressure columns filled in."""
+    players = kinematics.player_track(inputs)
+    blocks = kinematics.blocks(inputs)
+    teams = np.asarray(inputs.atd.slot_team)
+    column = columns(5)
+    X = np.full((len(X2), len(FEATURE_NAMES_V5)), np.nan)
+    for index, name in enumerate(FEATURE_NAMES_V2):
+        X[:, column[name]] = X2[:, index]
+    for team, prefix in ((0, "h_"), (1, "a_")):
+        slots, others = np.flatnonzero(teams == team), np.flatnonzero(teams != team)
+        for start, stop in blocks:
+            if stop > start and len(slots):
+                _press_columns(X[start:stop], players, slots, others, start, column, prefix)
+    gap = X[:, column["h_press_p90"]] - X[:, column["a_press_p90"]]
+    X[:, column["press_gap"]] = gap
+    k = int(round(PRESS_WINDOW_S * inputs.fps))
+    valid = np.isfinite(gap)
+    X[:, column["press_gap_past_2s"]] = kinematics.window_mean(gap, valid, blocks, k, 0)
+    X[:, column["press_gap_fut_2s"]] = kinematics.window_mean(gap, valid, blocks, 0, k)
+    X.flags.writeable = False
+    return X
+
+
+def _press_columns(out, players, slots, others, start, column, prefix):
+    """press_mean, press_p90 and press_share of one team in one block (`out` a view, the block's rows), a chunk of
+    frames at a time; NaN on a frame where no slot of the team has an approach."""
+    for low in range(0, len(out), CHUNK):
+        high = min(low + CHUNK, len(out))
+        approach = approach_of(players, slots, others, slice(start + low, start + high))
+        known = np.isfinite(approach)
+        count = known.sum(axis=1)
+        safe = np.maximum(count, 1)
+        mean = np.where(known, approach, 0.0).sum(axis=1) / safe
+        out[low:high, column[prefix + "press_mean"]] = _where_any(count, mean)
+        out[low:high, column[prefix + "press_p90"]] = _percentiles(approach, count, (HIGH_PERCENTILE,))[0]
+        with np.errstate(invalid="ignore"):
+            fast = (approach >= PRESS_SPEED_MS).sum(axis=1)
+        out[low:high, column[prefix + "press_share"]] = _where_any(count, fast / safe)
+
+
+def approach_of(players, slots, others, rows):
+    """(m, len(slots)) float64: each slot's approach on the frames `rows`, as the module docstring defines it. NaN where
+    the slot is absent, where its nearest opponent (within PRESS_RADIUS_M) has no velocity, and where that pair is
+    closer than PRESS_MIN_PAIR_M; 0 where no present opponent is within PRESS_RADIUS_M."""
+    present = np.ascontiguousarray(players.present[rows][:, slots])
+    if len(others) == 0:
+        return np.where(present, 0.0, np.nan)
+    xy = np.ascontiguousarray(players.xy_m[rows][:, slots])
+    other_present = np.ascontiguousarray(players.present[rows][:, others])
+    other_xy = np.ascontiguousarray(players.xy_m[rows][:, others])
+    other_vel = np.ascontiguousarray(players.vel[rows][:, others])
+    frame = np.arange(len(xy))[:, None]
+    with np.errstate(all="ignore"):
+        delta = xy[:, :, None, :] - other_xy[:, None, :, :]              # (m, own, other, 2): from j to i
+        distance = np.where(other_present[:, None, :], np.hypot(delta[..., 0], delta[..., 1]), np.inf)
+        nearest = distance.argmin(axis=2)                                # (m, own); NaN rows (absent slots) are masked
+        d = distance[frame, np.arange(len(slots))[None, :], nearest]
+        direction = xy - other_xy[frame, nearest]                        # p_i - p_j
+        v = other_vel[frame, nearest]
+        towards = (v[..., 0] * direction[..., 0] + v[..., 1] * direction[..., 1]) / d
+        close = d <= PRESS_RADIUS_M                                      # False for inf: no opponent is present
+        value = np.where(close, towards, 0.0)
+        value = np.where(close & (d < PRESS_MIN_PAIR_M), np.nan, value)  # a duplicated track has no direction
+    return np.where(present, value, np.nan)
 
 
 def _spread_column(out, players, slots, start):
