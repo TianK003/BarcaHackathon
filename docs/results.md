@@ -10832,7 +10832,7 @@ This is R026's finding again (the gap evidence must not grow against the seen fr
 
 ### R039 — P37: shape features version 4, each team's time since and until its control, for the gaps: both gates miss, dropped (declared 2026-11-13, 01:05; run 01:52 to 02:04, Tian away, an advisor agent in Tian's place)
 Proposal: P37 · Spec (declared before any run): [2026-11-13-p35-p39-design.md](superpowers/specs/2026-11-13-p35-p39-design.md)
-(amendment 5) · Code: `106ca0c`, `ed29ae2` (merged as `0e8cc43`), the model `963861b`; removed in DROP37, recoverable
+(amendment 5) · Code: `106ca0c`, `ed29ae2` (merged as `0e8cc43`), the model `963861b`; removed in `22a988e`, recoverable
 from `963861b` · Command: `python pipeline/benchmark/train_shape.py --features 4`, then `train_shape.py --features 4
 --report` and `--features 2 --report` (at `963861b`)
 Public: — (nothing of our match was run)
