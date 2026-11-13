@@ -61,6 +61,7 @@ two sets of numbers are different benchmarks. Hand labels on this match are not 
 | R035 | 2026-11-13 | P33: shape features version 3 (one-sided compactness over 5 s, the advance over 20 s, the teams' differences of the one-sided advance changes; 60 columns) at weight 0.3 / 0.45 | — | — | — | the pick `p33_w030` 0.5616 raw and 0.5934 coarse (mean 0.5775) against `p30_w030`'s 0.5629 and 0.5901 (mean 0.5765) | **dropped**: the gate passed by 0.0002 (gap log-loss 0.3137 against 0.3139), the bar missed (mean +0.0010, p 0.44); no retry; code removed |
 | R036 | 2026-11-13 | P34: the version 2 shape model trained on both truths' labels (weighted half each where they differ) | — | — | — | — (no config was run: the gate comes first) | **dropped at its sanity gate**: the mean of the raw and coarse held-out gap log-losses fell 0.0007 against the 0.003 needed (raw +0.0075, coarse −0.0088: a trade along the grain); no retry; code removed, the report's coarse cells kept |
 | R037 | 2026-11-13 | P32: P19's team model where the ball is seen, restored and retrained on `generic` with the ball's direction (team features version 2, 72 columns), at weight 0.075 / 0.15 / 0.30 / 0.60 on top of `p30_w030` | — | — | — | **the pick `p32_w030` 0.5891 raw and 0.5963 coarse (mean 0.5927)** against `p30_w030`'s 0.5629 and 0.5901, and `p27_final`'s 0.5414 and 0.5829 | **cleared the bar** against `p30_w030` (mean +0.0162, p 0.016, all seven matches; raw +0.0262, coarse +0.0062); the gate passed (feasibility log-loss 0.2088 against 0.2700, below the rule's on 7 of 7); the night's candidate `pipeline/configs/candidates/p32_team_model.toml`, stacked on P30; **not adopted: Tian decides** |
+| R038 | 2026-11-13 | P39: `p32_w030` with the shape source silent where the ball is seen (its existing `scope = "gaps"`), so that P32's model, which reads the 42 shape columns itself, does not count them a second time | — | — | — | 0.5878 raw and 0.5807 coarse (mean 0.5843) against `p32_w030`'s 0.5891 and 0.5963 (mean 0.5927) | **dropped**: the bar missed (mean −0.0084; raw −0.0013, p 0.72; coarse −0.0156, p 0.016, lower on all seven matches), the direction R026 predicted and the spec declared; no gate, no retry; config and check removed |
 
 ### The four yardsticks on every profile, in one table
 
@@ -10756,6 +10757,44 @@ ours show them on at least 10.8% of the graded frames (T32): the model reads per
 each team's slots, so a slot on the wrong team is read as the other team's player; how much that costs on our match is
 unmeasured. The model was trained on other teams' matches, and `generic`'s gaps ignore the play (T38, T39). The
 decoder's constants and the shift were chosen in R030 without this source.
+
+### R038 — P39: the shape vote silent where the ball is seen, on top of P32: the coarse truth loses on every match, dropped (declared 2026-11-13, 01:05; run 2026-11-13, Tian away, an advisor agent in Tian's place)
+Proposal: P39 · Spec (declared before any run): [2026-11-13-p35-p39-design.md](superpowers/specs/2026-11-13-p35-p39-design.md)
+· Code: none (a config of existing sources, `pipeline/benchmark/configs/p39/p39_seen_off.toml`, and its pin check
+`checks/p39.py`, both in `565d43e`; removed in `ce115bb`) · Command: `python pipeline/benchmark/run.py
+pipeline/benchmark/configs/p32/p32_w030.toml pipeline/benchmark/configs/p39/p39_seen_off.toml --profile generic --seeds
+3 --truth both` (at `565d43e`), then `p29_bar.py bar --reference p32_w030 p39_seen_off`
+Public: — (nothing of our match was run)
+Validation (P01 benchmark, `generic`, 3 seeds), against the night's candidate `p32_w030`: raw 0.5878 against 0.5891
+(−0.0013, p 0.72, four matches better), coarse 0.5807 against 0.5963 (−0.0156, p 0.016, none of seven better), the mean
+−0.0084
+Changed vs `main.toml`: nothing
+Verdict: **dropped at the bar; no retry**
+
+**The belief.** P32's model reads the 42 shape columns of version 2 itself. Where the ball is seen, the shape source at
+weight 0.3 then counts the same information a second time; a product of experts should not give one expert's inputs two
+votes. With the shape source silent there (its existing `scope = "gaps"`), the touch rule and P32 decide the seen frames
+and the shape source only the gaps.
+
+**Declared before the run** (the advisor's ruling of 01:05, amendment 7): no gate, since nothing is built; the bar
+against `p32_w030`; no retry. R026's closest test (halving the shape weight on the seen frames: raw +0.003, coarse
+−0.017, more possessions) was recorded as the expected direction, so that a raw-against-coarse trade would not be read
+as a near miss.
+
+**The run** (13 Nov, 01:12 to 01:16; `p32_w030` reproduced to the last digit: raw 0.5891, coarse 0.5963).
+
+| config | raw (Δ, p) | coarse (Δ, p, wins of 7) | mean (Δ) | macroF1 raw (Δ) | possessions / min |
+|---|---|---|---|---|---|
+| `p32_w030` | 0.5891 | 0.5963 | 0.5927 | 0.9042 | 3.11 |
+| `p39_seen_off` | 0.5878 (−0.0013, 0.72) | 0.5807 (−0.0156, 0.016, 0) | 0.5843 (−0.0084) | 0.9023 (−0.0019) | 3.19 |
+
+The dead ball is predicted on 44.7% of the graded frames by both (the truth 44.8%); alive/dead F1 0.9741 unchanged.
+
+**What it says.** The second vote is not double counting that hurts: without it the decoder makes more, shorter
+possessions on the seen frames, which the coarse truth punishes on every match and the raw truth does not reward.
+The shape source on the seen frames acts as a smoother of who has the ball, not only as a second copy of P32's inputs.
+This is R026's finding again (the gap evidence must not grow against the seen frames'), now with P32 in place. The
+"combined model" question is answered: keep the shape source on every frame.
 
 ## Submission log
 
