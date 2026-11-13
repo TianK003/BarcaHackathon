@@ -975,7 +975,8 @@ time.
 aggregates of DFL only. It has two parts.
 - **The ladder.** For each truth it decomposes where spellF1 goes between IoU 0.3 and 0.7: every pair the scorer
   matches at 0.3 is clean, merge, split or both by its same-team overlaps, and each class's loss up the ladder is
-  given in spellF1 units. The clean pairs' edge errors are reported too.
+  given in spellF1 units. The clean pairs' edge errors are reported too, and (C1, `edges_by_kind`) split by the kind of
+  boundary (the truth's label beside it: the other team, `D`, the half's edge) and by whether the ball is seen there.
 - **The calibration.** Each source and the hmm's posterior against the raw truth: log-loss, Brier, ECE, the reliability
   table and a Platt fit (α below 1 is overconfident).
 
