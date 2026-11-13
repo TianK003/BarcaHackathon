@@ -7,6 +7,7 @@ retired versions; and `p40_sanity` prints aggregates only, passes on a healthy s
 column that is all NaN or constant and on a version 2 column that is not equal (synthetic only).
 """
 
+import contextlib
 import copy
 import io
 import os
@@ -60,23 +61,11 @@ def test_p40_trainer_knows_version_5():
     assert parser.parse_args(["--features", "5"]).features == 5
     for retired in ("3", "4"):
         try:
-            with _quiet():
+            with contextlib.redirect_stderr(io.StringIO()):
                 parser.parse_args(["--features", retired])
         except SystemExit:
             continue
         raise AssertionError("--features {} must be refused (retired)".format(retired))
-
-
-class _quiet:
-    """Swallows what argparse prints to stderr while a refusal is expected."""
-    def __enter__(self):
-        import contextlib
-        self._stack = contextlib.ExitStack()
-        self._stack.enter_context(contextlib.redirect_stderr(io.StringIO()))
-
-    def __exit__(self, *exc):
-        self._stack.close()
-        return False
 
 
 def synthetic_served():

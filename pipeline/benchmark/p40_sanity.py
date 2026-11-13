@@ -32,10 +32,12 @@ NEW_COLUMNS = (tuple("h_" + name for name in shape_features.PRESS_COLUMNS)
                + tuple("a_" + name for name in shape_features.PRESS_COLUMNS) + shape_features.PRESS_CROSS)
 
 
-def check(inputs):
+def check(inputs, other=None):
     """([line, ...], ok) for one served Inputs: the nine new columns' NaN share and standard deviation over the graded
-    frames, and whether version 2's columns are equal in version 5."""
-    names2, X2 = shape_features.features(inputs, 2)
+    frames, and whether version 2's columns are equal in version 5. `other` is the same match served again (a second
+    Inputs, so that nothing is shared in the memo): version 2 is computed on it, version 5 on `inputs`, and the
+    equality is a comparison of two separate computations. Without it version 2 is taken from `inputs` itself."""
+    names2, X2 = shape_features.features(inputs if other is None else other, 2)
     names5, X5 = shape_features.features(inputs, 5)
     column5 = shape_features.columns(5)
     frames = np.concatenate([np.arange(start, stop) for _, start, stop in inputs.graded])
@@ -70,7 +72,7 @@ def sanity(profile, seeds, match_ids=None, matches=None, data_dir=None, log=prin
         match = matches[match_id] if matches is not None else dfl.load_match(match_id, data_dir=data_dir)
         for seed in train_shape._seed_list(profile, seeds):
             inputs = served_inputs(match, profile, seed, calibration, data_dir)
-            lines, ok = check(inputs)
+            lines, ok = check(inputs, served_inputs(match, profile, seed, calibration, data_dir))
             log("{} seed {}  ({})".format(match_id, seed, "ok" if ok else "FAILED"))
             for line in lines:
                 log("  " + line)

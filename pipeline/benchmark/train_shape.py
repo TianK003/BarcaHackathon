@@ -10,8 +10,8 @@
 What it learns, and from what
 -----------------------------
 The classifier answers one question, which team has the ball, from the twenty-six `shape_features` of a frame
-(version 1; version 2, P30, has 42 and goes in its own file, `--features 2`; version 5, P40, has 51: `--features 5`), none of which reads the ball
-(pipeline/evidence/shape_features.py). The seven open DFL/IDSSE matches are the only ones with a flag for it
+(version 1; version 2, P30, has 42 and goes in its own file, `--features 2`; version 5, P40, has 51: `--features 5`),
+none of which reads the ball (pipeline/evidence/shape_features.py). The seven open DFL/IDSSE matches are the only ones with a flag for it
 (`BallPossession`), so those are the training data, degraded to look like our tracking (profile `tracking`, version 3,
 seeds 0 to 2: P01) and served as `MatchInputs`, so that the features are computed by the very code and from the very
 kind of inputs that the submission pipeline will give them. No truth reaches the features: the label is read from
@@ -222,7 +222,7 @@ def augment(X, y, version=1):
 
     The classes balance exactly, whatever the rows' own balance: half the labels of y' are 1. The rows come first and
     unchanged, so the order is the input's and the fit is deterministic. ValueError for X that is not (n, 26)
-    (version 2: (n, 42)) or a y that is not one 0 or 1 per row.
+    (version 2: (n, 42), version 5: (n, 51)) or a y that is not one 0 or 1 per row.
     """
     X = np.asarray(X, dtype=np.float64)
     y = np.asarray(y)
@@ -601,7 +601,7 @@ def build_parser():
                              "file it reads")
     parser.add_argument("--out", help="where to write the artifact, or to read it from with --report (default "
                                       "pipeline/models/shape_possession_hgb.json, or shape_possession_v2_hgb.json "
-                                      "with --features 2)")
+                                      "with --features 2, shape_possession_v5_hgb.json with --features 5)")
     parser.add_argument("--verify", action="store_true",
                         help="retrain and compare with the committed file instead of writing it: exit 1 if "
                              "anything but the three source hashes differs")
