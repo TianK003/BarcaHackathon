@@ -172,7 +172,9 @@ The scorer writes `evaluation/scoreboard.csv` and `evaluation/reports/<name>.jso
 
 The benchmark's `run.py` takes `--profile generic|clean|gaps|tracking|context` (default `generic`, version 1, since
 R030: it reads nothing of our match; `gaps`, `tracking`, the default until R030, and `context`, which fails two of its
-gates, R005, read our match and are kept for the record of R002 to R029 only) and `--truth raw|coarse|both`; the
+gates, R005, read our match and are kept for the record of R002 to R029 only; `generic_swap05` and `generic_swap20`,
+A27's sensitivity profiles with declared wrong-team slots, are accepted by `run.py` alone and choose nothing) and
+`--truth raw|coarse|both`; the
 trainers, `choose.py` and `conventions.py` default to `generic` too. `fidelity.py` takes `--profile
 gaps|tracking|context` (default `tracking`; `clean` degrades nothing and `generic` is not held to our match, so
 neither has gates). Both take `--seeds N` (default 3), `--matches ID ...`, `--data-dir D` and `--no-write`;
