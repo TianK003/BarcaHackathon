@@ -44,7 +44,6 @@ python pipeline/benchmark/touch_stats.py      # P04's control rule measured: cov
 python pipeline/benchmark/train_dead_ball.py --model hgb   # P05: train the dead-ball model (folds + full) as JSON; --profile generic is the default
 python pipeline/benchmark/train_shape.py [--verify|--report]   # P07: train the shape model (folds + full) as JSON; --profile generic is the default
 python pipeline/benchmark/train_team.py [--verify|--dry-run|--feasibility]   # P32: train the team model (folds + full), count its rows, or test it against p30_w030; --profile generic is the default
-python pipeline/benchmark/train_turnover.py [--verify|--dry-run|--report]   # P35: train the turnover hazard (folds + full), count its rows, or run its gate (AUC, log-loss, transfer means, localisation)
 python pipeline/benchmark/conventions.py public|dfl|compare|latency|shift ...   # P02: when a truth flips, the shift
 python pipeline/benchmark/selftest.py [--dfl] [--data]   # the checks
 ```
@@ -1182,31 +1181,6 @@ The checks are in `checks/conventions.py` (synthetic): the window rule against a
 tracking, that the DFL mode reads the truth beside its inputs, that no transition frame is printed, the bootstrap, the
 typed matching at the tolerance, each condition of the rule on a list that fails it, the out-of-fold prediction
 against `shift_edges.apply`, and that a latency file of another content of the config, or of none, is refused.
-
-## P35's turnover hazard (A2: the model, the source and the configs)
-
-`train_turnover.py` is `train_team.py` with another label: not which team has the ball but whether a *direct* change of
-team (H to A or A to H, no D between, inside one graded block) lies within 12 frames of the frame. The rows are P32's
-(every 5th graded frame with the ball seen and the raw truth H or A, `team_features` version 2), the mirror rows keep
-the label (a change is a change whichever team is which), the fit is P05's `HGB_SETTINGS`, and each model (a fold per
-held-out match and `full`) stores its rows' `base_rate`, which the source (`pipeline/evidence/turnover_hazard.py`) uses
-for z = p / (p + base_rate). It speaks only where the ball is seen (amendment 4 of the design). Everything that is not
-the label is imported from `train_team.py`, `train_dead_ball.py` and `train_shape.py`.
-
-- **`--dry-run`** counts rows and fits nothing. The declared run (J03WMX, `generic`, one seed, stride 5) must land in
-  8,290 to 12,434 rows (P32's window) and a positive share of 6% to 14%, with no all-NaN or constant column and a
-  projected peak of at most 8 GB, or the exit code is 1.
-- **`--report`** scores each fold on its own match: pooled and per-match AUC (a plain rank formula, ties averaged),
-  log-loss and the log-loss of the fold's own training base rate. **GO** iff the pooled AUC is at least 0.80 and the
-  pooled log-loss at most 0.90 times the base rate's (a screen, not evidence). Printed beside it and gating nothing: per
-  match, the mean p over every graded frame with the ball seen (alive and dead), for amendment 10's transfer gate, and
-  the localisation (for each true direct change with the ball seen, the offset of p's maximum within +-25 frames).
-- **Configs** `configs/p35/p35_s000.toml`, `p35_s050`, `p35_s100`, `p35_s200`: `p32_w030` plus a `turnover_hazard`
-  source named `hazard` and the decoder's `hazard_source` and `hazard_scale` 0 / 0.5 / 1.0 / 2.0 (the decoder's side is
-  A1's). Scale 0 is the sanity config: it must reproduce `p32_w030` to the last digit.
-- **Checks:** `checks/p35.py`, the P35 model group (the label on a synthetic truth, the rows, the mirror, the fit, the
-  folds and the file, the dry run's gates, the report against plain loops, the go rule at its edges, the configs); the
-  source's own checks are the turnover-hazard group in `pipeline/selftest.py`.
 
 ## The checks
 
