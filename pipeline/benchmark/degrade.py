@@ -279,6 +279,20 @@ PROFILES = {CLEAN: 1, GAPS: 1, TRACKING: 3, CONTEXT: 1, GENERIC: 1}
 # of 5 Nov 2026 ("anything that is not explicitly allowed is not permitted") nothing is trained or chosen on them
 # (docs/rules.md, question 1). They stay for the record of R002 to R029. clean and generic read nothing of our match.
 NEEDS_CALIBRATION = frozenset({GAPS, TRACKING, CONTEXT})
+# C2 (13 Nov 2026): two SENSITIVITY profiles, name -> the declared share of frames in a wrong-team slot episode. Each is
+# `generic` v1 (same ball, same players, same streams) plus wrong-team episodes through episode_pieces at that share,
+# scale 1.0, lengths drawn from generic's own log-uniform grid. They are not versions of generic and not in PROFILES (so
+# not a default, not offered to any tool): only pipeline/benchmark/run.py --profile accepts them, and nothing is trained,
+# chosen, ranked or gated on them. The grid was declared KNOWING our measured share of frames with a team in surplus
+# (T32, 10.8%), so it cannot be justified independently of our match and is never a setting, a gate or a rank; it
+# describes how much the benchmark's gains depend on clean slot teams (the spec docs/superpowers/specs/
+# 2026-11-13-p40-c2-design.md, amendment 5); the grid's basis is DATA.md's "slots appear, vanish and swap identity"
+# with no rate given, round numbers from rare to common. C2 can never be the ground for a generic v2. Version 1 each;
+# generic v1 stays final for this submission.
+GENERIC_SWAP05 = "generic_swap05"
+GENERIC_SWAP20 = "generic_swap20"
+SENSITIVITY_PROFILES = {GENERIC_SWAP05: 0.05, GENERIC_SWAP20: 0.20}
+SENSITIVITY_VERSION = 1
 # The version of the tracking profile that the context profile's players are built from: its players ARE tracking's, by
 # the same code and the same draws, so a new version of tracking's players is a new version of context's. Pinned to
 # PROFILES[TRACKING] by a check, recorded in context's info and in the reports of a context run (profile_record).
@@ -754,6 +768,27 @@ def calibrated_parameters(calibration, fps, profile=TRACKING, tracked_scale=None
                                smooth=SMOOTH_WINDOW, min_piece=min_piece, tracked_scale=tracked_scale)
 
 
+def profile_version(profile):
+    """The version of a profile's recipe: PROFILES' for the five, SENSITIVITY_VERSION for a sensitivity profile;
+    KeyError for a name that is in neither."""
+    if profile in PROFILES:
+        return PROFILES[profile]
+    if profile in SENSITIVITY_PROFILES:
+        return SENSITIVITY_VERSION
+    raise KeyError(profile)
+
+
+def sensitivity_refusal(profile, tool):
+    """None for any profile but a sensitivity one; for one, the message that `tool` refuses it with.
+
+    A sensitivity profile describes and chooses nothing: no tool but pipeline/benchmark/run.py takes it (C2)."""
+    if profile not in SENSITIVITY_PROFILES:
+        return None
+    return ("{}: profile {!r} is a sensitivity profile (C2): a description of how the candidates' gains depend on "
+            "clean slot teams, declared knowing our measured share, so it trains, chooses, ranks and gates nothing; "
+            "only pipeline/benchmark/run.py --profile accepts it".format(tool, profile))
+
+
 def needs_calibration(profile):
     """True for a profile that reads the Calibration of BAR-ATH (NEEDS_CALIBRATION), False for clean and generic."""
     return profile in NEEDS_CALIBRATION
@@ -776,6 +811,20 @@ def generic_parameters(fps):
     quantiles = (np.arange(GENERIC_TRACKED_GRID, dtype=np.float64) + 0.5) / GENERIC_TRACKED_GRID
     lengths = np.maximum(1, np.rint(np.exp(low + (high - low) * quantiles) * fps)).astype(np.int64)
     return tracking_parameters(lengths, 1.0 - GENERIC_PRESENT_MEAN / FULL, smooth=GENERIC_SMOOTH_WINDOW)
+
+
+def swap_parameters(fps, share):
+    """TrackingParameters of a sensitivity profile: generic_parameters(fps) plus wrong-team episodes at `share`.
+
+    The tracked spans, the lost share and the smoothing are generic's. The episodes are the same GENERIC_TRACKED_GRID
+    lengths (log-uniform over GENERIC_TRACKED_SECONDS, declared), the target is `share`, the scale is 1.0: the onsets
+    come at share / mean episode per row, an episode ends at the earlier of its drawn length and the end of the
+    player's tracked span (episode_pieces), and a pair is a pair within NEAR_PAIR_M. At scale 1.0 the realised shares
+    fall below `share` (skipped onsets, cut episodes), and that stays so. No Calibration, no fitted scale; share 0 is
+    generic's own parameters."""
+    base = generic_parameters(fps)
+    return tracking_parameters(base.lengths, base.d, episodes=base.lengths, wrong_team_share=share, scale=1.0,
+                               smooth=GENERIC_SMOOTH_WINDOW)
 
 
 def generic_mask(rng, n, fps):
@@ -1296,13 +1345,16 @@ def degrade(view, profile, calibration, seed):
     the same "players" (the tracking profile's, byte for byte), "tracking_version" (the version of tracking's players
     that they are built from: CONTEXT_TRACKING_VERSION), "transplants" (the draws that its cap reads: no mask is
     transplanted) and "ball": the scale, c and the counts of the hazard's draws (_context_ball). ValueError for
-    a profile that is not in PROFILES, for a seed that is not a whole number of at least 0, for a profile that needs
+    a profile that is in neither PROFILES nor SENSITIVITY_PROFILES, for a seed that is not a whole number of at least 0, for a profile that needs
     the Calibration without one (or, for tracking, without the fields it reads: calibrated_parameters; for context,
     without CONTEXT_FIELDS, or with a hazard that does not go: its hazard_go is False, A08), and for a pool of slots
     with no free slot (choose_tracklets).
     """
-    if profile not in PROFILES:
-        raise ValueError("profile {!r} is not one of: {}".format(profile, ", ".join(sorted(PROFILES))))
+    if profile not in PROFILES and profile not in SENSITIVITY_PROFILES:
+        raise ValueError("profile {!r} is not one of: {}".format(
+            profile, ", ".join(sorted(PROFILES) + sorted(SENSITIVITY_PROFILES))))
+    if profile in SENSITIVITY_PROFILES:
+        return _degrade_swap(view, profile, SENSITIVITY_PROFILES[profile], calibration, seed)
     seed = _whole("seed", seed)
     atd = match_inputs.clean_atd(view)
     info = {"profile": profile, "version": PROFILES[profile], "seed": seed, "match_id": view.match_id,
@@ -1354,13 +1406,71 @@ def degrade(view, profile, calibration, seed):
     return degraded, info
 
 
+def _degrade_swap(view, profile, share, calibration, seed):
+    """(Atd, info) of a sensitivity profile: generic's ball and players, plus the episodes at `share` (swap_parameters).
+
+    The ball is _generic_ball's, from the same streams, so it is generic's byte for byte; the players differ only by
+    the episodes, which draw from the "wrong_team" stream of their own. info is generic's plus "swap". A cut is an
+    identity switch, so the smoothing of a moving player restarts at it and a new tracklet's first speed is NaN."""
+    if calibration is not None:
+        raise ValueError("profile {!r} reads nothing of our match and takes no Calibration, and one was given: it "
+                         "would be ignored, and a report must not suggest that it was used".format(profile))
+    return _degrade_at_share(view, share, seed, profile)
+
+
+def _degrade_at_share(view, share, seed, profile=None):
+    """(Atd, info) of generic with wrong-team episodes at `share` (0 is generic's own arrays); see _degrade_swap.
+
+    Private: a share is only ever one of SENSITIVITY_PROFILES' declared ones (or 0, for the check that the episodes'
+    stream leaves generic's arrays alone)."""
+    seed = _whole("seed", seed)
+    atd = match_inputs.clean_atd(view)
+    info = {"profile": profile, "version": SENSITIVITY_VERSION, "seed": seed, "match_id": view.match_id,
+            "match_index": view.match_index}
+    ball_xy, ball_speed, info["ball"], info["mask_share"] = _generic_ball(view, atd, seed)
+    parameters = swap_parameters(view.fps, share)
+    xy, speed, records, counts = degraded_players(view, parameters, seed)
+    info["players"] = _players_record(view, parameters, records, counts)
+    info["swap"] = _swap_record(view, share, records, xy, info["players"])
+    return Atd(players_xy=xy, players_speed=speed, ball_xy=ball_xy, ball_speed=ball_speed,
+               slot_team=slot_team()), info
+
+
+def _swap_record(view, share, records, xy, players):
+    """The shares a sensitivity run reports, aggregates only and never tuned (T37).
+
+    episode_frames / graded_rows would count the rows of every episode piece twice where two overlap; episode_share
+    counts a graded row once, when any episode piece covers it. surplus_share is the observable one: the share of
+    graded rows where a team shows more than 11 slots, the quantity that T32 measures on ours. Both are below the
+    declared share at scale 1.0, and stay so."""
+    team = np.asarray(view.player_team)
+    pool = slot_team()
+    rows = surplus = covered = 0
+    for half, start, stop in view.graded:
+        inside = np.zeros(stop - start, dtype=bool)
+        for t in records[half]:
+            if pool[t.slot] != team[t.player]:
+                inside[t.start - start:t.stop - start] = True
+        present = ~np.isnan(xy[start:stop, :, 0])
+        over = (present[:, pool == 0].sum(axis=1) > 11) | (present[:, pool == 1].sum(axis=1) > 11)
+        rows += stop - start
+        surplus += int(over.sum())
+        covered += int(inside.sum())
+    return {"declared_share": share, "graded_rows": rows, "episode_frames": int(players["episode_frames"]),
+            "onsets": int(players["onsets"]), "episodes": int(players["episodes"]),
+            "skipped_far": int(players["skipped_far"]), "skipped_overlap": int(players["skipped_overlap"]),
+            "episode_rows": covered, "episode_share": round(covered / rows, DECIMALS) if rows else 0.0,
+            "surplus_frames": surplus,
+            "surplus_share": round(surplus / rows, DECIMALS) if rows else 0.0}
+
+
 def profile_record(profile):
     """{"name", "version"} of a profile as the reports of a run state it; context's also has "tracking_version".
 
     That is the version of the tracking profile that context's players are built from (CONTEXT_TRACKING_VERSION): a
     report of a context run says it beside the profile's own, so that it names the players' version as well as the
-    ball's. KeyError for a name that is not in PROFILES (the callers have checked)."""
-    record = {"name": profile, "version": PROFILES[profile]}
+    ball's. KeyError for a name that is not in PROFILES or SENSITIVITY_PROFILES (the callers have checked)."""
+    record = {"name": profile, "version": profile_version(profile)}
     if profile == CONTEXT:
         record["tracking_version"] = CONTEXT_TRACKING_VERSION
     return record

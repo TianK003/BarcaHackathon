@@ -19,7 +19,7 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 if __name__ == "__main__":
     sys.path[0] = ROOT
 
-from pipeline.benchmark import choose, run  # noqa: E402
+from pipeline.benchmark import choose, degrade, run  # noqa: E402
 
 GAIN = 0.005
 P_MAX = 0.05
@@ -45,13 +45,19 @@ def pick_from(means, order, band=choose.TIE_BAND):
     return next(stem for stem in order if means[stem] >= top - band)
 
 
-def _choice(stems, reference, data_dir):
-    return choose.choose(stems, reference, profile=PROFILE, band=choose.TIE_BAND, objective="mean", data_dir=data_dir)
+def _choice(stems, reference, data_dir, profile=PROFILE):
+    refused = degrade.sensitivity_refusal(profile, "p29_bar")     # C2: a sensitivity profile is never ranked or gated
+    if refused:
+        raise choose.ChooseError(refused)
+    if profile != PROFILE:
+        raise choose.ChooseError("p29_bar: the bar is declared on the {} profile only, and {!r} was asked for"
+                                 .format(PROFILE, profile))
+    return choose.choose(stems, reference, profile=profile, band=choose.TIE_BAND, objective="mean", data_dir=data_dir)
 
 
-def pick(stems, reference, data_dir=None):
+def pick(stems, reference, data_dir=None, profile=PROFILE):
     """The stem the rule gives among `stems` (in tie-break order) against `reference`; prints one line."""
-    choice = _choice(stems, reference, data_dir)
+    choice = _choice(stems, reference, data_dir, profile)
     means = {stem: choice["rows"][stem]["mean"]["spell"] for stem in stems}
     picked = pick_from(means, list(stems))
     print("picked    {}".format(picked))
@@ -67,17 +73,17 @@ def _line(label, stem, reference, versus, ok, word):
         versus["mean"]["n"], versus["raw"]["pooled_delta"], versus["coarse"]["pooled_delta"], word if ok else "FAIL"))
 
 
-def bar(stem, reference, data_dir=None):
+def bar(stem, reference, data_dir=None, profile=PROFILE):
     """True if `stem` clears the bar against `reference`; prints one line with the numbers used."""
-    versus = _choice([stem], reference, data_dir)["versus"]
+    versus = _choice([stem], reference, data_dir, profile)["versus"]
     ok = passes_bar(versus)
     _line("bar", stem, reference, versus, ok, "pass")
     return ok
 
 
-def guard(stem, reference, data_dir=None):
+def guard(stem, reference, data_dir=None, profile=PROFILE):
     """True if neither truth of `stem` is more than LOSS below `reference`; prints one line with the numbers used."""
-    versus = _choice([stem], reference, data_dir)["versus"]
+    versus = _choice([stem], reference, data_dir, profile)["versus"]
     ok = passes_guard(versus)
     _line("guard", stem, reference, versus, ok, "kept")
     return ok
@@ -89,18 +95,21 @@ def main(argv=None):
     parser.add_argument("stems", nargs="+", help="pick: the stems in tie-break order; bar, guard: one stem")
     parser.add_argument("--reference", required=True)
     parser.add_argument("--data-dir")
+    parser.add_argument("--profile", default=PROFILE,
+                        help="only {0} is accepted (the bar is declared on it); any other profile, and a sensitivity "
+                             "profile above all, is refused".format(PROFILE))
     args = parser.parse_args(argv)
     reconfigure = getattr(sys.stdout, "reconfigure", None)
     if reconfigure is not None:
         reconfigure(encoding="utf-8")
     try:
         if args.command == "pick":
-            pick(args.stems, args.reference, args.data_dir)
+            pick(args.stems, args.reference, args.data_dir, args.profile)
             return 0
         if len(args.stems) != 1:
             parser.error("{} takes one stem; got {}".format(args.command, args.stems))
         check = bar if args.command == "bar" else guard
-        return 0 if check(args.stems[0], args.reference, args.data_dir) else 2
+        return 0 if check(args.stems[0], args.reference, args.data_dir, args.profile) else 2
     except (choose.ChooseError, ValueError, OSError, KeyError) as error:
         print("FAILED    {!r}".format(error))
         return 1

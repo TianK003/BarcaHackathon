@@ -178,6 +178,11 @@ def load_artifact(path, who, check, cache, unreadable, not_json):
     return artifact
 
 
+# C2: the benchmark's sensitivity profiles (degrade.SENSITIVITY_PROFILES; a check holds the two equal). A model file
+# that names one as its training profile is refused: nothing is trained or chosen on them.
+SENSITIVITY_PROFILES = ("generic_swap05", "generic_swap20")
+
+
 def check_artifact(artifact, path, who, retrain, *, source, version, names, kinds, check_model):
     """ValueError naming the file, what differs and `retrain`, unless `artifact` is a model file of these features.
 
@@ -188,6 +193,9 @@ def check_artifact(artifact, path, who, retrain, *, source, version, names, kind
     """
     if not isinstance(artifact, dict):
         raise ValueError("{}: {} holds no model object; {}".format(who, path, retrain))
+    if artifact.get("profile") in SENSITIVITY_PROFILES:
+        raise ValueError("{}: {} names the sensitivity profile {!r} as its training profile (C2): nothing is trained or "
+                         "chosen on a sensitivity profile; {}".format(who, path, artifact.get("profile"), retrain))
     if artifact.get("format") != FORMAT:
         raise ValueError("{}: {} has format {!r} and this reader's is {}; {}"
                          .format(who, path, artifact.get("format"), FORMAT, retrain))

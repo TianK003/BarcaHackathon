@@ -116,7 +116,7 @@ if __name__ == "__main__":
 import numpy as np  # noqa: E402
 
 from pipeline.benchmark import calibration as calibration_module  # noqa: E402
-from pipeline.benchmark import conventions, dfl, run  # noqa: E402
+from pipeline.benchmark import conventions, degrade, dfl, run  # noqa: E402
 from pipeline.benchmark import truth as truths  # noqa: E402
 from pipeline.benchmark.run import BenchmarkError  # noqa: E402
 # `dumps` is imported to be re-exported: the checks and later tools write the artifact's text with the trainer's own.
@@ -658,6 +658,9 @@ def _whole(name, value, minimum):
 
 
 def _known_profile(profile):
+    refused = degrade.sensitivity_refusal(profile, "train_shape")
+    if refused:
+        raise BenchmarkError(refused)
     if profile not in run.PROFILES:
         raise BenchmarkError("train_shape: profile {!r} is not one of: {}".format(profile,
                                                                                   ", ".join(sorted(run.PROFILES))))
