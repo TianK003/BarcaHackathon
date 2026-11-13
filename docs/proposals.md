@@ -1404,10 +1404,9 @@ smallest.
 
 ### P30 — Timing-aware shape features
 
-**Status: cleared the bar 12 Nov 2026 → [R033](results.md): gate G2 passed (held-out log-loss in the gaps 0.3189
-against 0.3560, lower on all seven matches); the pick `p30_w030` (the version 2 model at today's weight 0.3) gained
-+0.0143 on the mean of the two truths (raw +0.0215, coarse +0.0072; all seven matches won, p 0.016). It is the
-night's candidate, `pipeline/configs/candidates/p30_shape_v2.toml`: not adopted, Tian decides.** Effort M. Odds put
+**Status: adopted 13 Nov 2026 → [R042](results.md), with P32 (Tian's decision): `main.toml`'s shape source
+reads the version 2 model. Measured in [R033](results.md): +0.0143 on the mean against R030's `main.toml`, all
+seven matches; fresh seeds +0.0131; P30's transfer gate on our match passed (0.8317 against 0.7656).** Effort M. Odds put
 at about one in four.
 
 **The belief.** Clean pairs have a median edge error of 0 but an upper quartile of +14 to +27 frames (A25), 42% of
@@ -1448,10 +1447,9 @@ P35 (a turnover hazard as a per-frame switch cost, about 6 h with a decoder chan
 
 ### P32 — The team model where the ball is seen, on `generic`, measured on spellF1 (P19's one retry, in P24's slot)
 
-**Status: cleared the bar 13 Nov 2026 → [R037](results.md): the gate passed (feasibility log-loss 0.2088
-against 0.2700, below the rule's on 7 of 7); the pick `p32_w030` gained +0.0162 on the mean against `p30_w030`
-(raw +0.0262, coarse +0.0062; all seven matches). The night's candidate, stacked on P30:
-`pipeline/configs/candidates/p32_team_model.toml`; not adopted, Tian decides. No transfer check on our match.**
+**Status: adopted 13 Nov 2026 → [R042](results.md), with P30 (Tian's decision): `team_model` is a source of
+`main.toml` at weight 0.3. Measured in [R037](results.md): +0.0162 on the mean on top of P30, all seven matches;
+fresh seeds +0.0160; no transfer check on our match is possible.**
 Effort about 3.5 h. Odds about one in three.
 
 **The belief.** Where the ball is seen and no control episode runs, the evidence is the constant hold 0.60 and the

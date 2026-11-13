@@ -65,6 +65,7 @@ two sets of numbers are different benchmarks. Hand labels on this match are not 
 | R039 | 2026-11-13 | P37: shape features version 4 (version 2 plus each team's time since and until its control episode by the touch rule, capped at 30 s), speaking only in the ball-missing gaps (scope `"visible"` for version 2 where the ball is seen) | — | — | — | — (no config was run: the gate comes first) | **dropped at its gate**: the held-out gap log-loss 0.3206 against at most 0.3059 (version 2 reproduced 0.3189), the hand-over gaps 0.3448 against at most 0.3272 (version 2 0.3402; worse on 6 of 7 matches); no retry (the advisor); code and model removed, the report's gap cells kept |
 | R040 | 2026-11-13 | P35: a turnover hazard (a tree model of a direct change of team within ±12 frames, where the ball is seen) as the hmm decoder's per-frame switch cost, at scale 0 / 0.5 / 1 / 2 on top of `p32_w030` | — | — | — | the pick `p35_s050` 0.5906 raw and 0.5945 coarse (mean 0.5926) against `p32_w030`'s 0.5891 and 0.5963 (mean 0.5927) | **dropped**: the gate passed (held-out AUC 0.910, log-loss 0.2033 against 0.90 × the base rate's 0.3267); the bar missed at every scale (mean −0.0001 to −0.0005): a raw/coarse trade growing with the scale, more possessions; no retry (the advisor); code removed (the model side, then the decoder's team cost at the fourth round's ruling) |
 | R041 | 2026-11-13 | P40: shape features version 5 (version 2 plus, per team, how fast the nearest opponent within 5 m approaches its players: the mean, the 90th percentile and the share above 2 m/s; and the teams' difference now and over 2 s each side), players only, on every frame | — | — | — | — (no config was run: the gate comes first) | **dropped at its gate**: the held-out gap log-loss 0.3140 against at most 0.3059 (version 2 reproduced 0.3189), the hand-over gaps 0.3363 against at most 0.3272 (version 2 0.3402; better on 6 of 7 matches); no retry, declared before the run; code and model removed, version 5 retired |
+| R042 | 2026-11-13 | P30 + P32 adopted into `main.toml` (Tian's decision): the shape source reads the version 2 model and the team model where the ball is seen joins at weight 0.3; every other constant R030's | 0.7199 | 0.4737 | 21 / 13.4 s | **0.5891 raw and 0.5963 coarse (mean 0.5927)**: R037's `p32_w030`, +0.0305 over R030's 0.5414 and 0.5829 | **adopted**: P30's transfer gate passed on our match (0.8317 against at least 0.7656); the file `aae79a04…` twice from a rebuilt cache and from a clean clone; the public window a gross-error check only |
 
 ### The four yardsticks on every profile, in one table
 
@@ -11013,6 +11014,51 @@ by P30's rate would have moved the benchmark by about +0.002, well under the bar
 real but small signal before a benchmark that would most likely have read as noise. Shape features look used up as a way
 into the gaps (the advisor's note after P33, R035); version 5 is retired with 3 and 4.
 
+### R042 — P30 + P32 adopted into `main.toml` (Tian's decision, 2026-11-13)
+Proposal: P30 (R033) and P32 (R037), together · Code: `33d5ad7` (`main.toml`; the models `shape_possession_v2_hgb.json`
+and `team_model_hgb.json` committed in the night's chains) · Command: `python pipeline/run.py
+pipeline/configs/main.toml --rebuild-cache` (twice), `python pipeline/run.py pipeline/configs/main.toml --score`
+Public: macroF1 0.7199, spellF1 0.4737, 21 possessions with a mean of 13.4 s (a correctness check only, T01)
+Validation (P01 benchmark, `generic`, 3 seeds): 0.5891 raw and 0.5963 coarse pooled spellF1 (mean 0.5927), R037's
+`p32_w030`, against R030's 0.5414 and 0.5829 (mean 0.5622): +0.0305 (raw +0.0477, coarse +0.0133)
+Changed vs `main.toml`: the shape source reads `pipeline/models/shape_possession_v2_hgb.json` (P30); a fourth source,
+`team_model` (`pipeline/models/team_model_hgb.json`, weight 0.3, where the ball is seen; P32)
+Verdict: **adopted** (Tian, on the morning after the night of 12 to 13 Nov)
+
+**Why.** Each cleared the bar declared before its run: P30 against R030's copy (R033: +0.0143, all seven matches; fresh
+seeds +0.0131), P32 on top of P30 (R037: +0.0162, all seven matches; fresh seeds +0.0160). Together +0.0305 on the
+mean of the two truths, under both truths, and unchanged under declared wrong-team slots (A27, light ones only). The
+decoder's constants and the shift are R030's; R030's shift rule re-derived the same shift with the new sources. Both
+models were trained on DFL under `generic` only and pass `--verify` at the night's tip.
+
+**The checks on our match, pass or fail only** (declared before; they chose nothing, T01):
+
+| check | R030's file (`2dd51320…`) | R042's file (`aae79a04…`) | rule |
+|---|---|---|---|
+| P30's transfer gate: version 2's `full` `touch_agreement`, scope `all` | (version 1: 0.8199) | **0.8317** on 41,052 frames | at least 0.7656 (R033) |
+| the file, twice from a rebuilt ATD cache | `2dd51320…` | **`aae79a04…`** both times, valid | the same twice |
+| from a clean clone of `33d5ad7` (same laptop, the team's venv, rebuilt cache) | — | the same sha256, written to `Un Dia de Partit.csv` beside the repository; the validator OK | the same |
+| `D` share of the graded frames | 34.5% | **34.4%** | [30%, 62%] |
+| H, A of the graded frames | 38.5%, 27.0% | 38.2%, 27.4% | reported |
+| `X` frames inside the graded blocks | 0 | 0 | none |
+| possessions (half 1 + half 2) | 393 (187 + 206) | 386 (186 + 200) | reported |
+| possessions per graded minute | 3.71 | 3.64 | reported |
+| graded frames changed | | 2.65% | reported |
+
+- *The public window, as a gross-error check:* macroF1 0.7199 against the constant files' 0.2102 (all `H`), 0.1705
+  (all `A`) and 0.1092 (all `D`); each source agrees with it on more than half of its frames (`controlled_touch` 86.8%
+  of 5,484, `dead_ball_model` 86.5% of 7,500, `shape_possession` 92.5% of 6,031, `team_model` 91.9% of 5,640).
+  **Pass.** For the record only: spellF1 0.4737 and 21 possessions against the truth's 17 (R030's file: 0.5029, 18).
+  One possession moves that spellF1 by about 0.06 and the window ranks versions wrongly (T01): it chose nothing and
+  says nothing about the full match.
+- *P32* has no transfer check on our match (R037): its stated risks are wrong-team slots (T32; A27 tested light ones
+  only) and `generic`'s gaps, which ignore the play (T38, T39).
+
+**What it changes.** `main.toml`'s file is now `aae79a0446dabdf565d86b95f03acf0a53b5698cf3d80033c25bf7d49cbd3bdb`.
+The night's candidate configs (`pipeline/configs/candidates/`) are removed: `main.toml` is the first, and the check
+that pinned them to their benchmark configs now pins `main.toml` to `pipeline/benchmark/configs/p32/p32_w030.toml`.
+P30 alone (`p30_w030`) stays in the benchmark's configs as the fallback's record.
+
 ## Submission log
 
 The form keeps only the last response before the deadline, so log every upload.
@@ -11071,6 +11117,14 @@ clean clone of `6864c13`, the night's last commit before this line, with every d
 one laptop (AMD Ryzen 5 5500U): a second CPU is still to do (T21). A copy named `Un Dia de Partit.csv` sits beside the repository
 (`C:\Users\Tian\Desktop\`), passes `validate_submission.py`, and has **NOT been uploaded**: the upload is Tian's. On 10 Nov Tian reviewed the two choices that R030 lists as
 not obvious and kept the declared outcome, so this is the file to upload.
+
+`main.toml` was rewritten a ninth time by R042 (2026-11-13, Tian's decision): P30 + P32 adopted (the version 2 shape
+model and the team model where the ball is seen). It now produces sha256
+`aae79a0446dabdf565d86b95f03acf0a53b5698cf3d80033c25bf7d49cbd3bdb` (commit `33d5ad7`): the same on two runs from a
+rebuilt cache and from a clean clone of that commit (the same laptop and environment; a second CPU is still to do,
+T21). A copy named `Un Dia de Partit.csv` sits beside the repository (`C:\Users\Tian\Desktop\`), replacing R030's,
+passes `validate_submission.py`, and has **NOT been uploaded**: the upload is Tian's. R030's file (`2dd51320…`) is
+rebuilt by checking out `8eaf5c9`.
 
 **10 Nov 2026: do not upload R029's file** (`762f9073...`). By our reading of the organisers' reply of 5 Nov, its models
 and constants stood on a degradation fitted on our own match ([rules.md](rules.md)). It can no longer be rebuilt from

@@ -1058,16 +1058,14 @@ def test_committed_team_model_holds_a_fold_for_each_benchmark_match():
     team_model.load(path)
 
 
-def test_candidate_configs_are_their_benchmarked_configs():
-    """pipeline/configs/candidates/ holds what would be adopted; each must be the config that faced the bar, as parsed
-    TOML, apart from `description` (the only difference there is)."""
-    pairs = (("p30_shape_v2.toml", os.path.join("p30", "p30_w030.toml")),
-             ("p32_team_model.toml", os.path.join("p32", "p32_w030.toml")))
-    for candidate, benchmarked in pairs:
-        left = read_toml(os.path.join(ROOT, "pipeline", "configs", "candidates", candidate))
-        right = read_toml(os.path.join(CONFIGS, benchmarked))
-        assert isinstance(left.pop("description"), str) and isinstance(right.pop("description"), str), candidate
-        assert left == right, "{} differs from {} in more than its description".format(candidate, benchmarked)
+def test_main_toml_is_its_benchmarked_config():
+    """main.toml (R042: P30 + P32) must be the config that faced the bar, pipeline/benchmark/configs/p32/p32_w030.toml,
+    as parsed TOML, apart from `description` (the only difference there is). Until R042 this pinned the night's
+    candidate configs (pipeline/configs/candidates/, removed when the first of them became main.toml)."""
+    left = read_toml(os.path.join(ROOT, "pipeline", "configs", "main.toml"))
+    right = read_toml(os.path.join(CONFIGS, "p32", "p32_w030.toml"))
+    assert isinstance(left.pop("description"), str) and isinstance(right.pop("description"), str)
+    assert left == right, "main.toml differs from p32_w030 in more than its description"
 
 
 def test_team_p32_configs_are_p30_w030_plus_the_team_model():
