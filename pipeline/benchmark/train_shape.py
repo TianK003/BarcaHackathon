@@ -1,6 +1,6 @@
 """P07's trainer: fit the shape-possession model on the benchmark's matches and write it as JSON.
 
-    python pipeline/benchmark/train_shape.py [--profile tracking] [--seeds 3] [--stride 5] [--features {1,2}]
+    python pipeline/benchmark/train_shape.py [--profile tracking] [--seeds 3] [--stride 5] [--features {1,2,4}]
                                              [--out PATH] [--verify] [--report] [--data-dir D]
 
     artifact = train(profile="tracking", seeds=3, stride=5)             # the dict that is written, JSON-ready
@@ -10,8 +10,9 @@
 What it learns, and from what
 -----------------------------
 The classifier answers one question, which team has the ball, from the twenty-six `shape_features` of a frame
-(version 1; version 2, P30, has 42 and goes in its own file, `--features 2`), none of which reads the ball
-(pipeline/evidence/shape_features.py). The seven open DFL/IDSSE matches are the only ones with a flag for it
+(version 1; version 2, P30, has 42 and goes in its own file, `--features 2`, and so does version 4, P37, with 46:
+`--features 4`), none of which reads the ball except version 4's two timing columns per team, which read it through
+the touch rule (pipeline/evidence/shape_features.py). The seven open DFL/IDSSE matches are the only ones with a flag for it
 (`BallPossession`), so those are the training data, degraded to look like our tracking (profile `tracking`, version 3,
 seeds 0 to 2: P01) and served as `MatchInputs`, so that the features are computed by the very code and from the very
 kind of inputs that the submission pipeline will give them. No truth reaches the features: the label is read from
@@ -130,12 +131,15 @@ import possession_metrics as pm  # noqa: E402  (importing pipeline above put eva
 # Params
 FORMAT = trees.FORMAT
 KIND = "hgb"
+HANDOVER, SAME_TEAM, UNKNOWN = 1, 2, 3        # gap_classes' codes (0: not a graded frame with the ball missing)
+GAP_CELLS = ("gap_handover", "gap_same_team", "gap_unknown")
 HOME, AWAY = pm.H, pm.A                       # the codes of the truth that are alive; a dead ball has no team to name
 DEFAULT_STRIDE = 5
 PRIOR_HOME = shape_possession.PRIOR_HOME      # the share of homes among the rows and their mirrors
 # One file per feature version (P30): the file names its version, and `shape_possession` reads the features of it.
 DEFAULT_MODEL_PATHS = {1: "pipeline/models/shape_possession_hgb.json",
-                       2: "pipeline/models/shape_possession_v2_hgb.json"}     # relative to the repository root
+                       2: "pipeline/models/shape_possession_v2_hgb.json",     # relative to the repository root
+                       4: "pipeline/models/shape_possession_v4_hgb.json"}     # P37; 3 is retired (P33)
 DEFAULT_MODEL_PATH = os.path.join(ROOT, *DEFAULT_MODEL_PATHS[1].split("/"))
 SOURCE_FILES = (("train_shape.py", os.path.join(HERE, "train_shape.py")),
                 ("shape_features.py", os.path.join(ROOT, "pipeline", "evidence", "shape_features.py")),
@@ -363,8 +367,11 @@ def report(artifact, profile, seeds, matches=None, calibration=None, data_dir=No
     (scope "all") against the truth on the alive frames, on those where the served ball is missing, and
     `touch_agreement`. `coarse` (P34) is the same two scores against the coarse truth (`truth.coarse_codes` of the raw
     codes, per seed, with the served inputs' blocks and fps), a ccell being {alive: {frames, log_loss, accuracy},
-    missing: {...}}; the alive frames are the raw truth's (ValueError if the coarse truth's differ). Numbers and
-    strings only, no per-frame array.
+    missing: {...}}; the alive frames are the raw truth's (ValueError if the coarse truth's differ). `gap_classes`
+    (P37, for every feature version, independent of the model's columns) is {per_match: {id: gcell}, pooled: gcell}, a
+    gcell being {handover, same_team, unknown}, each {frames, log_loss, accuracy} of the alive frames with the ball
+    missing whose gap, by the touch rule, has a different last controller before than next after, the same one, or
+    none on a side (`gap_classes`). Numbers and strings only, no per-frame array.
 
     BenchmarkError for an unknown profile, for an artifact that lacks the fold of one of the matches (the source would
     score it with `full`, which saw it) and for matches with no alive frame whose ball is missing (the stop rule would
@@ -407,18 +414,51 @@ def report(artifact, profile, seeds, matches=None, calibration=None, data_dir=No
             "pooled": pooled_cell,
             "stop_rule": {"threshold": STOP_LOSS, "log_loss": loss, "fires": stop_rule_fires(loss)},
             "coarse": {"per_match": {match_id: _coarse_cell(tallies[match_id]) for match_id in sorted(tallies)},
-                       "pooled": _coarse_cell(pooled)}}
+                       "pooled": _coarse_cell(pooled)},
+            "gap_classes": {"per_match": {match_id: _gap_cell(tallies[match_id]) for match_id in sorted(tallies)},
+                            "pooled": _gap_cell(pooled)}}
+
+
+def gap_classes(inputs):
+    """An int8 array over every frame: for the graded frames where the ball is missing, the kind of gap by the touch
+    rule at `shape_features.TOUCH_RULE` (P37), whatever the model's columns are; 0 elsewhere.
+
+    1 `HANDOVER`: the team that last had a kept control frame before the frame, in its block, is not the team that has
+    the next one after it; 2 `SAME_TEAM`: it is; 3 `UNKNOWN`: there is none on one side (or both). A frame is classified
+    by the kept frames on either side of it in its own block, never across half time. Reads the ball (the rule does),
+    never the truth.
+    """
+    home, away = shape_features.control_masks(inputs)
+    kept = home | away
+    out = np.zeros(len(kept), dtype=np.int8)
+    missing = ~inputs.atd.ball_present
+    for _, start, stop in inputs.graded:
+        if stop <= start:
+            continue
+        m = stop - start
+        index = np.arange(m)
+        mask = kept[start:stop]
+        before = np.maximum.accumulate(np.where(mask, index, -1))
+        after = np.minimum.accumulate(np.where(mask, index, m)[::-1])[::-1]
+        is_home = home[start:stop]
+        has = (before >= 0) & (after < m)
+        differ = has & (is_home[np.maximum(before, 0)] != is_home[np.minimum(after, m - 1)])
+        kind = np.where(~has, UNKNOWN, np.where(differ, HANDOVER, SAME_TEAM))
+        out[start:stop] = np.where(missing[start:stop], kind, 0)
+    return out
 
 
 def _empty_tally():
     """The sums behind a cell: [frames, summed log-loss, frames right] for alive and for ball-missing frames, the
-    alive frames the source was silent on, and [touch frames, frames that agree]. Sums pool; ratios would not."""
+    alive frames the source was silent on, and [touch frames, frames that agree]; and, for the gap classes (P37), the
+    same triple on the alive ball-missing frames of each class. Sums pool; ratios would not."""
     return {"alive": [0, 0.0, 0], "missing": [0, 0.0, 0], "silent": 0, "touch": [0, 0],
-            "coarse_alive": [0, 0.0, 0], "coarse_missing": [0, 0.0, 0]}
+            "coarse_alive": [0, 0.0, 0], "coarse_missing": [0, 0.0, 0],
+            "gap_handover": [0, 0.0, 0], "gap_same_team": [0, 0.0, 0], "gap_unknown": [0, 0.0, 0]}
 
 
 def _add(total, part):
-    for name in ("alive", "missing", "touch", "coarse_alive", "coarse_missing"):
+    for name in ("alive", "missing", "touch", "coarse_alive", "coarse_missing") + GAP_CELLS:
         total[name] = [a + b for a, b in zip(total[name], part[name])]
     total["silent"] += part["silent"]
 
@@ -440,10 +480,15 @@ def _tally(match, codes, profile, seed_list, calibration, data_dir, path):
         spoken = ~np.isnan(home)
         part = _empty_tally()
         part["silent"] = int((alive & ~spoken).sum())
-        for name, wanted in (("alive", alive), ("missing", alive & ~inputs.atd.ball_present)):
+        kinds = gap_classes(inputs)
+        for name, wanted in (("alive", alive), ("missing", alive & ~inputs.atd.ball_present),
+                             ("gap_handover", alive & (kinds == HANDOVER)),
+                             ("gap_same_team", alive & (kinds == SAME_TEAM)),
+                             ("gap_unknown", alive & (kinds == UNKNOWN))):
             take = wanted & spoken
             p = np.clip(home[take], LOG_FLOOR, 1.0 - LOG_FLOOR)
-            for cell, homes in ((name, is_home), ("coarse_" + name, coarse_home)):
+            scored = [(name, is_home)] if name in GAP_CELLS else [(name, is_home), ("coarse_" + name, coarse_home)]
+            for cell, homes in scored:                  # the gap classes are scored against the raw truth only
                 truly_home = homes[take]
                 loss = -np.where(truly_home, np.log(p), np.log(1.0 - p))
                 part[cell] = [int(take.sum()), float(loss.sum()),
@@ -465,6 +510,17 @@ def _cell(tally):
     frames, agreed = tally["touch"]
     return {"alive": dict(scored("alive"), silent=tally["silent"]), "missing": scored("missing"),
             "touch": {"frames": frames, "agreement": agreed / frames if frames else None}}
+
+
+def _gap_cell(tally):
+    """The JSON-ready gap-class cell of a tally (P37): {handover, same_team, unknown}, each {frames, log_loss,
+    accuracy} of the alive frames with the ball missing in a gap of that kind (`gap_classes`), the raw truth's."""
+    def scored(name):
+        frames, loss, right = tally[name]
+        return {"frames": frames, "log_loss": loss / frames if frames else None,
+                "accuracy": right / frames if frames else None}
+    return {"handover": scored("gap_handover"), "same_team": scored("gap_same_team"),
+            "unknown": scored("gap_unknown")}
 
 
 def _coarse_cell(tally):
@@ -501,6 +557,20 @@ def render_report(report):
     lines.append("stop rule  {}".format(
         "FIRES: P07 stops here, the result is a negative one and the rest of the lane is skipped" if rule["fires"]
         else "does not fire: P07 goes on"))
+    if "gap_classes" in report:                         # P37: the gaps by the touch rule, before the coarse lines
+        lines.append("gaps      alive frames, ball missing, by the touch rule: handover (controller before != after), "
+                     "same team, unknown")
+        lines.append("gaps      {:<8} | {:^28} | {:^28} | {:^28}".format("", "handover", "same team", "unknown"))
+        lines.append("gaps      {:<8} | {:>10} {:>8} {:>8} | {:>10} {:>8} {:>8} | {:>10} {:>8} {:>8}".format(
+            "match", *("frames", "log-loss", "accuracy") * 3))
+        gaps = report["gap_classes"]
+        for name, cell in list(sorted(gaps["per_match"].items())) + [("pooled", gaps["pooled"])]:
+            parts = []
+            for kind in ("handover", "same_team", "unknown"):
+                part = cell[kind]
+                parts += ["{:>10,}".format(part["frames"]), "{:>8}".format(number(part["log_loss"], ".4f")),
+                          "{:>8}".format(number(part["accuracy"], ".4f"))]
+            lines.append("gaps      {:<8} | {} {} {} | {} {} {} | {} {} {}".format(name, *parts))
     if "coarse" in report:                              # P34: the same scores against the coarse truth, after the rest
         lines.append("coarse    the coarse truth (short possessions between two of the other team merged), same frames")
         lines.append("coarse    {:<8} | {:>10} {:>8} {:>8} | {:>10} {:>8} {:>8}".format(
@@ -526,17 +596,19 @@ def build_parser():
                         help="every this many graded frames is a row (default {})".format(DEFAULT_STRIDE))
     parser.add_argument("--features", type=int, choices=shape_features.VERSIONS, default=1,
                         help="the feature version to train, write or --verify (default 1: 26 columns, the committed "
-                             "file; 2: 42 columns, P30); --report takes the version from the file it reads")
+                             "file; 2: 42 columns, P30; 4: 46 columns, P37); --report takes the version from the "
+                             "file it reads")
     parser.add_argument("--out", help="where to write the artifact, or to read it from with --report (default "
                                       "pipeline/models/shape_possession_hgb.json, or shape_possession_v2_hgb.json "
-                                      "with --features 2)")
+                                      "or shape_possession_v4_hgb.json with --features 2 or 4)")
     parser.add_argument("--verify", action="store_true",
                         help="retrain and compare with the committed file instead of writing it: exit 1 if "
                              "anything but the three source hashes differs")
     parser.add_argument("--report", action="store_true",
                         help="train nothing: read the artifact and print each fold's held-out log-loss and accuracy "
                              "(all alive frames, and those with the ball missing), touch agreement, ln 2 and whether "
-                             "the stop rule fires")
+                             "the stop rule fires, then the ball-missing frames by gap kind (handover, same team, "
+                             "unknown) and the coarse truth's cells")
     parser.add_argument("--data-dir", help="the data bundle (default: data/, or $MTAH_DATA_DIR)")
     return parser
 

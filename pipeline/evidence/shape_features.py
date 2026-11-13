@@ -1,5 +1,6 @@
-"""P07's per-frame features of the two teams' shape and movement, none of which reads the ball. Twenty-six numbers
-(version 1), or forty-two with P30's version 2.
+"""P07's per-frame features of the two teams' shape and movement, none of which reads the ball (version 4's two timing
+columns per team read it through the touch rule, see below). Twenty-six numbers (version 1), forty-two with P30's
+version 2, or forty-six with P37's version 4.
 
 The ball is missing from the tracking on 41% of the graded frames, in long gaps (a median 10.7 s, docs/results.md A01,
 T12), and those are the frames nothing else says who has it on. A team in possession is more advanced, wider, and
@@ -40,6 +41,25 @@ The one-sided changes are windows of the same block (nothing reads across half t
 a team's absence included; like `d_adv_ks` they are the trees' missing value there. `features(inputs, version)` takes
 the version (1 by default) and `feature_names(version)` and `columns(version)` give its names and indices.
 
+Version 4 (P37; 3 stays retired, P33's version 3 is in git history at 411b881 and its file must never be read as this
+one) is version 2's matrix, its columns copied, with two more columns per team after the twenty: twenty-two `h_*`,
+twenty-two `a_*`, then `adv_gap` and `n_diff` (46). They say how long ago the team last had control of the ball and how
+soon it next will, by the pipeline's own touch rule, so that a model of the gaps can read who has the ball by time as
+well as by shape (P29 measured the persistence of the last controller on the DFL matches).
+
+    since_episode_s,        0 inside one of the team's control episodes (the frames `controlled_touch` keeps at
+    until_episode_s         `TOUCH_RULE`, confidence 0.99, hold off: kept = not NaN, as `team_features` builds its own
+                            episode columns); else the seconds back to the team's last kept frame in the block and
+                            forward to its next, each capped at `EPISODE_CAP_S` (also where there is none): never NaN
+                            inside a block, never read across half time
+
+The rule is `team_features.TOUCH_RULE`, frozen here with the model's inputs (a check compares the two, and main.toml's):
+`team_features` imports this module, so this one cannot import it back, and the since/until helper and the control
+masks are written out here too, a deliberate copy that the checks pin (test_shape_features_v4_helpers_equal_team_features
+calls both versions of each on edge cases and random scenes). These two columns are the only ones of any version that
+read the ball: where the ball is missing the touch rule keeps no frame, so inside a gap they are the time to the
+episodes on either side of it. Versions 1 and 2 are bit for bit what they were.
+
 Each team is seen in its own frame. A team's `adv` is x or L - x, whichever points at the goal it attacks, so no column
 carries "home is on the left" or "home is Barcelona": the classifier cannot learn a home bias from the geometry, and
 relabelling the teams gives the features of the same frames with the two blocks exchanged. `swap` does that exchange,
@@ -73,11 +93,12 @@ import weakref
 
 import numpy as np
 
-from pipeline.evidence import kinematics, play_features
+from pipeline.contracts import RunContext
+from pipeline.evidence import controlled_touch, kinematics, play_features
 
 # Params
 FEATURE_VERSION = 1
-VERSIONS = (1, 2)
+VERSIONS = (1, 2, 4)                                      # 3 is retired (P33), never reused
 TEAM_COLUMNS = ("n", "adv_mean", "adv_p10", "adv_p90", "width", "vel_adv", "speed_mean", "att_third", "own_third",
                 "d_adv_1s", "d_adv_2s", "vel_adv_1s")
 CROSS_COLUMNS = ("adv_gap", "n_diff")
@@ -88,6 +109,15 @@ TEAM_COLUMNS_V2 = TEAM_COLUMNS + ("length", "spread") + tuple(
     "adv_{}_{}s".format(side, int(seconds)) for side in ("past", "fut") for seconds in ONE_SIDED_S)
 FEATURE_NAMES_V2 = (tuple("h_" + name for name in TEAM_COLUMNS_V2) + tuple("a_" + name for name in TEAM_COLUMNS_V2)
                     + CROSS_COLUMNS)
+EPISODE_COLUMNS = ("since_episode_s", "until_episode_s")  # version 4
+TEAM_COLUMNS_V4 = TEAM_COLUMNS_V2 + EPISODE_COLUMNS
+FEATURE_NAMES_V4 = (tuple("h_" + name for name in TEAM_COLUMNS_V4) + tuple("a_" + name for name in TEAM_COLUMNS_V4)
+                    + CROSS_COLUMNS)
+# version 4's touch rule, frozen with the model's inputs: team_features.TOUCH_RULE (main.toml's rule as of R013, kept by
+# R030), confidence 0.99 and hold off, so that the kept frames are the non-NaN ones
+TOUCH_RULE = {"radius": 1.5, "max_rel_speed": 6.0, "min_frames": 1, "duel_radius": 1.0}
+EPISODE_CONFIDENCE, EPISODE_HOLD = 0.99, 0.5
+EPISODE_CAP_S = 30.0                                      # version 4: since and until saturate here
 LOW_PERCENTILE, HIGH_PERCENTILE = 10.0, 90.0
 DISPLACEMENT_S = (("d_adv_1s", 1.0), ("d_adv_2s", 2.0))   # seconds either side of the frame
 VELOCITY_WINDOW_S = 1.0                                   # vel_adv_1s: seconds either side of the frame
@@ -95,13 +125,15 @@ CHUNK = 1024                                              # frames per step of t
 
 COLUMN = {name: index for index, name in enumerate(FEATURE_NAMES)}
 TEAM_WIDTH = len(TEAM_COLUMNS)
-_NAMES = {1: FEATURE_NAMES, 2: FEATURE_NAMES_V2}
-_BLOCK_OF_WIDTH = {len(_NAMES[1]): TEAM_WIDTH, len(_NAMES[2]): len(TEAM_COLUMNS_V2)}   # matrix width -> a team's block
+_NAMES = {1: FEATURE_NAMES, 2: FEATURE_NAMES_V2, 4: FEATURE_NAMES_V4}
+_BLOCK_OF_WIDTH = {len(_NAMES[1]): TEAM_WIDTH, len(_NAMES[2]): len(TEAM_COLUMNS_V2),
+                   len(_NAMES[4]): len(TEAM_COLUMNS_V4)}   # matrix width -> a team's block
 _MEMO = weakref.WeakKeyDictionary()                       # Inputs -> {version: (names, X)}
 
 
 def feature_names(version):
-    """The column names of a feature version (1: FEATURE_NAMES, 2: FEATURE_NAMES_V2); refuses any other version."""
+    """The column names of a feature version (1: FEATURE_NAMES, 2: FEATURE_NAMES_V2, 4: FEATURE_NAMES_V4); refuses any
+    other version (3 included: it is retired)."""
     if type(version) is not int or version not in VERSIONS:      # not True or 2.0, which `in` would let through
         raise ValueError("shape_features: version must be one of {}, got {!r}".format(VERSIONS, version))
     return _NAMES[version]
@@ -113,23 +145,27 @@ def columns(version):
 
 
 def features(inputs, version=1):
-    """(names, X): the names of `version` and its (n, 26) or (n, 42) float64 feature matrix of `inputs`, read-only,
-    memoised per object and version. Version 2 holds version 1's columns, unchanged. Refuses any other version."""
+    """(names, X): the names of `version` and its (n, 26), (n, 42) or (n, 46) float64 feature matrix of `inputs`,
+    read-only, memoised per object and version. Version 2 holds version 1's columns and version 4 version 2's,
+    unchanged. Refuses any other version."""
     feature_names(version)
     memo = _MEMO.setdefault(inputs, {})
     if version not in memo:
         if 1 not in memo:
             memo[1] = (FEATURE_NAMES, _build(inputs))
-        if version == 2:
+        if version >= 2 and 2 not in memo:
             memo[2] = (FEATURE_NAMES_V2, _build_v2(inputs, memo[1][1]))
+        if version == 4:
+            memo[4] = (FEATURE_NAMES_V4, _build_v4(inputs, memo[2][1]))
     return memo[version]
 
 
 def swap(X):
     """A new array: the features of the same frames with the two teams relabelled, from the features X (..., 26) of
-    version 1 or (..., 42) of version 2; refuses any other width.
+    version 1, (..., 42) of version 2 or (..., 46) of version 4; refuses any other width.
 
-    The `h_*` and `a_*` blocks trade places and the two cross columns change sign. Applied twice it is the identity.
+    The `h_*` and `a_*` blocks trade places (version 4's timing columns with them) and the two cross columns change
+    sign. Applied twice it is the identity.
     """
     X = np.asarray(X, dtype=np.float64)
     if X.ndim == 0 or X.shape[-1] not in _BLOCK_OF_WIDTH:
@@ -187,6 +223,47 @@ def _build_v2(inputs, X1):
                     X[start:stop - k, column["{}adv_fut_{}s".format(prefix, int(seconds))]] = change
     X.flags.writeable = False
     return X
+
+
+def control_masks(inputs):
+    """(home, away): bool arrays over every frame, True on the frames `controlled_touch` keeps at `TOUCH_RULE` for that
+    team (home: kept and the touch's home >= 0.5), exactly as `team_features` reads them. Nothing outside the graded
+    blocks is kept, and no frame is both."""
+    touch = controlled_touch.compute(RunContext(inputs=inputs, seed=0), **TOUCH_RULE, confidence=EPISODE_CONFIDENCE,
+                                     hold=EPISODE_HOLD).home
+    kept = np.isfinite(touch)
+    return kept & (touch >= 0.5), kept & (touch < 0.5)
+
+
+def _build_v4(inputs, X2):
+    """The (n, 46) matrix of version 4: X2's columns copied into their places and each team's since and until its
+    control episodes filled in per block (NaN outside the blocks), read-only."""
+    blocks = kinematics.blocks(inputs)
+    column = columns(4)
+    column2 = columns(2)
+    X = np.full((len(X2), len(FEATURE_NAMES_V4)), np.nan)
+    for name in FEATURE_NAMES_V2:
+        X[:, column[name]] = X2[:, column2[name]]
+    for prefix, episode in zip(("h_", "a_"), control_masks(inputs)):
+        for start, stop in blocks:
+            if stop > start:
+                since, until = _since_until(episode[start:stop], inputs.fps, EPISODE_CAP_S)
+                X[start:stop, column[prefix + "since_episode_s"]] = since
+                X[start:stop, column[prefix + "until_episode_s"]] = until
+    X.flags.writeable = False
+    return X
+
+
+def _since_until(mask, fps, cap):
+    """(since, until): seconds back to the last True frame of `mask` and forward to the next, 0 on a True frame, `cap`
+    where there is none and at most `cap`. The same arithmetic as `team_features._since_until` (a check compares)."""
+    m = len(mask)
+    index = np.arange(m)
+    last = np.maximum.accumulate(np.where(mask, index, -1))
+    following = np.minimum.accumulate(np.where(mask, index, m)[::-1])[::-1]
+    since = np.where(last >= 0, np.minimum((index - last) / fps, cap), cap)
+    until = np.where(following < m, np.minimum((following - index) / fps, cap), cap)
+    return since, until
 
 
 def _spread_column(out, players, slots, start):
