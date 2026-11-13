@@ -285,8 +285,10 @@ NEEDS_CALIBRATION = frozenset({GAPS, TRACKING, CONTEXT})
 # not a default, not offered to any tool): only pipeline/benchmark/run.py --profile accepts them, and nothing is trained,
 # chosen, ranked or gated on them. The grid was declared KNOWING our measured share of frames with a team in surplus
 # (T32, 10.8%), so it cannot be justified independently of our match and is never a setting, a gate or a rank; it
-# describes how much the benchmark's gains depend on clean slot teams (docs/superpowers/specs/2026-11-13-p40-c2-design.md,
-# amendment 5). Version 1 each; generic v1 stays final for this submission.
+# describes how much the benchmark's gains depend on clean slot teams (the spec docs/superpowers/specs/
+# 2026-11-13-p40-c2-design.md, amendment 5); the grid's basis is DATA.md's "slots appear, vanish and swap identity"
+# with no rate given, round numbers from rare to common. C2 can never be the ground for a generic v2. Version 1 each;
+# generic v1 stays final for this submission.
 GENERIC_SWAP05 = "generic_swap05"
 GENERIC_SWAP20 = "generic_swap20"
 SENSITIVITY_PROFILES = {GENERIC_SWAP05: 0.05, GENERIC_SWAP20: 0.20}
@@ -767,8 +769,13 @@ def calibrated_parameters(calibration, fps, profile=TRACKING, tracked_scale=None
 
 
 def profile_version(profile):
-    """The version of a profile's recipe: PROFILES' for the five, SENSITIVITY_VERSION for a sensitivity profile."""
-    return PROFILES[profile] if profile in PROFILES else SENSITIVITY_VERSION
+    """The version of a profile's recipe: PROFILES' for the five, SENSITIVITY_VERSION for a sensitivity profile;
+    KeyError for a name that is in neither."""
+    if profile in PROFILES:
+        return PROFILES[profile]
+    if profile in SENSITIVITY_PROFILES:
+        return SENSITIVITY_VERSION
+    raise KeyError(profile)
 
 
 def sensitivity_refusal(profile, tool):
@@ -1338,7 +1345,7 @@ def degrade(view, profile, calibration, seed):
     the same "players" (the tracking profile's, byte for byte), "tracking_version" (the version of tracking's players
     that they are built from: CONTEXT_TRACKING_VERSION), "transplants" (the draws that its cap reads: no mask is
     transplanted) and "ball": the scale, c and the counts of the hazard's draws (_context_ball). ValueError for
-    a profile that is not in PROFILES, for a seed that is not a whole number of at least 0, for a profile that needs
+    a profile that is in neither PROFILES nor SENSITIVITY_PROFILES, for a seed that is not a whole number of at least 0, for a profile that needs
     the Calibration without one (or, for tracking, without the fields it reads: calibrated_parameters; for context,
     without CONTEXT_FIELDS, or with a hazard that does not go: its hazard_go is False, A08), and for a pool of slots
     with no free slot (choose_tracklets).
@@ -1403,15 +1410,19 @@ def _degrade_swap(view, profile, share, calibration, seed):
     """(Atd, info) of a sensitivity profile: generic's ball and players, plus the episodes at `share` (swap_parameters).
 
     The ball is _generic_ball's, from the same streams, so it is generic's byte for byte; the players differ only by
-    the episodes, which draw from the "wrong_team" stream of their own. info is generic's plus "swap"."""
+    the episodes, which draw from the "wrong_team" stream of their own. info is generic's plus "swap". A cut is an
+    identity switch, so the smoothing of a moving player restarts at it and a new tracklet's first speed is NaN."""
     if calibration is not None:
         raise ValueError("profile {!r} reads nothing of our match and takes no Calibration, and one was given: it "
                          "would be ignored, and a report must not suggest that it was used".format(profile))
-    return degrade_at_share(view, share, seed, profile)
+    return _degrade_at_share(view, share, seed, profile)
 
 
-def degrade_at_share(view, share, seed, profile=None):
-    """(Atd, info) of generic with wrong-team episodes at `share` (0 is generic's own arrays); see _degrade_swap."""
+def _degrade_at_share(view, share, seed, profile=None):
+    """(Atd, info) of generic with wrong-team episodes at `share` (0 is generic's own arrays); see _degrade_swap.
+
+    Private: a share is only ever one of SENSITIVITY_PROFILES' declared ones (or 0, for the check that the episodes'
+    stream leaves generic's arrays alone)."""
     seed = _whole("seed", seed)
     atd = match_inputs.clean_atd(view)
     info = {"profile": profile, "version": SENSITIVITY_VERSION, "seed": seed, "match_id": view.match_id,
@@ -1446,7 +1457,10 @@ def _swap_record(view, share, records, xy, players):
         surplus += int(over.sum())
         covered += int(inside.sum())
     return {"declared_share": share, "graded_rows": rows, "episode_frames": int(players["episode_frames"]),
-            "episode_rows": covered, "episode_share": round(covered / rows, DECIMALS) if rows else 0.0, "surplus_frames": surplus,
+            "onsets": int(players["onsets"]), "episodes": int(players["episodes"]),
+            "skipped_far": int(players["skipped_far"]), "skipped_overlap": int(players["skipped_overlap"]),
+            "episode_rows": covered, "episode_share": round(covered / rows, DECIMALS) if rows else 0.0,
+            "surplus_frames": surplus,
             "surplus_share": round(surplus / rows, DECIMALS) if rows else 0.0}
 
 
@@ -1455,7 +1469,7 @@ def profile_record(profile):
 
     That is the version of the tracking profile that context's players are built from (CONTEXT_TRACKING_VERSION): a
     report of a context run says it beside the profile's own, so that it names the players' version as well as the
-    ball's. KeyError for a name that is not in PROFILES (the callers have checked)."""
+    ball's. KeyError for a name that is not in PROFILES or SENSITIVITY_PROFILES (the callers have checked)."""
     record = {"name": profile, "version": profile_version(profile)}
     if profile == CONTEXT:
         record["tracking_version"] = CONTEXT_TRACKING_VERSION

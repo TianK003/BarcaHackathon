@@ -15,6 +15,7 @@ import contextlib
 import dataclasses
 import hashlib
 import io
+import math
 import os
 import tempfile
 import types
@@ -26,7 +27,7 @@ from pipeline.benchmark import inputs as match_inputs
 from pipeline.benchmark.checks.common import (MASK_ROWS, ROWS, NotRun, ball_bytes, leaks, made_up_calibration,
                                               pairs_match, real_match, reference_episodes, steady_match,
                                               synthetic_matches, tracked_match, yardstick_path)
-from pipeline.selftest import expect_error, quiet
+from pipeline.selftest import expect_error, quiet, write_text
 
 # Params
 PRODUCTION = degrade.__file__
@@ -431,10 +432,14 @@ def no_calibration_load():
 
 SWAP_NAMES = ("generic_swap05", "generic_swap20")
 SWAP_SHARES = {"generic_swap05": 0.05, "generic_swap20": 0.20}
+HMM_ONLY = chr(10).join(['scope = "halves"', "[[evidence]]", 'kind = "nearest_player"', "[[evidence]]",
+                      'kind = "ball_presence"', "[decoder]", 'kind = "hmm"', "switch_team = 4", "switch_dead = 8",
+                      "min_possession = 3", "min_dead = 3", ""])
 # The mechanism check's tolerance, declared here before any run: on a fixture where every opposing pair stands 1 m apart
 # and nobody is lost, the realised share of rows in an episode is the declared share less the onsets that land on a
-# player already in an episode (a few per cent) and the episodes cut by the half's end, so it lies in this band of the
-# declared share. Onsets are a Bernoulli process: their count is within ONSET_SIGMAS standard deviations of rate * rows.
+# player already in an episode (about 10% of onsets at 0.20) and the episodes cut by the half's end, so it lies in
+# this band of the declared share. Onsets are a Bernoulli process: their count is within ONSET_SIGMAS standard
+# deviations of rate * rows.
 EPISODE_SHARE_BAND = (0.80, 1.05)
 ONSET_SIGMAS = 5.0
 
@@ -442,7 +447,9 @@ ONSET_SIGMAS = 5.0
 def _tools():
     """Every tool that must refuse a sensitivity profile, as (name, call(profile)); the last accepts it."""
     from pipeline.benchmark import choose, fidelity, p29_bar, train_dead_ball, train_shape, train_team
+    from pipeline.benchmark import conventions, diagnose, headroom, restarts, touch_stats
     from pipeline.benchmark import run as benchmark_run
+    from pipeline.config import load_config
     matches = synthetic_matches()
     return [
         ("train_dead_ball.gather", lambda p: train_dead_ball.gather(p, 1, 7, matches=matches)),
@@ -456,6 +463,22 @@ def _tools():
         ("p29_bar.bar", lambda p: p29_bar.bar("a", "b", profile=p)),
         ("p29_bar.guard", lambda p: p29_bar.guard("a", "b", profile=p)),
         ("run._check_profile", lambda p: benchmark_run._check_profile(p)),
+        ("run.make_atd", lambda p: benchmark_run.make_atd(matches["RND001"], p, 0)),
+        ("run.evaluate_configs (not the command)",
+         lambda p: benchmark_run.evaluate_configs([yardstick_path(50)], profile=p, matches=matches)),
+        ("conventions.measure", lambda p: conventions.measure(profile=p, seeds=1, matches=matches, log=quiet)),
+        ("conventions.measure_latency", lambda p: conventions.measure_latency(
+            load_config(yardstick_path(0)), profile=p, seeds=1, matches=matches, log=quiet)),
+        ("touch_stats.measure", lambda p: touch_stats.measure(
+            [{"radius": 40.0, "max_rel_speed": math.inf, "min_frames": 2}], profile=p, seeds=1, matches=matches,
+            log=quiet)),
+        ("restarts.anatomy", lambda p: restarts.anatomy(yardstick_path(50), profile=p, seeds=1, matches=matches,
+                                                        log=quiet)),
+        ("diagnose.diagnose", lambda p: diagnose.diagnose(
+            write_text(tempfile.gettempdir(), "c2_hmm_only.toml", HMM_ONLY), profile=p, seeds=1, matches=matches,
+            log=quiet)),
+        ("headroom.run_headroom", lambda p: headroom.run_headroom(yardstick_path(50), profile=p, seeds=1,
+                                                                  matches=matches, log=quiet)),
     ]
 
 
@@ -471,7 +494,8 @@ def test_swap_profiles_are_declared_sensitivity_only():
         assert degrade.needs_calibration(name) is False, name
         assert degrade.profile_record(name) == {"name": name, "version": 1}, name
         assert name in benchmark_run.SWAP_NOTES and name not in benchmark_run.SENSITIVITY_ONLY, name
-        assert name in benchmark_run.profile_help(), name
+        assert name in benchmark_run.profile_help(benchmark=True), name
+        assert name not in benchmark_run.profile_help(), "the other tools' help does not offer it"
     assert benchmark_run.DEFAULT_PROFILE == "generic"
 
 
@@ -505,7 +529,7 @@ def test_swap_at_share_zero_serves_generics_arrays():
     synthetic match and seed (players, speeds, ball, slot teams); and at a share above 0 the ball is still generic's."""
     view = degrade.tracking_view(steady_match(rows=(3000, 2600)))
     base, _ = degrade.degrade(view, "generic", None, 3)
-    zero, info = degrade.degrade_at_share(view, 0.0, 3)
+    zero, info = degrade._degrade_at_share(view, 0.0, 3)
     for field in ("players_xy", "players_speed", "ball_xy", "ball_speed", "slot_team"):
         assert np.array_equal(getattr(base, field), getattr(zero, field), equal_nan=True), field
     assert info["swap"]["episode_frames"] == 0
@@ -525,21 +549,51 @@ def test_swap_calibration_is_never_loaded_or_accepted():
 
 
 def test_swap_episodes_swap_only_slot_teams_and_never_see_the_truth():
-    """Positions are untouched, the truth is unreachable (leaks), the same bytes come under the same seed, and the
-    episodes' count is above 0 at share 0.20 on a long synthetic match."""
-    match = steady_match(rows=(3000, 2600))
-    view = degrade.tracking_view(match)
-    atd, info = degrade.degrade(view, "generic_swap20", None, 0)
+    """On a fixture that draws episodes, a player is carried by the other team's slots during one and only then.
+
+    Six players stand still, each opposing pair 1 m apart (checks/common.py's pairs_match), halves of 4,000 rows, and
+    the episode grid is shortened (0.4 s to 4 s, monkeypatched and restored) so that onsets and episodes are drawn:
+    both counts are asserted above 0. Then, in what the served Atd shows:
+    * a slot carrying the other team's label at a player's position exists, and the rows where one does are exactly
+      the record's episode rows;
+    * a slot's team label is its own pool's, and every other served position is the true one (the present positions
+      of each row are the same multiset as generic's, whose slots carry no wrong team: nothing but the slot moved);
+    * the truth is never read (leaks), and the same seed gives the same bytes."""
+    real = degrade.GENERIC_TRACKED_SECONDS
+    degrade.GENERIC_TRACKED_SECONDS = (0.4, 4.0)
+    try:
+        windows = [(h, 0, 4000, [(0, 3, 1 / 128), (1, 4, 1 / 128), (2, 5, 1 / 128)]) for h in (1, 2)]
+        match = pairs_match(windows, rows=(4000, 4000))
+        view = degrade.tracking_view(match)
+        atd, info = degrade.degrade(view, "generic_swap20", None, 0)
+        base, _ = degrade.degrade(view, "generic", None, 0)
+        again, info_again = degrade.degrade(degrade.tracking_view(match), "generic_swap20", None, 0)
+    finally:
+        degrade.GENERIC_TRACKED_SECONDS = real
+    assert info["swap"]["onsets"] > 0 and info["swap"]["episodes"] > 0, info["swap"]
     assert leaks(match_inputs.MatchInputs(match, atd, profile="generic_swap20", seed=0, data_dir=None), match) == []
-    assert np.all(np.diff(atd.slot_team) >= 0) and sorted(set(atd.slot_team.tolist())) == [0, 1]
-    base, _ = degrade.degrade(view, "generic", None, 0)
-    # An episode changes which slot carries a piece and where a piece is cut, never a position: every position shown
-    # is one of the same player's smoothed positions, so the set of present values is a subset of generic's walk's
-    # source rows (the source array's values at the same rows).
-    shown = np.nan_to_num(atd.players_xy[:, :, 0], nan=-1.0)
-    assert shown.max() <= 1.0 + 1e-9 and (shown[shown >= 0]).size > 0
-    again, info_again = degrade.degrade(degrade.tracking_view(match), "generic_swap20", None, 0)
     assert np.array_equal(atd.players_xy, again.players_xy, equal_nan=True) and info == info_again
+    assert np.all(np.diff(atd.slot_team) >= 0) and sorted(set(atd.slot_team.tolist())) == [0, 1]
+    # The players stand still, so a position identifies its player (the six are all different).
+    start = match.graded[0][1]
+    spot = np.asarray(match.players_xy)[start]
+    team = np.asarray(match.player_team)
+    served = np.asarray(atd.players_xy)
+    wrong_rows = np.zeros(match.n_frames, dtype=bool)
+    for half, lo, hi in match.graded:
+        for row in range(lo, hi):
+            for slot in np.flatnonzero(~np.isnan(served[row, :, 0])):
+                player = int(np.argmin(np.hypot(*(spot - served[row, slot]).T)))
+                assert np.hypot(*(spot[player] - served[row, slot])) < 1e-9, "a served position is nobody's"
+                if atd.slot_team[slot] != team[player]:
+                    wrong_rows[row] = True
+    assert wrong_rows.sum() > 0, "no player was carried by the other team's slots"
+    assert int(wrong_rows.sum()) == info["swap"]["episode_rows"], (int(wrong_rows.sum()), info["swap"])
+    # Nothing but the slot moved: each row shows the same positions as generic's (the walk and the loss are generic's).
+    for row in range(match.graded[0][1], match.graded[1][2]):
+        ours = np.sort(served[row, :, 0][~np.isnan(served[row, :, 0])])
+        theirs = np.sort(np.asarray(base.players_xy)[row, :, 0][~np.isnan(np.asarray(base.players_xy)[row, :, 0])])
+        assert ours.shape == theirs.shape and np.allclose(ours, theirs, atol=1e-9, rtol=0), row
     assert base.players_xy.shape == atd.players_xy.shape
 
 
@@ -585,9 +639,9 @@ def test_swap_record_has_realised_and_surplus_shares():
     assert "swap" not in base_info
     _, info = degrade.degrade(view, "generic_swap20", None, 0)
     record = info["swap"]
-    assert sorted(record) == ["declared_share", "episode_frames", "episode_rows", "episode_share", "graded_rows",
-                              "surplus_frames",
-                              "surplus_share"]
+    assert sorted(record) == sorted(("declared_share", "episode_frames", "episode_rows", "episode_share",
+                                     "graded_rows", "onsets", "episodes", "skipped_far", "skipped_overlap",
+                                     "surplus_frames", "surplus_share"))
     assert record["declared_share"] == 0.20 and record["graded_rows"] == 5600
     assert 0.0 <= record["surplus_share"] <= 1.0 and 0.0 <= record["episode_share"] <= 1.0
 
@@ -600,16 +654,21 @@ def test_swap_runs_on_the_runner_and_the_report_says_so():
     lines = []
     with tempfile.TemporaryDirectory() as root, no_calibration_load():
         result = benchmark_run.evaluate_configs([yardstick_path(50)], profile="generic_swap20", seeds=2,
-                                                matches=matches, data_dir=root, log=lines.append)
+                                                matches=matches, data_dir=root, log=lines.append,
+                                                allow_sensitivity=True)
         plain = benchmark_run.evaluate_configs([yardstick_path(50)], profile="generic", seeds=2, matches=matches,
                                                data_dir=root, log=quiet)
     report = result["configs"][0]["report"]
     assert report["profile"] == {"name": "generic_swap20", "version": 1} and report["calibration"] is None
     assert "sensitivity_only" in report
-    assert all("swap" in record and sorted(record["swap"]) == ["episode_share", "surplus_share"]
+    assert all("swap" in record and sorted(record["swap"]) == ["episode_share", "seeds", "surplus_share"]
+               and sorted(record["swap"]["seeds"]) == ["0", "1"]
+               and all(sorted(one) == ["episode_share", "episodes", "onsets", "skipped_far", "surplus_share"]
+                       for one in record["swap"]["seeds"].values())
                for record in report["matches"]), report["matches"]
     text = "\n".join(lines)
     assert "episode share" in text and "surplus share" in text and "sensitivity" in text, text
+    assert "onsets" in text and "episodes" in text and "seed 1" in text, text
     base = plain["configs"][0]["report"]
     assert "sensitivity_only" not in base and all("swap" not in record for record in base["matches"])
 
@@ -618,13 +677,14 @@ def test_swap_profiles_are_refused_by_every_tool_but_the_runner():
     """degrade.SENSITIVITY_PROFILES is looped over against every tool that trains, chooses, ranks or gates, and the
     pipeline's model loader: each raises with the profile named, and only run.py's profile check accepts it."""
     from pipeline.benchmark import choose, fidelity, p29_bar
+    from pipeline.benchmark import run as benchmark_run
     from pipeline.evidence import trees
     assert tuple(trees.SENSITIVITY_PROFILES) == tuple(degrade.SENSITIVITY_PROFILES), "the pipeline's copy is the same"
     for name in degrade.SENSITIVITY_PROFILES:
+        benchmark_run._check_benchmark_profile(name)        # the one that accepts it: the runner's own command
         for tool, call in _tools():
             if tool == "run._check_profile":
-                call(name)          # the one that accepts it
-                continue
+                continue            # refuses too (below); the runner's own command accepts through its own check
             try:
                 call(name)
             except Exception as error:      # every tool refuses with its own error class, naming the profile

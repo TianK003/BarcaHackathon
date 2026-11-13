@@ -49,6 +49,9 @@ def _choice(stems, reference, data_dir, profile=PROFILE):
     refused = degrade.sensitivity_refusal(profile, "p29_bar")     # C2: a sensitivity profile is never ranked or gated
     if refused:
         raise choose.ChooseError(refused)
+    if profile != PROFILE:
+        raise choose.ChooseError("p29_bar: the bar is declared on the {} profile only, and {!r} was asked for"
+                                 .format(PROFILE, profile))
     return choose.choose(stems, reference, profile=profile, band=choose.TIE_BAND, objective="mean", data_dir=data_dir)
 
 
@@ -93,7 +96,8 @@ def main(argv=None):
     parser.add_argument("--reference", required=True)
     parser.add_argument("--data-dir")
     parser.add_argument("--profile", default=PROFILE,
-                        help="only {} (the bar is declared on it); a sensitivity profile is refused".format(PROFILE))
+                        help="only {0} is accepted (the bar is declared on it); any other profile, and a sensitivity "
+                             "profile above all, is refused".format(PROFILE))
     args = parser.parse_args(argv)
     reconfigure = getattr(sys.stdout, "reconfigure", None)
     if reconfigure is not None:
