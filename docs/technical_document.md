@@ -984,6 +984,9 @@ classes balance exactly and the model has no prior to subtract and no notion of 
 - **It has no wrong-team slots and no long NaN-speed runs**, which our tracking has (T31, T32), because DATA.md
   documents neither. The retired benchmark put the whole player degradation at 0.013 spellF1 (A14), so the cost is
   expected to be small, and it is not measured on our match.
+  A sensitivity check on 13 Nov (A27) added declared wrong-team slot episodes to `generic`: the gains of the
+  night's candidates (P30, P32, not adopted) held, but the realised share of such frames was at most 2.3%,
+  far below our tracking's, so it says nothing about wrong-team slots as frequent as ours.
 - **The gap law is one declared range.** Another range would give other constants, and no second range was run.
 - **Two figures are quoted from DATA.md**, and no text allows quoting them by name (section 5, the residual risk).
   We read them as public information of the task statement, and keep them.
