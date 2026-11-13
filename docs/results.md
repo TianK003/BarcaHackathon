@@ -2537,6 +2537,47 @@ in a gap +13 [−9, +40]; into `D`, both states, −1 [−11, 0].
 - That is P37's target (each team's time since and until its control, in the gaps). P35's hazard, which speaks only
   where the ball is seen (amendment 4), does not reach it.
 
+### A27 — The night's gains under declared wrong-team slots (C2; declared 2026-11-13, 02:50; run 03:35 to 03:44, Tian away, an advisor agent in Tian's place)
+Proposal: C2 (a check of the fourth round; [the spec](superpowers/specs/2026-11-13-p40-c2-design.md), amendment 5) ·
+Code: `bc90fe7`, `003982d` (two sensitivity profiles in `degrade.py`), merged as `97e8086` · Command: `python
+pipeline/benchmark/run.py pipeline/benchmark/configs/p27/p27_final.toml pipeline/benchmark/configs/p30/p30_w030.toml
+pipeline/benchmark/configs/p32/p32_w030.toml --profile generic_swap05|generic_swap20 --seeds 3 --truth both` (at
+`97e8086`) · It trains, chooses, ranks and gates nothing.
+
+**What it asks.** Our tracking puts a slot on the wrong team on at least 10.8% of the graded frames (T32, A07);
+`generic` has none. P30's and P32's sources read the teams' slots (P32 per team: distances, reach times), so a slot on
+the wrong team reads as the other team's player. C2 asks whether the night's gains survive wrong-team slots on DFL.
+
+**How, declared** (the advisor's amendment 5): two profiles, `generic` v1 bit for bit plus wrong-team slot episodes at a
+declared share of 0.05 and 0.20 (round numbers from rare to common; DATA.md says slots "appear, vanish and swap
+identity" and gives no rate), through the existing episode code at scale 1.0, episode lengths from `generic`'s declared
+grid, pairs within the declared 2 m, their own random stream, no Calibration. **The grid was declared knowing our
+measured 10.8%**: it can therefore never be a setting, a gate or a rank (T01, T54), and both profiles are refused by
+every tool except `run.py`. A wording was declared before the run: if under 0.20 P32's gain over `p30_w030` fell below
+half its `generic` gain (+0.0081) or turned negative on either truth, the summary would say "P32's gain depends on clean
+slot teams".
+
+**The run.** Realised (never tuned): at 0.05, 1.9% of graded frames in an episode and 0.8% with a team showing more
+slots than players (the observable surplus); at 0.20, 5.6% and 2.3% (about 45% of the onsets at 0.20 found no pair
+within 2 m and were skipped).
+
+| profile | P30 over `p27_final`: raw, coarse (wins of 7), mean | P32 over `p30_w030`: raw, coarse (wins), mean | both over `p27_final`, mean |
+|---|---|---|---|
+| `generic` | +0.0215 (7), +0.0072 (5), +0.0143 | +0.0262 (7), +0.0062 (6), +0.0162 | +0.0305 |
+| `generic_swap05` | +0.0216 (7), +0.0068 (5), +0.0142 | +0.0264 (7), +0.0062 (6), +0.0163 | +0.0305 |
+| `generic_swap20` | +0.0206 (7), +0.0072 (5), +0.0139 | +0.0267 (7), +0.0066 (6), +0.0166 | +0.0305 |
+
+`p32_w030` itself: raw 0.5891, 0.5896, 0.5873 and coarse 0.5963, 0.5955, 0.5941 under the three profiles; `p32_w030`
+reproduced to the last digit on `generic` in the same chain.
+
+**What it says.**
+- The declared wording is **not triggered**: under 0.20 P32's gain is +0.0166 (at least +0.0081 needed; positive under
+  both truths), and P30's +0.0139.
+- **The limit, stated:** at scale 1.0 the realised surplus (0.8% and 2.3% of the graded frames) is far below the
+  declared rates and below what our tracking shows. C2 says the gains do not depend on perfectly clean slot teams; it
+  says nothing about wrong-team slots as frequent as ours. That risk stays in the technical document's limitations, in
+  words (T32), and only a check on BAR-ATH at adoption, declared before anyone looks, could test it.
+
 ## Experiments
 
 Copy this template for each run, and add a scoreboard row for anything worth comparing.
@@ -10930,7 +10971,7 @@ trades the raw truth against the coarse one. The headroom is in the gaps, where 
 
 ### R041 — P40: shape features version 5, opponents' approach: better than version 2 in the gaps, short of its gate, dropped (declared 2026-11-13, 02:50; run 03:12 to 03:28, Tian away, an advisor agent in Tian's place)
 Proposal: P40 · Spec (declared before any run): [2026-11-13-p40-c2-design.md](superpowers/specs/2026-11-13-p40-c2-design.md)
-(amendment 3) · Code: `fd4a05c`, `4d7e16f` (merged as `d4ef852`, `a86f210`), the model `656fba3`; removed in DROP40,
+(amendment 3) · Code: `fd4a05c`, `4d7e16f` (merged as `d4ef852`, `a86f210`), the model `656fba3`; removed in `f740312`,
 recoverable from `656fba3` · Command: `python pipeline/benchmark/p40_sanity.py --matches J03WMX --seeds 1`,
 `train_shape.py --features 5`, then `train_shape.py --features 5 --report` and `--features 2 --report` (at `656fba3`)
 Public: — (nothing of our match was run)

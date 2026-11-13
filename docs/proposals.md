@@ -1579,7 +1579,9 @@ fails too (the into-`D` upper quartile +21 against the team ends' +31.5). It reo
 
 ### C2 — The candidate under declared wrong-team slots (a check)
 
-**Status: in progress (13 Nov).** It chooses nothing. Two sensitivity profiles of `generic` with wrong-team slot
+**Status: done 13 Nov 2026 → [A27](results.md): the gains hold (P32 over `p30_w030` +0.0166 under the 0.20
+profile against +0.0162 on `generic`; P30 +0.0139 against +0.0143); the declared wording is not triggered; the
+realised surplus (2.3% at most) was far below ours, so it says nothing about heavier slot errors.** It chooses nothing. Two sensitivity profiles of `generic` with wrong-team slot
 episodes at declared shares of 0.05 and 0.20 (scale 1.0, no Calibration), refused by every tool but `run.py`, rerun
 P30's and P32's gains to size the candidate's largest unseen risk (T32). The grid was declared knowing our measured
 10.8%, so it can never be a setting, a gate or a rank (T01, T54); its result is a stated risk in the technical
