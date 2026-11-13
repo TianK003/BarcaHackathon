@@ -129,7 +129,7 @@ def recording_fit(calls):
     """A stand-in for trainer.fit that records what it was given and returns a model that holds just that."""
     def fit(X, y):
         calls.append((np.array(X), np.array(y)))
-        return {"rows": int(len(y)), "home_share": float(np.mean(y))}
+        return {"rows": int(len(y)), "home_share": float(np.mean(y)) if len(y) else None}
     return fit
 
 
@@ -1039,6 +1039,36 @@ def test_team_feasibility_reports_silent_share_hashes_and_refuses_empty_wins():
 
 
 # -- P32's four configs -----------------------------------------------------------------------------------------------
+
+def test_committed_team_model_holds_a_fold_for_each_benchmark_match():
+    """The same standing check as the shape files': a missing or renamed fold would be scored with `full`, in sample.
+    Also `generic` and no Calibration digest."""
+    path = trainer.DEFAULT_MODEL_PATH
+    if not os.path.exists(path):
+        raise NotRun("{} is not trained yet; run `python pipeline/benchmark/train_team.py` and commit it".format(
+            os.path.relpath(path, trainer.ROOT)))
+    with open(path, encoding="utf-8") as handle:
+        artifact = json.load(handle)
+    name = os.path.basename(path)
+    assert sorted(artifact["folds"]) == sorted(sources.MATCH_IDS), (
+        "{}: folds {} are not the seven benchmark matches".format(name, sorted(artifact["folds"])))
+    assert "full" in artifact, "{}: no `full` model".format(name)
+    assert artifact["profile"] == "generic", "{}: trained on profile {!r}".format(name, artifact["profile"])
+    assert artifact["provenance"]["calibration_sha256"] is None, "{}: a Calibration digest is recorded".format(name)
+    team_model.load(path)
+
+
+def test_candidate_configs_are_their_benchmarked_configs():
+    """pipeline/configs/candidates/ holds what would be adopted; each must be the config that faced the bar, as parsed
+    TOML, apart from `description` (the only difference there is)."""
+    pairs = (("p30_shape_v2.toml", os.path.join("p30", "p30_w030.toml")),
+             ("p32_team_model.toml", os.path.join("p32", "p32_w030.toml")))
+    for candidate, benchmarked in pairs:
+        left = read_toml(os.path.join(ROOT, "pipeline", "configs", "candidates", candidate))
+        right = read_toml(os.path.join(CONFIGS, benchmarked))
+        assert isinstance(left.pop("description"), str) and isinstance(right.pop("description"), str), candidate
+        assert left == right, "{} differs from {} in more than its description".format(candidate, benchmarked)
+
 
 def test_team_p32_configs_are_p30_w030_plus_the_team_model():
     """Each is p30_w030.toml plus one [[evidence]] table at the end of the evidence, kind team_model with its weight and
