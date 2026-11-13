@@ -5103,7 +5103,7 @@ def test_shape_features_v5_ignore_the_ball():
 def test_shape_features_v5_speed():
     from pipeline.evidence import shape_features
     rng = np.random.default_rng(14)
-    n, slots = 100_000, 30
+    n, slots = 100_000, 46                           # 23 a team, as generic serves
     players = rng.random((n, slots, 2))
     players[rng.random((n, slots)) < 0.4] = np.nan
     ball = rng.random((n, 2))
@@ -5116,7 +5116,7 @@ def test_shape_features_v5_speed():
     elapsed = time.perf_counter() - started
     print("      shape features v5 speed: 80,000 graded frames x {} slots: version 5 on top of version 2 in {:.2f} s "
           "(version 2 and the tracks {:.2f} s)".format(slots, elapsed, v2_s))
-    assert elapsed < 4.0, "{:.2f} s for 80,000 frames x 30 slots (the budget is 4 s)".format(elapsed)
+    assert elapsed < 4.0, "{:.2f} s for 80,000 frames x 46 slots (the budget is 4 s)".format(elapsed)
 
 
 def test_shape_possession_reads_a_v5_file_and_refuses_the_retired_ones():
