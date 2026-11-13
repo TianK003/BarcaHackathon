@@ -62,7 +62,8 @@ What it cannot do, and why `hmm` replaces it:
 
 A three-state hidden Markov model over `H`, `A` and `D`, decoded by Viterbi once per block, so a possession is an
 interval whose edges have to be paid for; with `restart_source`, `D` splits into two restart states
-([below](#restart-states-p17)). Its module docstring ([`hmm.py`](hmm.py)) is the specification; the checks in
+([below](#restart-states-p17)), and with `hazard_source` a change of team costs a price per frame
+([below](#per-frame-team-cost-p35)). Its module docstring ([`hmm.py`](hmm.py)) is the specification; the checks in
 `pipeline/selftest.py` pin it against a brute force over every path.
 
 ```toml
@@ -102,6 +103,8 @@ first and last run, which its edges may have cut short. The decoder returns a va
 | `restart_source` | none | the name of the evidence source whose `home` says who restarts after a stoppage: turns on the restart states ([below](#restart-states-p17)) |
 | `switch_restart` | `inf` | with `restart_source`: nats a restart by the team the vote did not name costs on top of `switch_dead`; `inf` forbids it |
 | `team_neutral_dead` | `false` | `true` also gives `D` the larger of the two team terms of every `home` vote, so team evidence ranks `H` against `A` and leaves the better of them level with `D` (P31; [below](#team-neutral-dead-p31)); refused with `restart_source` |
+| `hazard_source` | none | the name of the `turnover_hazard` source whose `home` is a hazard: a change of team then costs a price per frame instead of `switch_team` (P35; [below](#per-frame-team-cost-p35)) |
+| `hazard_scale` | 1.0 with a source | how far the hazard's log-odds move `switch_team` on a frame; a finite number ≥ 0, 0 leaves `switch_team` on every frame; refused without `hazard_source` |
 
 All four numbers are validated (no bool, no NaN or infinity, minimums are whole numbers of frames >= 1) and named in the
 error, and so are the restart states' two: `switch_restart` must be > 0 or `inf`, and is refused when finite without a
@@ -139,6 +142,56 @@ the same code path, the same floats. It belongs to the three states: `team_neutr
 refused, a value that is not a bool is refused, and `posterior = true` gives the posterior of the emissions as the flag
 shapes them. [`configs/p31/p31_neutral.toml`](../benchmark/configs/p31/p31_neutral.toml) is `p27_final` with the flag on.
 
+### Per-frame team cost (P35)
+
+```toml
+[[evidence]]
+kind = "turnover_hazard"
+name = "hazard"
+
+[decoder]
+kind = "hmm"
+switch_team = 6
+switch_dead = 32
+hazard_source = "hazard"   # default none: switch_team on every frame, today's loop
+hazard_scale = 1.0         # default 1.0 with a source
+```
+
+A change of team costs `switch_team` on every frame: in a duel, a pass in flight, or thirty seconds into a quiet spell.
+With `hazard_source`, the named source's `home` is a hazard `z`: how likely a direct change of team is near the frame,
+against its base rate (`turnover_hazard` writes `z = p / (p + b)`, so `logit z = log(p / b)`). It speaks where the ball
+is seen and is `NaN` elsewhere. A change between `H` and `A` from frame `t - 1` to frame `t` then costs
+
+```
+team_cost[t] = clip(switch_team - hazard_scale * logit(clip(z_t, eps, 1 - eps)), HAZARD_FLOOR, 2 * switch_team)
+```
+
+and exactly `switch_team` where `z_t` is `NaN`. In an input-dependent HMM the cost of a change is minus the log of its
+probability, so `switch_team` is that cost at the base rate and `z` moves it by its log-odds against the base rate.
+
+- **Which frame.** The cost belongs to the first frame of the run the change starts, `t`, and is paid once however long
+  that run lasts. `team_cost[0]` is never read.
+- **Nothing else moves.** Changes into or out of `D` cost `switch_dead`; the minimums, the validity and the tie order are
+  as above (across a stretch without team evidence the change lands on the cheapest frame, the earliest of them on a
+  tie); the named source adds nothing to the emissions, neither its `home` nor its `alive`.
+- **Fixed bounds.** `HAZARD_FLOOR`, 1 nat, keeps a change from ever becoming free; the cap of `2 * switch_team` keeps a
+  frame the hazard rules out from becoming a wall no team evidence could climb. Both were declared with P35, not knobs.
+- **Off is today's decoder, bit for bit.** Without `hazard_source` the loop that always ran runs (the choice is made
+  once, before the loop). A hazard `NaN` everywhere, `z = 0.5` and `hazard_scale = 0` cost exactly `switch_team`, and
+  a cost of `switch_team` on every frame gives the same labels as the loop without it. The checks hold that on random
+  and on exactly tied blocks, and the priced decoder against every path of blocks of up to 8 frames.
+- **Cost.** 80,000 frames with a hazard take about 1.07 times the decode without it.
+- **The posterior** (`posterior = true`) takes the same per-frame costs: the forward pass prices the birth of a run into
+  frame `t` at `team_cost[t]`, the backward pass the leave from `t` towards `t + 1` at `team_cost[t + 1]`. Checked
+  against every path of blocks of up to 7 frames, against a long block read backwards, and, at a cost of `switch_team`
+  on every frame, against the posterior without a hazard to the last bit. `diagnose.py` reads it on a hazard config.
+- **Refused:** `hazard_scale` without `hazard_source`; a `hazard_source` that names none of the block's sources; a
+  negative, infinite or `NaN` scale; a hazard with `restart_source` or with `team_neutral_dead`; a hazard with
+  `switch_team` below `HAZARD_FLOOR` (a frame at the base rate would then cost more than `switch_team`, and scale 0
+  would not be today's decoder); and a weight other than 1 on the named source (its strength is `hazard_scale`). The config loader refuses, before any data is read, a `hazard_source` that is not a
+  `turnover_hazard` source and a `turnover_hazard` source the decoder does not name: read as an ordinary source, its
+  `home` would vote for the home team wherever a change is likely.
+
 ### The posterior
 
 ```toml
@@ -169,7 +222,8 @@ paths. Each row sums to 1.
 - **Cost.** It is O(`min_possession` + `min_dead`) a frame and holds `n_frames * (2 * min_possession + min_dead) * 8`
   bytes (96 MB for 80,000 frames with both minimums at 50), so it is off by default and no benchmark grid asks for it.
   80,000 frames with both minimums at 50 take about 2 s.
-- **Three states only.** `posterior = true` with `restart_source` is refused.
+- **Three states only.** `posterior = true` with `restart_source` is refused. With `hazard_source` it takes the
+  per-frame team cost ([above](#per-frame-team-cost-p35)).
 
 ### Restart states (P17)
 

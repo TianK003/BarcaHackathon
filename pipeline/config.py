@@ -26,6 +26,9 @@ EVIDENCE_RESERVED = ("kind", "name", "weight")
 # How many leading positional arguments each kind of component takes before its keyword-only parameters:
 # compute(run), decode(ctx), refine(ctx, decoded). Used to check a config's parameters against the signature.
 CONTEXT_ARGUMENTS = {"evidence": 1, "decode": 1, "refine": 2}
+# The kind of evidence source whose `home` is a turnover hazard (P35), not a team probability: the hmm decoder reads it
+# through its hazard_source, and nothing else may.
+HAZARD_KIND = "turnover_hazard"
 
 
 class ConfigError(ValueError):
@@ -111,6 +114,7 @@ def load_config(path, registries=None):
 
     refine = tuple(_component(entry, "refine", index, registries["refine"], where)
                    for index, entry in enumerate(_table_list(table, "refine", where), start=1))
+    _check_hazard(evidence, decoder, where)
 
     return Config(path=path, stem=os.path.splitext(os.path.basename(path))[0], text=text,
                   description=description, seed=seed, scope=scope,
@@ -147,6 +151,34 @@ def _component(entry, stage, index, registry, where):
 
     _check_parameters(registry[kind], stage, params, "{}: {} {!r}".format(where, label, kind))
     return Component(kind=kind, name=name, weight=float(weight), params=params)
+
+
+def _check_hazard(evidence, decoder, where):
+    """ConfigError unless the decoder's hazard_source (P35), if it sets one, names an evidence source of kind
+    HAZARD_KIND, and every source of that kind is the one it names.
+
+    Both ways, because a hazard is not a team probability. A turnover_hazard source that the decoder does not name would
+    be read as an ordinary `home` source, a vote for the home team wherever a change of team is likely; and a
+    hazard_source that names a source of another kind would read that source's team probability as a hazard.
+    """
+    named = decoder.params.get("hazard_source")
+    hazards = [component.name for component in evidence if component.kind == HAZARD_KIND]
+    if named is not None:
+        kinds = {component.name: component.kind for component in evidence}
+        kind = kinds.get(named) if isinstance(named, str) else None
+        if kind != HAZARD_KIND:
+            raise ConfigError("{}: [decoder] hazard_source = {!r} names {}; it must name an [[evidence]] source of "
+                              "kind \"{}\", and the config's are: {}".format(
+                                  where, named, "no evidence source" if kind is None else
+                                  "a source of kind {!r}".format(kind), HAZARD_KIND,
+                                  ", ".join(repr(name) for name in hazards) or "none"))
+    for name in hazards:
+        if name != named:
+            raise ConfigError("{}: [[evidence]] {!r} is of kind \"{}\", whose `home` is a hazard and not a team "
+                              "probability, so only the decoder's hazard_source may read it, and [decoder] {}; name it "
+                              "there (a decoder reads one hazard), or remove the source".format(
+                                  where, name, HAZARD_KIND, "sets no hazard_source" if named is None else
+                                  "has hazard_source = {!r}".format(named)))
 
 
 def _check_parameters(function, stage, params, who):

@@ -63,6 +63,10 @@ Against the raw truth only, the frame-level one (the coarse truth is a construct
   wherever a team source speaks the better alive state sits w log 2 max(h, 1 - h) above D, and beta on team_speaks
   measures that 50/50 assumption. And P(H) / (P(H) + P(A)) against the team, on the truth's alive frames; a frame
   whose P(H) + P(A) is 0 (underflow) has no such ratio and is counted apart (frames_without_alive_mass).
+* A config whose decoder reads a turnover hazard (hazard_source, P35): the posterior is hmm.marginals at the decoder's
+  own per-frame team cost (hmm.hazard_costs of the hazard source's `home` at the config's hazard_scale), and the hazard
+  source is left out of the measures (it is not a team probability): no calibration entry, no speaker bit, no term in
+  the posterior's emissions.
 * Added after the review of part 1, reported only and gating nothing: the same alive measure by which team sources
   speak on the frame (alive_by_team_sources), keyed by the sorted names of the sources with a finite `home` joined by
   "+", or "none" (speaker_groups). In main.toml shape_possession speaks on nearly every graded frame, so the declared
@@ -495,8 +499,10 @@ class _Pool:
 # -- the run ----------------------------------------------------------------------------------------------------------
 
 def posterior_parameters(config):
-    """{switch_team, switch_dead, min_possession, min_dead, eps, team_neutral_dead}: the config's [decoder] parameters for hmm.marginals,
-    hmm.decode's defaults where it leaves one out. BenchmarkError unless the decoder is hmm without restart_source."""
+    """{switch_team, switch_dead, min_possession, min_dead, eps, team_neutral_dead, hazard_source, hazard_scale}: the
+    config's [decoder] parameters for hmm.marginals and the source its decoder reads as a hazard (P35) with its scale,
+    hmm.decode's defaults where it leaves one out (hazard_scale hmm.DEFAULT_HAZARD_SCALE with a source and none given).
+    BenchmarkError unless the decoder is hmm without restart_source."""
     if config.decoder.kind != "hmm":
         raise run.BenchmarkError(
             "{}: the decoder is {!r}, which has no posterior; A19 reads the posterior of the hmm decoder "
@@ -510,7 +516,9 @@ def posterior_parameters(config):
             "{}: [decoder] sets restart_source = {!r}; the restart states have no posterior (hmm.marginals is the "
             "three states' only), so diagnose the config without restart_source".format(
                 config.stem, values["restart_source"]))
-    return {name: values[name] for name in POSTERIOR_PARAMETERS}
+    if values["hazard_source"] is not None and values["hazard_scale"] is None:
+        values["hazard_scale"] = hmm.DEFAULT_HAZARD_SCALE
+    return {name: values[name] for name in POSTERIOR_PARAMETERS + ("hazard_source", "hazard_scale")}
 
 
 def _predict(config, inputs):
@@ -605,7 +613,10 @@ def diagnose(config_path, profile=DEFAULT_PROFILE, seeds=None, match_ids=None, m
                 truth = raw[start:stop]
                 live = truth != D
                 speakers = np.zeros(stop - start, dtype=np.int64)       # bit i: the i-th source has a home here
-                for bit, (name, source) in enumerate(sources.items()):
+                # The decoder's hazard (P35) is not a team probability: no pool, no speaker bit, no emission of it.
+                team_sources = [(name, source) for name, source in sources.items()
+                                if name != decoder["hazard_source"]]
+                for bit, (name, source) in enumerate(team_sources):
                     home, alive = source.home[start:stop], source.alive[start:stop]
                     known = ~np.isnan(home)
                     speakers |= known.astype(np.int64) << bit
@@ -616,17 +627,21 @@ def diagnose(config_path, profile=DEFAULT_PROFILE, seeds=None, match_ids=None, m
                     known = ~np.isnan(alive)
                     if known.any():
                         pool(name, "alive").add(key, alive[known], live[known])
-                window = [source.window(start, stop) for source in sources.values()]
+                window = [source.window(start, stop) for _, source in team_sources]
                 emissions = hmm.log_likelihoods(window, stop - start, decoder["eps"], decoder["team_neutral_dead"])
+                # With a hazard (P35), a change of team costs what hmm.decode charges it, frame by frame.
+                team_cost = None if decoder["hazard_source"] is None else hmm.hazard_costs(
+                    sources[decoder["hazard_source"]].home[start:stop], float(decoder["switch_team"]),
+                    float(decoder["hazard_scale"]), decoder["eps"])
                 posterior = hmm.marginals(emissions, decoder["switch_team"], decoder["switch_dead"],
-                                          decoder["min_possession"], decoder["min_dead"])
+                                          decoder["min_possession"], decoder["min_dead"], team_cost)
                 in_play = posterior[:, H] + posterior[:, A]
                 pool(POSTERIOR, "alive").add(key, np.clip(in_play, 0.0, 1.0), live, speakers)
                 defined = live & (in_play > 0.0)
                 pool(POSTERIOR, "home").add(key, np.clip(posterior[defined, H] / in_play[defined], 0.0, 1.0),
                                             truth[defined] == H)
                 without_mass += int((live & ~defined).sum())
-                del emissions, posterior, in_play
+                del emissions, posterior, in_play, team_cost
             del atd, inputs, codes, sources, ball_seen
         log("match     {}   {} halves x {} seed{}".format(match.match_id, len(match.graded), len(seed_list),
                                                            "" if len(seed_list) == 1 else "s"))
@@ -644,6 +659,8 @@ def diagnose(config_path, profile=DEFAULT_PROFILE, seeds=None, match_ids=None, m
 
     measured = {}
     for component in config.evidence:
+        if component.name == decoder["hazard_source"]:
+            continue                                 # not a team probability: measured by its trainer's report
         entry = {"kind": component.kind, "weight": component.weight}
         if (component.name, "home") in pools:
             p, y, visible = pools.pop((component.name, "home")).arrays()
@@ -659,7 +676,8 @@ def diagnose(config_path, profile=DEFAULT_PROFILE, seeds=None, match_ids=None, m
     alive = {"all": _calibrate(p, y), "team_speaks": _calibrate(p[speaks], y[speaks]),
              "team_silent": _calibrate(p[~speaks], y[~speaks])}
     by_speakers = {}
-    for group, codes_in in speaker_groups(speakers, names).items():
+    team_names = [name for name in names if name != decoder["hazard_source"]]   # the speaker bits' order
+    for group, codes_in in speaker_groups(speakers, team_names).items():
         chosen = np.isin(speakers, codes_in)
         by_speakers[group] = _calibrate(p[chosen], y[chosen])
     p, y, _ = pools.pop((POSTERIOR, "home")).arrays()
