@@ -13,7 +13,7 @@ R002 to R012).
 
 **Since R030 (10 Nov 2026) the benchmark's default profile is `generic`, which reads nothing of our match**
 ([P27](../../docs/proposals.md), [the spec](../../docs/superpowers/specs/2026-11-09-p27-degradation-design.md)). Both
-models are trained on it and every numeric constant of `main.toml` is chosen on it. The three older degraded
+models are trained on it and every numeric constant of `main.toml` is chosen on it (R042 added P30's version 2 shape model and P32's team model, both trained on it too). The three older degraded
 profiles (`gaps`, `tracking`, `context`) read our match. Since the organisers' reply of 5 Nov nothing is trained or
 chosen on them, and they stay for the record of R002 to R029 ([The profiles](#the-profiles)).
 

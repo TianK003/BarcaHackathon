@@ -3,7 +3,7 @@
 - **Team:** [five names]
 - **Code:** [public repository URL], commit `<hash>`
 - **Submission:** `Un Dia de Partit.csv`, the file `pipeline/configs/main.toml` writes, sha256
-  `2dd51320b1d32f8be6d06e63f833e6d8e196ddcaad294b606db3914c351c1660` (R030)
+  `aae79a0446dabdf565d86b95f03acf0a53b5698cf3d80033c25bf7d49cbd3bdb` (R042)
 - **IDs** refer to files in the repository: A.. (analyses) and R.. (experiments) in docs/results.md, T.. (pitfalls) in
   docs/traps.md, P.. (proposals) in docs/proposals.md. The full record of every choice is docs/technical_document.md.
 
@@ -30,9 +30,13 @@ log-likelihood), a change into or out of `D` 32, a run of `H` or `A` lasts at le
 at least 25 (R030). A possession is then an interval whose two edges must be paid for, which is what spellF1
 scores.
 
-**Three sources:** `controlled_touch` (P04, `home`), a control rule where the ball is seen (section 4);
-`dead_ball_model` (P05, `alive`), boosted trees on 30 play features; and `shape_possession` (P07, `home`),
-boosted trees on 26 features of how the two teams stand and move, none reading the ball, weight 0.3 (R030). After
+**Four sources:** `controlled_touch` (P04, `home`), a control rule where the ball is seen (section 4);
+`dead_ball_model` (P05, `alive`), boosted trees on 30 play features; `shape_possession` (P07 and P30, `home`),
+boosted trees on 42 features of how the two teams stand and move, none reading the ball: version 1's 26 plus, per team,
+its length, its spread and the change of its advance one-sided in time over 2, 5 and 10 s, so that a hand-over inside a
+ball gap shows earlier (weight 0.3, R033); and `team_model` (P32, `home`), boosted trees on 72 features of the ball
+against each team (distances, closing, time to reach it, control timing, direction towards each goal) plus the shape
+features, only where the ball is seen, weight 0.3 (R037). After
 the decoder, `shift_edges` (P02) moves a change of team 1 frame later and a change into `D` 2 frames earlier: the
 pipeline's own median lag on the benchmark, negated (R012's rule, measured again in R030).
 
@@ -179,8 +183,8 @@ submission, and the submitted file does not read them. We degrade the DFL tracki
 
 **Not the public window** (section 2 lists its uses). Beyond the rule, it would mislead: with 17 possessions one moves
 spellF1 by about 0.06, it is the best-covered block (A02), and it ranks `smooth125` above `smooth50`, the reverse of the
-full match (T01). Today's file scores macroF1 0.7238 and spellF1 0.5029 on it (R030): a check for gross errors,
-which chose nothing.
+full match (T01). Today's file scores macroF1 0.7199 and spellF1 0.4737 on it (R042; R030's file 0.7238 and 0.5029): a
+check for gross errors, which chose nothing.
 
 **The benchmark** (P01) builds the truth as ours is (`D` where `BallStatus` is dead, else `BallPossession`'s team);
 our components see no truth, and the organisers' scorer grades each half. The truth served as a prediction scores
@@ -220,7 +224,7 @@ scores are history and nothing stands on them today (pooled spellF1 raw / coarse
 - R017, + Smart Tagging (agreement on our match 0.761, bar 0.75; strength untested); taken out by R029 (section 2).
 - R024, re-chosen on the mean of the two truths: the hold 0.60 to 0.55, 0.5363 / 0.5764, mean +0.0052 (p 0.0469).
 
-**What stands today: R030, on `generic`** (seven matches, three seeds). Both models were retrained: the dead-ball trees
+**What stands today: R030's constants plus R042's two models, on `generic`** (seven matches, three seeds). Both models were retrained: the dead-ball trees
 have a pooled held-out log-loss of 0.0788 (AUC 0.9942 to 0.9973 by match) and beat the logistic reference's 0.1524 on
 7 of 7 matches; the shape model's is 0.3560 on alive frames without a ball (accuracy 0.8458). The touch rule's
 confidence was measured again (93.5% agreement, so 0.93). Every constant was then chosen again by a rule declared
@@ -230,25 +234,42 @@ configs); `switch_team` went from 4 to 6 and the shape weight from 0.2 to 0.3, w
 configs); `switch_dead` 32, `min_dead` 25, the dead-ball weight 1.0, the shape source on every graded frame and the
 shift +1 / -2 / 0 came back unchanged. Without the shape source the mean falls by 0.1037, to 0.4584.
 
-The final config scores **0.5414 raw / 0.5829 coarse (mean 0.5622)**; the constants it replaced score 0.5388 / 0.5779
-(mean 0.5584) on the same profile and models. The organisers' baselines decoded per half score 0.1885 / 0.1698 (`w50`)
-and 0.1616 / 0.2092 (`w125`). The bar passes: +0.3529 raw over `w50` and +0.3738 coarse over `w125`, p 0.0156 and 7 wins
-in 7 each. Two of the choices were knife-edges, decided by the declared rule (section 6).
+**R042 (13 Nov 2026, Tian's decision) added two models on top.** P30's version 2 shape model beat R030's file by
++0.0143 on the mean of the two truths (0.5629 raw / 0.5901 coarse; all seven matches, p 0.016; +0.0131 on three fresh
+seeds), and P32's team model beat P30 by a further +0.0162 (all seven matches, p 0.016; +0.0160 on fresh seeds):
+**0.5891 raw / 0.5963 coarse (mean 0.5927)**, +0.0305 over R030's file (R033, R037). Their gains held under declared
+wrong-team slots, but the slots that check realised were at most 2.3% of the graded frames, far fewer than ours (A27).
+Where the ball is seen the edges of the possessions are within a few frames; the remaining error is at hand-overs
+inside the ball's gaps (A26). Every other constant is R030's, and R030's rule gives the same shift with the new sources.
 
-**On our match, pass or fail only (R030).** The checks were declared before the runs, and all pass. The file
-validates, with no `X` in a graded block and the same sha256 on two runs. Its `D` share is 34.5% of the graded frames,
-inside [30%, 62%], a band set on DFL (393 possessions). The shape model agrees with the touch episodes on 0.8199 of
-41,052 frames; its gate is 0.7426, its worst held-out DFL match. docs/results.md, R030, has the rest.
+R030's final config scored **0.5414 raw / 0.5829 coarse (mean 0.5622)**; the constants it replaced scored 0.5388 / 0.5779
+(mean 0.5584) on the same profile and models. The organisers' baselines decoded per half score 0.1885 / 0.1698 (`w50`)
+and 0.1616 / 0.2092 (`w125`). R030's bar passed: +0.3529 raw over `w50` and +0.3738 coarse over `w125`, p 0.0156 and 7
+wins in 7 each. Two of the choices were knife-edges, decided by the declared rule (section 6).
+
+**On our match, pass or fail only (R042).** The checks were declared before the runs, and all pass. The file
+validates, with no `X` in a graded block and the same sha256 on two runs, each from a rebuilt cache. Its `D` share is
+34.4% of the graded frames, inside [30%, 62%], a band set on DFL (`H` 38.2%, `A` 27.4%; 386 possessions, against R030's
+393). The version 2 shape model agrees with the touch episodes on 0.8317 of 41,052 frames; its gate is 0.7656 (R030's
+version 1 model: 0.8199 against 0.7426). The team model has no such check on our match (section 6). On the public
+window each source agrees with the truth on more than half of its frames and the macroF1 beats every constant file's.
+docs/results.md, R042, has the rest.
 
 **Where the remaining score is** (A25, on `generic`). A perfect team would add +0.1989 raw (+0.2151 coarse) where the
 ball is seen and +0.1800 (+0.1035) in the gaps, a perfect dead ball only +0.0278 (+0.0389): what is left is who has
 the ball. Each source earns its place: without the shape source the mean of the two truths falls by 0.1037, and
-without the touch rule by 0.0304 (R030).
+without the touch rule by 0.0304 (R030, before the two new models).
 
 ## 6. Limitations
 
 - **Where it is weakest on our match.** Late in each half the ball is missing on up to 80% of a 5-minute block (A02).
-  There the team rests on the shape model, trained on other teams, and on the hold. Where the ball is seen, the touch
+  There the team rests on the shape model, trained on other teams, and the decoder learns of a change of team late (a
+  median of +6 frames at a start and +11 at an end, A26).
+- **The team model has no transfer check on our match, and it is the source most exposed to wrong-team slots.** It
+  reads distances per team, and our tracking shows a team with more than 11 slots on at least 10.8% of the graded frames
+  (T32); the benchmark's check of this (A27) realised at most 2.3%. Its gain is the benchmark's, where the ball's gaps
+  ignore the play, so its size on our match is not known.
+- **The touch rule where the ball is seen.** Where the ball is seen, the touch
   rule finds control on 36.9% of our frames, against 43.6% for the 2.0 m rule it replaced (R013); what the tighter rule
   loses here is not measured.
 - **Our truth's grain is unknown, and two choices sit on it** (T33). DFL's flag gives 437 possessions a match, median
@@ -310,11 +331,12 @@ py -3.11 -m venv .venv                         # macOS/Linux: python3.11 -m venv
 .venv/Scripts/python -m pip install -r requirements-benchmark.txt
 .venv/Scripts/python pipeline/benchmark/sources.py                    # fetch the DFL files; --verify only checks them
 .venv/Scripts/python pipeline/benchmark/train_dead_ball.py --model hgb --profile generic --seeds 3 --verify
-.venv/Scripts/python pipeline/benchmark/train_shape.py --profile generic --seeds 3 --verify   # each retrains, compares
+.venv/Scripts/python pipeline/benchmark/train_shape.py --features 2 --verify   # each retrains, compares
+.venv/Scripts/python pipeline/benchmark/train_team.py --verify
 .venv/Scripts/python pipeline/benchmark/p27_profile_check.py          # the profile against its two declared shares
 .venv/Scripts/python pipeline/benchmark/run.py pipeline/benchmark/configs/nearest_w50.toml \
     pipeline/benchmark/configs/nearest_w125.toml pipeline/benchmark/configs/p27/p27_final.toml \
-    --profile generic --seeds 3 --truth both           # main.toml's constants and the two yardsticks (R030)
+    --profile generic --seeds 3 --truth both           # R030's file and the two yardsticks (R030)
 .venv/Scripts/python pipeline/benchmark/p27_choose.py bar p27_final   # the bar, from those reports
 .venv/Scripts/python pipeline/selftest.py --data       # needs data/: the organisers' four baselines byte for byte
 ```
@@ -323,9 +345,11 @@ py -3.11 -m venv .venv                         # macOS/Linux: python3.11 -m venv
   `p27_choose.py` applies the declared rules and `p27_shift.py` reads the shift; docs/results.md, R030, has the
   commands stage by stage. The retired profiles stay in the code for the record of R002 to R029, marked as such.
 
-**From a fresh clone.** R030's file (`2dd51320…`) came out the same on two runs in the working repository and from a
+**From a fresh clone.** R042's file (`aae79a04…`) came out the same on two runs, each from a rebuilt cache, and from a
+clean clone of `33d5ad7` (the same machine and environment); the three models' `--verify` pass. R030's file
+(`2dd51320…`) had come out the same on two runs in the working repository and from a
 clean clone of `c8d596e` in a fresh Python 3.11.9 environment built from `requirements-pipeline.txt`; again with the
-BLAS thread variables unset, and twice on Linux (WSL 2, Ubuntu 24.04, LF configs); both models' `--verify` pass. That
+BLAS thread variables unset, and twice on Linux (WSL 2, Ubuntu 24.04, LF configs). That
 was one machine, so another processor is untried. Earlier, A17 and A18 regenerated R017's file
 (`7ba575c0…`, an earlier config) from a fresh clone under Windows and under Linux (WSL 2; one laptop, AMD Ryzen 5
 5500U, CPU only), with the self-tests passing.
