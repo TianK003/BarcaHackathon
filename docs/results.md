@@ -62,6 +62,7 @@ two sets of numbers are different benchmarks. Hand labels on this match are not 
 | R036 | 2026-11-13 | P34: the version 2 shape model trained on both truths' labels (weighted half each where they differ) | — | — | — | — (no config was run: the gate comes first) | **dropped at its sanity gate**: the mean of the raw and coarse held-out gap log-losses fell 0.0007 against the 0.003 needed (raw +0.0075, coarse −0.0088: a trade along the grain); no retry; code removed, the report's coarse cells kept |
 | R037 | 2026-11-13 | P32: P19's team model where the ball is seen, restored and retrained on `generic` with the ball's direction (team features version 2, 72 columns), at weight 0.075 / 0.15 / 0.30 / 0.60 on top of `p30_w030` | — | — | — | **the pick `p32_w030` 0.5891 raw and 0.5963 coarse (mean 0.5927)** against `p30_w030`'s 0.5629 and 0.5901, and `p27_final`'s 0.5414 and 0.5829 | **cleared the bar** against `p30_w030` (mean +0.0162, p 0.016, all seven matches; raw +0.0262, coarse +0.0062); the gate passed (feasibility log-loss 0.2088 against 0.2700, below the rule's on 7 of 7); the night's candidate `pipeline/configs/candidates/p32_team_model.toml`, stacked on P30; **not adopted: Tian decides** |
 | R038 | 2026-11-13 | P39: `p32_w030` with the shape source silent where the ball is seen (its existing `scope = "gaps"`), so that P32's model, which reads the 42 shape columns itself, does not count them a second time | — | — | — | 0.5878 raw and 0.5807 coarse (mean 0.5843) against `p32_w030`'s 0.5891 and 0.5963 (mean 0.5927) | **dropped**: the bar missed (mean −0.0084; raw −0.0013, p 0.72; coarse −0.0156, p 0.016, lower on all seven matches), the direction R026 predicted and the spec declared; no gate, no retry; config and check removed |
+| R039 | 2026-11-13 | P37: shape features version 4 (version 2 plus each team's time since and until its control episode by the touch rule, capped at 30 s), speaking only in the ball-missing gaps (scope `"visible"` for version 2 where the ball is seen) | — | — | — | — (no config was run: the gate comes first) | **dropped at its gate**: the held-out gap log-loss 0.3206 against at most 0.3059 (version 2 reproduced 0.3189), the hand-over gaps 0.3448 against at most 0.3272 (version 2 0.3402; worse on 6 of 7 matches); no retry (the advisor); code and model removed, the report's gap cells kept |
 
 ### The four yardsticks on every profile, in one table
 
@@ -10828,6 +10829,45 @@ possessions on the seen frames, which the coarse truth punishes on every match a
 The shape source on the seen frames acts as a smoother of who has the ball, not only as a second copy of P32's inputs.
 This is R026's finding again (the gap evidence must not grow against the seen frames'), now with P32 in place. The
 "combined model" question is answered: keep the shape source on every frame.
+
+### R039 — P37: shape features version 4, each team's time since and until its control, for the gaps: both gates miss, dropped (declared 2026-11-13, 01:05; run 01:52 to 02:04, Tian away, an advisor agent in Tian's place)
+Proposal: P37 · Spec (declared before any run): [2026-11-13-p35-p39-design.md](superpowers/specs/2026-11-13-p35-p39-design.md)
+(amendment 5) · Code: `106ca0c`, `ed29ae2` (merged as `0e8cc43`), the model `963861b`; removed in DROP37, recoverable
+from `963861b` · Command: `python pipeline/benchmark/train_shape.py --features 4`, then `train_shape.py --features 4
+--report` and `--features 2 --report` (at `963861b`)
+Public: — (nothing of our match was run)
+Validation (P01 benchmark, `generic`, 3 seeds, held out per match): the gates only; no config was benchmarked
+Changed vs `main.toml`: nothing
+Verdict: **dropped at its gate; no retry**
+
+**The belief.** Version 2's shape model knows how the teams stand and move but not how long since each team last
+controlled the ball, or how long until it next does; in a gap that timing says who has it. Version 4 adds, per team,
+the seconds since its last control episode and until its next by the touch rule (0 inside an episode, capped at 30 s,
+never across half time), and speaks only in the gaps (version 2 keeps the seen frames, under R026's scope `"visible"`).
+C1 (A26) had just located the late edge tail at changes of team inside gaps, so the target was right.
+
+**The gates, declared before the run** (amendment 5): the held-out gap log-loss at most 0.3059 (version 2's 0.3189
+− 0.013), and on the hand-over gaps (the touch rule's last controller before differs from the next after) at most
+version 2's − 0.013 on the same frames; version 2 must reproduce 0.3189.
+
+**The run** (held out, seeds pooled; log-loss, accuracy):
+
+| version | alive frames | ball missing (the gate) | hand-over gaps (290,525) | same team (383,579) | unknown (11,143) | touch-episode agreement |
+|---|---|---|---|---|---|---|
+| 2 | 0.3213, 0.8636 | **0.3189**, 0.8645 | 0.3402, 0.8516 | 0.2981, 0.8769 | 0.4804, 0.7712 | 0.8470 |
+| 4 | 0.2709, 0.8904 | **0.3206**, 0.8644 | 0.3448, 0.8510 | 0.2972, 0.8773 | 0.4940, 0.7697 | 0.9571 |
+
+- **Both gates miss**: 0.3206 against at most 0.3059, worse than version 2; the hand-over gaps 0.3448 against at most
+  0.3272, worse than version 2 on 6 of 7 matches (better only on J03WMX, 0.3842 against 0.3886).
+- The advisor ruled no retry (02:06): not a near miss; the one plausible change (training on gap rows only) was put
+  under 1 in 8, and a pass would have been an alternative only (T38). The benchmark of `p37_split` and `p37_gap030` was
+  not run.
+
+**What it says.** The columns help only where the ball is seen, where they replay the touch rule's episodes (agreement
+0.847 → 0.957; all-alive log-loss 0.3213 → 0.2709), which the decoder already has from `controlled_touch` itself. In
+the gaps the time since a team's last touch does not say who has the ball after a hand-over the tracking did not see
+(T58). The hand-over gaps stay the hardest cell (0.34 against 0.30 for the same team), as C1 showed. The report's gap
+cells (hand-over, same team, unknown) are kept as a diagnostic: they choose nothing.
 
 ## Submission log
 

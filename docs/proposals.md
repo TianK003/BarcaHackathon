@@ -1520,8 +1520,10 @@ the ball is seen; the gaps decode as today. **The gate** (a screen): held-out AU
 
 ### P37 — Shape features version 4: each team's time since and until control, in the gaps only
 
-**Status: in progress (13 Nov).** Effort about 1.5 h. Odds about one in six. An **alternative** for Tian at most: no
-transfer check is possible (T38), so it never enters the night's candidate.
+**Status: dropped at its gate 13 Nov 2026 → [R039](results.md): the gap log-loss 0.3206 (at most 0.3059; version 2
+0.3189) and the hand-over gaps 0.3448 (at most 0.3272; version 2 0.3402) both missed; no retry (the advisor); code
+and model removed, the report's gap cells kept (T58).** Effort about 1.5 h. Odds about one in six. It would have
+been an alternative for Tian at most (T38).
 
 **The belief.** Version 2 knows the teams' shape but not how long since each last controlled the ball; in a gap that
 timing says who is likely to have it. Version 4 adds it, with a scope `"visible"` (R026's, restored) so the seen frames

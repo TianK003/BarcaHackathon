@@ -394,6 +394,16 @@ What to do:
 
 Cost: about a day.
 
+**T58 — A feature that replays the labelling rule wins where the rule already speaks: read the cell where the new
+source will speak.** P37 (R039) gave the shape model each team's time since and until its control episode by the touch
+rule, to be used only in the ball-missing gaps. On all alive frames its held-out log-loss fell from 0.3213 to 0.2709
+and its agreement with the touch episodes rose from 0.847 to 0.957: the columns replay the rule's own episodes where the
+ball is seen. In the gaps, the only frames it would have spoken on, it was worse (0.3206 against 0.3189; the hand-over
+gaps 0.3448 against 0.3402, worse on 6 of 7 matches). A headline over all frames would have read as a large gain.
+- *The rule:* gate a source on the frames where it will speak (its scope), and print that cell first. Treat a gain
+  that comes with a jump in agreement with another source's rule as a copy of that source, not new evidence.
+- *Cost:* about 1.5 engineer-hours and 8 heavy minutes, caught by the declared gate before any benchmark ran.
+
 ## Reproducibility and environment
 
 **T20 — Use the team venv.** It runs Python 3.11.9 in `.venv`, with numpy 2.4.6, pandas 3.0.6 and kloppy 3.18.0.
