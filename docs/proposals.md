@@ -1500,14 +1500,19 @@ with version 2 in place) stays not recommended.
 
 ### C1 — The edge errors by boundary kind and ball state (a check)
 
-**Status: in progress (13 Nov).** A report that chooses nothing: `diagnose.py` splits the clean pairs' start and end
+**Status: done 13 Nov 2026 → [A26](results.md): P38's gate is closed (the into-`D` end error's upper
+quartile 0 frames, against +10 needed); the late tail is at changes of team inside gaps (end median +11, upper
+quartile +31.5).** A report that chooses nothing: `diagnose.py` splits the clean pairs' start and end
 errors by the kind of boundary (a change of team, into `D`, out of `D`) and by whether the ball is seen at the true
 edge. It opens P38's gate: the into-`D` end error's upper quartile at least +10 frames (raw truth) and above the team
 ends.
 
 ### P35 — A turnover hazard: the decoder's switch cost per frame
 
-**Status: in progress (13 Nov).** Effort about 2.5 h (A1 the decoder, A2 the model). Odds about one in five.
+**Status: dropped 13 Nov 2026 → [R040](results.md): the gate passed (held-out AUC 0.910, log-loss 0.2033 against
+0.2940); the bar missed at every scale (the pick `p35_s050`: mean −0.0001; raw +0.0015, coarse −0.0017), a raw/coarse
+trade; no retry (the advisor); the model side removed (T59).** Effort about 2.5 h (A1 the decoder, A2 the model).
+Odds about one in five.
 
 **The belief.** `switch_team` is one constant for every frame, so a change of team costs as much in the middle of a
 controlled run as at a loose ball after a long pass. A model of where changes of team happen (trained on DFL, the ball
@@ -1518,8 +1523,10 @@ the ball is seen; the gaps decode as today. **The gate** (a screen): held-out AU
 
 ### P37 — Shape features version 4: each team's time since and until control, in the gaps only
 
-**Status: in progress (13 Nov).** Effort about 1.5 h. Odds about one in six. An **alternative** for Tian at most: no
-transfer check is possible (T38), so it never enters the night's candidate.
+**Status: dropped at its gate 13 Nov 2026 → [R039](results.md): the gap log-loss 0.3206 (at most 0.3059; version 2
+0.3189) and the hand-over gaps 0.3448 (at most 0.3272; version 2 0.3402) both missed; no retry (the advisor); code
+and model removed, the report's gap cells kept (T58).** Effort about 1.5 h. Odds about one in six. It would have
+been an alternative for Tian at most (T38).
 
 **The belief.** Version 2 knows the teams' shape but not how long since each last controlled the ball; in a gap that
 timing says who is likely to have it. Version 4 adds it, with a scope `"visible"` (R026's, restored) so the seen frames
@@ -1527,7 +1534,7 @@ keep version 2. **Gates:** gap log-loss at most 0.3059, and on the hand-over gap
 
 ### P38 — The dead-ball onset: one-sided speed changes
 
-**Status: waiting on C1's gate (13 Nov).** Effort about 1.5 h. Odds about one in eight, times a half for C1's gate. Built only if the into-`D` end
+**Status: not built 13 Nov 2026: C1's gate is closed ([A26](results.md)).** Effort about 1.5 h. Odds about one in eight, times a half for C1's gate. Built only if the into-`D` end
 error is the late tail C1 would show. **Gates:** the onset log-loss at most 0.90 × version 1's, on all frames at most
 version 1's + 0.002.
 
