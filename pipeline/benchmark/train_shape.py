@@ -10,7 +10,7 @@
 What it learns, and from what
 -----------------------------
 The classifier answers one question, which team has the ball, from the twenty-six `shape_features` of a frame
-(version 1; version 2, P30, has 42 and goes in its own file, `--features 2`; version 5, P40, has 51: `--features 5`),
+(version 1; version 2, P30, has 42 and goes in its own file, `--features 2`),
 none of which reads the ball (pipeline/evidence/shape_features.py). The seven open DFL/IDSSE matches are the only ones with a flag for it
 (`BallPossession`), so those are the training data, degraded to look like our tracking (profile `tracking`, version 3,
 seeds 0 to 2: P01) and served as `MatchInputs`, so that the features are computed by the very code and from the very
@@ -137,8 +137,7 @@ DEFAULT_STRIDE = 5
 PRIOR_HOME = shape_possession.PRIOR_HOME      # the share of homes among the rows and their mirrors
 # One file per feature version (P30): the file names its version, and `shape_possession` reads the features of it.
 DEFAULT_MODEL_PATHS = {1: "pipeline/models/shape_possession_hgb.json",
-                       2: "pipeline/models/shape_possession_v2_hgb.json",
-                       5: "pipeline/models/shape_possession_v5_hgb.json"}     # relative to the repository root
+                       2: "pipeline/models/shape_possession_v2_hgb.json"}     # relative to the repository root
 DEFAULT_MODEL_PATH = os.path.join(ROOT, *DEFAULT_MODEL_PATHS[1].split("/"))
 SOURCE_FILES = (("train_shape.py", os.path.join(HERE, "train_shape.py")),
                 ("shape_features.py", os.path.join(ROOT, "pipeline", "evidence", "shape_features.py")),
@@ -222,7 +221,7 @@ def augment(X, y, version=1):
 
     The classes balance exactly, whatever the rows' own balance: half the labels of y' are 1. The rows come first and
     unchanged, so the order is the input's and the fit is deterministic. ValueError for X that is not (n, 26)
-    (version 2: (n, 42), version 5: (n, 51)) or a y that is not one 0 or 1 per row.
+    (version 2: (n, 42)) or a y that is not one 0 or 1 per row.
     """
     X = np.asarray(X, dtype=np.float64)
     y = np.asarray(y)
@@ -597,11 +596,11 @@ def build_parser():
                         help="every this many graded frames is a row (default {})".format(DEFAULT_STRIDE))
     parser.add_argument("--features", type=int, choices=shape_features.VERSIONS, default=1,
                         help="the feature version to train, write or --verify (default 1: 26 columns, the committed "
-                             "file; 2: 42 columns, P30; 5: 51 columns, P40; --report takes the version from the "
+                             "file; 2: 42 columns, P30; --report takes the version from the "
                              "file it reads")
     parser.add_argument("--out", help="where to write the artifact, or to read it from with --report (default "
                                       "pipeline/models/shape_possession_hgb.json, or shape_possession_v2_hgb.json "
-                                      "with --features 2, shape_possession_v5_hgb.json with --features 5)")
+                                      "with --features 2)")
     parser.add_argument("--verify", action="store_true",
                         help="retrain and compare with the committed file instead of writing it: exit 1 if "
                              "anything but the three source hashes differs")
