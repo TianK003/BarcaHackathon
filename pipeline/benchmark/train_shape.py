@@ -11,8 +11,8 @@ What it learns, and from what
 -----------------------------
 The classifier answers one question, which team has the ball, from the twenty-six `shape_features` of a frame
 (version 1; version 2, P30, has 42 and goes in its own file, `--features 2`, and so does version 4, P37, with 46:
-`--features 4`), none of which reads the ball
-(pipeline/evidence/shape_features.py). The seven open DFL/IDSSE matches are the only ones with a flag for it
+`--features 4`), none of which reads the ball except version 4's two timing columns per team, which read it through
+the touch rule (pipeline/evidence/shape_features.py). The seven open DFL/IDSSE matches are the only ones with a flag for it
 (`BallPossession`), so those are the training data, degraded to look like our tracking (profile `tracking`, version 3,
 seeds 0 to 2: P01) and served as `MatchInputs`, so that the features are computed by the very code and from the very
 kind of inputs that the submission pipeline will give them. No truth reaches the features: the label is read from
@@ -596,17 +596,19 @@ def build_parser():
                         help="every this many graded frames is a row (default {})".format(DEFAULT_STRIDE))
     parser.add_argument("--features", type=int, choices=shape_features.VERSIONS, default=1,
                         help="the feature version to train, write or --verify (default 1: 26 columns, the committed "
-                             "file; 2: 42 columns, P30); --report takes the version from the file it reads")
+                             "file; 2: 42 columns, P30; 4: 46 columns, P37); --report takes the version from the "
+                             "file it reads")
     parser.add_argument("--out", help="where to write the artifact, or to read it from with --report (default "
                                       "pipeline/models/shape_possession_hgb.json, or shape_possession_v2_hgb.json "
-                                      "with --features 2)")
+                                      "or shape_possession_v4_hgb.json with --features 2 or 4)")
     parser.add_argument("--verify", action="store_true",
                         help="retrain and compare with the committed file instead of writing it: exit 1 if "
                              "anything but the three source hashes differs")
     parser.add_argument("--report", action="store_true",
                         help="train nothing: read the artifact and print each fold's held-out log-loss and accuracy "
                              "(all alive frames, and those with the ball missing), touch agreement, ln 2 and whether "
-                             "the stop rule fires")
+                             "the stop rule fires, then the ball-missing frames by gap kind (handover, same team, "
+                             "unknown) and the coarse truth's cells")
     parser.add_argument("--data-dir", help="the data bundle (default: data/, or $MTAH_DATA_DIR)")
     return parser
 

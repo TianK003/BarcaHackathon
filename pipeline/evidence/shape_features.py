@@ -54,8 +54,9 @@ well as by shape (P29 measured the persistence of the last controller on the DFL
                             inside a block, never read across half time
 
 The rule is `team_features.TOUCH_RULE`, frozen here with the model's inputs (a check compares the two, and main.toml's):
-`team_features` imports this module, so this one cannot import it back, and the since/until helper is written out here
-too; a check builds both on one scene and compares the columns. These two columns are the only ones of any version that
+`team_features` imports this module, so this one cannot import it back, and the since/until helper and the control
+masks are written out here too, a deliberate copy that the checks pin (test_shape_features_v4_helpers_equal_team_features
+calls both versions of each on edge cases and random scenes). These two columns are the only ones of any version that
 read the ball: where the ball is missing the touch rule keeps no frame, so inside a gap they are the time to the
 episodes on either side of it. Versions 1 and 2 are bit for bit what they were.
 

@@ -4090,6 +4090,49 @@ def test_shape_features_v4_equal_team_features_episode_columns():
                 assert np.array_equal(a, b, equal_nan=True), (seed, prefix + name)
 
 
+def test_shape_features_v4_helpers_equal_team_features():
+    """The deliberate copy of `_since_until` and of the control masks (team_features imports shape_features) is pinned:
+    both versions of each, on hand-built edge cases and on random scenes."""
+    from pipeline.contracts import RunContext
+    from pipeline.evidence import controlled_touch, shape_features, team_features
+    fps, cap = 25, shape_features.EPISODE_CAP_S
+    far = int(cap * fps)                                     # 750 frames
+    cases = {"none": np.zeros(40, dtype=bool), "all": np.ones(40, dtype=bool), "empty": np.zeros(0, dtype=bool),
+             "only before": np.isin(np.arange(60), [3, 4]), "only after": np.isin(np.arange(60), [50, 51]),
+             "inside": np.isin(np.arange(60), range(20, 30)), "one frame": np.isin(np.arange(60), [30])}
+    for gap in (far - 1, far, far + 1, far + 2):             # exactly at and just past the cap, both directions
+        mask = np.zeros(gap + 1 + far + 10, dtype=bool)
+        mask[10] = mask[10 + gap] = True
+        cases["gap {}".format(gap)] = mask
+    for name, mask in cases.items():
+        mine, theirs = shape_features._since_until(mask, fps, cap), team_features._since_until(mask, fps, cap)
+        for a, b in zip(mine, theirs):
+            assert np.array_equal(a, b), name
+            assert len(a) == len(mask) and (a <= cap).all(), name
+    # the cap: 749, 750 and 751 frames away are 29.96, 30 and 30 s
+    since, until = shape_features._since_until(cases["gap {}".format(far - 1)], fps, cap)
+    assert since[10 + far - 1] == 0.0 and until[10] == 0.0 and since[10 + far - 2] == (far - 2) / fps
+    since, _ = shape_features._since_until(cases["gap {}".format(far + 1)], fps, cap)
+    assert since[10 + far] == cap and since[10 + far - 1] == (far - 1) / fps < cap
+    # a block boundary: two blocks never read each other, in either version of the masks
+    players, ball, teams = episode_scene(200, range(50, 60), range(120, 130))
+    inputs = shape_inputs(players, teams, [(1, 0, 100), (2, 120, 200)], ball)
+    assert np.array_equal(shape_features.control_masks(inputs)[0][100:120], np.zeros(20, dtype=bool))
+    values, _ = shape_matrix_v4(players, teams, [(1, 0, 100), (2, 120, 200)], ball)
+    assert values["a_since_episode_s"][99] == cap and values["h_since_episode_s"][120] == cap
+    # both teams, and the masks against team_features' own reading of controlled_touch
+    scenes = [episode_scene(200, range(50, 60), range(120, 130)), episode_scene(200, range(0, 200), range(0))]
+    scenes += [team_scene(seed)[:3] for seed in range(6)]
+    for players, ball, teams in scenes:
+        inputs = play_inputs(players, ball, teams=teams, graded=[(1, 0, len(players))])
+        home, away = shape_features.control_masks(inputs)
+        touch = controlled_touch.compute(RunContext(inputs=inputs, seed=0), **team_features.TOUCH_RULE,
+                                         confidence=0.99, hold=0.5).home
+        kept = np.isfinite(touch)
+        assert np.array_equal(home, kept & (touch >= 0.5)) and np.array_equal(away, kept & (touch < 0.5))
+        assert not (home & away).any()
+
+
 def test_shape_features_v4_are_capped_and_never_nan_inside_a_block():
     from pipeline.evidence import shape_features
     cols = [shape_features.columns(4)[prefix + name] for prefix in ("h_", "a_")
@@ -4310,6 +4353,7 @@ def test_shape_possession_rejects_bad_artifacts():
                                ("features", {"feature_version": 2}),    # version 2 with version 1's 26 names
                                ("features", {"features": list(shape_features.FEATURE_NAMES_V2)}),   # and the reverse
                                ("feature_version", {"feature_version": max(shape_features.VERSIONS) + 1}),
+                               ("feature_version", {"feature_version": 3}),     # retired (P33): never readable
                                ("feature_version", {"feature_version": 0}),
                                ("feature_version", {"feature_version": None}),
                                ("feature_version", {"feature_version": True}),

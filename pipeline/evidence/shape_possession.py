@@ -10,9 +10,9 @@
 The ball is missing from our tracking on 41% of the graded frames, in long gaps (a median 10.7 s, docs/results.md A01),
 and `nearest_player` and `controlled_touch` are silent exactly there: both read the ball. A team in possession is more
 advanced, wider and moving up the pitch together; the other sits deeper and shifts to follow the ball
-(`shape_features`). This source lets a classifier read that off the `shape_features` columns (26, or 42 in version
-2), none of which touches
-the ball, and so it can be trained on matches whose ball has been hidden and be asked about the gaps of ours. The model
+(`shape_features`). This source lets a classifier read that off the `shape_features` columns (26, 42 or 46 in
+versions 1, 2 and 4), none of which touches the ball but version 4's two timing columns per team, which read it through
+the touch rule (so a version 4 model is meant for the gaps, where the rule keeps no frame), and so it can be trained on matches whose ball has been hidden and be asked about the gaps of ours. The model
 is trained by `pipeline/benchmark/train_shape.py` on the seven open DFL/IDSSE matches, degraded to look like our
 tracking (docs/proposals.md P01, P07), and written as JSON under pipeline/models/. Training needs scikit-learn and
 lives in pipeline/benchmark/; this module reads the file and runs the trees with numpy alone, through the walk that
