@@ -1557,7 +1557,10 @@ spec](superpowers/specs/2026-11-13-p40-c2-design.md), the rulings first). The re
 
 ### P40 — The pressed side: opponents' approach as shape columns (version 5)
 
-**Status: in progress (13 Nov).** Effort about 1.5 h. Odds about one in eight (× 0.85 for T32).
+**Status: dropped at its gate 13 Nov 2026 → [R041](results.md): better than version 2 in the gaps but short of
+the gate (gap log-loss 0.3140 against at most 0.3059; hand-over gaps 0.3363 against at most 0.3272, better on 6
+of 7); no retry, declared before the run; code and model removed, version 5 retired.** Effort about 1.5 h. Odds
+about one in eight (× 0.85 for T32).
 
 **The belief.** In a gap the shape model reads each team alone, so a change of team shows only when a team's shape
 has reorganised, seconds late (A26). One thing is visible from the players at once that no column reads: who is being
