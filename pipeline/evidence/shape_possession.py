@@ -9,8 +9,8 @@
 The ball is missing from our tracking on 41% of the graded frames, in long gaps (a median 10.7 s, docs/results.md A01),
 and `nearest_player` and `controlled_touch` are silent exactly there: both read the ball. A team in possession is more
 advanced, wider and moving up the pitch together; the other sits deeper and shifts to follow the ball
-(`shape_features`). This source lets a classifier read that off the `shape_features` columns (26, or 42 in version
-2), none of which touches
+(`shape_features`). This source lets a classifier read that off the `shape_features` columns (26, 42 in version 2, or 51
+in version 5), none of which touches
 the ball, and so it can be trained on matches whose ball has been hidden and be asked about the gaps of ours. The model
 is trained by `pipeline/benchmark/train_shape.py` on the seven open DFL/IDSSE matches, degraded to look like our
 tracking (docs/proposals.md P01, P07), and written as JSON under pipeline/models/. Training needs scikit-learn and
@@ -21,7 +21,8 @@ pickle is ever loaded.
 What it does, in order
 -----------------------------------
 1. Load. The file's `format`, `feature_version` (a plain int among `shape_features.VERSIONS`: 1 is the 26 columns, 2
-   the 42 of P30, which add each team's length and spread and the advance one-sided in time; 3 and 4 are retired),
+   the 42 of P30, which add each team's length and spread and the advance one-sided in time, 5 the 51 of P40, which add
+   the opponents' approach per team and as a gap; 3 and 4 are retired and refused),
    `features` (that version's names, in order) and `kind` ("hgb") must be shape_features' own, every model
    (`folds[match]` and `full`) must hold trees the walk can run and a `prior_home` of exactly 0.5, or this raises and
    says to retrain with `python pipeline/benchmark/train_shape.py`: a model that reads column 7 as a different feature

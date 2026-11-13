@@ -456,7 +456,8 @@ def test_shape_trainer_version_2_names_its_features_and_version_1_is_unchanged()
         expect_error(ValueError, lambda: trainer.rows(*_rows_args(matches), version=bad), "shape_features", "version")
     expect_error(ValueError, lambda: trainer.augment(np.zeros((4, 26)), np.zeros(4), version=2), "train_shape", "42")
     assert trainer.DEFAULT_MODEL_PATHS == {1: "pipeline/models/shape_possession_hgb.json",
-                                           2: "pipeline/models/shape_possession_v2_hgb.json"}
+                                           2: "pipeline/models/shape_possession_v2_hgb.json",
+                                           5: "pipeline/models/shape_possession_v5_hgb.json"}
     assert trainer.DEFAULT_MODEL_PATH == os.path.join(trainer.ROOT, "pipeline", "models", "shape_possession_hgb.json")
     args = trainer.build_parser().parse_args([])
     assert args.features == 1
