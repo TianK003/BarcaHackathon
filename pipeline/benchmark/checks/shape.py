@@ -798,19 +798,25 @@ def test_shape_touch_agreement_uses_the_conventions_rule_and_the_fold():
 
 # -- the committed model ----------------------------------------------------------------------------------------------
 
-def test_committed_shape_model_holds_a_fold_for_each_benchmark_match():
-    """A missing or renamed fold would fall back to `full`, which saw every match, and score it in sample silently."""
-    path = trainer.DEFAULT_MODEL_PATH
-    if not os.path.exists(path):
-        raise NotRun("{} is not trained yet; run `python pipeline/benchmark/train_shape.py` and commit it".format(
-            os.path.relpath(path, trainer.ROOT)))
-    with open(path, encoding="utf-8") as handle:
-        artifact = json.load(handle)
-    name = os.path.basename(path)
-    assert sorted(artifact["folds"]) == sorted(sources.MATCH_IDS), (
-        "{}: folds {} are not the seven benchmark matches".format(name, sorted(artifact["folds"])))
-    assert "full" in artifact, "{}: no `full` model".format(name)
-    shape_possession.load(path)
+def test_committed_shape_models_hold_a_fold_for_each_benchmark_match():
+    """A missing or renamed fold would fall back to `full`, which saw every match, and score it in sample silently.
+    Every committed shape file is held to it (versions 1 and 2), and to the `generic` profile with no Calibration
+    digest: none was trained on a profile that reads our match."""
+    for version, path in sorted(trainer.DEFAULT_MODEL_PATHS.items()):
+        path = os.path.join(trainer.ROOT, *path.split("/"))
+        if not os.path.exists(path):
+            raise NotRun("{} is not trained yet; run `python pipeline/benchmark/train_shape.py --features {}` and "
+                         "commit it".format(os.path.relpath(path, trainer.ROOT), version))
+        with open(path, encoding="utf-8") as handle:
+            artifact = json.load(handle)
+        name = os.path.basename(path)
+        assert sorted(artifact["folds"]) == sorted(sources.MATCH_IDS), (
+            "{}: folds {} are not the seven benchmark matches".format(name, sorted(artifact["folds"])))
+        assert "full" in artifact, "{}: no `full` model".format(name)
+        assert artifact["feature_version"] == version, "{}: feature_version {}".format(name, artifact["feature_version"])
+        assert artifact["profile"] == "generic", "{}: trained on profile {!r}".format(name, artifact["profile"])
+        assert artifact["provenance"]["calibration_sha256"] is None, "{}: a Calibration digest is recorded".format(name)
+        shape_possession.load(path)
 
 
 # -- the report's gap cells (P37's, kept on team_features' touch rule) -------------------------------------------------

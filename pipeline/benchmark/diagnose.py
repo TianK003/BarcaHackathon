@@ -7,6 +7,7 @@ say. Aggregates of the seven DFL matches only.
     report = diagnose(config_path)              # the ladder under both truths and the calibration: what is written
     half = ladder_half(truth, codes, start, stop)   # one graded half: its counts and its clean pairs
     ladder_summary([half, ...])                 # pooled: the ladder, its losses by class, the clean pairs' edges
+                                                # (and, with a ball mask, C1's edges_by_kind: boundary kind x ball state)
     calibration(p, y)                           # log-loss, Brier, ECE, a reliability table and a Platt fit
 
 docs/results.md A19 (part 1, declared before any run) is the authority for every definition here; this docstring says
@@ -59,9 +60,10 @@ Against the raw truth only, the frame-level one (the coarse truth is a construct
   min_possession, min_dead, eps, and team_neutral_dead, which turns on the emissions' D term of every `home` vote),
   on hmm.log_likelihoods of every source cut to the graded block, so before any
   refiner (shift_edges). P(H) + P(A) against alive, on all graded frames and split by whether a team source speaks on
-  the frame (any source with a finite `home`): `hmm` adds w log 2h and w log 2(1 - h) to H and A and nothing to D, so
+  the frame (any source with a finite `home`): `hmm` adds w log 2h and w log 2(1 - h) to H and A and, by default, nothing to D, so
   wherever a team source speaks the better alive state sits w log 2 max(h, 1 - h) above D, and beta on team_speaks
-  measures that 50/50 assumption. And P(H) / (P(H) + P(A)) against the team, on the truth's alive frames; a frame
+  measures that 50/50 assumption (with team_neutral_dead on, P31, D gets the larger of the two terms too and that
+  gap is gone; the figures then say what the decoder does with the flag). And P(H) / (P(H) + P(A)) against the team, on the truth's alive frames; a frame
   whose P(H) + P(A) is 0 (underflow) has no such ratio and is counted apart (frames_without_alive_mass).
 * Added after the review of part 1, reported only and gating nothing: the same alive measure by which team sources
   speak on the frame (alive_by_team_sources), keyed by the sorted names of the sources with a finite `home` joined by
@@ -290,8 +292,8 @@ def ladder_summary(halves):
     "iou_median", "iou_share_at_least": {IoU: share}, "start_error", "end_error": {"median", "q25", "q75", "within_5"}},
     its figures None where there is no clean pair)}, and, if the halves were made with a ball mask, "edges_by_kind"
     ({"start": {kind of START_KINDS: {state of CELL_STATES: {"n", "median", "q25", "q75", "within_5"}}}, "end": the
-    same by END_KINDS; state "all" pools "seen" and "gap"}: C1, the clean pairs' edge errors per cell, Nones for an empty one; the cells' counts add up to
-    clean_pairs' n). The per-IoU losses of a class add up to its loss, to rounding.
+    same by END_KINDS; state "all" pools "seen" and "gap"}: C1, the clean pairs' edge errors per cell, Nones for an
+    empty one; the cells' counts add up to clean_pairs' n). The per-IoU losses of a class add up to its loss, to rounding.
     ValueError for no half, or for halves of which only some were made with a ball mask.
     """
     halves = list(halves)
@@ -495,8 +497,8 @@ class _Pool:
 # -- the run ----------------------------------------------------------------------------------------------------------
 
 def posterior_parameters(config):
-    """{switch_team, switch_dead, min_possession, min_dead, eps, team_neutral_dead}: the config's [decoder] parameters for hmm.marginals,
-    hmm.decode's defaults where it leaves one out. BenchmarkError unless the decoder is hmm without restart_source."""
+    """{switch_team, switch_dead, min_possession, min_dead, eps, team_neutral_dead}: the config's [decoder] parameters
+    for hmm.marginals, hmm.decode's defaults where it leaves one out. BenchmarkError unless the decoder is hmm without restart_source."""
     if config.decoder.kind != "hmm":
         raise run.BenchmarkError(
             "{}: the decoder is {!r}, which has no posterior; A19 reads the posterior of the hmm decoder "

@@ -1,6 +1,6 @@
 """P07's trainer: fit the shape-possession model on the benchmark's matches and write it as JSON.
 
-    python pipeline/benchmark/train_shape.py [--profile tracking] [--seeds 3] [--stride 5] [--features {1,2,5}]
+    python pipeline/benchmark/train_shape.py [--profile tracking] [--seeds 3] [--stride 5] [--features {1,2}]
                                              [--out PATH] [--verify] [--report] [--data-dir D]
 
     artifact = train(profile="tracking", seeds=3, stride=5)             # the dict that is written, JSON-ready
@@ -533,7 +533,8 @@ def _coarse_cell(tally):
 
 
 def render_report(report):
-    """The report's lines: a table of the matches and the pool, then ln 2 and the stop rule."""
+    """The report's lines: a table of the matches and the pool, then ln 2 and the stop rule, the gap-class lines (P37's
+    cells) when the report has them, and the coarse-truth lines (P34's) when it has those."""
     def number(value, spec):
         return "-" if value is None else format(value, spec)
 
