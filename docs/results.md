@@ -63,6 +63,7 @@ two sets of numbers are different benchmarks. Hand labels on this match are not 
 | R037 | 2026-11-13 | P32: P19's team model where the ball is seen, restored and retrained on `generic` with the ball's direction (team features version 2, 72 columns), at weight 0.075 / 0.15 / 0.30 / 0.60 on top of `p30_w030` | — | — | — | **the pick `p32_w030` 0.5891 raw and 0.5963 coarse (mean 0.5927)** against `p30_w030`'s 0.5629 and 0.5901, and `p27_final`'s 0.5414 and 0.5829 | **cleared the bar** against `p30_w030` (mean +0.0162, p 0.016, all seven matches; raw +0.0262, coarse +0.0062); the gate passed (feasibility log-loss 0.2088 against 0.2700, below the rule's on 7 of 7); the night's candidate `pipeline/configs/candidates/p32_team_model.toml`, stacked on P30; **not adopted: Tian decides** |
 | R038 | 2026-11-13 | P39: `p32_w030` with the shape source silent where the ball is seen (its existing `scope = "gaps"`), so that P32's model, which reads the 42 shape columns itself, does not count them a second time | — | — | — | 0.5878 raw and 0.5807 coarse (mean 0.5843) against `p32_w030`'s 0.5891 and 0.5963 (mean 0.5927) | **dropped**: the bar missed (mean −0.0084; raw −0.0013, p 0.72; coarse −0.0156, p 0.016, lower on all seven matches), the direction R026 predicted and the spec declared; no gate, no retry; config and check removed |
 | R039 | 2026-11-13 | P37: shape features version 4 (version 2 plus each team's time since and until its control episode by the touch rule, capped at 30 s), speaking only in the ball-missing gaps (scope `"visible"` for version 2 where the ball is seen) | — | — | — | — (no config was run: the gate comes first) | **dropped at its gate**: the held-out gap log-loss 0.3206 against at most 0.3059 (version 2 reproduced 0.3189), the hand-over gaps 0.3448 against at most 0.3272 (version 2 0.3402; worse on 6 of 7 matches); no retry (the advisor); code and model removed, the report's gap cells kept |
+| R040 | 2026-11-13 | P35: a turnover hazard (a tree model of a direct change of team within ±12 frames, where the ball is seen) as the hmm decoder's per-frame switch cost, at scale 0 / 0.5 / 1 / 2 on top of `p32_w030` | — | — | — | the pick `p35_s050` 0.5906 raw and 0.5945 coarse (mean 0.5926) against `p32_w030`'s 0.5891 and 0.5963 (mean 0.5927) | **dropped**: the gate passed (held-out AUC 0.910, log-loss 0.2033 against 0.90 × the base rate's 0.3267); the bar missed at every scale (mean −0.0001 to −0.0005): a raw/coarse trade growing with the scale, more possessions; no retry (the advisor); the model side removed, the decoder's team cost pending the fourth round's ruling |
 
 ### The four yardsticks on every profile, in one table
 
@@ -10868,6 +10869,62 @@ version 2's − 0.013 on the same frames; version 2 must reproduce 0.3189.
 the gaps the time since a team's last touch does not say who has the ball after a hand-over the tracking did not see
 (T58). The hand-over gaps stay the hardest cell (0.34 against 0.30 for the same team), as C1 showed. The report's gap
 cells (hand-over, same team, unknown) are kept as a diagnostic: they choose nothing.
+
+### R040 — P35: a turnover hazard as the decoder's per-frame switch cost: the gate passes, the bar misses at every scale, dropped (declared 2026-11-13, 01:05; run 01:44 to 02:16, Tian away, an advisor agent in Tian's place)
+Proposal: P35 · Spec (declared before any run): [2026-11-13-p35-p39-design.md](superpowers/specs/2026-11-13-p35-p39-design.md)
+(amendments 4, 8, 11) · Code: the decoder `6eb2bec`, `79dd64c` (A1); the model and source `405f357`, `7c3dcf2` (A2);
+merged as `e29e18d` and `3a375bf`; the model `a898c42`; the model side removed in DROP35M · Command: `python
+pipeline/benchmark/train_turnover.py --dry-run --matches J03WMX --seeds 1`, `train_turnover.py`, `train_turnover.py
+--report`; `python pipeline/benchmark/run.py pipeline/benchmark/configs/p32/p32_w030.toml
+pipeline/benchmark/configs/p35/p35_s000.toml …p35_s050.toml …p35_s100.toml …p35_s200.toml --profile generic --seeds 3
+--truth both` (at `3a375bf`), then `p29_bar.py pick` and `bar --reference p32_w030`
+Public: — (nothing of our match was run; `main.toml` rebuilt its file with the same sha256 after the decoder merged,
+and `selftest.py --data` passed 253 of 253)
+Validation (P01 benchmark, `generic`, 3 seeds), the pick `p35_s050` against `p32_w030`: raw 0.5906 (+0.0015, six
+matches better), coarse 0.5945 (−0.0017, one), the mean −0.0001 (p 0.77)
+Changed vs `main.toml`: nothing
+Verdict: **dropped at the bar; no retry**
+
+**The belief.** `switch_team` is one constant for every frame, so a change of team costs as much in the middle of a
+controlled run as at a loose ball. A model of where changes of team happen lowers the cost where one is likely and
+raises it where it is not: `team_cost[t] = clip(switch_team − scale · log(p_t / b), 1, 2 · switch_team)`, with p the
+model's probability of a direct change (H ↔ A, no `D` between) within ±12 frames and b its base rate. Amended: it speaks
+only where the ball is seen; the gaps decode exactly as before.
+
+**Safeguards** (amendment 11): with no hazard the decoder is today's token for token (checked against a verbatim copy of
+the old loop and to the last bit for the posterior); a brute force over every valid path of tiny blocks matched the
+labels and scores (400 cases) and the posterior (200); `p35_s000` (scale 0) gave reports equal to `p32_w030`'s in every
+key, per match, seed and truth, at full precision (amendment 8).
+
+**Step 0, the gate** (a screen, declared before the run). The dry run: 10,208 rows for J03WMX seed 0 (window 8,290 to
+12,434), 11.1% positive (6% to 14%), a projected peak of 1.82 GB. Out of fold on 194,847 rows (10.0% positive): pooled
+AUC **0.910** (at least 0.80), log-loss **0.2033** against at most 0.90 × the base rate's 0.3267 = 0.2940; per match AUC
+0.887 to 0.932, below the base rate on all seven. The peak of p around a true change (gating nothing): median −1 frame,
+quartiles −6 to +4, 49% within ±5. **The gate passes.** For a transfer gate (amendment 10), the held-out mean p over
+graded frames with the ball seen was 0.048 to 0.068 per match.
+
+**The run** (13 Nov, 02:12 to 02:16; `p32_w030` reproduced to the last digit).
+
+| config | raw (Δ, wins of 7) | coarse (Δ, wins) | mean (Δ, p) | possessions / min |
+|---|---|---|---|---|
+| `p32_w030` | 0.5891 | 0.5963 | 0.5927 | 3.11 |
+| `p35_s000` | equal | equal | equal | 3.11 |
+| `p35_s050` | 0.5906 (+0.0015, 6) | 0.5945 (−0.0017, 1) | 0.5926 (−0.0001, 0.77) | 3.13 |
+| `p35_s100` | 0.5910 (+0.0019, 6) | 0.5934 (−0.0029, 1) | 0.5922 (−0.0005, 0.61) | 3.14 |
+| `p35_s200` | 0.5933 (+0.0041, 6) | 0.5913 (−0.0050, 1) | 0.5923 (−0.0004, 0.52) | 3.16 |
+
+The dead ball is predicted on 44.7% of the graded frames by every config; macroF1 flat.
+
+- **The pick: `p35_s050`** (the best mean; the band holds all three, the smallest scale). **The bar: missed** (mean
+  −0.0001, p 0.77). No scale is within reach of it.
+- The advisor ruled no retry (02:21): the trade amendment 7 warned of, as in P39 and R026. A one-sided cost (raising it
+  only where p < b) would walk the same frontier the other way (about 1 in 12); the hazard in the gaps would break
+  amendment 4 for a signal P37 had just shown absent there (about 1 in 15).
+
+**What it says.** A good model of where changes happen (AUC 0.91) did not help the decoder: where the ball is seen the
+edges are already within a few frames (A26), so the hazard can only let the decoder switch more or less often, which
+trades the raw truth against the coarse one. The headroom is in the gaps, where no source tonight has found a signal
+(T59).
 
 ## Submission log
 

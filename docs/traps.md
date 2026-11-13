@@ -404,6 +404,16 @@ gaps 0.3448 against 0.3402, worse on 6 of 7 matches). A headline over all frames
   that comes with a jump in agreement with another source's rule as a copy of that source, not new evidence.
 - *Cost:* about 1.5 engineer-hours and 8 heavy minutes, caught by the declared gate before any benchmark ran.
 
+**T59 — Before building a decoder cost, check that the edges it would move are wrong.** P35 (R040) built a turnover
+hazard with held-out AUC 0.91 and fed it to the decoder as a per-frame switch cost where the ball is seen. It changed
+nothing but the possession count: raw up, coarse down, at every scale. C1 (A26), measured the same night, had already
+shown that where the ball is seen the team-change edges are within a few frames (starts median −1, ends 0); the late
+tail is in the gaps. The model was good; there was nothing for it to fix.
+- *The rule:* before building anything that moves edges, read A26's cell for the frames it acts on (the boundary kind
+  and the ball state). If that cell's quartiles are already within a few frames, the change can only trade one truth's
+  grain against the other's.
+- *Cost:* about 2.5 engineer-hours and 25 heavy minutes.
+
 ## Reproducibility and environment
 
 **T20 — Use the team venv.** It runs Python 3.11.9 in `.venv`, with numpy 2.4.6, pandas 3.0.6 and kloppy 3.18.0.

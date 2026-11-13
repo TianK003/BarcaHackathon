@@ -1509,7 +1509,10 @@ ends.
 
 ### P35 — A turnover hazard: the decoder's switch cost per frame
 
-**Status: in progress (13 Nov).** Effort about 2.5 h (A1 the decoder, A2 the model). Odds about one in five.
+**Status: dropped 13 Nov 2026 → [R040](results.md): the gate passed (held-out AUC 0.910, log-loss 0.2033 against
+0.2940); the bar missed at every scale (the pick `p35_s050`: mean −0.0001; raw +0.0015, coarse −0.0017), a raw/coarse
+trade; no retry (the advisor); the model side removed (T59).** Effort about 2.5 h (A1 the decoder, A2 the model).
+Odds about one in five.
 
 **The belief.** `switch_team` is one constant for every frame, so a change of team costs as much in the middle of a
 controlled run as at a loose ball after a long pass. A model of where changes of team happen (trained on DFL, the ball
