@@ -1507,7 +1507,7 @@ ends.
 
 ### P35 — A turnover hazard: the decoder's switch cost per frame
 
-**Status: in progress (13 Nov).** Effort about 6 h (A1 the decoder, A2 the model). Odds about one in five.
+**Status: in progress (13 Nov).** Effort about 2.5 h (A1 the decoder, A2 the model). Odds about one in five.
 
 **The belief.** `switch_team` is one constant for every frame, so a change of team costs as much in the middle of a
 controlled run as at a loose ball after a long pass. A model of where changes of team happen (trained on DFL, the ball
@@ -1518,7 +1518,7 @@ the ball is seen; the gaps decode as today. **The gate** (a screen): held-out AU
 
 ### P37 — Shape features version 4: each team's time since and until control, in the gaps only
 
-**Status: in progress (13 Nov).** Effort about 2.5 h. Odds about one in six. An **alternative** for Tian at most: no
+**Status: in progress (13 Nov).** Effort about 1.5 h. Odds about one in six. An **alternative** for Tian at most: no
 transfer check is possible (T38), so it never enters the night's candidate.
 
 **The belief.** Version 2 knows the teams' shape but not how long since each last controlled the ball; in a gap that
@@ -1527,7 +1527,7 @@ keep version 2. **Gates:** gap log-loss at most 0.3059, and on the hand-over gap
 
 ### P38 — The dead-ball onset: one-sided speed changes
 
-**Status: waiting on C1's gate (13 Nov).** Effort about 2 h. Odds about one in six. Built only if the into-`D` end
+**Status: waiting on C1's gate (13 Nov).** Effort about 1.5 h. Odds about one in eight, times a half for C1's gate. Built only if the into-`D` end
 error is the late tail C1 would show. **Gates:** the onset log-loss at most 0.90 × version 1's, on all frames at most
 version 1's + 0.002.
 
