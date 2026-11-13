@@ -104,6 +104,11 @@ module of its topic:
     p31.py       P31's config: p27_final but for the decoder's team_neutral_dead flag (config files)
     team.py      P32's team model where the ball is seen (train_team) and its four configs (synthetic and config files)
     p34.py       train_shape's report: the coarse-truth cells kept from P34 (dropped, R036) (synthetic only)
+    p35.py       P35: the hmm's per-frame team cost and the turnover hazard (synthetic and config files)
+    p37.py       P37: shape features version 4 for the gaps, the report's handover cells, its configs (synthetic and
+                 config files)
+    p38.py       P38: play features version 2 for the dead-ball onset, its config (synthetic and config files)
+    p39.py       P39's config: p32_w030 with the shape source silent where the ball is seen (config files)
     harness.py   the harness itself: what it collects, how it reports NOT RUN, the console set-up, and that no check
                  module imports another one
     common.py    what several modules share, and no checks of its own: the synthetic DFL match, the random one
@@ -130,9 +135,9 @@ what two of them share goes to common.py (test_a_check_module_imports_no_other_c
 
 from pipeline.benchmark.checks import (
     calibration, cap, choose, context, conventions, dead_ball, degrade, dfl, dfl_events, diagnose, fidelity, generic,
-    harness, hazard, headroom, inputs, label_diff, metrica, p27, p29, p30, p31, p34, restarts, run, score,
-    shape, sources, tag_stats, team, tracking, touch, truth, wrong_team)
+    harness, hazard, headroom, inputs, label_diff, metrica, p27, p29, p30, p31, p34, p35, p37, p38, p39, restarts,
+    run, score, shape, sources, tag_stats, team, tracking, touch, truth, wrong_team)
 
 MODULES = (sources, dfl, dfl_events, truth, inputs, score, run, choose, hazard, calibration, degrade, cap, tracking, context,
            generic, fidelity, headroom, touch, dead_ball, conventions, restarts, shape, label_diff, wrong_team,
-           tag_stats, metrica, diagnose, p27, p29, p30, p31, team, p34, harness)
+           tag_stats, metrica, diagnose, p27, p29, p30, p31, team, p34, p35, p37, p38, p39, harness)
