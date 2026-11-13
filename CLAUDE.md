@@ -103,7 +103,11 @@ aggregates only, never raw data rows.
   R030); A13 says where `main.toml`'s remaining spellF1 is (who has the ball, not the dead ball); A21 audits
   `main.toml` against the 3 Nov rules; R030 (P27) is today's `main.toml`: both models retrained and every numeric
   constant re-chosen on the `generic` profile, which measures nothing of our match (Tian kept its outcome on 10 Nov);
-  A25 repeats A13 and A19 on `generic` (the same reading); R031 is P28, dropped at its gate.
+  A25 repeats A13 and A19 on `generic` (the same reading); R031 is P28, dropped at its gate. R032 to R041, A26 and
+  A27 are the night of 12 to 13 Nov (Tian away, an advisor agent in Tian's place): P30 and P32 cleared the bar and
+  stack into the candidate `pipeline/configs/candidates/p32_team_model.toml` (not adopted: Tian decides); P29, P33
+  to P35, P37, P39 and P40 were dropped and their code removed; A26 locates the remaining edge error at changes of
+  team inside ball gaps.
 - `docs/traps.md` — pitfalls `T01…`. Add one whenever something costs real time.
 - `docs/technical_document.md` — the draft of deliverable 3. Update it when a pipeline decision lands.
 
