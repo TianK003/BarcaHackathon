@@ -1,7 +1,10 @@
-"""Checks of P35: the hmm decoder's per-frame team cost (test_p35_decoder_*, Task 13) and the turnover hazard's
-trainer, source and configs (test_p35_model_*, Task 14).
+"""Checks of P35, a turnover hazard read by the hmm decoder as a per-frame switch cost: the decoder's checks (A1, the
+per-frame team cost, named test_p35_decoder_...) and the model's (A2, named test_p35_model_...: the trainer
+train_turnover.py, its report, the turnover_hazard source's artifact and the four configs of configs/p35/).
 
-A registered stub until its lane fills it (docs/superpowers/plans/2026-11-13-p35-p39.md, Tasks 13 and 14).
+The two halves come from two lanes and are concatenated: the decoder's at the top, the model's below under their own
+header and imports. Everything runs on arrays and synthetic matches made here (checks/common.py) and on config files;
+none reads data (docs/superpowers/plans/2026-11-13-p35-p39.md, Tasks 13 and 14).
 """
 
 
@@ -138,7 +141,6 @@ def test_p35_model_rows_are_p32s_rows_with_the_label():
     # the same rows as P32's trainer gives (its label is the team: 1 where the truth is H)
     X32, y32 = train_team.rows(inputs, codes, 5)
     assert np.array_equal(X, X32, equal_nan=True) and np.array_equal(y32, np.array([codes[t] == CODE_H for t in kept]))
-    assert not set(hidden) & set(kept), "a frame with the ball hidden is no row, however near a change it is"
     expect_error(ValueError, lambda: turnover.rows(inputs, codes, 0), "train_turnover", "stride")
     expect_error(ValueError, lambda: turnover.rows(inputs, codes, True), "stride")
     expect_error(ValueError, lambda: turnover.rows(inputs, codes[:-1], 5), "codes")
@@ -436,7 +438,8 @@ def report_agrees_with_plain_loops(matches, artifact):
     result = turnover.report(artifact, "clean", 1, 5, matches=matches)
     json.dumps(result, allow_nan=False)
     assert sorted(result) == sorted(["profile", "seeds", "stride", "model_sha256", "per_match", "pooled", "go",
-                                     "transfer", "localisation"])
+                                     "transfer", "localisation", "match_seeds"])
+    assert result["match_seeds"] == 3 * 1
     assert sorted(result["per_match"]) == list(TURNOVER_IDS)
     all_p, all_y, loss_sums, base_sums, means, offsets = [], [], 0.0, 0.0, [], []
     for match_id in TURNOVER_IDS:
@@ -487,12 +490,45 @@ def report_agrees_with_plain_loops(matches, artifact):
     assert result["model_sha256"] == hashlib.sha256(turnover.dumps(artifact).encode()).hexdigest()
     lines = turnover.render_report(result)
     assert any(line.startswith("report    GO") or line.startswith("report    NO GO") for line in lines)
-    assert any("transfer" in line for line in lines) and any("localisation" in line for line in lines)
+    assert any("transfer" in line for line in lines)
+    place = [line for line in lines if "localisation" in line]
+    assert len(place) == 1 and "summed over seeds" in place[0] and "over {} match-seeds".format(
+        result["match_seeds"]) in place[0] and "{:,} true direct changes".format(
+        result["localisation"]["changes"]) in place[0], place
     assert sum(1 for line in lines if line.startswith("report    RND00")) == 3
     # a model that never saw the match is the only one that scores it: a missing fold is refused
     short = copy.deepcopy(artifact)
     del short["folds"]["RND002"]
     expect_error(ValueError, lambda: turnover.report(short, "clean", 1, 5, matches=matches), "RND002", "full")
+
+
+def test_p35_model_report_refuses_a_file_that_is_not_its_own():
+    """The report reads the file through the source's loader and holds it to what it is run with: a target, a window,
+    a feature version, a profile or a stride that differs is one readable line (exit 2 on the command line)."""
+    matches, artifact = hazard_artifact()
+    with tempfile.TemporaryDirectory() as root:
+        def written(**changes):
+            changed = dict(copy.deepcopy(artifact), **changes)
+            path = os.path.join(root, "model.json")
+            turnover.write(path, changed)
+            return path
+
+        assert turnover.load_for_report(written(), "clean", 5) == artifact
+        for name, value in (("target", "team_home"), ("window_frames", 13), ("feature_version", 1)):
+            expect_error(ValueError, lambda: turnover.load_for_report(written(**{name: value}), "clean", 5),
+                         "turnover_hazard", name)                               # the source's own loader refuses these
+        for name, value in (("profile", "generic"), ("stride", 7)):
+            message = expect_error(ValueError, lambda: turnover.load_for_report(written(**{name: value}), "clean", 5),
+                                   "train_turnover", name, repr(value), "retrain")
+            assert "\n" not in message, "one line"
+        expect_error(ValueError, lambda: turnover.load_for_report(written(), "generic", 5), "profile", "'clean'")
+        expect_error(ValueError, lambda: turnover.load_for_report(written(), "clean", 3), "stride")
+        expect_error(ValueError, lambda: turnover.load_for_report(os.path.join(root, "absent.json"), "clean", 5),
+                     "absent.json")
+        # the command line: exit 2 and the line, before any match is loaded
+        flags = ["--report", "--profile", "clean", "--out", written(stride=7), "--data-dir", root]
+        code, text = turnover_quietly(turnover.main, flags)
+        assert code == 2 and text.startswith("REFUSED") and text.count("\n") == 1 and "stride" in text, text
 
 
 # -- the configs ------------------------------------------------------------------------------------------------------

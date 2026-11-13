@@ -43,7 +43,7 @@ log-loss of the fold's own training base rate said at every row. GO iff the pool
 pooled log-loss is at most LOSS_RATIO_MAX times the pooled base-rate log-loss (a screen, not evidence: amendment 4).
 Beside it, gating nothing: for amendment 10's transfer gate, per match the mean p (clipped as the source clips it) over
 every graded frame with the ball seen, alive or dead; and the localisation: for each true direct change with the ball
-seen, the offset of p's maximum within +-LOCALISE_FRAMES (inside its block): median, quartiles, the share within +-5.
+seen (counted once per match and seed, so summed over the seeds and printed so), the offset of p's maximum within +-LOCALISE_FRAMES (inside its block): median, quartiles, the share within +-5.
 The output is sums and ratios: no per-frame array.
 """
 
@@ -510,7 +510,27 @@ def report(artifact, profile=run.DEFAULT_PROFILE, seeds=run.DEFAULT_SEEDS, strid
             "model_sha256": hashlib.sha256(dumps(artifact).encode("utf-8")).hexdigest(), "per_match": cells,
             "pooled": pooled, "go": go(pooled["auc"], loss, base_loss),
             "transfer": {"low": 0.5 * min(means) if means else None, "high": 2.0 * max(means) if means else None},
-            "localisation": localisation(offsets)}
+            "localisation": localisation(offsets), "match_seeds": len(ids) * len(seed_list)}
+
+
+def load_for_report(path, profile, stride):
+    """The artifact at `path`, read through the source's own loader (`turnover_hazard.load`: format, feature_version,
+    features, kind, target, window_frames and every model validated) and then held to what the report is run with.
+
+    ValueError, one readable line, for a file that cannot be read or fails the source's checks, and for one whose
+    target, window_frames, feature_version, profile or stride differ from TARGET, WINDOW_FRAMES, the features' version,
+    `profile` and `stride`: scoring a model trained on other rows or another question would print numbers that say
+    nothing about this one. The report's command line returns exit code 2 on it.
+    """
+    artifact = turnover_hazard.load(path)
+    expected = {"target": TARGET, "window_frames": WINDOW_FRAMES, "feature_version": team_features.FEATURE_VERSION,
+                "profile": profile, "stride": stride}
+    for name, wanted in expected.items():
+        if artifact.get(name) != wanted:
+            raise ValueError("train_turnover: {} was trained with {} {!r} and the report is run with {!r}; retrain "
+                             "with `python {}` or run the report with the same {}".format(
+                                 path, name, artifact.get(name), wanted, turnover_hazard.TRAINER, name))
+    return artifact
 
 
 def render_report(result):
@@ -532,9 +552,10 @@ def render_report(result):
                  "BAR-ATH's graded frames with the ball seen must lie in [{}, {}] = [half the lowest, twice the "
                  "highest] of the means above".format(number(transfer["low"], 5), number(transfer["high"], 5)))
     place = result["localisation"]
-    lines.append("report    localisation (gates nothing): {:,} true direct changes with the ball seen; offset of p's "
+    lines.append("report    localisation (gates nothing, summed over seeds: a change counts once per match-seed, "
+                 "over {} match-seeds): {:,} true direct changes with the ball seen; offset of p's "
                  "maximum within +-{} frames: median {}, quartiles {} to {}, within +-{}: {}".format(
-                     place["changes"], LOCALISE_FRAMES, number(place["median"], 1), number(place["q1"], 1),
+                     result["match_seeds"], place["changes"], LOCALISE_FRAMES, number(place["median"], 1), number(place["q1"], 1),
                      number(place["q3"], 1), LOCALISE_NEAR,
                      "-" if place["within5"] is None else "{:.1%}".format(place["within5"])))
     verdict = result["go"]
@@ -601,11 +622,10 @@ def main(argv=None):
             return 0 if result["ok"] else 1
         if args.report:
             try:
-                with open(path, encoding="utf-8") as handle:
-                    artifact = json.load(handle)
-            except (OSError, ValueError) as error:
-                raise BenchmarkError("cannot read the model {} ({}); train it with `python {}`".format(
-                    path, error, turnover_hazard.TRAINER)) from error
+                artifact = load_for_report(path, args.profile, DEFAULT_STRIDE)
+            except ValueError as error:
+                print("REFUSED   {}".format(error))
+                return 2
             result = report(artifact, args.profile, args.seeds, data_dir=args.data_dir)
             for line in render_report(result):
                 print(line)
