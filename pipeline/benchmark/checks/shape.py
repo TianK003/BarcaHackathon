@@ -452,17 +452,16 @@ def test_shape_trainer_version_2_names_its_features_and_version_1_is_unchanged()
     assert trainer.dumps(explicit) == trainer.dumps(artifact)
     assert artifact["feature_version"] == 1 and artifact["features"] == list(NAMES)
     # what is refused
-    for bad in (3, 0, True, 2.0, None, "2"):
+    for bad in (3, 4, 5, 0, True, 2.0, None, "2"):
         expect_error(ValueError, lambda: trainer.rows(*_rows_args(matches), version=bad), "shape_features", "version")
     expect_error(ValueError, lambda: trainer.augment(np.zeros((4, 26)), np.zeros(4), version=2), "train_shape", "42")
     assert trainer.DEFAULT_MODEL_PATHS == {1: "pipeline/models/shape_possession_hgb.json",
-                                           2: "pipeline/models/shape_possession_v2_hgb.json",
-                                           5: "pipeline/models/shape_possession_v5_hgb.json"}
+                                           2: "pipeline/models/shape_possession_v2_hgb.json"}
     assert trainer.DEFAULT_MODEL_PATH == os.path.join(trainer.ROOT, "pipeline", "models", "shape_possession_hgb.json")
     args = trainer.build_parser().parse_args([])
     assert args.features == 1
     assert trainer.build_parser().parse_args(["--features", "2"]).features == 2
-    for bad in (["--features", "3"], ["--features", "0"], ["--features", "x"]):
+    for bad in (["--features", "3"], ["--features", "4"], ["--features", "5"], ["--features", "0"], ["--features", "x"]):
         buffer = io.StringIO()
         with contextlib.redirect_stderr(buffer):
             try:
@@ -470,28 +469,6 @@ def test_shape_trainer_version_2_names_its_features_and_version_1_is_unchanged()
             except SystemExit:
                 continue
         raise AssertionError("{} was accepted".format(bad))
-
-
-def test_shape_trainer_version_5_trains_writes_loads_and_reports():
-    """P40: `version=5` trains on the 51 columns, the file says so and loads in the source, and --report runs on it."""
-    matches, _ = planted()
-    calibration = synthetic_calibration()
-    names5 = shape_features.feature_names(5)
-    assert len(names5) == 51
-    artifact5 = trainer.train("gaps", PLANTED_SEEDS, PLANTED_STRIDE, matches=matches, calibration=calibration,
-                              version=5)
-    assert artifact5["feature_version"] == 5 and artifact5["features"] == list(names5)
-    assert sorted(artifact5["folds"]) == list(FOLD_IDS) and "full" in artifact5
-    for name, model in list(artifact5["folds"].items()) + [("full", artifact5["full"])]:
-        trees.check_trees(model, 51, name, "shape_possession")
-    with tempfile.TemporaryDirectory() as root:
-        path = os.path.join(root, "v5.json")
-        trainer.write(path, artifact5)
-        shape_possession.load(path)                       # the source accepts it: names, version and tree width agree
-    lines = trainer.render_report(trainer.report(artifact5, "gaps", PLANTED_SEEDS, matches=matches,
-                                                 calibration=calibration))
-    assert lines and any("gap" in line for line in lines)
-    expect_error(ValueError, lambda: trainer.augment(np.zeros((4, 42)), np.zeros(4), version=5), "train_shape", "51")
 
 
 def _rows_args(matches):

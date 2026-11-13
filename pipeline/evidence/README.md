@@ -151,8 +151,8 @@ the trees' raw score r(x) on the frame's features and on the same frame with the
 
 *The file names its features (P30).* A model file carries `feature_version`, a plain int among
 `shape_features.VERSIONS`, and `features`, the names of that version in order: version 1 is the 26 columns,
-version 2 the 42 that add each team's length, spread and the advance one-sided in time, version 5 the 51 of P40 that add the opponents' approach (the velocity of a slot's nearest opponent towards it within 5 m; per team its mean, 90th percentile and share at or above 2 m/s, and their gap, players only) (`shape_features.py`; versions 3,
-P33, and 4, P37, were dropped at their gates and are retired, never reused, and refused). The source computes `shape_features.features(inputs, version)` for the version of the file, and refuses a file whose
+version 2 the 42 that add each team's length, spread and the advance one-sided in time (`shape_features.py`; versions 3,
+P33, 4, P37, and 5, P40, were dropped at their gates and are retired, never reused, and refused). The source computes `shape_features.features(inputs, version)` for the version of the file, and refuses a file whose
 `feature_version` is not a plain int among the versions (a bool or a float is refused, since `True == 1` and
 `2.0 == 2`), whose `features` are not that version's names, or whose trees reach past its width. A version 1 file, as
 `pipeline/models/shape_possession_hgb.json` is, gives the numbers it always gave. A version 2 model lives in its own
