@@ -2501,6 +2501,39 @@ decision on P24 (a learned team source where the ball is seen): the headroom it 
 against the +0.020 needed, 3 matches of 7 against 6), and R031 found that a team's first touch after the other
 team's control is its possession's start less than half the time.
 
+### A26 — The night's candidate's edge errors by boundary kind and ball state (C1; declared 2026-11-13, 01:05; run 01:39 to 01:43, Tian away, an advisor agent in Tian's place)
+Proposal: C1 (a check of the third round; [the spec](superpowers/specs/2026-11-13-p35-p39-design.md)) · Code: `980f59c`,
+`807a406` (`diagnose.py`'s `edges_by_kind`), merged as `babff8c` · Command: `python pipeline/benchmark/diagnose.py
+pipeline/benchmark/configs/p32/p32_w030.toml` (`generic`, 3 seeds, 42 halves) · It chooses nothing; it opens or closes
+P38.
+
+**What it measures.** R037's diagnosis of `p32_w030` gave the clean pairs' start and end errors pooled. C1 splits them
+by the kind of true boundary (a start after the other team's spell, after `D`, or at the half's edge; an end before the
+other team's spell, before `D`, or at the edge) and by whether the ball is seen at the true spell's first frame (for a
+start) or its last (for an end). Every existing number of R037's diagnosis reproduced.
+
+**Raw truth** (clean pairs; predicted − true, frames):
+
+| boundary | kind | ball seen: n, median [q25, q75], within ±5 | in a gap | both |
+|---|---|---|---|---|
+| start | after the other team | 1,997, −1 [−9, +2], 47.1% | 907, +6 [−13, +27], 15.7% | 2,904, 0 [−10, +11], 37.3% |
+| start | after `D` | 971, 0 [−3, 0], 98.1% | 497, +1 [−17, +16], 17.7% | 1,468, 0 [−3, 0], 70.9% |
+| end | before the other team | 2,276, 0 [−7, +8], 43.6% | 1,139, +11 [−7, +31.5], 14.8% | 3,415, 0 [−7, +18], 34.0% |
+| end | into `D` | 688, −1 [−2, 0], 87.2% | 293, +4 [−15, +21], 18.4% | 981, −1 [−3, 0], 66.7% |
+
+(The half's edges: 24 starts, all exact.) The coarse truth shows the same pattern, wider: an end before the other team
+in a gap +13 [−9, +40]; into `D`, both states, −1 [−11, 0].
+
+**What it says.**
+- **P38's gate is closed** (declared: under the raw truth the into-`D` end error's upper quartile at least +10 frames and
+  above the team ends'). It is 0, against +18 for the team ends: the dead ball's onset is found within ±5 frames on 87%
+  of the clean pairs where the ball is seen. P38 is not built.
+- **The late tail is at changes of team inside gaps.** Where the ball is seen, starts and ends after or before the other
+  team are within a few frames (medians −1 and 0); in a gap the error's median is +6 at a start and +11 at an end, its
+  upper quartile near a second, and only about 15% fall within ±5. The decoder learns of a hand-over in a gap late.
+- That is P37's target (each team's time since and until its control, in the gaps). P35's hazard, which speaks only
+  where the ball is seen (amendment 4), does not reach it.
+
 ## Experiments
 
 Copy this template for each run, and add a scoreboard row for anything worth comparing.

@@ -1500,7 +1500,9 @@ with version 2 in place) stays not recommended.
 
 ### C1 — The edge errors by boundary kind and ball state (a check)
 
-**Status: in progress (13 Nov).** A report that chooses nothing: `diagnose.py` splits the clean pairs' start and end
+**Status: done 13 Nov 2026 → [A26](results.md): P38's gate is closed (the into-`D` end error's upper
+quartile 0 frames, against +10 needed); the late tail is at changes of team inside gaps (end median +11, upper
+quartile +31.5).** A report that chooses nothing: `diagnose.py` splits the clean pairs' start and end
 errors by the kind of boundary (a change of team, into `D`, out of `D`) and by whether the ball is seen at the true
 edge. It opens P38's gate: the into-`D` end error's upper quartile at least +10 frames (raw truth) and above the team
 ends.
@@ -1527,7 +1529,7 @@ keep version 2. **Gates:** gap log-loss at most 0.3059, and on the hand-over gap
 
 ### P38 — The dead-ball onset: one-sided speed changes
 
-**Status: waiting on C1's gate (13 Nov).** Effort about 1.5 h. Odds about one in eight, times a half for C1's gate. Built only if the into-`D` end
+**Status: not built 13 Nov 2026: C1's gate is closed ([A26](results.md)).** Effort about 1.5 h. Odds about one in eight, times a half for C1's gate. Built only if the into-`D` end
 error is the late tail C1 would show. **Gates:** the onset log-loss at most 0.90 × version 1's, on all frames at most
 version 1's + 0.002.
 
