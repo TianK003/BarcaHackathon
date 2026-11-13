@@ -1198,7 +1198,8 @@ proposal does.
 
 ### P24 — The ball's direction and the touch timing as features of a learned team source: P19's one retry
 
-**Status: idea.** P19 (a learned team model where the ball is seen) was dropped at its feasibility gate: +0.0160
+**Status: done as P32 → [R037](results.md) (13 Nov 2026): P19's one retry ran in this slot, with the ball's direction
+added and the gate moved to log-loss (declared); it cleared the bar against `p30_w030`.** Was: **idea.** P19 (a learned team model where the ball is seen) was dropped at its feasibility gate: +0.0160
 pooled per-frame accuracy against `main.toml`'s decoded labels, +0.020 needed, 3 of 7 matches against 6 (R021), with
 no retry run; its code is recoverable at `15e7e14`. False9 reports the ball's velocity projected on each team's
 attacking direction (the direction from where each team's slots stand, per block, as `play_features.own_half_is_left`
@@ -1447,8 +1448,11 @@ P35 (a turnover hazard as a per-frame switch cost, about 6 h with a decoder chan
 
 ### P32 — The team model where the ball is seen, on `generic`, measured on spellF1 (P19's one retry, in P24's slot)
 
-**Status: started 12 Nov 2026.** Effort about 3.5 h. Odds about one in three. **No retry: a miss drops P19 and P24
-for good.**
+**Status: cleared the bar 13 Nov 2026 → [R037](results.md): the gate passed (feasibility log-loss 0.2088
+against 0.2700, below the rule's on 7 of 7); the pick `p32_w030` gained +0.0162 on the mean against `p30_w030`
+(raw +0.0262, coarse +0.0062; all seven matches). The night's candidate, stacked on P30:
+`pipeline/configs/candidates/p32_team_model.toml`; not adopted, Tian decides. No transfer check on our match.**
+Effort about 3.5 h. Odds about one in three.
 
 **The belief.** Where the ball is seen and no control episode runs, the evidence is the constant hold 0.60 and the
 shape model. P19's tree model, which reads the ball against both teams, was better than the touch rule and its hold
