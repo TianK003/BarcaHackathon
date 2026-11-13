@@ -1547,6 +1547,42 @@ lower on all seven matches), the direction R026 predicted; no retry; config and 
 seen; with the shape source silent there (`scope = "gaps"`), each input votes once. The measurement says the second
 vote smooths who has the ball: without it the decoder makes more, shorter possessions, which the coarse truth punishes.
 
+## The night's fourth round (13 Nov)
+
+With the third round measured by 02:20 (C1 done, P35, P37 and P39 dropped, P38 not built), a research agent proposed a
+fourth round (P40, P41, C2); the advisor, in Tian's place, ruled at 02:50 ([the
+spec](superpowers/specs/2026-11-13-p40-c2-design.md), the rulings first). The reference stays the night's candidate
+`p32_w030`, with the bar and the fresh-seed hold of the third round. There is nothing to combine: the candidate stays
+`p32_w030` unless P40 clears the bar and holds on fresh seeds.
+
+### P40 — The pressed side: opponents' approach as shape columns (version 5)
+
+**Status: in progress (13 Nov).** Effort about 1.5 h. Odds about one in eight (× 0.85 for T32).
+
+**The belief.** In a gap the shape model reads each team alone, so a change of team shows only when a team's shape
+has reorganised, seconds late (A26). One thing is visible from the players at once that no column reads: who is being
+run at. Defenders close down the ball carrier and the players near him, and after a turnover the team that lost the
+ball presses at once. So the side whose players opponents approach is the side with the ball. Version 5 adds, per team,
+the mean, the 90th percentile and the share of its players approached faster than 2 m/s by the nearest opponent within
+5 m, and the difference between the teams now and over the 2 s before and after. Players only; the constants are
+declared, not knobs. **Gates:** the gap log-loss at most 0.3059 and on the hand-over gaps at most 0.3272 (P37's). One
+config, `p40_v5`; no retry.
+
+### P41 — The dead-ball onset in the gaps (P38's mechanism on the gap cells)
+
+**Status: struck 13 Nov 2026 (the advisor):** it is P38's mechanism unchanged with the gate's cell moved after C1's
+table had been read, so it re-reads a gate that was declared to decide; read on the gap cells, P38's own second clause
+fails too (the into-`D` upper quartile +21 against the team ends' +31.5). It reopens only on data not yet seen.
+
+### C2 — The candidate under declared wrong-team slots (a check)
+
+**Status: in progress (13 Nov).** It chooses nothing. Two sensitivity profiles of `generic` with wrong-team slot
+episodes at declared shares of 0.05 and 0.20 (scale 1.0, no Calibration), refused by every tool but `run.py`, rerun
+P30's and P32's gains to size the candidate's largest unseen risk (T32). The grid was declared knowing our measured
+10.8%, so it can never be a setting, a gate or a rank (T01, T54); its result is a stated risk in the technical
+document. Wording declared: under 0.20, if P32's gain over `p30_w030` falls below half its `generic` gain (+0.0081) or
+is negative on either truth, "P32's gain depends on clean slot teams".
+
 ## Cheap signals worth checking
 
 ### P09 — Camera aim as a coarse ball-zone prior
