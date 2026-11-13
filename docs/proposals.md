@@ -1586,6 +1586,25 @@ P30's and P32's gains to size the candidate's largest unseen risk (T32). The gri
 document. Wording declared: under 0.20, if P32's gain over `p30_w030` falls below half its `generic` gain (+0.0081) or
 is negative on either truth, "P32's gain depends on clean slot teams".
 
+## The night's fifth round (13 Nov)
+
+P40's early drop left about two hours before the night's last benchmark, so the advisor allowed a capped fifth round
+at 03:38: at most two proposals on A26's headroom (changes of team inside ball-missing gaps), neither a shape feature
+nor an edge mover where the ball is seen, each with a cheap held-out check before any benchmark. A research agent
+found one candidate.
+
+### P42 — The touch hold stops at ball gaps
+
+**Status: struck 13 Nov 2026 (the advisor), as P29's retry; nothing built.** The idea: `controlled_touch`'s hold 0.60
+carries the last controller across a ball-missing gap, so the visible frames after the gap, before the next control
+episode, still vote for the old team and push the hand-over late; an off-by-default flag would leave them without an
+opinion. The advisor struck it because R032's belief was that the hold should go silent where it is wrong "behind a gap
+or a stoppage", and P42 is its gap half: on 74% of R032's 65,639 frames after a gap `p29_s025` already voted 0.49 to
+0.51 (in effect silent) and missed the bar, while on the other 26% the hold is right 75.6% of the time; its first gate
+could not miss (R032's table: 56.6% right after a gap against 87.7% in sight). What is new is the base (P32's team
+model now speaks where the ball is seen): whether that reopens the hold is Tian's call, with a protocol declared in the
+night's workspace (`rulings-5.md`) in case.
+
 ## Cheap signals worth checking
 
 ### P09 — Camera aim as a coarse ball-zone prior
