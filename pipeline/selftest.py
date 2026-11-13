@@ -3241,7 +3241,6 @@ def test_hmm_hazard_refusals():
                  "restart_source")
     expect_error(ValueError, lambda: decode(hazard_source="s1", team_neutral_dead=True), "hmm", "hazard_source",
                  "team_neutral_dead")
-    expect_error(ValueError, lambda: decode(hazard_source="s1", posterior=True), "hmm", "hazard_source", "posterior")
     # below HAZARD_FLOOR a frame at the base rate would cost more than switch_team, and scale 0 would not be today's
     for low in (0.0, 0.5, 0.999):
         expect_error(ValueError, lambda: decode(hazard_source="s1", switch_team=low), "hmm", "hazard_source",
@@ -3256,13 +3255,15 @@ def test_hmm_hazard_refusals():
                  {"hazard_scale": np.float64(1.5)}, {"hazard_scale": np.int64(1)}, {"switch_team": 1.0}):
         assert len(decode(hazard_source="s1", **good).labels) == 10, good
     assert decode(hazard_source="s1", posterior=False).posterior is None
-    # viterbi's team_cost: one finite number of nats >= 0 per frame
+    assert decode(hazard_source="s1", posterior=True).posterior.shape == (10, 3), "the posterior takes the hazard"
+    # viterbi's and marginals' team_cost: one finite number of nats >= 0 per frame
     emissions = np.zeros((5, 3))
-    for bad in (np.zeros(4), np.zeros(6), np.zeros((5, 1)), np.array([1.0, np.nan, 1.0, 1.0, 1.0]),
-                np.array([1.0, 1.0, np.inf, 1.0, 1.0]), np.array([1.0, 1.0, 1.0, -0.1, 1.0])):
-        expect_error(ValueError, lambda: hmm.viterbi(emissions, 1.0, 1.0, 1, 1, team_cost=bad), "hmm", "team_cost")
-    assert len(hmm.viterbi(emissions, 1.0, 1.0, 1, 1, team_cost=[0, 1, 2, 3, 4])) == 5     # a list of whole numbers
-    assert len(hmm.viterbi(np.zeros((0, 3)), 1.0, 1.0, 1, 1, team_cost=np.zeros(0))) == 0
+    for function in (hmm.viterbi, hmm.marginals):
+        for bad in (np.zeros(4), np.zeros(6), np.zeros((5, 1)), np.array([1.0, np.nan, 1.0, 1.0, 1.0]),
+                    np.array([1.0, 1.0, np.inf, 1.0, 1.0]), np.array([1.0, 1.0, 1.0, -0.1, 1.0])):
+            expect_error(ValueError, lambda: function(emissions, 1.0, 1.0, 1, 1, team_cost=bad), "hmm", "team_cost")
+        assert len(function(emissions, 1.0, 1.0, 1, 1, team_cost=[0, 1, 2, 3, 4])) == 5     # a list of whole numbers
+        assert len(function(np.zeros((0, 3)), 1.0, 1.0, 1, 1, team_cost=np.zeros(0))) == 0
 
 
 def test_hmm_hazard_config_cross_check():
@@ -3309,6 +3310,110 @@ def test_hmm_hazard_config_cross_check():
     vote = '[decoder]\nkind = "fake_vote"\nhalf_width = 3\n'
     expect_error(ConfigError, lambda: load(team + hazard.format("hazard") + vote), "p35_trial.toml", "'hazard'",
                  "turnover_hazard", "hazard_source")
+
+
+def hmm_priced_brute_force_marginals(emissions, switch_dead, team_cost, min_possession, min_dead, paths):
+    """The posterior with a per-frame team cost by its definition, over the valid ones of `paths` ((P, n) of codes H,
+    A, D, every path of the block): each valid path weighs exp(its hmm_priced_scores score). (n_frames, 3)."""
+    valid = paths[restart_paths_valid(paths, min_possession, min_dead)]
+    scores = hmm_priced_scores(emissions, valid, switch_dead, team_cost)
+    weights = np.exp(scores - scores.max())
+    weights /= weights.sum()
+    return np.stack([weights @ (valid == state) for state in range(3)], axis=1)
+
+
+def test_hmm_hazard_posterior_matches_brute_force():
+    """marginals with a per-frame team cost against every path of tiny blocks (n <= 7, min_possession 1 to 3, min_dead
+    1 to 2, blocks shorter than a minimum among them, random continuous emissions and costs): the forward pass's birth
+    into frame t and the backward pass's leave towards frame t + 1 both price a change of team at the cost of the
+    frame its new run starts on."""
+    import itertools
+    from pipeline.decode import hmm
+    every = {}
+    priced = short = 0
+    for case in range(200):
+        rng = np.random.default_rng([35, 4000 + case])
+        n_frames = int(rng.integers(1, 8))
+        if n_frames not in every:
+            every[n_frames] = np.array(list(itertools.product(range(3), repeat=n_frames)), dtype=np.int64)
+        emissions = rng.uniform(-3.0, 3.0, size=(n_frames, 3))
+        switch_team, switch_dead = (float(value) for value in rng.uniform(0.1, 4.0, size=2))
+        team_cost = rng.uniform(0.0, 6.0, size=n_frames)
+        min_possession, min_dead = int(rng.integers(1, 4)), int(rng.integers(1, 3))
+        costs = (switch_team, switch_dead, min_possession, min_dead)
+        got = hmm.marginals(emissions, *costs, team_cost=team_cost)
+        expected = hmm_priced_brute_force_marginals(emissions, switch_dead, team_cost, min_possession, min_dead,
+                                                    every[n_frames])
+        assert got.dtype == np.float64 and got.shape == (n_frames, 3), (case, got.dtype, got.shape)
+        assert np.allclose(got, expected, rtol=1e-9, atol=1e-12), "case {} ({} frames, minimums {} and {}): {!r} " \
+            "against the brute force {!r}".format(case, n_frames, min_possession, min_dead, got, expected)
+        flat = hmm.marginals(emissions, *costs, team_cost=np.full(n_frames, team_cost[1:].mean() if n_frames > 1
+                                                                  else 0.0))
+        priced += np.abs(flat - got).max() > 1e-6
+        short += n_frames < max(min_possession, min_dead)
+    # The per-frame costs have to move the posterior away from a flat cost of their mean, and some blocks have to be
+    # shorter than a minimum, or the check proves nothing about them.
+    assert priced >= 100 and short >= 10, "{} cases priced, {} blocks shorter than a minimum, of 200".format(
+        priced, short)
+
+
+def test_hmm_hazard_posterior_flat_cost_is_today():
+    """marginals with team_cost filled with switch_team is marginals without it, to the last bit, on random blocks;
+    and a long block read backwards, its costs moved with it (the change into reversed frame u is the change into the
+    original frame n - u), has the reversed posterior: the forward and the backward pass read the same frame's cost
+    over thousands of frames."""
+    from pipeline.decode import hmm
+    moved = 0
+    for case in range(8):
+        rng = np.random.default_rng([35, 5000 + case])
+        n_frames = int(rng.integers(300, 2000))
+        emissions = rng.normal(0.0, float(rng.choice([0.3, 2.0, 30.0])), size=(n_frames, 3))
+        costs = (float(rng.uniform(0.0, 20.0)), float(rng.uniform(0.0, 20.0)), int(rng.integers(1, 150)),
+                 int(rng.integers(1, 150)))
+        today = hmm.marginals(emissions, *costs)
+        flat = hmm.marginals(emissions, *costs, team_cost=np.full(n_frames, costs[0]))
+        assert np.array_equal(flat, today), "case {}: {:.1e} apart".format(case, np.abs(flat - today).max())
+        team_cost = rng.uniform(1.0, 2.0 * costs[0] + 1.0, size=n_frames)
+        forwards = hmm.marginals(emissions, *costs, team_cost=team_cost)
+        reversed_cost = np.concatenate([team_cost[:1], team_cost[1:][::-1]])
+        backwards = hmm.marginals(emissions[::-1], *costs, team_cost=reversed_cost)[::-1]
+        assert np.allclose(forwards, backwards, rtol=0.0, atol=1e-10), "case {}: {:.1e} apart".format(
+            case, np.abs(forwards - backwards).max())
+        moved += np.abs(forwards - today).max() > 1e-6     # emissions of 30 nats a frame may leave nothing to move
+    assert moved >= 4, "the costs moved the posterior in only {} of 8 long blocks".format(moved)
+
+
+def test_hmm_hazard_decode_posterior():
+    """decode's posterior with a hazard is marginals' at hazard_costs on the other sources' emissions, its labels are
+    the same with the posterior on and off, and a silent hazard, or scale 0, gives the posterior of the block without
+    the source, to the last bit."""
+    from pipeline.contracts import no_opinion
+    from pipeline.decode import REGISTRY, hmm
+    for case in range(12):
+        rng = np.random.default_rng([35, 6000 + case])
+        n_frames = int(rng.integers(200, 1200))
+        team = np.repeat(rng.integers(0, 2, n_frames // 40 + 1), 40)[:n_frames]
+        votes = np.where(rng.random(n_frames) < np.where(team == 0, 0.75, 0.25), VOTE, 1.0 - VOTE)
+        alive = np.where(rng.random(n_frames) < 0.5, np.nan, rng.random(n_frames))
+        hazard = np.where(rng.random(n_frames) < 0.4, np.nan, rng.beta(0.5, 0.5, n_frames))
+        costs = {"switch_team": float(rng.choice([1.0, 6.0])), "switch_dead": float(rng.uniform(2.0, 30.0)),
+                 "min_possession": int(rng.integers(1, 30)), "min_dead": int(rng.integers(1, 30))}
+        scale = float(rng.choice([0.5, 1.0, 2.0]))
+        ctx, name = hmm_hazard_context([votes], [alive], [1.0], hazard, None, int(rng.integers(0, 2)))
+        decoded = REGISTRY["hmm"](ctx, hazard_source=name, hazard_scale=scale, posterior=True, **costs)
+        labels = REGISTRY["hmm"](ctx, hazard_source=name, hazard_scale=scale, **costs).labels
+        assert np.array_equal(decoded.labels, labels), "case {}: the posterior moved a label".format(case)
+        emissions = hmm.log_likelihoods(hmm_context(votes, alive).evidence.values(), n_frames, hmm.EPS)
+        expected = hmm.marginals(emissions, *costs.values(),
+                                 team_cost=hmm.hazard_costs(hazard, costs["switch_team"], scale, hmm.EPS))
+        assert np.array_equal(decoded.posterior, expected), case
+        without = REGISTRY["hmm"](hmm_context(votes, alive), posterior=True, **costs).posterior
+        silent, silent_name = hmm_hazard_context([votes], [alive], [1.0], no_opinion(n_frames))
+        assert np.array_equal(REGISTRY["hmm"](silent, hazard_source=silent_name, posterior=True, **costs).posterior,
+                              without), case
+        assert np.array_equal(REGISTRY["hmm"](ctx, hazard_source=name, hazard_scale=0.0, posterior=True,
+                                              **costs).posterior, without), case
+        assert np.abs(decoded.posterior - without).max() > 1e-6, "case {}: the hazard did not move it".format(case)
 
 
 # -- dead ball (P05) --------------------------------------------------------------------------------------------------

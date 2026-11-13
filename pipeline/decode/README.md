@@ -181,11 +181,14 @@ probability, so `switch_team` is that cost at the base rate and `z` moves it by 
   a cost of `switch_team` on every frame gives the same labels as the loop without it. The checks hold that on random
   and on exactly tied blocks, and the priced decoder against every path of blocks of up to 8 frames.
 - **Cost.** 80,000 frames with a hazard take about 1.07 times the decode without it.
+- **The posterior** (`posterior = true`) takes the same per-frame costs: the forward pass prices the birth of a run into
+  frame `t` at `team_cost[t]`, the backward pass the leave from `t` towards `t + 1` at `team_cost[t + 1]`. Checked
+  against every path of blocks of up to 7 frames, against a long block read backwards, and, at a cost of `switch_team`
+  on every frame, against the posterior without a hazard to the last bit. `diagnose.py` reads it on a hazard config.
 - **Refused:** `hazard_scale` without `hazard_source`; a `hazard_source` that names none of the block's sources; a
-  negative, infinite or `NaN` scale; a hazard with `restart_source`, with `team_neutral_dead` or with `posterior =
-  true`; a hazard with `switch_team` below `HAZARD_FLOOR` (a frame at the base rate would then cost more than
-  `switch_team`, and scale 0 would not be today's decoder); and a weight other than 1 on the named source (its strength
-  is `hazard_scale`). The config loader refuses, before any data is read, a `hazard_source` that is not a
+  negative, infinite or `NaN` scale; a hazard with `restart_source` or with `team_neutral_dead`; a hazard with
+  `switch_team` below `HAZARD_FLOOR` (a frame at the base rate would then cost more than `switch_team`, and scale 0
+  would not be today's decoder); and a weight other than 1 on the named source (its strength is `hazard_scale`). The config loader refuses, before any data is read, a `hazard_source` that is not a
   `turnover_hazard` source and a `turnover_hazard` source the decoder does not name: read as an ordinary source, its
   `home` would vote for the home team wherever a change is likely.
 
@@ -219,8 +222,8 @@ paths. Each row sums to 1.
 - **Cost.** It is O(`min_possession` + `min_dead`) a frame and holds `n_frames * (2 * min_possession + min_dead) * 8`
   bytes (96 MB for 80,000 frames with both minimums at 50), so it is off by default and no benchmark grid asks for it.
   80,000 frames with both minimums at 50 take about 2 s.
-- **Three states only.** `posterior = true` with `restart_source` is refused, and so is `posterior = true` with
-  `hazard_source` (no per-frame team cost in it).
+- **Three states only.** `posterior = true` with `restart_source` is refused. With `hazard_source` it takes the
+  per-frame team cost ([above](#per-frame-team-cost-p35)).
 
 ### Restart states (P17)
 

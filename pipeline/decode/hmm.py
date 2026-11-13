@@ -125,10 +125,10 @@ tied ones, and the priced decoder against every path of tiny blocks.
 
 Refused: hazard_scale without hazard_source (nothing would read it); a hazard_source that names none of the block's
 sources; a scale that is negative, infinite, NaN or not a number; a hazard with restart_source or with
-team_neutral_dead (it prices the three states' changes of team under today's emissions); a hazard with posterior =
-true (marginals takes no per-frame cost); a hazard with switch_team below HAZARD_FLOOR (a frame at the base rate would
-then cost more than switch_team, and hazard_scale 0 would not be the decoder without a hazard); and a weight other than
-1 on the named source (the hazard's strength is hazard_scale, and a weight would be read by nothing).
+team_neutral_dead (it prices the three states' changes of team under today's emissions); a hazard with switch_team
+below HAZARD_FLOOR (a frame at the base rate would then cost more than switch_team, and hazard_scale 0 would not be the
+decoder without a hazard); and a weight other than 1 on the named source (the hazard's strength is hazard_scale, and a
+weight would be read by nothing). posterior = true takes the same per-frame costs (The posterior, below).
 pipeline/config.py refuses, before any data is read, a hazard_source that is not a "turnover_hazard" source and a
 "turnover_hazard" source that the decoder does not name (read as an ordinary source, its `home` would vote for the
 home team wherever a change is likely).
@@ -208,8 +208,12 @@ but not for a probability of 1e-12. The chain costs O(min_possession + min_dead)
 (2 * min_possession + min_dead) * 8 bytes, so it is off by default: the benchmark never asks for it. 80,000 frames with
 both minimums at 50 take about 2 s.
 
-The posterior is the three states' only: posterior = true with restart_source is refused. It has no per-frame team cost
-either: posterior = true with hazard_source is refused.
+The posterior is the three states' only: posterior = true with restart_source is refused. With hazard_source it takes
+the decoder's per-frame team cost (marginals' team_cost): the forward pass's birth of a run into frame t is priced at
+team_cost[t], and the backward pass's leave from frame t towards t + 1 at team_cost[t + 1], the same frame's cost seen
+from the other side. Without one, both passes run as they always did (the choice is made once, before each), and a
+team_cost of switch_team on every frame gives the same posterior to the last bit. pipeline/selftest.py checks it
+against every path of tiny blocks and against a long block read backwards with its costs moved with it.
 
 What it does not do yet
 -----------------------
@@ -264,11 +268,11 @@ def decode(ctx, *, switch_team, switch_dead, min_possession=1, min_dead=1, eps=E
 
     With hazard_source, the name of one of ctx.evidence's sources, that source's `home` is a hazard z and a change of
     team into frame t costs hazard_costs(z, switch_team, hazard_scale, eps)[t] instead of switch_team (the module
-    docstring's per-frame team cost); the source adds nothing to the emissions. hazard_scale is a finite number >= 0,
-    None meaning DEFAULT_HAZARD_SCALE. Refused (ValueError): hazard_scale without hazard_source; a hazard_source that is
-    not a non-empty string or names none of the block's sources, or whose source has a weight other than 1; a hazard
-    with restart_source, with team_neutral_dead or with posterior = True; and a hazard with switch_team below
-    HAZARD_FLOOR.
+    docstring's per-frame team cost); the source adds nothing to the emissions, and the posterior, if asked for, takes
+    the same costs. hazard_scale is a finite number >= 0, None meaning DEFAULT_HAZARD_SCALE. Refused (ValueError):
+    hazard_scale without hazard_source; a hazard_source that is not a non-empty string or names none of the block's
+    sources, or whose source has a weight other than 1; a hazard with restart_source or with team_neutral_dead; and a
+    hazard with switch_team below HAZARD_FLOOR.
     """
     _check_costs(switch_team, switch_dead, min_possession, min_dead)
     _check_eps(eps)
@@ -280,14 +284,17 @@ def decode(ctx, *, switch_team, switch_dead, min_possession=1, min_dead=1, eps=E
     if team_neutral_dead and restart_source is not None:
         raise ValueError("hmm: team_neutral_dead = true is the three states' only, and restart_source {!r} asks for "
                          "the four restart states; leave one of them out".format(restart_source))
-    hazard_scale = _check_hazard(hazard_source, hazard_scale, switch_team, restart_source, team_neutral_dead,
-                                 posterior)
+    hazard_scale = _check_hazard(hazard_source, hazard_scale, switch_team, restart_source, team_neutral_dead)
     if hazard_source is not None:
         hazard = _hazard_source(ctx.evidence, hazard_source, len(ctx.block))
         emissions = log_likelihoods([source for name, source in ctx.evidence.items() if name != hazard_source],
                                     len(ctx.block), eps)
         team_cost = hazard_costs(hazard.home, float(switch_team), hazard_scale, eps)
-        return Decoded(labels=viterbi(emissions, switch_team, switch_dead, min_possession, min_dead, team_cost))
+        labels = viterbi(emissions, switch_team, switch_dead, min_possession, min_dead, team_cost)
+        if not posterior:
+            return Decoded(labels=labels)
+        return Decoded(labels=labels, posterior=marginals(emissions, switch_team, switch_dead, min_possession,
+                                                          min_dead, team_cost))
     if restart_source is None:
         emissions = log_likelihoods(ctx.evidence.values(), len(ctx.block), eps, bool(team_neutral_dead))
         labels = viterbi(emissions, switch_team, switch_dead, min_possession, min_dead)
@@ -528,13 +535,14 @@ def _best_path(emissions, penalty, minimum, preference, team_cost=None):
         begun = started[state][stop - 1]
 
 
-def marginals(emissions, switch_team, switch_dead, min_possession, min_dead):
+def marginals(emissions, switch_team, switch_dead, min_possession, min_dead, team_cost=None):
     """(n_frames, 3) float64: the probability of H, A and D at each frame under the model in the module docstring.
 
     The weight of a valid path is exp(its score), and the marginal of (frame, state) is the total weight of the valid
     paths that hold the state there, over the total weight of all valid paths. Each row sums to 1 (to rounding).
-    Same arguments as `viterbi`; n_frames = 0 gives an empty array. The memory is n_frames * (2 * min_possession +
-    min_dead) * 8 bytes, the forward table below.
+    Same arguments as `viterbi`, team_cost included (a change between H and A into frame t costs team_cost[t]; None
+    runs the passes as they always ran; ValueError for a team_cost of the wrong shape or values); n_frames = 0 gives an
+    empty array. The memory is n_frames * (2 * min_possession + min_dead) * 8 bytes, the forward table below.
 
     A forward-backward pass over the expanded chain: state s is split into substates "run length so far" 1..m_s, the
     last with a self-loop, so a run is born in substate 1 of s from the *last* substate of another state, at the cost of
@@ -553,6 +561,8 @@ def marginals(emissions, switch_team, switch_dead, min_possession, min_dead):
         switch_team, switch_dead, min_possession, min_dead)
     emissions = _check_emissions(emissions)
     n_frames = len(emissions)
+    if team_cost is not None:
+        team_cost = _check_team_cost(team_cost, n_frames)
     posterior = np.empty((n_frames, 3))
     if n_frames == 0:
         return posterior
@@ -573,31 +583,60 @@ def marginals(emissions, switch_team, switch_dead, min_possession, min_dead):
     forward[0] = -np.inf
     forward[0, last] = emissions[0]
     forward[0] -= forward[0].max()
-    for frame in range(1, n_frames):
-        previous, row = forward[frame - 1], forward[frame]
-        mature = previous[last]                                          # a run that may be left, per state
-        born = np.logaddexp.reduce(mature[:, None] + link, axis=0)       # into each state's substate 1
-        row[1:] = previous[:-1]                                          # a run one frame older
-        row[first] = -np.inf                                             # (the shift put another state's here)
-        row[last] = np.logaddexp(row[last], mature)                      # the self-loop of the last substate
-        row[first] = np.logaddexp(row[first], born)                      # ... which is substate 1 when the minimum is 1
-        row += emissions[frame][owner]
-        row -= row.max()
+    # Which loops run is chosen here, once: without a per-frame team cost they are the loops as they always were. With
+    # one, each pass is the same step with the change between H and A priced at the cost of the frame its new run
+    # starts on: the birth into frame t at team_cost[t], the leave from frame t towards t + 1 at team_cost[t + 1].
+    priced = None if team_cost is None else link.copy()
+    if team_cost is None:
+        for frame in range(1, n_frames):
+            previous, row = forward[frame - 1], forward[frame]
+            mature = previous[last]                                          # a run that may be left, per state
+            born = np.logaddexp.reduce(mature[:, None] + link, axis=0)       # into each state's substate 1
+            row[1:] = previous[:-1]                                          # a run one frame older
+            row[first] = -np.inf                                             # (the shift put another state's here)
+            row[last] = np.logaddexp(row[last], mature)                      # the self-loop of the last substate
+            row[first] = np.logaddexp(row[first], born)                      # ... substate 1 when the minimum is 1
+            row += emissions[frame][owner]
+            row -= row.max()
+    else:
+        for frame in range(1, n_frames):
+            priced[H, A] = priced[A, H] = -team_cost[frame]
+            previous, row = forward[frame - 1], forward[frame]
+            mature = previous[last]
+            born = np.logaddexp.reduce(mature[:, None] + priced, axis=0)
+            row[1:] = previous[:-1]
+            row[first] = -np.inf
+            row[last] = np.logaddexp(row[last], mature)
+            row[first] = np.logaddexp(row[first], born)
+            row += emissions[frame][owner]
+            row -= row.max()
 
     # backward[x]: log of the total weight of every continuation after frame t from substate x, emission at t not
     # included, less a scalar; at the last frame every substate may end the path, so every continuation is empty.
     # Folded into `forward` on the way down, which then holds forward * backward: no second table.
     backward = np.zeros(len(owner))
-    for frame in range(n_frames - 2, -1, -1):
-        ahead = emissions[frame + 1][owner] + backward                   # the next frame, its emission paid
-        # np.empty_like is safe: the shift below fills every entry but the last, and `last` covers the last index.
-        following = np.empty_like(ahead)
-        following[:-1] = ahead[1:]                                       # a run one frame older: the only way on
-        leave = np.logaddexp.reduce(ahead[first][None, :] + link, axis=1)  # a mature run ends: into another state
-        following[last] = np.logaddexp(ahead[last], leave)               # ... or goes on in the last substate
-        following -= following.max()
-        backward = following
-        forward[frame] += backward
+    if team_cost is None:
+        for frame in range(n_frames - 2, -1, -1):
+            ahead = emissions[frame + 1][owner] + backward                   # the next frame, its emission paid
+            # np.empty_like is safe: the shift below fills every entry but the last, and `last` covers the last index.
+            following = np.empty_like(ahead)
+            following[:-1] = ahead[1:]                                       # a run one frame older: the only way on
+            leave = np.logaddexp.reduce(ahead[first][None, :] + link, axis=1)  # a mature run ends: into another state
+            following[last] = np.logaddexp(ahead[last], leave)               # ... or goes on in the last substate
+            following -= following.max()
+            backward = following
+            forward[frame] += backward
+    else:
+        for frame in range(n_frames - 2, -1, -1):
+            priced[H, A] = priced[A, H] = -team_cost[frame + 1]
+            ahead = emissions[frame + 1][owner] + backward
+            following = np.empty_like(ahead)
+            following[:-1] = ahead[1:]
+            leave = np.logaddexp.reduce(ahead[first][None, :] + priced, axis=1)
+            following[last] = np.logaddexp(ahead[last], leave)
+            following -= following.max()
+            backward = following
+            forward[frame] += backward
 
     for lo in range(0, n_frames, CHUNK):
         rows = forward[lo:lo + CHUNK]
@@ -652,12 +691,12 @@ def _check_switch_restart(switch_restart):
     return float(switch_restart)
 
 
-def _check_hazard(hazard_source, hazard_scale, switch_team, restart_source, team_neutral_dead, posterior):
+def _check_hazard(hazard_source, hazard_scale, switch_team, restart_source, team_neutral_dead):
     """hazard_scale as a float (DEFAULT_HAZARD_SCALE where None is given with a source; None without a source).
     ValueError naming hazard_source or hazard_scale, whichever is wrong, or the setting a hazard cannot go with: a scale
     without a source, a source that is not a non-empty string, a scale that is not a finite number >= 0,
-    restart_source, team_neutral_dead, posterior, and switch_team below HAZARD_FLOOR. Whether the source is one of the
-    block's is _hazard_source's check."""
+    restart_source, team_neutral_dead, and switch_team below HAZARD_FLOOR. Whether the source is one of the block's is
+    _hazard_source's check."""
     if hazard_source is None:
         if hazard_scale is not None:
             raise ValueError("hmm: hazard_scale = {!r} is read only with hazard_source, and none is given; name the "
@@ -680,9 +719,6 @@ def _check_hazard(hazard_source, hazard_scale, switch_team, restart_source, team
     if team_neutral_dead:
         raise ValueError("hmm: hazard_source {!r} is not written for team_neutral_dead = true (P35 prices the changes "
                          "of today's emissions); leave one of them out".format(hazard_source))
-    if posterior:
-        raise ValueError("hmm: posterior = true has no per-frame team cost (marginals takes none), and hazard_source "
-                         "{!r} asks for one; leave one of them out".format(hazard_source))
     if float(switch_team) < HAZARD_FLOOR:
         raise ValueError("hmm: hazard_source {!r} needs switch_team >= HAZARD_FLOOR ({} nat), got {!r}: below it a "
                          "frame at the hazard's base rate would cost more than switch_team, and hazard_scale 0 would "
