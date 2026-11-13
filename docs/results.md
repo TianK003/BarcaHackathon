@@ -10873,7 +10873,7 @@ cells (hand-over, same team, unknown) are kept as a diagnostic: they choose noth
 ### R040 — P35: a turnover hazard as the decoder's per-frame switch cost: the gate passes, the bar misses at every scale, dropped (declared 2026-11-13, 01:05; run 01:44 to 02:16, Tian away, an advisor agent in Tian's place)
 Proposal: P35 · Spec (declared before any run): [2026-11-13-p35-p39-design.md](superpowers/specs/2026-11-13-p35-p39-design.md)
 (amendments 4, 8, 11) · Code: the decoder `6eb2bec`, `79dd64c` (A1); the model and source `405f357`, `7c3dcf2` (A2);
-merged as `e29e18d` and `3a375bf`; the model `a898c42`; the model side removed in DROP35M · Command: `python
+merged as `e29e18d` and `3a375bf`; the model `a898c42`; the model side removed in `ef1c975` · Command: `python
 pipeline/benchmark/train_turnover.py --dry-run --matches J03WMX --seeds 1`, `train_turnover.py`, `train_turnover.py
 --report`; `python pipeline/benchmark/run.py pipeline/benchmark/configs/p32/p32_w030.toml
 pipeline/benchmark/configs/p35/p35_s000.toml …p35_s050.toml …p35_s100.toml …p35_s200.toml --profile generic --seeds 3
