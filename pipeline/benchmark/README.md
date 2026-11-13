@@ -30,6 +30,7 @@ python pipeline/benchmark/p27_choose.py guard STEM BASE  # P27: the shift's guar
 python pipeline/benchmark/p27_shift.py STEM   # P27 Stage E: the shift, from the pipeline's own lag on DFL (generic, raw truth)
 python pipeline/benchmark/p27_profile_check.py   # P27: the generic profile against its declared shares, on the 21 match-seeds
 python pipeline/benchmark/p27_sensitivity.py REFERENCE STEM ...   # R030: the six-seed reports read as seeds 0-2, 3-5, 0-5; a report, never a choice
+python pipeline/benchmark/p29_bar.py pick|bar|guard --reference REFERENCE STEM ...   # the bar of 12 Nov's night (mean +0.005, p <= 0.05, neither truth -0.005), its pick and guard; exit 0 or 2
 python pipeline/benchmark/diagnose.py CONFIG --drop-match-only   # A19: the IoU ladder decomposed, the sources' and the posterior's calibration
 python pipeline/benchmark/fidelity.py --profile tracking|gaps|context   # how far a profile that reads our match looks like it
                                               # (gates, warnings); default tracking; generic has no gates, by design
