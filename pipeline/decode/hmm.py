@@ -26,6 +26,17 @@ A channel that is NaN adds 0 to every state: it cannot push the decoder anywhere
 (The product P(H) = alive * home would put a missing `alive` at a coin flip and hand D a head start on every frame
 where only `home` is known. `home` is a likelihood ratio between H and A only, so D gets nothing from it.)
 
+Team-neutral dead (P31)
+-----------------------
+With team_neutral_dead = true the `home` line gains a term, and nothing else changes:
+
+    where `home` is known:   e[D] += w max(log 2h, log 2(1 - h))
+
+A confident team vote then lifts D as much as it lifts the better team, so it ranks H against A and no longer says
+"the ball is in play": the rule above leaves D at 0 where only `home` speaks, which makes every confident team term a
+vote against a stoppage. Off (the default), the emissions, the labels and the posterior are what they were, bit for
+bit. It is the three states' only: with restart_source it is refused.
+
 A path is one label per frame of the block. Its score is the sum of e[t, s_t] along it, less switch_team for every
 H <-> A change and switch_dead for every change into or out of D. There is no penalty at the block's edges. The
 decoder returns a *valid* path of maximal score: every run (maximal constant stretch) of H or A lasts at least
@@ -177,7 +188,7 @@ CHUNK = 4096                  # frames per step of the posterior's final normali
 
 
 def decode(ctx, *, switch_team, switch_dead, min_possession=1, min_dead=1, eps=EPS, posterior=False,
-           restart_source=None, switch_restart=math.inf):
+           restart_source=None, switch_restart=math.inf, team_neutral_dead=False):
     """Decoded(labels) for ctx.block: the best valid path through the block's emissions.
 
     With posterior=True, Decoded.posterior is also the (len(block), 3) marginal probability of H, A and D per frame
@@ -186,14 +197,23 @@ def decode(ctx, *, switch_team, switch_dead, min_possession=1, min_dead=1, eps=E
     With restart_source, the name of one of ctx.evidence's sources, the four states of the module docstring: that
     source's `home` says who restarts, switch_restart prices a restart by the other team, and D_H and D_A are written
     D. There is no posterior then.
+
+    With team_neutral_dead (a bool, default False), every `home` term also gives D the larger of the two team terms:
+    team evidence ranks H against A and leaves the better of them level with D (the module docstring). It is the three
+    states' only, so it is refused with restart_source.
     """
     _check_costs(switch_team, switch_dead, min_possession, min_dead)
     _check_eps(eps)
     if not isinstance(posterior, (bool, np.bool_)):
         raise ValueError("hmm: posterior must be True or False, got {!r}".format(posterior))
+    if not isinstance(team_neutral_dead, (bool, np.bool_)):
+        raise ValueError("hmm: team_neutral_dead must be True or False, got {!r}".format(team_neutral_dead))
     _check_restart(restart_source, switch_restart)
+    if team_neutral_dead and restart_source is not None:
+        raise ValueError("hmm: team_neutral_dead = true is the three states' only, and restart_source {!r} asks for "
+                         "the four restart states; leave one of them out".format(restart_source))
     if restart_source is None:
-        emissions = log_likelihoods(ctx.evidence.values(), len(ctx.block), eps)
+        emissions = log_likelihoods(ctx.evidence.values(), len(ctx.block), eps, bool(team_neutral_dead))
         labels = viterbi(emissions, switch_team, switch_dead, min_possession, min_dead)
         if not posterior:
             return Decoded(labels=labels)
@@ -207,17 +227,18 @@ def decode(ctx, *, switch_team, switch_dead, min_possession=1, min_dead=1, eps=E
     return Decoded(labels=RESTART_LABELS[path])
 
 
-def log_likelihoods(sources, n_frames, eps):
+def log_likelihoods(sources, n_frames, eps, neutral_dead=False):
     """(n_frames, 3) float64 emissions in nats, columns H, A, D: the sum over `sources` of the rule in the docstring.
 
     `sources` is an iterable of Evidence, each of length n_frames. A source's weight must be finite and >= 0 (an
-    exponent on its likelihood), whether or not it has an opinion anywhere. Reads the evidence, never writes it: the
-    runner hands over read-only arrays.
+    exponent on its likelihood), whether or not it has an opinion anywhere. With neutral_dead, where a source's `home`
+    is known D also gets the larger of the H and A terms, as the docstring's team-neutral rule says. Reads the
+    evidence, never writes it: the runner hands over read-only arrays.
     """
     _check_eps(eps)
     emissions = np.zeros((n_frames, 3))
     for source in sources:
-        _add_source(emissions, source, n_frames, eps)
+        _add_source(emissions, source, n_frames, eps, neutral_dead=neutral_dead)
     return emissions
 
 
@@ -249,9 +270,10 @@ def restart_log_likelihoods(evidence, restart_source, n_frames, eps):
     return emissions
 
 
-def _add_source(emissions, source, n_frames, eps, home=True):
+def _add_source(emissions, source, n_frames, eps, home=True, neutral_dead=False):
     """Add one source's terms to the (n_frames, 3) `emissions` in place, by the rule in the docstring: its `home` to H
-    and A (unless home is False), its `alive` to H, A and D. ValueError on a bad weight or length."""
+    and A (unless home is False; with neutral_dead, also the larger of the two to D), its `alive` to H, A and D.
+    ValueError on a bad weight or length."""
     weight = source.weight
     if isinstance(weight, bool) or not isinstance(weight, numbers.Real) or not math.isfinite(weight) or weight < 0:
         raise ValueError("hmm: evidence {!r} has weight {!r}; a weight is an exponent on its likelihood and must "
@@ -263,8 +285,12 @@ def _add_source(emissions, source, n_frames, eps, home=True):
         known = ~np.isnan(source.home)
         if known.any():
             values = np.clip(source.home[known], eps, 1.0 - eps)
-            emissions[known, H] += weight * np.log(PRIOR_CHANCE * values)
-            emissions[known, A] += weight * np.log(PRIOR_CHANCE * (1.0 - values))
+            home_term = weight * np.log(PRIOR_CHANCE * values)
+            away_term = weight * np.log(PRIOR_CHANCE * (1.0 - values))
+            emissions[known, H] += home_term
+            emissions[known, A] += away_term
+            if neutral_dead:
+                emissions[known, D] += np.maximum(home_term, away_term)
     known = ~np.isnan(source.alive)
     if known.any():
         alive = np.clip(source.alive[known], eps, 1.0 - eps)

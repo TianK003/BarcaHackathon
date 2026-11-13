@@ -13,7 +13,7 @@ R002 to R012).
 
 **Since R030 (10 Nov 2026) the benchmark's default profile is `generic`, which reads nothing of our match**
 ([P27](../../docs/proposals.md), [the spec](../../docs/superpowers/specs/2026-11-09-p27-degradation-design.md)). Both
-models are trained on it and every numeric constant of `main.toml` is chosen on it. The three older degraded
+models are trained on it and every numeric constant of `main.toml` is chosen on it (R042 added P30's version 2 shape model and P32's team model, both trained on it too). The three older degraded
 profiles (`gaps`, `tracking`, `context`) read our match. Since the organisers' reply of 5 Nov nothing is trained or
 chosen on them, and they stay for the record of R002 to R029 ([The profiles](#the-profiles)).
 
@@ -30,6 +30,7 @@ python pipeline/benchmark/p27_choose.py guard STEM BASE  # P27: the shift's guar
 python pipeline/benchmark/p27_shift.py STEM   # P27 Stage E: the shift, from the pipeline's own lag on DFL (generic, raw truth)
 python pipeline/benchmark/p27_profile_check.py   # P27: the generic profile against its declared shares, on the 21 match-seeds
 python pipeline/benchmark/p27_sensitivity.py REFERENCE STEM ...   # R030: the six-seed reports read as seeds 0-2, 3-5, 0-5; a report, never a choice
+python pipeline/benchmark/p29_bar.py pick|bar|guard --reference REFERENCE STEM ...   # the bar of 12 Nov's night (mean +0.005, p <= 0.05, neither truth -0.005), its pick and guard; exit 0 or 2
 python pipeline/benchmark/diagnose.py CONFIG --drop-match-only   # A19: the IoU ladder decomposed, the sources' and the posterior's calibration
 python pipeline/benchmark/fidelity.py --profile tracking|gaps|context   # how far a profile that reads our match looks like it
                                               # (gates, warnings); default tracking; generic has no gates, by design
@@ -42,6 +43,7 @@ python pipeline/benchmark/metrica.py [--offline]   # P16: the grain of H/A/D der
 python pipeline/benchmark/touch_stats.py      # P04's control rule measured: coverage, agreement, flip lags, confidence
 python pipeline/benchmark/train_dead_ball.py --model hgb   # P05: train the dead-ball model (folds + full) as JSON; --profile generic is the default
 python pipeline/benchmark/train_shape.py [--verify|--report]   # P07: train the shape model (folds + full) as JSON; --profile generic is the default
+python pipeline/benchmark/train_team.py [--verify|--dry-run|--feasibility]   # P32: train the team model (folds + full), count its rows, or test it against p30_w030; --profile generic is the default
 python pipeline/benchmark/conventions.py public|dfl|compare|latency|shift ...   # P02: when a truth flips, the shift
 python pipeline/benchmark/selftest.py [--dfl] [--data]   # the checks
 ```
@@ -251,6 +253,29 @@ Its checks are in `checks/generic.py` (synthetic): `test_generic_constants_are_t
 `test_generic_ball_is_missing_exactly_where_the_masks_say`, `test_generic_parameters_are_the_declared_rules`,
 `test_generic_players_are_lost_at_the_declared_rate_in_46_slots` and
 `test_generic_runs_on_the_runner_with_no_calibration`.
+
+**The two sensitivity profiles `generic_swap05` and `generic_swap20` (C2, 13 Nov 2026; version 1 each;
+`degrade.SENSITIVITY_PROFILES`).** Each is `generic` v1 (the same ball and the same players, from the same streams)
+plus wrong-team slot episodes at a declared share of 0.05 or 0.20, through the existing episode code at scale 1.0
+(`degrade.swap_parameters`; not `WRONG_TEAM_SCALE`, not the Calibration's episodes or share; episode lengths from
+`generic`'s own log-uniform grid of tracked spans, an episode ending at the earlier of its drawn length and the end of
+the player's tracked span, an opposing pair within the declared `NEAR_PAIR_M` of 2 m, the episodes' own random stream:
+at share 0 the served inputs are `generic`'s array for array). A cut is an identity switch, so the 7-frame smoothing
+restarts at it and a new tracklet's first speed is NaN. They read no Calibration. The grid's basis is DATA.md's
+"slots appear, vanish and swap identity", which gives no rate: 0.05 and 0.20 are round numbers from rare to common.
+They are a description of how far a candidate's gain depends on clean slot teams, and they **choose nothing**: nothing
+is trained, chosen, ranked, gated or set on them, and C2 is never the ground for a `generic` v2. Only the runner's own
+command line (`run.py --profile`) accepts them (a report says `sensitivity_only`, and the printout gives the realised
+share of frames in an episode and the observable share of frames with a team in surplus, with the onsets and episodes
+of each match and seed; all reported, never tuned); `train_*.py`, `choose.py`, `p29_bar.py` (every command),
+`fidelity.py`, `conventions.py`, `touch_stats.py`, `restarts.py`, `diagnose.py`, `headroom.py`, `run.make_atd`,
+`run.evaluate_configs` called any other way and the pipeline's model loader refuse them. **The grid of 0.05 and 0.20
+was declared knowing our measured 10.8% (T32), so it cannot be justified independently of our match, and is therefore
+never a setting, a gate or a rank.** `generic` v1 is untouched and stays final for this submission.
+
+Their checks are in `checks/degrade.py`: `test_swap_profiles_are_declared_sensitivity_only`, `test_swap_parameters_are_generic_plus_declared_episodes_at_scale_one`, `test_swap_at_share_zero_serves_generics_arrays`,
+`test_swap_calibration_is_never_loaded_or_accepted`, `test_swap_episodes_swap_only_slot_teams_and_never_see_the_truth`, `test_swap_episode_share_matches_the_declared_rate_within_tolerance`,
+and `test_swap_record_has_realised_and_surplus_shares`, `test_swap_runs_on_the_runner_and_the_report_says_so`, `test_swap_profiles_are_refused_by_every_tool_but_the_runner`.
 
 *From here to "No truth reaches the degrader" the text describes the three profiles that read our match. It is the
 record of how R002 to R029 were measured. Nothing is trained or chosen on those profiles since R030.*
@@ -974,7 +999,9 @@ time.
 aggregates of DFL only. It has two parts.
 - **The ladder.** For each truth it decomposes where spellF1 goes between IoU 0.3 and 0.7: every pair the scorer
   matches at 0.3 is clean, merge, split or both by its same-team overlaps, and each class's loss up the ladder is
-  given in spellF1 units. The clean pairs' edge errors are reported too.
+  given in spellF1 units. The clean pairs' edge errors are reported too, and (C1, `edges_by_kind`) split by the kind of
+  boundary (the truth's label beside it: the other team, `D`, the half's edge) and by whether the ball is seen there (on the true spell's first frame for a start, its last for an end;
+  a third state, `all`, pools the two).
 - **The calibration.** Each source and the hmm's posterior against the raw truth: log-loss, Brier, ECE, the reliability
   table and a Platt fit (α below 1 is overconfident).
 

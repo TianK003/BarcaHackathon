@@ -2924,6 +2924,60 @@ def test_hmm_restart_states_refuse_posterior_and_unknown_source():
                  "restart_source", "'s9'")
 
 
+# P31: team_neutral_dead. Under the flag each `home` term also gives D the larger of the two team terms, so that team
+# evidence ranks H against A and leaves the better of them level with D. Off, the decoder is what it was.
+
+def test_hmm_team_neutral_dead_emissions():
+    from pipeline.contracts import Evidence, no_opinion
+    from pipeline.decode import hmm
+    source = Evidence(alive=no_opinion(3), home=np.array([0.93, 0.07, np.nan]), name="s", weight=2.0)
+    off = hmm.log_likelihoods([source], 3, hmm.EPS)
+    on = hmm.log_likelihoods([source], 3, hmm.EPS, neutral_dead=True)
+    assert np.array_equal(off[:, hmm.H], on[:, hmm.H]) and np.array_equal(off[:, hmm.A], on[:, hmm.A]), (off, on)
+    assert (off[:, hmm.D] == 0.0).all(), off[:, hmm.D]
+    expected = np.array([2 * np.log(1.86), 2 * np.log(1.86), 0.0])
+    assert np.allclose(on[:, hmm.D], expected, atol=1e-12, rtol=0.0), (on[:, hmm.D], expected)
+    assert np.array_equal(on[:, hmm.D], np.maximum(on[:, hmm.H], on[:, hmm.A])), on
+
+
+def test_hmm_team_neutral_dead_leaves_alive_terms():
+    from pipeline.contracts import Evidence, no_opinion
+    from pipeline.decode import hmm
+    rng = np.random.default_rng([6, 5100])
+    alive = np.where(rng.random(100) < 0.3, np.nan, rng.random(100))
+    source = Evidence(alive=alive, home=no_opinion(100), name="s", weight=1.5)
+    assert np.array_equal(hmm.log_likelihoods([source], 100, hmm.EPS),
+                          hmm.log_likelihoods([source], 100, hmm.EPS, neutral_dead=True)), "an alive term moved"
+
+
+def test_hmm_team_neutral_dead_decodes_dead():
+    from pipeline.contracts import D, H
+    from pipeline.decode import REGISTRY, hmm
+    ctx = hmm_context([np.full(100, 0.93), np.full(100, np.nan)], [None, np.full(100, 0.45)])
+    parameters = {"switch_team": 6, "switch_dead": 32, "min_possession": 35, "min_dead": 25}
+    off = REGISTRY["hmm"](ctx, **parameters).labels
+    on = REGISTRY["hmm"](ctx, team_neutral_dead=True, **parameters)
+    assert (off == H).all(), letters(off)
+    assert (on.labels == D).all(), letters(on.labels)
+    with_posterior = REGISTRY["hmm"](ctx, team_neutral_dead=True, posterior=True, **parameters).posterior
+    assert (np.argmax(with_posterior, axis=1) == hmm.D).all(), with_posterior.min(axis=0)
+
+
+def test_hmm_team_neutral_dead_refusals():
+    from pipeline.contracts import no_opinion
+    from pipeline.decode import REGISTRY
+    ctx = hmm_context([np.full(10, VOTE), no_opinion(10)])
+
+    def decode(**parameters):
+        return REGISTRY["hmm"](ctx, **dict({"switch_team": 1.0, "switch_dead": 1.0}, **parameters))
+
+    for bad in (1, 0, "yes", None):
+        expect_error(ValueError, lambda: decode(team_neutral_dead=bad), "hmm", "team_neutral_dead")
+    expect_error(ValueError, lambda: decode(team_neutral_dead=True, restart_source="s1"), "hmm", "team_neutral_dead",
+                 "restart_source")
+    assert len(decode(team_neutral_dead=np.True_).labels) == 10
+
+
 # -- dead ball (P05) --------------------------------------------------------------------------------------------------
 #
 # Hand-built scenes, in metres on the default 105.3 x 68.0 pitch (centre spot (52.65, 34), penalty spots (11, 34) and
@@ -3813,6 +3867,123 @@ def test_shape_features_speed():
     assert elapsed < 6.0, "{:.2f} s for 160,000 frames x 30 slots (the budget is 6 s)".format(elapsed)
 
 
+V2_TEAM = ("n", "adv_mean", "adv_p10", "adv_p90", "width", "vel_adv", "speed_mean", "att_third", "own_third",
+           "d_adv_1s", "d_adv_2s", "vel_adv_1s", "length", "spread", "adv_past_2s", "adv_past_5s", "adv_past_10s",
+           "adv_fut_2s", "adv_fut_5s", "adv_fut_10s")
+
+
+def shape_matrix_v2(players, teams, graded):
+    from pipeline.evidence import shape_features
+    names, X = shape_features.features(shape_inputs(players, teams, graded), 2)
+    assert len(names) == 42
+    return {name: X[:, index] for index, name in enumerate(names)}, X
+
+
+def test_shape_features_v2_names_and_shape():
+    from pipeline.evidence import shape_features
+    names = shape_features.feature_names(2)
+    assert names == tuple("h_" + t for t in V2_TEAM) + tuple("a_" + t for t in V2_TEAM) + ("adv_gap", "n_diff")
+    assert len(names) == 42 and len(set(names)) == 42
+    assert shape_features.VERSIONS == (1, 2) and shape_features.ONE_SIDED_S == (2.0, 5.0, 10.0)
+    assert shape_features.feature_names(1) == shape_features.FEATURE_NAMES == SHAPE_NAMES
+    assert shape_features.columns(2) == {name: index for index, name in enumerate(names)}
+    assert shape_features.columns(1) == shape_features.COLUMN
+    players, teams, graded = shape_scene(0)
+    inputs = shape_inputs(players, teams, graded)
+    assert shape_features.features(inputs)[1] is shape_features.features(inputs, 1)[1]
+    names2, X2 = shape_features.features(inputs, 2)
+    assert names2 == names and X2.shape == (len(players), 42) and X2.dtype == np.float64
+    assert not X2.flags.writeable and shape_features.features(inputs, 2)[1] is X2
+    assert np.isfinite(X2[graded[0][1]:graded[0][2], shape_features.columns(2)["h_spread"]]).any()
+    for retired in (3, 4, 5):                         # P33's, P37's and P40's versions are retired, never reused
+        expect_error(ValueError, lambda: shape_features.features(inputs, retired), "shape_features", "version",
+                     str(retired))
+        expect_error(ValueError, lambda: shape_features.feature_names(retired), "shape_features", "version",
+                     str(retired))
+
+
+def test_shape_features_v2_keeps_v1():
+    from pipeline.evidence import shape_features
+    for seed in range(4):
+        players, teams, graded = shape_scene(seed)
+        inputs = shape_inputs(players, teams, graded)
+        names1, X1 = shape_features.features(inputs, 1)
+        names2, X2 = shape_features.features(inputs, 2)
+        column = shape_features.columns(2)
+        for index, name in enumerate(names1):
+            assert np.array_equal(X1[:, index], X2[:, column[name]], equal_nan=True), (seed, name)
+
+
+def test_shape_features_v2_known_values():
+    n = 600
+    # a team of two slots 10 m apart: both are 5 m from their centroid
+    players = np.tile(np.array([(10.0, 10.0), (20.0, 10.0), (60.0, 30.0), (70.0, 40.0)])[None], (n, 1, 1))
+    values, _ = shape_matrix_v2(players, np.array([0, 0, 1, 1]), [(1, 0, n)])
+    assert np.allclose(values["h_spread"][:n], 5.0, atol=1e-9)
+    assert np.allclose(values["a_spread"][:n], np.hypot(10.0, 10.0) / 2, atol=1e-9)
+    assert np.allclose(values["h_length"], values["h_adv_p90"] - values["h_adv_p10"], atol=1e-12)
+    # every slot advances 0.1 m a frame (2.5 m/s): the mean advance moves 0.1 k m over k frames
+    starts = np.array([(10.0, 10.0), (20.0, 20.0), (60.0, 30.0)])
+    walking = starts[None] + np.arange(n)[:, None, None] * np.array([0.1, 0.0])[None, None]
+    values, _ = shape_matrix_v2(walking, np.array([0, 0, 1]), [(1, 0, n)])
+    for name, want, k in (("adv_past_2s", 5.0, 50), ("adv_fut_5s", 12.5, 125), ("adv_past_10s", 25.0, 250)):
+        column = values["h_" + name]
+        assert np.isfinite(column).any()
+        assert np.allclose(column[np.isfinite(column)], want, atol=1e-9, rtol=0), name
+        assert np.isfinite(column).sum() == n - k, name
+    # the away team attacks the other way, and walks +x: it loses ground
+    assert np.allclose(values["a_adv_past_2s"][50:], -5.0, atol=1e-9)
+    assert np.allclose(values["h_spread"], np.hypot(10.0, 10.0) / 2, atol=1e-9)
+
+
+def test_shape_features_v2_nan_at_block_edges():
+    rng = np.random.default_rng(31)
+    n = 1400
+    players = rng.random((n, 8, 2)) * PLAY_PITCH
+    graded = [(1, 100, 700), (2, 750, 1350)]
+    values, X = shape_matrix_v2(players, np.arange(8) % 2, graded)
+    for prefix in ("h_", "a_"):
+        for start, stop in ((100, 700), (750, 1350)):
+            for name, k, side in (("adv_past_2s", 50, "past"), ("adv_past_10s", 250, "past"),
+                                  ("adv_fut_2s", 50, "fut"), ("adv_fut_10s", 250, "fut")):
+                column = values[prefix + name]
+                if side == "past":
+                    assert np.isnan(column[start:start + k]).all() and np.isfinite(column[start + k]), name
+                    assert np.isfinite(column[start + k:stop]).all(), name
+                else:
+                    assert np.isnan(column[stop - k:stop]).all() and np.isfinite(column[stop - k - 1]), name
+                    assert np.isfinite(column[start:stop - k]).all(), name
+    outside = np.ones(n, dtype=bool)
+    outside[100:700] = outside[750:1350] = False
+    assert np.isnan(X[outside]).all()
+    # a team that is gone for a stretch has NaN in every column that reads that stretch
+    gone = players.copy()
+    gone[300:320, 1::2] = np.nan
+    values, _ = shape_matrix_v2(gone, np.arange(8) % 2, graded)
+    assert np.isnan(values["a_spread"][300:320]).all() and np.isnan(values["a_length"][300:320]).all()
+    assert np.isnan(values["a_adv_past_2s"][300:320]).all() and np.isnan(values["a_adv_past_2s"][350:370]).all()
+    assert np.isfinite(values["a_adv_past_2s"][320:350]).all() and np.isnan(values["a_adv_fut_2s"][250:270]).all()
+    assert np.isnan(values["a_adv_fut_2s"][300:320]).all() and np.isfinite(values["a_adv_fut_2s"][270:300]).all()
+    assert np.isfinite(values["a_adv_past_2s"][371]) and np.isfinite(values["h_adv_past_2s"][300:370]).all()
+
+
+def test_shape_features_v2_swap():
+    from pipeline.evidence import shape_features
+    for seed in range(8):
+        players, teams, graded = shape_scene(seed)
+        X2 = shape_features.features(shape_inputs(players, teams, graded), 2)[1]
+        relabelled = shape_features.features(shape_inputs(players, 1 - teams, graded), 2)[1]
+        swapped = shape_features.swap(X2)
+        assert swapped is not X2 and not np.shares_memory(swapped, X2) and swapped.shape == X2.shape
+        assert np.array_equal(swapped, relabelled, equal_nan=True), "seed {}: swap is not exact".format(seed)
+        assert np.array_equal(shape_features.swap(swapped), X2, equal_nan=True)
+    row = np.arange(42, dtype=np.float64)
+    flipped = shape_features.swap(row)
+    assert flipped[:20].tolist() == list(range(20, 40)) and flipped[20:40].tolist() == list(range(20))
+    assert flipped[40] == -40.0 and flipped[41] == -41.0
+    expect_error(ValueError, lambda: shape_features.swap(np.zeros((4, 30))), "shape_features.swap", "30")
+
+
 # -- the shape possession source (P07) --------------------------------------------------------------------------------
 #
 # Hand-made artifacts whose trees are stumps on the shape features, so that every number is worked out here and not by
@@ -3824,18 +3995,20 @@ SHAPE_TRAINER = "pipeline/benchmark/train_shape.py"
 STUMP_LOGIT = 1.5
 
 
-def shape_model(baseline, left, right, feature="adv_gap", threshold=0.0, missing_left=0, prior=0.5):
+def shape_model(baseline, left, right, feature="adv_gap", threshold=0.0, missing_left=0, prior=0.5, version=1):
+    from pipeline.evidence import shape_features
     return {"baseline": baseline, "prior_home": prior,
-            "trees": [stump(SHAPE_COLUMN[feature], threshold, left, right, missing_left)]}
+            "trees": [stump(shape_features.columns(version)[feature], threshold, left, right, missing_left)]}
 
 
-def write_shape_model(folder, folds=None, full=None, name="shape_hgb.json", **changes):
+def write_shape_model(folder, folds=None, full=None, name="shape_hgb.json", version=1, **changes):
     import json
     from pipeline.evidence import shape_features
-    artifact = {"format": 1, "kind": "hgb", "feature_version": shape_features.FEATURE_VERSION,
-                "features": list(SHAPE_NAMES), "profile": "tracking", "seeds": 3, "stride": 5, "provenance": {},
-                "folds": {"FOLD1": shape_model(-0.2, 1.0, -1.0)} if folds is None else folds,
-                "full": shape_model(0.7, -1.0, 2.0) if full is None else full}
+    artifact = {"format": 1, "kind": "hgb", "feature_version": version,
+                "features": list(shape_features.feature_names(version)), "profile": "tracking", "seeds": 3, "stride": 5,
+                "provenance": {},
+                "folds": {"FOLD1": shape_model(-0.2, 1.0, -1.0, version=version)} if folds is None else folds,
+                "full": shape_model(0.7, -1.0, 2.0, version=version) if full is None else full}
     artifact.update(changes)
     return write_text(folder, name, json.dumps(artifact, sort_keys=True) + "\n")
 
@@ -3991,8 +4164,17 @@ def test_shape_possession_rejects_bad_artifacts():
                                 *fragments)
 
         for label, changes in (("format", {"format": 2}), ("format", {"format": None}),
-                               ("feature_version", {"feature_version": 2}),
-                               ("feature_version", {"feature_version": shape_features.FEATURE_VERSION + 1}),
+                               ("features", {"feature_version": 2}),    # version 2 with version 1's 26 names
+                               ("features", {"features": list(shape_features.FEATURE_NAMES_V2)}),   # and the reverse
+                               ("feature_version", {"feature_version": max(shape_features.VERSIONS) + 1}),
+                               ("feature_version", {"feature_version": 3}),    # retired (P33)
+                               ("feature_version", {"feature_version": 4}),    # retired (P37)
+                               ("feature_version", {"feature_version": 5}),    # retired (P40)
+                               ("feature_version", {"feature_version": 0}),
+                               ("feature_version", {"feature_version": None}),
+                               ("feature_version", {"feature_version": True}),
+                               ("feature_version", {"feature_version": 2.0}),
+                               ("feature_version", {"feature_version": "1"}),
                                ("features", {"features": list(SHAPE_NAMES)[::-1]}), ("features", {"features": renamed}),
                                ("features", {"features": list(SHAPE_NAMES)[:-1]}),
                                ("features", {"features": ["a"] * 30}),
@@ -4000,6 +4182,11 @@ def test_shape_possession_rejects_bad_artifacts():
                                ("folds", {"folds": [good]}), ("folds", {"folds": "FOLD1"})):
             refused(write_shape_model(root, name="other.json", **changes), label)
         refused(write_text(root, "list.json", "[1, 2]"), "model object")
+        # a version 2 file whose trees reach for column 42 (it has 0 to 41)
+        refused(write_shape_model(root, name="narrow2.json", version=2,
+                                  full=dict(good, trees=[stump(42, 0.0, -1.0, 1.0)])), "tree 0", "full")
+        refused(write_shape_model(root, name="wide1.json", full=dict(good, trees=[stump(30, 0.0, -1.0, 1.0)])),
+                "tree 0", "full")
         for bad in (0.6, 0.0, 1.0, -0.5, True, "0.5", None):
             refused(write_shape_model(root, full=dict(good, prior_home=bad), name="prior.json"), "prior_home", "full")
             refused(write_shape_model(root, folds={"FOLD1": dict(good, prior_home=bad)}, name="prior.json"),
@@ -4022,6 +4209,37 @@ def test_shape_possession_rejects_bad_artifacts():
         refused(os.path.join(root, "text.json"), "text.json")
         # dead_ball_model's file is a model of other features: it must not load here
         refused(write_model(root, name="dead.json"), "features")
+
+
+def test_shape_possession_reads_a_v2_file():
+    from pipeline.evidence import shape_features
+    column = shape_features.columns(2)
+    with tempfile.TemporaryDirectory() as root:
+        # a stump on the home team's advance over the next 2 s, leaves -1.0 (<= 0 or NaN, missing_left) and 2.0
+        stump_model = shape_model(0.4, -1.0, 2.0, feature="h_adv_fut_2s", missing_left=1, version=2)
+        path = write_shape_model(root, version=2, full=stump_model, folds={"FOLD1": stump_model})
+        sides, same = 0, 0
+        for seed in range(4):
+            players, teams, graded = shape_scene(seed)
+            inputs = shape_inputs(players, teams, graded)
+            home = shape_home(inputs, path, scope="all")
+            X = shape_features.features(inputs, 2)[1]
+
+            def leaf(values):
+                left = np.isnan(values) | (values <= 0.0)         # a NaN goes where missing_left sends it: left
+                return np.where(left, -1.0, 2.0)
+            own, other = X[:, column["h_adv_fut_2s"]], X[:, column["a_adv_fut_2s"]]
+            want = np.clip(1.0 / (1.0 + np.exp(-(leaf(own) - leaf(other)) / 2.0)), 0.02, 0.98)
+            known = ~np.isnan(home)
+            assert known.sum() > 100, seed
+            assert np.allclose(home[known], want[known], rtol=0, atol=1e-12), seed
+            apart = known & (leaf(own) != leaf(other))
+            together = known & (leaf(own) == leaf(other))
+            assert np.allclose(np.abs(np.log(home[apart] / (1.0 - home[apart]))), 1.5, rtol=0, atol=1e-12)
+            assert np.array_equal(home[together], np.full(int(together.sum()), 0.5))
+            sides += int(apart.sum())
+            same += int(together.sum())
+        assert sides > 50 and same > 50, "the scene must hold both cases ({}, {})".format(sides, same)
 
 
 def test_shape_possession_parameters():
@@ -4114,7 +4332,7 @@ def test_shape_possession_refuses_infinite_features():
         broken = X.copy()
         broken[40, SHAPE_COLUMN["h_adv_mean"]] = np.inf
         real = shape_features.features
-        shape_features.features = lambda given: (names, broken)
+        shape_features.features = lambda given, version=1: (names, broken)
         try:
             expect_error(ValueError, lambda: shape_home(inputs, path), "shape_possession", "infinite")
         finally:
@@ -4156,6 +4374,622 @@ def test_shape_possession_speed():
         assert np.isnan(evidence.home[:5_000]).all() and not np.isnan(evidence.home[5_000:75_000]).all()
         assert first_s < 6.0, "{:.2f} s for 300 trees, twice, on 140,000 frames with warm features (the budget is " \
                               "6 s)".format(first_s)
+
+
+# -- team features (P19, version 2 for P32) ---------------------------------------------------------------------------
+#
+# Hand-built scenes in metres on the default pitch, the names spelled out here so that a reordered column cannot pass
+# by agreeing with itself. The ATD's speed channels are NaN (or random garbage) in every scene: nothing may read them.
+# Version 1 (P19's 56 columns) is in git at commit 15e7e14; version 2 drops over11, since_gap_s and until_gap_s, adds
+# ball_adv and ball_vel_adv to each team, and takes shape_features' version 2 (42 columns) as its shape block.
+
+TEAM_BLOCK = ("ball_d1", "ball_d2", "closing", "rel_speed", "reach_s", "in_episode", "since_episode_s",
+              "until_episode_s", "ball_adv", "ball_vel_adv")
+TEAM_SHARED = ("ball_speed_02", "ball_speed_05", "ball_speed_10", "ball_acc_02", "ball_acc_05", "ball_acc_10",
+               "ball_turn_02", "ball_turn_05", "ball_turn_10", "ball_line_m")
+TEAM_SHAPE = tuple("h_" + name for name in V2_TEAM) + tuple("a_" + name for name in V2_TEAM) + ("adv_gap", "n_diff")
+TEAM_NAMES = (tuple("h_" + name for name in TEAM_BLOCK) + tuple("a_" + name for name in TEAM_BLOCK) + TEAM_SHARED
+              + TEAM_SHAPE)
+TEAM_COLUMN = {name: index for index, name in enumerate(TEAM_NAMES)}
+
+
+def team_matrix(players, ball, teams, graded):
+    from pipeline.evidence import team_features
+    names, X = team_features.features(play_inputs(players, ball, teams=teams, graded=graded))
+    assert names == TEAM_NAMES
+    return X
+
+
+def team_values(X, *names):
+    return [X[:, TEAM_COLUMN[name]] for name in names]
+
+
+def team_scene(seed, n=240, slots=16):
+    """shape_scene's two blocks and a ball that rides on slot 0 (0.4 m off it) and is lost for stretches of frames."""
+    players, teams, graded = shape_scene(seed, n=n, slots=slots)
+    rng = np.random.default_rng([seed, 19])
+    ball = players[:, 0] + np.array([0.4, 0.3])
+    lost = np.zeros(n, dtype=bool)
+    for start in rng.integers(0, n, size=6):
+        lost[start:start + rng.integers(5, 30)] = True
+    ball[lost] = np.nan
+    return players, ball, teams, graded
+
+
+def test_team_features_shape_and_names():
+    from pipeline.evidence import shape_features, team_features
+    assert team_features.FEATURE_VERSION == 2 and team_features.SHAPE_VERSION == 2
+    assert team_features.TEAM_COLUMNS == TEAM_BLOCK and team_features.SHARED_COLUMNS == TEAM_SHARED
+    assert team_features.FEATURE_NAMES == TEAM_NAMES and len(TEAM_NAMES) == 72 and len(set(TEAM_NAMES)) == 72
+    assert len(TEAM_BLOCK) == 10 and len(TEAM_SHARED) == 10 and len(TEAM_SHAPE) == 42
+    assert TEAM_NAMES[-42:] == TEAM_SHAPE == shape_features.feature_names(2) and team_features.COLUMN == TEAM_COLUMN
+    players, ball, teams, graded = team_scene(0)
+    X = team_matrix(players, ball, teams, graded)
+    assert X.shape == (len(players), 72) and X.dtype == np.float64
+    assert np.isfinite(X[graded[0][1]:graded[0][2]]).mean() > 0.5, "the scene must give the columns something to say"
+    inputs = play_inputs(players, ball, teams=teams, graded=graded)
+    assert np.array_equal(team_features.features(inputs)[1][:, 30:], shape_features.features(inputs, 2)[1],
+                          equal_nan=True), "the shape block is shape_features' version 2, unchanged"
+
+
+def test_team_features_version_1_columns_are_gone():
+    from pipeline.evidence import team_features
+    for name in ("h_over11", "a_over11", "since_gap_s", "until_gap_s"):
+        assert name not in team_features.FEATURE_NAMES and name not in team_features.COLUMN, name
+    assert "over11" not in team_features.TEAM_COLUMNS
+    assert not {"since_gap_s", "until_gap_s"} & set(team_features.SHARED_COLUMNS)
+    assert not hasattr(team_features, "MAX_SLOTS") and not hasattr(team_features, "GAP_CAP_S"), "version 1's constants"
+
+
+def test_team_features_constants_are_the_designs():
+    import inspect
+    from pipeline.config import load_config
+    from pipeline.evidence import controlled_touch, team_features
+    assert [int(round(seconds * 25)) for seconds in team_features.WINDOWS_S] == [5, 12, 25]
+    assert int(round(team_features.CLOSING_S * 25)) == 5
+    assert team_features.REACTION_S == 0.7 and team_features.REACH_SPEED == 5.0
+    assert team_features.EPISODE_CAP_S == 30.0
+    assert team_features.TOUCH_RULE == {"radius": 1.5, "max_rel_speed": 6.0, "min_frames": 1, "duel_radius": 1.0}
+    config = load_config(os.path.join(HERE, "configs", "main.toml"))
+    rule = [part.params for part in config.evidence if part.kind == "controlled_touch"]
+    assert len(rule) == 1
+    # main.toml leaves duel_radius out, so controlled_touch's own default stands for it there
+    default = inspect.signature(controlled_touch.compute).parameters["duel_radius"].default
+    main_rule = dict({"duel_radius": default}, **rule[0])
+    assert {key: main_rule[key] for key in team_features.TOUCH_RULE} == team_features.TOUCH_RULE, \
+        "TOUCH_RULE is main.toml's touch rule (R013, kept by R030)"
+
+
+def test_team_features_known_values():
+    n = 100
+    players = np.tile(np.array([(50.0, 34.0), (53.0, 34.0), (60.0, 34.0)])[None], (n, 1, 1))
+    teams = np.array([0, 1, 1])
+    X = team_matrix(players, np.tile([50.5, 34.0], (n, 1)), teams, [(1, 0, n)])
+    got = dict(zip(TEAM_NAMES, X[50]))
+    want = {"h_ball_d1": 0.5, "a_ball_d1": 2.5, "a_ball_d2": 9.5, "h_closing": 0.0, "a_closing": 0.0,
+            "h_rel_speed": 0.0, "a_rel_speed": 0.0, "h_reach_s": 0.7 + 0.5 / 5.0, "a_reach_s": 0.7 + 2.5 / 5.0,
+            "h_ball_adv": 50.5, "a_ball_adv": PLAY_PITCH[0] - 50.5, "h_ball_vel_adv": 0.0, "a_ball_vel_adv": 0.0,
+            "ball_line_m": -34.0}
+    for name in TEAM_SHARED[:9]:
+        want[name] = 0.0
+    for name, expected in want.items():
+        assert abs(got[name] - expected) < 1e-12, (name, got[name], expected)
+    assert np.isnan(got["h_ball_d2"]), "one present slot has no second-nearest"
+    # a ball at 10 m/s along x: speed 10, no acceleration, no turn
+    ball = np.stack([20.0 + 10.0 / 25 * np.arange(n), np.full(n, 34.0)], axis=1)
+    X = team_matrix(players, ball, teams, [(1, 0, n)])
+    for tag in ("02", "05", "10"):
+        speed, acc, turn = team_values(X, "ball_speed_" + tag, "ball_acc_" + tag, "ball_turn_" + tag)
+        assert abs(speed[50] - 10.0) < 1e-9 and abs(acc[50]) < 1e-9 and turn[50] == 0.0, tag
+    # a right-angle turn at t = 50: +x before it, +y after it
+    t = np.arange(n)
+    ball = np.stack([np.where(t <= 50, 30.0 + 0.4 * (t - 50), 30.0), np.where(t <= 50, 34.0, 34.0 + 0.4 * (t - 50))],
+                    axis=1)
+    turn = team_values(team_matrix(players, ball, teams, [(1, 0, n)]), "ball_turn_02")[0]
+    assert abs(turn[50] - np.pi / 2) < 1e-12, turn[50]
+    assert turn[40] == 0.0 and turn[60] == 0.0, "a straight stretch turns by nothing"
+    # approaching: the nearest slot closes on a still ball at 5 m/s, so `closing` and `rel_speed` are 5
+    walking = walkers(n, 5.0, [(30.0, 34.0), (80.0, 34.0)], direction=(1.0, 0.0))
+    X = team_matrix(walking, np.tile([60.0, 34.0], (n, 1)), np.array([0, 1]), [(1, 0, n)])
+    closing, rel = team_values(X, "h_closing", "h_rel_speed")
+    assert abs(closing[50] - 5.0) < 1e-9 and abs(rel[50] - 5.0) < 1e-9
+    assert np.isnan(closing[3]) and np.isnan(closing[n - 3]), "closing needs 5 frames on each side inside the block"
+
+
+def test_team_features_ball_direction():
+    # Two blocks, the teams swapping ends between them (home defends x < L/2 in the first, x > L/2 in the second), and
+    # a ball that moves towards the goal home attacks at 2 m/s in each: +x in the first block, -x in the second
+    length = PLAY_PITCH[0]
+    n = 300
+    graded = [(1, 0, 140), (2, 160, 300)]
+    first = np.array([(20.0, 30.0), (30.0, 40.0), (70.0, 30.0), (80.0, 40.0)])
+    second = first * [-1.0, 1.0] + [length, 0.0]
+    players = np.where((np.arange(n) < 150)[:, None, None], first[None], second[None])
+    teams = np.array([0, 0, 1, 1])
+    t = np.arange(n)
+    x = np.where(t < 150, 40.0 + 2.0 / 25 * t, length - 40.0 - 2.0 / 25 * (t - 160))
+    ball = np.stack([x, np.full(n, 34.0)], axis=1)
+    X = team_matrix(players, ball, teams, graded)
+    h_adv, a_adv, h_vel, a_vel = team_values(X, "h_ball_adv", "a_ball_adv", "h_ball_vel_adv", "a_ball_vel_adv")
+    for start, stop, home_attacks_right in ((0, 140, True), (160, 300, False)):
+        rows = slice(start, stop)
+        assert np.allclose(h_vel[rows], 2.0, rtol=0, atol=1e-9), "towards home's attacking goal: +2 m/s for home"
+        assert np.allclose(a_vel[rows], -2.0, rtol=0, atol=1e-9), "and -2 m/s for away, which attacks the other one"
+        # the team's own frame: metres from its own goal line, x where it attacks towards x = L, else L - x
+        home_frame = x[rows] if home_attacks_right else length - x[rows]
+        assert np.allclose(h_adv[rows], home_frame, rtol=0, atol=1e-9), (start, stop)
+        assert np.allclose(a_adv[rows], length - home_frame, rtol=0, atol=1e-9), (start, stop)
+    assert np.isnan(X[140:160][:, [TEAM_COLUMN[name] for name in ("h_ball_adv", "a_ball_vel_adv")]]).all()
+
+    # The very frame shape_features gives a team's adv_mean: a ball carried exactly by a team's only slot has that
+    # team's adv_mean as its ball_adv and its vel_adv as its ball_vel_adv, in either block (shape_scene's teams swap
+    # ends between its blocks, and in seed 3 one team is gone from the second block)
+    from pipeline.evidence import shape_features
+    column = shape_features.columns(2)
+    for seed in range(4):
+        players, teams, graded = shape_scene(seed, slots=2)
+        for team, prefix in ((0, "h_"), (1, "a_")):
+            carried = players[:, int(np.flatnonzero(teams == team)[0])]
+            inputs = play_inputs(players, carried, teams=teams, graded=graded)
+            X = team_matrix(players, carried, teams, graded)
+            shape = shape_features.features(inputs, 2)[1]
+            adv, vel = team_values(X, prefix + "ball_adv", prefix + "ball_vel_adv")
+            assert np.array_equal(np.isnan(adv), np.isnan(shape[:, column[prefix + "adv_mean"]])), (seed, prefix)
+            assert np.isfinite(adv).sum() > 50, (seed, prefix)          # seed 3: home is gone from block 2
+            assert np.allclose(adv, shape[:, column[prefix + "adv_mean"]], rtol=0, atol=1e-9, equal_nan=True)
+            assert np.allclose(vel, shape[:, column[prefix + "vel_adv"]], rtol=0, atol=1e-9, equal_nan=True)
+
+
+def episode_scene(n, home_frames, away_frames):
+    players = np.full((n, 2, 2), np.nan)
+    players[:, 0] = beside_ball(n, home_frames)
+    players[:, 1] = beside_ball(n, away_frames, offset=(-0.5, 0.0))
+    return players, np.tile([30.0, 30.0], (n, 1)), np.array([0, 1])
+
+
+def test_team_features_episodes():
+    from pipeline.contracts import RunContext
+    from pipeline.evidence import controlled_touch
+    players, ball, teams = episode_scene(200, range(50, 60), range(120, 130))
+    inputs = play_inputs(players, ball, teams=teams, graded=[(1, 0, 200)])
+    touch = controlled_touch.compute(RunContext(inputs=inputs, seed=0), radius=1.5, max_rel_speed=6.0, min_frames=1,
+                                     confidence=0.99, hold=0.5).home
+    assert np.flatnonzero(np.isfinite(touch)).tolist() == list(range(50, 60)) + list(range(120, 130)), "the scene"
+    assert (touch[50:60] > 0.5).all() and (touch[120:130] < 0.5).all()
+    X = team_matrix(players, ball, teams, [(1, 0, 200)])
+    h_in, a_in, h_since, h_until, a_since, a_until = team_values(
+        X, "h_in_episode", "a_in_episode", "h_since_episode_s", "h_until_episode_s", "a_since_episode_s",
+        "a_until_episode_s")
+    assert h_in.tolist() == [1.0 if 50 <= t < 60 else 0.0 for t in range(200)]
+    assert a_in.tolist() == [1.0 if 120 <= t < 130 else 0.0 for t in range(200)]
+    assert h_since[70] == (70 - 59) / 25 and h_since[40] == 30.0 and h_until[40] == 0.4 and h_until[55] == 0.0
+    assert h_since[55] == 0.0 and h_until[70] == 30.0, "no later episode: the cap"
+    assert a_until[70] == (120 - 70) / 25 and a_since[150] == (150 - 129) / 25
+    # an episode 40 s away is capped at 30 s
+    players, ball, teams = episode_scene(1300, range(1100, 1110), range(0))
+    X = team_matrix(players, ball, teams, [(1, 0, 1300)])
+    since, until = team_values(X, "h_since_episode_s", "h_until_episode_s")
+    assert since[1200] == (1200 - 1109) / 25 and until[10] == 30.0 and since[10] == 30.0, "44 s away"
+    # an episode never reaches across a block's edge
+    players, ball, teams = episode_scene(200, range(50, 60), range(0))
+    X = team_matrix(players, ball, teams, [(1, 0, 100), (2, 120, 200)])
+    since, until = team_values(X, "h_since_episode_s", "h_until_episode_s")
+    assert since[130] == 30.0 and until[120] == 30.0, "block 2 does not see block 1's episode"
+    assert until[0] == 2.0 and since[99] == (99 - 59) / 25
+
+
+def test_team_features_where_the_ball_is_hidden():
+    n = 200
+    players = np.tile(np.array([(10.0, 10.0), (60.0, 30.0)])[None], (n, 1, 1))
+    ball = np.stack([30.0 + 2.0 / 25 * np.arange(n), np.full(n, 30.0)], axis=1)     # moving, so ball_vel_adv is not 0
+    ball[80:100] = np.nan
+    X = team_matrix(players, ball, np.array([0, 1]), [(1, 0, n)])
+    ball_columns = [TEAM_COLUMN[name] for name in TEAM_SHARED]
+    assert np.isnan(X[80:100][:, ball_columns]).all(), "no ball, no ball column"
+    needs_the_ball = [TEAM_COLUMN[prefix + name] for prefix in ("h_", "a_")
+                      for name in ("ball_d1", "reach_s", "rel_speed", "ball_adv", "ball_vel_adv")]
+    assert np.isnan(X[80:100][:, needs_the_ball]).all()
+    assert np.isfinite(X[:80][:, needs_the_ball]).all() and np.isfinite(X[100:][:, needs_the_ball]).all()
+    h_vel, a_vel = team_values(X, "h_ball_vel_adv", "a_ball_vel_adv")
+    assert np.allclose(h_vel[100:], 2.0, rtol=0, atol=1e-9) and np.allclose(a_vel[:80], -2.0, rtol=0, atol=1e-9), \
+        "the velocity of a run is its own: the gap does not reach into it"
+    in_episode = [TEAM_COLUMN[prefix + name] for prefix in ("h_", "a_")
+                  for name in ("in_episode", "since_episode_s", "until_episode_s")]
+    assert np.isfinite(X[80:100][:, in_episode]).all(), "the episode columns do not need the ball"
+    assert np.isfinite(X[80:100][:, 30:][:, [TEAM_SHAPE.index("h_adv_mean"), TEAM_SHAPE.index("a_n")]]).all()
+
+
+def test_team_features_swap():
+    from pipeline.evidence import shape_features, team_features
+    for seed in range(6):
+        players, ball, teams, graded = team_scene(seed)
+        X = team_matrix(players, ball, teams, graded)
+        relabelled = team_matrix(players, ball, 1 - teams, graded)
+        swapped = team_features.swap(X)
+        assert swapped is not X and not np.shares_memory(swapped, X) and swapped.flags.writeable
+        assert np.array_equal(swapped, relabelled, equal_nan=True), "seed {}: swap is not exact".format(seed)
+        assert np.array_equal(team_features.swap(swapped), X, equal_nan=True), "swap is not an involution"
+        assert np.array_equal(swapped[:, 20:30], X[:, 20:30], equal_nan=True), "the shared columns are untouched"
+        assert np.array_equal(swapped[:, 30:], shape_features.swap(X[:, 30:]), equal_nan=True)
+        assert np.array_equal(swapped[:, :10], X[:, 10:20], equal_nan=True)
+        assert np.array_equal(swapped[:, 10:20], X[:, :10], equal_nan=True)
+        assert np.nansum(team_values(X, "h_in_episode", "a_in_episode")) > 0, "seed {}: no episodes".format(seed)
+        assert np.isfinite(team_values(X, "h_ball_vel_adv")[0]).sum() > 50, "seed {}: no direction".format(seed)
+    row = np.arange(72, dtype=np.float64)
+    flipped = team_features.swap(row)
+    assert flipped[:10].tolist() == list(range(10, 20)) and flipped[10:20].tolist() == list(range(10))
+    assert flipped[20:30].tolist() == list(range(20, 30)), "the shared ten stay"
+    assert np.array_equal(flipped[30:], shape_features.swap(row[30:])), "the 42 go through shape_features.swap"
+    for width in (26, 42, 56, 71, 73):                      # shape's two widths, version 1's 56, one either side of 72
+        expect_error(ValueError, lambda: team_features.swap(np.zeros((4, width))), "team_features.swap", "72",
+                     str(width))
+    expect_error(ValueError, lambda: team_features.swap(np.zeros(())), "team_features.swap", "72")
+
+
+def test_team_features_ignore_speed_channels():
+    from pipeline.evidence import team_features
+    players, ball, teams, graded = team_scene(2)
+    pitch = np.array(PLAY_PITCH)
+    both = []
+    for seed in (1, 2):
+        atd = kinematics_atd(players / pitch, ball / pitch, seed=seed)
+        atd.slot_team[:] = teams
+        both.append(team_features.features(kinematics_inputs(atd, graded))[1])
+    assert np.array_equal(both[0], both[1], equal_nan=True), "a column reads the ATD's own speed channels (T31)"
+    assert np.isfinite(both[0]).any()
+
+
+def test_team_features_see_only_their_block():
+    rng = np.random.default_rng(13)
+    players, ball, teams, graded = team_scene(2)
+    (_, first_start, first_stop), (_, second_start, second_stop) = graded
+    base = team_matrix(players, ball, teams, graded)
+    moved, moved_ball = players.copy(), ball.copy()
+    moved[second_start:second_stop] = rng.random((second_stop - second_start, len(teams), 2)) * PLAY_PITCH
+    moved_ball[second_start:second_stop] = moved[second_start:second_stop, 0]
+    moved[first_stop:second_start], moved_ball[first_stop:second_start] = 7.0, 7.0
+    again = team_matrix(moved, moved_ball, teams, graded)
+    assert np.array_equal(base[:first_stop], again[:first_stop], equal_nan=True), "block 2 leaked into block 1"
+    assert np.isnan(again[:first_start]).all() and np.isnan(again[first_stop:second_start]).all()
+    assert np.isnan(again[second_stop:]).all(), "rows outside the blocks are all NaN"
+    assert not np.array_equal(base[second_start:second_stop], again[second_start:second_stop], equal_nan=True)
+    moved, moved_ball = players.copy(), ball.copy()
+    moved[:first_stop] = rng.random((first_stop, len(teams), 2)) * PLAY_PITCH
+    moved_ball[:first_stop] = moved[:first_stop, 0]
+    third = team_matrix(moved, moved_ball, teams, graded)
+    assert np.array_equal(base[second_start:], third[second_start:], equal_nan=True), "block 1 leaked into block 2"
+
+
+def test_team_features_memo_and_read_only():
+    from pipeline.evidence import team_features
+    players, ball, teams, graded = team_scene(7)
+    inputs = play_inputs(players, ball, teams=teams, graded=graded)
+    names, X = team_features.features(inputs)
+    assert not X.flags.writeable, "features must hand out read-only arrays"
+    again_names, again = team_features.features(inputs)
+    assert again is X and again_names is names, "features is remembered per Inputs object"
+    players, ball, teams, graded = team_scene(8)
+    other = team_features.features(play_inputs(players, ball, teams=teams, graded=graded))[1]
+    assert other is not X and not np.array_equal(other, X, equal_nan=True)
+
+
+def test_team_features_speed():
+    from pipeline.evidence import team_features
+    rng = np.random.default_rng(14)
+    n, slots = 140_000, 46
+    players = rng.random((n, slots, 2))
+    players[rng.random((n, slots)) < 0.4] = np.nan
+    ball = rng.random((n, 2))
+    ball[rng.random(n) < 0.4] = np.nan
+    inputs = kinematics_inputs(kinematics_atd(players, ball), [(1, 5_000, 70_000), (2, 75_000, 135_000)])
+    started = time.perf_counter()                   # from a fresh Inputs: the tracks and the Atd's masks are in it
+    team_features.features(inputs)
+    elapsed = time.perf_counter() - started
+    print("      team features speed: 125,000 graded frames x {} slots (tracks, shape and touch included) in {:.2f} "
+          "s".format(slots, elapsed))
+    assert elapsed < 10.0, "{:.2f} s for 125,000 frames x 46 slots (the budget is 10 s)".format(elapsed)
+
+
+# -- the team model source (P19, team features version 2 for P32) -----------------------------------------------------
+#
+# Hand-made artifacts whose trees are stumps on `h_ball_d1`, so that every number is worked out here and not by the
+# trainer. A stump on h_ball_d1 is not antisymmetric by itself; the source's (r(x) - r(swap(x))) / 2 makes it so: the
+# logit is (leaf(h_ball_d1) - leaf(a_ball_d1)) / 2, the baseline cancels, and a NaN distance goes to the missing side.
+
+TEAM_TRAINER = "pipeline/benchmark/train_team.py"
+TEAM_THRESHOLD = 5.0
+TEAM_VERSION = 2                     # team_features' version, written out: a file of version 1 must not load
+
+
+def team_model_stub(baseline, left, right, feature="h_ball_d1", threshold=TEAM_THRESHOLD, missing_left=0, prior=0.5):
+    return {"baseline": baseline, "prior_home": prior,
+            "trees": [stump(TEAM_COLUMN[feature], threshold, left, right, missing_left)]}
+
+
+def write_team_model(folder, folds=None, full=None, name="team_hgb.json", **changes):
+    import json
+    artifact = {"format": 1, "kind": "hgb", "feature_version": TEAM_VERSION,
+                "features": list(TEAM_NAMES), "profile": "generic", "seeds": 3, "stride": 5, "provenance": {},
+                "folds": {"FOLD1": team_model_stub(-0.2, 1.0, -1.0)} if folds is None else folds,
+                "full": team_model_stub(0.7, -1.0, 2.0) if full is None else full}
+    artifact.update(changes)
+    return write_text(folder, name, json.dumps(artifact, sort_keys=True) + "\n")
+
+
+def team_home(inputs, path, game="BAR-ATH", **values):
+    from pipeline.contracts import RunContext, check_evidence
+    from pipeline.evidence import REGISTRY
+    inputs.game = game
+    evidence = REGISTRY["team_model"](RunContext(inputs=inputs, seed=0), model=path, **values)
+    check_evidence(evidence, len(inputs.atd.ball_xy))
+    assert np.isnan(evidence.alive).all(), "team_model has no opinion on whether the ball is alive"
+    assert not (evidence.home.flags.writeable or evidence.alive.flags.writeable), "the arrays are read-only"
+    return evidence.home
+
+
+def team_inputs(players, ball, teams, graded):
+    return play_inputs(players, ball, teams=teams, graded=graded)
+
+
+def stump_team_home(X, left, right, threshold=TEAM_THRESHOLD, missing_left=0, min_prob=0.02):
+    """The home probability of a stump on h_ball_d1, worked out from the two nearest distances alone."""
+    def leaf(distance):
+        goes_left = np.where(np.isnan(distance), bool(missing_left), distance <= threshold)
+        return np.where(goes_left, left, right)
+
+    logit_home = (leaf(X[:, TEAM_COLUMN["h_ball_d1"]]) - leaf(X[:, TEAM_COLUMN["a_ball_d1"]])) / 2.0
+    return np.clip(1.0 / (1.0 + np.exp(-logit_home)), min_prob, 1.0 - min_prob)
+
+
+def test_team_model_values():
+    # logit(home) = (r(x) - r(swap(x))) / 2: the baseline cancels, so no prior is ever corrected for
+    with tempfile.TemporaryDirectory() as root:
+        for baseline in (0.7, -3.0, 0.0):
+            path = write_team_model(root, full=team_model_stub(baseline, -1.0, 2.0))
+            for seed in (0, 1, 3, 5):
+                players, ball, teams, graded = team_scene(seed)
+                inputs = team_inputs(players, ball, teams, graded)
+                home = team_home(inputs, path)
+                X = team_matrix(players, ball, teams, graded)
+                known = ~np.isnan(home)
+                assert known.sum() > 20 and (np.abs(home[known] - 0.5) > 0.2).any()
+                assert np.allclose(home[known], stump_team_home(X, -1.0, 2.0)[known], rtol=0, atol=1e-12), \
+                    (baseline, seed)
+        # a model that gives every row the same leaf has no opinion to give: exactly 0.5, whatever its baseline
+        flat = write_team_model(root, full=team_model_stub(2.5, 0.8, 0.8), name="flat.json")
+        home = team_home(team_inputs(*team_scene(0)), flat)
+        assert (home[~np.isnan(home)] == 0.5).all() and (~np.isnan(home)).any()
+
+
+def test_team_model_is_antisymmetric():
+    from pipeline.evidence import team_features, trees
+    with tempfile.TemporaryDirectory() as root:
+        # none of the trees is symmetric: one reads the home block only, one the away block only, two others a team
+        # column and a shape column that swap or change sign (a shared column would cancel by construction)
+        lopsided = {"baseline": 0.9, "prior_home": 0.5, "trees": [
+            stump(TEAM_COLUMN["h_ball_d1"], 3.0, -0.8, 1.7, missing_left=1),
+            stump(TEAM_COLUMN["a_reach_s"], 1.0, 0.6, -0.3),
+            stump(TEAM_COLUMN["h_until_episode_s"], 0.5, 0.7, -0.4),
+            stump(TEAM_COLUMN["adv_gap"], 0.0, -0.5, 1.5),
+            stump(TEAM_COLUMN["h_ball_vel_adv"], 0.0, -0.6, 0.9),            # version 2's direction of the ball
+            stump(TEAM_COLUMN["a_adv_fut_2s"], 0.0, 0.4, -0.2)]}              # and P30's one-sided advance
+        path = write_team_model(root, full=lopsided)
+        for seed in range(8):
+            players, ball, teams, graded = team_scene(seed)
+            home = team_home(team_inputs(players, ball, teams, graded), path)
+            relabelled = team_home(team_inputs(players, ball, 1 - teams, graded), path)
+            known = ~np.isnan(home)
+            assert known.sum() > 20 and np.array_equal(known, ~np.isnan(relabelled)), seed
+            assert np.allclose(home[known], 1.0 - relabelled[known], rtol=0, atol=1e-12), \
+                "seed {}: relabelling the teams is not 1 - home".format(seed)
+            # the check has teeth: the trees alone, run on the two labellings, are not antisymmetric
+            X = team_matrix(players, ball, teams, graded)[known]
+            alone = 1.0 / (1.0 + np.exp(-trees.score(lopsided, X)))
+            alone_relabelled = 1.0 / (1.0 + np.exp(-trees.score(lopsided, team_features.swap(X))))
+            assert np.abs(alone - (1.0 - alone_relabelled)).max() > 0.05, "the model is symmetric on its own"
+        # on random rows the logit is exactly odd under swap
+        rng = np.random.default_rng(21)
+        rows = rng.normal(size=(400, len(TEAM_NAMES))) * 5.0
+        rows[rng.random(rows.shape) < 0.2] = np.nan
+        both = (trees.score(lopsided, rows) - trees.score(lopsided, team_features.swap(rows))) / 2.0
+        flipped = (trees.score(lopsided, team_features.swap(rows)) - trees.score(lopsided, rows)) / 2.0
+        assert np.allclose(both, -flipped, rtol=0, atol=1e-12)
+
+
+def test_team_model_silent_where_the_ball_is_missing():
+    with tempfile.TemporaryDirectory() as root:
+        path = write_team_model(root)
+        for seed in (0, 3):
+            players, ball, teams, graded = team_scene(seed)
+            home = team_home(team_inputs(players, ball, teams, graded), path)
+            inside = block_mask(len(home), graded)
+            seen = inside & ~np.isnan(ball[:, 0])
+            assert seen.sum() > 50 and (inside & np.isnan(ball[:, 0])).sum() > 5, "the scene needs both kinds"
+            assert np.isnan(home[~seen]).all(), "no opinion where the ball is missing or outside the blocks"
+            assert not np.isnan(home[seen]).any(), "an opinion on every graded frame with the ball"
+
+
+def test_team_model_fold_choice():
+    with tempfile.TemporaryDirectory() as root:
+        folds = {"FOLD1": team_model_stub(0.0, 1.0, -1.0), "FOLD2": team_model_stub(0.0, 3.0, -3.0)}
+        path = write_team_model(root, folds=folds, full=team_model_stub(0.0, -1.0, 1.0))
+        players, ball, teams, graded = team_scene(0)
+        X = team_matrix(players, ball, teams, graded)
+        inputs = team_inputs(players, ball, teams, graded)
+        values = dict(min_prob=0.0001)
+        full = team_home(inputs, path, **values)
+        known = ~np.isnan(full)
+        assert np.allclose(full[known], stump_team_home(X, -1.0, 1.0, min_prob=0.0001)[known], rtol=0, atol=1e-12)
+        for game, left, right in (("FOLD1", 1.0, -1.0), ("FOLD2", 3.0, -3.0)):
+            fold = team_home(inputs, path, game=game, **values)
+            assert np.array_equal(known, ~np.isnan(fold))
+            assert np.allclose(fold[known], stump_team_home(X, left, right, min_prob=0.0001)[known], rtol=0,
+                               atol=1e-12), "{} is the fold of its own game".format(game)
+            assert not np.allclose(fold[known], full[known]), "the folds must differ from `full`"
+        for game in ("BAR-ATH", "NOT-IN-FOLDS", "full"):
+            other = team_home(inputs, path, game=game, **values)
+            assert np.array_equal(other, full, equal_nan=True), "{}: a game with no fold gets `full`".format(game)
+        # the file is read again when it changes
+        write_team_model(root, folds=folds, full=team_model_stub(0.0, 5.0, -5.0))
+        changed = team_home(inputs, path, **values)
+        assert np.allclose(changed[known], stump_team_home(X, 5.0, -5.0, min_prob=0.0001)[known], rtol=0, atol=1e-12)
+
+
+def test_team_model_rejects_bad_artifacts():
+    with tempfile.TemporaryDirectory() as root:
+        inputs = team_inputs(*team_scene(0))
+        renamed = list(TEAM_NAMES)
+        renamed[3] = "h_rel_speed_x"
+        good = team_model_stub(0.0, -1.0, 1.0)
+        # version 1's 56 names (P19's, at 15e7e14): the same blocks with over11, the two gap columns and P07's 26
+        version_1 = (tuple("{}{}".format(prefix, name) for prefix in ("h_", "a_") for name in (
+            "ball_d1", "ball_d2", "closing", "rel_speed", "reach_s", "over11", "in_episode", "since_episode_s",
+            "until_episode_s")) + TEAM_SHARED + ("since_gap_s", "until_gap_s") + SHAPE_NAMES)
+        assert len(version_1) == 56
+
+        def refused(path, *fragments):
+            return expect_error(ValueError, lambda: team_home(inputs, path), "team_model", TEAM_TRAINER, *fragments)
+
+        for label, changes in (("format", {"format": 2}), ("format", {"format": None}),
+                               ("feature_version", {"feature_version": 1}),
+                               ("feature_version", {"feature_version": 3}),
+                               ("feature_version", {"feature_version": 0}),
+                               ("feature_version", {"feature_version": None}),
+                               ("feature_version", {"feature_version": True}),
+                               ("feature_version", {"feature_version": 2.0}),
+                               ("feature_version", {"feature_version": "2"}),
+                               ("feature_version", {"feature_version": 1, "features": list(version_1)}),
+                               ("features", {"features": list(TEAM_NAMES)[::-1]}), ("features", {"features": renamed}),
+                               ("features", {"features": list(TEAM_NAMES)[:-1]}),
+                               ("features", {"features": list(version_1)}),
+                               ("features", {"features": list(SHAPE_NAMES)}),
+                               ("features", {"features": list(TEAM_SHAPE)}),
+                               ("kind", {"kind": "logistic"}), ("kind", {"kind": None}),
+                               ("folds", {"folds": [good]}), ("folds", {"folds": "FOLD1"})):
+            refused(write_team_model(root, name="other.json", **changes), label)
+        refused(write_text(root, "list.json", "[1, 2]"), "model object")
+        for bad in (0.6, 0.0, 1.0, -0.5, True, "0.5", None):
+            refused(write_team_model(root, full=dict(good, prior_home=bad), name="prior.json"), "prior_home", "full")
+            refused(write_team_model(root, folds={"FOLD1": dict(good, prior_home=bad)}, name="prior.json"),
+                    "prior_home", "FOLD1")
+        ragged = team_model_stub(0.0, -1.0, 1.0)
+        ragged["trees"][0]["left"] = [1, 0]                      # arrays of unequal lengths
+        refused(write_team_model(root, full=ragged, name="ragged.json"), "tree 0", "full")
+        wide = team_model_stub(0.0, -1.0, 1.0)
+        wide["trees"][0]["feature"][0] = len(TEAM_NAMES)         # a column the features do not have
+        refused(write_team_model(root, folds={"FOLD1": wide}, name="wide.json"), "tree 0", "FOLD1")
+        refused(write_team_model(root, full=dict(good, baseline=None), name="nobase.json"), "baseline")
+        refused(os.path.join(root, "absent.json"), "absent.json")
+        # P30's file is a model of other features, of the same version number: it must not load here
+        refused(write_shape_model(root, name="shape.json", version=2), "features")
+        refused(write_shape_model(root, name="shape1.json"), "feature_version")
+
+
+def test_team_model_parameters():
+    from pipeline.contracts import RunContext
+    from pipeline.evidence import REGISTRY
+    with tempfile.TemporaryDirectory() as root:
+        path = write_team_model(root)
+        inputs = team_inputs(*team_scene(3))
+        for bad in (0.0, 0.5, 0.6, -0.1, True, False, "0.02", None, float("nan"), float("inf")):
+            expect_error(ValueError, lambda: team_home(inputs, path, min_prob=bad), "team_model", "min_prob")
+        for bad in (None, 5, "", True):
+            expect_error(ValueError, lambda: team_home(inputs, bad), "team_model", "model")
+        expect_error(TypeError, lambda: REGISTRY["team_model"](RunContext(inputs=inputs, seed=0)), "model")
+        expect_error(TypeError, lambda: team_home(inputs, path, scope="all"), "scope")
+        team_home(inputs, path, min_prob=np.float64(0.25))                      # numpy numbers from a sweep are fine
+        # the default is the design's 0.02, and the clip holds a score far out at min_prob and 1 - min_prob
+        assert np.array_equal(team_home(inputs, path), team_home(inputs, path, min_prob=0.02), equal_nan=True)
+        extreme = write_team_model(root, full=team_model_stub(0.0, -40.0, 40.0), name="extreme.json")
+        X = team_matrix(*team_scene(3))
+        for min_prob in (0.02, 0.1, 0.4):
+            home = team_home(inputs, extreme, min_prob=min_prob)
+            known = ~np.isnan(home)
+            assert known.any() and home[known].min() >= min_prob and home[known].max() <= 1.0 - min_prob
+            assert np.allclose(home[known], stump_team_home(X, -40.0, 40.0, min_prob=min_prob)[known], rtol=0,
+                               atol=1e-12)
+        assert home.dtype == np.float64 and home.shape == (len(X),)
+
+
+def test_team_model_remembers_its_scores_per_inputs():
+    from pipeline.evidence import trees
+    with tempfile.TemporaryDirectory() as root:
+        path = write_team_model(root)
+        inputs = team_inputs(*team_scene(0))
+        calls = []
+        real = trees.score
+        trees.score = lambda model, X: calls.append(len(X)) or real(model, X)
+        try:
+            first = team_home(inputs, path)
+            walked = len(calls)
+            assert walked >= 1
+            second = team_home(inputs, path)
+            assert len(calls) == walked and np.array_equal(first, second, equal_nan=True), "walked the trees again"
+            clipped = team_home(inputs, path, min_prob=0.3)                         # another clip: no walk
+            assert len(calls) == walked
+            assert np.nanmin(clipped) >= 0.3 and np.nanmax(clipped) <= 0.7, "a different min_prob must re-clip"
+            team_home(inputs, path, game="FOLD1")                                    # another model of the file
+            assert len(calls) == 2 * walked
+            team_home(inputs, path, game="FOLD1")
+            assert len(calls) == 2 * walked
+            team_home(team_inputs(*team_scene(0)), path)
+            assert len(calls) == 3 * walked, "the memo is per Inputs object"
+        finally:
+            trees.score = real
+
+
+def test_team_model_refuses_infinite_features():
+    from pipeline.evidence import team_features
+    with tempfile.TemporaryDirectory() as root:
+        path = write_team_model(root)
+        inputs = team_inputs(*team_scene(0))
+        names, X = team_features.features(inputs)
+        broken = X.copy()
+        seen = np.flatnonzero(~np.isnan(X[:, TEAM_COLUMN["ball_line_m"]]))
+        broken[seen[3], TEAM_COLUMN["ball_line_m"]] = np.inf
+        real = team_features.features
+        team_features.features = lambda given: (names, broken)
+        try:
+            expect_error(ValueError, lambda: team_home(inputs, path), "team_model", "infinite")
+        finally:
+            team_features.features = real
+
+
+def test_team_model_speed():
+    from pipeline.contracts import RunContext
+    from pipeline.evidence import REGISTRY, team_features
+    rng = np.random.default_rng(22)
+    n, slots = 140_000, 46
+    players = rng.random((n, slots, 2))
+    players[rng.random((n, slots)) < 0.4] = np.nan
+    ball = rng.random((n, 2))
+    ball[rng.random(n) < 0.4] = np.nan
+    inputs = kinematics_inputs(kinematics_atd(players, ball), [(1, 5_000, 70_000), (2, 75_000, 135_000)])
+    inputs.game = "BAR-ATH"
+    inputs.atd.players_present                      # the Atd's own cached masks are not this module's cost
+    inputs.atd.ball_present
+    model = random_hgb_model(rng, prior=0.5)        # of the size the trainer writes, over the 72 team columns
+    model.pop("prior_alive")
+    model["prior_home"] = 0.5
+    for tree in model["trees"]:
+        tree["feature"] = [feature % len(TEAM_NAMES) if feature >= 0 else feature for feature in tree["feature"]]
+    with tempfile.TemporaryDirectory() as root:
+        path = write_team_model(root, full=model)
+        started = time.perf_counter()
+        team_features.features(inputs)              # warm: the features have their own check
+        features_s = time.perf_counter() - started
+        started = time.perf_counter()
+        evidence = REGISTRY["team_model"](RunContext(inputs=inputs, seed=0), model=path)
+        first_s = time.perf_counter() - started
+        started = time.perf_counter()
+        REGISTRY["team_model"](RunContext(inputs=inputs, seed=0), model=path, min_prob=0.01)
+        again_s = time.perf_counter() - started
+        print("      team_model speed: 125,000 graded frames, 300 trees of 15 leaves, two walks over the ball-visible "
+              "frames: first inference {:.2f} s (features {:.2f} s before it), a second config on the same inputs "
+              "{:.2f} s".format(first_s, features_s, again_s))
+        assert np.isnan(evidence.home[:5_000]).all() and not np.isnan(evidence.home[5_000:70_000]).all()
+        assert first_s < 18.0, "{:.2f} s for 300 trees, twice, on the ball-visible frames (the budget is 18 s)".format(
+            first_s)
 
 
 SHAPE_TRIAL_CONFIG = """

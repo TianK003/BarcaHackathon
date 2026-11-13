@@ -55,6 +55,17 @@ two sets of numbers are different benchmarks. Hand labels on this match are not 
 | R029 | 2026-11-03 | `smart_tagging` (P08) taken out of `main.toml`: its `c_team` was measured on BAR-ATH, which the organisers' clarification of 3 Nov forbids (A21, [rules.md](rules.md)); nothing else changed | 0.7149 | 0.4444 | 19 / 14.8 s | 0.5363 raw and 0.5764 coarse: R024's, by construction (the benchmark always ran `main.toml` with `--drop-match-only`, which removed exactly this source) | **adopted, for the rules and not for a score**; sha256 `762f9073…`; the public figures chose nothing (T01) |
 | R030 | 2026-11-10 | P27: the benchmark's degradation replaced by `generic` v1 (no measurement of ours enters it: two figures quoted from the organisers' DATA.md and declared rules for the rest), both models retrained on it, and every constant re-chosen by rules declared before the runs: Stage A the touch rule (192 configs), Stage C the decoder and P07's weight (144), Stage D what R009 to R011 chose (11), Stage E the shift | 0.7238 | 0.5029 | 18 / 15.7 s | **0.5414 raw and 0.5829 coarse (mean 0.5622) on `generic`**, against the incumbent constants' 0.5388 and 0.5779 (mean 0.5584) there; `nearest_w50` 0.1885 raw, `nearest_w125` 0.2092 coarse | **adopted, because the rules require the redo** ([rules.md](rules.md)): the hold 0.55 → 0.60, switch_team 4 → 6, P07's weight 0.2 → 0.3, everything else unchanged; the bar passes (7 wins in 7 under each truth) and so do the declared checks (both `--verify`, the profile's shares, the transfer gate 0.8199 against 0.7426, the file twice and from a clean clone, sha256 `2dd51320...`); two ties decided by the declared tie-break are knife-edges (the hold: inside the band by 0.000004; the decoder); **Tian reviewed both on 10 Nov and kept the declared outcome**; not uploaded |
 | R031 | 2026-11-10 | P28: a possession back-dated to the team's first touch (a kink of the ball's velocity inside a player's zone, τ in {3, 6} m/s); step 0, the gate declared before any config | — | — | — | — (no config was built) | **dropped at the gate**: the frames the rule would back-date name the touching team 33.8% (τ = 3) and 46.5% (τ = 6) of the time against the 70% needed, and at τ = 6 the touch-without-episode share is 9.8% against 10%; nothing built into the pipeline, the branch `p28-touch-backdating` keeps the code |
+| R032 | 2026-11-12 | P29: a learned hold: `controlled_touch`'s vote between episodes follows the measured agreement by time since the last touch and a hidden ball since (20 cells, a curve per held-out match), at scale 0.25 / 0.5 / 0.75 / 1.0 | — | — | — | the pick `p29_s025` 0.5481 raw and 0.5870 coarse (mean 0.5675) against `p27_final`'s 0.5414 and 0.5829 (mean 0.5622) | **dropped**: the gate passed (deviation 0.098 against 0.05), the pick gained +0.0054 on the mean with both truths up and missed the sign-flip test (p 0.078, six of seven matches); the larger scales trade raw against coarse (T33); the advisor found no change the evidence points to, so no retry; code removed, recoverable from `3eee56e` |
+| R033 | 2026-11-12 | P30: timing-aware shape features: a version 2 shape model (42 features: length, spread and the one-sided advance over the last and the next 2, 5 and 10 s, per team) at weight 0.3 / 0.2 / 0.45 | — | — | — | **the pick `p30_w030` 0.5629 raw and 0.5901 coarse (mean 0.5765)** against `p27_final`'s 0.5414 and 0.5829 (mean 0.5622) | **cleared the bar** (mean +0.0143, p 0.016, all seven matches won on the mean; raw +0.0215, coarse +0.0072); gate G2 passed (held-out log-loss in the gaps 0.3189 against 0.3560); the night's candidate `pipeline/configs/candidates/p30_shape_v2.toml`, **not adopted: Tian decides** |
+| R034 | 2026-11-12 | P31: team evidence level with the dead ball in the decoder (`team_neutral_dead`) | — | — | — | 0.5399 raw and 0.5811 coarse (mean 0.5605) against `p27_final`'s 0.5414 and 0.5829 | **the guard holds** (raw −0.0014, coarse −0.0018), a small loss on six of seven matches under both truths; the flag stays off by default; Tian's call |
+| R035 | 2026-11-13 | P33: shape features version 3 (one-sided compactness over 5 s, the advance over 20 s, the teams' differences of the one-sided advance changes; 60 columns) at weight 0.3 / 0.45 | — | — | — | the pick `p33_w030` 0.5616 raw and 0.5934 coarse (mean 0.5775) against `p30_w030`'s 0.5629 and 0.5901 (mean 0.5765) | **dropped**: the gate passed by 0.0002 (gap log-loss 0.3137 against 0.3139), the bar missed (mean +0.0010, p 0.44); no retry; code removed |
+| R036 | 2026-11-13 | P34: the version 2 shape model trained on both truths' labels (weighted half each where they differ) | — | — | — | — (no config was run: the gate comes first) | **dropped at its sanity gate**: the mean of the raw and coarse held-out gap log-losses fell 0.0007 against the 0.003 needed (raw +0.0075, coarse −0.0088: a trade along the grain); no retry; code removed, the report's coarse cells kept |
+| R037 | 2026-11-13 | P32: P19's team model where the ball is seen, restored and retrained on `generic` with the ball's direction (team features version 2, 72 columns), at weight 0.075 / 0.15 / 0.30 / 0.60 on top of `p30_w030` | — | — | — | **the pick `p32_w030` 0.5891 raw and 0.5963 coarse (mean 0.5927)** against `p30_w030`'s 0.5629 and 0.5901, and `p27_final`'s 0.5414 and 0.5829 | **cleared the bar** against `p30_w030` (mean +0.0162, p 0.016, all seven matches; raw +0.0262, coarse +0.0062); the gate passed (feasibility log-loss 0.2088 against 0.2700, below the rule's on 7 of 7); the night's candidate `pipeline/configs/candidates/p32_team_model.toml`, stacked on P30; **not adopted: Tian decides** |
+| R038 | 2026-11-13 | P39: `p32_w030` with the shape source silent where the ball is seen (its existing `scope = "gaps"`), so that P32's model, which reads the 42 shape columns itself, does not count them a second time | — | — | — | 0.5878 raw and 0.5807 coarse (mean 0.5843) against `p32_w030`'s 0.5891 and 0.5963 (mean 0.5927) | **dropped**: the bar missed (mean −0.0084; raw −0.0013, p 0.72; coarse −0.0156, p 0.016, lower on all seven matches), the direction R026 predicted and the spec declared; no gate, no retry; config and check removed |
+| R039 | 2026-11-13 | P37: shape features version 4 (version 2 plus each team's time since and until its control episode by the touch rule, capped at 30 s), speaking only in the ball-missing gaps (scope `"visible"` for version 2 where the ball is seen) | — | — | — | — (no config was run: the gate comes first) | **dropped at its gate**: the held-out gap log-loss 0.3206 against at most 0.3059 (version 2 reproduced 0.3189), the hand-over gaps 0.3448 against at most 0.3272 (version 2 0.3402; worse on 6 of 7 matches); no retry (the advisor); code and model removed, the report's gap cells kept |
+| R040 | 2026-11-13 | P35: a turnover hazard (a tree model of a direct change of team within ±12 frames, where the ball is seen) as the hmm decoder's per-frame switch cost, at scale 0 / 0.5 / 1 / 2 on top of `p32_w030` | — | — | — | the pick `p35_s050` 0.5906 raw and 0.5945 coarse (mean 0.5926) against `p32_w030`'s 0.5891 and 0.5963 (mean 0.5927) | **dropped**: the gate passed (held-out AUC 0.910, log-loss 0.2033 against 0.90 × the base rate's 0.3267); the bar missed at every scale (mean −0.0001 to −0.0005): a raw/coarse trade growing with the scale, more possessions; no retry (the advisor); code removed (the model side, then the decoder's team cost at the fourth round's ruling) |
+| R041 | 2026-11-13 | P40: shape features version 5 (version 2 plus, per team, how fast the nearest opponent within 5 m approaches its players: the mean, the 90th percentile and the share above 2 m/s; and the teams' difference now and over 2 s each side), players only, on every frame | — | — | — | — (no config was run: the gate comes first) | **dropped at its gate**: the held-out gap log-loss 0.3140 against at most 0.3059 (version 2 reproduced 0.3189), the hand-over gaps 0.3363 against at most 0.3272 (version 2 0.3402; better on 6 of 7 matches); no retry, declared before the run; code and model removed, version 5 retired |
+| R042 | 2026-11-13 | P30 + P32 adopted into `main.toml` (Tian's decision): the shape source reads the version 2 model and the team model where the ball is seen joins at weight 0.3; every other constant R030's | 0.7199 | 0.4737 | 21 / 13.4 s | **0.5891 raw and 0.5963 coarse (mean 0.5927)**: R037's `p32_w030`, +0.0305 over R030's 0.5414 and 0.5829 | **adopted**: P30's transfer gate passed on our match (0.8317 against at least 0.7656); the file `aae79a04…` twice from a rebuilt cache and from a clean clone; the public window a gross-error check only |
 
 ### The four yardsticks on every profile, in one table
 
@@ -2493,6 +2504,80 @@ decision on P24 (a learned team source where the ball is seen): the headroom it 
 `plus_home_visible`, unchanged since A13; P19 missed its feasibility gate on the old benchmark (R021: +0.0160 pooled
 against the +0.020 needed, 3 matches of 7 against 6), and R031 found that a team's first touch after the other
 team's control is its possession's start less than half the time.
+
+### A26 — The night's candidate's edge errors by boundary kind and ball state (C1; declared 2026-11-13, 01:05; run 01:39 to 01:43, Tian away, an advisor agent in Tian's place)
+Proposal: C1 (a check of the third round; [the spec](superpowers/specs/2026-11-13-p35-p39-design.md)) · Code: `980f59c`,
+`807a406` (`diagnose.py`'s `edges_by_kind`), merged as `babff8c` · Command: `python pipeline/benchmark/diagnose.py
+pipeline/benchmark/configs/p32/p32_w030.toml` (`generic`, 3 seeds, 42 halves) · It chooses nothing; it opens or closes
+P38.
+
+**What it measures.** R037's diagnosis of `p32_w030` gave the clean pairs' start and end errors pooled. C1 splits them
+by the kind of true boundary (a start after the other team's spell, after `D`, or at the half's edge; an end before the
+other team's spell, before `D`, or at the edge) and by whether the ball is seen at the true spell's first frame (for a
+start) or its last (for an end). Every existing number of R037's diagnosis reproduced.
+
+**Raw truth** (clean pairs; predicted − true, frames):
+
+| boundary | kind | ball seen: n, median [q25, q75], within ±5 | in a gap | both |
+|---|---|---|---|---|
+| start | after the other team | 1,997, −1 [−9, +2], 47.1% | 907, +6 [−13, +27], 15.7% | 2,904, 0 [−10, +11], 37.3% |
+| start | after `D` | 971, 0 [−3, 0], 98.1% | 497, +1 [−17, +16], 17.7% | 1,468, 0 [−3, 0], 70.9% |
+| end | before the other team | 2,276, 0 [−7, +8], 43.6% | 1,139, +11 [−7, +31.5], 14.8% | 3,415, 0 [−7, +18], 34.0% |
+| end | into `D` | 688, −1 [−2, 0], 87.2% | 293, +4 [−15, +21], 18.4% | 981, −1 [−3, 0], 66.7% |
+
+(The half's edges: 24 starts, all exact.) The coarse truth shows the same pattern, wider: an end before the other team
+in a gap +13 [−9, +40]; into `D`, both states, −1 [−11, 0].
+
+**What it says.**
+- **P38's gate is closed** (declared: under the raw truth the into-`D` end error's upper quartile at least +10 frames and
+  above the team ends'). It is 0, against +18 for the team ends: the dead ball's onset is found within ±5 frames on 87%
+  of the clean pairs where the ball is seen. P38 is not built.
+- **The late tail is at changes of team inside gaps.** Where the ball is seen, starts and ends after or before the other
+  team are within a few frames (medians −1 and 0); in a gap the error's median is +6 at a start and +11 at an end, its
+  upper quartile near a second, and only about 15% fall within ±5. The decoder learns of a hand-over in a gap late.
+- That is P37's target (each team's time since and until its control, in the gaps). P35's hazard, which speaks only
+  where the ball is seen (amendment 4), does not reach it.
+
+### A27 — The night's gains under declared wrong-team slots (C2; declared 2026-11-13, 02:50; run 03:35 to 03:44, Tian away, an advisor agent in Tian's place)
+Proposal: C2 (a check of the fourth round; [the spec](superpowers/specs/2026-11-13-p40-c2-design.md), amendment 5) ·
+Code: `bc90fe7`, `003982d` (two sensitivity profiles in `degrade.py`), merged as `97e8086` · Command: `python
+pipeline/benchmark/run.py pipeline/benchmark/configs/p27/p27_final.toml pipeline/benchmark/configs/p30/p30_w030.toml
+pipeline/benchmark/configs/p32/p32_w030.toml --profile generic_swap05|generic_swap20 --seeds 3 --truth both` (at
+`97e8086`) · It trains, chooses, ranks and gates nothing.
+
+**What it asks.** Our tracking puts a slot on the wrong team on at least 10.8% of the graded frames (T32, A07);
+`generic` has none. P30's and P32's sources read the teams' slots (P32 per team: distances, reach times), so a slot on
+the wrong team reads as the other team's player. C2 asks whether the night's gains survive wrong-team slots on DFL.
+
+**How, declared** (the advisor's amendment 5): two profiles, `generic` v1 bit for bit plus wrong-team slot episodes at a
+declared share of 0.05 and 0.20 (round numbers from rare to common; DATA.md says slots "appear, vanish and swap
+identity" and gives no rate), through the existing episode code at scale 1.0, episode lengths from `generic`'s declared
+grid, pairs within the declared 2 m, their own random stream, no Calibration. **The grid was declared knowing our
+measured 10.8%**: it can therefore never be a setting, a gate or a rank (T01, T54), and both profiles are refused by
+every tool except `run.py`. A wording was declared before the run: if under 0.20 P32's gain over `p30_w030` fell below
+half its `generic` gain (+0.0081) or turned negative on either truth, the summary would say "P32's gain depends on clean
+slot teams".
+
+**The run.** Realised (never tuned): at 0.05, 1.9% of graded frames in an episode and 0.8% with a team showing more
+slots than players (the observable surplus); at 0.20, 5.6% and 2.3% (about 45% of the onsets at 0.20 found no pair
+within 2 m and were skipped).
+
+| profile | P30 over `p27_final`: raw, coarse (wins of 7), mean | P32 over `p30_w030`: raw, coarse (wins), mean | both over `p27_final`, mean |
+|---|---|---|---|
+| `generic` | +0.0215 (7), +0.0072 (5), +0.0143 | +0.0262 (7), +0.0062 (6), +0.0162 | +0.0305 |
+| `generic_swap05` | +0.0216 (7), +0.0068 (5), +0.0142 | +0.0264 (7), +0.0062 (6), +0.0163 | +0.0305 |
+| `generic_swap20` | +0.0206 (7), +0.0072 (5), +0.0139 | +0.0267 (7), +0.0066 (6), +0.0166 | +0.0305 |
+
+`p32_w030` itself: raw 0.5891, 0.5896, 0.5873 and coarse 0.5963, 0.5955, 0.5941 under the three profiles; `p32_w030`
+reproduced to the last digit on `generic` in the same chain.
+
+**What it says.**
+- The declared wording is **not triggered**: under 0.20 P32's gain is +0.0166 (at least +0.0081 needed; positive under
+  both truths), and P30's +0.0139.
+- **The limit, stated:** at scale 1.0 the realised surplus (0.8% and 2.3% of the graded frames) is far below the
+  declared rates and below what our tracking shows. C2 says the gains do not depend on perfectly clean slot teams; it
+  says nothing about wrong-team slots as frequent as ours. That risk stays in the technical document's limitations, in
+  words (T32), and only a check on BAR-ATH at adoption, declared before anyone looks, could test it.
 
 ## Experiments
 
@@ -10167,6 +10252,813 @@ to catch before a config was spent on it.
 the one retry was tied to a bar that was never reached. The ball-state shift (the lane's fallback) was struck by the
 advisor before any run: `generic`'s gaps are blind to the play, so a lag measured inside them would not transfer.
 
+### R032 — P29: a hold that follows the measured curve: the gate passes, the pick misses the bar on one match, dropped (declared 2026-11-12; run 2026-11-12, Tian away, an advisor agent in Tian's place)
+Proposal: P29 · Spec (declared before any run):
+[2026-11-12-p29-p31-design.md](superpowers/specs/2026-11-12-p29-p31-design.md) · Code: removed from the branch
+`p29-p31` in `57279e9`, recoverable from `3eee56e` (the hold's state and `pipeline/benchmark/hold_stats.py` are
+`f6b7bdd`, the curve and the vote `cee9736`, the file `pipeline/models/hold_curve.json` `3eee56e`, the four configs
+`5007445`). The bar's script `pipeline/benchmark/p29_bar.py` stays: P30 and P31 use it ·
+Command (all at `3eee56e`): `python pipeline/benchmark/hold_stats.py --profile generic --seeds 3 --write` (the gate
+and the file); `python pipeline/benchmark/run.py pipeline/benchmark/configs/p27/p27_final.toml
+pipeline/benchmark/configs/p29/p29_s025.toml …p29_s050.toml …p29_s075.toml …p29_s100.toml --profile generic --seeds 3
+--truth both`; `python pipeline/benchmark/p29_bar.py pick --reference p27_final p29_s025 p29_s050 p29_s075 p29_s100`,
+then `bar --reference p27_final p29_s025`; `python pipeline/benchmark/choose.py --reference p27_final --objective mean
+p29_s025 p29_s050 p29_s075 p29_s100` for the leave-one-match-out estimate
+Public: — (no candidate was run on our match; `main.toml` rebuilt its file at `3eee56e` with the same sha256,
+`2dd51320…1660`)
+Validation (P01 benchmark, `generic`, 3 seeds), the pick `p29_s025`: raw 0.5481 against 0.5414 (+0.0067), coarse
+0.5870 against 0.5829 (+0.0041), the mean of the two +0.0054, sign-flip p 0.078 (six of seven matches)
+Changed vs `main.toml`: nothing
+Verdict: **dropped: the pick clears the size of the bar and loses on neither truth, and misses the sign-flip test
+(p 0.078, needs 0.05). A near miss, logged; the advisor found no change the evidence points to, so no retry; the code
+is removed**
+
+**The belief.** Between two control episodes `controlled_touch` votes a constant 0.60 for the last controlling team
+on every frame with the ball visible, however long that lasts. How likely the last controller still has the ball
+falls with the time since their last touch, and further once the ball has been out of sight. A vote that follows that
+curve is stronger where the constant is too timid (a pass in flight) and silent or reversed where it is wrong (long
+after, behind a gap or a stoppage). Falsified if the agreement is flat across time, or if the benchmark does not move.
+
+**Step 0, the gate, declared before the run.** On the hold frames of `main.toml`'s touch rule (1.5 m / 6.0 m/s /
+1 frame / duel 1.0 m; ball visible, outside every kept episode, after the block's first one) where DFL's truth is
+alive: the share of frames where the truth's team is the last controller's, in ten bins of time since the last kept
+frame and by whether the ball was hidden in between. The gate passes if the 20 cells differ from the pooled agreement
+by at least 0.05 on average, weighted by frames.
+
+| time since the last kept frame | no gap: frames | agreement | ball hidden since: frames | agreement |
+|---|---|---|---|---|
+| 0 to 0.4 s | 115,650 | 90.7% | 0 | — |
+| 0.4 to 1 s | 149,369 | 90.9% | 0 | — |
+| 1 to 2 s | 125,623 | 91.1% | 1,122 | 92.2% |
+| 2 to 3 s | 47,648 | 85.8% | 2,430 | 84.2% |
+| 3 to 5 s | 33,967 | 74.7% | 4,669 | 81.7% |
+| 5 to 8 s | 10,536 | 70.1% | 4,860 | 72.7% |
+| 8 to 12 s | 4,091 | 67.7% | 3,954 | 62.1% |
+| 12 to 20 s | 4,634 | 56.7% | 7,569 | 55.0% |
+| 20 to 40 s | 5,744 | 48.3% | 18,875 | 46.5% |
+| 40 s and more | 1,491 | 29.8% | 22,160 | 51.0% |
+
+- 564,392 hold frames (seven matches × three seeds), pooled agreement 84.1%, frame-weighted mean absolute deviation
+  **0.0979** (needs 0.05): **the gate passes**. The same numbers came out of the run that wrote the file.
+- 69% of the hold frames lie within 2 s of the last touch, at 91%: there the constant 0.60 says less than the data.
+  Beyond 12 s (11% of the frames) the agreement is 57% and falling to a coin flip or below.
+- The gap flag adds little beyond time: the frames with the ball hidden since are mostly the late bins, and within a
+  bin the two rows differ by a few points either way.
+
+**The mechanism** (as built; off by default, `main.toml`'s file unchanged with it merged). The 20 cells, smoothed as
+(agree + 1) / (frames + 2), in `pipeline/models/hold_curve.json`: one curve per held-out match, built from the other
+six, and one from all seven; a benchmark match is scored by the curve built without it. On a hold frame the vote for
+the last controller is `0.5 + hold_scale * (p − 0.5)`, clipped to the episode's confidence.
+
+**Candidates and the pick, declared before the run.** `hold_scale` 0.25, 0.5, 0.75 and 1.0, everything else
+`p27_final`'s. The pick: the highest mean of the two truths; among those within 0.005 of it, the smallest scale.
+
+**The run** (12 Nov, 22:42 to 22:45; `p27_final`: raw 0.5414, coarse 0.5829, mean 0.5622, 2.98 possessions per graded
+minute; the truth has 4.58 raw and 2.48 coarse).
+
+| config | raw | Δ raw (p, wins of 7) | coarse | Δ coarse (p, wins) | mean | Δ mean (p, wins) | possessions / min |
+|---|---|---|---|---|---|---|---|
+| `p29_s025` | 0.5481 | +0.0067 (0.047, 6) | 0.5870 | **+0.0041** (0.27, 6) | 0.5675 | **+0.0054** (0.078, 6) | 2.99 |
+| `p29_s050` | 0.5611 | +0.0197 (0.016, 7) | 0.5759 | −0.0071 (0.125, 1) | 0.5685 | +0.0063 (0.0625, 6) | 3.07 |
+| `p29_s075` | 0.5645 | +0.0231 (0.016, 7) | 0.5715 | −0.0114 (0.047, 1) | 0.5680 | +0.0059 (0.0625, 5) | 3.11 |
+| `p29_s100` | 0.5663 | +0.0249 (0.016, 7) | 0.5680 | −0.0150 (0.031, 1) | 0.5671 | +0.0050 (0.078, 5) | 3.14 |
+
+- The dead ball is predicted on 44.7% of the graded frames by every config (the truth 44.8%); alive/dead F1 0.9742.
+- **The pick: `p29_s025`.** The best mean is `p29_s050`'s 0.5685 and all four are within 0.005 of it, so the smallest
+  scale.
+- **The bar: missed.** The mean gains +0.0054 (needs +0.005) and neither truth is lower, but the sign-flip p of the
+  mean difference is 0.078 (needs 0.05): six matches won and the seventh, J03WQQ, lost by too much (raw −0.0020,
+  coarse −0.0108). Per match, raw / coarse: J03WMX +0.0041 / +0.0091, J03WN1 +0.0138 / +0.0164, J03WOH +0.0126 /
+  +0.0027, J03WOY +0.0006 / +0.0025, J03WPY +0.0104 / +0.0039, J03WQQ −0.0020 / −0.0108, J03WR9 +0.0067 / +0.0030.
+- No other scale passes: 0.5 and up lose more than 0.005 under the coarse truth, and their p is 0.0625 or more.
+- The leave-one-match-out estimate of picking by the mean alone (a report): +0.0046 [−0.0000, +0.0093], p 0.11 (raw
+  +0.0179, coarse −0.0086).
+
+**What it says.** The belief has two halves and the run separates them. At scale 0.25 the vote within 2 s is
+0.5 + 0.25 × (0.91 − 0.5) = 0.60, which is today's constant, and after that it decays (the no-gap row): 0.59 at 2 to
+3 s, then 0.56, 0.55, 0.54, 0.52, 0.50 at 20 to 40 s and 0.45 beyond. So `p29_s025` differs from `p27_final` only by letting the hold
+fade, and it is the only candidate that gains under both truths. The larger scales add the other half, a stronger
+vote within 2 s (0.70, 0.81, 0.91): each step raises the raw truth's score, lowers the coarse truth's and adds
+possessions (2.98 to 3.14 per minute). That is the grain trade-off of T33, a finer output that the fine truth rewards
+and the coarse one punishes, not better evidence about who has the ball. "Silent where it is wrong" has support under
+both truths; "stronger where the constant is too timid" depends on a grain we do not know.
+
+**The advisor's ruling (22:52, in Tian's place): drop.** The spec allows one retry only for a specific change that
+the first run's evidence points to. The obvious one, a decay-only hold, has in effect been run: it is `p29_s025`, and
+it missed. A hold capped at 0.60 with a larger scale would start to fade at 8 to 12 s instead of 2 s, a smaller dose
+of the same idea, with nothing in the run to say it would do better. The miss is one match, the worst coarse match at
+every scale, which looks like the match and not like a flaw a fix could aim at. New candidates chosen after seeing
+these seven matches and tested on the same seven would be a second look that the p-value does not correct for, and a
+pass near 0.047 would carry less than the 0.078 already measured. Even if real, +0.005 is about an eighth of what the
+full match can tell apart (0.04).
+
+**What stays, what went.** The result and the table above stay. The code went in `57279e9`: `controlled_touch.py`
+is byte for byte what it was before the night. `p29_bar.py` and its checks stay as the bar and the guard of P30 and
+P31.
+
+**Not tried, and why.** A second covariate for the curve (the nearest opponent's distance, the ball's speed away from
+the controller: the literature pass's suggestion) has no support in this run's numbers and would be a new idea, not a
+retry. More seeds or a re-scoring of the same candidate would be a second roll of a declared test.
+
+**For Tian.** `p29_s025` is a near miss: +0.0054 on the mean, both truths up, six of seven matches. It can be
+reopened by overturning the ruling, as `p29_s025` exactly as run and with its miss stated, not as a new variant. "The
+hold never expires" is a known limit of `main.toml` either way (the constant 0.60 is voted at any distance in time
+from the last touch); it should be tested again only with an expiry rule declared beforehand and on new evidence, not
+by another pass over these seven matches.
+
+### R033 — P30: timing-aware shape features: the gate passes, the pick clears the bar on all seven matches (declared 2026-11-12; run 2026-11-12, Tian away)
+Proposal: P30 · Spec (declared before any run):
+[2026-11-12-p29-p31-design.md](superpowers/specs/2026-11-12-p29-p31-design.md) · Code: branch `p29-p31`, `22e5857`
+(the version 2 features), `10587c1` (the model file names its feature version; `train_shape.py --features 2`; the
+three configs), `11dfa6e` (the version 2 model, `pipeline/models/shape_possession_v2_hgb.json`), `da698fb` (the
+candidate's config and the close-out configs) ·
+Command: `python pipeline/benchmark/train_shape.py --features 2 --out pipeline/models/shape_possession_v2_hgb.json`
+(at `8a66b0d`), `train_shape.py --report --out pipeline/models/shape_possession_v2_hgb.json` and `train_shape.py
+--report` (the gate, at `11dfa6e`), `train_shape.py --verify` (version 1 unchanged); `python
+pipeline/benchmark/run.py pipeline/benchmark/configs/p27/p27_final.toml pipeline/benchmark/configs/p30/p30_w030.toml
+…p30_w020.toml …p30_w045.toml --profile generic --seeds 3 --truth both` (at `dad5acd`), then `python
+pipeline/benchmark/p29_bar.py pick --reference p27_final p30_w030 p30_w020 p30_w045` and `bar --reference p27_final
+p30_w030`; `python pipeline/benchmark/choose.py --reference p27_final --objective mean p30_w030 p30_w020 p30_w045` for
+the leave-one-match-out estimate
+Public: — (no score or statistic of the candidate on our match was computed: its file was written and validated only;
+`main.toml` rebuilt its file at every merge of the night with the same sha256, `2dd51320…1660`)
+Validation (P01 benchmark, `generic`, 3 seeds), the pick `p30_w030`: raw 0.5629 against 0.5414 (+0.0215), coarse
+0.5901 against 0.5829 (+0.0072), the mean of the two +0.0143, sign-flip p 0.016 (all seven matches)
+Changed vs `main.toml`: nothing (the candidate is `pipeline/configs/candidates/p30_shape_v2.toml`)
+Verdict: **cleared the bar; the night's candidate. Not adopted: Tian decides**
+
+**The belief.** A team that has just won the ball starts to advance and to spread, and the team that lost it drops
+and narrows. P07's time features are centred windows (±1 s, ±2 s), which see the average of before and after; a
+one-sided window sees the change itself, so the model can place a hand-over inside a ball gap earlier and more
+exactly. Falsified if the held-out log-loss in the gaps does not fall, or if the benchmark does not move.
+
+**The mechanism.** A second feature set beside the first, version 2 (42 columns): version 1's 26 plus, per team,
+`length` (`adv_p90 − adv_p10`), `spread` (the mean distance of the team's present slots to their centroid, metres),
+`adv_past_2s/5s/10s` (`adv_mean` now minus k seconds ago) and `adv_fut_2s/5s/10s` (k seconds ahead minus now), NaN
+within k of a block's edge and never across half time. The model file names its feature version (`feature_version`,
+checked as a plain int, against the version's 42 names and against every tree node's feature index), and
+`shape_possession` computes the set its file was trained on: the committed version 1 file gives today's numbers bit
+for bit (`main.toml`'s sha256 unchanged, `train_shape.py --verify` passes). The version 2 model is version 1's recipe
+on 42 columns: the same rows (every 5th graded frame), the same mirror augmentation, the same tree settings and seeds,
+a model per held-out match and one from all seven.
+
+**The gate, declared before the run:** the pooled held-out log-loss on alive frames with the ball missing at most
+0.3510 (version 1: 0.3560).
+
+| match | gap frames | version 1 log-loss | version 2 log-loss | version 1 accuracy | version 2 accuracy |
+|---|---|---|---|---|---|
+| J03WMX | 100,677 | 0.3910 | **0.3583** | 0.8381 | 0.8504 |
+| J03WN1 | 83,916 | 0.4626 | **0.3937** | 0.7865 | 0.8266 |
+| J03WOH | 84,142 | 0.3362 | **0.2977** | 0.8582 | 0.8690 |
+| J03WOY | 98,570 | 0.3515 | **0.3274** | 0.8468 | 0.8630 |
+| J03WPY | 102,035 | 0.3414 | **0.3123** | 0.8526 | 0.8651 |
+| J03WQQ | 109,913 | 0.3253 | **0.2919** | 0.8603 | 0.8769 |
+| J03WR9 | 105,994 | 0.3043 | **0.2654** | 0.8675 | 0.8920 |
+| pooled | 685,247 | 0.3560 | **0.3189** | 0.8458 | 0.8645 |
+
+- **The gate passes**: 0.3189, lower on all seven matches (by 0.024 to 0.069).
+- On all alive frames: 0.3213 against 0.3567 (accuracy 0.8636 against 0.8454); on the frames of a kept touch episode,
+  the agreement with the touch rule is 0.8470 against 0.8334.
+
+**Candidates and the pick, declared before the run.** The version 2 model at weight 0.3, 0.2 and 0.45, everything
+else `p27_final`'s (the shift included). The pick: the highest mean of the two truths; among those within 0.005 of
+it, the weight nearest today's 0.3.
+
+**The run** (12 Nov, 23:07 to 23:10; `p27_final`: raw 0.5414, coarse 0.5829, mean 0.5622, 2.98 possessions per
+graded minute; the truth has 4.58 raw and 2.48 coarse).
+
+| config | raw | Δ raw (p, wins of 7) | coarse | Δ coarse (p, wins) | mean | Δ mean (p, wins) | possessions / min | D share |
+|---|---|---|---|---|---|---|---|---|
+| `p30_w030` | 0.5629 | +0.0215 (0.016, 7) | 0.5901 | +0.0072 (0.16, 5) | 0.5765 | **+0.0143 (0.016, 7)** | 3.04 | 44.7% |
+| `p30_w020` | 0.5577 | +0.0163 (0.016, 7) | 0.5861 | +0.0032 (0.19, 4) | 0.5719 | +0.0097 (0.016, 7) | 3.01 | 44.8% |
+| `p30_w045` | 0.5644 | +0.0231 (0.016, 7) | 0.5892 | +0.0063 (0.34, 4) | 0.5768 | +0.0147 (0.016, 7) | 3.09 | 44.5% |
+
+- **The pick: `p30_w030`.** The best mean is `p30_w045`'s 0.5768; `p30_w030` (0.5765) is within 0.005 of it and is
+  today's weight.
+- **The bar: cleared.** The mean gains +0.0143 (needs +0.005), the sign-flip p is 0.016 (all seven matches won on the
+  mean; needs 0.05), and neither truth is lower (raw +0.0215, coarse +0.0072). All three weights clear it.
+- Per match, raw / coarse: J03WMX +0.0182 / +0.0081, J03WN1 +0.0335 / +0.0307, J03WOH +0.0281 / +0.0072, J03WOY
+  +0.0118 / −0.0075, J03WPY +0.0125 / −0.0002, J03WQQ +0.0247 / +0.0063, J03WR9 +0.0205 / +0.0045.
+- macroF1 0.8993 raw and 0.8977 coarse against 0.8934 and 0.8941; alive/dead F1 0.9740 against 0.9741; the dead ball
+  is predicted on 44.7% of the graded frames either way (the truth 44.8%).
+- The leave-one-match-out estimate (a report): picking by the mean alone gives +0.0118 [+0.0041, +0.0195] on the mean,
+  p 0.016, seven wins (raw +0.0205, coarse +0.0031 with four losses); `choose.py`'s own tie-break would have named
+  `p30_w045`, which is not the declared rule.
+
+**What it says.** The gain is in who has the ball where the ball is not seen, as the belief said: the model is better
+on the gap frames of every held-out match, and the benchmark's gain is under both truths, larger under the raw one.
+The count of possessions moves up a little (2.98 to 3.04 per minute), less than P29's larger scales moved it, and
+the coarse truth still gains: this is not only the grain trade-off of T33. The coarse truth's gain is the less sure
+half (five of seven matches, p 0.16 on its own).
+
+**Where the gain is: the edges** (`python pipeline/benchmark/diagnose.py pipeline/benchmark/configs/p30/p30_w030.toml`
+and the same for `p27_final`, at `da698fb`; a report, A19's decomposition).
+
+| | `p27_final` raw | `p30_w030` raw | `p27_final` coarse | `p30_w030` coarse |
+|---|---|---|---|---|
+| predicted possessions (true 9,183 raw, 4,977 coarse) | 5,982 | 6,102 | 5,982 | 6,102 |
+| clean pairs matched at IoU 0.3 | 3,962 | 4,126 | 3,194 | 3,218 |
+| their IoU median | 0.827 | 0.839 | 0.849 | 0.865 |
+| start error, quartiles (frames, predicted − true) | [−5, +14] | **[−7, +7]** | [−4, +19] | **[−7, +11]** |
+| end error, quartiles | [−4.8, +23] | **[−7, +16]** | [−5, +27] | **[−9, +18]** |
+| ladder loss: clean / merge / split | 0.0707 / 0.0467 / 0.0078 | 0.0660 / 0.0450 / 0.0080 | 0.0654 / 0.0045 / 0.0434 | 0.0585 / 0.0036 / 0.0463 |
+| the shape source's log-loss on alive frames (α) | 0.3567 (1.08) | 0.3213 (1.07) | | |
+| the posterior's `home` log-loss | 1.170 | 1.084 | | |
+
+The late tail of the edges shrank by about a third: the upper quartile of the start error went from +14 to +7 frames
+under the raw truth and from +19 to +11 under the coarse one, the end error's from +23 to +16 and from +27 to +18. The
+hand-over is placed earlier, which is what the belief said one-sided windows would do; the medians stay at 0. The
+coarse truth's split loss rose a little (+0.003): the extra possessions. The shape source is as well calibrated as
+before (α 1.07 against 1.08).
+
+**P31's flag on the candidate** (declared: run once beside the candidate and held to the guard against it;
+`pipeline/benchmark/configs/night/night_neutral.toml`, at `da698fb`): raw 0.5618 against 0.5629 (−0.0011, one match
+won of seven), coarse 0.5885 against 0.5901 (−0.0016, two won), the mean −0.0014. The guard holds (`p29_bar.py guard
+--reference p30_w030 night_neutral` exits 0), the same small loss as against `p27_final` (R034). P31 does not enter
+the candidate.
+
+**The shift by R030's rule** (declared: reported, not applied; `conventions.py latency
+pipeline/benchmark/configs/night/night_preshift.toml dfl --profile generic --seeds 3 --truth raw`, then `p27_shift.py
+night_preshift`): the candidate without `shift_edges` lags a change of team by −1 frame (7,053 changes, 45% matched
+within 50 frames), a change into `D` by +2 (2,130, 53%) and out of `D` by 0 (2,097, 79%), so the rule gives **+1, −2,
+0, the shift the candidate already has**. Nothing to apply.
+
+**The candidate's file** (`python pipeline/run.py pipeline/configs/candidates/p30_shape_v2.toml`, at `da698fb`):
+`evaluation/results/p30_shape_v2.csv`, 199,319 rows, sha256 `ca44ca10a2aafbe455a1c629fd1a9e49669768315e4dc88c37b95e45cde7c14b`;
+`evaluation/validate_submission.py` says valid. As declared, nothing else of it was read: no score, no label shares,
+no count of possessions on our match. `main.toml`'s own file is unchanged (`2dd51320…1660`).
+
+**On fresh seeds** (C0, a check made after the choice that chooses nothing, declared at 23:50 in
+[the next spec](superpowers/specs/2026-11-13-p32-p34-design.md); `python pipeline/benchmark/run.py
+pipeline/benchmark/configs/p27/p27_final.toml pipeline/benchmark/configs/p30/p30_w030.toml --profile generic --seeds 6
+--truth both`, then `python pipeline/benchmark/p27_sensitivity.py p27_final p30_w030`, at `da698fb`). Seeds 3 to 5
+redraw the ball's gaps and the players' losses on the same seven matches and played no part in the choice.
+
+| seeds | `p27_final` raw / coarse / mean | `p30_w030` raw / coarse / mean | Δ mean (raw, coarse) | p, wins of 7 |
+|---|---|---|---|---|
+| 0 to 2 (the choice's) | 0.5414 / 0.5829 / 0.5622 | 0.5629 / 0.5901 / 0.5765 | +0.0143 (+0.0215, +0.0072) | 0.016, 7 |
+| **3 to 5 (fresh)** | 0.5397 / 0.5839 / 0.5618 | 0.5592 / 0.5906 / 0.5749 | **+0.0131 (+0.0196, +0.0066)** | 0.016, 7 |
+| 0 to 5 | 0.5405 / 0.5834 / 0.5620 | 0.5611 / 0.5903 / 0.5757 | +0.0137 (+0.0205, +0.0069) | 0.016, 7 |
+
+Seeds 0 to 2 reproduce the choice's reports to the last digit. On the fresh seeds the gain is +0.0131, 92% of the
+in-sample +0.0143, and all seven matches win again; both truths gain. R030's lesson (an in-sample +0.0038 that was
++0.0004 on fresh seeds) does not repeat here: the gain is a model's, not a knife-edge of a tie band. The matches are the
+same seven, so this guards against a lucky degradation and not against the seven matches themselves.
+
+**The transfer gate for adoption, declared before anyone computes it** (the advisor's ruling 6, at 23:45): by R011's
+and R030's rule, the version 2 model's `full` `touch_agreement` on BAR-ATH must be at least the lowest held-out
+per-match value of its own `--report`, **0.7656** (J03WN1; the others 0.8383 to 0.8865). A pass/fail check on our
+match, run at adoption by Tian, never a choice; not computed tonight.
+
+**The limits, stated with it.** The model was trained on other teams' matches (as version 1 was), so the benchmark's
+gain is not a forecast for our match; `generic`'s ball gaps ignore the play (T38, T39), and the one-sided windows read
+up to 10 s ahead and behind inside those gaps, which our match's tracking may serve differently. The decoder's
+constants and the shift were chosen in R030 with version 1 in place and were not re-chosen.
+
+### R034 — P31: team evidence level with the dead ball in the decoder: the guard holds, with a small loss under both truths (declared 2026-11-12; run 2026-11-12, Tian away)
+Proposal: P31 · Spec (declared before any run):
+[2026-11-12-p29-p31-design.md](superpowers/specs/2026-11-12-p29-p31-design.md) · Code: branch `p29-p31`, commit
+`48c8aa8` (merged as `b427246`): the decoder flag `team_neutral_dead`, off by default, and
+`pipeline/benchmark/configs/p31/p31_neutral.toml` ·
+Command: `python pipeline/benchmark/run.py pipeline/benchmark/configs/p27/p27_final.toml
+pipeline/benchmark/configs/p31/p31_neutral.toml --profile generic --seeds 3 --truth both`, then
+`python pipeline/benchmark/p29_bar.py guard --reference p27_final p31_neutral` (both at `b427246`)
+Public: — (no candidate was run on our match; `main.toml` rebuilt its file at `b427246` with the same sha256,
+`2dd51320…1660`)
+Validation (P01 benchmark, `generic`, 3 seeds): raw 0.5399 against 0.5414 (−0.0014), coarse 0.5811 against 0.5829
+(−0.0018), the mean of the two −0.0016
+Changed vs `main.toml`: nothing
+Verdict: **the guard holds; not quite neutral: a small loss on six of the seven matches under both truths. The flag
+stays off; adopting it is Tian's call**
+
+**The belief.** A `home` term of the decoder goes to `H` and to `A` and not to `D`, so every confident team vote also
+pushes the frame away from the dead ball: a control episode by +0.62 nats per frame, the hold by +0.18 and P07 by up
+to +0.20 (A19). Whether the ball is alive should be decided by the evidence about that (the dead-ball model), not by
+how confident the team evidence happens to be. Proposed as a matter of principle and expected to be neutral.
+
+**The mechanism.** `hmm.decode(..., team_neutral_dead=true)`: each `home` term also gives `D` the larger of the two
+team terms, `weight * max(log 2p, log 2(1 − p))`, so team evidence ranks `H` against `A` and leaves the better of
+them level with `D`. Off by default (the output is bit for bit today's), refused together with `restart_source`.
+One candidate: `p27_final` with the flag on.
+
+**The guard, declared before the run.** Neither truth's pooled spellF1 more than 0.005 below `p27_final`'s. No bar:
+a neutral change is not asked to win.
+
+**The run** (12 Nov, 22:30 to 22:33).
+
+| truth | `p27_final` | `p31_neutral` | pooled Δ | per-match mean Δ [90% t-interval] | sign-flip p | wins / losses |
+|---|---|---|---|---|---|---|
+| raw | 0.5414 | 0.5399 | **−0.0014** | −0.0015 [−0.0023, −0.0007] | 0.031 | 1 / 6 |
+| coarse | 0.5829 | 0.5811 | **−0.0018** | −0.0018 [−0.0036, +0.0000] | 0.109 | 1 / 6 |
+| mean of the two | | | **−0.0016** | | 0.047 | 1 / 6 |
+
+- Guard: raw −0.0014 and coarse −0.0018 are both above −0.005: **kept** (`p29_bar.py guard` exits 0).
+- Per match, raw / coarse: J03WMX −0.0008 / −0.0014, J03WN1 −0.0021 / −0.0017, J03WOH −0.0016 / −0.0025, J03WOY
+  −0.0019 / −0.0029, J03WPY +0.0004 / +0.0034, J03WQQ −0.0012 / −0.0035, J03WR9 −0.0030 / −0.0039.
+- macroF1 −0.0003 under both truths (3 wins, 4 losses; p 0.25 and 0.36); alive/dead F1 0.9741 to 0.9737.
+- The dead ball: predicted on 44.7% of the graded frames before and 45.0% with the flag, against the truth's 44.8%.
+  Possessions: 2.98 per graded minute both ways (the truth 4.58 raw, 2.48 coarse).
+
+**What it says.** Without the push, `D` takes 0.3 points more of the graded frames and the number of possessions does
+not move: the flag changes where a few stoppages begin and end, not which possessions exist. The loss is a third of
+the guard's width and far below what the full match can tell apart (0.04), but its sign is the same on six of seven
+matches under both truths, so it is a small real cost on this benchmark and not noise around zero. "Expected neutral"
+was close and not exact: the push the principle objects to was worth about 0.0015 of spellF1 here.
+
+**The limit of this test, declared with it.** The decoder's other constants (the switch costs, the minimum runs, the
+dead-ball model's weight) were chosen in R030 with the push in place and were not re-chosen with the flag on. A
+re-choice could recover the loss or not; it was not run, because a re-choice of the decoder is a grid of its own and
+the spec left it out.
+
+**What follows, by the spec.** P31 never enters a candidate by itself. If P29 or P30 gives a candidate, that candidate
+is run once more with the flag on and held to the same guard against the candidate; the result is added below. The
+code stays on the branch behind its flag, off by default.
+
+### R035 — P33: shape features version 3: the gate passes by a hair, the benchmark does not move, dropped (declared 2026-11-12, 23:50; run 2026-11-13, Tian away, an advisor agent in Tian's place)
+Proposal: P33 · Spec (declared before any run): [2026-11-13-p32-p34-design.md](superpowers/specs/2026-11-13-p32-p34-design.md)
+· Code: removed in `c9c0708`, recoverable from `a92000e` (version 3 is `411b881`, the model `a92000e`) ·
+Command (at `768d3f5` and `a92000e`): `python pipeline/benchmark/train_shape.py --features 3 --out
+pipeline/models/shape_possession_v3_hgb.json`, `train_shape.py --report --out pipeline/models/shape_possession_v3_hgb.json`
+(the gate); `python pipeline/benchmark/run.py pipeline/benchmark/configs/p30/p30_w030.toml
+pipeline/benchmark/configs/p33/p33_w030.toml pipeline/benchmark/configs/p33/p33_w045.toml --profile generic --seeds 3
+--truth both`, then `p29_bar.py pick --reference p30_w030 p33_w030 p33_w045` and `bar --reference p30_w030 p33_w030`
+Public: — (nothing was run on our match; `main.toml` rebuilt its file with the same sha256 with version 3 merged)
+Validation (P01 benchmark, `generic`, 3 seeds), the pick `p33_w030` against the candidate `p30_w030`: raw 0.5616
+against 0.5629 (−0.0013), coarse 0.5934 against 0.5901 (+0.0034), the mean +0.0010, sign-flip p 0.44
+Changed vs `main.toml`: nothing
+Verdict: **dropped: the benchmark does not move (the belief's own falsifier); no retry**
+
+**The belief.** P30 showed that one-sided time is where the shape signal is. Version 2 leaves out the difference of
+the two teams' one-sided advance changes (one advances while the other drops), which an axis-aligned tree reaches only
+through a staircase of splits; one-sided changes of compactness, not only of position; and a 20 s horizon for the long
+gaps. Falsified if the held-out gap log-loss does not fall by P30's own margin, or the benchmark does not move.
+
+**The mechanism.** Version 3 of the shape features (60 columns): version 2's 42 copied, plus per team
+`spread_past_5s`, `spread_fut_5s`, `width_past_5s`, `width_fut_5s`, `adv_past_20s`, `adv_fut_20s`, and as cross
+columns the six differences `h_adv_{past,fut}_{2,5,10}s − a_…` (negated by `swap`). Version 2's recipe on 60 columns.
+
+**The gate, declared before the run:** the pooled held-out log-loss on alive frames with the ball missing at most
+0.3139 (version 2's 0.3189 − 0.005).
+
+| match | version 2 gap log-loss | version 3 gap log-loss |
+|---|---|---|
+| J03WMX | 0.3583 | **0.3515** |
+| J03WN1 | **0.3937** | 0.3981 |
+| J03WOH | 0.2977 | **0.2913** |
+| J03WOY | 0.3274 | **0.3219** |
+| J03WPY | 0.3123 | **0.3016** |
+| J03WQQ | 0.2919 | **0.2805** |
+| J03WR9 | **0.2654** | 0.2672 |
+| pooled (685,247 frames) | 0.3189 | **0.3137** |
+
+- **The gate passes, by 0.0002**, lower on five of seven matches. Under the coarse truth the gap log-loss is 0.3123
+  (version 2: 0.3185); on all alive frames 0.3162 (0.3213); the touch-episode agreement 0.8514 (0.8470).
+
+**The run** (13 Nov, 00:30 to 00:33; `p30_w030` reproduced to the last digit: raw 0.5629, coarse 0.5901, mean 0.5765).
+
+| config | raw (Δ, p, wins of 7) | coarse (Δ, p, wins) | mean (Δ, p, wins) | possessions / min |
+|---|---|---|---|---|
+| `p33_w030` | 0.5616 (−0.0013, 0.34, 3) | 0.5934 (+0.0034, 0.14, 6) | 0.5775 (**+0.0010**, 0.44, 5) | 3.00 |
+| `p33_w045` | 0.5623 (−0.0006, 0.88, 4) | 0.5917 (+0.0016, 0.67, 4) | 0.5770 (+0.0005, 0.89, 5) | 3.04 |
+
+- **The pick: `p33_w030`** (the best mean; 0.45 within the band). **The bar: missed** (+0.0010 against +0.005, p 0.44
+  against 0.05); neither truth more than 0.005 lower.
+
+**What it says.** P30 turned 0.0371 of gap log-loss into +0.0143 of spellF1 (about 0.39 per unit); version 3's 0.0052
+predicted about +0.002, and +0.0010 came out, inside the noise. The extra columns sharpen the model a little where it
+was already right and move the decoded labels hardly at all. Version 2 seems to have taken what the shape of the teams
+says about a hand-over in time.
+
+**The advisor's ruling (00:39, in Tian's place): drop, no retry.** The belief's own falsifier holds (the benchmark does
+not move); the gate passed by a hair with two matches worse; a retry would need about 0.013 of log-loss gain, 2.5 times
+what the 18 columns gave; the one candidate retry (without the 20 s columns, from the coarse truth's 6 of 7 against
+the raw truth's 3 of 7) would be a story fitted to a split that is not significant (p 0.14 and 0.34), a sixteenth
+configuration on the same seven matches. Nothing of P33 is kept, not even the helper it factored out of version 2's
+code: `shape_features.py` is byte for byte what it was before P33.
+
+**For Tian.** Stop adding shape features before the deadline: at P30's rate, a further version needs about 0.013 of
+held-out gap log-loss to have a chance at the bar.
+
+### R036 — P34: the version 2 shape model trained on both truths' labels: the sanity gate misses, dropped (declared 2026-11-12, 23:50; run 2026-11-13, Tian away, an advisor agent in Tian's place)
+Proposal: P34 · Spec (declared before any run): [2026-11-13-p32-p34-design.md](superpowers/specs/2026-11-13-p32-p34-design.md)
+· Code: removed in `d767596`, recoverable from `a92000e` (and `768d3f5`) (`train_shape.py --labels both` is `6a3e7bc`, the model
+`66fe24b`); the report's coarse-truth cells were kept (below) ·
+Command (at `e106e5e` and `66fe24b`): `python pipeline/benchmark/train_shape.py --features 2 --labels both --out
+pipeline/models/shape_possession_v2both_hgb.json`, then `train_shape.py --report --out
+pipeline/models/shape_possession_v2_hgb.json` and the same for the new file; `train_shape.py --verify` (version 1
+unchanged with the option merged)
+Public: — (nothing was run on our match; `main.toml` rebuilt its file with the same sha256 at every merge)
+Validation (P01 benchmark): — (no config was run: the gate comes first)
+Changed vs `main.toml`: nothing
+Verdict: **dropped at its sanity gate; the advisor found no retry the evidence points to**
+
+**The belief.** The objective is the mean of the raw and the coarse truth's spellF1, and the shape model learns the raw
+truth only. The coarse truth merges each short possession that sits between two of the other team; the teams' shape
+cannot see a 2-second possession, so for the model those raw labels are noise and for the coarse truth they are wrong.
+Training on both labels, each weighted half where they differ, trains on the objective's own target.
+
+**The mechanism.** `train_shape.py --labels both`: the coarse codes from the benchmark's own `truth.coarse_codes` on
+the same frames; where the two labels agree a row at weight 1, where they differ two rows, one with each label, at 0.5;
+the mirrors alike; the trees fitted with `sample_weight`. Version 2's features, rows, stride and tree settings.
+
+**The gate, declared before the run as a sanity gate** (it is close to the model's own training objective, so it
+screens a broken build, not a weak idea): on alive frames with the ball missing, the mean of the raw and coarse pooled
+held-out log-losses at most version 2's mean − 0.003, and the raw log-loss at most version 2's + 0.010.
+
+| model (685,247 held-out alive frames with the ball missing) | raw log-loss (accuracy) | coarse log-loss (accuracy) | mean |
+|---|---|---|---|
+| version 2, raw labels (the candidate's, R033) | 0.3189 (0.8645) | 0.3185 (0.8647) | 0.3187 |
+| version 2, both labels (P34) | 0.3264 (0.8596) | 0.3097 (0.8687) | **0.3181** |
+
+- **The gate misses**: the mean falls 0.0007 (needs 0.003); the raw condition holds (0.3264 ≤ 0.3289).
+- On all alive frames (1,659,315): version 2 0.3213 raw / 0.3212 coarse, both labels 0.3280 / 0.3108.
+- Per match on the gap frames the coarse log-loss is lower on all seven matches and the raw one higher.
+- The build is sound: the weights reach the fit (checked by the review with a synthetic probe), and `train_shape.py
+  --verify` passes on the version 1 file with the option merged.
+
+**What it says.** The model traded the raw truth for the coarse one almost one for one (raw +0.0075, coarse −0.0088):
+it moved its calibration along the grain and learned nothing new about who has the ball, which is what the belief
+itself implies once the shape cannot see the short possessions. By P30's ratio (−0.0371 of log-loss for +0.0143 of
+spellF1) a fall of 0.0007 is worth about +0.0003, and the raw truth, where P30 made most of its gain, is the side P34
+worsens.
+
+**The advisor's ruling (00:21, in Tian's place): drop, no retry.** A miss at the gate drops the lane; "the bar decides"
+applies only to a lane past its gate. Weighting 0.5/0.5 everywhere is the scheme already run (an agreeing frame twice at
+0.5 is one row at 1.0); more weight on the coarse label moves further along the same trade; a rule by possession length
+would be a setting chosen after the miss; and running the benchmark anyway would only re-read the gate, as the
+fifteenth configuration of the night on the same seven matches. The option not taken (the 3-minute benchmark): it would
+have answered the spellF1 question directly, against a declared threshold already missed.
+
+**What stays.** `train_shape.py --report` keeps the coarse-truth cells P34 added (log-loss and accuracy under the
+coarse truth beside the raw ones, all alive frames and those with the ball missing): they only report and gate
+nothing, and they measure any shape model against the objective's second truth (the advisor's call, for Tian to
+check). Everything else of P34 is removed.
+
+**For Tian.** Relabelling cannot settle the raw-against-coarse grain while the features cannot see short possessions;
+that question still needs our provider's own data (P16, P26).
+
+### R037 — P32: the team model where the ball is seen, retrained on `generic` with the ball's direction: the gate passes, the pick clears the bar on all seven matches (declared 2026-11-12, 23:50; run 2026-11-13, Tian away, an advisor agent in Tian's place)
+Proposal: P32 (P19's one retry, in P24's slot) · Spec (declared before any run):
+[2026-11-13-p32-p34-design.md](superpowers/specs/2026-11-13-p32-p34-design.md) · Code: branch `p29-p31`, `e6057d5` (P19's
+code restored from `15e7e14` and adapted: team features version 2, the trainer on `generic`, the feasibility gate on
+log-loss, the four configs), `d25075d` (the review's three fixes), `b57177c` (the model,
+`pipeline/models/team_model_hgb.json`), `7c3cdae` and `041f87e` (the candidate's config and the close-out configs) ·
+Command: `python pipeline/benchmark/train_team.py --dry-run --matches J03WMX --seeds 1`, `train_team.py`,
+`train_team.py --feasibility --config pipeline/benchmark/configs/p30/p30_w030.toml` (at `9fba231` and `b57177c`);
+`python pipeline/benchmark/run.py pipeline/benchmark/configs/p30/p30_w030.toml
+pipeline/benchmark/configs/p32/p32_w0075.toml …p32_w015.toml …p32_w030.toml …p32_w060.toml --profile generic --seeds 3
+--truth both` (at `b57177c`), then `p29_bar.py pick --reference p30_w030 p32_w0075 p32_w015 p32_w030 p32_w060` and `bar
+--reference p30_w030 p32_w030`; `choose.py --reference p30_w030 --objective mean …` for the estimate
+Public: — (no score or statistic of the candidate on our match was computed; `main.toml` rebuilt its file with the
+same sha256 after the merge)
+Validation (P01 benchmark, `generic`, 3 seeds), the pick `p32_w030` against the night's first candidate `p30_w030`: raw
+0.5891 against 0.5629 (+0.0262), coarse 0.5963 against 0.5901 (+0.0062), the mean +0.0162, sign-flip p 0.016 (all
+seven matches); against `main.toml`'s copy `p27_final`: the mean +0.0305 (raw +0.0477, coarse +0.0133), a report
+Changed vs `main.toml`: nothing (the candidate is `pipeline/configs/candidates/p32_team_model.toml`)
+Verdict: **cleared the bar; the night's candidate, stacked on P30. Not adopted: Tian decides**
+
+**The belief.** Where the ball is seen and no control episode runs (passes in flight, duels, loose balls, the long tail
+after a touch), the evidence was the touch rule's constant hold 0.60 and the shape model. A tree model that reads the
+ball against both teams (who is closer, closing, who can reach it first, how long since and until each team's control,
+which way the ball moves relative to each team's attack) names the team better there. R021 measured that on 31 Oct (7 of
+7 matches better than the rule, log-loss 0.2268 against 0.4340) and dropped P19 at a per-frame gate against the decoded
+output of all sources; no spellF1 was ever measured.
+
+**What it departs from, declared.** P24 was recorded as P19's one retry with "the same model and gate". P32 took that
+slot with the gate moved to log-loss and the decision to the bar on spellF1; R021's per-frame statistic is printed and
+gates nothing (the advisor's ruling of 23:45). A miss would have dropped P19 and P24 for good.
+
+**The mechanism.** P19's code restored from `15e7e14`: `team_features` (now version 2, 72 columns: per team the ball's
+two nearest distances, the closing speed, the relative speed, the reach time, the control-episode timing, and new, the
+ball's advance and velocity towards that team's attacking goal, in the direction `shape_features` uses for the team;
+`over11` and the gap timers dropped; ten shared ball columns; the 42 version 2 shape columns), `team_model` (the
+evidence source: `home` on graded frames with the ball visible, symmetrised, clipped to [0.02, 0.98]; a fold per
+held-out match), `train_team.py` (rows every 5th alive frame with the ball visible, mirrored, P05's tree settings).
+Off by default: no existing config names it.
+
+**Step 0, the gate, declared before the run.**
+- The dry run: 10,208 rows for J03WMX seed 0 (the declared estimate 10,362, window 8,290 to 12,434: inside), no all-NaN
+  or constant column, a projected peak of 1.82 GB. Training followed.
+- The feasibility, out of fold, on 971,196 frames (graded, the truth H or A, the ball seen, `p30_w030` decoding H or A):
+
+| match | frames | P32 accuracy | `p30_w030` decoded | rule | P32 log-loss | rule-with-hold log-loss |
+|---|---|---|---|---|---|---|
+| J03WMX | 154,983 | 0.9151 | 0.9022 | 0.8907 | 0.2110 | 0.4219 |
+| J03WN1 | 120,592 | 0.8982 | 0.8722 | 0.8470 | 0.2613 | 0.4790 |
+| J03WOH | 131,376 | 0.9190 | 0.8951 | 0.8607 | 0.1964 | 0.4487 |
+| J03WOY | 130,013 | 0.9097 | 0.8864 | 0.8638 | 0.2376 | 0.4681 |
+| J03WPY | 142,013 | 0.9240 | 0.9014 | 0.8843 | 0.1867 | 0.4225 |
+| J03WQQ | 142,809 | 0.9175 | 0.9066 | 0.8948 | 0.2030 | 0.4236 |
+| J03WR9 | 149,410 | 0.9333 | 0.9190 | 0.9056 | 0.1769 | 0.3957 |
+| pooled | 971,196 | **0.9173** | 0.8985 | 0.8796 | **0.2088** | 0.4351 |
+
+- **The gate passes**: the pooled log-loss 0.2088 (at most 0.2700) and lower than the rule's on all seven matches. By
+  class: on the 408,039 episode frames 0.9423 against the decoded 0.9372, on the 561,969 hold frames 0.8991 against
+  0.8704.
+- R021's per-frame statistic, which gates nothing: +0.0188 pooled, +0.020 or more on four matches of seven (R021 needed
+  six).
+
+**Candidates and the pick, declared before the run.** Weight 0.075, 0.15, 0.30 and 0.60 on top of `p30_w030`; the
+highest mean, and among those within 0.005 of it the smallest weight.
+
+**The run** (13 Nov, 00:45 to 00:48; `p30_w030` reproduced to the last digit: raw 0.5629, coarse 0.5901, mean 0.5765).
+
+| config | raw (Δ, wins of 7) | coarse (Δ, p, wins) | mean (Δ, p, wins) | possessions / min |
+|---|---|---|---|---|
+| `p32_w0075` | 0.5734 (+0.0105, 7) | 0.5946 (+0.0045, 0.031, 6) | 0.5840 (+0.0075, 0.016, 7) | 3.07 |
+| `p32_w015` | 0.5792 (+0.0163, 7) | 0.5958 (+0.0058, 0.031, 6) | 0.5875 (+0.0110, 0.016, 7) | 3.08 |
+| `p32_w030` | 0.5891 (+0.0262, 7) | 0.5963 (+0.0062, 0.094, 6) | **0.5927 (+0.0162, 0.016, 7)** | 3.11 |
+| `p32_w060` | 0.5978 (+0.0349, 7) | 0.5943 (+0.0042, 0.16, 6) | 0.5960 (+0.0195, 0.016, 7) | 3.15 |
+
+- **The pick: `p32_w030`.** The best mean is `p32_w060`'s 0.5960; `p32_w030` is 0.0033 below it, inside the band, and
+  the smallest weight there.
+- **The bar: cleared** (mean +0.0162, p 0.016, all seven matches won on the mean; raw +0.0262, coarse +0.0062). All four
+  weights clear it. The raw truth gains on every match at every weight; the coarse truth on six of seven (J03WQQ loses
+  0.003 to 0.010).
+- The dead ball is predicted on 44.7% of the graded frames by every config (the truth 44.8%); macroF1 0.8993 → 0.9042
+  (raw).
+- The leave-one-match-out estimate (a report): picking by the mean alone +0.0194 [+0.0170, +0.0217], seven wins; by the
+  whole rule +0.0184 [+0.0161, +0.0208], seven wins.
+
+**What it says.** The model where the ball is seen is the largest single gain of the night, larger than P30's, and
+comes where A13 and A25 put the headroom (who has the ball where it is seen). The raw truth gains most; the coarse
+truth's gain is smaller and flat across the weights (0.0045 to 0.0062), so the larger weights add mostly fine-grained
+possessions that the coarse truth does not reward: the tie-break's smallest weight in the band is also the one that
+keeps the two truths closest.
+
+**On fresh seeds** (C0's check, chooses nothing; `run.py p30_w030 p32_w030 --seeds 6 --truth both`, then
+`p27_sensitivity.py p30_w030 p32_w030`, at `041f87e`).
+
+| seeds | `p30_w030` raw / coarse / mean | `p32_w030` raw / coarse / mean | Δ mean (raw, coarse) | p, wins of 7 |
+|---|---|---|---|---|
+| 0 to 2 (the choice's) | 0.5629 / 0.5901 / 0.5765 | 0.5891 / 0.5963 / 0.5927 | +0.0162 (+0.0262, +0.0062) | 0.016, 7 |
+| **3 to 5 (fresh)** | 0.5592 / 0.5906 / 0.5749 | 0.5883 / 0.5935 / 0.5909 | **+0.0160 (+0.0290, +0.0029)** | 0.016, 7 |
+| 0 to 5 | 0.5611 / 0.5903 / 0.5757 | 0.5887 / 0.5949 / 0.5918 | +0.0161 (+0.0276, +0.0045) | 0.016, 7 |
+
+The gain holds on the fresh seeds (+0.0160 of +0.0162, all seven matches); its coarse half is the smaller and less
+stable one (+0.0062 → +0.0029). The third round's fresh-seed hold (declared at 01:07, after this run's choice, for that
+round) would be met: it is recorded as met, not as a condition P32 was declared under.
+
+**Where the gain is** (`diagnose.py pipeline/benchmark/configs/p32/p32_w030.toml`, at `041f87e`, beside R033's
+`p30_w030`):
+
+| | `p30_w030` raw | `p32_w030` raw | `p30_w030` coarse | `p32_w030` coarse |
+|---|---|---|---|---|
+| predicted possessions (true 9,183 raw, 4,977 coarse) | 6,102 | 6,245 | 6,102 | 6,245 |
+| clean pairs matched at IoU 0.3 | 4,126 | 4,396 | 3,218 | 3,276 |
+| their IoU median | 0.839 | 0.856 | 0.865 | 0.871 |
+| start error, quartiles (frames) | [−7, +7] | [−6, +5] | [−7, +11] | [−6, +8] |
+| end error, quartiles | [−7, +16] | [−6, +14] | [−9, +18] | [−8, +16] |
+| ladder loss: clean / merge / split | 0.0660 / 0.0450 / 0.0080 | 0.0642 / 0.0435 / 0.0073 | 0.0585 / 0.0036 / 0.0463 | 0.0565 / 0.0034 / 0.0472 |
+| the posterior's `home` log-loss | 1.084 | 1.046 | | |
+
+The team model's own `home` log-loss on the 974,068 alive frames with the ball seen is 0.2097 (α 1.08). P32 adds 270
+clean pairs under the raw truth, and every edge quartile narrows a little more; the coarse truth's split loss rises a
+little (+0.001), the extra possessions.
+
+**P31's flag on the candidate** (declared: once, the guard against the candidate; `night/night2_neutral.toml`): raw
+−0.0010, coarse −0.0014, the mean −0.0012 (two matches won of seven); the guard holds. The same small loss on every
+reference tonight; P31 stays off.
+
+**The shift by R030's rule** (reported, not applied; `conventions.py latency …/night/night2_preshift.toml dfl`, then
+`p27_shift.py night2_preshift`): a change of team lags −1 frame (7,053 changes, 48% matched), into `D` +2 (53%), out of
+`D` 0 (82%): **+1, −2, 0, the shift the candidate already has**.
+
+**The candidate's file** (`python pipeline/run.py pipeline/configs/candidates/p32_team_model.toml`, at `041f87e`):
+`evaluation/results/p32_team_model.csv`, 199,319 rows, sha256
+`aae79a0446dabdf565d86b95f03acf0a53b5698cf3d80033c25bf7d49cbd3bdb`; the official validator says valid. Nothing else of it
+was read.
+
+**The limits, stated with it.** No transfer check on our match: R021's relied on Smart Tagging, which left `main.toml`
+in R029, and a touch agreement would be circular (`in_episode` is a feature). `generic` has no wrong-team slots, while
+ours show them on at least 10.8% of the graded frames (T32): the model reads per-team distances and the reach time of
+each team's slots, so a slot on the wrong team is read as the other team's player; how much that costs on our match is
+unmeasured. The model was trained on other teams' matches, and `generic`'s gaps ignore the play (T38, T39). The
+decoder's constants and the shift were chosen in R030 without this source.
+
+### R038 — P39: the shape vote silent where the ball is seen, on top of P32: the coarse truth loses on every match, dropped (declared 2026-11-13, 01:05; run 2026-11-13, Tian away, an advisor agent in Tian's place)
+Proposal: P39 · Spec (declared before any run): [2026-11-13-p35-p39-design.md](superpowers/specs/2026-11-13-p35-p39-design.md)
+· Code: none (a config of existing sources, `pipeline/benchmark/configs/p39/p39_seen_off.toml`, and its pin check
+`checks/p39.py`, both in `565d43e`; removed in `ce115bb`) · Command: `python pipeline/benchmark/run.py
+pipeline/benchmark/configs/p32/p32_w030.toml pipeline/benchmark/configs/p39/p39_seen_off.toml --profile generic --seeds
+3 --truth both` (at `565d43e`), then `p29_bar.py bar --reference p32_w030 p39_seen_off`
+Public: — (nothing of our match was run)
+Validation (P01 benchmark, `generic`, 3 seeds), against the night's candidate `p32_w030`: raw 0.5878 against 0.5891
+(−0.0013, p 0.72, four matches better), coarse 0.5807 against 0.5963 (−0.0156, p 0.016, none of seven better), the mean
+−0.0084
+Changed vs `main.toml`: nothing
+Verdict: **dropped at the bar; no retry**
+
+**The belief.** P32's model reads the 42 shape columns of version 2 itself. Where the ball is seen, the shape source at
+weight 0.3 then counts the same information a second time; a product of experts should not give one expert's inputs two
+votes. With the shape source silent there (its existing `scope = "gaps"`), the touch rule and P32 decide the seen frames
+and the shape source only the gaps.
+
+**Declared before the run** (the advisor's ruling of 01:05, amendment 7): no gate, since nothing is built; the bar
+against `p32_w030`; no retry. R026's closest test (halving the shape weight on the seen frames: raw +0.003, coarse
+−0.017, more possessions) was recorded as the expected direction, so that a raw-against-coarse trade would not be read
+as a near miss.
+
+**The run** (13 Nov, 01:12 to 01:16; `p32_w030` reproduced to the last digit: raw 0.5891, coarse 0.5963).
+
+| config | raw (Δ, p) | coarse (Δ, p, wins of 7) | mean (Δ) | macroF1 raw (Δ) | possessions / min |
+|---|---|---|---|---|---|
+| `p32_w030` | 0.5891 | 0.5963 | 0.5927 | 0.9042 | 3.11 |
+| `p39_seen_off` | 0.5878 (−0.0013, 0.72) | 0.5807 (−0.0156, 0.016, 0) | 0.5843 (−0.0084) | 0.9023 (−0.0019) | 3.19 |
+
+The dead ball is predicted on 44.7% of the graded frames by both (the truth 44.8%); alive/dead F1 0.9741 unchanged.
+
+**What it says.** The second vote is not double counting that hurts: without it the decoder makes more, shorter
+possessions on the seen frames, which the coarse truth punishes on every match and the raw truth does not reward.
+The shape source on the seen frames acts as a smoother of who has the ball, not only as a second copy of P32's inputs.
+This is R026's finding again (the gap evidence must not grow against the seen frames'), now with P32 in place. The
+"combined model" question is answered: keep the shape source on every frame.
+
+### R039 — P37: shape features version 4, each team's time since and until its control, for the gaps: both gates miss, dropped (declared 2026-11-13, 01:05; run 01:52 to 02:04, Tian away, an advisor agent in Tian's place)
+Proposal: P37 · Spec (declared before any run): [2026-11-13-p35-p39-design.md](superpowers/specs/2026-11-13-p35-p39-design.md)
+(amendment 5) · Code: `106ca0c`, `ed29ae2` (merged as `0e8cc43`), the model `963861b`; removed in `22a988e`, recoverable
+from `963861b` · Command: `python pipeline/benchmark/train_shape.py --features 4`, then `train_shape.py --features 4
+--report` and `--features 2 --report` (at `963861b`)
+Public: — (nothing of our match was run)
+Validation (P01 benchmark, `generic`, 3 seeds, held out per match): the gates only; no config was benchmarked
+Changed vs `main.toml`: nothing
+Verdict: **dropped at its gate; no retry**
+
+**The belief.** Version 2's shape model knows how the teams stand and move but not how long since each team last
+controlled the ball, or how long until it next does; in a gap that timing says who has it. Version 4 adds, per team,
+the seconds since its last control episode and until its next by the touch rule (0 inside an episode, capped at 30 s,
+never across half time), and speaks only in the gaps (version 2 keeps the seen frames, under R026's scope `"visible"`).
+C1 (A26) had just located the late edge tail at changes of team inside gaps, so the target was right.
+
+**The gates, declared before the run** (amendment 5): the held-out gap log-loss at most 0.3059 (version 2's 0.3189
+− 0.013), and on the hand-over gaps (the touch rule's last controller before differs from the next after) at most
+version 2's − 0.013 on the same frames; version 2 must reproduce 0.3189.
+
+**The run** (held out, seeds pooled; log-loss, accuracy):
+
+| version | alive frames | ball missing (the gate) | hand-over gaps (290,525) | same team (383,579) | unknown (11,143) | touch-episode agreement |
+|---|---|---|---|---|---|---|
+| 2 | 0.3213, 0.8636 | **0.3189**, 0.8645 | 0.3402, 0.8516 | 0.2981, 0.8769 | 0.4804, 0.7712 | 0.8470 |
+| 4 | 0.2709, 0.8904 | **0.3206**, 0.8644 | 0.3448, 0.8510 | 0.2972, 0.8773 | 0.4940, 0.7697 | 0.9571 |
+
+- **Both gates miss**: 0.3206 against at most 0.3059, worse than version 2; the hand-over gaps 0.3448 against at most
+  0.3272, worse than version 2 on 6 of 7 matches (better only on J03WMX, 0.3842 against 0.3886).
+- The advisor ruled no retry (02:06): not a near miss; the one plausible change (training on gap rows only) was put
+  under 1 in 8, and a pass would have been an alternative only (T38). The benchmark of `p37_split` and `p37_gap030` was
+  not run.
+
+**What it says.** The columns help only where the ball is seen, where they replay the touch rule's episodes (agreement
+0.847 → 0.957; all-alive log-loss 0.3213 → 0.2709), which the decoder already has from `controlled_touch` itself. In
+the gaps the time since a team's last touch does not say who has the ball after a hand-over the tracking did not see
+(T58). The hand-over gaps stay the hardest cell (0.34 against 0.30 for the same team), as C1 showed. The report's gap
+cells (hand-over, same team, unknown) are kept as a diagnostic: they choose nothing.
+
+### R040 — P35: a turnover hazard as the decoder's per-frame switch cost: the gate passes, the bar misses at every scale, dropped (declared 2026-11-13, 01:05; run 01:44 to 02:16, Tian away, an advisor agent in Tian's place)
+Proposal: P35 · Spec (declared before any run): [2026-11-13-p35-p39-design.md](superpowers/specs/2026-11-13-p35-p39-design.md)
+(amendments 4, 8, 11) · Code: the decoder `6eb2bec`, `79dd64c` (A1); the model and source `405f357`, `7c3dcf2` (A2);
+merged as `e29e18d` and `3a375bf`; the model `a898c42`; the model side removed in `ef1c975`, the decoder path in
+`4ce22f0` (`hmm.py`, `config.py` and the decode README back to `565d43e`; recoverable from `33c3a62`) · Command: `python
+pipeline/benchmark/train_turnover.py --dry-run --matches J03WMX --seeds 1`, `train_turnover.py`, `train_turnover.py
+--report`; `python pipeline/benchmark/run.py pipeline/benchmark/configs/p32/p32_w030.toml
+pipeline/benchmark/configs/p35/p35_s000.toml …p35_s050.toml …p35_s100.toml …p35_s200.toml --profile generic --seeds 3
+--truth both` (at `3a375bf`), then `p29_bar.py pick` and `bar --reference p32_w030`
+Public: — (nothing of our match was run; `main.toml` rebuilt its file with the same sha256 after the decoder merged,
+and `selftest.py --data` passed 253 of 253)
+Validation (P01 benchmark, `generic`, 3 seeds), the pick `p35_s050` against `p32_w030`: raw 0.5906 (+0.0015, six
+matches better), coarse 0.5945 (−0.0017, one), the mean −0.0001 (p 0.77)
+Changed vs `main.toml`: nothing
+Verdict: **dropped at the bar; no retry**
+
+**The belief.** `switch_team` is one constant for every frame, so a change of team costs as much in the middle of a
+controlled run as at a loose ball. A model of where changes of team happen lowers the cost where one is likely and
+raises it where it is not: `team_cost[t] = clip(switch_team − scale · log(p_t / b), 1, 2 · switch_team)`, with p the
+model's probability of a direct change (H ↔ A, no `D` between) within ±12 frames and b its base rate. Amended: it speaks
+only where the ball is seen; the gaps decode exactly as before.
+
+**Safeguards** (amendment 11): with no hazard the decoder is today's token for token (checked against a verbatim copy of
+the old loop and to the last bit for the posterior); a brute force over every valid path of tiny blocks matched the
+labels and scores (400 cases) and the posterior (200); `p35_s000` (scale 0) gave reports equal to `p32_w030`'s in every
+key, per match, seed and truth, at full precision (amendment 8).
+
+**Step 0, the gate** (a screen, declared before the run). The dry run: 10,208 rows for J03WMX seed 0 (window 8,290 to
+12,434), 11.1% positive (6% to 14%), a projected peak of 1.82 GB. Out of fold on 194,847 rows (10.0% positive): pooled
+AUC **0.910** (at least 0.80), log-loss **0.2033** against at most 0.90 × the base rate's 0.3267 = 0.2940; per match AUC
+0.887 to 0.932, below the base rate on all seven. The peak of p around a true change (gating nothing): median −1 frame,
+quartiles −6 to +4, 49% within ±5. **The gate passes.** For a transfer gate (amendment 10), the held-out mean p over
+graded frames with the ball seen was 0.048 to 0.068 per match.
+
+**The run** (13 Nov, 02:12 to 02:16; `p32_w030` reproduced to the last digit).
+
+| config | raw (Δ, wins of 7) | coarse (Δ, wins) | mean (Δ, p) | possessions / min |
+|---|---|---|---|---|
+| `p32_w030` | 0.5891 | 0.5963 | 0.5927 | 3.11 |
+| `p35_s000` | equal | equal | equal | 3.11 |
+| `p35_s050` | 0.5906 (+0.0015, 6) | 0.5945 (−0.0017, 1) | 0.5926 (−0.0001, 0.77) | 3.13 |
+| `p35_s100` | 0.5910 (+0.0019, 6) | 0.5934 (−0.0029, 1) | 0.5922 (−0.0005, 0.61) | 3.14 |
+| `p35_s200` | 0.5933 (+0.0041, 6) | 0.5913 (−0.0050, 1) | 0.5923 (−0.0004, 0.52) | 3.16 |
+
+The dead ball is predicted on 44.7% of the graded frames by every config; macroF1 flat.
+
+- **The pick: `p35_s050`** (the best mean; the band holds all three, the smallest scale). **The bar: missed** (mean
+  −0.0001, p 0.77). No scale is within reach of it.
+- The advisor ruled no retry (02:21): the trade amendment 7 warned of, as in P39 and R026. A one-sided cost (raising it
+  only where p < b) would walk the same frontier the other way (about 1 in 12); the hazard in the gaps would break
+  amendment 4 for a signal P37 had just shown absent there (about 1 in 15).
+
+**What it says.** A good model of where changes happen (AUC 0.91) did not help the decoder: where the ball is seen the
+edges are already within a few frames (A26), so the hazard can only let the decoder switch more or less often, which
+trades the raw truth against the coarse one. The headroom is in the gaps, where no source tonight has found a signal
+(T59).
+
+### R041 — P40: shape features version 5, opponents' approach: better than version 2 in the gaps, short of its gate, dropped (declared 2026-11-13, 02:50; run 03:12 to 03:28, Tian away, an advisor agent in Tian's place)
+Proposal: P40 · Spec (declared before any run): [2026-11-13-p40-c2-design.md](superpowers/specs/2026-11-13-p40-c2-design.md)
+(amendment 3) · Code: `fd4a05c`, `4d7e16f` (merged as `d4ef852`, `a86f210`), the model `656fba3`; removed in `f740312`,
+recoverable from `656fba3` · Command: `python pipeline/benchmark/p40_sanity.py --matches J03WMX --seeds 1`,
+`train_shape.py --features 5`, then `train_shape.py --features 5 --report` and `--features 2 --report` (at `656fba3`)
+Public: — (nothing of our match was run)
+Validation (P01 benchmark, `generic`, 3 seeds, held out per match): the gate only; no config was benchmarked
+Changed vs `main.toml`: nothing
+Verdict: **dropped at its gate; no retry (declared before the run)**
+
+**The belief.** In a gap the shape model reads each team alone, so a change of team shows only once a team's shape has
+reorganised, seconds late (A26). One thing visible from the players at once is who is being run at: defenders close
+down the carrier and the players near him, and after a turnover the team that lost the ball presses at once (the
+velocity pressure of Bekkers' pressing intensity; the pressure event's ~5 yards). Version 5 adds, per team, for each of
+its players the speed at which the nearest opponent within 5 m approaches (0 if none, NaN for a pair closer than
+0.01 m), as the mean, the 90th percentile and the share above 2 m/s, and the teams' difference of the 90th percentile now
+and over 2 s before and after. The constants were declared, not knobs; players only.
+
+**Declared before the run** (the advisor's ruling of 02:50, amendment 3): a feature sanity step; the gate (i) the gap
+log-loss at most 0.3059 and (ii) on the hand-over gaps at most 0.3272, with version 2's cells reproducing R039's exactly;
+one config `p40_v5`; no retry.
+
+**The run.** The sanity step (J03WMX, seed 0): version 2's 42 columns equal in version 5 (served separately), the nine
+new columns never NaN and never constant (standard deviations 0.07 to 1.21). Training 03:14 to 03:22. The reports (held
+out, seeds pooled; log-loss, accuracy):
+
+| version | alive frames | ball missing (the gate) | hand-over gaps (290,525) | same team (383,579) | unknown (11,143) | touch-episode agreement |
+|---|---|---|---|---|---|---|
+| 2 | 0.3213, 0.8636 | **0.3189**, 0.8645 | 0.3402, 0.8516 | 0.2981, 0.8769 | 0.4804, 0.7712 | 0.8470 |
+| 5 | 0.3152, 0.8676 | **0.3140**, 0.8683 | 0.3363, 0.8542 | 0.2920, 0.8817 | 0.4921, 0.7738 | 0.8529 |
+
+- Version 2 reproduced R039's cells exactly.
+- **Both gates miss**: 0.3140 against at most 0.3059 (0.0049 of the 0.013 needed), and the hand-over gaps 0.3363 against
+  at most 0.3272 (0.0039 of 0.013; better than version 2 on 6 of 7 matches, worse on J03WN1).
+- The touch-episode agreement rose by 0.006, under the +0.02 that T58's warning would have flagged: the columns do not
+  replay the touch rule.
+- No retry, as declared; the benchmark was not run.
+
+**What it says.** Unlike P37's columns, the pressure columns are new information and help where they speak, in the gaps
+and on the hand-overs, on 6 of 7 matches. But the gain is P33's size (0.0049 of gap log-loss against P33's 0.0052), which
+by P30's rate would have moved the benchmark by about +0.002, well under the bar. The gate did its job: it turned away a
+real but small signal before a benchmark that would most likely have read as noise. Shape features look used up as a way
+into the gaps (the advisor's note after P33, R035); version 5 is retired with 3 and 4.
+
+### R042 — P30 + P32 adopted into `main.toml` (Tian's decision, 2026-11-13)
+Proposal: P30 (R033) and P32 (R037), together · Code: `33d5ad7` (`main.toml`; the models `shape_possession_v2_hgb.json`
+and `team_model_hgb.json` committed in the night's chains) · Command: `python pipeline/run.py
+pipeline/configs/main.toml --rebuild-cache` (twice), `python pipeline/run.py pipeline/configs/main.toml --score`
+Public: macroF1 0.7199, spellF1 0.4737, 21 possessions with a mean of 13.4 s (a correctness check only, T01)
+Validation (P01 benchmark, `generic`, 3 seeds): 0.5891 raw and 0.5963 coarse pooled spellF1 (mean 0.5927), R037's
+`p32_w030`, against R030's 0.5414 and 0.5829 (mean 0.5622): +0.0305 (raw +0.0477, coarse +0.0133)
+Changed vs `main.toml`: the shape source reads `pipeline/models/shape_possession_v2_hgb.json` (P30); a fourth source,
+`team_model` (`pipeline/models/team_model_hgb.json`, weight 0.3, where the ball is seen; P32)
+Verdict: **adopted** (Tian, on the morning after the night of 12 to 13 Nov)
+
+**Why.** Each cleared the bar declared before its run: P30 against R030's copy (R033: +0.0143, all seven matches; fresh
+seeds +0.0131), P32 on top of P30 (R037: +0.0162, all seven matches; fresh seeds +0.0160). Together +0.0305 on the
+mean of the two truths, under both truths, and unchanged under declared wrong-team slots (A27, light ones only). The
+decoder's constants and the shift are R030's; R030's shift rule re-derived the same shift with the new sources. Both
+models were trained on DFL under `generic` only and pass `--verify` at the night's tip.
+
+**The checks on our match, pass or fail only** (declared before; they chose nothing, T01):
+
+| check | R030's file (`2dd51320…`) | R042's file (`aae79a04…`) | rule |
+|---|---|---|---|
+| P30's transfer gate: version 2's `full` `touch_agreement`, scope `all` | (version 1: 0.8199) | **0.8317** on 41,052 frames | at least 0.7656 (R033) |
+| the file, twice from a rebuilt ATD cache | `2dd51320…` | **`aae79a04…`** both times, valid | the same twice |
+| from a clean clone of `33d5ad7` (same laptop, the team's venv, rebuilt cache) | — | the same sha256, written to `Un Dia de Partit.csv` beside the repository; the validator OK | the same |
+| `D` share of the graded frames | 34.5% | **34.4%** | [30%, 62%] |
+| H, A of the graded frames | 38.5%, 27.0% | 38.2%, 27.4% | reported |
+| `X` frames inside the graded blocks | 0 | 0 | none |
+| possessions (half 1 + half 2) | 393 (187 + 206) | 386 (186 + 200) | reported |
+| possessions per graded minute | 3.71 | 3.64 | reported |
+| graded frames changed | | 2.65% | reported |
+
+- *The public window, as a gross-error check:* macroF1 0.7199 against the constant files' 0.2102 (all `H`), 0.1705
+  (all `A`) and 0.1092 (all `D`); each source agrees with it on more than half of its frames (`controlled_touch` 86.8%
+  of 5,484, `dead_ball_model` 86.5% of 7,500, `shape_possession` 92.5% of 6,031, `team_model` 91.9% of 5,640).
+  **Pass.** For the record only: spellF1 0.4737 and 21 possessions against the truth's 17 (R030's file: 0.5029, 18).
+  One possession moves that spellF1 by about 0.06 and the window ranks versions wrongly (T01): it chose nothing and
+  says nothing about the full match.
+- *P32* has no transfer check on our match (R037): its stated risks are wrong-team slots (T32; A27 tested light ones
+  only) and `generic`'s gaps, which ignore the play (T38, T39).
+
+**What it changes.** `main.toml`'s file is now `aae79a0446dabdf565d86b95f03acf0a53b5698cf3d80033c25bf7d49cbd3bdb`.
+The night's candidate configs (`pipeline/configs/candidates/`) are removed: `main.toml` is the first, and the check
+that pinned them to their benchmark configs now pins `main.toml` to `pipeline/benchmark/configs/p32/p32_w030.toml`.
+P30 alone (`p30_w030`) stays in the benchmark's configs as the fallback's record.
+
 ## Submission log
 
 The form keeps only the last response before the deadline, so log every upload.
@@ -10225,6 +11117,14 @@ clean clone of `6864c13`, the night's last commit before this line, with every d
 one laptop (AMD Ryzen 5 5500U): a second CPU is still to do (T21). A copy named `Un Dia de Partit.csv` sits beside the repository
 (`C:\Users\Tian\Desktop\`), passes `validate_submission.py`, and has **NOT been uploaded**: the upload is Tian's. On 10 Nov Tian reviewed the two choices that R030 lists as
 not obvious and kept the declared outcome, so this is the file to upload.
+
+`main.toml` was rewritten a ninth time by R042 (2026-11-13, Tian's decision): P30 + P32 adopted (the version 2 shape
+model and the team model where the ball is seen). It now produces sha256
+`aae79a0446dabdf565d86b95f03acf0a53b5698cf3d80033c25bf7d49cbd3bdb` (commit `33d5ad7`): the same on two runs from a
+rebuilt cache and from a clean clone of that commit (the same laptop and environment; a second CPU is still to do,
+T21). A copy named `Un Dia de Partit.csv` sits beside the repository (`C:\Users\Tian\Desktop\`), replacing R030's,
+passes `validate_submission.py`, and has **NOT been uploaded**: the upload is Tian's. R030's file (`2dd51320…`) is
+rebuilt by checking out `8eaf5c9`.
 
 **10 Nov 2026: do not upload R029's file** (`762f9073...`). By our reading of the organisers' reply of 5 Nov, its models
 and constants stood on a degradation fitted on our own match ([rules.md](rules.md)). It can no longer be rebuilt from

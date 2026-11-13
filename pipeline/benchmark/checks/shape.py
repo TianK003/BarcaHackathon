@@ -22,7 +22,11 @@ then runs with numpy alone. What is held against it here:
   refused (test_shape_report_is_aggregates, test_shape_report_holds_the_held_out_numbers,
   test_shape_report_refuses_what_would_score_in_sample), the stop rule is the Design's number
   (test_shape_stop_rule_is_the_designs), and `touch_agreement` counts what it says on a hand-built scene
-  (test_shape_touch_agreement_counts_kept_frames, test_shape_touch_agreement_uses_the_conventions_rule_and_the_fold).
+  (test_shape_touch_agreement_counts_kept_frames, test_shape_touch_agreement_uses_the_conventions_rule_and_the_fold);
+* the report's gap cells (P37's, kept when P37 was dropped; handover, same team and unknown alive gap frames, by the
+  touch rule at `team_features.TOUCH_RULE`) are worked out here by loops and partition the missing cell
+  (test_shape_gap_classes_on_a_synthetic_scene, test_shape_gap_classes_equal_a_loop_on_random_scenes,
+  test_shape_report_gap_cells_partition_the_missing_cell).
 
 Everything runs on arrays and synthetic matches made here (checks/common.py): none reads data, and none of the numbers
 printed is a figure of any match. The one fixture that takes a few seconds, three matches whose truth is a function of
@@ -51,8 +55,8 @@ from pipeline.benchmark.checks.common import (A, H, NotRun, leaks, loading, rand
                                               tracking_calibration)
 from pipeline.benchmark.run import BenchmarkError
 from pipeline.contracts import RunContext
-from pipeline.evidence import controlled_touch, shape_features, shape_possession, trees
-from pipeline.selftest import expect_error, play_inputs, shape_model, write_shape_model
+from pipeline.evidence import controlled_touch, shape_features, shape_possession, team_features, trees
+from pipeline.selftest import (beside_ball, expect_error, play_inputs, shape_model, team_scene, write_shape_model)
 
 # Params
 NAMES = shape_features.FEATURE_NAMES
@@ -292,9 +296,9 @@ def test_shape_trainer_never_passes_truth():
         seen, real = [], shape_features.features
         match = matches["RND001"]
 
-        def spy(inputs):
+        def spy(inputs, version=1):
             seen.append([leaks(inputs, other) for other in matches.values()])      # against every match's truth
-            return real(inputs)
+            return real(inputs, version)
         shape_features.features = spy
         real_fit = trainer.fit
         trainer.fit = recording_fit([])
@@ -422,6 +426,56 @@ def test_shape_artifact_round_trip():
         expect_error(ValueError, lambda: trainer.write(os.path.join(root, "big.json"), big), "10")
         assert not os.path.exists(os.path.join(root, "big.json"))
         expect_error(ValueError, lambda: trainer.dumps({"x": float("nan")}), "NaN")
+
+
+def test_shape_trainer_version_2_names_its_features_and_version_1_is_unchanged():
+    """P30: `version=2` trains on the 42 columns and the file says so; the default is version 1, byte for byte."""
+    matches, artifact = planted()
+    calibration = synthetic_calibration()
+    names2 = shape_features.feature_names(2)
+    assert len(names2) == 42
+    artifact2 = trainer.train("gaps", PLANTED_SEEDS, PLANTED_STRIDE, matches=matches, calibration=calibration,
+                              version=2)
+    assert artifact2["feature_version"] == 2 and artifact2["features"] == list(names2)
+    assert sorted(artifact2["folds"]) == list(FOLD_IDS) and "full" in artifact2
+    for name, model in list(artifact2["folds"].items()) + [("full", artifact2["full"])]:
+        trees.check_trees(model, 42, name, "shape_possession")
+        assert any(feature >= len(NAMES) for tree in model["trees"] for feature in tree["feature"]), (
+            "{} never split on a column of version 2".format(name))
+    with tempfile.TemporaryDirectory() as root:
+        path = os.path.join(root, "v2.json")
+        trainer.write(path, artifact2)
+        shape_possession.load(path)                       # the source accepts it: names, version and tree width agree
+    # the artifact trained with version=1 given is the one trained without the keyword
+    explicit = trainer.train("gaps", PLANTED_SEEDS, PLANTED_STRIDE, matches=matches, calibration=calibration,
+                             version=1)
+    assert trainer.dumps(explicit) == trainer.dumps(artifact)
+    assert artifact["feature_version"] == 1 and artifact["features"] == list(NAMES)
+    # what is refused
+    for bad in (3, 4, 5, 0, True, 2.0, None, "2"):
+        expect_error(ValueError, lambda: trainer.rows(*_rows_args(matches), version=bad), "shape_features", "version")
+    expect_error(ValueError, lambda: trainer.augment(np.zeros((4, 26)), np.zeros(4), version=2), "train_shape", "42")
+    assert trainer.DEFAULT_MODEL_PATHS == {1: "pipeline/models/shape_possession_hgb.json",
+                                           2: "pipeline/models/shape_possession_v2_hgb.json"}
+    assert trainer.DEFAULT_MODEL_PATH == os.path.join(trainer.ROOT, "pipeline", "models", "shape_possession_hgb.json")
+    args = trainer.build_parser().parse_args([])
+    assert args.features == 1
+    assert trainer.build_parser().parse_args(["--features", "2"]).features == 2
+    for bad in (["--features", "3"], ["--features", "4"], ["--features", "5"], ["--features", "0"], ["--features", "x"]):
+        buffer = io.StringIO()
+        with contextlib.redirect_stderr(buffer):
+            try:
+                trainer.build_parser().parse_args(bad)
+            except SystemExit:
+                continue
+        raise AssertionError("{} was accepted".format(bad))
+
+
+def _rows_args(matches):
+    match = matches[FOLD_IDS[0]]
+    inputs = trainer.served_inputs(match, "gaps", 0, synthetic_calibration(), None)
+    codes, _ = truth.truth_codes(match)
+    return inputs, codes, 5
 
 
 def test_shape_verify_ignores_only_source_hashes():
@@ -744,16 +798,116 @@ def test_shape_touch_agreement_uses_the_conventions_rule_and_the_fold():
 
 # -- the committed model ----------------------------------------------------------------------------------------------
 
-def test_committed_shape_model_holds_a_fold_for_each_benchmark_match():
-    """A missing or renamed fold would fall back to `full`, which saw every match, and score it in sample silently."""
-    path = trainer.DEFAULT_MODEL_PATH
-    if not os.path.exists(path):
-        raise NotRun("{} is not trained yet; run `python pipeline/benchmark/train_shape.py` and commit it".format(
-            os.path.relpath(path, trainer.ROOT)))
-    with open(path, encoding="utf-8") as handle:
-        artifact = json.load(handle)
-    name = os.path.basename(path)
-    assert sorted(artifact["folds"]) == sorted(sources.MATCH_IDS), (
-        "{}: folds {} are not the seven benchmark matches".format(name, sorted(artifact["folds"])))
-    assert "full" in artifact, "{}: no `full` model".format(name)
-    shape_possession.load(path)
+def test_committed_shape_models_hold_a_fold_for_each_benchmark_match():
+    """A missing or renamed fold would fall back to `full`, which saw every match, and score it in sample silently.
+    Every committed shape file is held to it (versions 1 and 2), and to the `generic` profile with no Calibration
+    digest: none was trained on a profile that reads our match."""
+    for version, path in sorted(trainer.DEFAULT_MODEL_PATHS.items()):
+        path = os.path.join(trainer.ROOT, *path.split("/"))
+        if not os.path.exists(path):
+            raise NotRun("{} is not trained yet; run `python pipeline/benchmark/train_shape.py --features {}` and "
+                         "commit it".format(os.path.relpath(path, trainer.ROOT), version))
+        with open(path, encoding="utf-8") as handle:
+            artifact = json.load(handle)
+        name = os.path.basename(path)
+        assert sorted(artifact["folds"]) == sorted(sources.MATCH_IDS), (
+            "{}: folds {} are not the seven benchmark matches".format(name, sorted(artifact["folds"])))
+        assert "full" in artifact, "{}: no `full` model".format(name)
+        assert artifact["feature_version"] == version, "{}: feature_version {}".format(name, artifact["feature_version"])
+        assert artifact["profile"] == "generic", "{}: trained on profile {!r}".format(name, artifact["profile"])
+        assert artifact["provenance"]["calibration_sha256"] is None, "{}: a Calibration digest is recorded".format(name)
+        shape_possession.load(path)
+
+
+# -- the report's gap cells (P37's, kept on team_features' touch rule) -------------------------------------------------
+
+def control_masks(inputs):
+    """(home, away): the frames `controlled_touch` keeps at `team_features.TOUCH_RULE` (confidence 0.99, hold off) for
+    each team, written out here from the rule's own parameters."""
+    touch = controlled_touch.compute(RunContext(inputs=inputs, seed=0), **team_features.TOUCH_RULE, confidence=0.99,
+                                     hold=0.5).home
+    kept = np.isfinite(touch)
+    return kept & (touch >= 0.5), kept & (touch < 0.5)
+
+
+def gap_scene():
+    """A static ball with a home slot beside it on frames 20 to 39 and 200 to 209, an away slot on 100 to 119, and a
+    home one again on 150 to 159 (so: home, away, home, home, with the ball hidden between every two), in two blocks of
+    which the second holds no episode of its own. Returns (inputs, the frames the ball is missing on)."""
+    n = 400
+    players = np.full((n, 2, 2), np.nan)
+    for frames in (range(20, 40), range(150, 160), range(200, 210)):
+        players[list(frames), 0] = beside_ball(n, frames)[list(frames)]
+    players[100:120, 1] = beside_ball(n, range(100, 120), offset=(-0.5, 0.0))[100:120]
+    ball = np.tile([30.0, 30.0], (n, 1))
+    hidden = np.zeros(n, dtype=bool)
+    for start, stop in ((5, 15), (45, 95), (125, 145), (165, 195), (215, 250), (270, 300), (320, 390)):
+        hidden[start:stop] = True
+    ball[hidden] = np.nan
+    inputs = play_inputs(players, ball, teams=np.array([0, 1]), graded=[(1, 0, 260), (2, 260, 400)])
+    return inputs, hidden
+
+
+def test_shape_gap_classes_on_a_synthetic_scene():
+    """The last controller before a gap against the next after it, inside a block: HANDOVER, SAME_TEAM or UNKNOWN."""
+    inputs, hidden = gap_scene()
+    kinds = trainer.gap_classes(inputs)
+    assert kinds.dtype == np.int8 and kinds.shape == (400,)
+    assert (kinds[~hidden] == 0).all(), "only frames with the ball missing are classified"
+    for span, want in (((5, 15), trainer.UNKNOWN),       # before the block's first episode
+                       ((45, 95), trainer.HANDOVER),     # home 20-39, then away 100-119
+                       ((125, 145), trainer.HANDOVER),   # away, then home 150-159
+                       ((165, 195), trainer.SAME_TEAM),  # home 150-159, then home 200-209
+                       ((215, 250), trainer.UNKNOWN),    # nothing after it in the block (the second block is another)
+                       ((270, 300), trainer.UNKNOWN),    # the second block: nothing of the first one reaches it
+                       ((320, 390), trainer.UNKNOWN)):
+        assert (kinds[span[0]:span[1]] == want).all(), (span, kinds[span[0]:span[1]])
+    assert {trainer.HANDOVER, trainer.SAME_TEAM, trainer.UNKNOWN} == {1, 2, 3}
+    home, away = control_masks(inputs)
+    assert np.flatnonzero(home).tolist() == list(range(20, 40)) + list(range(150, 160)) + list(range(200, 210))
+    assert np.flatnonzero(away).tolist() == list(range(100, 120))
+
+
+def loop_classes(inputs):
+    """gap_classes, one frame at a time: look backwards and forwards inside the block for a kept frame."""
+    home, away = control_masks(inputs)
+    present = inputs.atd.ball_present
+    out = np.zeros(len(present), dtype=np.int8)
+    for _, start, stop in inputs.graded:
+        for frame in range(start, stop):
+            if present[frame]:
+                continue
+            before = next((t for t in range(frame, start - 1, -1) if home[t] or away[t]), None)
+            after = next((t for t in range(frame, stop) if home[t] or away[t]), None)
+            if before is None or after is None:
+                out[frame] = trainer.UNKNOWN
+            else:
+                out[frame] = trainer.SAME_TEAM if bool(home[before]) == bool(home[after]) else trainer.HANDOVER
+    return out
+
+
+def test_shape_gap_classes_equal_a_loop_on_random_scenes():
+    for seed in range(6):
+        players, ball, teams, graded = team_scene(seed)
+        inputs = play_inputs(players, ball, teams=teams, graded=graded)
+        assert np.array_equal(trainer.gap_classes(inputs), loop_classes(inputs)), seed
+
+
+def test_shape_report_gap_cells_partition_the_missing_cell():
+    """The three gap cells of the report hold the alive ball-missing frames the missing cell holds, split by class."""
+    report = planted_report()
+    json.dumps(report, allow_nan=False)
+    gaps = report["gap_classes"]
+    assert sorted(gaps) == ["per_match", "pooled"] and sorted(gaps["per_match"]) == list(FOLD_IDS)
+    for name, cell in list(gaps["per_match"].items()) + [("pooled", gaps["pooled"])]:
+        whole = report["pooled"] if name == "pooled" else report["per_match"][name]
+        assert sorted(cell) == ["handover", "same_team", "unknown"]
+        for part in cell.values():
+            assert set(part) == {"frames", "log_loss", "accuracy"}
+        assert sum(part["frames"] for part in cell.values()) == whole["missing"]["frames"] > 0, name
+        total = sum(part["frames"] * part["log_loss"] for part in cell.values() if part["frames"])
+        assert abs(total - whole["missing"]["frames"] * whole["missing"]["log_loss"]) <= 1e-9, name
+    lines = trainer.render_report(report)
+    assert any(line.startswith("gaps") and "handover" in line for line in lines)
+    without = trainer.render_report({key: value for key, value in report.items() if key != "gap_classes"})
+    assert [line for line in lines if not line.startswith("gaps")] == without

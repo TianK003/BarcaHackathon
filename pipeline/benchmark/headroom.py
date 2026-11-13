@@ -560,6 +560,7 @@ def run_headroom(config_path, *, profile=DEFAULT_PROFILE, seeds=None, truth="raw
     a repeated match, a number of seeds below 1, a calibration that does not suit the profile. The files are a few
     small configs in a fixed folder, rewritten by the next run, and no report is written for a run that was refused.
     """
+    run._check_profile(profile)         # C2: a sensitivity profile is refused, before anything is built
     if truth not in run.TRUTHS:
         raise run.BenchmarkError("truth {!r} is not one of: {}".format(truth, ", ".join(run.TRUTHS)))
     config = load_config(config_path)

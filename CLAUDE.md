@@ -58,7 +58,8 @@ tunes or uses the video.
   statistics (the old profiles: `gaps` transplants our missing-ball masks), because both models and every constant
   chosen on it stand on data that is not only external. The organisers answered question 1 with the clarification
   alone, and Tian decided the redo on 9 Nov (`docs/proposals.md` P27). **Done 10 Nov (R030):** both models are trained,
-  and every numeric constant of `main.toml` is chosen, on the `generic` profile, into which no measurement of ours enters.
+  and every numeric constant of `main.toml` is chosen, on the `generic` profile, into which no measurement of ours enters
+  (R042's two new models, 13 Nov, too).
   It quotes two figures from the organisers' DATA.md (41% of graded frames without a ball, a mean of 20.5 tracked
   objects). No text allows quoting them by name; Tian decided on 10 Nov to keep them, reading statistics that the
   organisers publish in the task statement as public information, not as the provided data (stated in the technical
@@ -101,9 +102,14 @@ aggregates only, never raw data rows.
   scores, verdict. Log failures too, and every upload in its submission log. A01–A03 hold measurements that should
   shape any design; A05–A09 and R002–R005 are the benchmark's (P01, done; R004c's `tracking` was the default until
   R030); A13 says where `main.toml`'s remaining spellF1 is (who has the ball, not the dead ball); A21 audits
-  `main.toml` against the 3 Nov rules; R030 (P27) is today's `main.toml`: both models retrained and every numeric
-  constant re-chosen on the `generic` profile, which measures nothing of our match (Tian kept its outcome on 10 Nov);
-  A25 repeats A13 and A19 on `generic` (the same reading); R031 is P28, dropped at its gate.
+  `main.toml` against the 3 Nov rules; R030 (P27) retrained both models and re-chose every numeric constant on the
+  `generic` profile, which measures nothing of our match (Tian kept its outcome on 10 Nov); R042 is today's
+  `main.toml`: R030's plus P30 (the version 2 shape model) and P32 (the team model where the ball is seen), adopted by
+  Tian on 13 Nov (sha256 `aae79a04…`);
+  A25 repeats A13 and A19 on `generic` (the same reading); R031 is P28, dropped at its gate. R032 to R041, A26 and
+  A27 are the night of 12 to 13 Nov (Tian away, an advisor agent in Tian's place): P30 and P32 cleared the bar and
+  stack (+0.0305 on the benchmark), adopted as R042; P29, P33 to P35, P37, P39 and P40 were dropped and their code
+  removed; A26 locates the remaining edge error at changes of team inside ball gaps.
 - `docs/traps.md` — pitfalls `T01…`. Add one whenever something costs real time.
 - `docs/technical_document.md` — the draft of deliverable 3. Update it when a pipeline decision lands.
 
@@ -140,6 +146,9 @@ python pipeline/benchmark/p27_sensitivity.py REF STEM ...   # R030: six-seed rep
 python pipeline/benchmark/diagnose.py CONFIG --drop-match-only   # A19: the IoU ladder decomposed, sources' and posterior's calibration
 python pipeline/benchmark/fidelity.py --profile tracking --seeds 3   # gates + WARNs: the copy against our match
 python pipeline/benchmark/train_shape.py [--verify|--report]   # P07: train the shape model as JSON; --verify, --report
+python pipeline/benchmark/train_team.py [--verify|--dry-run|--feasibility]   # P32: the team model where the ball is seen
+python pipeline/benchmark/p29_bar.py pick|bar|guard --reference REF STEM ...   # the night of 12 Nov's bar: mean +0.005,
+                                                        # p <= 0.05, neither truth -0.005; exit 0 pass, 2 fail
 python pipeline/benchmark/conventions.py public|dfl|compare|latency|shift ...   # P02: timing, inspected; DFL-lag shift
 python pipeline/benchmark/metrica.py [--offline]        # P16: Metrica's sample games' grain against the two truths (R023);
                                                         # not to be run since 5 Nov: the data has no licence (docs/rules.md)
@@ -165,7 +174,9 @@ The scorer writes `evaluation/scoreboard.csv` and `evaluation/reports/<name>.jso
 
 The benchmark's `run.py` takes `--profile generic|clean|gaps|tracking|context` (default `generic`, version 1, since
 R030: it reads nothing of our match; `gaps`, `tracking`, the default until R030, and `context`, which fails two of its
-gates, R005, read our match and are kept for the record of R002 to R029 only) and `--truth raw|coarse|both`; the
+gates, R005, read our match and are kept for the record of R002 to R029 only; `generic_swap05` and `generic_swap20`,
+A27's sensitivity profiles with declared wrong-team slots, are accepted by `run.py` alone and choose nothing) and
+`--truth raw|coarse|both`; the
 trainers, `choose.py` and `conventions.py` default to `generic` too. `fidelity.py` takes `--profile
 gaps|tracking|context` (default `tracking`; `clean` degrades nothing and `generic` is not held to our match, so
 neither has gates). Both take `--seeds N` (default 3), `--matches ID ...`, `--data-dir D` and `--no-write`;
@@ -200,8 +211,9 @@ keeps that convention: its scripts swap their own folder on `sys.path` for the r
   `data/cache/atd_tactical/`) → `evidence` (per-frame `alive`/`home` probabilities, NaN = no opinion) → `decode` (one
   block per graded half) → `refine` → `output` (LF CSV, official validation, manifest in `data/runs/`). Components are
   plain functions in each stage's `REGISTRY` (`evidence` holds `nearest_player`, `ball_presence`, `controlled_touch`,
-  `dead_ball_rules`, `smart_tagging`, `dead_ball_model`, `shape_possession` and `restart_team`, the last three reading
-  the trained JSON models in `pipeline/models/`; `smart_tagging` is Smart Tagging's team votes, in `main.toml` from
+  `dead_ball_rules`, `smart_tagging`, `dead_ball_model`, `shape_possession`, `team_model` and `restart_team`, the last
+  four reading the trained JSON models in `pipeline/models/` (`main.toml` since R042: `controlled_touch`,
+  `dead_ball_model`, `shape_possession` on the version 2 model and `team_model`); `smart_tagging` is Smart Tagging's team votes, in `main.toml` from
   R017 (P08) until R029 took it out under the 3 Nov rules (its `c_team` was measured on this match, `docs/rules.md`),
   and declares `MATCH_ONLY`, so the benchmark runs a config that has it with `--drop-match-only`; `restart_team` is
   a restart-team vote, measured but not in `main.toml`, P17; `decode`

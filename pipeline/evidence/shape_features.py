@@ -1,4 +1,5 @@
-"""P07's per-frame features of the two teams' shape and movement, none of which reads the ball. Twenty-six numbers.
+"""P07's per-frame features of the two teams' shape and movement, none of which reads the ball. Twenty-six numbers
+(version 1), or forty-two with P30's version 2.
 
 The ball is missing from the tracking on 41% of the graded frames, in long gaps (a median 10.7 s, docs/results.md A01,
 T12), and those are the frames nothing else says who has it on. A team in possession is more advanced, wider, and
@@ -25,6 +26,23 @@ trained on matches whose ball has been hidden and be asked about the gaps of our
 
     adv_gap                 h_adv_mean - a_adv_mean: who is further up the pitch
     n_diff                  h_n - a_n
+
+Version 2 (P30) is version 1's matrix, its columns copied and not recomputed (a model trained on version 1 keeps
+reading what it was trained on), with eight more columns per team after the twelve: twenty `h_*`, twenty `a_*`, then
+`adv_gap` and `n_diff` (42).
+
+    length                  adv_p90 - adv_p10: how stretched the team is between its lines
+    spread                  mean distance, in metres, of the present slots to their centroid (x and y both)
+    adv_past_2s, _5s, _10s  adv_mean now minus adv_mean k seconds earlier: the team's advance over the last k seconds
+    adv_fut_2s, _5s, _10s   adv_mean k seconds later minus adv_mean now: its advance over the next k seconds
+
+The one-sided changes are windows of the same block (nothing reads across half time) and NaN where either end is NaN,
+a team's absence included; like `d_adv_ks` they are the trees' missing value there. `features(inputs, version)` takes
+the version (1 by default) and `feature_names(version)` and `columns(version)` give its names and indices.
+
+Versions 3 (P33, git history 411b881), 4 (P37, git history 963861b) and 5 (P40, git history 656fba3) were dropped at
+their gates and are retired: they are never reused for another matrix (the next recipe is 6), and `feature_names`,
+`features` and the model loader refuse them.
 
 Each team is seen in its own frame. A team's `adv` is x or L - x, whichever points at the goal it attacks, so no column
 carries "home is on the left" or "home is Barcelona": the classifier cannot learn a home bias from the geometry, and
@@ -63,11 +81,18 @@ from pipeline.evidence import kinematics, play_features
 
 # Params
 FEATURE_VERSION = 1
+VERSIONS = (1, 2)                                         # 3 (P33, 411b881), 4 (P37, 963861b) and 5 (P40, 656fba3)
+                                                          # are retired and never reused; refused like any other
 TEAM_COLUMNS = ("n", "adv_mean", "adv_p10", "adv_p90", "width", "vel_adv", "speed_mean", "att_third", "own_third",
                 "d_adv_1s", "d_adv_2s", "vel_adv_1s")
 CROSS_COLUMNS = ("adv_gap", "n_diff")
 FEATURE_NAMES = (tuple("h_" + name for name in TEAM_COLUMNS) + tuple("a_" + name for name in TEAM_COLUMNS)
                  + CROSS_COLUMNS)
+ONE_SIDED_S = (2.0, 5.0, 10.0)                            # version 2: seconds behind and ahead of the frame
+TEAM_COLUMNS_V2 = TEAM_COLUMNS + ("length", "spread") + tuple(
+    "adv_{}_{}s".format(side, int(seconds)) for side in ("past", "fut") for seconds in ONE_SIDED_S)
+FEATURE_NAMES_V2 = (tuple("h_" + name for name in TEAM_COLUMNS_V2) + tuple("a_" + name for name in TEAM_COLUMNS_V2)
+                    + CROSS_COLUMNS)
 LOW_PERCENTILE, HIGH_PERCENTILE = 10.0, 90.0
 DISPLACEMENT_S = (("d_adv_1s", 1.0), ("d_adv_2s", 2.0))   # seconds either side of the frame
 VELOCITY_WINDOW_S = 1.0                                   # vel_adv_1s: seconds either side of the frame
@@ -75,30 +100,53 @@ CHUNK = 1024                                              # frames per step of t
 
 COLUMN = {name: index for index, name in enumerate(FEATURE_NAMES)}
 TEAM_WIDTH = len(TEAM_COLUMNS)
-_MEMO = weakref.WeakKeyDictionary()
+_NAMES = {1: FEATURE_NAMES, 2: FEATURE_NAMES_V2}
+_BLOCK_OF_WIDTH = {len(_NAMES[1]): TEAM_WIDTH, len(_NAMES[2]): len(TEAM_COLUMNS_V2)}   # matrix width -> a team's block
+_MEMO = weakref.WeakKeyDictionary()                       # Inputs -> {version: (names, X)}
 
 
-def features(inputs):
-    """(names, X): FEATURE_NAMES and the (n, 26) float64 feature matrix of `inputs`, read-only, memoised per object."""
-    cached = _MEMO.get(inputs)
-    if cached is None:
-        cached = _MEMO[inputs] = (FEATURE_NAMES, _build(inputs))
-    return cached
+def feature_names(version):
+    """The column names of a feature version (1: FEATURE_NAMES, 2: FEATURE_NAMES_V2); refuses any other version, 3, 4 and 5
+    (retired) included."""
+    if type(version) is not int or version not in VERSIONS:      # not True or 2.0, which `in` would let through
+        raise ValueError("shape_features: version must be one of {} (3, 4 and 5 are retired), got {!r}".format(
+            VERSIONS, version))
+    return _NAMES[version]
+
+
+def columns(version):
+    """{name: column index} of a feature version; refuses any other version."""
+    return {name: index for index, name in enumerate(feature_names(version))}
+
+
+def features(inputs, version=1):
+    """(names, X): the names of `version` and its (n, 26) or (n, 42) float64 feature matrix of `inputs`, read-only,
+    memoised per object and version. Version 2 holds version 1's columns, unchanged. Refuses any other version."""
+    feature_names(version)
+    memo = _MEMO.setdefault(inputs, {})
+    if version not in memo:
+        if 1 not in memo:
+            memo[1] = (FEATURE_NAMES, _build(inputs))
+        if version == 2:
+            memo[2] = (FEATURE_NAMES_V2, _build_v2(inputs, memo[1][1]))
+    return memo[version]
 
 
 def swap(X):
-    """A new array: the features of the same frames with the two teams relabelled, from the features X (..., 26).
+    """A new array: the features of the same frames with the two teams relabelled, from the features X (..., 26) of
+    version 1 or (..., 42) of version 2; refuses any other width.
 
     The `h_*` and `a_*` blocks trade places and the two cross columns change sign. Applied twice it is the identity.
     """
     X = np.asarray(X, dtype=np.float64)
-    if X.ndim == 0 or X.shape[-1] != len(FEATURE_NAMES):
-        raise ValueError("shape_features.swap: X must have {} columns (FEATURE_NAMES), got shape {}".format(
-            len(FEATURE_NAMES), X.shape))
+    if X.ndim == 0 or X.shape[-1] not in _BLOCK_OF_WIDTH:
+        raise ValueError("shape_features.swap: X must have {} columns (a feature version's width), got shape {}".format(
+            " or ".join(str(width) for width in _BLOCK_OF_WIDTH), X.shape))
+    block = _BLOCK_OF_WIDTH[X.shape[-1]]
     out = np.empty(X.shape)
-    out[..., :TEAM_WIDTH] = X[..., TEAM_WIDTH:2 * TEAM_WIDTH]
-    out[..., TEAM_WIDTH:2 * TEAM_WIDTH] = X[..., :TEAM_WIDTH]
-    out[..., 2 * TEAM_WIDTH:] = 0.0 - X[..., 2 * TEAM_WIDTH:]    # 0.0 - x, not -x: a zero stays +0.0, as a - h gives
+    out[..., :block] = X[..., block:2 * block]
+    out[..., block:2 * block] = X[..., :block]
+    out[..., 2 * block:] = 0.0 - X[..., 2 * block:]    # 0.0 - x, not -x: a zero stays +0.0, as a - h gives
     return out
 
 
@@ -121,6 +169,50 @@ def _build(inputs):
     X[:, COLUMN["n_diff"]] = X[:, COLUMN["h_n"]] - X[:, COLUMN["a_n"]]
     X.flags.writeable = False
     return X
+
+
+def _build_v2(inputs, X1):
+    """The (n, 42) matrix of version 2: X1's columns copied into their places and the new ones filled in, read-only."""
+    players = kinematics.player_track(inputs)
+    blocks = kinematics.blocks(inputs)
+    teams = np.asarray(inputs.atd.slot_team)
+    column = columns(2)
+    X = np.full((len(X1), len(FEATURE_NAMES_V2)), np.nan)
+    for index, name in enumerate(FEATURE_NAMES):
+        X[:, column[name]] = X1[:, index]
+    for team, prefix in ((0, "h_"), (1, "a_")):
+        adv_mean = X[:, column[prefix + "adv_mean"]]
+        X[:, column[prefix + "length"]] = X[:, column[prefix + "adv_p90"]] - X[:, column[prefix + "adv_p10"]]
+        for start, stop in blocks:
+            if stop > start:
+                _spread_column(X[start:stop, column[prefix + "spread"]], players, np.flatnonzero(teams == team), start)
+            for seconds in ONE_SIDED_S:
+                k = int(round(seconds * inputs.fps))
+                if stop - start > k:
+                    change = adv_mean[start + k:stop] - adv_mean[start:stop - k]    # NaN where either end is
+                    X[start + k:stop, column["{}adv_past_{}s".format(prefix, int(seconds))]] = change
+                    X[start:stop - k, column["{}adv_fut_{}s".format(prefix, int(seconds))]] = change
+    X.flags.writeable = False
+    return X
+
+
+def _spread_column(out, players, slots, start):
+    """Fills `out` (one block, a view) with the mean distance of the team's present slots to their centroid, NaN with
+    no slot, a chunk of frames at a time over contiguous copies of the team's columns, as `_team_columns` does."""
+    if len(slots) == 0:
+        return
+    for low in range(0, len(out), CHUNK):
+        high = min(low + CHUNK, len(out))
+        present = np.ascontiguousarray(players.present[start + low:start + high][:, slots])
+        x = np.ascontiguousarray(players.xy_m[start + low:start + high][:, slots, 0])
+        y = np.ascontiguousarray(players.xy_m[start + low:start + high][:, slots, 1])
+        count = present.sum(axis=1)
+        safe = np.maximum(count, 1)
+        centre_x = np.where(present, x, 0.0).sum(axis=1) / safe
+        centre_y = np.where(present, y, 0.0).sum(axis=1) / safe
+        with np.errstate(invalid="ignore"):
+            distance = np.hypot(x - centre_x[:, None], y - centre_y[:, None])
+        out[low:high] = _where_any(count, np.where(present, distance, 0.0).sum(axis=1) / safe)
 
 
 def _team_columns(out, players, slots, start, stop, prefix, attacks_right, length):

@@ -138,6 +138,11 @@ METRICS = (("spell_f1_mean", "spellF1"), ("macro_f1", "macroF1"))   # what a com
 # printout and the report of a run on it say so (R005: context fails two of its gates).
 SENSITIVITY_ONLY = {"context": "fails two of its gates (R005), the near-line share badly and the missing share "
                                "narrowly: a sensitivity check, not the yardstick"}
+# C2's two profiles (degrade.SENSITIVITY_PROFILES) are described apart, so that SENSITIVITY_ONLY stays context's: name ->
+# the note that the printout and the report carry. They choose nothing: no tool but this runner accepts them.
+SWAP_NOTES = {name: "is a sensitivity profile (C2): generic v1 plus wrong-team slot episodes at a declared {:.2f}; a "
+                    "description that trains, chooses, ranks and gates nothing, its grid declared knowing our measured "
+                    "share".format(share) for name, share in degrade.SENSITIVITY_PROFILES.items()}
 # What _unavailable adds when the source that asked for the missing asset is one that declares MATCH_ONLY.
 DROP_HINT = (" Run with --drop-match-only to benchmark the config without its match-only sources (they are "
              "listed in the report).")
@@ -203,14 +208,26 @@ def make_atd(match, profile, seed, calibration=None):
 
 
 def _check_profile(profile):
+    """Every tool but the runner's own command goes through this: a sensitivity profile (C2) is refused."""
+    refused = degrade.sensitivity_refusal(profile, "run")
+    if refused:
+        raise BenchmarkError(refused)
     if profile not in PROFILES:
         raise BenchmarkError("profile {!r} is not one of: {}".format(profile, ", ".join(sorted(PROFILES))))
+
+
+def _check_benchmark_profile(profile):
+    """The runner's own command (main, with allow_sensitivity) also takes C2's two sensitivity profiles."""
+    if profile in degrade.SENSITIVITY_PROFILES:
+        return
+    _check_profile(profile)
 
 
 # -- every config on every match --------------------------------------------------------------------------------------
 
 def evaluate_configs(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_ids=None, matches=None,
-                     calibration=None, truth="raw", data_dir=None, log=print, drop_match_only=False):
+                     calibration=None, truth="raw", data_dir=None, log=print, drop_match_only=False,
+                     allow_sensitivity=False):
     """Run each config on each match and score it; the result holds a JSON-ready report per config.
 
     `config_paths` are TOML files for pipeline.config.load_config; the first is the reference of the comparisons.
@@ -245,11 +262,12 @@ def evaluate_configs(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_id
         raise BenchmarkError("truth {!r} is not one of: {}".format(truth, ", ".join(TRUTHS)))
     return evaluate_truths(config_paths, profile=profile, seeds=seeds, match_ids=match_ids, matches=matches,
                            calibration=calibration, truth_names=(truth,), data_dir=data_dir, log=log,
-                           drop_match_only=drop_match_only)[truth]
+                           drop_match_only=drop_match_only, allow_sensitivity=allow_sensitivity)[truth]
 
 
 def evaluate_truths(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_ids=None, matches=None,
-                    calibration=None, truth_names=TRUTHS, data_dir=None, log=print, drop_match_only=False):
+                    calibration=None, truth_names=TRUTHS, data_dir=None, log=print, drop_match_only=False,
+                    allow_sensitivity=False):
     """{truth: result}: evaluate_configs under each of `truth_names`, every config decoded once per match and seed.
 
     Each config's codes on a match and seed are scored against each truth in turn, so a result is exactly what
@@ -263,7 +281,8 @@ def evaluate_truths(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_ids
     if not truth_names or any(name not in TRUTHS for name in truth_names) or len(set(truth_names)) < len(truth_names):
         raise BenchmarkError("truths {!r}: name one or more of {}, each once".format(truth_names, ", ".join(TRUTHS)))
     configs, dropped = _load_configs(config_paths, drop_match_only)
-    _check_profile(profile)
+    # C2: only the runner's own command line sets allow_sensitivity; every other caller is refused the two profiles.
+    (_check_benchmark_profile if allow_sensitivity else _check_profile)(profile)
     asked_for_seeds = seeds is not None
     seeds = DEFAULT_SEEDS if seeds is None else seeds
     if isinstance(seeds, bool) or not isinstance(seeds, int) or seeds < 1:
@@ -297,7 +316,17 @@ def evaluate_truths(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_ids
                   "graded_frames": int(sum(stop - start for _, start, stop in match.graded)), "fps": int(match.fps),
                   "carried_frames": int(carried["carried_possession_frames"] + carried["carried_status_frames"])}
         for seed in seed_list:
-            atd = make_atd(match, profile, seed, calibration)
+            if profile in degrade.SENSITIVITY_PROFILES:
+                atd, drawn = degrade.degrade(degrade.tracking_view(match), profile, calibration, seed)
+                swap = record.setdefault("swap", {"rows": 0, "episode_rows": 0, "surplus_rows": 0, "seeds": {}})
+                swap["rows"] += drawn["swap"]["graded_rows"]
+                swap["episode_rows"] += drawn["swap"]["episode_rows"]
+                swap["surplus_rows"] += drawn["swap"]["surplus_frames"]
+                swap["seeds"][seed] = {key: drawn["swap"][key] for key in ("onsets", "episodes", "skipped_far")}
+                swap["seeds"][seed].update(episode_share=drawn["swap"]["episode_share"],
+                                           surplus_share=drawn["swap"]["surplus_share"])
+            else:
+                atd = make_atd(match, profile, seed, calibration)
             inputs = match_inputs.MatchInputs(match, atd, profile=profile, seed=seed, data_dir=data_dir)
             if seed == seed_list[0]:
                 record["sources"] = inputs.atd_manifest["sources"]
@@ -310,6 +339,10 @@ def evaluate_truths(config_paths, profile=DEFAULT_PROFILE, seeds=None, match_ids
                                                                     match.match_id, seed)
                 seconds[config.stem] += time.perf_counter() - started
             del atd, inputs, codes
+        if "swap" in record:      # C2: the realised shares over the seeds, aggregates only, never tuned
+            swap = record["swap"]
+            record["swap"] = {"episode_share": swap["episode_rows"] / swap["rows"],
+                              "surplus_share": swap["surplus_rows"] / swap["rows"], "seeds": swap["seeds"]}
         records.append(record)
         log("match     {}   {:,} rows, {:,} graded   truth {}".format(
             record["id"], record["frames"], record["graded_frames"], "+".join(truth_names)))
@@ -505,6 +538,8 @@ def _report(config, halves, records, seed_list, profile, truth, git, environment
     }
     if profile["name"] in SENSITIVITY_ONLY:
         report["sensitivity_only"] = SENSITIVITY_ONLY[profile["name"]]      # only for a profile that is one
+    elif profile["name"] in SWAP_NOTES:
+        report["sensitivity_only"] = SWAP_NOTES[profile["name"]]
     return plain(report)
 
 
@@ -663,6 +698,21 @@ def render(result):
                  len(ids), git["commit"] or "?", " +dirty" if git["dirty"] else "")]
     if profile["name"] in SENSITIVITY_ONLY:
         lines.append("note      profile {} {}".format(profile["name"], SENSITIVITY_ONLY[profile["name"]]))
+    elif profile["name"] in SWAP_NOTES:
+        lines.append("note      profile {} {}".format(profile["name"], SWAP_NOTES[profile["name"]]))
+    if any("swap" in record for record in result["matches"]):
+        rows = [record["swap"] for record in result["matches"]]
+        lines.append("swap      realised episode share {} (declared {}), observable surplus share {} (mean of the "
+                     "matches; reported, never tuned or rescaled)".format(
+                         _number(sum(r["episode_share"] for r in rows) / len(rows)),
+                         degrade.SENSITIVITY_PROFILES[profile["name"]],
+                         _number(sum(r["surplus_share"] for r in rows) / len(rows))))
+        for record in result["matches"]:
+            lines.append("          {}: {}".format(record["id"], "; ".join(
+                "seed {} onsets {} episodes {} (skipped, no pair within {} m: {}) episode share {} surplus share {}"
+                .format(seed, one["onsets"], one["episodes"], degrade.NEAR_PAIR_M, one["skipped_far"],
+                        _number(one["episode_share"]), _number(one["surplus_share"]))
+                for seed, one in sorted(record["swap"]["seeds"].items()))))
     if result["calibration"] is not None:
         lines.append("calibration   {}... (version {}): {}".format(
             result["calibration"]["sha256"][:12], result["calibration"]["version"], PROVENANCE[profile["name"]]))
@@ -767,12 +817,20 @@ def _interval(interval, excludes=None, signed=False):
 
 # -- the command line -------------------------------------------------------------------------------------------------
 
-def profile_help():
+def profile_help(benchmark=False):
     """The --profile help: the profiles, the default, and which of them are a sensitivity check and not the
-    yardstick."""
-    return "how the tracking is made: {} (default {}){}".format(
-        ", ".join(sorted(PROFILES)), DEFAULT_PROFILE,
+    yardstick. Only the runner's own command (`benchmark`) names C2's two sensitivity profiles, and says that they
+    choose nothing."""
+    names = sorted(PROFILES) + (sorted(degrade.SENSITIVITY_PROFILES) if benchmark else [])
+    text = "how the tracking is made: {} (default {}){}".format(
+        ", ".join(names), DEFAULT_PROFILE,
         "".join("; {} {}".format(name, reason) for name, reason in sorted(SENSITIVITY_ONLY.items())))
+    if benchmark:
+        text += ("; {} (C2): generic v1 plus wrong-team slot episodes at a declared {} (0.05 or 0.20); they choose "
+                 "nothing: nothing is trained, chosen, ranked or gated on them".format(
+                     ", ".join(sorted(SWAP_NOTES)), " / ".join("{:.2f}".format(v) for _, v in
+                                                               sorted(degrade.SENSITIVITY_PROFILES.items()))))
+    return text
 
 
 def main(argv=None):
@@ -782,7 +840,7 @@ def main(argv=None):
     parser.add_argument("configs", nargs="+", metavar="CONFIG",
                         help="TOML configs, e.g. pipeline/benchmark/configs/nearest_w50.toml; the first is the "
                              "reference that the others are compared with")
-    parser.add_argument("--profile", default=DEFAULT_PROFILE, help=profile_help())
+    parser.add_argument("--profile", default=DEFAULT_PROFILE, help=profile_help(benchmark=True))
     parser.add_argument("--seeds", type=int,
                         help="degradation seeds per match (default {}; the clean profile has just one, and says so "
                              "if you ask for more)".format(DEFAULT_SEEDS))
@@ -800,7 +858,7 @@ def main(argv=None):
     try:
         results = evaluate_truths(args.configs, profile=args.profile, seeds=args.seeds, match_ids=args.matches,
                                   truth_names=TRUTHS if args.truth == BOTH else (args.truth,), data_dir=args.data_dir,
-                                  drop_match_only=args.drop_match_only)
+                                  drop_match_only=args.drop_match_only, allow_sensitivity=True)
         paths = [] if args.no_write else [path for result in results.values() for path in write_reports(result)]
     except (ConfigError, BenchmarkError, OSError) as error:
         # The expected failures get a sentence: a config to fix, a profile or match that does not exist, a source that

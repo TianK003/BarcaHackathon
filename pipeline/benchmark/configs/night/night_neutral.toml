@@ -1,0 +1,41 @@
+# Close-out of the night of 12 Nov 2026 (docs/results.md R033, R034): the night's candidate, p30/p30_w030.toml, with
+# P31's flag on. Run once beside the candidate and held to the guard against it; P31 never enters the candidate by
+# itself (docs/superpowers/specs/2026-11-12-p29-p31-design.md, "After the three lanes").
+
+description = "Night of 12 Nov: p30_w030 (the version 2 shape model at weight 0.3) with team_neutral_dead"
+seed = 0
+scope = "halves"
+
+[[evidence]]
+kind = "controlled_touch"
+radius = 1.5
+max_rel_speed = 6.0
+min_frames = 1
+confidence = 0.93    # touch_stats.py --grid r013 --profile generic: floor of the pooled agreement
+hold = 0.6
+
+[[evidence]]
+kind = "dead_ball_model"
+weight = 1.0
+model = "pipeline/models/dead_ball_hgb.json"
+
+[[evidence]]
+kind = "shape_possession"
+weight = 0.3
+model = "pipeline/models/shape_possession_v2_hgb.json"
+scope = "all"
+min_prob = 0.02
+
+[decoder]
+kind = "hmm"
+switch_team = 6
+switch_dead = 32
+min_possession = 35
+min_dead = 25
+team_neutral_dead = true
+
+[[refine]]
+kind = "shift_edges"
+team = 1
+into_dead = -2
+out_of_dead = 0

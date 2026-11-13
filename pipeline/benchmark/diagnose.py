@@ -7,6 +7,7 @@ say. Aggregates of the seven DFL matches only.
     report = diagnose(config_path)              # the ladder under both truths and the calibration: what is written
     half = ladder_half(truth, codes, start, stop)   # one graded half: its counts and its clean pairs
     ladder_summary([half, ...])                 # pooled: the ladder, its losses by class, the clean pairs' edges
+                                                # (and, with a ball mask, C1's edges_by_kind: boundary kind x ball state)
     calibration(p, y)                           # log-loss, Brier, ECE, a reliability table and a Platt fit
 
 docs/results.md A19 (part 1, declared before any run) is the authority for every definition here; this docstring says
@@ -56,11 +57,13 @@ Against the raw truth only, the frame-level one (the coarse truth is a construct
   truth's alive (y = the truth is not D). A channel the source never speaks on is left out. Every learned model is
   out of fold: dead_ball_model and shape_possession score a benchmark match with the fold that never saw it.
 * The decoder's posterior: hmm.marginals at the config's own [decoder] parameters (switch_team, switch_dead,
-  min_possession, min_dead, and eps), on hmm.log_likelihoods of every source cut to the graded block, so before any
+  min_possession, min_dead, eps, and team_neutral_dead, which turns on the emissions' D term of every `home` vote),
+  on hmm.log_likelihoods of every source cut to the graded block, so before any
   refiner (shift_edges). P(H) + P(A) against alive, on all graded frames and split by whether a team source speaks on
-  the frame (any source with a finite `home`): `hmm` adds w log 2h and w log 2(1 - h) to H and A and nothing to D, so
+  the frame (any source with a finite `home`): `hmm` adds w log 2h and w log 2(1 - h) to H and A and, by default, nothing to D, so
   wherever a team source speaks the better alive state sits w log 2 max(h, 1 - h) above D, and beta on team_speaks
-  measures that 50/50 assumption. And P(H) / (P(H) + P(A)) against the team, on the truth's alive frames; a frame
+  measures that 50/50 assumption (with team_neutral_dead on, P31, D gets the larger of the two terms too and that
+  gap is gone; the figures then say what the decoder does with the flag). And P(H) / (P(H) + P(A)) against the team, on the truth's alive frames; a frame
   whose P(H) + P(A) is 0 (underflow) has no such ratio and is counted apart (frames_without_alive_mass).
 * Added after the review of part 1, reported only and gating nothing: the same alive measure by which team sources
   speak on the frame (alive_by_team_sources), keyed by the sorted names of the sources with a finite `home` joined by
@@ -121,6 +124,10 @@ DEFAULT_PROFILE = run.DEFAULT_PROFILE
 IOUS = score.IOUS                     # the scorer's IoUs, 0.3 ... 0.7
 FLOOR = IOUS[0]                       # the matching at 0.3, of which the matching at every other IoU is a cut
 CLASSES = ("clean", "merge", "split", "both")   # a matched pair's class (A19), in the order they are reported
+START_KINDS = ("team", "out_of_d", "edge")   # C1: what the truth's label just before a true start is (edge: none)
+END_KINDS = ("team", "into_d", "edge")       # ... and what the label just after a true end is
+BALL_STATES = ("seen", "gap")                # ... crossed with the ball at the true boundary frame
+CELL_STATES = BALL_STATES + ("all",)         # a cell's states: the two, and both pooled (quartiles do not pool)
 EDGE_TOLERANCE = 5                    # frames: the share of the clean pairs' edge errors within +- this
 # EDGE_TOLERANCE is named in the report's key "within_5": change both together.
 GATE = 0.015                          # A19: R025 is built only if the mean clean-pair ladder loss is at least this
@@ -137,7 +144,7 @@ MAX_SPEAKER_KEYS = 16                 # the most keys alive_by_team_sources has 
 RESERVED = (POSTERIOR, NO_TEAM_SOURCE, OTHER_SPEAKERS)   # names a source may not have: the report uses them
 REPORT_FOLDER = ("runs", "diagnose")  # <data dir>/runs/diagnose/<stem>[.<profile>][.m-<ids>][.s<n>].json
 MAX_LIST = 64                         # the longest list a report may hold: aggregates only
-POSTERIOR_PARAMETERS = ("switch_team", "switch_dead", "min_possession", "min_dead", "eps")
+POSTERIOR_PARAMETERS = ("switch_team", "switch_dead", "min_possession", "min_dead", "eps", "team_neutral_dead")
 
 
 # -- B, the ladder ----------------------------------------------------------------------------------------------------
@@ -171,7 +178,25 @@ def pair_class(pred_overlaps, gt_overlaps):
     return "clean"
 
 
-def ladder_half(truth, codes, start, stop):
+def boundary_kinds(truth, start, stop, gt_start, gt_stop):
+    """(start kind, end kind) of a true spell [gt_start, gt_stop) in the half [start, stop) of `truth`.
+
+    Start: "edge" at the half's first frame, else "out_of_d" if the frame before is D, else "team" (the other team: a
+    spell is a maximal run, so the frame before it is never its own team's). End: "edge" where the spell reaches the
+    half's end, else "into_d" if the frame after it is D, else "team".
+    """
+    if gt_start == start:
+        before = "edge"
+    else:
+        before = "out_of_d" if truth[gt_start - 1] == D else "team"
+    if gt_stop == stop:
+        after = "edge"
+    else:
+        after = "into_d" if truth[gt_stop] == D else "team"
+    return before, after
+
+
+def ladder_half(truth, codes, start, stop, ball_present=None):
     """One graded half's ladder: summable counts, and the clean pairs' IoUs and edge errors as lists.
 
     `truth` and `codes` are the match's int8 codes (the truth without X inside [start, stop), the prediction as
@@ -180,7 +205,11 @@ def ladder_half(truth, codes, start, stop):
     pairs matched at 0.3}), "pred_multi" (predicted spells overlapping 2 or more true ones of their team), "gt_multi"
     (true spells overlapping 2 or more predicted ones), "unmatched" ({"gt", "pred"}: {"overlapping", "alone"}, the
     spells unmatched at 0.3 by whether they overlap a spell of their team), "clean_iou", "clean_start_error",
-    "clean_end_error"}. ValueError for arrays of different shapes, a half outside them, or an X in the truth's half.
+    "clean_end_error"}, and, only with `ball_present` (C1: a bool per frame of the match, the ball seen), "clean_edges"
+    ({"start", "end"}: per clean pair, in the order of clean_iou, (kind, ball state, error) with the kind from
+    boundary_kinds, the ball state "seen" or "gap" on the true spell's first frame for a start and its last frame for
+    an end, and the error predicted minus true). ValueError for arrays of different shapes, a mask of another shape,
+    a half outside them, or an X in the truth's half.
     """
     truth, codes = np.asarray(truth), np.asarray(codes)
     if truth.ndim != 1 or truth.shape != codes.shape:
@@ -192,6 +221,12 @@ def ladder_half(truth, codes, start, stop):
     if (truth[start:stop] == X).any():
         raise ValueError("ladder_half: the truth has X inside the half [{}, {}); a graded half of the truth is H, A "
                          "and D only (pass the graded blocks, as score.score_halves takes them)".format(start, stop))
+    if ball_present is not None:
+        ball_present = np.asarray(ball_present)
+        if ball_present.shape != truth.shape:
+            raise ValueError("ladder_half: ball_present has shape {} and the codes {}; it must hold one bool per frame "
+                             "of the match".format(ball_present.shape, truth.shape))
+        ball_present = ball_present.astype(bool)
     runs = [(start, stop)]
     gt_spells = pm.possession_spells(truth, runs)
     pred_spells = pm.possession_spells(pm.fill_abstentions(codes, runs), runs)
@@ -222,13 +257,23 @@ def ladder_half(truth, codes, start, stop):
             if index not in matched:
                 unmatched[side]["overlapping" if count[index] else "alone"] += 1
     clean = [(gt, pred, value) for (gt, pred, value), kind in zip(pairs, classes) if kind == "clean"]
-    return {"n_gt": n_gt, "n_pred": n_pred, "tp": tp, "lost": lost,
+    half = {"n_gt": n_gt, "n_pred": n_pred, "tp": tp, "lost": lost,
             "pairs": {name: classes.count(name) for name in CLASSES},
             "pred_multi": int((pred_count >= 2).sum()), "gt_multi": int((gt_count >= 2).sum()),
             "unmatched": unmatched,
             "clean_iou": [value for _, _, value in clean],
             "clean_start_error": [pred_spells[pred][0] - gt_spells[gt][0] for gt, pred, _ in clean],
             "clean_end_error": [pred_spells[pred][1] - gt_spells[gt][1] for gt, pred, _ in clean]}
+    if ball_present is not None:
+        edges = {"start": [], "end": []}
+        for gt, pred, _ in clean:
+            gt_start, gt_stop = gt_spells[gt][:2]
+            pred_start, pred_stop = pred_spells[pred][:2]
+            before, after = boundary_kinds(truth, start, stop, gt_start, gt_stop)
+            edges["start"].append((before, "seen" if ball_present[gt_start] else "gap", pred_start - gt_start))
+            edges["end"].append((after, "seen" if ball_present[gt_stop - 1] else "gap", pred_stop - gt_stop))
+        half["clean_edges"] = edges
+    return half
 
 
 def spell_f1(tp, n_gt, n_pred):
@@ -245,12 +290,20 @@ def ladder_summary(halves):
     {class: pairs}, "loss": {class: spellF1}}}), "clean_loss", "merge_loss", "split_loss", "both_loss", "pairs" ({class:
     pairs matched at 0.3}), "merge_share", "split_share" (None with nothing to share), "unmatched", "clean_pairs" ({"n",
     "iou_median", "iou_share_at_least": {IoU: share}, "start_error", "end_error": {"median", "q25", "q75", "within_5"}},
-    its figures None where there is no clean pair)}. The per-IoU losses of a class add up to its loss, to rounding.
-    ValueError for no half.
+    its figures None where there is no clean pair)}, and, if the halves were made with a ball mask, "edges_by_kind"
+    ({"start": {kind of START_KINDS: {state of CELL_STATES: {"n", "median", "q25", "q75", "within_5"}}}, "end": the
+    same by END_KINDS; state "all" pools "seen" and "gap"}: C1, the clean pairs' edge errors per cell, Nones for an
+    empty one; the cells' counts add up to clean_pairs' n). The per-IoU losses of a class add up to its loss, to rounding.
+    ValueError for no half, or for halves of which only some were made with a ball mask.
     """
     halves = list(halves)
     if not halves:
         raise ValueError("ladder_summary: no half to pool; an empty list would hide the mistake that emptied it")
+    with_edges = ["clean_edges" in half for half in halves]
+    if any(with_edges) and not all(with_edges):
+        raise ValueError("ladder_summary: {} of {} halves were made with a ball_present mask and the others without; "
+                         "the cells by ball state would count some of the clean pairs only".format(
+                             sum(with_edges), len(halves)))
     n_gt = sum(half["n_gt"] for half in halves)
     n_pred = sum(half["n_pred"] for half in halves)
     tp = [sum(half["tp"][index] for half in halves) for index in range(len(IOUS))]
@@ -280,17 +333,24 @@ def ladder_summary(halves):
         "iou_share_at_least": {iou: float((ious >= iou).mean()) if len(ious) else None for iou in IOUS},
         "start_error": _errors([value for half in halves for value in half["clean_start_error"]]),
         "end_error": _errors([value for half in halves for value in half["clean_end_error"]])}
+    if all(with_edges):
+        summary["edges_by_kind"] = {
+            side: {kind: {state: _errors([error for half in halves for k, s, error in half["clean_edges"][side]
+                                          if k == kind and state in (s, "all")], count=True)
+                           for state in CELL_STATES}
+                   for kind in kinds} for side, kinds in (("start", START_KINDS), ("end", END_KINDS))}
     return summary
 
 
-def _errors(values):
-    """{"median", "q25", "q75", "within_5"} of signed frame errors (numpy's linear percentiles); Nones for none."""
+def _errors(values, count=False):
+    """{"median", "q25", "q75", "within_5"} of signed frame errors (numpy's linear percentiles); Nones for none.
+    With `count`, {"n", ...}: C1's cells."""
     values = np.asarray(values, dtype=np.float64)
+    head = {"n": len(values)} if count else {}
     if not len(values):
-        return {"median": None, "q25": None, "q75": None, "within_5": None}
+        return dict(head, median=None, q25=None, q75=None, within_5=None)
     q25, median, q75 = (float(value) for value in np.percentile(values, [25, 50, 75]))
-    return {"median": median, "q25": q25, "q75": q75,
-            "within_5": float((np.abs(values) <= EDGE_TOLERANCE).mean())}
+    return dict(head, median=median, q25=q25, q75=q75, within_5=float((np.abs(values) <= EDGE_TOLERANCE).mean()))
 
 
 # -- D, calibration ---------------------------------------------------------------------------------------------------
@@ -437,8 +497,8 @@ class _Pool:
 # -- the run ----------------------------------------------------------------------------------------------------------
 
 def posterior_parameters(config):
-    """{switch_team, switch_dead, min_possession, min_dead, eps}: the config's [decoder] parameters for hmm.marginals,
-    hmm.decode's defaults where it leaves one out. BenchmarkError unless the decoder is hmm without restart_source."""
+    """{switch_team, switch_dead, min_possession, min_dead, eps, team_neutral_dead}: the config's [decoder] parameters
+    for hmm.marginals, hmm.decode's defaults where it leaves one out. BenchmarkError unless the decoder is hmm without restart_source."""
     if config.decoder.kind != "hmm":
         raise run.BenchmarkError(
             "{}: the decoder is {!r}, which has no posterior; A19 reads the posterior of the hmm decoder "
@@ -534,7 +594,7 @@ def diagnose(config_path, profile=DEFAULT_PROFILE, seeds=None, match_ids=None, m
             for name in run.TRUTHS:
                 found = score.score_halves(truth_of[name], codes, match.graded, match.match_id, seed)
                 for (half, start, stop), counted in zip(match.graded, found):
-                    rung = ladder_half(truth_of[name], codes, start, stop)
+                    rung = ladder_half(truth_of[name], codes, start, stop, inputs.atd.ball_present)
                     if (rung["n_gt"], rung["n_pred"], tuple(rung["tp"])) != (counted.n_gt, counted.n_pred,
                                                                               counted.tp):
                         raise AssertionError("diagnose: the ladder of {} half {} seed {} does not count what "
@@ -559,7 +619,7 @@ def diagnose(config_path, profile=DEFAULT_PROFILE, seeds=None, match_ids=None, m
                     if known.any():
                         pool(name, "alive").add(key, alive[known], live[known])
                 window = [source.window(start, stop) for source in sources.values()]
-                emissions = hmm.log_likelihoods(window, stop - start, decoder["eps"])
+                emissions = hmm.log_likelihoods(window, stop - start, decoder["eps"], decoder["team_neutral_dead"])
                 posterior = hmm.marginals(emissions, decoder["switch_team"], decoder["switch_dead"],
                                           decoder["min_possession"], decoder["min_dead"])
                 in_play = posterior[:, H] + posterior[:, A]
@@ -732,6 +792,24 @@ def _ladder_lines(name, ladder):
         lines.append("          {:<5} error (predicted - true, frames): median {}, quartiles [{}, {}], within +-{} {}"
                      .format(side, _frames(errors["median"]), _frames(errors["q25"]), _frames(errors["q75"]),
                              EDGE_TOLERANCE, _share(errors["within_5"])))
+    if "edges_by_kind" in ladder:
+        lines += render_edges(name, ladder["edges_by_kind"])
+    return lines
+
+
+def render_edges(name, cells):
+    """C1's table under the truth `name`: one row per boundary kind and ball state, the clean pairs' edge errors."""
+    lines = ["          clean pairs' edge errors by boundary kind and ball state (truth {}, predicted - true, frames; "
+             "ball at the true spell's first frame for a start, its last for an end)".format(name),
+             "          {:<10}{:<10}{:<6}{:>8}{:>9}{:>9}{:>9}{:>10}".format(
+                 "boundary", "kind", "ball", "n", "median", "q25", "q75", "within+-{}".format(EDGE_TOLERANCE))]
+    for side, kinds in (("start", START_KINDS), ("end", END_KINDS)):
+        for kind in kinds:
+            for state in CELL_STATES:
+                one = cells[side][kind][state]
+                lines.append("          {:<10}{:<10}{:<6}{:>8,}{:>9}{:>9}{:>9}{:>10}".format(
+                    side, kind, state, one["n"], _frames(one["median"]), _frames(one["q25"]), _frames(one["q75"]),
+                    _share(one["within_5"])))
     return lines
 
 
