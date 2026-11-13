@@ -58,7 +58,8 @@ tunes or uses the video.
   statistics (the old profiles: `gaps` transplants our missing-ball masks), because both models and every constant
   chosen on it stand on data that is not only external. The organisers answered question 1 with the clarification
   alone, and Tian decided the redo on 9 Nov (`docs/proposals.md` P27). **Done 10 Nov (R030):** both models are trained,
-  and every numeric constant of `main.toml` is chosen, on the `generic` profile, into which no measurement of ours enters.
+  and every numeric constant of `main.toml` is chosen, on the `generic` profile, into which no measurement of ours enters
+  (R042's two new models, 13 Nov, too).
   It quotes two figures from the organisers' DATA.md (41% of graded frames without a ball, a mean of 20.5 tracked
   objects). No text allows quoting them by name; Tian decided on 10 Nov to keep them, reading statistics that the
   organisers publish in the task statement as public information, not as the provided data (stated in the technical
@@ -101,13 +102,14 @@ aggregates only, never raw data rows.
   scores, verdict. Log failures too, and every upload in its submission log. A01–A03 hold measurements that should
   shape any design; A05–A09 and R002–R005 are the benchmark's (P01, done; R004c's `tracking` was the default until
   R030); A13 says where `main.toml`'s remaining spellF1 is (who has the ball, not the dead ball); A21 audits
-  `main.toml` against the 3 Nov rules; R030 (P27) is today's `main.toml`: both models retrained and every numeric
-  constant re-chosen on the `generic` profile, which measures nothing of our match (Tian kept its outcome on 10 Nov);
+  `main.toml` against the 3 Nov rules; R030 (P27) retrained both models and re-chose every numeric constant on the
+  `generic` profile, which measures nothing of our match (Tian kept its outcome on 10 Nov); R042 is today's
+  `main.toml`: R030's plus P30 (the version 2 shape model) and P32 (the team model where the ball is seen), adopted by
+  Tian on 13 Nov (sha256 `aae79a04…`);
   A25 repeats A13 and A19 on `generic` (the same reading); R031 is P28, dropped at its gate. R032 to R041, A26 and
   A27 are the night of 12 to 13 Nov (Tian away, an advisor agent in Tian's place): P30 and P32 cleared the bar and
-  stack into the candidate `pipeline/configs/candidates/p32_team_model.toml` (not adopted: Tian decides); P29, P33
-  to P35, P37, P39 and P40 were dropped and their code removed; A26 locates the remaining edge error at changes of
-  team inside ball gaps.
+  stack (+0.0305 on the benchmark), adopted as R042; P29, P33 to P35, P37, P39 and P40 were dropped and their code
+  removed; A26 locates the remaining edge error at changes of team inside ball gaps.
 - `docs/traps.md` — pitfalls `T01…`. Add one whenever something costs real time.
 - `docs/technical_document.md` — the draft of deliverable 3. Update it when a pipeline decision lands.
 
@@ -209,8 +211,9 @@ keeps that convention: its scripts swap their own folder on `sys.path` for the r
   `data/cache/atd_tactical/`) → `evidence` (per-frame `alive`/`home` probabilities, NaN = no opinion) → `decode` (one
   block per graded half) → `refine` → `output` (LF CSV, official validation, manifest in `data/runs/`). Components are
   plain functions in each stage's `REGISTRY` (`evidence` holds `nearest_player`, `ball_presence`, `controlled_touch`,
-  `dead_ball_rules`, `smart_tagging`, `dead_ball_model`, `shape_possession` and `restart_team`, the last three reading
-  the trained JSON models in `pipeline/models/`; `smart_tagging` is Smart Tagging's team votes, in `main.toml` from
+  `dead_ball_rules`, `smart_tagging`, `dead_ball_model`, `shape_possession`, `team_model` and `restart_team`, the last
+  four reading the trained JSON models in `pipeline/models/` (`main.toml` since R042: `controlled_touch`,
+  `dead_ball_model`, `shape_possession` on the version 2 model and `team_model`); `smart_tagging` is Smart Tagging's team votes, in `main.toml` from
   R017 (P08) until R029 took it out under the 3 Nov rules (its `c_team` was measured on this match, `docs/rules.md`),
   and declares `MATCH_ONLY`, so the benchmark runs a config that has it with `--drop-match-only`; `restart_team` is
   a restart-team vote, measured but not in `main.toml`, P17; `decode`
