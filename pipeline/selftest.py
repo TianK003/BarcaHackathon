@@ -3188,8 +3188,8 @@ def test_hmm_hazard_peak_places_the_change():
 
 def test_hmm_hazard_speed():
     """80,000 frames, two team sources and a hazard where the ball is seen, minimums of 50: the decode with the hazard
-    takes at most 1.5 times today's on the same frames without it (the median of three runs each, interleaved)."""
-    import statistics
+    takes at most 1.5 times today's on the same frames without it (the fastest of three runs each, interleaved: the
+    minimum is the least disturbed by a loaded machine)."""
     from pipeline.decode import REGISTRY
     rng = np.random.default_rng([35, 3000])
     n_frames = 80000
@@ -3213,9 +3213,9 @@ def test_hmm_hazard_speed():
         started = time.perf_counter()
         labels = REGISTRY["hmm"](ctx, hazard_source=name, **costs).labels
         priced.append(time.perf_counter() - started)
-    ratio = statistics.median(priced) / statistics.median(today)
+    ratio = min(priced) / min(today)
     print("      hmm: {:,} frames, with a hazard {:.2f} s, without {:.2f} s (x{:.2f})".format(
-        n_frames, statistics.median(priced), statistics.median(today), ratio))
+        n_frames, min(priced), min(today), ratio))
     assert len(labels) == len(expected) == n_frames and not np.array_equal(labels, expected), "the hazard did nothing"
     assert ratio <= 1.5, "the hazard's decode takes {:.2f} times today's".format(ratio)
 
