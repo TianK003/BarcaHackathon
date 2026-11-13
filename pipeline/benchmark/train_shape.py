@@ -1,6 +1,6 @@
 """P07's trainer: fit the shape-possession model on the benchmark's matches and write it as JSON.
 
-    python pipeline/benchmark/train_shape.py [--profile tracking] [--seeds 3] [--stride 5] [--features {1,2,4}]
+    python pipeline/benchmark/train_shape.py [--profile tracking] [--seeds 3] [--stride 5] [--features {1,2}]
                                              [--out PATH] [--verify] [--report] [--data-dir D]
 
     artifact = train(profile="tracking", seeds=3, stride=5)             # the dict that is written, JSON-ready
@@ -10,9 +10,8 @@
 What it learns, and from what
 -----------------------------
 The classifier answers one question, which team has the ball, from the twenty-six `shape_features` of a frame
-(version 1; version 2, P30, has 42 and goes in its own file, `--features 2`, and so does version 4, P37, with 46:
-`--features 4`), none of which reads the ball except version 4's two timing columns per team, which read it through
-the touch rule (pipeline/evidence/shape_features.py). The seven open DFL/IDSSE matches are the only ones with a flag for it
+(version 1; version 2, P30, has 42 and goes in its own file, `--features 2`), none of which reads the ball
+(pipeline/evidence/shape_features.py). The seven open DFL/IDSSE matches are the only ones with a flag for it
 (`BallPossession`), so those are the training data, degraded to look like our tracking (profile `tracking`, version 3,
 seeds 0 to 2: P01) and served as `MatchInputs`, so that the features are computed by the very code and from the very
 kind of inputs that the submission pipeline will give them. No truth reaches the features: the label is read from
@@ -124,7 +123,7 @@ from pipeline.benchmark.run import BenchmarkError  # noqa: E402
 from pipeline.benchmark.train_dead_ball import (  # noqa: E402
     HGB_SETTINGS, LOG_FLOOR, Gathered, compare, dumps, export_hgb, served_inputs, write)
 from pipeline.contracts import RunContext  # noqa: E402
-from pipeline.evidence import controlled_touch, shape_features, shape_possession, trees  # noqa: E402
+from pipeline.evidence import controlled_touch, shape_features, shape_possession, team_features, trees  # noqa: E402
 
 import possession_metrics as pm  # noqa: E402  (importing pipeline above put evaluation/ on sys.path)
 
@@ -138,8 +137,7 @@ DEFAULT_STRIDE = 5
 PRIOR_HOME = shape_possession.PRIOR_HOME      # the share of homes among the rows and their mirrors
 # One file per feature version (P30): the file names its version, and `shape_possession` reads the features of it.
 DEFAULT_MODEL_PATHS = {1: "pipeline/models/shape_possession_hgb.json",
-                       2: "pipeline/models/shape_possession_v2_hgb.json",     # relative to the repository root
-                       4: "pipeline/models/shape_possession_v4_hgb.json"}     # P37; 3 is retired (P33)
+                       2: "pipeline/models/shape_possession_v2_hgb.json"}     # relative to the repository root
 DEFAULT_MODEL_PATH = os.path.join(ROOT, *DEFAULT_MODEL_PATHS[1].split("/"))
 SOURCE_FILES = (("train_shape.py", os.path.join(HERE, "train_shape.py")),
                 ("shape_features.py", os.path.join(ROOT, "pipeline", "evidence", "shape_features.py")),
@@ -368,7 +366,7 @@ def report(artifact, profile, seeds, matches=None, calibration=None, data_dir=No
     `touch_agreement`. `coarse` (P34) is the same two scores against the coarse truth (`truth.coarse_codes` of the raw
     codes, per seed, with the served inputs' blocks and fps), a ccell being {alive: {frames, log_loss, accuracy},
     missing: {...}}; the alive frames are the raw truth's (ValueError if the coarse truth's differ). `gap_classes`
-    (P37, for every feature version, independent of the model's columns) is {per_match: {id: gcell}, pooled: gcell}, a
+    (P37's cells, kept on `team_features`' touch rule, for every feature version, independent of the model's columns) is {per_match: {id: gcell}, pooled: gcell}, a
     gcell being {handover, same_team, unknown}, each {frames, log_loss, accuracy} of the alive frames with the ball
     missing whose gap, by the touch rule, has a different last controller before than next after, the same one, or
     none on a side (`gap_classes`). Numbers and strings only, no per-frame array.
@@ -421,15 +419,17 @@ def report(artifact, profile, seeds, matches=None, calibration=None, data_dir=No
 
 def gap_classes(inputs):
     """An int8 array over every frame: for the graded frames where the ball is missing, the kind of gap by the touch
-    rule at `shape_features.TOUCH_RULE` (P37), whatever the model's columns are; 0 elsewhere.
+    rule at `team_features.TOUCH_RULE` (P37's cells), whatever the model's columns are; 0 elsewhere.
 
     1 `HANDOVER`: the team that last had a kept control frame before the frame, in its block, is not the team that has
     the next one after it; 2 `SAME_TEAM`: it is; 3 `UNKNOWN`: there is none on one side (or both). A frame is classified
     by the kept frames on either side of it in its own block, never across half time. Reads the ball (the rule does),
     never the truth.
     """
-    home, away = shape_features.control_masks(inputs)
-    kept = home | away
+    touch = controlled_touch.compute(RunContext(inputs=inputs, seed=0), **team_features.TOUCH_RULE, confidence=0.99,
+                                     hold=0.5).home                 # the kept frames, as team_features reads them
+    kept = np.isfinite(touch)
+    home, away = kept & (touch >= 0.5), kept & (touch < 0.5)
     out = np.zeros(len(kept), dtype=np.int8)
     missing = ~inputs.atd.ball_present
     for _, start, stop in inputs.graded:
@@ -596,11 +596,11 @@ def build_parser():
                         help="every this many graded frames is a row (default {})".format(DEFAULT_STRIDE))
     parser.add_argument("--features", type=int, choices=shape_features.VERSIONS, default=1,
                         help="the feature version to train, write or --verify (default 1: 26 columns, the committed "
-                             "file; 2: 42 columns, P30; 4: 46 columns, P37); --report takes the version from the "
+                             "file; 2: 42 columns, P30; --report takes the version from the "
                              "file it reads")
     parser.add_argument("--out", help="where to write the artifact, or to read it from with --report (default "
                                       "pipeline/models/shape_possession_hgb.json, or shape_possession_v2_hgb.json "
-                                      "or shape_possession_v4_hgb.json with --features 2 or 4)")
+                                      "with --features 2)")
     parser.add_argument("--verify", action="store_true",
                         help="retrain and compare with the committed file instead of writing it: exit 1 if "
                              "anything but the three source hashes differs")
