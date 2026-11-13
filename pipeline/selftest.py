@@ -4986,6 +4986,248 @@ def test_team_model_speed():
             first_s)
 
 
+HAZARD_TRAINER = "pipeline/benchmark/train_turnover.py"
+
+
+def write_hazard_model(folder, folds=None, full=None, name="turnover_hgb.json", **changes):
+    import json
+    artifact = {"format": 1, "kind": "hgb", "target": "team_change_pm12", "window_frames": 12,
+                "feature_version": TEAM_VERSION, "features": list(TEAM_NAMES), "profile": "generic", "seeds": 3,
+                "stride": 5, "provenance": {},
+                "folds": {"FOLD1": hazard_model_stub(-2.0, 1.0, -1.0, base=0.05)} if folds is None else folds,
+                "full": hazard_model_stub(-1.5, -1.0, 2.0, base=0.1) if full is None else full}
+    artifact.update(changes)
+    return write_text(folder, name, json.dumps(artifact, sort_keys=True) + "\n")
+
+
+def hazard_model_stub(baseline, left, right, base=0.1, feature="h_ball_d1", threshold=TEAM_THRESHOLD, missing_left=0):
+    """A one-stump hazard model: `base_rate` where team_model_stub has a `prior_home`."""
+    model = team_model_stub(baseline, left, right, feature, threshold, missing_left)
+    del model["prior_home"]
+    model["base_rate"] = base
+    return model
+
+
+def hazard_home(inputs, path, game="BAR-ATH", **values):
+    from pipeline.contracts import RunContext, check_evidence
+    from pipeline.evidence import REGISTRY
+    inputs.game = game
+    evidence = REGISTRY["turnover_hazard"](RunContext(inputs=inputs, seed=0), model=path, **values)
+    check_evidence(evidence, len(inputs.atd.ball_xy))
+    assert np.isnan(evidence.alive).all(), "turnover_hazard has no opinion on whether the ball is alive"
+    assert not (evidence.home.flags.writeable or evidence.alive.flags.writeable), "the arrays are read-only"
+    return evidence.home
+
+
+def stump_hazard_z(X, left, right, base, threshold=TEAM_THRESHOLD, missing_left=0, baseline=0.0, min_prob=0.001):
+    """z = p / (p + base) of a stump on h_ball_d1, worked out from the two nearest distances alone: the logit of p is
+    the baseline plus the mean of the leaves that the home and the away distance reach (r(x) + r(swap x)) / 2."""
+    def leaf(distance):
+        goes_left = np.where(np.isnan(distance), bool(missing_left), distance <= threshold)
+        return np.where(goes_left, left, right)
+
+    logit = baseline + (leaf(X[:, TEAM_COLUMN["h_ball_d1"]]) + leaf(X[:, TEAM_COLUMN["a_ball_d1"]])) / 2.0
+    p = np.clip(1.0 / (1.0 + np.exp(-logit)), min_prob, 1.0 - min_prob)
+    return p / (p + base)
+
+
+def test_turnover_hazard_values():
+    # z = p / (p + base_rate), p the swap-averaged score through the sigmoid, so that logit z = log(p / base_rate)
+    with tempfile.TemporaryDirectory() as root:
+        for baseline, base in ((-1.5, 0.1), (-4.0, 0.02), (0.5, 0.3)):
+            path = write_hazard_model(root, full=hazard_model_stub(baseline, -1.0, 2.0, base=base))
+            for seed in (0, 1, 3, 5):
+                players, ball, teams, graded = team_scene(seed)
+                inputs = team_inputs(players, ball, teams, graded)
+                home = hazard_home(inputs, path)
+                X = team_matrix(players, ball, teams, graded)
+                known = ~np.isnan(home)
+                assert known.sum() > 20 and home[known].min() > 0.0 and home[known].max() < 1.0
+                assert np.allclose(home[known], stump_hazard_z(X, -1.0, 2.0, base, baseline=baseline)[known], rtol=0,
+                                   atol=1e-12), (baseline, seed)
+                logit_z = np.log(home[known] / (1.0 - home[known]))
+                p = base * np.exp(logit_z)
+                assert (p >= 0.001 - 1e-12).all() and (p <= 0.999 + 1e-12).all(), "logit z = log(p / base): p in range"
+        # a model that says the same thing everywhere has z = p / (p + base) everywhere: exactly 0.5 at p = base
+        base = 0.2
+        flat = write_hazard_model(root, full=hazard_model_stub(float(np.log(base / (1 - base))), 0.0, 0.0, base=base),
+                                  name="flat.json")
+        home = hazard_home(team_inputs(*team_scene(0)), flat)
+        assert np.allclose(home[~np.isnan(home)], 0.5, rtol=0, atol=1e-12) and (~np.isnan(home)).any()
+
+
+def test_turnover_hazard_is_swap_invariant():
+    from pipeline.evidence import team_features, trees, turnover_hazard
+    with tempfile.TemporaryDirectory() as root:
+        # none of the trees is symmetric: a home-block column, an away-block one, and two columns that swap or change
+        # sign; the score (r(x) + r(swap x)) / 2 is invariant under the exchange of the teams all the same
+        lopsided = {"baseline": -2.1, "base_rate": 0.07, "trees": [
+            stump(TEAM_COLUMN["h_ball_d1"], 3.0, -0.8, 1.7, missing_left=1),
+            stump(TEAM_COLUMN["a_reach_s"], 1.0, 0.6, -0.3),
+            stump(TEAM_COLUMN["h_until_episode_s"], 0.5, 0.7, -0.4),
+            stump(TEAM_COLUMN["adv_gap"], 0.0, -0.5, 1.5),
+            stump(TEAM_COLUMN["h_ball_vel_adv"], 0.0, -0.6, 0.9),
+            stump(TEAM_COLUMN["a_adv_fut_2s"], 0.0, 0.4, -0.2)]}
+        path = write_hazard_model(root, full=lopsided)
+        for seed in range(8):
+            players, ball, teams, graded = team_scene(seed)
+            home = hazard_home(team_inputs(players, ball, teams, graded), path)
+            relabelled = hazard_home(team_inputs(players, ball, 1 - teams, graded), path)
+            known = ~np.isnan(home)
+            assert known.sum() > 20 and np.array_equal(known, ~np.isnan(relabelled)), seed
+            assert np.allclose(home[known], relabelled[known], rtol=0, atol=1e-12), \
+                "seed {}: relabelling the teams must not change z".format(seed)
+            # the check has teeth: the trees alone, run on the two labellings, differ
+            X = team_matrix(players, ball, teams, graded)[known]
+            alone = 1.0 / (1.0 + np.exp(-trees.score(lopsided, X)))
+            alone_relabelled = 1.0 / (1.0 + np.exp(-trees.score(lopsided, team_features.swap(X))))
+            assert np.abs(alone - alone_relabelled).max() > 0.05, "the model is symmetric on its own"
+        rng = np.random.default_rng(31)
+        rows = rng.normal(size=(400, len(TEAM_NAMES))) * 5.0
+        rows[rng.random(rows.shape) < 0.2] = np.nan
+        assert np.allclose(turnover_hazard.symmetric_logit(lopsided, rows),
+                           turnover_hazard.symmetric_logit(lopsided, team_features.swap(rows)), rtol=0, atol=1e-12)
+
+
+def test_turnover_hazard_silent_where_the_ball_is_missing():
+    with tempfile.TemporaryDirectory() as root:
+        path = write_hazard_model(root)
+        for seed in (0, 3):
+            players, ball, teams, graded = team_scene(seed)
+            home = hazard_home(team_inputs(players, ball, teams, graded), path)
+            inside = block_mask(len(home), graded)
+            seen = inside & ~np.isnan(ball[:, 0])
+            assert seen.sum() > 50 and (inside & np.isnan(ball[:, 0])).sum() > 5, "the scene needs both kinds"
+            assert np.isnan(home[~seen]).all(), "no opinion in the gaps or outside the blocks"
+            assert not np.isnan(home[seen]).any(), "an opinion on every graded frame with the ball"
+
+
+def test_turnover_hazard_fold_choice_and_base_rate():
+    with tempfile.TemporaryDirectory() as root:
+        folds = {"FOLD1": hazard_model_stub(-1.0, 1.0, -1.0, base=0.05),
+                 "FOLD2": hazard_model_stub(-1.0, 3.0, -3.0, base=0.2)}
+        path = write_hazard_model(root, folds=folds, full=hazard_model_stub(-1.0, -1.0, 1.0, base=0.1))
+        players, ball, teams, graded = team_scene(0)
+        X = team_matrix(players, ball, teams, graded)
+        inputs = team_inputs(players, ball, teams, graded)
+        full = hazard_home(inputs, path)
+        known = ~np.isnan(full)
+        assert np.allclose(full[known], stump_hazard_z(X, -1.0, 1.0, 0.1, baseline=-1.0)[known], rtol=0, atol=1e-12)
+        for game, left, right, base in (("FOLD1", 1.0, -1.0, 0.05), ("FOLD2", 3.0, -3.0, 0.2)):
+            fold = hazard_home(inputs, path, game=game)
+            assert np.array_equal(known, ~np.isnan(fold))
+            assert np.allclose(fold[known], stump_hazard_z(X, left, right, base, baseline=-1.0)[known], rtol=0,
+                               atol=1e-12), "{} is the fold of its own game, with its own base rate".format(game)
+            assert not np.allclose(fold[known], full[known])
+        for game in ("BAR-ATH", "NOT-IN-FOLDS", "full"):
+            assert np.array_equal(hazard_home(inputs, path, game=game), full, equal_nan=True), game
+        write_hazard_model(root, folds=folds, full=hazard_model_stub(-1.0, -1.0, 1.0, base=0.4))      # changed on disk
+        changed = hazard_home(inputs, path)
+        assert np.allclose(changed[known], stump_hazard_z(X, -1.0, 1.0, 0.4, baseline=-1.0)[known], rtol=0, atol=1e-12)
+
+
+def test_turnover_hazard_rejects_bad_artifacts():
+    with tempfile.TemporaryDirectory() as root:
+        inputs = team_inputs(*team_scene(0))
+        renamed = list(TEAM_NAMES)
+        renamed[3] = "h_rel_speed_x"
+        good = hazard_model_stub(-1.0, -1.0, 1.0)
+
+        def refused(path, *fragments):
+            return expect_error(ValueError, lambda: hazard_home(inputs, path), "turnover_hazard", HAZARD_TRAINER,
+                                *fragments)
+
+        for label, changes in (("format", {"format": 2}), ("feature_version", {"feature_version": 1}),
+                               ("feature_version", {"feature_version": 2.0}),
+                               ("feature_version", {"feature_version": True}),
+                               ("features", {"features": renamed}), ("features", {"features": list(TEAM_NAMES)[:-1]}),
+                               ("kind", {"kind": "logistic"}),
+                               ("target", {"target": "team_home"}), ("target", {"target": None}),
+                               ("target", {"target": "team_change_pm13"}),
+                               ("window_frames", {"window_frames": 13}), ("window_frames", {"window_frames": 12.0}),
+                               ("window_frames", {"window_frames": True}), ("window_frames", {"window_frames": None}),
+                               ("folds", {"folds": [good]})):
+            refused(write_hazard_model(root, name="other.json", **changes), label)
+        refused(write_text(root, "list.json", "[1, 2]"), "model object")
+        for bad in (0.0, 1.0, -0.1, 1.5, True, "0.1", None):
+            refused(write_hazard_model(root, full=dict(good, base_rate=bad), name="base.json"), "base_rate", "full")
+            refused(write_hazard_model(root, folds={"FOLD1": dict(good, base_rate=bad)}, name="base.json"),
+                    "base_rate", "FOLD1")
+        missing = dict(good)
+        del missing["base_rate"]
+        refused(write_hazard_model(root, full=missing, name="missing.json"), "base_rate")
+        wide = hazard_model_stub(-1.0, -1.0, 1.0)
+        wide["trees"][0]["feature"][0] = len(TEAM_NAMES)
+        refused(write_hazard_model(root, folds={"FOLD1": wide}, name="wide.json"), "tree 0", "FOLD1")
+        refused(os.path.join(root, "absent.json"), "absent.json")
+        # team_model's own file is a model of another question, with a prior and no base rate: it must not load here
+        refused(write_team_model(root, name="team.json"), "target")
+
+
+def test_turnover_hazard_parameters_and_registry():
+    from pipeline.contracts import RunContext
+    from pipeline import evidence
+    from pipeline.evidence import REGISTRY, turnover_hazard
+    assert REGISTRY["turnover_hazard"] is turnover_hazard.compute and not evidence.match_only("turnover_hazard")
+    with tempfile.TemporaryDirectory() as root:
+        path = write_hazard_model(root)
+        inputs = team_inputs(*team_scene(3))
+        for bad in (0.0, 0.5, 0.6, -0.1, True, False, "0.001", None, float("nan"), float("inf")):
+            expect_error(ValueError, lambda: hazard_home(inputs, path, min_prob=bad), "turnover_hazard", "min_prob")
+        for bad in (None, 5, "", True):
+            expect_error(ValueError, lambda: hazard_home(inputs, bad), "turnover_hazard", "model")
+        expect_error(TypeError, lambda: REGISTRY["turnover_hazard"](RunContext(inputs=inputs, seed=0)), "model")
+        expect_error(TypeError, lambda: hazard_home(inputs, path, scope="all"), "scope")
+        hazard_home(inputs, path, min_prob=np.float64(0.25))
+        assert np.array_equal(hazard_home(inputs, path), hazard_home(inputs, path, min_prob=0.001), equal_nan=True)
+        # the clip holds p at min_prob and 1 - min_prob, so z is bounded by p / (p + base) at both ends
+        extreme = write_hazard_model(root, full=hazard_model_stub(0.0, -40.0, 40.0, base=0.1), name="extreme.json")
+        X = team_matrix(*team_scene(3))
+        for min_prob in (0.001, 0.05, 0.4):
+            home = hazard_home(inputs, extreme, min_prob=min_prob)
+            known = ~np.isnan(home)
+            assert known.any() and home[known].min() >= min_prob / (min_prob + 0.1) - 1e-12
+            assert home[known].max() <= (1 - min_prob) / (1 - min_prob + 0.1) + 1e-12
+            assert np.allclose(home[known], stump_hazard_z(X, -40.0, 40.0, 0.1, min_prob=min_prob)[known], rtol=0,
+                               atol=1e-12)
+        assert home.dtype == np.float64 and home.shape == (len(X),)
+
+
+def test_turnover_hazard_remembers_its_scores_and_refuses_infinite_features():
+    from pipeline.evidence import team_features, trees
+    with tempfile.TemporaryDirectory() as root:
+        path = write_hazard_model(root)
+        inputs = team_inputs(*team_scene(0))
+        calls = []
+        real = trees.score
+        trees.score = lambda model, X: calls.append(len(X)) or real(model, X)
+        try:
+            first = hazard_home(inputs, path)
+            walked = len(calls)
+            assert walked >= 1
+            assert np.array_equal(first, hazard_home(inputs, path), equal_nan=True)
+            assert len(calls) == walked, "walked the trees again"
+            hazard_home(inputs, path, min_prob=0.3)                                  # another clip: no walk
+            assert len(calls) == walked
+            hazard_home(inputs, path, game="FOLD1")                                  # another model of the file
+            assert len(calls) == 2 * walked
+            hazard_home(team_inputs(*team_scene(0)), path)
+            assert len(calls) == 3 * walked, "the memo is per Inputs object"
+        finally:
+            trees.score = real
+        names, X = team_features.features(inputs)
+        broken = X.copy()
+        seen = np.flatnonzero(~np.isnan(X[:, TEAM_COLUMN["ball_line_m"]]))
+        broken[seen[3], TEAM_COLUMN["ball_line_m"]] = np.inf
+        real_features = team_features.features
+        team_features.features = lambda given: (names, broken)
+        try:
+            expect_error(ValueError, lambda: hazard_home(team_inputs(*team_scene(0)), path), "turnover_hazard",
+                         "infinite")
+        finally:
+            team_features.features = real_features
+
+
 SHAPE_TRIAL_CONFIG = """
 [[evidence]]
 kind = "nearest_player"
