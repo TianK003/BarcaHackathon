@@ -309,11 +309,19 @@ def test_edges_by_kind_hand_built_half():
         "start": {"team": {"seen": cell(2, 3.5, 3.25, 3.75, 1.0), "gap": cell(1, 5.0, 5.0, 5.0, 1.0)},
                   "out_of_d": {"seen": cell(4, -1.0, -3.75, 1.25, 0.75), "gap": cell(3, 7.0, -2.5, 13.5, 0.0)},
                   "edge": {"seen": cell(1, 0.0, 0.0, 0.0, 1.0), "gap": empty}},
+        "start_all": {"team": cell(3, 4.0, 3.5, 4.5, 1.0), "out_of_d": cell(7, 1.0, -4.5, 4.5, 3 / 7),
+                      "edge": cell(1, 0.0, 0.0, 0.0, 1.0)},
+        "end_all": {"team": cell(3, 4.0, 3.5, 4.5, 1.0), "into_d": cell(7, 1.0, -4.5, 4.0, 4 / 7),
+                    "edge": cell(1, 0.0, 0.0, 0.0, 1.0)},
         "end": {"team": {"seen": cell(2, 3.5, 3.25, 3.75, 1.0), "gap": cell(1, 5.0, 5.0, 5.0, 1.0)},
                 "into_d": {"seen": cell(4, -1.0, -4.25, 3.0, 0.75), "gap": cell(3, 1.0, -3.5, 5.5, 1 / 3)},
                 "edge": {"seen": empty, "gap": cell(1, 0.0, 0.0, 0.0, 1.0)}}}
     for side in ("start", "end"):
+        for kind, want in expected[side + "_all"].items():
+            expected[side][kind]["all"] = want
         for kind, states in expected[side].items():
+            assert (states["seen"]["n"] + states["gap"]["n"] == states["all"]["n"]
+                    == cells[side][kind]["seen"]["n"] + cells[side][kind]["gap"]["n"]), (side, kind)
             for state, want in states.items():
                 got = cells[side][kind][state]
                 assert set(got) == set(CELL), (side, kind, state, got)
@@ -324,7 +332,7 @@ def test_edges_by_kind_hand_built_half():
                         assert close(got[key], want[key]), (side, kind, state, key, got)
     # The cells add up to the pooled errors: the same eleven values, in the same quartiles.
     for side, errors in (("start", start_errors), ("end", end_errors)):
-        assert sum(c["n"] for states in cells[side].values() for c in states.values()) == 11, side
+        assert sum(states["all"]["n"] for states in cells[side].values()) == 11, side
         pooled = summary["clean_pairs"][side + "_error"]
         assert pooled == diagnose._errors(errors), (side, pooled)
     # Two halves pool their cells' counts.
@@ -554,6 +562,10 @@ def test_diagnose_end_to_end_on_synthetic_matches():
         assert report["profile"]["name"] == "gaps" and report["seeds"] == [0], report
         assert report["matches"] == sorted(matches) and report["dropped_match_only"] == [], report
         assert set(report["ladder"]) == {"raw", "coarse", "mean"}, report["ladder"]
+        for name in ("raw", "coarse"):
+            ladder = report["ladder"][name]
+            for side in ("start", "end"):
+                assert sum(states["all"]["n"] for states in ladder["edges_by_kind"][side].values())                     == ladder["clean_pairs"]["n"], (name, side, ladder["edges_by_kind"][side])
         runner = benchmark_run.evaluate_truths([path], profile="gaps", seeds=1, matches=matches,
                                                calibration=synthetic_calibration(), data_dir=root, log=quiet)
         for name in ("raw", "coarse"):

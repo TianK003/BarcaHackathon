@@ -125,6 +125,7 @@ CLASSES = ("clean", "merge", "split", "both")   # a matched pair's class (A19), 
 START_KINDS = ("team", "out_of_d", "edge")   # C1: what the truth's label just before a true start is (edge: none)
 END_KINDS = ("team", "into_d", "edge")       # ... and what the label just after a true end is
 BALL_STATES = ("seen", "gap")                # ... crossed with the ball at the true boundary frame
+CELL_STATES = BALL_STATES + ("all",)         # a cell's states: the two, and both pooled (quartiles do not pool)
 EDGE_TOLERANCE = 5                    # frames: the share of the clean pairs' edge errors within +- this
 # EDGE_TOLERANCE is named in the report's key "within_5": change both together.
 GATE = 0.015                          # A19: R025 is built only if the mean clean-pair ladder loss is at least this
@@ -205,7 +206,8 @@ def ladder_half(truth, codes, start, stop, ball_present=None):
     "clean_end_error"}, and, only with `ball_present` (C1: a bool per frame of the match, the ball seen), "clean_edges"
     ({"start", "end"}: per clean pair, in the order of clean_iou, (kind, ball state, error) with the kind from
     boundary_kinds, the ball state "seen" or "gap" on the true spell's first frame for a start and its last frame for
-    an end, and the error predicted minus true). ValueError for arrays of different shapes, a mask of another shape, a half outside them, or an X in the truth's half.
+    an end, and the error predicted minus true). ValueError for arrays of different shapes, a mask of another shape,
+    a half outside them, or an X in the truth's half.
     """
     truth, codes = np.asarray(truth), np.asarray(codes)
     if truth.ndim != 1 or truth.shape != codes.shape:
@@ -286,9 +288,9 @@ def ladder_summary(halves):
     {class: pairs}, "loss": {class: spellF1}}}), "clean_loss", "merge_loss", "split_loss", "both_loss", "pairs" ({class:
     pairs matched at 0.3}), "merge_share", "split_share" (None with nothing to share), "unmatched", "clean_pairs" ({"n",
     "iou_median", "iou_share_at_least": {IoU: share}, "start_error", "end_error": {"median", "q25", "q75", "within_5"}},
-    its figures None where there is no clean pair)}, and, if the halves were made with a ball mask, "edges_by_kind" ({"start":
-    {kind of START_KINDS: {state of BALL_STATES: {"n", "median", "q25", "q75", "within_5"}}}, "end": the same by
-    END_KINDS}: C1, the clean pairs' edge errors per cell, Nones for an empty one; the cells' counts add up to
+    its figures None where there is no clean pair)}, and, if the halves were made with a ball mask, "edges_by_kind"
+    ({"start": {kind of START_KINDS: {state of CELL_STATES: {"n", "median", "q25", "q75", "within_5"}}}, "end": the
+    same by END_KINDS; state "all" pools "seen" and "gap"}: C1, the clean pairs' edge errors per cell, Nones for an empty one; the cells' counts add up to
     clean_pairs' n). The per-IoU losses of a class add up to its loss, to rounding.
     ValueError for no half, or for halves of which only some were made with a ball mask.
     """
@@ -332,7 +334,8 @@ def ladder_summary(halves):
     if all(with_edges):
         summary["edges_by_kind"] = {
             side: {kind: {state: _errors([error for half in halves for k, s, error in half["clean_edges"][side]
-                                          if (k, s) == (kind, state)], count=True) for state in BALL_STATES}
+                                          if k == kind and state in (s, "all")], count=True)
+                           for state in CELL_STATES}
                    for kind in kinds} for side, kinds in (("start", START_KINDS), ("end", END_KINDS))}
     return summary
 
@@ -794,15 +797,15 @@ def _ladder_lines(name, ladder):
 
 def render_edges(name, cells):
     """C1's table under the truth `name`: one row per boundary kind and ball state, the clean pairs' edge errors."""
-    lines = ["          clean pairs' edge errors by boundary kind and ball state (truth {}, predicted - true, "
-             "frames)".format(name),
-             "          {:<6}{:<10}{:<6}{:>8}{:>9}{:>9}{:>9}{:>10}".format(
-                 "edge", "kind", "ball", "n", "median", "q25", "q75", "within+-5")]
+    lines = ["          clean pairs' edge errors by boundary kind and ball state (truth {}, predicted - true, frames; "
+             "ball at the true spell's first frame for a start, its last for an end)".format(name),
+             "          {:<10}{:<10}{:<6}{:>8}{:>9}{:>9}{:>9}{:>10}".format(
+                 "boundary", "kind", "ball", "n", "median", "q25", "q75", "within+-{}".format(EDGE_TOLERANCE))]
     for side, kinds in (("start", START_KINDS), ("end", END_KINDS)):
         for kind in kinds:
-            for state in BALL_STATES:
+            for state in CELL_STATES:
                 one = cells[side][kind][state]
-                lines.append("          {:<6}{:<10}{:<6}{:>8,}{:>9}{:>9}{:>9}{:>10}".format(
+                lines.append("          {:<10}{:<10}{:<6}{:>8,}{:>9}{:>9}{:>9}{:>10}".format(
                     side, kind, state, one["n"], _frames(one["median"]), _frames(one["q25"]), _frames(one["q75"]),
                     _share(one["within_5"])))
     return lines
