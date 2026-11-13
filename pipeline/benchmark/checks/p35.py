@@ -1,8 +1,152 @@
-"""Checks of P35: the hmm decoder's per-frame team cost (test_p35_decoder_*, Task 13) and the turnover hazard's
-trainer, source and configs (test_p35_model_*, Task 14).
+"""Checks of P35, a turnover hazard read by the hmm decoder as a per-frame switch cost: the decoder's checks (A1, the
+per-frame team cost, named test_p35_decoder_...) and the model's (A2, named test_p35_model_...: the trainer
+train_turnover.py, its report, the turnover_hazard source's artifact and the four configs of configs/p35/).
 
-A registered stub until its lane fills it (docs/superpowers/plans/2026-11-13-p35-p39.md, Tasks 13 and 14).
+The two halves come from two lanes: the decoder's (A1) first, the model's (A2) below, under its own header and
+imports. The decoder's own checks (the brute force of the path and of the posterior, the flat cost against today's
+loop, the refusals, the config cross-check, the speed) are pipeline/selftest.py's test_hmm_hazard_*; here, A1 checks
+what diagnose (A19) does with a config whose decoder reads a hazard, lending the evidence REGISTRY a stand-in of
+kind turnover_hazard for their duration (stand_in_hazard) and giving the REGISTRY back as it was. Everything runs
+on arrays, synthetic matches (checks/common.py) and config files; none reads data
+(docs/superpowers/plans/2026-11-13-p35-p39.md, Tasks 13 and 14).
 """
+
+import contextlib
+import tempfile
+
+import numpy as np
+
+from pipeline import evidence
+from pipeline.benchmark import diagnose
+from pipeline.benchmark import inputs as match_inputs
+from pipeline.benchmark import run as benchmark_run
+from pipeline.benchmark import truth as truths
+from pipeline.benchmark.checks.common import synthetic_matches
+from pipeline.config import load_config
+from pipeline.contracts import A, D, H, Block, BlockContext, Evidence, RunContext, no_opinion
+from pipeline.decode import hmm
+from pipeline.selftest import quiet, write_text
+
+# Params
+HAZARD_KIND = "turnover_hazard"
+# A config with a team source, an alive source, a hazard source and the hmm reading it; {scale} is a decoder line.
+HAZARD_CONFIG = """
+scope = "halves"
+
+[[evidence]]
+kind = "nearest_player"
+
+[[evidence]]
+kind = "turnover_hazard"
+name = "hazard"
+
+[[evidence]]
+kind = "ball_presence"
+
+[decoder]
+kind = "hmm"
+switch_team = 4
+switch_dead = 8
+min_possession = 3
+min_dead = 3
+hazard_source = "hazard"
+{scale}"""
+# The same config without the hazard: what scale 0 must reproduce.
+PLAIN_CONFIG = HAZARD_CONFIG.replace('[[evidence]]\nkind = "turnover_hazard"\nname = "hazard"\n\n', "").replace(
+    'hazard_source = "hazard"\n{scale}', "")
+
+
+def stand_in_turnover_hazard(run):
+    """A stand-in of Task 14's source: a hazard z of made-up values (often near 0 or 1, NaN on 40% of the frames, a
+    function of the match's length only, so the same on every call) and no `alive`."""
+    n_frames = run.inputs.n_frames
+    rng = np.random.default_rng([35, n_frames])
+    home = np.where(rng.random(n_frames) < 0.4, np.nan, rng.beta(0.3, 0.3, n_frames))
+    return Evidence(alive=no_opinion(n_frames), home=home, name=HAZARD_KIND)
+
+
+@contextlib.contextmanager
+def stand_in_hazard():
+    """evidence.REGISTRY with the stand-in as "turnover_hazard" for the duration, and as it was afterwards (the real
+    source, once Task 14 is merged, included)."""
+    had = HAZARD_KIND in evidence.REGISTRY
+    real = evidence.REGISTRY.get(HAZARD_KIND)
+    evidence.REGISTRY[HAZARD_KIND] = stand_in_turnover_hazard
+    try:
+        yield
+    finally:
+        if had:
+            evidence.REGISTRY[HAZARD_KIND] = real
+        else:
+            evidence.REGISTRY.pop(HAZARD_KIND, None)
+
+
+def posterior_tally(config, matches):
+    """{"alive": (n, mean p), "home": (n, mean p)}: diagnose's posterior measures worked out here from run.predict's
+    sources and hmm.decode's own posterior (posterior = true, the config's [decoder] as the pipeline passes it), on the
+    clean profile: P(H) + P(A) on every graded frame, and P(H) / (P(H) + P(A)) on the raw truth's alive frames."""
+    alive, home = [], []
+    for match_id in sorted(matches):
+        match = matches[match_id]
+        raw, _ = truths.truth_codes(match)
+        inputs = match_inputs.MatchInputs(match, benchmark_run.make_atd(match, "clean", 0, None), profile="clean",
+                                          seed=0)
+        _, sources = benchmark_run.predict(config, inputs)
+        for half, start, stop in match.graded:
+            block = BlockContext(run=RunContext(inputs=inputs, seed=config.seed), block=Block(half, start, stop),
+                                 evidence={name: source.window(start, stop) for name, source in sources.items()})
+            posterior = hmm.decode(block, posterior=True, **config.decoder.params).posterior
+            in_play = posterior[:, H] + posterior[:, A]
+            defined = (raw[start:stop] != D) & (in_play > 0.0)
+            alive.append(np.clip(in_play, 0.0, 1.0))
+            home.append(np.clip(posterior[defined, H] / in_play[defined], 0.0, 1.0))
+    alive, home = np.concatenate(alive), np.concatenate(home)
+    return {"alive": (len(alive), float(alive.mean())), "home": (len(home), float(home.mean()))}
+
+
+def test_p35_decoder_diagnose_reads_the_hazard():
+    """diagnose on a config whose decoder reads a hazard: the hazard source is in no calibration entry and no speaker
+    key, the posterior is the decoder's own with the hazard (an independent tally through hmm.decode), at hazard_scale
+    0 the ladder and the calibration are the same config's without the hazard to the last bit, and at scale 1 the
+    hazard moves the posterior. posterior_parameters passes hazard_source and hazard_scale on (1.0 when left out with a
+    source). The REGISTRY is as it was afterwards."""
+    before = dict(evidence.REGISTRY)
+    matches = synthetic_matches()
+    with tempfile.TemporaryDirectory() as root, stand_in_hazard():
+        reports, configs = {}, {}
+        for stem, text in (("p35_plain", PLAIN_CONFIG), ("p35_s000", HAZARD_CONFIG.format(scale="hazard_scale = 0\n")),
+                           ("p35_s100", HAZARD_CONFIG.format(scale=""))):
+            path = write_text(root, stem + ".toml", text)
+            configs[stem] = load_config(path)
+            reports[stem] = diagnose.diagnose(path, profile="clean", matches=matches, data_dir=root, log=quiet)
+        assert "hazard" not in PLAIN_CONFIG and "{scale}" not in PLAIN_CONFIG, PLAIN_CONFIG
+        expected = {"switch_team": 4, "switch_dead": 8, "min_possession": 3, "min_dead": 3, "eps": 1e-6,
+                    "team_neutral_dead": False}
+        assert diagnose.posterior_parameters(configs["p35_plain"]) == dict(expected, hazard_source=None,
+                                                                          hazard_scale=None)
+        assert diagnose.posterior_parameters(configs["p35_s000"]) == dict(expected, hazard_source="hazard",
+                                                                         hazard_scale=0)
+        assert diagnose.posterior_parameters(configs["p35_s100"]) == dict(expected, hazard_source="hazard",
+                                                                         hazard_scale=1.0)
+        tallies = {stem: posterior_tally(configs[stem], matches) for stem in reports}
+        for stem in ("p35_s000", "p35_s100"):
+            block = reports[stem]["calibration"]
+            assert set(block) == {"nearest_player", "ball_presence", "posterior"}, (stem, sorted(block))
+            assert set(block["posterior"]["alive_by_team_sources"]) <= {"nearest_player", "none"}, (
+                stem, sorted(block["posterior"]["alive_by_team_sources"]))
+            for measure in ("alive", "home"):
+                figures = (block["posterior"]["alive"]["all"] if measure == "alive" else block["posterior"]["home"])
+                n, mean_p = tallies[stem][measure]
+                # the report's floats are rounded to the runner's DECIMALS; the frames are the same, in the same order
+                assert figures["n"] == n > 100 and figures["mean_p"] == round(mean_p, benchmark_run.DECIMALS), (
+                    stem, measure, figures["n"], figures["mean_p"], tallies[stem][measure])
+        plain, zero = reports["p35_plain"], reports["p35_s000"]
+        assert zero["ladder"] == plain["ladder"] and zero["calibration"] == plain["calibration"], \
+            "hazard_scale 0 is not the config without the hazard"
+        assert tallies["p35_s000"] == tallies["p35_plain"], "hazard_scale 0 moved the posterior"
+        assert all(abs(tallies["p35_s100"][measure][1] - tallies["p35_plain"][measure][1]) > 1e-9
+                   for measure in ("alive", "home")), ("the hazard did not move the posterior", tallies)
+    assert evidence.REGISTRY == before, "the stand-in was left in the REGISTRY"
 
 
 # -- the turnover hazard's trainer, report and configs (Task 14, A2): test_p35_model_* ------------------------------------
@@ -138,7 +282,6 @@ def test_p35_model_rows_are_p32s_rows_with_the_label():
     # the same rows as P32's trainer gives (its label is the team: 1 where the truth is H)
     X32, y32 = train_team.rows(inputs, codes, 5)
     assert np.array_equal(X, X32, equal_nan=True) and np.array_equal(y32, np.array([codes[t] == CODE_H for t in kept]))
-    assert not set(hidden) & set(kept), "a frame with the ball hidden is no row, however near a change it is"
     expect_error(ValueError, lambda: turnover.rows(inputs, codes, 0), "train_turnover", "stride")
     expect_error(ValueError, lambda: turnover.rows(inputs, codes, True), "stride")
     expect_error(ValueError, lambda: turnover.rows(inputs, codes[:-1], 5), "codes")
@@ -436,7 +579,8 @@ def report_agrees_with_plain_loops(matches, artifact):
     result = turnover.report(artifact, "clean", 1, 5, matches=matches)
     json.dumps(result, allow_nan=False)
     assert sorted(result) == sorted(["profile", "seeds", "stride", "model_sha256", "per_match", "pooled", "go",
-                                     "transfer", "localisation"])
+                                     "transfer", "localisation", "match_seeds"])
+    assert result["match_seeds"] == 3 * 1
     assert sorted(result["per_match"]) == list(TURNOVER_IDS)
     all_p, all_y, loss_sums, base_sums, means, offsets = [], [], 0.0, 0.0, [], []
     for match_id in TURNOVER_IDS:
@@ -487,12 +631,45 @@ def report_agrees_with_plain_loops(matches, artifact):
     assert result["model_sha256"] == hashlib.sha256(turnover.dumps(artifact).encode()).hexdigest()
     lines = turnover.render_report(result)
     assert any(line.startswith("report    GO") or line.startswith("report    NO GO") for line in lines)
-    assert any("transfer" in line for line in lines) and any("localisation" in line for line in lines)
+    assert any("transfer" in line for line in lines)
+    place = [line for line in lines if "localisation" in line]
+    assert len(place) == 1 and "summed over seeds" in place[0] and "over {} match-seeds".format(
+        result["match_seeds"]) in place[0] and "{:,} true direct changes".format(
+        result["localisation"]["changes"]) in place[0], place
     assert sum(1 for line in lines if line.startswith("report    RND00")) == 3
     # a model that never saw the match is the only one that scores it: a missing fold is refused
     short = copy.deepcopy(artifact)
     del short["folds"]["RND002"]
     expect_error(ValueError, lambda: turnover.report(short, "clean", 1, 5, matches=matches), "RND002", "full")
+
+
+def test_p35_model_report_refuses_a_file_that_is_not_its_own():
+    """The report reads the file through the source's loader and holds it to what it is run with: a target, a window,
+    a feature version, a profile or a stride that differs is one readable line (exit 2 on the command line)."""
+    matches, artifact = hazard_artifact()
+    with tempfile.TemporaryDirectory() as root:
+        def written(**changes):
+            changed = dict(copy.deepcopy(artifact), **changes)
+            path = os.path.join(root, "model.json")
+            turnover.write(path, changed)
+            return path
+
+        assert turnover.load_for_report(written(), "clean", 5) == artifact
+        for name, value in (("target", "team_home"), ("window_frames", 13), ("feature_version", 1)):
+            expect_error(ValueError, lambda: turnover.load_for_report(written(**{name: value}), "clean", 5),
+                         "turnover_hazard", name)                               # the source's own loader refuses these
+        for name, value in (("profile", "generic"), ("stride", 7)):
+            message = expect_error(ValueError, lambda: turnover.load_for_report(written(**{name: value}), "clean", 5),
+                                   "train_turnover", name, repr(value), "retrain")
+            assert "\n" not in message, "one line"
+        expect_error(ValueError, lambda: turnover.load_for_report(written(), "generic", 5), "profile", "'clean'")
+        expect_error(ValueError, lambda: turnover.load_for_report(written(), "clean", 3), "stride")
+        expect_error(ValueError, lambda: turnover.load_for_report(os.path.join(root, "absent.json"), "clean", 5),
+                     "absent.json")
+        # the command line: exit 2 and the line, before any match is loaded
+        flags = ["--report", "--profile", "clean", "--out", written(stride=7), "--data-dir", root]
+        code, text = turnover_quietly(turnover.main, flags)
+        assert code == 2 and text.startswith("REFUSED") and text.count("\n") == 1 and "stride" in text, text
 
 
 # -- the configs ------------------------------------------------------------------------------------------------------

@@ -2978,6 +2978,444 @@ def test_hmm_team_neutral_dead_refusals():
     assert len(decode(team_neutral_dead=np.True_).labels) == 10
 
 
+# P35: a per-frame team cost from a named hazard source (hazard_source, hazard_scale). The named source's `home` is a
+# hazard z; a change of team into frame t costs clip(switch_team - hazard_scale logit z_t, HAZARD_FLOOR, 2 switch_team),
+# and switch_team where z_t is NaN. Without a hazard, viterbi runs the loop it always ran (team_cost=None).
+
+def hmm_priced_scores(emissions, paths, switch_dead, team_cost):
+    """(P,) scores of the three-state `paths` ((P, n) of codes H, A, D) by the definition, written out here and not
+    taken from the module: the emissions along each, less team_cost[t] for a change between H and A from frame t - 1
+    to t and switch_dead for a change into or out of D. team_cost[0] is never read: no change enters the first frame."""
+    from pipeline.contracts import D
+    n_frames = paths.shape[1]
+    scores = emissions[np.arange(n_frames), paths].sum(axis=1)
+    if n_frames > 1:
+        before, after = paths[:, :-1], paths[:, 1:]
+        changed = before != after
+        dead = changed & ((before == D) | (after == D))
+        scores = scores - np.where(changed & ~dead, team_cost[1:], 0.0).sum(axis=1) - dead.sum(axis=1) * switch_dead
+    return scores
+
+
+def hmm_hazard_context(homes, alives, weights, hazard, hazard_alive=None, at=None):
+    """(ctx, name): hmm_context of the team sources with a hazard source inserted at position `at` (default last), whose
+    `home` is `hazard` and `alive` is hazard_alive (None: no opinion), and the hazard source's name."""
+    at = len(homes) if at is None else at
+    ctx = hmm_context(homes[:at] + [hazard] + homes[at:], alives[:at] + [hazard_alive] + alives[at:],
+                      weights=weights[:at] + [1.0] + weights[at:])
+    return ctx, "s{}".format(at)
+
+
+def test_hmm_hazard_matches_brute_force():
+    """viterbi with a per-frame team cost against every path of tiny blocks (n <= 8, 3^n paths, min_possession 1 to 3,
+    min_dead 1 to 2, random continuous emissions and costs): its path is valid, scores the best of all valid paths, and
+    is the best one (continuous random numbers leave no tie). team_cost[0] is never read."""
+    import itertools
+    from pipeline.decode import hmm
+    every = {}
+    priced = bound = 0
+    for case in range(400):
+        rng = np.random.default_rng([35, case])
+        n_frames = int(rng.integers(1, 9))
+        if n_frames not in every:
+            every[n_frames] = np.array(list(itertools.product(range(3), repeat=n_frames)), dtype=np.int64)
+        paths = every[n_frames]
+        emissions = rng.uniform(-3.0, 3.0, size=(n_frames, 3))
+        switch_team, switch_dead = (float(value) for value in rng.uniform(0.1, 4.0, size=2))
+        team_cost = rng.uniform(0.0, 6.0, size=n_frames)
+        min_possession, min_dead = int(rng.integers(1, 4)), int(rng.integers(1, 3))
+        costs = (switch_team, switch_dead, min_possession, min_dead)
+        labels = hmm.viterbi(emissions, *costs, team_cost=team_cost)
+        assert labels.dtype == np.int8 and labels.shape == (n_frames,), (case, labels.dtype, labels.shape)
+        assert restart_paths_valid(labels[None].astype(np.int64), min_possession, min_dead)[0], (case, letters(labels))
+        valid = restart_paths_valid(paths, min_possession, min_dead)   # the three codes are its first three columns
+        scores = np.where(valid, hmm_priced_scores(emissions, paths, switch_dead, team_cost), -np.inf)
+        best = int(np.argmax(scores))
+        got = hmm_priced_scores(emissions, labels[None].astype(np.int64), switch_dead, team_cost)[0]
+        assert abs(got - scores[best]) < 1e-9, "case {}: viterbi scores {!r}, the best valid path {!r}".format(
+            case, got, scores[best])
+        assert np.array_equal(labels, paths[best]), (case, letters(labels), letters(paths[best]))
+        for first in (0.0, 1e3):                                       # what frame 0's cost is changes nothing
+            moved = team_cost.copy()
+            moved[0] = first
+            assert np.array_equal(hmm.viterbi(emissions, *costs, team_cost=moved), labels), (case, first)
+        # The per-frame costs have to matter (the best path under a flat cost of their mean is another one), and so do
+        # the minimums (the best path with every run allowed is another one), or the check proves nothing about them.
+        flat = np.where(valid, hmm_priced_scores(emissions, paths, switch_dead,
+                                                 np.full(n_frames, team_cost[1:].mean() if n_frames > 1 else 0.0)),
+                        -np.inf)
+        priced += int(np.argmax(flat)) != best
+        bound += hmm_priced_scores(emissions, paths, switch_dead, team_cost).max() > scores[best] + 1e-9
+    assert priced >= 30 and bound >= 30, "{} cases where the per-frame cost decided, {} where a minimum bound".format(
+        priced, bound)
+
+
+def test_hmm_hazard_flat_cost_is_today():
+    """team_cost filled with switch_team gives the labels of team_cost=None, to the label: on random scenes, on
+    whole-number emissions where exact ties are everywhere, and on the gap scenes whose change of team only the tie rule
+    places (on the gap's first frame)."""
+    from pipeline.decode import hmm
+    for case in range(40):
+        rng = np.random.default_rng([35, 1000 + case])
+        n_frames = int(rng.integers(1, 1500))
+        homes, alives, weights = hmm_random_scene(rng, n_frames)
+        costs = hmm_random_costs(rng)
+        emissions = hmm.log_likelihoods(hmm_context(homes, alives, weights=weights).evidence.values(), n_frames,
+                                        hmm.EPS)
+        today = hmm.viterbi(emissions, **costs)
+        flat = hmm.viterbi(emissions, **costs, team_cost=np.full(n_frames, costs["switch_team"]))
+        assert flat.dtype == np.int8 and np.array_equal(flat, today), "case {}: {} labels moved".format(
+            case, int((flat != today).sum()))
+        assert np.array_equal(today, hmm_viterbi_before_restart_states(emissions, **costs)), case
+    for case in range(300):
+        rng = np.random.default_rng([35, 1100 + case])
+        n_frames = int(rng.integers(1, 60))
+        emissions = rng.integers(-2, 3, size=(n_frames, 3)).astype(np.float64)
+        costs = (float(rng.choice([0.0, 0.5, 1.0, 2.0])), float(rng.choice([0.0, 0.5, 1.0, 2.0])),
+                 int(rng.integers(1, 6)), int(rng.integers(1, 6)))
+        today = hmm.viterbi(emissions, *costs)
+        flat = hmm.viterbi(emissions, *costs, team_cost=np.full(n_frames, costs[0]))
+        assert np.array_equal(flat, today), (case, letters(flat), letters(today))
+    for gap in (30, 50):
+        home = home_runs((VOTE, 60), (np.nan, gap), (1.0 - VOTE, 60))
+        alive = np.concatenate([np.full(60, 0.585), np.full(gap, 0.2), np.full(60, 0.585)])
+        emissions = hmm.log_likelihoods(hmm_context(home, alive).evidence.values(), len(home), hmm.EPS)
+        for min_possession in (1, 10):
+            costs = (1.0, 100.0, min_possession, 1)
+            flat = hmm.viterbi(emissions, *costs, team_cost=np.full(len(home), 1.0))
+            assert letters(flat) == "H" * 60 + "A" * (gap + 60), (gap, min_possession, letters(flat))
+            assert np.array_equal(flat, hmm.viterbi(emissions, *costs)), (gap, min_possession)
+
+
+def test_hmm_hazard_costs_follow_the_rule():
+    """hazard_costs: switch_team - scale logit(z) clipped to [HAZARD_FLOOR, 2 switch_team], z clipped to [eps, 1 - eps]
+    first, and switch_team exactly where z is NaN, at z = 0.5 and at scale 0."""
+    from pipeline.decode import hmm
+    assert hmm.HAZARD_FLOOR == 1.0
+    z = np.array([np.nan, 0.5, 0.9, 0.1, 0.999, 1e-4, 1.0, 0.0])
+    got = hmm.hazard_costs(z, 6.0, 1.0, 1e-6)
+    logit = np.log(0.9 / 0.1)
+    expected = np.array([6.0, 6.0, 6.0 - logit, 6.0 + logit, 1.0, 12.0, 1.0, 12.0])
+    assert got.dtype == np.float64 and got.shape == (8,) and np.allclose(got, expected, rtol=0.0, atol=1e-12), got
+    assert got[0] == 6.0 and got[1] == 6.0, "NaN and z = 0.5 must cost exactly switch_team"
+    half = hmm.hazard_costs(z, 6.0, 0.5, 1e-6)
+    assert np.allclose(half[2:4], [6.0 - logit / 2, 6.0 + logit / 2], rtol=0.0, atol=1e-12), half
+    assert (hmm.hazard_costs(z, 6.0, 0.0, 1e-6) == 6.0).all(), "scale 0 is switch_team on every frame"
+    assert (hmm.hazard_costs(z, 1.0, 0.0, 1e-6) == 1.0).all(), "and at switch_team = HAZARD_FLOOR too"
+    # eps is the decoder's clip: at eps 1e-2 the hard 1 is logit(0.99) = 4.6 nats, inside the clip at switch_team 8
+    assert abs(hmm.hazard_costs(np.array([1.0]), 8.0, 1.0, 1e-2)[0] - (8.0 - np.log(99.0))) < 1e-12
+    before = z.copy()
+    z.flags.writeable = False
+    hmm.hazard_costs(z, 6.0, 1.0, 1e-6)
+    assert np.array_equal(z, before, equal_nan=True), "the hazard was written"
+
+
+def test_hmm_hazard_silent_or_scale_zero_is_today():
+    """A hazard source NaN everywhere (at any scale), and any hazard at hazard_scale 0, give the labels of the same
+    block without the source: the named source adds nothing to the emissions, neither its `home` nor its `alive`, and
+    a cost of switch_team on every frame is today's decoder. Each case has two scenes: hmm_random_scene's noise at
+    random costs, and team runs that noisy votes make out, with ball gaps, where the decoder changes team from H to A
+    directly (the changes the hazard prices) and the same hazards at scale 1 move labels."""
+    from pipeline.contracts import D, no_opinion
+    from pipeline.decode import REGISTRY
+    moved = direct = 0
+    for case in range(30):
+        rng = np.random.default_rng([35, 2000 + case])
+        n_frames = int(rng.integers(1, 1500))
+        homes, alives, weights = hmm_random_scene(rng, n_frames)
+        costs = dict(hmm_random_costs(rng), switch_team=float(rng.choice([1.0, 6.0, rng.uniform(1.0, 20.0)])))
+        team = np.repeat(rng.integers(0, 2, n_frames // 40 + 1), 40)[:n_frames]
+        seen = ~np.repeat(rng.random(n_frames // 60 + 1) < 0.3, 60)[:n_frames]
+        votes = np.where(rng.random(n_frames) < np.where(team == 0, 0.75, 0.25), VOTE, 1.0 - VOTE)
+        votes[~seen] = np.nan
+        runs = {"switch_team": float(rng.choice([1.0, 6.0])), "switch_dead": 50.0,
+                "min_possession": int(rng.integers(1, 20))}
+        hazard_alive = np.where(rng.random(n_frames) < 0.5, np.nan, rng.random(n_frames))
+        at = int(rng.integers(0, len(homes) + 1))
+        hazard = np.where(rng.random(n_frames) < 0.4, np.nan, rng.beta(0.5, 0.5, n_frames))
+        scenes = (([homes, alives, weights], costs, at),
+                  ([[votes], [np.where(seen, 0.585, 0.2)], [1.0]], runs, int(rng.integers(0, 2))))
+        for scene, (sources, parameters, position) in enumerate(scenes):
+            without = REGISTRY["hmm"](hmm_context(sources[0], sources[1], weights=sources[2]), **parameters).labels
+            ctx, name = hmm_hazard_context(*sources, no_opinion(n_frames), hazard_alive, position)
+            for scale in ({}, {"hazard_scale": 2.0}, {"hazard_scale": 0.0}):
+                labels = REGISTRY["hmm"](ctx, hazard_source=name, **scale, **parameters).labels
+                assert labels.dtype == np.int8 and np.array_equal(labels, without), "case {} scene {} {}: {} labels " \
+                    "moved".format(case, scene, scale, int((labels != without).sum()))
+            ctx, name = hmm_hazard_context(*sources, hazard, hazard_alive, position)
+            for zero in (0.0, 0, np.float64(0.0)):
+                labels = REGISTRY["hmm"](ctx, hazard_source=name, hazard_scale=zero, **parameters).labels
+                assert np.array_equal(labels, without), "case {} scene {}: {} labels moved at scale 0".format(
+                    case, scene, int((labels != without).sum()))
+            if scene == 1:
+                direct += int(((without[1:] != without[:-1]) & (without[1:] != D) & (without[:-1] != D)).sum())
+                moved += not np.array_equal(REGISTRY["hmm"](ctx, hazard_source=name, **parameters).labels, without)
+    # Equal labels where the decoder never changed team directly would say nothing about the per-frame cost.
+    assert direct >= 100 and moved >= 10, "{} direct changes of team in 30 decodes, the hazard moved labels in {} of " \
+        "30 at scale 1".format(direct, moved)
+
+
+def test_hmm_hazard_peak_places_the_change():
+    """A stretch with no team evidence between two teams' runs: the change of team lands on the stretch's first frame
+    (the tie rule); a hazard peak at frame k puts it on k, a dip at the first frame moves it off, and a hazard that
+    names no frame moves nothing. Where the team evidence decides, a peak does not make a change."""
+    from pipeline.contracts import no_opinion
+    from pipeline.decode import REGISTRY
+    home = home_runs((VOTE, 60), (np.nan, 30), (1.0 - VOTE, 60))
+    alive = np.concatenate([np.full(60, 0.585), np.full(30, 0.2), np.full(60, 0.585)])   # ball_presence's shape
+    costs = {"switch_team": 6.0, "switch_dead": 100.0, "min_possession": 10}
+
+    def labels(hazard, **extra):
+        ctx, name = hmm_hazard_context([home], [alive], [1.0], hazard)
+        return letters(REGISTRY["hmm"](ctx, hazard_source=name, **extra, **costs).labels)
+
+    assert letters(REGISTRY["hmm"](hmm_context(home, alive), **costs).labels) == "H" * 60 + "A" * 90
+    assert labels(no_opinion(150)) == "H" * 60 + "A" * 90
+    for k in (60, 61, 75, 89):
+        hazard = no_opinion(150)
+        hazard[k] = 0.9
+        for scale in (0.5, 1.0, 2.0):
+            assert labels(hazard, hazard_scale=scale) == "H" * k + "A" * (150 - k), (k, scale)
+        assert labels(hazard, hazard_scale=0.0) == "H" * 60 + "A" * 90, k
+    dip = no_opinion(150)
+    dip[60] = 0.1
+    assert labels(dip) == "H" * 61 + "A" * 89, "a dip at the first frame makes the next one the cheapest"
+    # A peak inside H's votes: the 10 frames a change there would give A cost far more than the peak takes off.
+    peak = np.full(150, 0.5)
+    peak[30] = 1.0
+    assert labels(peak) == "H" * 60 + "A" * 90
+
+
+def test_hmm_hazard_speed():
+    """80,000 frames, two team sources and a hazard where the ball is seen, minimums of 50: the decode with the hazard
+    takes at most 1.5 times today's on the same frames without it (the fastest of three runs each, interleaved: the
+    minimum is the least disturbed by a loaded machine)."""
+    from pipeline.decode import REGISTRY
+    rng = np.random.default_rng([35, 3000])
+    n_frames = 80000
+    team = np.repeat(rng.integers(0, 2, n_frames // 100), 100)
+    seen = ~np.repeat(rng.random(n_frames // 200) < 0.4, 200)
+    homes, alives = [], []
+    for noise in (0.25, 0.4):
+        home = np.where(rng.random(n_frames) < np.where(team == 0, 1.0 - noise, noise), VOTE, 1.0 - VOTE)
+        home[~seen] = np.nan
+        homes.append(home)
+        alives.append(np.where(seen, 0.585, 0.2))
+    hazard = np.where(seen, rng.beta(0.5, 4.0, n_frames), np.nan)
+    without = hmm_context(homes, alives)
+    ctx, name = hmm_hazard_context(homes, alives, [1.0, 1.0], hazard)
+    costs = {"switch_team": 6.0, "switch_dead": 8.0, "min_possession": 50, "min_dead": 50}
+    today, priced = [], []
+    for _ in range(3):
+        started = time.perf_counter()
+        expected = REGISTRY["hmm"](without, **costs).labels
+        today.append(time.perf_counter() - started)
+        started = time.perf_counter()
+        labels = REGISTRY["hmm"](ctx, hazard_source=name, **costs).labels
+        priced.append(time.perf_counter() - started)
+    ratio = min(priced) / min(today)
+    print("      hmm: {:,} frames, with a hazard {:.2f} s, without {:.2f} s (x{:.2f})".format(
+        n_frames, min(priced), min(today), ratio))
+    assert len(labels) == len(expected) == n_frames and not np.array_equal(labels, expected), "the hazard did nothing"
+    assert ratio <= 1.5, "the hazard's decode takes {:.2f} times today's".format(ratio)
+
+
+def test_hmm_hazard_refusals():
+    """What decode refuses with a hazard, each a ValueError naming the decoder, the parameter, what is allowed and the
+    value given; and what viterbi refuses of a team_cost."""
+    from pipeline.decode import REGISTRY, hmm
+    ctx = hmm_context([np.full(10, VOTE), np.full(10, 0.3)])
+
+    def decode(context=ctx, **parameters):
+        return REGISTRY["hmm"](context, **dict({"switch_team": 6.0, "switch_dead": 8.0}, **parameters))
+
+    # hazard_scale without a source would be read by nothing
+    expect_error(ValueError, lambda: decode(hazard_scale=1.0), "hmm", "hazard_scale", "hazard_source")
+    for bad in (-0.5, -np.inf, np.nan, np.inf, True, np.True_, "1"):
+        expect_error(ValueError, lambda: decode(hazard_source="s1", hazard_scale=bad), "hmm", "hazard_scale",
+                     repr(bad))
+    for bad in ("", 3, True, ["s1"], b"s1"):
+        expect_error(ValueError, lambda: decode(hazard_source=bad), "hmm", "hazard_source", repr(bad))
+    expect_error(ValueError, lambda: decode(hazard_source="s9"), "hmm", "hazard_source", "'s9'", "'s0'", "'s1'")
+    expect_error(ValueError, lambda: decode(hazard_source="s1", restart_source="s0"), "hmm", "hazard_source",
+                 "restart_source")
+    expect_error(ValueError, lambda: decode(hazard_source="s1", team_neutral_dead=True), "hmm", "hazard_source",
+                 "team_neutral_dead")
+    # below HAZARD_FLOOR a frame at the base rate would cost more than switch_team, and scale 0 would not be today's
+    for low in (0.0, 0.5, 0.999):
+        expect_error(ValueError, lambda: decode(hazard_source="s1", switch_team=low), "hmm", "hazard_source",
+                     "switch_team", "HAZARD_FLOOR", repr(low))
+    # the hazard's strength is hazard_scale: a weight on its source would be read by nothing
+    weighted = hmm_context([np.full(10, VOTE), np.full(10, 0.3)], weights=[1.0, 0.5])
+    expect_error(ValueError, lambda: decode(weighted, hazard_source="s1"), "hmm", "'s1'", "weight", "hazard_scale",
+                 "0.5")
+    # the three-state checks still apply
+    expect_error(ValueError, lambda: decode(hazard_source="s1", min_dead=0), "hmm", "min_dead")
+    for good in ({}, {"hazard_scale": None}, {"hazard_scale": 0}, {"hazard_scale": 2}, {"hazard_scale": 0.5},
+                 {"hazard_scale": np.float64(1.5)}, {"hazard_scale": np.int64(1)}, {"switch_team": 1.0}):
+        assert len(decode(hazard_source="s1", **good).labels) == 10, good
+    assert decode(hazard_source="s1", posterior=False).posterior is None
+    assert decode(hazard_source="s1", posterior=True).posterior.shape == (10, 3), "the posterior takes the hazard"
+    # viterbi's and marginals' team_cost: one finite number of nats >= 0 per frame
+    emissions = np.zeros((5, 3))
+    for function in (hmm.viterbi, hmm.marginals):
+        for bad in (np.zeros(4), np.zeros(6), np.zeros((5, 1)), np.array([1.0, np.nan, 1.0, 1.0, 1.0]),
+                    np.array([1.0, 1.0, np.inf, 1.0, 1.0]), np.array([1.0, 1.0, 1.0, -0.1, 1.0])):
+            expect_error(ValueError, lambda: function(emissions, 1.0, 1.0, 1, 1, team_cost=bad), "hmm", "team_cost")
+        assert len(function(emissions, 1.0, 1.0, 1, 1, team_cost=[0, 1, 2, 3, 4])) == 5     # a list of whole numbers
+        assert len(function(np.zeros((0, 3)), 1.0, 1.0, 1, 1, team_cost=np.zeros(0))) == 0
+
+
+def test_hmm_hazard_config_cross_check():
+    """load_config: an hmm decoder's hazard_source must name an evidence source of kind "turnover_hazard", and every
+    such source must be named by it (unnamed, it would vote as a team source). Each a ConfigError naming both; the
+    real hmm.decode's signature with stand-in sources (the real source is another task's)."""
+    from pipeline.config import ConfigError, load_config
+    from pipeline.decode import hmm
+
+    def fake_source(run):
+        return None
+
+    def fake_hazard(run, *, model="m.json"):
+        return None
+
+    registries = {"evidence": {"fake_source": fake_source, "turnover_hazard": fake_hazard},
+                  "decode": {"hmm": hmm.decode, "fake_vote": fake_registries()["decode"]["fake_vote"]},
+                  "refine": {}}
+    team = '[[evidence]]\nkind = "fake_source"\nname = "team"\n\n'
+    hazard = '[[evidence]]\nkind = "turnover_hazard"\nname = "{}"\n\n'
+    decoder = '[decoder]\nkind = "hmm"\nswitch_team = 6\nswitch_dead = 32\n'
+
+    def load(text):
+        with tempfile.TemporaryDirectory() as folder:
+            return load_config(write_text(folder, "p35_trial.toml", text), registries=registries)
+
+    config = load(team + hazard.format("hazard") + decoder + 'hazard_source = "hazard"\nhazard_scale = 0.5\n')
+    assert [component.kind for component in config.evidence] == ["fake_source", "turnover_hazard"], config.evidence
+    assert config.decoder.params == {"switch_team": 6, "switch_dead": 32, "hazard_source": "hazard",
+                                     "hazard_scale": 0.5}, config.decoder.params
+    assert load(hazard.format("h2") + team + decoder + 'hazard_source = "h2"\n').decoder.params["hazard_source"] == "h2"
+    assert "hazard_source" not in load(team + decoder).decoder.params, "no hazard: the config is as it was"
+    # hazard_source names a source of another kind, or none at all
+    expect_error(ConfigError, lambda: load(team + hazard.format("hazard") + decoder + 'hazard_source = "team"\n'),
+                 "p35_trial.toml", "hazard_source", "'team'", "turnover_hazard", "'hazard'")
+    expect_error(ConfigError, lambda: load(team + decoder + 'hazard_source = "hazard"\n'), "p35_trial.toml",
+                 "hazard_source", "'hazard'", "turnover_hazard")
+    # a turnover_hazard source that the decoder does not name: with no hazard_source, another one, or a second source
+    expect_error(ConfigError, lambda: load(team + hazard.format("hazard") + decoder), "p35_trial.toml", "'hazard'",
+                 "turnover_hazard", "hazard_source")
+    expect_error(ConfigError, lambda: load(team + hazard.format("hazard") + hazard.format("other") + decoder +
+                                           'hazard_source = "hazard"\n'), "p35_trial.toml", "'other'",
+                 "turnover_hazard", "hazard_source", "'hazard'")
+    vote = '[decoder]\nkind = "fake_vote"\nhalf_width = 3\n'
+    expect_error(ConfigError, lambda: load(team + hazard.format("hazard") + vote), "p35_trial.toml", "'hazard'",
+                 "turnover_hazard", "hazard_source")
+
+
+def hmm_priced_brute_force_marginals(emissions, switch_dead, team_cost, min_possession, min_dead, paths):
+    """The posterior with a per-frame team cost by its definition, over the valid ones of `paths` ((P, n) of codes H,
+    A, D, every path of the block): each valid path weighs exp(its hmm_priced_scores score). (n_frames, 3)."""
+    valid = paths[restart_paths_valid(paths, min_possession, min_dead)]
+    scores = hmm_priced_scores(emissions, valid, switch_dead, team_cost)
+    weights = np.exp(scores - scores.max())
+    weights /= weights.sum()
+    return np.stack([weights @ (valid == state) for state in range(3)], axis=1)
+
+
+def test_hmm_hazard_posterior_matches_brute_force():
+    """marginals with a per-frame team cost against every path of tiny blocks (n <= 7, min_possession 1 to 3, min_dead
+    1 to 2, blocks shorter than a minimum among them, random continuous emissions and costs): the forward pass's birth
+    into frame t and the backward pass's leave towards frame t + 1 both price a change of team at the cost of the
+    frame its new run starts on."""
+    import itertools
+    from pipeline.decode import hmm
+    every = {}
+    priced = short = 0
+    for case in range(200):
+        rng = np.random.default_rng([35, 4000 + case])
+        n_frames = int(rng.integers(1, 8))
+        if n_frames not in every:
+            every[n_frames] = np.array(list(itertools.product(range(3), repeat=n_frames)), dtype=np.int64)
+        emissions = rng.uniform(-3.0, 3.0, size=(n_frames, 3))
+        switch_team, switch_dead = (float(value) for value in rng.uniform(0.1, 4.0, size=2))
+        team_cost = rng.uniform(0.0, 6.0, size=n_frames)
+        min_possession, min_dead = int(rng.integers(1, 4)), int(rng.integers(1, 3))
+        costs = (switch_team, switch_dead, min_possession, min_dead)
+        got = hmm.marginals(emissions, *costs, team_cost=team_cost)
+        expected = hmm_priced_brute_force_marginals(emissions, switch_dead, team_cost, min_possession, min_dead,
+                                                    every[n_frames])
+        assert got.dtype == np.float64 and got.shape == (n_frames, 3), (case, got.dtype, got.shape)
+        assert np.allclose(got, expected, rtol=1e-9, atol=1e-12), "case {} ({} frames, minimums {} and {}): {!r} " \
+            "against the brute force {!r}".format(case, n_frames, min_possession, min_dead, got, expected)
+        flat = hmm.marginals(emissions, *costs, team_cost=np.full(n_frames, team_cost[1:].mean() if n_frames > 1
+                                                                  else 0.0))
+        priced += np.abs(flat - got).max() > 1e-6
+        short += n_frames < max(min_possession, min_dead)
+    # The per-frame costs have to move the posterior away from a flat cost of their mean, and some blocks have to be
+    # shorter than a minimum, or the check proves nothing about them.
+    assert priced >= 100 and short >= 10, "{} cases priced, {} blocks shorter than a minimum, of 200".format(
+        priced, short)
+
+
+def test_hmm_hazard_posterior_flat_cost_is_today():
+    """marginals with team_cost filled with switch_team is marginals without it, to the last bit, on random blocks;
+    and a long block read backwards, its costs moved with it (the change into reversed frame u is the change into the
+    original frame n - u), has the reversed posterior: the forward and the backward pass read the same frame's cost
+    over thousands of frames."""
+    from pipeline.decode import hmm
+    moved = 0
+    for case in range(8):
+        rng = np.random.default_rng([35, 5000 + case])
+        n_frames = int(rng.integers(300, 2000))
+        emissions = rng.normal(0.0, float(rng.choice([0.3, 2.0, 30.0])), size=(n_frames, 3))
+        costs = (float(rng.uniform(0.0, 20.0)), float(rng.uniform(0.0, 20.0)), int(rng.integers(1, 150)),
+                 int(rng.integers(1, 150)))
+        today = hmm.marginals(emissions, *costs)
+        flat = hmm.marginals(emissions, *costs, team_cost=np.full(n_frames, costs[0]))
+        assert np.array_equal(flat, today), "case {}: {:.1e} apart".format(case, np.abs(flat - today).max())
+        team_cost = rng.uniform(1.0, 2.0 * costs[0] + 1.0, size=n_frames)
+        forwards = hmm.marginals(emissions, *costs, team_cost=team_cost)
+        reversed_cost = np.concatenate([team_cost[:1], team_cost[1:][::-1]])
+        backwards = hmm.marginals(emissions[::-1], *costs, team_cost=reversed_cost)[::-1]
+        assert np.allclose(forwards, backwards, rtol=0.0, atol=1e-10), "case {}: {:.1e} apart".format(
+            case, np.abs(forwards - backwards).max())
+        moved += np.abs(forwards - today).max() > 1e-6     # emissions of 30 nats a frame may leave nothing to move
+    assert moved >= 4, "the costs moved the posterior in only {} of 8 long blocks".format(moved)
+
+
+def test_hmm_hazard_decode_posterior():
+    """decode's posterior with a hazard is marginals' at hazard_costs on the other sources' emissions, its labels are
+    the same with the posterior on and off, and a silent hazard, or scale 0, gives the posterior of the block without
+    the source, to the last bit."""
+    from pipeline.contracts import no_opinion
+    from pipeline.decode import REGISTRY, hmm
+    for case in range(12):
+        rng = np.random.default_rng([35, 6000 + case])
+        n_frames = int(rng.integers(200, 1200))
+        team = np.repeat(rng.integers(0, 2, n_frames // 40 + 1), 40)[:n_frames]
+        votes = np.where(rng.random(n_frames) < np.where(team == 0, 0.75, 0.25), VOTE, 1.0 - VOTE)
+        alive = np.where(rng.random(n_frames) < 0.5, np.nan, rng.random(n_frames))
+        hazard = np.where(rng.random(n_frames) < 0.4, np.nan, rng.beta(0.5, 0.5, n_frames))
+        costs = {"switch_team": float(rng.choice([1.0, 6.0])), "switch_dead": float(rng.uniform(2.0, 30.0)),
+                 "min_possession": int(rng.integers(1, 30)), "min_dead": int(rng.integers(1, 30))}
+        scale = float(rng.choice([0.5, 1.0, 2.0]))
+        ctx, name = hmm_hazard_context([votes], [alive], [1.0], hazard, None, int(rng.integers(0, 2)))
+        decoded = REGISTRY["hmm"](ctx, hazard_source=name, hazard_scale=scale, posterior=True, **costs)
+        labels = REGISTRY["hmm"](ctx, hazard_source=name, hazard_scale=scale, **costs).labels
+        assert np.array_equal(decoded.labels, labels), "case {}: the posterior moved a label".format(case)
+        emissions = hmm.log_likelihoods(hmm_context(votes, alive).evidence.values(), n_frames, hmm.EPS)
+        expected = hmm.marginals(emissions, *costs.values(),
+                                 team_cost=hmm.hazard_costs(hazard, costs["switch_team"], scale, hmm.EPS))
+        assert np.array_equal(decoded.posterior, expected), case
+        without = REGISTRY["hmm"](hmm_context(votes, alive), posterior=True, **costs).posterior
+        silent, silent_name = hmm_hazard_context([votes], [alive], [1.0], no_opinion(n_frames))
+        assert np.array_equal(REGISTRY["hmm"](silent, hazard_source=silent_name, posterior=True, **costs).posterior,
+                              without), case
+        assert np.array_equal(REGISTRY["hmm"](ctx, hazard_source=name, hazard_scale=0.0, posterior=True,
+                                              **costs).posterior, without), case
+        assert np.abs(decoded.posterior - without).max() > 1e-6, "case {}: the hazard did not move it".format(case)
+
+
 # -- dead ball (P05) --------------------------------------------------------------------------------------------------
 #
 # Hand-built scenes, in metres on the default 105.3 x 68.0 pitch (centre spot (52.65, 34), penalty spots (11, 34) and
