@@ -1487,6 +1487,59 @@ cannot see a 2-second possession, which the coarse truth merges. Training on bot
 differ) trains on the objective's own target. **A sanity gate:** the mean of the raw and coarse held-out log-losses in
 the gaps at most version 2's − 0.003, the raw one at most +0.010 worse. One config at weight 0.3.
 
+## The night's third round (13 Nov)
+
+With P32 kept and P33 and P34 dropped by 00:40, a research agent proposed a third round (C1 and P35 to P39); the
+advisor, in Tian's place, ruled at 01:05 that all five run and amended them ([the
+spec](superpowers/specs/2026-11-13-p35-p39-design.md), declared at 01:07 before any run; [the
+plan](superpowers/plans/2026-11-13-p35-p39.md)). **The reference is the night's candidate `p32_w030`** (P30 + P32,
+raw 0.5891, coarse 0.5963), not `main.toml`'s copy; the bar is the night's. New for this round: a pick, or the
+combination, becomes a candidate only if it also holds on fresh seeds (3 to 5: mean at least +0.005, neither truth
+below −0.005). The combination of kept picks must beat the better single pick by +0.005. P36 (the decoder re-chosen
+with version 2 in place) stays not recommended.
+
+### C1 — The edge errors by boundary kind and ball state (a check)
+
+**Status: in progress (13 Nov).** A report that chooses nothing: `diagnose.py` splits the clean pairs' start and end
+errors by the kind of boundary (a change of team, into `D`, out of `D`) and by whether the ball is seen at the true
+edge. It opens P38's gate: the into-`D` end error's upper quartile at least +10 frames (raw truth) and above the team
+ends.
+
+### P35 — A turnover hazard: the decoder's switch cost per frame
+
+**Status: in progress (13 Nov).** Effort about 6 h (A1 the decoder, A2 the model). Odds about one in five.
+
+**The belief.** `switch_team` is one constant for every frame, so a change of team costs as much in the middle of a
+controlled run as at a loose ball after a long pass. A model of where changes of team happen (trained on DFL, the ball
+seen) lowers the cost where a change is likely and raises it where it is not. **Amended:** the hazard speaks only where
+the ball is seen; the gaps decode as today. **The gate** (a screen): held-out AUC at least 0.80 and log-loss at most
+0.90 × the base rate's. Scales 0.5, 1.0, 2.0; ties to the smallest. `HAZARD_FLOOR` 1.0 nat, the cost capped at
+2 × `switch_team`. Safeguards on `hmm.py`: off by default it decodes bit for bit as today, checked by brute force.
+
+### P37 — Shape features version 4: each team's time since and until control, in the gaps only
+
+**Status: in progress (13 Nov).** Effort about 2.5 h. Odds about one in six. An **alternative** for Tian at most: no
+transfer check is possible (T38), so it never enters the night's candidate.
+
+**The belief.** Version 2 knows the teams' shape but not how long since each last controlled the ball; in a gap that
+timing says who is likely to have it. Version 4 adds it, with a scope `"visible"` (R026's, restored) so the seen frames
+keep version 2. **Gates:** gap log-loss at most 0.3059, and on the hand-over gaps at most version 2's − 0.013.
+
+### P38 — The dead-ball onset: one-sided speed changes
+
+**Status: waiting on C1's gate (13 Nov).** Effort about 2 h. Odds about one in six. Built only if the into-`D` end
+error is the late tail C1 would show. **Gates:** the onset log-loss at most 0.90 × version 1's, on all frames at most
+version 1's + 0.002.
+
+### P39 — The shape vote silent where P32's model speaks
+
+**Status: dropped 13 Nov 2026 → [R038](results.md): the bar missed (mean −0.0084; raw −0.0013, coarse −0.0156 and
+lower on all seven matches), the direction R026 predicted; no retry; config and check removed.** A config only.
+
+**The belief.** P32's model reads the 42 shape columns itself, so the shape source counts them twice where the ball is
+seen; with the shape source silent there (`scope = "gaps"`), each input votes once. The measurement says the second
+vote smooths who has the ball: without it the decoder makes more, shorter possessions, which the coarse truth punishes.
+
 ## Cheap signals worth checking
 
 ### P09 — Camera aim as a coarse ball-zone prior
