@@ -3,7 +3,8 @@
     [[evidence]]
     kind = "shape_possession"
     model = "pipeline/models/shape_possession_hgb.json"   # relative to the repository root
-    scope = "gaps"                                        # "gaps": only where the ball is missing; "all": every frame
+    scope = "gaps"                                        # "gaps": only where the ball is missing; "visible": only
+                                                          # where it is present; "all": every frame
     min_prob = 0.02                                       # home is clipped to [min_prob, 1 - min_prob]
 
 The ball is missing from our tracking on 41% of the graded frames, in long gaps (a median 10.7 s, docs/results.md A01),
@@ -21,7 +22,8 @@ pickle is ever loaded.
 What it does, in order
 -----------------------------------
 1. Load. The file's `format`, `feature_version` (a plain int among `shape_features.VERSIONS`: 1 is the 26 columns, 2
-   the 42 of P30, which add each team's length and spread and the advance one-sided in time), `features` (that
+   the 42 of P30, which add each team's length and spread and the advance one-sided in time, 4 the 46 of
+   P37, which add each team's time since and until its control episodes; 3 is retired), `features` (that
    version's names, in order) and `kind` ("hgb") must be shape_features' own, every model
    (`folds[match]` and `full`) must hold trees the walk can run and a `prior_home` of exactly 0.5, or this raises and
    says to retrain with `python pipeline/benchmark/train_shape.py`: a model that reads column 7 as a different feature
@@ -53,8 +55,11 @@ What it does, in order
    features there) and on a frame where both teams have no present slot (`h_n` and `a_n` are both 0: nobody to read the
    shape of), and with `scope = "gaps"`, the default, also where the ball is present: those frames have better
    evidence, and P07 (docs/proposals.md) is a source for the gaps. `scope = "all"` speaks on those frames too, to
-   measure the source on its own. A team that is present while the other is gone is not silent:
-   the missing team's columns are NaN, which the trees were fitted to handle.
+   measure the source on its own, and `scope = "visible"` speaks on those frames only: the complement of "gaps" within
+   "all" (R026, restored for P37), so that two sources, "visible" at one weight and "gaps" at another (of the same
+   model or of two), decode exactly as "all" does when the weights and models are equal (the decoder sums its sources,
+   and on every frame only one of the two speaks). A team that is present while the other is gone is not silent: the
+   missing team's columns are NaN, which the trees were fitted to handle.
 
 Speed: with the features already computed, the first call on 140,000 frames and 300 trees of 15 leaves, which is two
 walks of the trees, takes 2 to 3.5 s on the development machine (test_shape_possession_speed prints it and holds it
@@ -77,7 +82,7 @@ from pipeline.evidence import shape_features, trees
 NAME = "shape_possession"
 KINDS = ("hgb",)
 PRIOR_HOME = 0.5                                       # what a model of rows and their mirrors must say
-SCOPES = ("gaps", "all")
+SCOPES = ("gaps", "all", "visible")
 TRAINER = "pipeline/benchmark/train_shape.py"          # path form: the benchmark-import scan reads dotted names
 RETRAIN = "retrain it with `python {}`".format(TRAINER)
 
@@ -100,6 +105,8 @@ def compute(run, *, model, scope="gaps", min_prob=0.02):
     speaks = ~np.isnan(logit_home)
     if scope == "gaps":
         speaks &= ~inputs.atd.ball_present
+    elif scope == "visible":
+        speaks &= inputs.atd.ball_present
     home = np.full(len(logit_home), np.nan)
     home[speaks] = np.clip(trees.sigmoid(logit_home[speaks]), min_prob, 1.0 - min_prob)
     home.flags.writeable = False
@@ -169,6 +176,6 @@ def _check_model(model, where, width):
 
 def _scope(value):
     if not isinstance(value, str) or value not in SCOPES:
-        raise ValueError("{}: scope must be \"gaps\" (only where the ball is missing) or \"all\" (every graded "
-                         "frame), got {!r}".format(NAME, value))
+        raise ValueError("{}: scope must be \"gaps\" (only where the ball is missing), \"visible\" (only where it "
+                         "is present) or \"all\" (every graded frame), got {!r}".format(NAME, value))
     return value

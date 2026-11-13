@@ -3884,7 +3884,7 @@ def test_shape_features_v2_names_and_shape():
     names = shape_features.feature_names(2)
     assert names == tuple("h_" + t for t in V2_TEAM) + tuple("a_" + t for t in V2_TEAM) + ("adv_gap", "n_diff")
     assert len(names) == 42 and len(set(names)) == 42
-    assert shape_features.VERSIONS == (1, 2) and shape_features.ONE_SIDED_S == (2.0, 5.0, 10.0)
+    assert shape_features.VERSIONS == (1, 2, 4) and shape_features.ONE_SIDED_S == (2.0, 5.0, 10.0)
     assert shape_features.feature_names(1) == shape_features.FEATURE_NAMES == SHAPE_NAMES
     assert shape_features.columns(2) == {name: index for index, name in enumerate(names)}
     assert shape_features.columns(1) == shape_features.COLUMN
@@ -3979,6 +3979,152 @@ def test_shape_features_v2_swap():
     assert flipped[:20].tolist() == list(range(20, 40)) and flipped[20:40].tolist() == list(range(20))
     assert flipped[40] == -40.0 and flipped[41] == -41.0
     expect_error(ValueError, lambda: shape_features.swap(np.zeros((4, 30))), "shape_features.swap", "30")
+
+
+V4_TEAM = tuple(V2_TEAM) + ("since_episode_s", "until_episode_s")
+
+
+def shape_matrix_v4(players, teams, graded, ball=None):
+    from pipeline.evidence import shape_features
+    names, X = shape_features.features(shape_inputs(players, teams, graded, ball), 4)
+    assert len(names) == 46
+    return {name: X[:, index] for index, name in enumerate(names)}, X
+
+
+def test_shape_features_v4_names_and_keeps_v2():
+    from pipeline.evidence import shape_features
+    names = shape_features.feature_names(4)
+    assert names == tuple("h_" + t for t in V4_TEAM) + tuple("a_" + t for t in V4_TEAM) + ("adv_gap", "n_diff")
+    assert shape_features.TEAM_COLUMNS_V4 == V4_TEAM and len(V4_TEAM) == 22
+    assert shape_features.FEATURE_NAMES_V4 == names and len(names) == 46 and len(set(names)) == 46
+    assert shape_features.VERSIONS == (1, 2, 4), "version 3 stays retired"
+    assert shape_features.columns(4) == {name: index for index, name in enumerate(names)}
+    for seed in range(3):
+        players, teams, graded = shape_scene(seed)
+        ball = players[:, 0] + np.array([0.4, 0.3])
+        inputs = shape_inputs(players, teams, graded, ball)
+        X1 = shape_features.features(inputs, 1)[1]
+        X2 = shape_features.features(inputs, 2)[1]
+        names4, X4 = shape_features.features(inputs, 4)
+        assert names4 == names and X4.shape == (len(players), 46) and X4.dtype == np.float64
+        assert not X4.flags.writeable and shape_features.features(inputs, 4)[1] is X4
+        assert shape_features.features(inputs, 1)[1] is X1 and shape_features.features(inputs, 2)[1] is X2
+        column = shape_features.columns(4)
+        for index, name in enumerate(shape_features.feature_names(2)):
+            assert np.array_equal(X2[:, index], X4[:, column[name]], equal_nan=True), (seed, name)
+        # version 4 asked for first builds versions 1 and 2 on the way, and they are what they are alone
+        fresh = shape_inputs(players, teams, graded, ball)
+        shape_features.features(fresh, 4)
+        assert np.array_equal(shape_features.features(fresh, 2)[1], X2, equal_nan=True)
+        assert np.array_equal(shape_features.features(fresh, 1)[1], X1, equal_nan=True)
+    for bad in (0, 3, 5, True, 4.0, "4", None):
+        expect_error(ValueError, lambda: shape_features.features(inputs, bad), "shape_features", "version")
+        expect_error(ValueError, lambda: shape_features.feature_names(bad), "shape_features", "version")
+    expect_error(ValueError, lambda: shape_features.features(inputs, 3), "shape_features", "version", "3")
+    expect_error(ValueError, lambda: shape_features.features(inputs, 5), "shape_features", "version", "5")
+
+
+def test_shape_features_v4_touch_rule_is_the_designs():
+    """The frozen rule of version 4 is team_features' (which imports shape_features, so it cannot be imported here) and
+    main.toml's, and so are the episode constants."""
+    import inspect
+    from pipeline.config import load_config
+    from pipeline.evidence import controlled_touch, shape_features, team_features
+    assert shape_features.TOUCH_RULE == team_features.TOUCH_RULE
+    assert shape_features.TOUCH_RULE == {"radius": 1.5, "max_rel_speed": 6.0, "min_frames": 1, "duel_radius": 1.0}
+    assert shape_features.EPISODE_CAP_S == team_features.EPISODE_CAP_S == 30.0
+    assert (shape_features.EPISODE_CONFIDENCE, shape_features.EPISODE_HOLD) == (0.99, 0.5), "kept = not NaN"
+    config = load_config(os.path.join(HERE, "configs", "main.toml"))
+    rule = [part.params for part in config.evidence if part.kind == "controlled_touch"]
+    assert len(rule) == 1
+    default = inspect.signature(controlled_touch.compute).parameters["duel_radius"].default
+    main_rule = dict({"duel_radius": default}, **rule[0])
+    assert {key: main_rule[key] for key in shape_features.TOUCH_RULE} == shape_features.TOUCH_RULE
+
+
+def test_shape_features_v4_known_values():
+    from pipeline.evidence import shape_features
+    players, ball, teams = episode_scene(200, range(50, 60), range(120, 130))
+    home, away = shape_features.control_masks(shape_inputs(players, teams, [(1, 0, 200)], ball))
+    assert np.flatnonzero(home).tolist() == list(range(50, 60))
+    assert np.flatnonzero(away).tolist() == list(range(120, 130))
+    values, X = shape_matrix_v4(players, teams, [(1, 0, 200)], ball)
+    h_since, h_until, a_since, a_until = (values[name] for name in (
+        "h_since_episode_s", "h_until_episode_s", "a_since_episode_s", "a_until_episode_s"))
+    assert h_since[55] == 0.0 and h_until[55] == 0.0 and h_since[70] == (70 - 59) / 25 and h_until[40] == 0.4
+    assert h_since[40] == 30.0 and h_until[70] == 30.0, "no earlier or later episode: the cap"
+    assert a_until[70] == (120 - 70) / 25 and a_since[150] == (150 - 129) / 25 and a_since[70] == 30.0
+    assert a_since[125] == 0.0 and a_until[125] == 0.0 and a_until[150] == 30.0
+    # an episode 40 s away is capped at 30 s
+    players, ball, teams = episode_scene(1300, range(1100, 1110), range(0))
+    values, _ = shape_matrix_v4(players, teams, [(1, 0, 1300)], ball)
+    assert values["h_since_episode_s"][1200] == (1200 - 1109) / 25
+    assert values["h_until_episode_s"][10] == 30.0 and values["h_since_episode_s"][10] == 30.0
+    assert values["a_since_episode_s"][600] == 30.0 and values["a_until_episode_s"][600] == 30.0, "a team with none"
+    # an episode never reaches across a block's edge
+    players, ball, teams = episode_scene(200, range(50, 60), range(0))
+    values, X = shape_matrix_v4(players, teams, [(1, 0, 100), (2, 120, 200)], ball)
+    assert values["h_since_episode_s"][130] == 30.0 and values["h_until_episode_s"][120] == 30.0
+    assert values["h_until_episode_s"][0] == 2.0 and values["h_since_episode_s"][99] == (99 - 59) / 25
+    assert np.isnan(X[100:120]).all(), "the frames between the blocks"
+    # inside a gap (no ball) the touch rule keeps nothing, and the columns count the time to the episodes either side
+    players, ball, teams = episode_scene(200, range(20, 40), range(150, 160))
+    ball[60:140] = np.nan
+    values, _ = shape_matrix_v4(players, teams, [(1, 0, 200)], ball)
+    assert values["h_since_episode_s"][100] == (100 - 39) / 25
+    assert values["a_until_episode_s"][100] == (150 - 100) / 25
+    assert values["h_until_episode_s"][100] == 30.0 and values["a_since_episode_s"][100] == 30.0
+
+
+def test_shape_features_v4_equal_team_features_episode_columns():
+    """The since and until columns are the ones team_features builds, on scenes with a ball, lost and not."""
+    from pipeline.evidence import shape_features, team_features
+    for seed in range(6):
+        players, ball, teams, graded = team_scene(seed)
+        inputs = team_inputs(players, ball, teams, graded)
+        X4, X = shape_features.features(inputs, 4)[1], team_features.features(inputs)[1]
+        for prefix in ("h_", "a_"):
+            for name in shape_features.EPISODE_COLUMNS:
+                a = X4[:, shape_features.columns(4)[prefix + name]]
+                b = X[:, team_features.COLUMN[prefix + name]]
+                assert np.array_equal(a, b, equal_nan=True), (seed, prefix + name)
+
+
+def test_shape_features_v4_are_capped_and_never_nan_inside_a_block():
+    from pipeline.evidence import shape_features
+    cols = [shape_features.columns(4)[prefix + name] for prefix in ("h_", "a_")
+            for name in shape_features.EPISODE_COLUMNS]
+    for seed in range(8):
+        players, ball, teams, graded = team_scene(seed)
+        X = shape_features.features(team_inputs(players, ball, teams, graded), 4)[1]
+        inside = block_mask(len(players), graded)
+        part = X[:, cols]
+        assert np.isfinite(part[inside]).all() and (part[inside] >= 0.0).all(), seed
+        assert (part[inside] <= shape_features.EPISODE_CAP_S).all(), seed
+        assert np.isnan(part[~inside]).all(), "NaN outside the blocks"
+    # no ball at all: no episode, both columns sit at the cap for both teams
+    players, teams, graded = shape_scene(0)
+    values, _ = shape_matrix_v4(players, teams, graded)
+    inside = block_mask(len(players), graded)
+    for name in ("h_since_episode_s", "h_until_episode_s", "a_since_episode_s", "a_until_episode_s"):
+        assert (values[name][inside] == 30.0).all(), name
+
+
+def test_shape_features_v4_swap():
+    from pipeline.evidence import shape_features
+    for seed in range(8):
+        players, ball, teams, graded = team_scene(seed)
+        X4 = shape_features.features(team_inputs(players, ball, teams, graded), 4)[1]
+        relabelled = shape_features.features(team_inputs(players, ball, 1 - teams, graded), 4)[1]
+        swapped = shape_features.swap(X4)
+        assert swapped is not X4 and not np.shares_memory(swapped, X4) and swapped.shape == X4.shape
+        assert np.array_equal(swapped, relabelled, equal_nan=True), "seed {}: swap is not exact".format(seed)
+        assert np.array_equal(shape_features.swap(swapped), X4, equal_nan=True)
+    row = np.arange(46, dtype=np.float64)
+    flipped = shape_features.swap(row)
+    assert flipped[:22].tolist() == list(range(22, 44)) and flipped[22:44].tolist() == list(range(22))
+    assert flipped[44] == -44.0 and flipped[45] == -45.0
+    expect_error(ValueError, lambda: shape_features.swap(np.zeros((4, 30))), "shape_features.swap", "30", "46")
 
 
 # -- the shape possession source (P07) --------------------------------------------------------------------------------
@@ -4368,6 +4514,70 @@ def test_shape_possession_speed():
         assert np.isnan(evidence.home[:5_000]).all() and not np.isnan(evidence.home[5_000:75_000]).all()
         assert first_s < 6.0, "{:.2f} s for 300 trees, twice, on 140,000 frames with warm features (the budget is " \
                               "6 s)".format(first_s)
+
+
+def shape_scope_inputs(seed):
+    """Synthetic inputs with a ball that is missing on 40% of the frames, for the scope checks."""
+    players, teams, graded = shape_scene(seed)
+    n = len(players)
+    ball = np.random.default_rng(100 + seed).random((n, 2)) * PLAY_PITCH
+    ball[np.random.default_rng(200 + seed).random(n) < 0.4] = np.nan
+    return shape_inputs(players, teams, graded, ball)
+
+
+def test_shape_possession_visible_is_the_complement_of_gaps():
+    with tempfile.TemporaryDirectory() as root:
+        path = write_shape_model(root)
+        for seed in (0, 2, 3, 6):
+            inputs = shape_scope_inputs(seed)
+            home_all = shape_home(inputs, path, scope="all")
+            home_gaps = shape_home(inputs, path, scope="gaps")
+            home_visible = shape_home(inputs, path, scope="visible")
+            in_gaps, in_visible, in_all = (~np.isnan(h) for h in (home_gaps, home_visible, home_all))
+            assert in_gaps.any() and in_visible.any(), seed
+            assert not (in_gaps & in_visible).any(), "visible and gaps are disjoint"
+            assert np.array_equal(in_gaps | in_visible, in_all), "their union is all's known frames"
+            assert np.array_equal(in_visible, in_all & inputs.atd.ball_present), seed
+            assert np.array_equal(home_all[in_visible], home_visible[in_visible])
+            assert np.array_equal(home_all[in_gaps], home_gaps[in_gaps])
+
+
+def test_shape_split_scopes_decode_as_all():
+    from pipeline.contracts import Evidence, no_opinion
+    from pipeline.decode import hmm
+    with tempfile.TemporaryDirectory() as root:
+        path = write_shape_model(root)
+        for seed in (0, 3):
+            inputs = shape_scope_inputs(seed)
+            n = len(inputs.atd.ball_xy)
+            rng = np.random.default_rng(seed)
+            other_home = np.where(rng.random(n) < 0.3, np.nan, rng.random(n))
+            other = Evidence(alive=np.where(rng.random(n) < 0.5, np.nan, rng.random(n)), home=other_home,
+                             name="other", weight=1.0)
+            shapes = {scope: Evidence(alive=no_opinion(n), home=shape_home(inputs, path, scope=scope), name=scope)
+                      for scope in ("all", "visible", "gaps")}
+            for w in (0.1, 0.2, 0.5):
+                def at(scope):
+                    return Evidence(alive=shapes[scope].alive, home=shapes[scope].home, name=scope, weight=w)
+                whole = hmm.log_likelihoods([other, at("all")], n, 1e-6)
+                split = hmm.log_likelihoods([other, at("visible"), at("gaps")], n, 1e-6)
+                assert np.array_equal(whole, split), (seed, w)
+
+
+def test_shape_possession_reads_a_v4_file_and_its_scopes_split():
+    """A version 4 file is read with the version 4 columns, and its "visible" and "gaps" together are "all"."""
+    with tempfile.TemporaryDirectory() as root:
+        full = shape_model(0.3, -1.0, 2.0, feature="h_since_episode_s", threshold=1.0, version=4)
+        path = write_shape_model(root, version=4, folds={"FOLD1": shape_model(-0.2, 1.0, -1.0, version=4)}, full=full)
+        for seed in (0, 3):
+            players, teams, graded = shape_scene(seed)
+            ball = players[:, 0] + np.array([0.4, 0.3])
+            ball[np.random.default_rng(seed).random(len(ball)) < 0.4] = np.nan
+            inputs = shape_inputs(players, teams, graded, ball)
+            whole = shape_home(inputs, path, scope="all")
+            gaps, visible = shape_home(inputs, path, scope="gaps"), shape_home(inputs, path, scope="visible")
+            assert (~np.isnan(gaps)).any() and (~np.isnan(visible)).any()
+            assert np.array_equal(whole, np.where(np.isnan(gaps), visible, gaps), equal_nan=True), seed
 
 
 # -- team features (P19, version 2 for P32) ---------------------------------------------------------------------------
