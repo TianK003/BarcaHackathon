@@ -6,12 +6,22 @@
 # name), change it, run it, and log the run in docs/results.md. When an experiment wins on validation, its changes
 # come back here.
 #
-# Today this is P04 + P05 + P07 + P02 together, with both models retrained and every constant re-chosen by R030 (P27,
-# 10 Nov 2026) on the benchmark's `generic` profile:
+# Today this is P04 + P05 + P07 + P02 + P30 + P32 (R042, adopted by Tian on 13 Nov 2026):
 # controlled_touch for `home` (P04: radius 1.5 m, 6.0 m/s, 1 frame, hold 0.60), the hgb dead_ball_model for `alive`
-# (P05), shape_possession for `home` on every graded frame (P07, weight 0.3), the hmm decoder (switch_team 6,
-# switch_dead 32, min_possession 35, min_dead 25) and, after the decoder, shift_edges at the pipeline's own lag (P02: a
-# change of team 1 frame later, a change into D 2 frames earlier, a change out of D unmoved).
+# (P05), shape_possession for `home` on every graded frame (P07, weight 0.3) reading the version 2 model (P30: 42
+# features, the teams' shape with its one-sided changes over 2, 5 and 10 s), team_model for `home` where the ball is
+# seen (P32: P19's team model retrained on `generic` with the ball's direction, 72 features, weight 0.3), the hmm decoder
+# (switch_team 6, switch_dead 32, min_possession 35, min_dead 25) and, after the decoder, shift_edges at the pipeline's
+# own lag (P02: a change of team 1 frame later, a change into D 2 frames earlier, a change out of D unmoved).
+#
+# Why R042. On the benchmark (`generic`, three seeds, both truths) P30 cleared the bar declared before its run (R033:
+# the mean of the two truths' pooled spellF1 +0.0143 over this file's R030 version, all seven matches) and P32 cleared
+# it again on top of P30 (R037: +0.0162 more, all seven matches); together +0.0305 (raw 0.5891 against 0.5414, coarse
+# 0.5963 against 0.5829), holding on fresh seeds (R037) and under declared wrong-team slots (A27, light ones only).
+# Every other constant is R030's: the decoder's constants and the shift were chosen without the two new sources, and
+# R030's shift rule gives the same shift with them (+1, -2, 0). Both new models were trained on DFL only and pass
+# --verify. P30's transfer gate on our match passed (R042: touch_agreement 0.8317 against at least 0.7656); P32 has no
+# transfer check on our match (R037). This file at R030 (sha256 2dd51320...) is in the git history at commit 8eaf5c9.
 #
 # Why R030. The organisers' reply of 5 Nov 2026 ("anything that is not explicitly allowed is not permitted",
 # docs/rules.md) makes, by our reading, the benchmark's old degradation not permitted: `tracking` v3 was fitted on
@@ -41,7 +51,7 @@
 # ignore the play, the shape model was trained on other teams' matches, and the raw and the coarse truth still disagree
 # on how finely to cut possessions (T33): read R030 before trusting the size of any gain.
 
-description = "P04 + P05 + P07 + P02, every constant re-chosen by R030 (P27) on the benchmark's generic profile: controlled_touch 1.5 m / 6.0 m/s / 1 frame / hold 0.60 (confidence 0.93) + dead_ball_model (hgb, pipeline/models/dead_ball_hgb.json) at weight 1.0 + shape_possession (hgb, pipeline/models/shape_possession_hgb.json) at weight 0.3, scope all, min_prob 0.02, hmm 6/32/35/25, decoded per half, then shift_edges team +1 / into_dead -2 / out_of_dead 0 frames."
+description = "P04 + P05 + P07 + P02 (constants re-chosen by R030 on the benchmark's generic profile) + P30 + P32 (R042): controlled_touch 1.5 m / 6.0 m/s / 1 frame / hold 0.60 (confidence 0.93) + dead_ball_model (hgb, pipeline/models/dead_ball_hgb.json) at weight 1.0 + shape_possession version 2 (hgb, pipeline/models/shape_possession_v2_hgb.json) at weight 0.3, scope all, min_prob 0.02 + team_model where the ball is seen (hgb, pipeline/models/team_model_hgb.json) at weight 0.3, hmm 6/32/35/25, decoded per half, then shift_edges team +1 / into_dead -2 / out_of_dead 0 frames."
 seed = 0
 scope = "halves"
 
@@ -63,10 +73,15 @@ model = "pipeline/models/dead_ball_hgb.json"  # relative to the repo root
 
 [[evidence]]
 kind = "shape_possession"
-weight = 0.3                                          # an exponent on the source's likelihood (R030)
-model = "pipeline/models/shape_possession_hgb.json"   # relative to the repo root; BAR-ATH has no fold, so `full`
-scope = "all"                                         # "gaps": ball missing only; "all": every graded frame
-min_prob = 0.02                                       # home is clipped to [0.02, 0.98]
+weight = 0.3                                             # an exponent on the source's likelihood (R030; R033 kept it)
+model = "pipeline/models/shape_possession_v2_hgb.json"   # P30 (R033): version 2; BAR-ATH has no fold, so `full`
+scope = "all"                                            # "gaps": ball missing only; "all": every graded frame
+min_prob = 0.02                                          # home is clipped to [0.02, 0.98]
+
+[[evidence]]
+kind = "team_model"
+weight = 0.3                                          # P32 (R037): the pick of 0.075 / 0.15 / 0.30 / 0.60
+model = "pipeline/models/team_model_hgb.json"         # where the ball is seen; BAR-ATH has no fold, so `full`
 
 # Exactly one decoder (pipeline/decode/). Every key but kind is a keyword argument.
 [decoder]
