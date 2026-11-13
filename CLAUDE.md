@@ -140,6 +140,9 @@ python pipeline/benchmark/p27_sensitivity.py REF STEM ...   # R030: six-seed rep
 python pipeline/benchmark/diagnose.py CONFIG --drop-match-only   # A19: the IoU ladder decomposed, sources' and posterior's calibration
 python pipeline/benchmark/fidelity.py --profile tracking --seeds 3   # gates + WARNs: the copy against our match
 python pipeline/benchmark/train_shape.py [--verify|--report]   # P07: train the shape model as JSON; --verify, --report
+python pipeline/benchmark/train_team.py [--verify|--dry-run|--feasibility]   # P32: the team model where the ball is seen
+python pipeline/benchmark/p29_bar.py pick|bar|guard --reference REF STEM ...   # the night of 12 Nov's bar: mean +0.005,
+                                                        # p <= 0.05, neither truth -0.005; exit 0 pass, 2 fail
 python pipeline/benchmark/conventions.py public|dfl|compare|latency|shift ...   # P02: timing, inspected; DFL-lag shift
 python pipeline/benchmark/metrica.py [--offline]        # P16: Metrica's sample games' grain against the two truths (R023);
                                                         # not to be run since 5 Nov: the data has no licence (docs/rules.md)
