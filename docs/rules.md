@@ -12,8 +12,8 @@ it, the technical document explains it).
 On 5 Nov the organisers answered our questions 1 to 4 with this clarification again, and one new sentence: "anything
 that is not explicitly allowed is not permitted" ([The organisers' reply of 5 Nov](#the-organisers-reply-of-5-nov-2026)).
 
-On 10 Nov the redo that this reading required was done (P27, [R030](results.md)). Both models and every numeric
-constant of `main.toml` now stand on a benchmark degradation that measures nothing of our match
+On 10 Nov the redo that this reading required was done (P27, [R030](results.md)). Every model (three since R042) and
+every numeric constant of `main.toml` now stand on a benchmark degradation that measures nothing of our match
 ([Where we stand on 10 Nov](#where-we-stand-on-10-nov-r030)).
 
 Upstream has no commit carrying the email yet: on 3 Nov `git fetch upstream` still ended at `f8f2629`, and on 4 and 9 Nov
@@ -82,7 +82,7 @@ in a published rule, but it contradicts nothing in the clarification, and we fol
 | question | does a text allow it explicitly? | our reading since 5 Nov | what follows |
 |---|---|---|---|
 | 1. the benchmark's degradation, fitted on label-free statistics of our tracking | no (below) | **not permitted** | every learned part and every chosen constant rests on it. Redo them on a degradation that measures nothing of our match (P27), or keep them and carry the risk. **Decided 9 Nov (Tian): redo, P27. Done 10 Nov ([R030](results.md)):** the profile `generic` v1, both models retrained on it and every numeric constant re-chosen on it |
-| 2. the repository private until shortly before the deadline | the rules ask for a public repository URL in the form and say nothing about when it becomes public | **fine** | make it public before the form is submitted, after checking the whole git history, not only the tip, for anything under `data/` or frame-level. A deliberate step, Tian's |
+| 2. the repository private until shortly before the deadline | the rules ask for a public repository URL in the form and say nothing about when it becomes public | **fine** | make it public before the form is submitted, after checking the whole git history, not only the tip, for anything under `data/` or frame-level. A deliberate step, Tian's. **Done 16 Nov** ([below](#where-we-stand-on-10-nov-r030)) |
 | 3. Metrica's sample data, used once for R023 | no: "Using any dataset you have the rights to use. Please check the license". A repository without a licence grants no rights; its README asks for acknowledgement, which is not permission. That Metrica Sports, one of the organisers, publishes it does not license it either | **not permitted** | no further use: P16's timing part and P26 are on hold and `metrica.py` is not run again; the technical document lists the data as used once and withdrawn; R024's objective, which R023 set, stays (decided 9 Nov, below), and R030 re-chose every constant under it (10 Nov) |
 | 4. watching the video to understand how the tracking fails | no: watching and inspecting are allowed "to better understand what counts as possession", nothing more. Issue #14's wider answer (26 Oct) is superseded, since the clarification takes precedence over "answers to individual questions" | **not permitted** | no change: our practice since 3 Nov ("How we read it", point 4) |
 
@@ -314,7 +314,8 @@ or frame-level (question 2's condition; none found, [results.md](results.md), su
 
 **What was left on 10 Nov.** The file is not uploaded. The upload and making the repository public are Tian's. A second
 processor has not reproduced the file yet (T21); every reproduction so far is one laptop, under Windows and Linux. `generic` v1 is
-final for this submission.
+final for this submission. *(16 Nov: the repository is public and a second processor has reproduced the file, above; the
+upload is still Tian's.)*
 
 ## What it rules out among the proposals
 
@@ -350,7 +351,7 @@ holds only where the clarification agrees with it. What the answers settle, beyo
 | #2 (22 Oct) | a ball detector trained on the match's video with the ATD as labels; a GPU to reproduce | not allowed: no labelling of the provided dataset, even automatic, to train a model; weights are fine if trained on other data with the source stated; runtime is not a requirement and a GPU is fine | P14 may run only weights trained elsewhere (already here); our run is CPU, 17 s |
 | #8 (22 Oct) | how much hand labelling is "small" | none on BAR-ATH for any purpose; unlimited on other matches if accessible and documented | compliant: our labels are DFL's and Metrica's own |
 | #10 (23 Oct) | own hand labels used only to choose parameter values | not allowed: it fits the match; annotate another match, apply the values unchanged, share the video and the annotations | compliant (A21) |
-| #11 (26 Oct) | must reproduction be byte-identical | training need not reproduce; the CSV must, byte for byte: commit the weights, infer on the CPU, pin the dependencies, fix the seeds | compliant: JSON models, CPU, pins; R029's file still has to be regenerated from a fresh clone (since 10 Nov the file is R030's; see [R030](results.md) for its clean-clone check) |
+| #11 (26 Oct) | must reproduction be byte-identical | training need not reproduce; the CSV must, byte for byte: commit the weights, infer on the CPU, pin the dependencies, fix the seeds | compliant: JSON models, CPU, pins; the file is R042's since 13 Nov, regenerated byte for byte on 16 Nov from fresh clones of the public repository on two processors ([results.md](results.md), A28 and the submission log) |
 | #14 (26 Oct) | committing a stage's small intermediate output; watching clips to understand why the ball goes missing, then rules with thresholds from other matches | yes to both; not allowed: labels, corrections, or rules and constants tied to specific frames | the first part is recorded below ("Settled without asking"); the second is superseded: the clarification allows watching only "to better understand what counts as possession", and the reply of 5 Nov to question 4 added nothing |
 | #15 (26 Oct) | is look-ahead allowed | yes: the task is post-match; a causal approach is scored the same | the Viterbi decode over a whole half is fine |
 | #16 (26 Oct) | training a team-shape prior on the IDSSE dataset | fully permissible: other games, open, inspectable; cite CC BY 4.0; choose every hyperparameter on IDSSE or other games, never on the 5 public minutes | the organisers bless the dataset P01, P05 and P07 rest on |

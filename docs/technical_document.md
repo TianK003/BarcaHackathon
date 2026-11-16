@@ -1044,7 +1044,7 @@ classes balance exactly and the model has no prior to subtract and no notion of 
 
 <!-- Where it fails, and what we would fix with more time. The pipeline's own limits: fill as decisions land. -->
 
-**Of the benchmark's profile today** (`generic` v1, R030), on which both models and every numeric constant now rest:
+**Of the benchmark's profile today** (`generic` v1, R030), on which the three models and every numeric constant now rest:
 
 - **Its gaps ignore the play, and ours do not.** They are a Poisson process, and DATA.md says our ball goes missing
   "disproportionately on the frames that matter". So the benchmark still overstates the dead-ball model (T38, T39) and
@@ -1315,9 +1315,9 @@ prints it). R042 wrote it twice, each from a rebuilt ATD cache, and a clean clon
 virtual environment, a rebuilt cache) gave the same file. R030's file,
 `2dd51320b1d32f8be6d06e63f833e6d8e196ddcaad294b606db3914c351c1660`, is the one before it (git history at `8eaf5c9`); a
 clean clone of `c8d596e` in a fresh Python 3.11.9 environment from `requirements-pipeline.txt` had given R030's file the
-same way. For R030's file: So did a clean clone run with the BLAS thread
+same way. For R030's file, so did a clean clone run with the BLAS thread
 variables unset, and two runs on Linux (WSL 2, Ubuntu 24.04, LF configs, the ATD parsed again). All of that was on one
-laptop, so a second processor is still untried (T21). On 16 Nov 2026, before the upload, a fresh clone of the public
+laptop, so a second processor was then still untried (T21). On 16 Nov 2026, before the upload, a fresh clone of the public
 repository at `e66b153`, in a fresh Python 3.11.9 environment from `requirements-pipeline.txt` (numpy 2.4.6, pandas
 3.0.6) and with a rebuilt ATD cache, gave R042's file again, byte for byte the copy to upload (the same laptop). The same day Andrea rebuilt it on a second
 processor, an Apple M2 under macOS (a fresh clone of `e66b153`, Python 3.11.18, numpy 2.4.6, pandas 3.0.6): the
@@ -1336,8 +1336,8 @@ trained models and the benchmark's 0.5430 / 0.5593 (on `tracking` v3) came back 
 tracking into `data/cache/` once
 (7.4 s in A17). Every run then computes the play features and the shape features and walks the trees: 13 s with the cache
 warm and 20 s cold in A17, on an AMD Ryzen 5 5500U (6 cores), 15.3 GB RAM, Windows 11, CPU only. A18 ran the same on
-Linux (WSL 2, Ubuntu 24.04, same laptop) with LF configs: the same sha256 on two runs, and `selftest.py --data` passed. Another
-processor (an Intel CPU) has not been tried yet (T20, T21).
+Linux (WSL 2, Ubuntu 24.04, same laptop) with LF configs: the same sha256 on two runs, and `selftest.py --data` passed. No other
+processor was tried then; R042's file was rebuilt on an Apple M2 on 16 Nov (above, A28).
 
 The three trained models that `main.toml` reads, `dead_ball_hgb.json`, `shape_possession_v2_hgb.json` and
 `team_model_hgb.json`, are committed as JSON under `pipeline/models/` and read with numpy only, so the CSV needs no

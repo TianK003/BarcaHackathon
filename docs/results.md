@@ -11167,7 +11167,11 @@ same day from Andrea: an Apple M2 under macOS, a fresh clone of `e66b153`, Pytho
 T21 closed). Since `33d5ad7`, R042's clean-clone commit, only a benchmark check changed and two candidate configs were
 removed. The technical document was shortened to four pages (Tian), given a diagram of the pipeline, and set in the IEEE
 conference format (IEEEtran, `docs/technical_document_submission.tex`, built with Tectonic 0.17.0) as
-`Un Dia de Partit.pdf` beside the CSV. The organisers' documents name no template.
+`Un Dia de Partit.pdf` beside the CSV. The organisers' documents name no template. The same evening Andrea's review (A28) and an independent review of the document against
+this file, the config and the code corrected it: a few statements were stronger than the record (what was inherited
+from the retired benchmark, the public window's constants, the ablations' truth), one figure was version 1's (the
+shape model's 85%, now version 2's 86%), and the whistle detector failed a gate, not a bar. The PDF beside the CSV
+is the build after those corrections: four pages. No code, config or model changed.
 
 Before each upload:
 1. Regenerate the file from a clean clone, ideally on a second machine, and compare the sha256 ([T21](traps.md)).

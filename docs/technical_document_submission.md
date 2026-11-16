@@ -13,8 +13,8 @@
 
 **The problem.** The ball is missing on 41% of the graded frames, in long gaps (median 10.7 s). Where it is seen,
 the nearest player's team is the possessor only about 78% of the time, and a missing ball is not a dead ball: the
-ball is visible on most dead frames. The organisers' baselines fragment (131 possessions in the public window
-against 17 real ones), which is fatal for spellF1. So the question is how to hold a team through long stretches
+ball is visible on most dead frames. The organisers' unsmoothed baseline fragments (131 possessions in the public
+window against 17 real ones), which is fatal for spellF1. So the question is how to hold a team through long stretches
 without a ball and change it only on real evidence.
 
 **The pipeline** has five stages: inputs → evidence → decode → refine → output. Each evidence source gives, per
@@ -25,7 +25,7 @@ frame, P(ball in play) or P(home has it), or no opinion. There are four:
 | `controlled_touch` | a control rule on the ball and the nearest players (section 5) | where the ball is seen |
 | `dead_ball_model` | boosted trees on 30 features of the play (where the ball vanished and reappeared, the players' slowdown, set-piece shapes) | every frame: in play or dead |
 | `shape_possession` | boosted trees on 42 features of how the two teams stand and move, none reading the ball | every frame, so also inside ball gaps |
-| `team_model` | boosted trees on 72 features of the ball against each team (distances, closing speed, time to reach it) plus the shape features | where the ball is seen |
+| `team_model` | boosted trees on 72 features: the ball against each team (distances, closing speed, time to reach it) and the 42 shape features | where the ball is seen |
 
 **The pipeline in one picture.** Solid arrows carry the provided match through the five stages at run time. Dashed
 arrows show where learned models and chosen constants come from: other games only, never the provided match.
@@ -70,7 +70,7 @@ punishes flicker: evidence may be noisy per frame, but a possession has to be wo
 | Tactical tracking (ATD) | yes | the only input of every source |
 | Smart Tagging | no | automatic tags; their confidence could only be measured on this match, which the rules forbid, so the source was removed before submission |
 | Tactical homography | no | analysed only: the camera's aim is too coarse a proxy for the ball (median error 12 m along the pitch) |
-| Tactical video and audio | no | a whistle detector on the audio was tried and failed its bar |
+| Tactical video and audio | no | a whistle detector on the audio was tried and failed its gate |
 | Broadcast video, tracking, homography | no | its own timeline with cuts and replays, and no mapping to the tactical frames |
 | Public 5-minute ground truth | check only | a correctness check of the finished pipeline (sections 3 and 6) |
 
@@ -86,7 +86,7 @@ We labelled nothing by hand, on any game. Everything learned comes from one exte
 
 | data | source and licence | who labelled it | how much | used for |
 |---|---|---|---|---|
-| DFL/IDSSE open data: `BallStatus` (in play or dead) and `BallPossession` (the team), per frame | Bassek et al. 2025, figshare, CC BY 4.0 | DFL, in its official match data; the paper says operators check all data | 7 full matches (2 Bundesliga, 5 2. Bundesliga), 25 Hz, 668 graded minutes | training the three models; choosing every constant; validation |
+| DFL/IDSSE open data: `BallStatus` (in play or dead) and `BallPossession` (the team), per frame | Bassek et al. 2025, figshare, CC BY 4.0 | DFL, in its official match data; the paper says operators check all data | 7 full matches (2 Bundesliga, 5 2. Bundesliga), 25 Hz, 668 graded minutes | training the three models; choosing every constant; validation. Its 681 restart events only as a diagnostic of a dropped source |
 
 Three other external sources were read and nothing in the submission stands on them: PathCRF's public checkpoint
 (Kim et al. 2026, MPL-2.0; measured once, dropped); SkillCorner's open data (MIT; a plausibility check of the
@@ -97,7 +97,8 @@ ranking on two truths, section 6, was kept on its own ground: neither is known t
 **Nothing was trained, fitted or tuned on the provided game.** No tracking was corrected by hand, no human-produced
 data about the match was used, and no output of ours was checked against the video. The public 5 minutes were used
 as a correctness check (alignment, a valid and deterministic file, each source pointing the right way) and
-inspected to understand what counts as possession; no model saw them and no constant was set on them.
+inspected to understand what counts as possession; no model saw them and no constant of the submission was set on
+them.
 
 **Three things we state openly:**
 
@@ -107,20 +108,21 @@ inspected to understand what counts as possession; no model saw them and no cons
 - *An earlier benchmark, retired.* Until 9 Nov the degradation was fitted on label-free statistics of our own
   tracking (which frames have no ball, how long the tracklets are). After the organisers' reply of 5 Nov ("anything
   that is not explicitly allowed is not permitted") we retired it, retrained the models and chose every constant
-  again on a degradation that measures nothing of our match. Nothing in the submission stands on the old one.
+  again on a degradation that measures nothing of our match. Only the architecture (which components exist, the
+  trees' settings) comes from the old one, re-verified on the new.
 - *The Smart Tagging,* a source in earlier versions, was removed for the same reason (section 2).
 
 ## 4. Missing and noisy tracking
 
 - **Long ball gaps.** No interpolation: gaps under 2 s hold 0.1% of the missing frames. The decoder keeps its state
-  through a gap, and the shape model speaks inside it (out of fold on the benchmark, its first version names the
-  right team on 85% of the in-play frames without a ball).
-- **A missing ball is not a dead ball.** `D` never comes from ball presence; the dead-ball model reads where the
+  through a gap, and the shape model speaks inside it (out of fold on the benchmark, the submitted version names the
+  right team on 86% of the in-play frames without a ball).
+- **A missing ball is not a dead ball.** `D` never comes from ball presence alone; the dead-ball model reads where the
   ball vanished and reappeared and how the players behave.
 - **The ball-speed channel is unusable** (empty on 92% of the frames with a ball). Every speed comes from successive
   positions.
 - **Track slots are tracklets, not players** (46 slots for 22 players). No feature follows a slot over time; the
-  shape features are per-frame aggregates of each team.
+  shape features are aggregates over each team's players.
 - **Wrong-team slots.** One team shows more than 11 slots on at least 10.8% of the graded frames. Such slots
   do not cluster at the ball, so a repair was judged not worth it; this stays a limitation (section 7).
 
@@ -140,8 +142,8 @@ inspected to understand what counts as possession; no model saw them and no cons
   kick-off is `D`. After a restart the weaker vote still favours the team that had the ball before the stoppage,
   until a player controls the ball; we do not use the restart type. Who owns a dead ball is not asked.
 - **A change of team inside a ball gap** falls where the shape evidence for the other team pays the switch cost.
-- **Not implemented:** aerial duels (no ball height), pass and interception events, and abstention (no `X` on a
-  graded frame).
+- **Not implemented:** aerial duels (no ball height), pass and interception events, and abstention (tried and
+  dropped: no `X` on a graded frame).
 
 ## 6. Validation and results
 
@@ -149,7 +151,7 @@ inspected to understand what counts as possession; no model saw them and no cons
 rank anything, and the rules forbid tuning on it. We validate on the seven DFL matches instead. The truth is built
 as ours is (`D` where the ball is dead, else the team in possession), the tracking is degraded to resemble ours by
 rules declared before any run (ball gaps of 1 to 60 s covering 41% of the frames, players dropping out, 46 slots),
-and the official scorer grades each half. DFL's possession flag is fine-grained and how fine ours is is unknown, so
+and the official scorer grades each half. DFL's possession flag is fine-grained and the grain of ours is unknown, so
 every choice is ranked on the mean of two truths: DFL's own ("raw") and one that absorbs possessions under 5 s
 ("coarse"). Every change had to clear a bar declared before its run, tested over the seven matches.
 
@@ -159,9 +161,9 @@ every choice is ranked on the mean of two truths: DFL's own ("raw") and one that
 | touch rule + dead-ball model + shape model + HMM | 0.5414 | 0.5829 |
 | + shape model version 2 and the team model: **the submission** | **0.5891** | **0.5963** |
 
-Measured before the last two models were added: without the shape source the score falls by 0.10, and without the
-touch rule by 0.03. A perfect dead-ball source would add only 0.03, a perfect team source about 0.2 where the ball
-is seen and 0.10 to 0.18 inside the gaps: what is left to win is who has the ball.
+Measured before the last two models were added: on the mean of the two truths, the score falls by 0.10 without the
+shape source and by 0.03 without the touch rule. A perfect dead-ball source would add only 0.03 to 0.04, a perfect
+team source about 0.2 where the ball is seen and 0.10 to 0.18 inside the gaps: what is left to win is who has the ball.
 
 **On our match, checks that pass or fail only.** The file validates, has no `X` on a graded frame and comes out
 byte-identical on repeated runs. Its `D` share is 34.4% of the graded frames, inside a band set on DFL; it holds 386
@@ -178,8 +180,8 @@ gross errors, which chose nothing.
   ball (more often near the lines), and it has no wrong-team slots. So its scores are not a forecast for the real
   match; it overstates the dead-ball model in particular, by an amount we cannot measure.
 - **The team model has no transfer check on our match,** and wrong-team slots hit it hardest, since it reads
-  distances per team. The benchmark's test of this realised such slots on at most 2.3% of the graded frames; our
-  match has them on at least 10.8%.
+  distances per team. The benchmark's test of this realised a team with more slots than players on at most 2.3% of
+  the graded frames; our match shows one on at least 10.8%.
 - **Seven German matches,** five of them one club's home games: the models may transfer imperfectly to LaLiga, and
   several constants were chosen within noise of their neighbours.
 - **Our truth's conventions are unknown:** how short a possession may be, and when exactly `D` starts and ends. The
@@ -195,10 +197,11 @@ detected passes; learn our provider's timing from other games of the same provid
 py -3.11 -m venv .venv                         # macOS/Linux: python3.11 -m venv .venv, then .venv/bin/python
 .venv/Scripts/python -m pip install -r requirements-pipeline.txt
 # unpack the data bundle into data/ as data/README.md describes
-.venv/Scripts/python pipeline/run.py pipeline/configs/main.toml --out "../Un Dia de Partit.csv"
+.venv/Scripts/python pipeline/run.py pipeline/configs/main.toml
 ```
 
-One command goes from `data/` to the CSV, validates it with the official checks and prints its sha256. Python
+`evaluation/results/main.csv` is the file the last command writes from `data/`. The run validates it with the
+official checks and prints its sha256; the uploaded `Un Dia de Partit.csv` is that file renamed (sha256 above). Python
 3.11.9; every package the pipeline imports is pinned (numpy 2.4.6, pandas 3.0.6). The models are JSON files in
 `pipeline/models/`, so nothing is trained at run time and no GPU is needed; the run takes under a minute on a laptop
 CPU. On 16 Nov the file came out with the same sha256 from fresh clones of the public repository, in fresh
@@ -208,6 +211,8 @@ only the public DFL files: `requirements-benchmark.txt` and the commands in `pip
 
 **References.** Bassek et al. (2025), An integrated dataset of spatiotemporal and event data in elite soccer,
 *Scientific Data* 12, 195 (data: doi:10.6084/m9.figshare.28196177, CC BY 4.0; we degrade its tracking). Kim et al.
-(2026), PathCRF, arXiv:2602.12080. Link and Hoernig (2017), Individual ball possession in soccer, *PLOS ONE*.
-Vidal-Codina et al. (2022), Automatic event detection in football using tracking data, arXiv:2202.00804.
-SkillCorner open data (MIT). Metrica Sports sample data, github.com/metrica-sports/sample-data.
+(2026), PathCRF: Ball-free soccer event detection via possession path inference from player trajectories, KDD,
+arXiv:2602.12080. Link and Hoernig (2017), Individual ball possession in soccer, *PLOS ONE*. Vidal-Codina et al.
+(2022), Automatic event detection in football using tracking data, *Sports Engineering*, arXiv:2202.00804.
+SkillCorner, open data: broadcast tracking of A-League matches (MIT). Metrica Sports sample data,
+github.com/metrica-sports/sample-data.

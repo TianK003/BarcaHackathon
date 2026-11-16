@@ -111,7 +111,9 @@ aggregates only, never raw data rows.
   stack (+0.0305 on the benchmark), adopted as R042; P29, P33 to P35, P37, P39 and P40 were dropped and their code
   removed; A26 locates the remaining edge error at changes of team inside ball gaps.
 - `docs/traps.md` — pitfalls `T01…`. Add one whenever something costs real time.
-- `docs/technical_document.md` — the draft of deliverable 3. Update it when a pipeline decision lands.
+- `docs/technical_document.md` — the full record behind deliverable 3. Update it when a pipeline decision lands. The
+  four pages submitted are `docs/technical_document_submission.tex` (IEEE format, builds the PDF) and its Markdown copy
+  `technical_document_submission.md`; keep the two in step.
 
 ## Commands
 
@@ -145,7 +147,7 @@ python pipeline/benchmark/p27_profile_check.py          # P27: the generic profi
 python pipeline/benchmark/p27_sensitivity.py REF STEM ...   # R030: six-seed reports as seeds 0-2 / 3-5 / 0-5; a report, never a choice
 python pipeline/benchmark/diagnose.py CONFIG --drop-match-only   # A19: the IoU ladder decomposed, sources' and posterior's calibration
 python pipeline/benchmark/fidelity.py --profile tracking --seeds 3   # gates + WARNs: the copy against our match
-python pipeline/benchmark/train_shape.py [--verify|--report]   # P07: train the shape model as JSON; --verify, --report
+python pipeline/benchmark/train_shape.py [--features 2] [--verify|--report]   # P07: the shape model as JSON; 2: P30's, main.toml's
 python pipeline/benchmark/train_team.py [--verify|--dry-run|--feasibility]   # P32: the team model where the ball is seen
 python pipeline/benchmark/p29_bar.py pick|bar|guard --reference REF STEM ...   # the night of 12 Nov's bar: mean +0.005,
                                                         # p <= 0.05, neither truth -0.005; exit 0 pass, 2 fail
@@ -356,4 +358,5 @@ before the deadline counts.
    CSV. The `requirements*.txt` here are mostly unpinned; pin ours.
 3. **`Un Dia de Partit.pdf` or `.md` technical doc**, a few pages: approach and why; assets used and dropped; handling of
    missing/noisy tracking; possession rules implemented (loose balls, challenges, restarts); limitations;
-   reproduction. Draft it in `docs/technical_document.md`. `*.pdf` is gitignored.
+   reproduction. Built from `docs/technical_document_submission.tex` (full record: `docs/technical_document.md`).
+   `*.pdf` is gitignored.
