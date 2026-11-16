@@ -1,9 +1,11 @@
-# Un Dia de Partit — More than a Hack 2027, Phase 1: technical document
+# Un Dia de Partit: technical document (More than a Hack 2027, Phase 1)
 
 - **Team:** Tian Ključanin, Andrea Molteni, Jakob Wilhelm Fidelio Nunnendorf, Balázs Molnár, Kamel Brouthen
 - **Code:** https://github.com/TianK003/BarcaHackathon, commit `e66b153` (later commits change documents only)
 - **Submission:** `Un Dia de Partit.csv`, the file `pipeline/configs/main.toml` writes, sha256
   `aae79a0446dabdf565d86b95f03acf0a53b5698cf3d80033c25bf7d49cbd3bdb`
+- **PDF:** the uploaded `Un Dia de Partit.pdf` is this text in the IEEE conference format, built from
+  docs/technical_document_submission.tex.
 - **Full record:** docs/technical_document.md in the repository, with every experiment and analysis (numbers,
   commands, failures) in docs/results.md and our reading of the rules in docs/rules.md.
 
@@ -24,6 +26,29 @@ frame, P(ball in play) or P(home has it), or no opinion. There are four:
 | `dead_ball_model` | boosted trees on 30 features of the play (where the ball vanished and reappeared, the players' slowdown, set-piece shapes) | every frame: in play or dead |
 | `shape_possession` | boosted trees on 42 features of how the two teams stand and move, none reading the ball | every frame, so also inside ball gaps |
 | `team_model` | boosted trees on 72 features of the ball against each team (distances, closing speed, time to reach it) plus the shape features | where the ball is seen |
+
+**The pipeline in one picture.** Solid arrows carry the provided match through the five stages at run time. Dashed
+arrows show where learned models and chosen constants come from: other games only, never the provided match.
+
+```mermaid
+flowchart LR
+    IN["1. Inputs<br/>tactical tracking,<br/>aligned to the video frames"]
+    subgraph EV["2. Evidence"]
+        direction TB
+        S1["controlled_touch: control rule<br/>P(home) where the ball is seen"]
+        S2["dead_ball_model: boosted trees<br/>P(in play) on every frame"]
+        S3["shape_possession: boosted trees<br/>P(home) on every frame, without the ball"]
+        S4["team_model: boosted trees<br/>P(home) where the ball is seen"]
+    end
+    DE["3. Decode<br/>HMM over H, A, D<br/>Viterbi per graded half"]
+    RE["4. Refine<br/>shift edges by +1 / -2 frames"]
+    OUT["5. Output<br/>CSV, 199,319 rows, validated"]
+    DFL[("External data only:<br/>7 open DFL matches (CC BY 4.0),<br/>tracking degraded by declared rules")]
+    IN --> EV --> DE --> RE --> OUT
+    DFL -. "trains the three models" .-> EV
+    DFL -. "every constant chosen on it" .-> DE
+    DFL -.-> RE
+```
 
 **The decoder** is a three-state hidden Markov model over `H`, `A` and `D`, decoded by Viterbi over each graded
 half. Each source adds its log-likelihood to the states it speaks for; silence adds nothing. A change of team has a

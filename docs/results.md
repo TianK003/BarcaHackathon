@@ -11065,7 +11065,7 @@ The form keeps only the last response before the deadline, so log every upload.
 
 | date | file | sha256 | commit | command | notes |
 |---|---|---|---|---|---|
-| 2026-11-16 | `Un Dia de Partit.csv` (1,682,773 bytes) | `aae79a0446dabdf565d86b95f03acf0a53b5698cf3d80033c25bf7d49cbd3bdb` | `e66b153` | `python pipeline/run.py pipeline/configs/main.toml` | R042's file. **Prepared for the form; the upload itself is Tian's and is not yet confirmed in this log.** With it: the repository URL https://github.com/TianK003/BarcaHackathon (public since 16 Nov) and `Un Dia de Partit.pdf`, four pages, rendered from `docs/technical_document_submission.md` |
+| 2026-11-16 | `Un Dia de Partit.csv` (1,682,773 bytes) | `aae79a0446dabdf565d86b95f03acf0a53b5698cf3d80033c25bf7d49cbd3bdb` | `e66b153` | `python pipeline/run.py pipeline/configs/main.toml` | R042's file. **Prepared for the form; the upload itself is Tian's and is not yet confirmed in this log.** With it: the repository URL https://github.com/TianK003/BarcaHackathon (public since 16 Nov) and `Un Dia de Partit.pdf`, four pages in the IEEE conference format, built from `docs/technical_document_submission.tex` (the organisers give no template) |
 
 `main.toml` was rewritten by R010 (2026-10-25): it then produced sha256
 `a706e7f711b2d3faacc2f071b6e28963ed8e2f2326a7880e6d0776cce4295f1f` (P04 `controlled_touch` + P05
@@ -11140,8 +11140,9 @@ public truth and four baselines, the same blobs as upstream's; no video, XML or 
 --rebuild-cache` with the data folder passed by `--data-dir`: sha256 `aae79a04…`, byte for byte the copy beside the
 repository (`cmp`), and `validate_submission.py` says valid on both. The same laptop, so a second CPU stays untried
 (T21). Since `33d5ad7`, R042's clean-clone commit, only a benchmark check changed and two candidate configs were
-removed. The technical document was shortened to four pages (Tian) and rendered to `Un Dia de Partit.pdf` beside
-the CSV.
+removed. The technical document was shortened to four pages (Tian), given a diagram of the pipeline, and set in the IEEE
+conference format (IEEEtran, `docs/technical_document_submission.tex`, built with Tectonic 0.17.0) as
+`Un Dia de Partit.pdf` beside the CSV. The organisers' documents name no template.
 
 Before each upload:
 1. Regenerate the file from a clean clone, ideally on a second machine, and compare the sha256 ([T21](traps.md)).
