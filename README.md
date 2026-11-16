@@ -38,7 +38,7 @@ its sha256. That hash must equal the one in the submission log at the end of [do
 file is the same byte for byte from a clean clone. Rename the CSV to `Un Dia de Partit.csv` to get the uploaded file
 (or pass `--out "../Un Dia de Partit.csv"`).
 
-- The two trained models are committed as JSON (`pipeline/models/`), so nothing is trained at run time and no GPU is
+- The three trained models are committed as JSON (`pipeline/models/`), so nothing is trained at run time and no GPU is
   needed. Retraining them from the public DFL matches, and re-running the choice of every constant, takes
   `requirements-benchmark.txt` and the commands in [pipeline/benchmark/README.md](pipeline/benchmark/README.md).
 - How it works: [pipeline/README.md](pipeline/README.md) and the technical document,

@@ -1,12 +1,12 @@
 # Un Dia de Partit — More than a Hack 2027, Phase 1: technical document
 
 > **The full record, not the file to upload.** Deliverable 3 (SUBMISSION.md: a few pages, uploaded as
-> `Un Dia de Partit.pdf` or `Un Dia de Partit.md`) is [`technical_document_submission.md`](technical_document_submission.md): the
-> same seven sections at deliverable length, every number copied from `docs/results.md` with its entry. This file keeps
+> `Un Dia de Partit.pdf` or `Un Dia de Partit.md`) is [`technical_document_submission.md`](technical_document_submission.md): a
+> summary of four pages (shortened on 16 Nov 2026, Tian: four pages at most), its numbers copied from `docs/results.md`. This file keeps
 > every choice, number and caveat in full. When a decision changes, update both.
 
-- **Team:** [five names]
-- **Code:** [public repository URL], commit `<hash>`
+- **Team:** Tian Ključanin, Andrea Molteni, Jakob Wilhelm Fidelio Nunnendorf, Balázs Molnár, Kamel Brouthen
+- **Code:** https://github.com/TianK003/BarcaHackathon, commit `e66b153` (later commits change documents only)
 - **Submission:** `Un Dia de Partit.csv`, sha256 `aae79a0446dabdf565d86b95f03acf0a53b5698cf3d80033c25bf7d49cbd3bdb`
   (R042; R030's file, `2dd51320...`, is superseded)
 - **Scores we can state:** public window macroF1 0.7199 / spellF1 0.4737 (a check for gross errors only, T01); our
@@ -1317,7 +1317,9 @@ virtual environment, a rebuilt cache) gave the same file. R030's file,
 clean clone of `c8d596e` in a fresh Python 3.11.9 environment from `requirements-pipeline.txt` had given R030's file the
 same way. For R030's file: So did a clean clone run with the BLAS thread
 variables unset, and two runs on Linux (WSL 2, Ubuntu 24.04, LF configs, the ATD parsed again). All of that was on one
-laptop, so a second processor is still untried (T21).
+laptop, so a second processor is still untried (T21). On 16 Nov 2026, before the upload, a fresh clone of the public
+repository at `e66b153`, in a fresh Python 3.11.9 environment from `requirements-pipeline.txt` (numpy 2.4.6, pandas
+3.0.6) and with a rebuilt ATD cache, gave R042's file again, byte for byte the copy to upload (the same laptop).
 
 The files before R030's, for the record: R029's was `762f9073e0d0c56bf8fd4e0b801b80d79defe87246b4f0a8c201d9b5337cdf6e`
 (written twice, never regenerated from a fresh clone), R024's

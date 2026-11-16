@@ -307,7 +307,11 @@ seeds); they differ in how far they lean to the coarse truth, which nothing we m
 decision: keep the declared outcome.** It is the rule applied as written, so nothing in `main.toml` was picked
 after a result was seen. No alternative was run on our match or on the public window.
 
-**What is left.** The file is not uploaded. The upload and making the repository public are Tian's. A second
+**16 Nov 2026.** Tian made the repository public, after the whole git history was checked for anything under `data/`
+or frame-level (question 2's condition; none found, [results.md](results.md), submission log). The file is R042's
+(`aae79a04…`), regenerated that day from a fresh clone of the public repository. The form is Tian's.
+
+**What was left on 10 Nov.** The file is not uploaded. The upload and making the repository public are Tian's. A second
 processor has not reproduced the file yet (T21); every reproduction so far is one laptop, under Windows and Linux. `generic` v1 is
 final for this submission.
 
