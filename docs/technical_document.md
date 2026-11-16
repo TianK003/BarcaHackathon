@@ -1319,7 +1319,9 @@ same way. For R030's file: So did a clean clone run with the BLAS thread
 variables unset, and two runs on Linux (WSL 2, Ubuntu 24.04, LF configs, the ATD parsed again). All of that was on one
 laptop, so a second processor is still untried (T21). On 16 Nov 2026, before the upload, a fresh clone of the public
 repository at `e66b153`, in a fresh Python 3.11.9 environment from `requirements-pipeline.txt` (numpy 2.4.6, pandas
-3.0.6) and with a rebuilt ATD cache, gave R042's file again, byte for byte the copy to upload (the same laptop).
+3.0.6) and with a rebuilt ATD cache, gave R042's file again, byte for byte the copy to upload (the same laptop). The same day Andrea rebuilt it on a second
+processor, an Apple M2 under macOS (a fresh clone of `e66b153`, Python 3.11.18, numpy 2.4.6, pandas 3.0.6): the
+same sha256 (A28). So the file is the same on x86-64 and on arm64, and T21's open point is closed.
 
 The files before R030's, for the record: R029's was `762f9073e0d0c56bf8fd4e0b801b80d79defe87246b4f0a8c201d9b5337cdf6e`
 (written twice, never regenerated from a fresh clone), R024's

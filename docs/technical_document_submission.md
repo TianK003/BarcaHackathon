@@ -22,7 +22,7 @@ frame, P(ball in play) or P(home has it), or no opinion. There are four:
 
 | source | what it is | speaks |
 |---|---|---|
-| `controlled_touch` | a control rule on the ball and the nearest players (section 4) | where the ball is seen |
+| `controlled_touch` | a control rule on the ball and the nearest players (section 5) | where the ball is seen |
 | `dead_ball_model` | boosted trees on 30 features of the play (where the ball vanished and reappeared, the players' slowdown, set-piece shapes) | every frame: in play or dead |
 | `shape_possession` | boosted trees on 42 features of how the two teams stand and move, none reading the ball | every frame, so also inside ball gaps |
 | `team_model` | boosted trees on 72 features of the ball against each team (distances, closing speed, time to reach it) plus the shape features | where the ball is seen |
@@ -58,7 +58,7 @@ moves a change of team 1 frame later and a change into `D` 2 frames earlier: the
 benchmark, negated.
 
 **Why this and not something else.** The rules allow training and tuning on external data only. So the three models
-are trained on other matches, and every numeric constant is chosen on a benchmark of other matches (section 5).
+are trained on other matches, and every numeric constant is chosen on a benchmark of other matches (section 6).
 Boosted trees on hand-built features suit that: they train on a CPU, are committed as JSON files, and each feature
 can be checked against how our tracking differs from the training data. The decoder is there because spellF1
 punishes flicker: evidence may be noisy per frame, but a possession has to be worth its two edges.
@@ -72,7 +72,7 @@ punishes flicker: evidence may be noisy per frame, but a possession has to be wo
 | Tactical homography | no | analysed only: the camera's aim is too coarse a proxy for the ball (median error 12 m along the pitch) |
 | Tactical video and audio | no | a whistle detector on the audio was tried and failed its bar |
 | Broadcast video, tracking, homography | no | its own timeline with cuts and replays, and no mapping to the tactical frames |
-| Public 5-minute ground truth | check only | a correctness check of the finished pipeline (section 3) |
+| Public 5-minute ground truth | check only | a correctness check of the finished pipeline (sections 3 and 6) |
 
 **Tried and dropped,** each by a bar declared before its run (docs/results.md has the numbers): the restarting team
 by restart type; the referee's whistle; the camera's aim as a ball proxy; repairing wrong-team track slots; a
@@ -101,7 +101,7 @@ inspected to understand what counts as possession; no model saw them and no cons
 
 **Three things we state openly:**
 
-- *Two published figures.* The benchmark's degradation (section 5) quotes two statistics of this match from the
+- *Two published figures.* The benchmark's degradation (section 6) quotes two statistics of this match from the
   organisers' DATA.md: the ball is missing on 41% of the graded frames, and 20.5 objects are tracked on average. We
   read them as public information of the task statement, given to every team, not as use of the provided data.
 - *An earlier benchmark, retired.* Until 9 Nov the degradation was fitted on label-free statistics of our own
@@ -170,16 +170,21 @@ gross errors, which chose nothing.
 
 ## 7. Limitations
 
-- **Late in each half** the ball is missing on up to 80% of a 5-minute block. There the team rests on the shape
-  model alone, trained on other teams, and a change of team is found late.
+- **A change of team inside a ball gap is found late; this is the largest error left.** On the benchmark, where
+  the ball is seen a change lands within a few frames; inside a gap it lands late (a median of 6 frames at a
+  possession's start and 11 at its end, the upper quartile near one second). Late in each half the ball is missing
+  on up to 80% of a 5-minute block, and there the team rests on the shape model alone, trained on other teams.
 - **The benchmark is not our tracking.** Its ball gaps ignore the play, while ours fall where the tracker loses the
   ball (more often near the lines), and it has no wrong-team slots. So its scores are not a forecast for the real
   match; it overstates the dead-ball model in particular, by an amount we cannot measure.
-- **Wrong-team slots** hit the team model hardest, since it reads distances per team.
+- **The team model has no transfer check on our match,** and wrong-team slots hit it hardest, since it reads
+  distances per team. The benchmark's test of this realised such slots on at most 2.3% of the graded frames; our
+  match has them on at least 10.8%.
 - **Seven German matches,** five of them one club's home games: the models may transfer imperfectly to LaLiga, and
   several constants were chosen within noise of their neighbours.
 - **Our truth's conventions are unknown:** how short a possession may be, and when exactly `D` starts and ends. The
-  models carry DFL's conventions.
+  models carry DFL's conventions, and the decoder's minimum of 1.4 s, chosen on the benchmark, rules out shorter
+  possessions, which the public truth shows to exist.
 
 **With more time:** recover the ball from the video with a detector trained on other matches; place the edges from
 detected passes; learn our provider's timing from other games of the same provider, given data with a licence.
@@ -196,8 +201,9 @@ py -3.11 -m venv .venv                         # macOS/Linux: python3.11 -m venv
 One command goes from `data/` to the CSV, validates it with the official checks and prints its sha256. Python
 3.11.9; every package the pipeline imports is pinned (numpy 2.4.6, pandas 3.0.6). The models are JSON files in
 `pipeline/models/`, so nothing is trained at run time and no GPU is needed; the run takes under a minute on a laptop
-CPU. The file came out with the same sha256 from a fresh clone of the public repository in a fresh environment
-(16 Nov, Windows), and earlier versions also under Linux; all on one laptop, so a second processor is untried. Retraining the models and repeating the benchmark needs
+CPU. On 16 Nov the file came out with the same sha256 from fresh clones of the public repository, in fresh
+environments, on two processors: an AMD Ryzen 5 5500U laptop (Windows, Python 3.11.9) and an Apple M2 (macOS,
+Python 3.11.18). Earlier versions were also rebuilt under Linux. Retraining the models and repeating the benchmark needs
 only the public DFL files: `requirements-benchmark.txt` and the commands in `pipeline/benchmark/README.md`.
 
 **References.** Bassek et al. (2025), An integrated dataset of spatiotemporal and event data in elite soccer,

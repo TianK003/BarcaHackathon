@@ -2579,6 +2579,30 @@ reproduced to the last digit on `generic` in the same chain.
   says nothing about wrong-team slots as frequent as ours. That risk stays in the technical document's limitations, in
   words (T32), and only a check on BAR-ATH at adoption, declared before anyone looks, could test it.
 
+### A28 — Andrea's review of R042 before the upload, and the file rebuilt on a second processor (2026-11-16)
+Source: the repository's issues #1 and #2 (Andrea, 16 Nov), read against the code and this file by Tian's agent.
+Nothing was run on our match for it except Andrea's rebuild; no constant changed; `main.toml` is frozen.
+
+**The file on a second processor (issue #1, item 2; T21 closed).** Reported by Andrea: a fresh clone of the public
+repository at `e66b153` on an Apple M2 (arm64, macOS), a fresh environment from `requirements-pipeline.txt` (Python
+3.11.18, numpy 2.4.6, pandas 3.0.6; the team standard is 3.11.9, so the patch version differs), the data from the
+organisers' download, `python pipeline/run.py pipeline/configs/main.toml --rebuild-cache`: sha256 `aae79a04…`, the
+validator OK, the same aggregates as R042 (H 38.2%, A 27.4%, D 34.4%, 386 possessions). With the rebuild of the same
+day on the Ryzen 5 5500U (submission log), the file is the same on x86-64 and on arm64.
+
+**The review's points, each confirmed, corrected or refuted:**
+
+| point | verdict | what was done |
+|---|---|---|
+| 1. the upload is not confirmed | confirmed | Tian's; the submission log's row says so until it is done |
+| 2. never rebuilt on a second CPU | closed | above |
+| 3. hand-overs inside ball gaps are decoded late, the largest error left (A26) | confirmed as A26 has it (medians +6 and +11 frames, the upper quartile near a second, about 15% within ±5). **The cause it names is corrected:** `controlled_touch`'s hold does not vote through a gap. It votes only on frames where the ball is seen, and a frame without a ball stays without an opinion (`pipeline/evidence/controlled_touch.py`). Inside a gap the team rests on `shape_possession` and the decoder's switch cost, so a change is found once the shape evidence has paid that cost, which is what A26 reads | stated in the technical document as the main limitation. The ideas (a gap-specific shift, P42, P37) are not built: each needs a declared bar, and the file is frozen |
+| 4. P32 has no transfer check on our match | confirmed (R037, A27: at most 2.3% of the graded frames with an observable surplus, against our 10.8% at least) | the technical document's limitation now says so with both figures |
+| 5. `min_possession` 35 rules out possessions under 1.4 s, and the public truth has shorter ones | confirmed (the public truth's 0.76 s and 1.32 s possessions, P06's note). The value is the benchmark's choice and stays | stated in the technical document. T38, T39 and the unknown grain were already there |
+| "do not act on" the public window's 0.5029 to 0.4737 | agreed (T01) | nothing |
+| issue #2: four section references one too low in `technical_document_submission.md` | three confirmed (the control rule is section 5, the benchmark section 6, twice). The fourth pointed at section 3, which does describe the public window's use; it now names sections 3 and 6. The IEEE PDF takes its numbers from labels, so it was right except for that fourth one | fixed in the Markdown and the LaTeX |
+| issue #2: "a second processor is untried" | confirmed outdated | both versions now name the two processors; the PDF was rebuilt before the upload |
+
 ## Experiments
 
 Copy this template for each run, and add a scoreboard row for anything worth comparing.
@@ -11138,8 +11162,9 @@ public truth and four baselines, the same blobs as upstream's; no video, XML or 
 `git clone` of the public URL at `e66b153` into an empty folder, a fresh Python 3.11.9 environment from
 `requirements-pipeline.txt` (numpy 2.4.6, pandas 3.0.6), `python pipeline/run.py pipeline/configs/main.toml
 --rebuild-cache` with the data folder passed by `--data-dir`: sha256 `aae79a04…`, byte for byte the copy beside the
-repository (`cmp`), and `validate_submission.py` says valid on both. The same laptop, so a second CPU stays untried
-(T21). Since `33d5ad7`, R042's clean-clone commit, only a benchmark check changed and two candidate configs were
+repository (`cmp`), and `validate_submission.py` says valid on both. The same laptop; the second CPU came the
+same day from Andrea: an Apple M2 under macOS, a fresh clone of `e66b153`, Python 3.11.18, the same sha256 (A28;
+T21 closed). Since `33d5ad7`, R042's clean-clone commit, only a benchmark check changed and two candidate configs were
 removed. The technical document was shortened to four pages (Tian), given a diagram of the pipeline, and set in the IEEE
 conference format (IEEEtran, `docs/technical_document_submission.tex`, built with Tectonic 0.17.0) as
 `Un Dia de Partit.pdf` beside the CSV. The organisers' documents name no template.

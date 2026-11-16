@@ -91,7 +91,8 @@ left before the upload:
 *Where the plan stands on 16 Nov.* The repository is public (Tian), after a check of the whole git history. R042's
 file was regenerated from a fresh clone of the public repository in a fresh environment, with the same sha256, and
 validates; the technical document is cut to four pages and rendered to PDF ([results.md](results.md), submission
-log). A second processor was not tried. What is left is the form, which is Tian's.
+log). Andrea rebuilt the file on a second processor (Apple M2), with the same sha256, and reviewed R042 and the
+document ([results.md](results.md), A28). What is left is the form, which is Tian's.
 
 The next-step lane after R030, P28 (a possession back-dated to the first touch), was dropped at its gate (R031), and
 no other lane was opened. A25 puts the remaining score where A13 did, in who has the ball where the ball is seen

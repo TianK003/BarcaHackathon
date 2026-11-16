@@ -142,7 +142,7 @@ Tactical video and audio & no & A whistle detector on the audio was tried and fa
 Broadcast video, tracking, homography & no & Its own timeline with cuts and replays, and no mapping to the
   tactical frames. \\
 Public 5-minute ground truth & check only & A correctness check of the finished pipeline
-  (Section~\ref{sec:data}). \\
+  (Sections~\ref{sec:data} and~\ref{sec:validation}). \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -289,16 +289,22 @@ which chose nothing.
 \label{sec:limits}
 
 \begin{itemize}
-\item \textbf{Late in each half} the ball is missing on up to 80\% of a 5-minute block. There the team rests on
-  the shape model alone, trained on other teams, and a change of team is found late.
+\item \textbf{A change of team inside a ball gap is found late; this is the largest error left.} On the
+  benchmark, where the ball is seen a change lands within a few frames; inside a gap it lands late (a median of 6
+  frames at a possession's start and 11 at its end, the upper quartile near one second). Late in each half the
+  ball is missing on up to 80\% of a 5-minute block, and there the team rests on the shape model alone, trained on
+  other teams.
 \item \textbf{The benchmark is not our tracking.} Its ball gaps ignore the play, while ours fall where the tracker
   loses the ball (more often near the lines), and it has no wrong-team slots. So its scores are not a forecast
   for the real match; it overstates the dead-ball model in particular, by an amount we cannot measure.
-\item \textbf{Wrong-team slots} hit the team model hardest, since it reads distances per team.
+\item \textbf{The team model has no transfer check on our match,} and wrong-team slots hit it hardest, since it
+  reads distances per team. The benchmark's test of this realised such slots on at most 2.3\% of the graded
+  frames; our match has them on at least 10.8\%.
 \item \textbf{Seven German matches,} five of them one club's home games: the models may transfer imperfectly to
   LaLiga, and several constants were chosen within noise of their neighbours.
 \item \textbf{Our truth's conventions are unknown:} how short a possession may be, and when exactly \code{D}
-  starts and ends. The models carry DFL's conventions.
+  starts and ends. The models carry DFL's conventions, and the decoder's minimum of 1.4\,s, chosen on the
+  benchmark, rules out shorter possessions, which the public truth shows to exist.
 \end{itemize}
 
 \textbf{With more time:} recover the ball from the video with a detector trained on other matches; place the
@@ -329,9 +335,9 @@ aae79a0446dabdf565d86b95f03acf0a53b5698cf3d80033c25bf7d49cbd3bdb
 
 Python 3.11.9; every package the pipeline imports is pinned (numpy 2.4.6, pandas 3.0.6). The models are JSON files
 in \code{pipeline/models/}, so nothing is trained at run time and no GPU is needed; the run takes under a minute
-on a laptop CPU. The file came out with the same sha256 from a fresh clone of the public repository in a fresh
-environment (16~Nov, Windows), and earlier versions also under Linux; all on one laptop, so a second processor is
-untried. Retraining the models and repeating the benchmark needs only the public DFL files:
+on a laptop CPU. On 16~Nov the file came out with the same sha256 from fresh clones of the public repository, in
+fresh environments, on two processors: an AMD Ryzen~5 5500U laptop (Windows, Python 3.11.9) and an Apple M2
+(macOS, Python 3.11.18). Earlier versions were also rebuilt under Linux. Retraining the models and repeating the benchmark needs only the public DFL files:
 \code{requirements-benchmark.txt} and the commands in \code{pipeline/benchmark/README.md}. The full record of
 every experiment, with its numbers, commands and failures, is in \code{docs/results.md}, and our reading of the
 rules in \code{docs/rules.md}.
