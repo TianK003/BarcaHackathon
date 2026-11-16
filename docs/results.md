@@ -11089,7 +11089,7 @@ The form keeps only the last response before the deadline, so log every upload.
 
 | date | file | sha256 | commit | command | notes |
 |---|---|---|---|---|---|
-| 2026-11-16 | `Un Dia de Partit.csv` (1,682,773 bytes) | `aae79a0446dabdf565d86b95f03acf0a53b5698cf3d80033c25bf7d49cbd3bdb` | `e66b153` | `python pipeline/run.py pipeline/configs/main.toml` | R042's file. **Prepared for the form; the upload itself is Tian's and is not yet confirmed in this log.** With it: the repository URL https://github.com/TianK003/BarcaHackathon (public since 16 Nov) and `Un Dia de Partit.pdf`, four pages in the IEEE conference format, built from `docs/technical_document_submission.tex` (the organisers give no template) |
+| 2026-11-16 | `Un Dia de Partit.csv` (1,682,773 bytes) | `aae79a0446dabdf565d86b95f03acf0a53b5698cf3d80033c25bf7d49cbd3bdb` | `e66b153` | `python pipeline/run.py pipeline/configs/main.toml` | R042's file. **Uploaded: Tian sent the form on 16 Nov 2026** (one response per team; it can be edited, and the last one before the deadline counts). With it: the repository URL https://github.com/TianK003/BarcaHackathon (public since 16 Nov) and `Un Dia de Partit.pdf`, four pages in the IEEE conference format, built from `docs/technical_document_submission.tex` (the organisers give no template), sha256 `32b1474f08b4dfa4dfff183183ef255ea06b14a8c678ff0791b840e6eecfbe2e`. The repository's `main` was at `beb6117` when the form was sent; since `e66b153` only documents changed |
 
 `main.toml` was rewritten by R010 (2026-10-25): it then produced sha256
 `a706e7f711b2d3faacc2f071b6e28963ed8e2f2326a7880e6d0776cce4295f1f` (P04 `controlled_touch` + P05
@@ -11172,6 +11172,10 @@ this file, the config and the code corrected it: a few statements were stronger 
 from the retired benchmark, the public window's constants, the ablations' truth), one figure was version 1's (the
 shape model's 85%, now version 2's 86%), and the whistle detector failed a gate, not a bar. The PDF beside the CSV
 is the build after those corrections: four pages. No code, config or model changed.
+
+**16 Nov 2026: the form is sent (Tian).** Team name Un Dia de Partit, the CSV above, the repository URL and the
+PDF. From here to the results (before 26 Nov) `main` is frozen: documents only, and no change to the pipeline's
+code, configs, models or requirements. If the form is ever sent again before the deadline, log it as a new row.
 
 Before each upload:
 1. Regenerate the file from a clean clone, ideally on a second machine, and compare the sha256 ([T21](traps.md)).

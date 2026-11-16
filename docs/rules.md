@@ -310,7 +310,7 @@ after a result was seen. No alternative was run on our match or on the public wi
 **16 Nov 2026.** Tian made the repository public, after the whole git history was checked for anything under `data/`
 or frame-level (question 2's condition; none found, [results.md](results.md), submission log). The file is R042's
 (`aae79a04…`), regenerated that day from a fresh clone of the public repository, and by Andrea on a second processor (an Apple M2;
-[results.md](results.md), A28). The form is Tian's.
+[results.md](results.md), A28). Tian sent the form the same day (the submission log).
 
 **What was left on 10 Nov.** The file is not uploaded. The upload and making the repository public are Tian's. A second
 processor has not reproduced the file yet (T21); every reproduction so far is one laptop, under Windows and Linux. `generic` v1 is

@@ -13,7 +13,10 @@ Our team's fork of the organisers' starter repo for **More than a Hack 2027 — 
   their repo by 9 Nov; `docs/rules.md`). They answered our questions 1–4 (5 Nov) with the clarification alone, so plan as if
   any question gets it back (`docs/traps.md` T56). The upload files are named after it:
   `Un Dia de Partit.csv` and `Un Dia de Partit.pdf` (or `.md`); the scorer names the board's row after the file.
-- **Deadline: November 17, 2026.** Results before November 26, 2026.
+- **Deadline: November 17, 2026.** Results before November 26, 2026. **Submitted 16 Nov 2026** (Tian, through the
+  form): R042's file, sha256 `aae79a04…`, the repository URL and the four-page PDF (`docs/results.md`, submission
+  log). The PDF names commit `e66b153` and says later commits change documents only, so until the results `main`
+  takes documents only: no change to the pipeline's code, configs, models or requirements.
 - **This stage is tested automatically.** Organisers run this repo's own `evaluation/run_evaluation.py` against a
   private full-match ground truth. No jury, no presentation, no live leaderboard, no feedback before results.
 

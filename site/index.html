@@ -727,8 +727,8 @@ const DATA = {
       flag: "Correctness check only, never used to choose anything (rule `f8f2629`, T01)."
     },
     {
-      label: "Submission", value: "Not uploaded", badge: "todo",
-      text: "The submission log in [docs/results.md](../docs/results.md) holds the prepared file (16 Nov); the upload is not yet confirmed there. `main.toml` writes sha256 `aae79a04…` (R042: P30 and P32 adopted), the same on two runs, each from a rebuilt ATD cache, from a clean clone of `33d5ad7` (same machine, same venv) and, on 16 Nov, from fresh clones of the public repository on two processors (A28); the official validator says valid. The upload is Tian's. The files before it were `2dd51320…` (R030), `762f9073…` (R029), `e6496a9b…` (R024) and `7ba575c0…` (R017); their record configs read the model files, which R030 retrained, so they no longer write them."
+      label: "Submission", value: "Uploaded 16 Nov", badge: "done",
+      text: "The submission log in [docs/results.md](../docs/results.md) holds the upload: Tian sent the form on 16 Nov (the CSV, the repository URL and the four-page PDF). `main.toml` writes sha256 `aae79a04…` (R042: P30 and P32 adopted), the same on two runs, each from a rebuilt ATD cache, from a clean clone of `33d5ad7` (same machine, same venv) and, on 16 Nov, from fresh clones of the public repository on two processors (A28); the official validator says valid. The files before it were `2dd51320…` (R030), `762f9073…` (R029), `e6496a9b…` (R024) and `7ba575c0…` (R017); their record configs read the model files, which R030 retrained, so they no longer write them."
     }
   ],
 
@@ -1031,7 +1031,7 @@ const DATA = {
   ],
 
   configs: [
-    { name: "main.toml", status: "main", label: "the submission config", text: "The team's current pipeline, the file we would submit today (not uploaded): R030's constants (chosen on `generic`: hold 0.60, `switch_team` 6, shape weight 0.3) with P30's version 2 shape model and P32's team model added by R042 (sha256 `aae79a04…`). `benchmark/configs/p27/p27_final.toml` holds the same constants for the benchmark." },
+    { name: "main.toml", status: "main", label: "the submission config", text: "The team's current pipeline, the file submitted on 16 Nov: R030's constants (chosen on `generic`: hold 0.60, `switch_team` 6, shape weight 0.3) with P30's version 2 shape model and P32's team model added by R042 (sha256 `aae79a04…`). `benchmark/configs/p27/p27_final.toml` holds the same constants for the benchmark." },
     { name: "r024_both.toml", status: "baseline", label: "record", text: "R024's final config, written when it was chosen, with R017's Smart Tagging votes; it wrote R024's `e6496a9b…`, the file `main.toml` wrote before R029, with the models of that day (R030 retrained them)." },
     { name: "r017_frame.toml", status: "baseline", label: "record", text: "R017's choice: R013's config plus `smart_tagging`; the file `main.toml` wrote before R024 (`7ba575c0…`), with the models of that day." },
     { name: "r013_retune.toml", status: "baseline", label: "record", text: "R013's final config, written when it was chosen; the file `main.toml` wrote before R017 (`0ebdfbec…`), with the models of that day." },
@@ -1689,8 +1689,8 @@ const DATA = {
 
   /* ---------- Work to do ---------- */
   deliverables: [
-    { title: "CSV uploaded (`Un Dia de Partit.csv`)", status: "todo", label: "not yet",
-      text: "The submission log holds the prepared file (`aae79a04…`, 16 Nov); the upload is not yet confirmed there. Validate the exact file and log every upload in [docs/results.md](../docs/results.md). Our advice, not a rule: upload `main.toml`'s file early as a safety copy; the form keeps the last response before the deadline, so an early upload is insurance.",
+    { title: "CSV uploaded (`Un Dia de Partit.csv`)", status: "done", label: "uploaded 16 Nov",
+      text: "Tian sent the form on 16 Nov with `aae79a04…`; the submission log has the row. Validate the exact file and log every upload in [docs/results.md](../docs/results.md). Our advice, not a rule: upload `main.toml`'s file early as a safety copy; the form keeps the last response before the deadline, so an early upload is insurance.",
       cmds: ["python pipeline/run.py pipeline/configs/main.toml --out \"../Un Dia de Partit.csv\"", "python evaluation/validate_submission.py \"../Un Dia de Partit.csv\""] },
     { title: "Public repo URL", status: "done", label: "public since 16 Nov",
       text: "https://github.com/TianK003/BarcaHackathon is public since 16 Nov 2026 (Tian), after the whole git history was checked for anything under `data/` or frame-level. It holds the source, pinned dependencies, install and run instructions, and the command that regenerates the CSV." },
